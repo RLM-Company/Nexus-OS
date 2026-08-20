@@ -1,3 +1,3 @@
 # API application
 
-Reserved for the Fastify server in B01-006.
+Fastify server for Nexus OS. It applies SQLite migrations during startup and exposes `GET /api/v1/health`.

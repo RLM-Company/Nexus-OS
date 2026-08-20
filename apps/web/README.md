@@ -1,3 +1,3 @@
 # Web application
 
-Reserved for the Next.js App Router client in B01-007.
+Responsive Next.js App Router shell for Nexus OS. Product workflows are added in later B0.1 increments.
