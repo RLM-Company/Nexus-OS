@@ -8,6 +8,13 @@
       "when": 1787244365653,
       "tag": "0000_early_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787252997001,
+      "tag": "0001_complex_wendigo",
+      "breakpoints": true
     }
   ]
 }

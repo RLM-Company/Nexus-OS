@@ -36,6 +36,9 @@ button,
 textarea {
   font: inherit;
 }
+button {
+  cursor: pointer;
+}
 a {
   color: inherit;
   text-decoration: none;
@@ -389,6 +392,240 @@ svg {
 .mobile-nav {
   display: none;
 }
+.mobile-project-strip {
+  display: none;
+}
+
+.workspace:not(.chat-workspace) {
+  display: flex;
+  flex-direction: column;
+}
+.workspace:not(.chat-workspace) .topbar {
+  order: 1;
+}
+.workspace:not(.chat-workspace) .hero {
+  order: 2;
+}
+.workspace:not(.chat-workspace) .composer {
+  order: 3;
+}
+.workspace:not(.chat-workspace) .foundation-grid {
+  order: 4;
+}
+.navigation button,
+.project-item,
+.mobile-nav button {
+  border: 0;
+  text-align: left;
+}
+.project-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.35rem;
+  overflow-y: auto;
+}
+.project-item {
+  display: grid;
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.62rem;
+  border-radius: 0.72rem;
+  color: var(--muted);
+  background: transparent;
+}
+.project-item:hover,
+.project-item.active {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.055);
+}
+.project-glyph {
+  display: grid;
+  width: 1.85rem;
+  height: 1.85rem;
+  place-items: center;
+  border: 1px solid rgba(179, 168, 255, 0.16);
+  border-radius: 0.58rem;
+  color: var(--accent-strong);
+  background: rgba(138, 119, 255, 0.08);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+.project-item strong,
+.project-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-item strong {
+  font-size: 0.76rem;
+  font-weight: 620;
+}
+.project-item small {
+  margin-top: 0.2rem;
+  color: #687184;
+  font-size: 0.63rem;
+}
+.chat-workspace {
+  display: grid;
+  height: 100vh;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  padding-bottom: 1.3rem;
+  overflow: hidden;
+}
+.chat-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.chat-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.manager-avatar,
+.message-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--accent-strong);
+  background: rgba(138, 119, 255, 0.1);
+}
+.manager-avatar {
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid rgba(179, 168, 255, 0.18);
+  border-radius: 0.7rem;
+}
+.manager-avatar svg,
+.message-avatar svg {
+  width: 1rem;
+  height: 1rem;
+}
+.chat-heading strong,
+.chat-heading small {
+  display: block;
+}
+.chat-heading strong {
+  font-size: 0.82rem;
+}
+.chat-heading small {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+.live-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+  color: #8ddfbc;
+  font-size: 0.66rem;
+}
+.live-badge i {
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 50%;
+  background: var(--green);
+}
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 0.25rem 1.5rem;
+  scrollbar-color: #2c3342 transparent;
+}
+.message {
+  display: grid;
+  max-width: 50rem;
+  margin: 0 auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.8rem;
+  padding: 0.85rem 0;
+}
+.message + .message {
+  border-top: 1px solid rgba(255, 255, 255, 0.045);
+}
+.message-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.62rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+.message.user .message-avatar {
+  color: #161321;
+  background: linear-gradient(135deg, #d4cdff, #8471ff);
+}
+.message header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+}
+.message header strong {
+  font-size: 0.75rem;
+}
+.message time {
+  color: #626b7e;
+  font-size: 0.61rem;
+}
+.message p {
+  margin: 0.38rem 0 0;
+  color: #ccd1dc;
+  font-size: 0.86rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+.message.user p {
+  color: #eef0f6;
+}
+.typing {
+  color: var(--muted);
+}
+.typing span {
+  animation: pulse 1s ease-in-out infinite;
+}
+.chat-composer {
+  width: 100%;
+  margin-top: 0;
+}
+.composer textarea:disabled {
+  opacity: 0.72;
+}
+.composer-footer button {
+  cursor: pointer;
+  color: #151222;
+  background: linear-gradient(135deg, #d2cbff, #9686ff);
+  font-weight: 720;
+}
+.composer-footer button:disabled {
+  cursor: not-allowed;
+  color: #77748a;
+  background: #2a2840;
+}
+.spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid rgba(20, 17, 34, 0.3);
+  border-top-color: #151222;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
 
 @media (max-width: 860px) {
   .sidebar {
@@ -401,6 +638,43 @@ svg {
   }
   .topbar {
     align-items: flex-start;
+  }
+  .topbar > div:first-child {
+    min-width: 0;
+  }
+  .topbar h1 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-project-strip {
+    display: flex;
+    gap: 0.45rem;
+    margin-inline: -0.1rem;
+    padding: 0.7rem 0.1rem 0.2rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .mobile-project-strip::-webkit-scrollbar {
+    display: none;
+  }
+  .mobile-project-strip button {
+    max-width: 12rem;
+    flex: 0 0 auto;
+    padding: 0.45rem 0.65rem;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.025);
+    font-size: 0.65rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-project-strip button.active {
+    border-color: rgba(179, 168, 255, 0.25);
+    color: var(--text);
+    background: rgba(138, 119, 255, 0.1);
   }
   .privacy-badge {
     display: none !important;
@@ -433,10 +707,29 @@ svg {
     border-radius: 0.7rem;
     color: #697184;
     font-size: 0.62rem;
+    border: 0;
+    background: transparent;
   }
   .mobile-nav .active {
     color: var(--text);
     background: rgba(255, 255, 255, 0.055);
+  }
+  .chat-workspace {
+    height: 100dvh;
+    padding-bottom: 5.7rem;
+  }
+  .chat-heading {
+    padding: 0.75rem 0;
+  }
+  .messages {
+    padding-top: 0.65rem;
+  }
+  .message {
+    gap: 0.65rem;
+    padding: 0.72rem 0;
+  }
+  .chat-composer {
+    border-radius: 1rem;
   }
   .mobile-nav svg {
     width: 0.95rem;
@@ -473,6 +766,15 @@ svg {
   .composer-footer > span {
     max-width: 10rem;
     line-height: 1.35;
+  }
+  .chat-workspace .topbar {
+    padding-bottom: 0.8rem;
+  }
+  .chat-workspace .system-status {
+    display: none;
+  }
+  .message p {
+    font-size: 0.82rem;
   }
 }
 
