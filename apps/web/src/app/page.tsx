@@ -37,6 +37,14 @@ type AcceptedResponse = {
 
 type ProjectDetail = { project: Project; chat_id: string; messages: Message[] };
 
+type ModelRuntimeStatus = {
+  mode: "mock" | "openai-compatible";
+  provider: "mock" | "primary";
+  model: string;
+  credential_configured: boolean;
+  fallback_to_mock: boolean;
+};
+
 const SparkIcon = () => (
   <svg aria-hidden="true" viewBox="0 0 24 24">
     <path d="M12 2l1.55 5.3L19 9l-5.45 1.7L12 16l-1.55-5.3L5 9l5.45-1.7L12 2Z" />
@@ -118,6 +126,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<ModelRuntimeStatus | null>(null);
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -127,7 +136,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    void loadProjects()
+    void Promise.all([
+      loadProjects(),
+      api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
+    ])
       .catch(() => setError("API Nexus пока недоступен. Запусти web и api вместе."))
       .finally(() => setLoading(false));
     return () => streamRef.current?.close();
@@ -339,7 +351,7 @@ export default function Home() {
           <div className="system-status" aria-label="Статус системы">
             <span>
               <i className="status-dot" />
-              Локальный режим
+              {runtime?.mode === "openai-compatible" ? "Провайдер готов" : "Mock-режим"}
             </span>
             <span className="privacy-badge">
               <ShieldIcon />
@@ -371,7 +383,11 @@ export default function Home() {
               </span>
               <div>
                 <strong>Nexus Manager</strong>
-                <small>MockProvider · история сохраняется</small>
+                <small>
+                  {runtime?.mode === "openai-compatible"
+                    ? `${runtime.model} · fallback ${runtime.fallback_to_mock ? "включён" : "выключен"}`
+                    : "MockProvider · история сохраняется"}
+                </small>
               </div>
               <span className="live-badge">
                 <i /> Готов

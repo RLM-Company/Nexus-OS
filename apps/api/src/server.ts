@@ -1,13 +1,17 @@
 import { loadServerConfig } from "@nexus/config";
 import { openDatabase, ProjectStore, runMigrations } from "@nexus/db";
 import { buildApp } from "./app.js";
+import { buildModelRuntime } from "./model-runtime.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
+const modelRuntime = buildModelRuntime(config);
 const app = buildApp({
   config,
   database,
   projectStore: new ProjectStore(database.sqlite),
+  modelGateway: modelRuntime.gateway,
+  manager: modelRuntime.manager,
   closeDatabase: () => database.close()
 });
 

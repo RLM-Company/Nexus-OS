@@ -2,6 +2,7 @@ import { loadServerConfig } from "@nexus/config";
 import { openDatabase, ProjectStore, runMigrations } from "@nexus/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
+import { buildModelRuntime } from "../src/model-runtime.js";
 
 describe("project chat API", () => {
   const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
@@ -11,10 +12,13 @@ describe("project chat API", () => {
   beforeEach(async () => {
     database = openDatabase(":memory:");
     await runMigrations(database);
+    const runtime = buildModelRuntime(config);
     app = buildApp({
       config,
       database,
-      projectStore: new ProjectStore(database.sqlite)
+      projectStore: new ProjectStore(database.sqlite),
+      modelGateway: runtime.gateway,
+      manager: runtime.manager
     });
   });
 

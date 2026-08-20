@@ -50,9 +50,16 @@ describe("SQLite foundation", () => {
       const assistant = store.startAssistantMessage(accepted.run.id);
       expect(assistant?.status).toBe("streaming");
       store.appendAssistantDelta(assistant?.id ?? "", "Готово");
-      store.completeRun(accepted.run.id, "mock", "manager-test");
+      store.completeRun(accepted.run.id, "mock", "manager-test", {
+        inputTokens: 12,
+        outputTokens: 4
+      });
 
-      expect(store.getRun(accepted.run.id)?.status).toBe("succeeded");
+      expect(store.getRun(accepted.run.id)).toMatchObject({
+        status: "succeeded",
+        input_tokens: 12,
+        output_tokens: 4
+      });
       expect(store.getAssistantMessage(accepted.run.id)).toMatchObject({
         content: "Готово",
         status: "completed"

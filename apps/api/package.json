@@ -15,7 +15,9 @@
     "@fastify/type-provider-typebox": "6.1.0",
     "@nexus/config": "workspace:*",
     "@nexus/contracts": "workspace:*",
+    "@nexus/core": "workspace:*",
     "@nexus/db": "workspace:*",
+    "@nexus/model-gateway": "workspace:*",
     "fastify": "5.12.1",
     "typebox": "1.3.16"
   },

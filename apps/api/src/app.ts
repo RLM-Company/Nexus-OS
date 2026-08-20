@@ -1,28 +1,33 @@
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { ServerConfig } from "@nexus/config";
+import type { ManagerService } from "@nexus/core";
 import {
   ApiErrorSchema,
   CreateMessageRequestSchema,
   CreateProjectRequestSchema,
   HealthResponseSchema,
   MessageAcceptedResponseSchema,
+  ModelRuntimeStatusSchema,
   ProjectDetailResponseSchema,
   ProjectListResponseSchema,
   type ApiError,
   type HealthResponse,
   type MessageAcceptedResponse,
+  type ModelRuntimeStatus,
   type ProjectDetailResponse,
   type ProjectListResponse,
   type StreamEvent
 } from "@nexus/contracts";
 import type { DatabaseHealth, ProjectStore, StoredMessage } from "@nexus/db";
+import { GatewayRunError, type ModelGateway } from "@nexus/model-gateway";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
-import { MOCK_MODEL, MOCK_PROVIDER, streamMockResponse } from "./mock-provider.js";
 
 export interface AppDependencies {
   config: ServerConfig;
   database: DatabaseHealth;
   projectStore?: ProjectStore;
+  modelGateway?: ModelGateway;
+  manager?: ManagerService;
   closeDatabase?: () => void;
 }
 
@@ -47,7 +52,13 @@ const sendEvent = (reply: FastifyReply, event: StreamEvent): void => {
   reply.raw.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
 };
 
-const completedReplay = (reply: FastifyReply, runId: string, message: StoredMessage): void => {
+const completedReplay = (
+  reply: FastifyReply,
+  runId: string,
+  message: StoredMessage,
+  provider: string,
+  model: string
+): void => {
   const timestamp = new Date().toISOString();
   sendEvent(reply, { type: "run.started", data: { run_id: runId, timestamp } });
   sendEvent(reply, { type: "message.started", data: { run_id: runId, message_id: message.id } });
@@ -68,7 +79,7 @@ const completedReplay = (reply: FastifyReply, runId: string, message: StoredMess
   });
   sendEvent(reply, {
     type: "run.completed",
-    data: { run_id: runId, provider: MOCK_PROVIDER, model_resolved: MOCK_MODEL }
+    data: { run_id: runId, provider, model_resolved: model }
   });
 };
 
@@ -103,8 +114,27 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     }
   );
 
-  if (dependencies.projectStore) {
+  app.get(
+    "/api/v1/model-runtime",
+    { schema: { response: { 200: ModelRuntimeStatusSchema } } },
+    () => {
+      const response: ModelRuntimeStatus = {
+        mode: dependencies.config.modelProvider,
+        provider: dependencies.config.modelProvider === "mock" ? "mock" : "primary",
+        model: dependencies.config.modelName,
+        credential_configured:
+          dependencies.config.modelProvider === "openai-compatible" &&
+          Boolean(dependencies.config.modelApiKey),
+        fallback_to_mock: dependencies.config.modelFallbackToMock
+      };
+      return response;
+    }
+  );
+
+  if (dependencies.projectStore && dependencies.modelGateway && dependencies.manager) {
     const store = dependencies.projectStore;
+    const modelGateway = dependencies.modelGateway;
+    const manager = dependencies.manager;
 
     app.get(
       "/api/v1/projects",
@@ -209,8 +239,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       },
       async (request, reply) => {
         const run = store.getRun(request.params.runId);
-        const prompt = store.getRunPrompt(request.params.runId);
-        if (!run || prompt === null) {
+        const conversation = store.getConversationForRun(request.params.runId);
+        if (!run || conversation.length === 0) {
           return reply.status(404).send(errorBody(request.id, "RUN_NOT_FOUND", "Run not found"));
         }
 
@@ -224,7 +254,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
 
         const existing = store.getAssistantMessage(run.id);
         if (run.status === "succeeded" && existing) {
-          completedReplay(reply, run.id, existing);
+          completedReplay(
+            reply,
+            run.id,
+            existing,
+            run.provider ?? "unknown",
+            run.model_resolved ?? "unknown"
+          );
           reply.raw.end();
           return reply;
         }
@@ -246,43 +282,85 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
 
         let sequence = 0;
         let size = assistant.content.length;
+        let completed:
+          | {
+              provider: string;
+              model: string;
+              finishReason: string;
+              usage?: { inputTokens: number; outputTokens: number };
+            }
+          | undefined;
+        const controller = new AbortController();
+        const onAborted = (): void => controller.abort(new Error("Client disconnected"));
+        request.raw.once("aborted", onAborted);
         try {
-          for await (const delta of streamMockResponse(
-            prompt,
-            dependencies.config.mockProviderMode
-          )) {
-            store.appendAssistantDelta(assistant.id, delta);
-            size += delta.length;
-            sendEvent(reply, {
-              type: "message.delta",
-              data: { run_id: run.id, message_id: assistant.id, seq: sequence++, delta }
-            });
+          const modelRequest = manager.buildRequest({
+            projectId: run.project_id,
+            runId: run.id,
+            messages: conversation
+          });
+          for await (const event of modelGateway.stream(modelRequest, controller.signal)) {
+            if (event.type === "text.delta") {
+              store.appendAssistantDelta(assistant.id, event.delta);
+              size += event.delta.length;
+              sendEvent(reply, {
+                type: "message.delta",
+                data: {
+                  run_id: run.id,
+                  message_id: assistant.id,
+                  seq: sequence++,
+                  delta: event.delta
+                }
+              });
+            } else {
+              completed = event;
+            }
           }
-          store.completeRun(run.id, MOCK_PROVIDER, MOCK_MODEL);
+          if (!completed) {
+            throw new GatewayRunError(
+              "PROVIDER_ERROR",
+              "gateway",
+              "Provider stream ended without completion",
+              true
+            );
+          }
+          store.completeRun(run.id, completed.provider, completed.model, completed.usage);
           sendEvent(reply, {
             type: "message.completed",
             data: {
               run_id: run.id,
               message_id: assistant.id,
               size,
-              finish_reason: "stop"
+              finish_reason: completed.finishReason
             }
           });
           sendEvent(reply, {
             type: "run.completed",
-            data: { run_id: run.id, provider: MOCK_PROVIDER, model_resolved: MOCK_MODEL }
+            data: {
+              run_id: run.id,
+              provider: completed.provider,
+              model_resolved: completed.model
+            }
           });
         } catch (error) {
-          const code =
-            dependencies.config.mockProviderMode === "timeout"
-              ? "PROVIDER_TIMEOUT"
-              : "PROVIDER_ERROR";
+          const gatewayError =
+            error instanceof GatewayRunError
+              ? error
+              : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
+                  cause: error
+                });
+          const code = gatewayError.code;
           store.failRun(run.id, code);
           sendEvent(reply, {
             type: "run.failed",
-            data: { run_id: run.id, error_code: code, retryable: code === "PROVIDER_TIMEOUT" }
+            data: { run_id: run.id, error_code: code, retryable: gatewayError.retryable }
           });
-          app.log.warn({ error, runId: run.id }, "Mock provider run failed");
+          app.log.warn(
+            { error: gatewayError, runId: run.id, provider: gatewayError.provider },
+            "Model provider run failed"
+          );
+        } finally {
+          request.raw.off("aborted", onAborted);
         }
         reply.raw.end();
         return reply;

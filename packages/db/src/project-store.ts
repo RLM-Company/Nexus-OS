@@ -33,6 +33,8 @@ export interface StoredRun {
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   provider: string | null;
   model_resolved: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -213,7 +215,8 @@ export class ProjectStore {
       run: asRun(
         this.#get(
           this.#sqlite.prepare(
-            `SELECT id, project_id, chat_id, status, provider, model_resolved, created_at, updated_at
+            `SELECT id, project_id, chat_id, status, provider, model_resolved,
+              input_tokens, output_tokens, created_at, updated_at
              FROM runs WHERE id = ?`
           ),
           runId
@@ -242,7 +245,8 @@ export class ProjectStore {
   getRun(runId: string): StoredRun | null {
     const row = this.#get(
       this.#sqlite.prepare(
-        `SELECT id, project_id, chat_id, status, provider, model_resolved, created_at, updated_at
+        `SELECT id, project_id, chat_id, status, provider, model_resolved,
+          input_tokens, output_tokens, created_at, updated_at
          FROM runs WHERE id = ?`
       ),
       runId
@@ -258,6 +262,23 @@ export class ProjectStore {
       runId
     );
     return typeof row?.content === "string" ? row.content : null;
+  }
+
+  getConversationForRun(runId: string): StoredMessage[] {
+    const run = this.getRun(runId);
+    if (!run) return [];
+    return this.#sqlite
+      .prepare(
+        `SELECT id, project_id, chat_id, role, content_type, content, status,
+          reply_to_message_id, run_id, error_code, created_at, updated_at
+         FROM messages
+         WHERE project_id = ?
+           AND rowid <= (
+             SELECT rowid FROM messages WHERE run_id = ? AND role = 'user' LIMIT 1
+           )
+         ORDER BY rowid ASC`
+      )
+      .all(run.project_id, runId) as unknown as StoredMessage[];
   }
 
   getAssistantMessage(runId: string): StoredMessage | null {
@@ -308,7 +329,12 @@ export class ProjectStore {
       .run(delta, now(), messageId);
   }
 
-  completeRun(runId: string, provider: string, model: string): void {
+  completeRun(
+    runId: string,
+    provider: string,
+    model: string,
+    usage?: { inputTokens: number; outputTokens: number }
+  ): void {
     const timestamp = now();
     this.#sqlite
       .prepare(
@@ -317,9 +343,17 @@ export class ProjectStore {
       .run(timestamp, runId);
     this.#sqlite
       .prepare(
-        "UPDATE runs SET status = 'succeeded', provider = ?, model_resolved = ?, updated_at = ? WHERE id = ?"
+        `UPDATE runs SET status = 'succeeded', provider = ?, model_resolved = ?,
+          input_tokens = ?, output_tokens = ?, updated_at = ? WHERE id = ?`
       )
-      .run(provider, model, timestamp, runId);
+      .run(
+        provider,
+        model,
+        usage?.inputTokens ?? null,
+        usage?.outputTokens ?? null,
+        timestamp,
+        runId
+      );
     const run = this.getRun(runId);
     if (run) {
       this.#sqlite
