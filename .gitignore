@@ -1,0 +1,16 @@
+node_modules/
+.turbo/
+.next/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+pnpm-debug.log*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,31 @@
+{
+  "name": "nexus-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nexus OS B0.1 monorepo",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.19.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.2.0",
+    "eslint": "10.8.1",
+    "prettier": "3.9.6",
+    "turbo": "2.10.11",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.11"
+  }
+}
