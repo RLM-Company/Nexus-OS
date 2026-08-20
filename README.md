@@ -18,10 +18,13 @@ Implemented through the current checkpoint:
 - B01-013: typed project and message API;
 - B01-014: SSE mock-manager response with durable message history;
 - B01-015: interactive desktop and mobile project chat.
+- B01-016: provider-neutral Model Gateway with safe fallback and timeouts;
+- B01-017: Manager Core with durable multi-turn context;
+- B01-018: OpenAI-compatible streaming provider adapter and token accounting.
 
-The current vertical slice creates real local projects and streams deterministic mock-manager
-responses. External model providers, agents, tools, and autonomous execution are intentionally not
-connected yet.
+The current vertical slice creates real local projects and can stream either deterministic
+mock-manager responses or a configured OpenAI-compatible model. Tool execution and autonomous
+worker agents are intentionally not connected yet.
 
 ## Requirements
 
@@ -37,7 +40,25 @@ pnpm dev
 ```
 
 Web runs at `http://localhost:3000`, API at `http://127.0.0.1:3100`, and health is available at
-`GET /api/v1/health`. The web app proxies `/api/*` to `NEXUS_API_ORIGIN`.
+`GET /api/v1/health`. A secret-free provider summary is available at
+`GET /api/v1/model-runtime`. The web app proxies `/api/*` to `NEXUS_API_ORIGIN`.
+
+## Connect a model provider
+
+Keep the API key only in a local `.env` file (never paste it into chat or commit it):
+
+```dotenv
+MODEL_PROVIDER=openai-compatible
+MODEL_BASE_URL=https://your-provider.example/v1
+MODEL_API_KEY=your-local-secret
+MODEL_NAME=provider-model-id
+MODEL_FALLBACK_TO_MOCK=true
+```
+
+The provider must expose an OpenAI-compatible streaming `POST /chat/completions` endpoint. Nexus
+does not expose the key through its health or runtime-status APIs. If the provider fails before the
+first response token, optional mock fallback keeps the local workflow usable; after output begins,
+the gateway fails the run instead of mixing responses from two models.
 
 Run the complete verification pipeline with:
 
@@ -52,4 +73,5 @@ pnpm check
 - Secrets are server-only and never committed.
 - Future packages reference local packages with `workspace:*`.
 
-See `docs/decisions/ADR-001-technology-stack.md` for the accepted stack.
+See `docs/decisions/ADR-001-technology-stack.md` and
+`docs/decisions/ADR-002-model-gateway.md` for accepted architecture decisions.

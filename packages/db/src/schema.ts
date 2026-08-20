@@ -1,4 +1,4 @@
-import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const systemMetadata = sqliteTable("nexus_system_metadata", {
   key: text("key").primaryKey(),
@@ -45,6 +45,8 @@ export const runs = sqliteTable(
     status: text("status").notNull(),
     provider: text("provider"),
     modelResolved: text("model_resolved"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
   },
