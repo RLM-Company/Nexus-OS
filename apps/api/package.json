@@ -1,0 +1,25 @@
+{
+  "name": "@nexus/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx --conditions=development watch src/server.ts",
+    "lint": "eslint src test",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fastify/type-provider-typebox": "6.1.0",
+    "@nexus/config": "workspace:*",
+    "@nexus/contracts": "workspace:*",
+    "@nexus/db": "workspace:*",
+    "fastify": "5.12.1",
+    "typebox": "1.3.16"
+  },
+  "devDependencies": {
+    "tsx": "4.20.6"
+  }
+}

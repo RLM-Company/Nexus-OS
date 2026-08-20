@@ -10,6 +10,8 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "db:generate": "pnpm --filter @nexus/db db:generate",
+    "db:migrate": "pnpm build && pnpm --filter @nexus/db db:migrate",
     "dev": "turbo run dev --parallel",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
