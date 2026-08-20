@@ -1,5 +1,5 @@
 import { loadServerConfig } from "@nexus/config";
-import { openDatabase, runMigrations } from "@nexus/db";
+import { openDatabase, ProjectStore, runMigrations } from "@nexus/db";
 import { buildApp } from "./app.js";
 
 const config = loadServerConfig();
@@ -7,6 +7,7 @@ const database = openDatabase(config.databaseUrl);
 const app = buildApp({
   config,
   database,
+  projectStore: new ProjectStore(database.sqlite),
   closeDatabase: () => database.close()
 });
 

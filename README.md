@@ -14,8 +14,14 @@ Implemented through the current checkpoint:
 - B01-006: Fastify API with a database-aware health check;
 - B01-007: responsive Next.js application shell;
 - B01-008: SQLite connection and reproducible Drizzle migrations.
+- B01-009–B01-012: persisted projects, main chats, messages, runs, and idempotency;
+- B01-013: typed project and message API;
+- B01-014: SSE mock-manager response with durable message history;
+- B01-015: interactive desktop and mobile project chat.
 
-Domain entities, real projects, chat, agents, and model execution are not implemented yet.
+The current vertical slice creates real local projects and streams deterministic mock-manager
+responses. External model providers, agents, tools, and autonomous execution are intentionally not
+connected yet.
 
 ## Requirements
 
@@ -30,7 +36,8 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Web runs at `http://localhost:3000`, API at `http://127.0.0.1:3100`, and health is available at `GET /api/v1/health`.
+Web runs at `http://localhost:3000`, API at `http://127.0.0.1:3100`, and health is available at
+`GET /api/v1/health`. The web app proxies `/api/*` to `NEXUS_API_ORIGIN`.
 
 Run the complete verification pipeline with:
 

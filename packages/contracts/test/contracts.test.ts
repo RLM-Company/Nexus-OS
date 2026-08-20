@@ -19,6 +19,12 @@ describe("shared contracts", () => {
         client_message_id: "client-1"
       })
     ).toBe(false);
+    expect(
+      Value.Check(CreateProjectRequestSchema, {
+        initial_message: "   ",
+        client_message_id: "client-1"
+      })
+    ).toBe(false);
   });
 
   it("accepts a provider-neutral model request", () => {

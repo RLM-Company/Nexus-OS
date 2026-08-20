@@ -74,7 +74,7 @@ export type Message = Static<typeof MessageSchema>;
 
 export const CreateProjectRequestSchema = Type.Object(
   {
-    initial_message: Type.String({ minLength: 1, maxLength: 100_000 }),
+    initial_message: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
     client_message_id: EntityIdSchema
   },
   { additionalProperties: false }
@@ -83,9 +83,49 @@ export type CreateProjectRequest = Static<typeof CreateProjectRequestSchema>;
 
 export const CreateMessageRequestSchema = Type.Object(
   {
-    content: Type.String({ minLength: 1, maxLength: 100_000 }),
+    content: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
     client_message_id: EntityIdSchema
   },
   { additionalProperties: false }
 );
 export type CreateMessageRequest = Static<typeof CreateMessageRequestSchema>;
+
+export const ProjectSchema = Type.Object(
+  {
+    id: EntityIdSchema,
+    title: Type.String({ minLength: 1, maxLength: 160 }),
+    status: ProjectStatusSchema,
+    created_at: IsoDateTimeSchema,
+    updated_at: IsoDateTimeSchema
+  },
+  { additionalProperties: false }
+);
+export type Project = Static<typeof ProjectSchema>;
+
+export const ProjectListResponseSchema = Type.Object(
+  { items: Type.Array(ProjectSummarySchema) },
+  { additionalProperties: false }
+);
+export type ProjectListResponse = Static<typeof ProjectListResponseSchema>;
+
+export const ProjectDetailResponseSchema = Type.Object(
+  {
+    project: ProjectSchema,
+    chat_id: EntityIdSchema,
+    messages: Type.Array(MessageSchema)
+  },
+  { additionalProperties: false }
+);
+export type ProjectDetailResponse = Static<typeof ProjectDetailResponseSchema>;
+
+export const MessageAcceptedResponseSchema = Type.Object(
+  {
+    project: ProjectSchema,
+    chat_id: EntityIdSchema,
+    user_message: MessageSchema,
+    run_id: EntityIdSchema,
+    stream_url: Type.String({ minLength: 1 })
+  },
+  { additionalProperties: false }
+);
+export type MessageAcceptedResponse = Static<typeof MessageAcceptedResponseSchema>;
