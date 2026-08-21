@@ -17,7 +17,7 @@ describe("loadServerConfig", () => {
       managerTimeoutMs: 60_000,
       managerMaxOutputTokens: 1_200,
       logLevel: "info",
-      mockProviderMode: "success",
+      mockProviderMode: "success"
     });
   });
 
@@ -27,13 +27,13 @@ describe("loadServerConfig", () => {
 
   it("rejects an invalid port without exposing values", () => {
     expect(() => loadServerConfig({ API_PORT: "99999" })).toThrow(
-      "Invalid server configuration: /API_PORT",
+      "Invalid server configuration: /API_PORT"
     );
   });
 
   it("rejects an unknown mock mode", () => {
     expect(() => loadServerConfig({ MOCK_PROVIDER_MODE: "unsafe" })).toThrow(
-      "Invalid server configuration: /MOCK_PROVIDER_MODE",
+      "Invalid server configuration: /MOCK_PROVIDER_MODE"
     );
   });
 
@@ -43,8 +43,8 @@ describe("loadServerConfig", () => {
       expect(() =>
         loadServerConfig({
           MODEL_PROVIDER: provider,
-          MODEL_BASE_URL: "https://provider.example/v1",
-        }),
+          MODEL_BASE_URL: "https://provider.example/v1"
+        })
       ).toThrow("Invalid server configuration: /MODEL_API_KEY");
 
       expect(
@@ -53,23 +53,23 @@ describe("loadServerConfig", () => {
           MODEL_BASE_URL: "https://provider.example/v1",
           MODEL_API_KEY: "secret",
           MODEL_NAME: "manager-model",
-          MODEL_FALLBACK_TO_MOCK: "false",
-        }),
+          MODEL_FALLBACK_TO_MOCK: "false"
+        })
       ).toMatchObject({
         modelProvider: provider,
         modelBaseUrl: "https://provider.example/v1",
         modelName: "manager-model",
-        modelFallbackToMock: false,
+        modelFallbackToMock: false
       });
-    },
+    }
   );
 
   it("rejects unsafe manager limits", () => {
     expect(() => loadServerConfig({ MANAGER_TIMEOUT_MS: "20" })).toThrow(
-      "Invalid server configuration: /MANAGER_TIMEOUT_MS",
+      "Invalid server configuration: /MANAGER_TIMEOUT_MS"
     );
     expect(() => loadServerConfig({ MANAGER_MAX_OUTPUT_TOKENS: "0" })).toThrow(
-      "Invalid server configuration: /MANAGER_MAX_OUTPUT_TOKENS",
+      "Invalid server configuration: /MANAGER_MAX_OUTPUT_TOKENS"
     );
   });
 });

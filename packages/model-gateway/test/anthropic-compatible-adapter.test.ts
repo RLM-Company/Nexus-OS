@@ -1,9 +1,6 @@
 import type { ModelRequest } from "@nexus/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  AnthropicCompatibleAdapter,
-  type ProviderStreamEvent,
-} from "../src/index.js";
+import { AnthropicCompatibleAdapter, type ProviderStreamEvent } from "../src/index.js";
 
 const request = (): ModelRequest => ({
   request_id: "request-1",
@@ -14,15 +11,15 @@ const request = (): ModelRequest => ({
   task_type: "project_chat",
   messages: [
     { role: "system", content: "System" },
-    { role: "user", content: "Создай проект" },
+    { role: "user", content: "Создай проект" }
   ],
   constraints: { timeout_ms: 1_000, max_output_tokens: 500 },
   routing: {
     preferred_provider: "primary",
     preferred_model_alias: "manager",
-    fallback_allowed: true,
+    fallback_allowed: true
   },
-  idempotency_key: "run-1",
+  idempotency_key: "run-1"
 });
 
 const collect = async (events: AsyncIterable<ProviderStreamEvent>) => {
@@ -52,17 +49,15 @@ describe("AnthropicCompatibleAdapter", () => {
               'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Привет"}}',
               'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}',
               'event: message_stop\ndata: {"type":"message_stop"}',
-              "",
+              ""
             ].join("\n\n"),
-            { status: 200, headers: { "content-type": "text/event-stream" } },
-          ),
+            { status: 200, headers: { "content-type": "text/event-stream" } }
+          )
         );
-      },
+      }
     });
 
-    const events = await collect(
-      adapter.stream(request(), new AbortController().signal),
-    );
+    const events = await collect(adapter.stream(request(), new AbortController().signal));
 
     expect(requestUrl).toBe("https://provider.example/v1/messages");
     expect(requestHeaders.get("x-api-key")).toBe("test-key");
@@ -72,7 +67,7 @@ describe("AnthropicCompatibleAdapter", () => {
       max_tokens: 500,
       messages: [{ role: "user", content: "Создай проект" }],
       stream: true,
-      system: "System",
+      system: "System"
     });
     expect(events).toEqual([
       { type: "text.delta", delta: "Привет" },
@@ -81,8 +76,8 @@ describe("AnthropicCompatibleAdapter", () => {
         provider: "primary",
         model: "resolved-model",
         finishReason: "end_turn",
-        usage: { inputTokens: 10, outputTokens: 2 },
-      },
+        usage: { inputTokens: 10, outputTokens: 2 }
+      }
     ]);
   });
 
@@ -92,12 +87,11 @@ describe("AnthropicCompatibleAdapter", () => {
       baseUrl: "https://provider.example/v1",
       apiKey: "test-key",
       model: "model",
-      fetchImplementation: () =>
-        Promise.resolve(new Response(null, { status: 429 })),
+      fetchImplementation: () => Promise.resolve(new Response(null, { status: 429 }))
     });
 
     await expect(
-      collect(adapter.stream(request(), new AbortController().signal)),
+      collect(adapter.stream(request(), new AbortController().signal))
     ).rejects.toMatchObject({ code: "PROVIDER_ERROR", retryable: true });
   });
 });

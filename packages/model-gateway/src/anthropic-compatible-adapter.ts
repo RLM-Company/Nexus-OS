@@ -1,9 +1,5 @@
 import type { ModelMessage, ModelRequest } from "@nexus/contracts";
-import {
-  GatewayRunError,
-  type ModelProviderAdapter,
-  type ProviderStreamEvent,
-} from "./types.js";
+import { GatewayRunError, type ModelProviderAdapter, type ProviderStreamEvent } from "./types.js";
 
 export interface AnthropicCompatibleAdapterOptions {
   id: string;
@@ -51,10 +47,7 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
     this.#fetch = options.fetchImplementation ?? fetch;
   }
 
-  async *stream(
-    request: ModelRequest,
-    signal: AbortSignal,
-  ): AsyncGenerator<ProviderStreamEvent> {
+  async *stream(request: ModelRequest, signal: AbortSignal): AsyncGenerator<ProviderStreamEvent> {
     const { system, messages } = this.#translateMessages(request.messages);
     const body: {
       model: string;
@@ -66,7 +59,7 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
       model: this.#model,
       max_tokens: request.constraints.max_output_tokens,
       messages,
-      stream: true,
+      stream: true
     };
     if (system) body.system = system;
 
@@ -75,10 +68,10 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
       headers: {
         "anthropic-version": this.#anthropicVersion,
         "content-type": "application/json",
-        "x-api-key": this.#apiKey,
+        "x-api-key": this.#apiKey
       },
       body: JSON.stringify(body),
-      signal,
+      signal
     });
 
     if (!response.ok) {
@@ -86,18 +79,11 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
         "PROVIDER_ERROR",
         this.id,
         `Provider returned HTTP ${response.status}`,
-        response.status === 408 ||
-          response.status === 429 ||
-          response.status >= 500,
+        response.status === 408 || response.status === 429 || response.status >= 500
       );
     }
     if (!response.body) {
-      throw new GatewayRunError(
-        "PROVIDER_ERROR",
-        this.id,
-        "Provider returned an empty body",
-        true,
-      );
+      throw new GatewayRunError("PROVIDER_ERROR", this.id, "Provider returned an empty body", true);
     }
 
     let resolvedModel = this.#model;
@@ -114,7 +100,7 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
           this.id,
           "Provider returned invalid streaming JSON",
           true,
-          { cause: error },
+          { cause: error }
         );
       }
 
@@ -123,21 +109,17 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
           "PROVIDER_ERROR",
           this.id,
           event.error?.message ?? "Provider returned a streaming error",
-          true,
+          true
         );
       }
       if (event.type === "message_start") {
         resolvedModel = event.message?.model ?? resolvedModel;
         usage = {
           inputTokens: event.message?.usage?.input_tokens ?? usage.inputTokens,
-          outputTokens:
-            event.message?.usage?.output_tokens ?? usage.outputTokens,
+          outputTokens: event.message?.usage?.output_tokens ?? usage.outputTokens
         };
       }
-      if (
-        event.type === "content_block_delta" &&
-        event.delta?.type === "text_delta"
-      ) {
+      if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
         const delta = event.delta.text;
         if (delta) yield { type: "text.delta", delta };
       }
@@ -145,7 +127,7 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
         finishReason = event.delta?.stop_reason ?? finishReason;
         usage = {
           inputTokens: event.usage?.input_tokens ?? usage.inputTokens,
-          outputTokens: event.usage?.output_tokens ?? usage.outputTokens,
+          outputTokens: event.usage?.output_tokens ?? usage.outputTokens
         };
       }
     }
@@ -155,7 +137,7 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
       provider: this.id,
       model: resolvedModel,
       finishReason,
-      usage,
+      usage
     };
   }
 
@@ -176,7 +158,7 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
           "PROVIDER_ERROR",
           this.id,
           "Anthropic-compatible tool messages are not supported yet",
-          false,
+          false
         );
       }
       translated.push({ role: message.role, content: message.content });
@@ -187,16 +169,14 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
         "PROVIDER_ERROR",
         this.id,
         "Anthropic-compatible requests require at least one user or assistant message",
-        false,
+        false
       );
     }
 
     return { system: system.join("\n\n"), messages: translated };
   }
 
-  async *#readDataPayloads(
-    stream: ReadableStream<Uint8Array>,
-  ): AsyncGenerator<string> {
+  async *#readDataPayloads(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buffer = "";

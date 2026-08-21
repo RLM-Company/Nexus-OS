@@ -5,7 +5,7 @@ import {
   MockProviderAdapter,
   ModelGateway,
   OpenAICompatibleAdapter,
-  type ModelProviderAdapter,
+  type ModelProviderAdapter
 } from "@nexus/model-gateway";
 
 export interface ModelRuntime {
@@ -14,11 +14,8 @@ export interface ModelRuntime {
 }
 
 export const buildModelRuntime = (config: ServerConfig): ModelRuntime => {
-  const adapters: ModelProviderAdapter[] = [
-    new MockProviderAdapter(config.mockProviderMode),
-  ];
-  const preferredProvider =
-    config.modelProvider === "mock" ? "mock" : "primary";
+  const adapters: ModelProviderAdapter[] = [new MockProviderAdapter(config.mockProviderMode)];
+  const preferredProvider = config.modelProvider === "mock" ? "mock" : "primary";
 
   if (config.modelProvider !== "mock") {
     if (!config.modelBaseUrl || !config.modelApiKey) {
@@ -31,8 +28,8 @@ export const buildModelRuntime = (config: ServerConfig): ModelRuntime => {
           id: preferredProvider,
           baseUrl: config.modelBaseUrl,
           apiKey: config.modelApiKey,
-          model: config.modelName,
-        }),
+          model: config.modelName
+        })
       );
     } else {
       adapters.push(
@@ -40,23 +37,20 @@ export const buildModelRuntime = (config: ServerConfig): ModelRuntime => {
           id: preferredProvider,
           baseUrl: config.modelBaseUrl,
           apiKey: config.modelApiKey,
-          model: config.modelName,
-        }),
+          model: config.modelName
+        })
       );
     }
   }
 
   return {
-    gateway: new ModelGateway(
-      adapters,
-      config.modelFallbackToMock ? ["mock"] : [],
-    ),
+    gateway: new ModelGateway(adapters, config.modelFallbackToMock ? ["mock"] : []),
     manager: new ManagerService({
       preferredProvider,
       preferredModelAlias: config.modelName,
       fallbackAllowed: config.modelFallbackToMock,
       timeoutMs: config.managerTimeoutMs,
-      maxOutputTokens: config.managerMaxOutputTokens,
-    }),
+      maxOutputTokens: config.managerMaxOutputTokens
+    })
   };
 };
