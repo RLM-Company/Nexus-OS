@@ -39,9 +39,11 @@ describe("AnthropicCompatibleAdapter", () => {
       apiKey: "test-key",
       model: "requested-model",
       fetchImplementation: (input, init) => {
-        requestUrl = String(input);
+        requestUrl =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         requestHeaders = new Headers(init?.headers);
-        requestBody = JSON.parse(String(init?.body));
+        if (typeof init?.body !== "string") throw new Error("Expected a JSON request body");
+        requestBody = JSON.parse(init.body) as unknown;
         return Promise.resolve(
           new Response(
             [
