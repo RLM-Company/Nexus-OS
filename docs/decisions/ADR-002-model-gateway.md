@@ -15,8 +15,9 @@ All model access goes through `packages/model-gateway`.
 
 - `ManagerService` assembles the provider-independent request and durable conversation context.
 - Adapters translate that request into provider protocols.
-- The first external adapter uses the commonly supported OpenAI-compatible streaming
-  chat-completions protocol and accepts a configurable base URL and model ID.
+- OpenAI-compatible models use the streaming `/chat/completions` protocol.
+- Anthropic-compatible models use the streaming `/messages` protocol. System messages are moved to
+  the top-level `system` field, while user and assistant messages retain their order.
 - The gateway owns timeout, cancellation, normalized errors, and fallback selection.
 - Fallback is allowed only before the first text delta. After output begins, failure terminates the
   run so content from different models is never combined.
@@ -28,6 +29,7 @@ All model access goes through `packages/model-gateway`.
 
 ## Consequences
 
-Connecting a provider requires configuration rather than application code. Vendor-specific features
-that do not fit the compatibility protocol will require a separate adapter. The mock adapter remains
-available for deterministic tests and offline development.
+Connecting either supported protocol requires configuration rather than changes to Manager Core.
+Provider-specific features such as tool-use content blocks require explicit adapter support before
+they can be enabled. The mock adapter remains available for deterministic tests and offline
+development.
