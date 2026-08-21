@@ -56,10 +56,19 @@ jobs:
             stream: true
           }')"
 
-          status="$(curl --silent --show-error             --max-time 45             --output "${response_file}"             --write-out "%{http_code}"             --request POST "${MODEL_BASE_URL%/}/chat/completions"             --header "Authorization: Bearer ${MODEL_API_KEY}"             --header "Content-Type: application/json"             --data "${payload}")"
+          status="$(curl --silent --show-error \
+            --max-time 45 \
+            --output "${response_file}" \
+            --write-out "%{http_code}" \
+            --request POST "${MODEL_BASE_URL%/}/chat/completions" \
+            --header "Authorization: Bearer ${MODEL_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "${payload}")"
 
           if [[ "${status}" != "200" ]]; then
-            echo "::error::VibeCode returned HTTP ${status}"
+            detail="$(jq -r '.error.message // .message // "No structured error message returned"' "${response_file}" 2>/dev/null || printf '%s' 'Unreadable error response')"
+            detail="$(printf '%s' "${detail}" | tr '\n\r' '  ' | sed -E 's/vk-[[:alnum:]_.-]+/[REDACTED]/g' | cut -c1-500)"
+            echo "::error::VibeCode returned HTTP ${status}: ${detail}"
             exit 1
           fi
 
