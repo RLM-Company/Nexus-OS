@@ -123,8 +123,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         provider: dependencies.config.modelProvider === "mock" ? "mock" : "primary",
         model: dependencies.config.modelName,
         credential_configured:
-          dependencies.config.modelProvider !== "mock" &&
-          Boolean(dependencies.config.modelApiKey),
+          dependencies.config.modelProvider !== "mock" && Boolean(dependencies.config.modelApiKey),
         fallback_to_mock: dependencies.config.modelFallbackToMock
       };
       return response;
