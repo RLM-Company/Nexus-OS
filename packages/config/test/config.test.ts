@@ -37,29 +37,32 @@ describe("loadServerConfig", () => {
     );
   });
 
-  it("requires complete OpenAI-compatible provider settings", () => {
-    expect(() =>
-      loadServerConfig({
-        MODEL_PROVIDER: "openai-compatible",
-        MODEL_BASE_URL: "https://provider.example/v1"
-      })
-    ).toThrow("Invalid server configuration: /MODEL_API_KEY");
+  it.each(["openai-compatible", "anthropic-compatible"] as const)(
+    "requires complete %s provider settings",
+    (provider) => {
+      expect(() =>
+        loadServerConfig({
+          MODEL_PROVIDER: provider,
+          MODEL_BASE_URL: "https://provider.example/v1"
+        })
+      ).toThrow("Invalid server configuration: /MODEL_API_KEY");
 
-    expect(
-      loadServerConfig({
-        MODEL_PROVIDER: "openai-compatible",
-        MODEL_BASE_URL: "https://provider.example/v1",
-        MODEL_API_KEY: "secret",
-        MODEL_NAME: "manager-model",
-        MODEL_FALLBACK_TO_MOCK: "false"
-      })
-    ).toMatchObject({
-      modelProvider: "openai-compatible",
-      modelBaseUrl: "https://provider.example/v1",
-      modelName: "manager-model",
-      modelFallbackToMock: false
-    });
-  });
+      expect(
+        loadServerConfig({
+          MODEL_PROVIDER: provider,
+          MODEL_BASE_URL: "https://provider.example/v1",
+          MODEL_API_KEY: "secret",
+          MODEL_NAME: "manager-model",
+          MODEL_FALLBACK_TO_MOCK: "false"
+        })
+      ).toMatchObject({
+        modelProvider: provider,
+        modelBaseUrl: "https://provider.example/v1",
+        modelName: "manager-model",
+        modelFallbackToMock: false
+      });
+    }
+  );
 
   it("rejects unsafe manager limits", () => {
     expect(() => loadServerConfig({ MANAGER_TIMEOUT_MS: "20" })).toThrow(

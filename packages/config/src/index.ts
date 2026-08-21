@@ -11,7 +11,11 @@ export const RawServerConfigSchema = Type.Object(
     WEB_ORIGIN: Type.Optional(Type.String({ minLength: 1 })),
     DATABASE_URL: Type.Optional(Type.String({ minLength: 1 })),
     MODEL_PROVIDER: Type.Optional(
-      Type.Union([Type.Literal("mock"), Type.Literal("openai-compatible")])
+      Type.Union([
+        Type.Literal("mock"),
+        Type.Literal("openai-compatible"),
+        Type.Literal("anthropic-compatible")
+      ])
     ),
     MODEL_BASE_URL: Type.Optional(Type.String({ pattern: "^https?://" })),
     MODEL_API_KEY: Type.Optional(Type.String({ minLength: 1 })),
@@ -46,6 +50,7 @@ export const RawServerConfigSchema = Type.Object(
 );
 
 type RawServerConfig = Static<typeof RawServerConfigSchema>;
+export type ModelProvider = "mock" | "openai-compatible" | "anthropic-compatible";
 
 export interface ServerConfig {
   nodeEnv: "development" | "test" | "production";
@@ -53,7 +58,7 @@ export interface ServerConfig {
   apiPort: number;
   webOrigin: string;
   databaseUrl: string;
-  modelProvider: "mock" | "openai-compatible";
+  modelProvider: ModelProvider;
   modelBaseUrl: string | null;
   modelApiKey: string | null;
   modelName: string;
@@ -113,7 +118,7 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
   }
 
   const modelProvider = raw.MODEL_PROVIDER ?? "mock";
-  if (modelProvider === "openai-compatible") {
+  if (modelProvider !== "mock") {
     for (const key of ["MODEL_BASE_URL", "MODEL_API_KEY", "MODEL_NAME"] as const) {
       if (!raw[key]) throw new Error(`Invalid server configuration: /${key}`);
     }

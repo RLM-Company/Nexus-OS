@@ -37,32 +37,54 @@ jobs:
             fi
           done
           [[ "${missing}" -eq 0 ]]
-          [[ "${MODEL_PROVIDER}" == "openai-compatible" ]] || {
-            echo "::error::MODEL_PROVIDER must be openai-compatible"
-            exit 1
-          }
+          case "${MODEL_PROVIDER}" in
+            openai-compatible | anthropic-compatible) ;;
+            *)
+              echo "::error::MODEL_PROVIDER must be openai-compatible or anthropic-compatible"
+              exit 1
+              ;;
+          esac
 
-      - name: Verify streaming chat completion
+      - name: Verify streaming model response
         shell: bash
         run: |
           set -euo pipefail
           response_file="$(mktemp)"
           trap 'rm -f "${response_file}"' EXIT
 
-          payload="$(jq -nc --arg model "${MODEL_NAME}" '{
-            model: $model,
-            messages: [{role: "user", content: "Reply with exactly OK."}],
-            max_tokens: 8,
-            stream: true
-          }')"
+          if [[ "${MODEL_PROVIDER}" == "anthropic-compatible" ]]; then
+            endpoint="${MODEL_BASE_URL%/}/messages"
+            payload="$(jq -nc --arg model "${MODEL_NAME}" '{
+              model: $model,
+              messages: [{role: "user", content: "Reply with exactly OK."}],
+              max_tokens: 8,
+              stream: true
+            }')"
+            headers=(
+              --header "x-api-key: ${MODEL_API_KEY}"
+              --header "anthropic-version: 2023-06-01"
+              --header "Content-Type: application/json"
+            )
+          else
+            endpoint="${MODEL_BASE_URL%/}/chat/completions"
+            payload="$(jq -nc --arg model "${MODEL_NAME}" '{
+              model: $model,
+              messages: [{role: "user", content: "Reply with exactly OK."}],
+              max_tokens: 8,
+              stream: true
+            }')"
+            headers=(
+              --header "Authorization: Bearer ${MODEL_API_KEY}"
+              --header "Content-Type: application/json"
+            )
+          fi
 
           status="$(curl --silent --show-error \
             --max-time 45 \
             --output "${response_file}" \
             --write-out "%{http_code}" \
-            --request POST "${MODEL_BASE_URL%/}/chat/completions" \
-            --header "Authorization: Bearer ${MODEL_API_KEY}" \
-            --header "Content-Type: application/json" \
+            --request POST "${endpoint}" \
+            "${headers[@]}" \
             --data "${payload}")"
 
           if [[ "${status}" != "200" ]]; then
@@ -76,9 +98,20 @@ jobs:
             echo "::error::Response is not an SSE stream"
             exit 1
           }
-          grep -q '"delta"' "${response_file}" || {
-            echo "::error::SSE stream contains no model delta"
-            exit 1
-          }
+          if [[ "${MODEL_PROVIDER}" == "anthropic-compatible" ]]; then
+            grep -Eq '"type"[[:space:]]*:[[:space:]]*"content_block_delta"' "${response_file}" || {
+              echo "::error::Anthropic SSE stream contains no content block delta"
+              exit 1
+            }
+            grep -Eq '"type"[[:space:]]*:[[:space:]]*"text_delta"' "${response_file}" || {
+              echo "::error::Anthropic SSE stream contains no text delta"
+              exit 1
+            }
+          else
+            grep -q '"delta"' "${response_file}" || {
+              echo "::error::OpenAI SSE stream contains no model delta"
+              exit 1
+            }
+          fi
 
           echo "VibeCode authorization, model routing, and SSE streaming are available."
