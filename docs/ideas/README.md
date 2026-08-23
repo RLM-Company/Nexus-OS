@@ -37,3 +37,4 @@
 - [Базовая подписка Synmetis OS за 990 ₽](./2026-08-22-basic-subscription-990.md)
 - [Чекпоинты проекта и прозрачный ход решений ИИ](./2026-08-23-project-checkpoints-and-decision-trace.md)
 - [Многоуровневая память проекта с сегментным восстановлением](./2026-08-23-tiered-project-memory.md)
+- [Обучение моделей на проектной памяти](./2026-08-23-model-training-from-project-memory.md)
