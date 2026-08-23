@@ -35,3 +35,4 @@
 
 - [A6, профиль автономности и экспериментальная ИИ-песочница](./2026-08-22-a6-and-experimental-sandbox.md)
 - [Базовая подписка Synmetis OS за 990 ₽](./2026-08-22-basic-subscription-990.md)
+- [Чекпоинты проекта и прозрачный ход решений ИИ](./2026-08-23-project-checkpoints-and-decision-trace.md)
