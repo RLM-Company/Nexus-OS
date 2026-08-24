@@ -78,6 +78,12 @@ describe("project chat API", () => {
     const messages = project.json<{ messages: Array<{ role: string; status: string }> }>().messages;
     expect(messages).toHaveLength(2);
     expect(messages[1]).toMatchObject({ role: "assistant", status: "completed" });
+
+    const projects = await app.inject({ method: "GET", url: "/api/v1/projects" });
+    expect(projects.statusCode).toBe(200);
+    const preview = projects.json<{ items: Array<{ last_message_preview: string | null }> }>()
+      .items[0]?.last_message_preview;
+    expect(preview?.length).toBeLessThanOrEqual(240);
   });
 
   it("returns typed not-found errors", async () => {

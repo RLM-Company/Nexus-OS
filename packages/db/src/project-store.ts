@@ -83,7 +83,8 @@ export class ProjectStore {
     return this.#sqlite
       .prepare(
         `SELECT p.id, p.title, p.status, p.created_at, p.updated_at,
-          (SELECT content FROM messages m WHERE m.project_id = p.id ORDER BY m.created_at DESC LIMIT 1)
+          (SELECT substr(content, 1, 240) FROM messages m
+            WHERE m.project_id = p.id ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1)
             AS last_message_preview
          FROM projects p
          WHERE p.owner_id = ?
