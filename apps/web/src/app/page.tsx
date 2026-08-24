@@ -97,10 +97,10 @@ const clientId = (): string =>
     : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const displayedContent = (message: Message): string | null => {
-  if (message.content) return message.content;
   if (message.status === "cancelled") return "Запуск остановлен владельцем.";
   if (message.status === "failed")
     return `Запуск завершился с ошибкой: ${message.error_code ?? "UNKNOWN"}.`;
+  if (message.content) return message.content;
   return null;
 };
 
