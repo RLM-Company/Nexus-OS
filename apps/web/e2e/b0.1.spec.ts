@@ -5,7 +5,13 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
 
   await page.goto("/");
   await page.getByLabel("Опишите результат, который хотите получить").fill(initialTask);
+  const createProject = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/projects") && response.request().method() === "POST"
+  );
   await page.getByRole("button", { name: "Запустить" }).click();
+  const created = await createProject;
+  expect(created.status(), await created.text()).toBe(201);
 
   await expect(page.getByRole("heading", { name: initialTask })).toBeVisible();
   await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
