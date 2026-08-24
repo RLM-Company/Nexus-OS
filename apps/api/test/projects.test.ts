@@ -156,4 +156,34 @@ describe("project chat API", () => {
     });
     expect(repeated.statusCode).toBe(200);
   });
+
+  it("persists a cancelled assistant message before streaming starts", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: { initial_message: "Не начинай поток", client_message_id: "queued-cancel-1" }
+    });
+    const body = created.json<{ project: { id: string }; run_id: string }>();
+
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/api/v1/runs/${body.run_id}/cancel`
+    });
+    const project = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${body.project.id}`
+    });
+
+    expect(cancelled.statusCode).toBe(200);
+    expect(project.statusCode).toBe(200);
+    expect(
+      project
+        .json<{ messages: Array<{ role: string; status: string; error_code: string | null }> }>()
+        .messages.at(-1)
+    ).toMatchObject({
+      role: "assistant",
+      status: "cancelled",
+      error_code: "CANCELLED_BY_OWNER"
+    });
+  });
 });

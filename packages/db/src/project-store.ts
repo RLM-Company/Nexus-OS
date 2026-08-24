@@ -430,14 +430,26 @@ export class ProjectStore {
     if (run.status === "succeeded" || run.status === "failed") return "finished";
 
     const timestamp = now();
+    const assistant = this.getAssistantMessage(runId, ownerId);
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
-      this.#sqlite
-        .prepare(
-          `UPDATE messages SET status = 'cancelled', error_code = 'CANCELLED_BY_OWNER', updated_at = ?
-           WHERE run_id = ? AND role = 'assistant' AND status IN ('pending', 'streaming')`
-        )
-        .run(timestamp, runId);
+      if (assistant) {
+        this.#sqlite
+          .prepare(
+            `UPDATE messages SET status = 'cancelled', error_code = 'CANCELLED_BY_OWNER', updated_at = ?
+             WHERE id = ? AND status IN ('pending', 'streaming')`
+          )
+          .run(timestamp, assistant.id);
+      } else {
+        this.#sqlite
+          .prepare(
+            `INSERT INTO messages
+              (id, project_id, chat_id, role, content_type, content, status, run_id, error_code,
+               created_at, updated_at)
+             VALUES (?, ?, ?, 'assistant', 'text', '', 'cancelled', ?, 'CANCELLED_BY_OWNER', ?, ?)`
+          )
+          .run(randomUUID(), run.project_id, run.chat_id, runId, timestamp, timestamp);
+      }
       this.#sqlite
         .prepare(
           `UPDATE runs SET status = 'cancelled', updated_at = ?
