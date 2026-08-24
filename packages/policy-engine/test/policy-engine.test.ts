@@ -110,6 +110,19 @@ describe("evaluatePolicy", () => {
     expect(verdict.permission_ids).toEqual(["permission-1"]);
   });
 
+  it("does not consume a redundant permission that did not raise autonomy", () => {
+    const verdict = evaluatePolicy(
+      {
+        intent: intent(["external.communicate"]),
+        profile: profile("A3"),
+        permissionContracts: [permission("external.communicate", "AUTONOMOUS")]
+      },
+      { evaluatedAt: NOW }
+    );
+    expect(verdict.verdict).toBe("ALLOW");
+    expect(verdict.permission_ids).toEqual([]);
+  });
+
   it("ignores expired and revoked permission contracts", () => {
     const verdict = evaluatePolicy(
       {

@@ -3,6 +3,11 @@ import type { ServerConfig } from "@nexus/config";
 import type { ManagerService } from "@nexus/core";
 import {
   ApiErrorSchema,
+  AUTONOMY_MATRIX,
+  CapabilityProfileResponseSchema,
+  ConfirmationDecisionRequestSchema,
+  ConfirmationListResponseSchema,
+  ConfirmationRequestSchema,
   CreateMessageRequestSchema,
   CreateProjectRequestSchema,
   HealthResponseSchema,
@@ -10,7 +15,13 @@ import {
   ModelRuntimeStatusSchema,
   ProjectDetailResponseSchema,
   ProjectListResponseSchema,
+  PERMISSION_MODE_RANK,
+  UpdateCapabilityProfileRequestSchema,
+  requiresStepUp,
   type ApiError,
+  type CapabilityId,
+  type CapabilityProfileResponse,
+  type ConfirmationListResponse,
   type HealthResponse,
   type MessageAcceptedResponse,
   type ModelRuntimeStatus,
@@ -18,7 +29,7 @@ import {
   type ProjectListResponse,
   type StreamEvent
 } from "@nexus/contracts";
-import type { DatabaseHealth, ProjectStore, StoredMessage } from "@nexus/db";
+import type { DatabaseHealth, PolicyStore, ProjectStore, StoredMessage } from "@nexus/db";
 import { GatewayRunError, type ModelGateway } from "@nexus/model-gateway";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 
@@ -26,10 +37,28 @@ export interface AppDependencies {
   config: ServerConfig;
   database: DatabaseHealth;
   projectStore?: ProjectStore;
+  policyStore?: PolicyStore;
   modelGateway?: ModelGateway;
   manager?: ManagerService;
+  stepUpVerifier?: (token: string, purpose: string) => Promise<boolean>;
   closeDatabase?: () => void;
 }
+
+const stepUpToken = (value: string | string[] | undefined): string | null =>
+  typeof value === "string" && value.length > 0 ? value : null;
+
+const profileUpdateRequiresStepUp = (
+  baseLevel: keyof (typeof AUTONOMY_MATRIX)[CapabilityId],
+  overrides: Array<{ capability_id: CapabilityId; mode: keyof typeof PERMISSION_MODE_RANK }>
+): boolean =>
+  baseLevel === "A6" ||
+  overrides.some(
+    (override) =>
+      override.mode === "FULL" ||
+      (requiresStepUp([override.capability_id]) &&
+        PERMISSION_MODE_RANK[override.mode] >
+          PERMISSION_MODE_RANK[AUTONOMY_MATRIX[override.capability_id][baseLevel]])
+  );
 
 const errorBody = (
   requestId: string,
@@ -157,9 +186,257 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           request.body.initial_message,
           request.body.client_message_id
         );
+        dependencies.policyStore?.ensureProfile(accepted.project.id);
         return reply.status(accepted.duplicate ? 200 : 201).send(acceptedResponse(accepted));
       }
     );
+
+    if (dependencies.policyStore) {
+      const policyStore = dependencies.policyStore;
+
+      app.get(
+        "/api/v1/projects/:projectId/autonomy-profile",
+        {
+          schema: {
+            params: {
+              type: "object",
+              properties: { projectId: { type: "string", minLength: 1 } },
+              required: ["projectId"],
+              additionalProperties: false
+            },
+            response: { 200: CapabilityProfileResponseSchema, 404: ApiErrorSchema }
+          }
+        },
+        async (request, reply) => {
+          const profile = policyStore.ensureProfile(request.params.projectId);
+          if (!profile) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          const response: CapabilityProfileResponse = { profile };
+          return response;
+        }
+      );
+
+      app.put(
+        "/api/v1/projects/:projectId/autonomy-profile",
+        {
+          schema: {
+            params: {
+              type: "object",
+              properties: { projectId: { type: "string", minLength: 1 } },
+              required: ["projectId"],
+              additionalProperties: false
+            },
+            body: UpdateCapabilityProfileRequestSchema,
+            response: {
+              200: CapabilityProfileResponseSchema,
+              404: ApiErrorSchema,
+              409: ApiErrorSchema,
+              403: ApiErrorSchema
+            }
+          }
+        },
+        async (request, reply) => {
+          if (!store.getProject(request.params.projectId)) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          policyStore.ensureProfile(request.params.projectId);
+          if (profileUpdateRequiresStepUp(request.body.base_level, request.body.overrides)) {
+            const token = stepUpToken(request.headers["x-step-up-token"]);
+            const verified =
+              token !== null &&
+              dependencies.stepUpVerifier !== undefined &&
+              (await dependencies.stepUpVerifier(token, "autonomy_profile_escalation"));
+            if (!verified) {
+              return reply
+                .status(403)
+                .send(errorBody(request.id, "STEP_UP_REQUIRED", "Step-up verification required"));
+            }
+          }
+          const profile = policyStore.updateProfile({
+            projectId: request.params.projectId,
+            baseLevel: request.body.base_level,
+            overrides: request.body.overrides,
+            expectedVersion: request.body.expected_version
+          });
+          if (!profile) {
+            return reply
+              .status(409)
+              .send(
+                errorBody(
+                  request.id,
+                  "AUTONOMY_PROFILE_CONFLICT",
+                  "Autonomy profile version changed"
+                )
+              );
+          }
+          const response: CapabilityProfileResponse = { profile };
+          return response;
+        }
+      );
+
+      app.get(
+        "/api/v1/projects/:projectId/confirmations",
+        {
+          schema: {
+            params: {
+              type: "object",
+              properties: { projectId: { type: "string", minLength: 1 } },
+              required: ["projectId"],
+              additionalProperties: false
+            },
+            querystring: {
+              type: "object",
+              properties: {
+                status: {
+                  type: "string",
+                  enum: ["PENDING", "APPROVED", "REJECTED", "EXPIRED", "CONSUMED"]
+                }
+              },
+              additionalProperties: false
+            },
+            response: { 200: ConfirmationListResponseSchema, 404: ApiErrorSchema }
+          }
+        },
+        async (request, reply) => {
+          if (!store.getProject(request.params.projectId)) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          const response: ConfirmationListResponse = {
+            items: policyStore.listConfirmations(request.params.projectId, request.query.status)
+          };
+          return response;
+        }
+      );
+
+      app.post(
+        "/api/v1/confirmations/:confirmationId/approve",
+        {
+          schema: {
+            params: {
+              type: "object",
+              properties: { confirmationId: { type: "string", minLength: 1 } },
+              required: ["confirmationId"],
+              additionalProperties: false
+            },
+            body: ConfirmationDecisionRequestSchema,
+            response: {
+              200: ConfirmationRequestSchema,
+              403: ApiErrorSchema,
+              404: ApiErrorSchema,
+              409: ApiErrorSchema
+            }
+          }
+        },
+        async (request, reply) => {
+          const pending = policyStore.getConfirmation(request.params.confirmationId);
+          if (!pending) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "CONFIRMATION_NOT_FOUND", "Confirmation not found"));
+          }
+          let approvalMethod: "session" | "step_up" = "session";
+          if (pending.requires_step_up) {
+            const token = stepUpToken(request.headers["x-step-up-token"]);
+            const verified =
+              token !== null &&
+              dependencies.stepUpVerifier !== undefined &&
+              (await dependencies.stepUpVerifier(token, "critical_tool_confirmation"));
+            if (!verified) {
+              return reply
+                .status(403)
+                .send(errorBody(request.id, "STEP_UP_REQUIRED", "Step-up verification required"));
+            }
+            approvalMethod = "step_up";
+          }
+          const decision = policyStore.decideConfirmation({
+            confirmationId: request.params.confirmationId,
+            challengeNonce: request.body.challenge_nonce,
+            decision: "approve",
+            decidedBy: "local-owner",
+            approvalMethod,
+            ...(request.body.reason === undefined ? {} : { reason: request.body.reason })
+          });
+          if (decision.status === "APPROVED") return decision.confirmation;
+          if (decision.status === "NOT_FOUND") {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "CONFIRMATION_NOT_FOUND", "Confirmation not found"));
+          }
+          if (decision.status === "EXPIRED") {
+            return reply
+              .status(409)
+              .send(errorBody(request.id, "CONFIRMATION_EXPIRED", "Confirmation expired"));
+          }
+          if (decision.status === "STEP_UP_REQUIRED") {
+            return reply
+              .status(403)
+              .send(errorBody(request.id, "STEP_UP_REQUIRED", "Step-up verification required"));
+          }
+          return reply
+            .status(409)
+            .send(
+              errorBody(
+                request.id,
+                "CONFIRMATION_ALREADY_DECIDED",
+                "Confirmation cannot be approved"
+              )
+            );
+        }
+      );
+
+      app.post(
+        "/api/v1/confirmations/:confirmationId/reject",
+        {
+          schema: {
+            params: {
+              type: "object",
+              properties: { confirmationId: { type: "string", minLength: 1 } },
+              required: ["confirmationId"],
+              additionalProperties: false
+            },
+            body: ConfirmationDecisionRequestSchema,
+            response: { 200: ConfirmationRequestSchema, 404: ApiErrorSchema, 409: ApiErrorSchema }
+          }
+        },
+        async (request, reply) => {
+          const decision = policyStore.decideConfirmation({
+            confirmationId: request.params.confirmationId,
+            challengeNonce: request.body.challenge_nonce,
+            decision: "reject",
+            decidedBy: "local-owner",
+            approvalMethod: "session",
+            ...(request.body.reason === undefined ? {} : { reason: request.body.reason })
+          });
+          if (decision.status === "REJECTED") return decision.confirmation;
+          if (decision.status === "NOT_FOUND") {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "CONFIRMATION_NOT_FOUND", "Confirmation not found"));
+          }
+          if (decision.status === "EXPIRED") {
+            return reply
+              .status(409)
+              .send(errorBody(request.id, "CONFIRMATION_EXPIRED", "Confirmation expired"));
+          }
+          return reply
+            .status(409)
+            .send(
+              errorBody(
+                request.id,
+                "CONFIRMATION_ALREADY_DECIDED",
+                "Confirmation cannot be rejected"
+              )
+            );
+        }
+      );
+    }
 
     app.get(
       "/api/v1/projects/:projectId",

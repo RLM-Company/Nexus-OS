@@ -1,0 +1,1 @@
+ALTER TABLE `permission_contracts` ADD `confirmation_id` text;

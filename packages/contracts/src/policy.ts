@@ -192,6 +192,78 @@ export const PolicyEvaluationEnvelopeSchema = Type.Object(
 );
 export type PolicyEvaluationEnvelope = Static<typeof PolicyEvaluationEnvelopeSchema>;
 
+export const ConfirmationStatusSchema = Type.Union([
+  Type.Literal("PENDING"),
+  Type.Literal("APPROVED"),
+  Type.Literal("REJECTED"),
+  Type.Literal("EXPIRED"),
+  Type.Literal("CONSUMED")
+]);
+export type ConfirmationStatus = Static<typeof ConfirmationStatusSchema>;
+
+export const ToolOperationStatusSchema = Type.Union([
+  Type.Literal("WAITING_CONFIRMATION"),
+  Type.Literal("READY"),
+  Type.Literal("RESERVED"),
+  Type.Literal("SUCCEEDED"),
+  Type.Literal("FAILED"),
+  Type.Literal("DENIED"),
+  Type.Literal("PAUSED")
+]);
+export type ToolOperationStatus = Static<typeof ToolOperationStatusSchema>;
+
+export const ConfirmationRequestSchema = Type.Object(
+  {
+    confirmation_id: Type.String({ minLength: 1, maxLength: 128 }),
+    project_id: Type.String({ minLength: 1, maxLength: 128 }),
+    operation_id: Type.String({ minLength: 1, maxLength: 128 }),
+    actor_id: Type.String({ minLength: 1, maxLength: 128 }),
+    intent: PolicyIntentSchema,
+    verdict: PolicyVerdictSchema,
+    status: ConfirmationStatusSchema,
+    challenge_nonce: Type.String({ minLength: 16, maxLength: 256 }),
+    requires_step_up: Type.Boolean(),
+    requested_at: Type.String({ minLength: 1 }),
+    expires_at: Type.String({ minLength: 1 }),
+    decided_at: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+    decided_by: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+    decision_reason: Type.Union([Type.String({ minLength: 1, maxLength: 2_000 }), Type.Null()])
+  },
+  { additionalProperties: false }
+);
+export type ConfirmationRequest = Static<typeof ConfirmationRequestSchema>;
+
+export const ConfirmationListResponseSchema = Type.Object(
+  { items: Type.Array(ConfirmationRequestSchema) },
+  { additionalProperties: false }
+);
+export type ConfirmationListResponse = Static<typeof ConfirmationListResponseSchema>;
+
+export const ConfirmationDecisionRequestSchema = Type.Object(
+  {
+    challenge_nonce: Type.String({ minLength: 16, maxLength: 256 }),
+    reason: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 }))
+  },
+  { additionalProperties: false }
+);
+export type ConfirmationDecisionRequest = Static<typeof ConfirmationDecisionRequestSchema>;
+
+export const UpdateCapabilityProfileRequestSchema = Type.Object(
+  {
+    base_level: AutonomyLevelSchema,
+    overrides: Type.Array(CapabilityOverrideSchema),
+    expected_version: Type.Integer({ minimum: 0 })
+  },
+  { additionalProperties: false }
+);
+export type UpdateCapabilityProfileRequest = Static<typeof UpdateCapabilityProfileRequestSchema>;
+
+export const CapabilityProfileResponseSchema = Type.Object(
+  { profile: CapabilityProfileSchema },
+  { additionalProperties: false }
+);
+export type CapabilityProfileResponse = Static<typeof CapabilityProfileResponseSchema>;
+
 export const AUTONOMY_LEVELS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6"] as const;
 
 export const CAPABILITY_IDS = [
@@ -369,4 +441,44 @@ export function verdictForModes(permissionModes: readonly PermissionMode[]): Pol
   if (permissionModes.includes("CONFIRM")) return "NEEDS_CONFIRMATION";
   if (permissionModes.includes("SCOPED")) return "ALLOW_WITH_LIMITS";
   return "ALLOW";
+}
+
+export function createCapabilityProfile(input: {
+  profileId: string;
+  projectId: string;
+  baseLevel: AutonomyLevel;
+  overrides?: CapabilityOverride[];
+  version: number;
+  issuedAt: string;
+}): CapabilityProfile {
+  return {
+    profile_id: input.profileId,
+    project_id: input.projectId,
+    base_level: input.baseLevel,
+    grants: CAPABILITY_IDS.map((capabilityId) => ({
+      capability_id: capabilityId,
+      mode: AUTONOMY_MATRIX[capabilityId][input.baseLevel],
+      scope: [],
+      conditions: []
+    })),
+    overrides: input.overrides ?? [],
+    version: input.version,
+    issued_at: input.issuedAt
+  };
+}
+
+export const STEP_UP_CAPABILITIES = [
+  "finance.spend",
+  "finance.credit",
+  "legal.accept_terms",
+  "contract.finalize",
+  "data.disclose",
+  "prompt.permanent",
+  "strategy.change"
+] as const satisfies readonly CapabilityId[];
+
+export function requiresStepUp(capabilityIds: readonly CapabilityId[]): boolean {
+  return capabilityIds.some((capabilityId) =>
+    (STEP_UP_CAPABILITIES as readonly CapabilityId[]).includes(capabilityId)
+  );
 }

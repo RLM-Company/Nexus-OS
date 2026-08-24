@@ -137,9 +137,12 @@ const resolveCapability = (
     capabilityId,
     now
   )) {
-    mode = maxMode(mode, grant.mode);
-    permissionIds.push(contract.permission_id);
-    reasons.push(`Permission ${contract.permission_id} expanded the mode to ${mode}.`);
+    const expandedMode = maxMode(mode, grant.mode);
+    if (expandedMode !== mode) {
+      mode = expandedMode;
+      permissionIds.push(contract.permission_id);
+      reasons.push(`Permission ${contract.permission_id} expanded the mode to ${mode}.`);
+    }
   }
 
   const overrides = input.profile.overrides.filter((override) =>
