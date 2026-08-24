@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { openDatabase, ProjectStore, runMigrations } from "../src/index.js";
+import {
+  IdempotencyConflictError,
+  openDatabase,
+  ProjectStore,
+  runMigrations
+} from "../src/index.js";
 
 describe("SQLite foundation", () => {
   it("applies migrations to a clean database", async () => {
@@ -39,7 +44,7 @@ describe("SQLite foundation", () => {
       await runMigrations(database);
       const store = new ProjectStore(database.sqlite);
       const accepted = store.createProject("Запусти тестовый проект", "client-project-1");
-      const duplicate = store.createProject("Не должно дублироваться", "client-project-1");
+      const duplicate = store.createProject("Запусти тестовый проект", "client-project-1");
 
       expect(accepted.duplicate).toBe(false);
       expect(duplicate.duplicate).toBe(true);
@@ -64,6 +69,29 @@ describe("SQLite foundation", () => {
         content: "Готово",
         status: "completed"
       });
+      expect(() =>
+        store.createProject("Другой запрос с тем же ключом", "client-project-1")
+      ).toThrow(IdempotencyConflictError);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps projects, messages and runs inside the owner boundary", async () => {
+    const database = openDatabase(":memory:");
+
+    try {
+      await runMigrations(database);
+      const store = new ProjectStore(database.sqlite);
+      const hidden = store.createProject("Чужой проект", "other-client-1", "other-owner");
+
+      expect(store.listProjects()).toHaveLength(0);
+      expect(store.getProject(hidden.project.id)).toBeNull();
+      expect(store.getMainChatId(hidden.project.id)).toBeNull();
+      expect(store.listMessages(hidden.project.id)).toHaveLength(0);
+      expect(store.getRun(hidden.run.id)).toBeNull();
+      expect(store.getProject(hidden.project.id, "other-owner")).not.toBeNull();
+      expect(store.getRun(hidden.run.id, "other-owner")).not.toBeNull();
     } finally {
       database.close();
     }
@@ -76,7 +104,11 @@ describe("SQLite foundation", () => {
 
     try {
       await runMigrations(first);
-      new ProjectStore(first.sqlite).createProject("Переживи перезапуск", "restart-1");
+      const store = new ProjectStore(first.sqlite);
+      const accepted = store.createProject("Переживи перезапуск", "restart-1");
+      const assistant = store.startAssistantMessage(accepted.run.id);
+      store.appendAssistantDelta(assistant?.id ?? "", "История восстановлена");
+      store.completeRun(accepted.run.id, "mock", "manager-b0.1");
     } finally {
       first.close();
     }
@@ -86,7 +118,45 @@ describe("SQLite foundation", () => {
       await runMigrations(reopened);
       const store = new ProjectStore(reopened.sqlite);
       expect(store.listProjects()).toHaveLength(1);
-      expect(store.listMessages(store.listProjects()[0]?.id ?? "")).toHaveLength(1);
+      expect(store.listMessages(store.listProjects()[0]?.id ?? "")).toMatchObject([
+        { role: "user", status: "completed" },
+        { role: "assistant", status: "completed", content: "История восстановлена" }
+      ]);
+    } finally {
+      reopened.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails an interrupted streaming run safely after restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "nexus-interrupted-test-"));
+    const file = join(directory, "nexus.db");
+    const first = openDatabase(file);
+    let runId: string;
+
+    try {
+      await runMigrations(first);
+      const store = new ProjectStore(first.sqlite);
+      const accepted = store.createProject("Начни длинный ответ", "restart-running-1");
+      runId = accepted.run.id;
+      const assistant = store.startAssistantMessage(runId);
+      store.appendAssistantDelta(assistant?.id ?? "", "Частичный ответ");
+    } finally {
+      first.close();
+    }
+
+    const reopened = openDatabase(file);
+    try {
+      await runMigrations(reopened);
+      const store = new ProjectStore(reopened.sqlite);
+      expect(store.recoverInterruptedRuns()).toBe(1);
+      expect(store.getRun(runId)).toMatchObject({ status: "failed" });
+      expect(store.getAssistantMessage(runId)).toMatchObject({
+        status: "failed",
+        error_code: "INTERRUPTED_BY_RESTART",
+        content: "Частичный ответ"
+      });
+      expect(store.recoverInterruptedRuns()).toBe(0);
     } finally {
       reopened.close();
       rmSync(directory, { recursive: true, force: true });

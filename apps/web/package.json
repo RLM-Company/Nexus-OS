@@ -7,6 +7,7 @@
     "dev": "next dev -H 127.0.0.1",
     "lint": "eslint src",
     "start": "next start -H 127.0.0.1",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -15,6 +16,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4"
   }

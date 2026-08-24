@@ -3,6 +3,13 @@ import type { DatabaseSync, StatementSync } from "node:sqlite";
 
 export const LOCAL_OWNER_ID = "local-owner";
 
+export class IdempotencyConflictError extends Error {
+  constructor() {
+    super("Idempotency key was already used for another request");
+    this.name = "IdempotencyConflictError";
+  }
+}
+
 export interface StoredProject {
   id: string;
   title: string;
@@ -76,7 +83,8 @@ export class ProjectStore {
     return this.#sqlite
       .prepare(
         `SELECT p.id, p.title, p.status, p.created_at, p.updated_at,
-          (SELECT content FROM messages m WHERE m.project_id = p.id ORDER BY m.created_at DESC LIMIT 1)
+          (SELECT substr(content, 1, 240) FROM messages m
+            WHERE m.project_id = p.id ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1)
             AS last_message_preview
          FROM projects p
          WHERE p.owner_id = ?
@@ -96,27 +104,42 @@ export class ProjectStore {
     return row ? asProject(row) : null;
   }
 
-  getMainChatId(projectId: string): string | null {
+  getMainChatId(projectId: string, ownerId = LOCAL_OWNER_ID): string | null {
     const row = this.#get(
-      this.#sqlite.prepare("SELECT id FROM chats WHERE project_id = ? AND kind = 'main'"),
-      projectId
+      this.#sqlite.prepare(
+        `SELECT c.id FROM chats c
+         JOIN projects p ON p.id = c.project_id
+         WHERE c.project_id = ? AND c.kind = 'main' AND p.owner_id = ?`
+      ),
+      projectId,
+      ownerId
     );
     return typeof row?.id === "string" ? row.id : null;
   }
 
-  listMessages(projectId: string): StoredMessage[] {
+  listMessages(projectId: string, ownerId = LOCAL_OWNER_ID): StoredMessage[] {
     return this.#sqlite
       .prepare(
-        `SELECT id, project_id, chat_id, role, content_type, content, status,
-          reply_to_message_id, run_id, error_code, created_at, updated_at
-         FROM messages WHERE project_id = ? ORDER BY created_at ASC, rowid ASC`
+        `SELECT m.id, m.project_id, m.chat_id, m.role, m.content_type, m.content, m.status,
+          m.reply_to_message_id, m.run_id, m.error_code, m.created_at, m.updated_at
+         FROM messages m
+         JOIN projects p ON p.id = m.project_id
+         WHERE m.project_id = ? AND p.owner_id = ?
+         ORDER BY m.created_at ASC, m.rowid ASC`
       )
-      .all(projectId) as unknown as StoredMessage[];
+      .all(projectId, ownerId) as unknown as StoredMessage[];
   }
 
-  createProject(initialMessage: string, clientMessageId: string): AcceptedMessage {
-    const existing = this.findByClientMessageId(clientMessageId);
-    if (existing) return { ...existing, duplicate: true };
+  createProject(
+    initialMessage: string,
+    clientMessageId: string,
+    ownerId = LOCAL_OWNER_ID
+  ): AcceptedMessage {
+    const existing = this.findByClientMessageId(clientMessageId, ownerId);
+    if (existing) {
+      if (existing.userMessage.content !== initialMessage) throw new IdempotencyConflictError();
+      return { ...existing, duplicate: true };
+    }
 
     const projectId = randomUUID();
     const chatId = randomUUID();
@@ -128,7 +151,7 @@ export class ProjectStore {
         .prepare(
           "INSERT INTO projects (id, owner_id, title, status, created_at, updated_at) VALUES (?, ?, ?, 'ACTIVE', ?, ?)"
         )
-        .run(projectId, LOCAL_OWNER_ID, projectTitle(initialMessage), timestamp, timestamp);
+        .run(projectId, ownerId, projectTitle(initialMessage), timestamp, timestamp);
       this.#sqlite
         .prepare("INSERT INTO chats (id, project_id, kind, created_at) VALUES (?, ?, 'main', ?)")
         .run(chatId, projectId, timestamp);
@@ -137,7 +160,8 @@ export class ProjectStore {
         chatId,
         initialMessage,
         clientMessageId,
-        timestamp
+        timestamp,
+        ownerId
       );
       this.#sqlite.exec("COMMIT;");
       return { ...accepted, duplicate: false };
@@ -150,20 +174,33 @@ export class ProjectStore {
   createMessage(
     projectId: string,
     content: string,
-    clientMessageId: string
+    clientMessageId: string,
+    ownerId = LOCAL_OWNER_ID
   ): AcceptedMessage | null {
-    const project = this.getProject(projectId);
+    const project = this.getProject(projectId, ownerId);
     if (!project) return null;
-    const existing = this.findByClientMessageId(clientMessageId);
-    if (existing) return { ...existing, duplicate: true };
+    const existing = this.findByClientMessageId(clientMessageId, ownerId);
+    if (existing) {
+      if (existing.project.id !== projectId || existing.userMessage.content !== content) {
+        throw new IdempotencyConflictError();
+      }
+      return { ...existing, duplicate: true };
+    }
 
-    const chatId = this.getMainChatId(projectId);
+    const chatId = this.getMainChatId(projectId, ownerId);
     if (!chatId) throw new Error(`Main chat is missing for project ${projectId}`);
     const timestamp = now();
 
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
-      const accepted = this.#insertMessage(projectId, chatId, content, clientMessageId, timestamp);
+      const accepted = this.#insertMessage(
+        projectId,
+        chatId,
+        content,
+        clientMessageId,
+        timestamp,
+        ownerId
+      );
       this.#sqlite
         .prepare("UPDATE projects SET updated_at = ? WHERE id = ?")
         .run(timestamp, projectId);
@@ -180,7 +217,8 @@ export class ProjectStore {
     chatId: string,
     content: string,
     clientMessageId: string,
-    timestamp: string
+    timestamp: string,
+    ownerId: string
   ): Omit<AcceptedMessage, "duplicate"> {
     const userMessageId = randomUUID();
     const runId = randomUUID();
@@ -197,7 +235,7 @@ export class ProjectStore {
       )
       .run(userMessageId, projectId, chatId, content, clientMessageId, runId, timestamp, timestamp);
 
-    const project = this.getProject(projectId);
+    const project = this.getProject(projectId, ownerId);
     if (!project) throw new Error(`Project ${projectId} disappeared during message creation`);
     return {
       project,
@@ -225,36 +263,46 @@ export class ProjectStore {
     };
   }
 
-  findByClientMessageId(clientMessageId: string): Omit<AcceptedMessage, "duplicate"> | null {
+  findByClientMessageId(
+    clientMessageId: string,
+    ownerId = LOCAL_OWNER_ID
+  ): Omit<AcceptedMessage, "duplicate"> | null {
     const messageRow = this.#get(
       this.#sqlite.prepare(
-        `SELECT id, project_id, chat_id, role, content_type, content, status,
-          reply_to_message_id, run_id, error_code, created_at, updated_at
-         FROM messages WHERE client_message_id = ?`
+        `SELECT m.id, m.project_id, m.chat_id, m.role, m.content_type, m.content, m.status,
+          m.reply_to_message_id, m.run_id, m.error_code, m.created_at, m.updated_at
+         FROM messages m
+         JOIN projects p ON p.id = m.project_id
+         WHERE m.client_message_id = ? AND p.owner_id = ?`
       ),
-      clientMessageId
+      clientMessageId,
+      ownerId
     );
     if (!messageRow) return null;
     const message = asMessage(messageRow);
-    const project = this.getProject(message.project_id);
-    const run = message.run_id ? this.getRun(message.run_id) : null;
+    const project = this.getProject(message.project_id, ownerId);
+    const run = message.run_id ? this.getRun(message.run_id, ownerId) : null;
     if (!project || !run) throw new Error("Idempotency record is incomplete");
     return { project, chatId: message.chat_id, userMessage: message, run };
   }
 
-  getRun(runId: string): StoredRun | null {
+  getRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredRun | null {
     const row = this.#get(
       this.#sqlite.prepare(
-        `SELECT id, project_id, chat_id, status, provider, model_resolved,
-          input_tokens, output_tokens, created_at, updated_at
-         FROM runs WHERE id = ?`
+        `SELECT r.id, r.project_id, r.chat_id, r.status, r.provider, r.model_resolved,
+          r.input_tokens, r.output_tokens, r.created_at, r.updated_at
+         FROM runs r
+         JOIN projects p ON p.id = r.project_id
+         WHERE r.id = ? AND p.owner_id = ?`
       ),
-      runId
+      runId,
+      ownerId
     );
     return row ? asRun(row) : null;
   }
 
-  getRunPrompt(runId: string): string | null {
+  getRunPrompt(runId: string, ownerId = LOCAL_OWNER_ID): string | null {
+    if (!this.getRun(runId, ownerId)) return null;
     const row = this.#get(
       this.#sqlite.prepare(
         "SELECT content FROM messages WHERE run_id = ? AND role = 'user' ORDER BY created_at ASC LIMIT 1"
@@ -264,8 +312,8 @@ export class ProjectStore {
     return typeof row?.content === "string" ? row.content : null;
   }
 
-  getConversationForRun(runId: string): StoredMessage[] {
-    const run = this.getRun(runId);
+  getConversationForRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredMessage[] {
+    const run = this.getRun(runId, ownerId);
     if (!run) return [];
     return this.#sqlite
       .prepare(
@@ -281,7 +329,8 @@ export class ProjectStore {
       .all(run.project_id, runId) as unknown as StoredMessage[];
   }
 
-  getAssistantMessage(runId: string): StoredMessage | null {
+  getAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredMessage | null {
+    if (!this.getRun(runId, ownerId)) return null;
     const row = this.#get(
       this.#sqlite.prepare(
         `SELECT id, project_id, chat_id, role, content_type, content, status,
@@ -336,29 +385,41 @@ export class ProjectStore {
     usage?: { inputTokens: number; outputTokens: number }
   ): void {
     const timestamp = now();
-    this.#sqlite
-      .prepare(
-        "UPDATE messages SET status = 'completed', updated_at = ? WHERE run_id = ? AND role = 'assistant'"
-      )
-      .run(timestamp, runId);
-    this.#sqlite
-      .prepare(
-        `UPDATE runs SET status = 'succeeded', provider = ?, model_resolved = ?,
-          input_tokens = ?, output_tokens = ?, updated_at = ? WHERE id = ?`
-      )
-      .run(
-        provider,
-        model,
-        usage?.inputTokens ?? null,
-        usage?.outputTokens ?? null,
-        timestamp,
-        runId
-      );
-    const run = this.getRun(runId);
-    if (run) {
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const result = this.#sqlite
+        .prepare(
+          `UPDATE runs SET status = 'succeeded', provider = ?, model_resolved = ?,
+            input_tokens = ?, output_tokens = ?, updated_at = ?
+           WHERE id = ? AND status IN ('queued', 'running')`
+        )
+        .run(
+          provider,
+          model,
+          usage?.inputTokens ?? null,
+          usage?.outputTokens ?? null,
+          timestamp,
+          runId
+        );
+      if (Number(result.changes) === 0) {
+        this.#sqlite.exec("COMMIT;");
+        return;
+      }
       this.#sqlite
-        .prepare("UPDATE projects SET updated_at = ? WHERE id = ?")
-        .run(timestamp, run.project_id);
+        .prepare(
+          `UPDATE messages SET status = 'completed', updated_at = ?
+           WHERE run_id = ? AND role = 'assistant' AND status IN ('pending', 'streaming')`
+        )
+        .run(timestamp, runId);
+      this.#sqlite
+        .prepare(
+          "UPDATE projects SET updated_at = ? WHERE id = (SELECT project_id FROM runs WHERE id = ?)"
+        )
+        .run(timestamp, runId);
+      this.#sqlite.exec("COMMIT;");
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
     }
   }
 
@@ -372,5 +433,71 @@ export class ProjectStore {
     this.#sqlite
       .prepare("UPDATE runs SET status = 'failed', updated_at = ? WHERE id = ?")
       .run(timestamp, runId);
+  }
+
+  cancelRun(runId: string, ownerId = LOCAL_OWNER_ID): "cancelled" | "finished" | null {
+    const run = this.getRun(runId, ownerId);
+    if (!run) return null;
+    if (run.status === "cancelled") return "cancelled";
+    if (run.status === "succeeded" || run.status === "failed") return "finished";
+
+    const timestamp = now();
+    const assistant = this.getAssistantMessage(runId, ownerId);
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      if (assistant) {
+        this.#sqlite
+          .prepare(
+            `UPDATE messages SET status = 'cancelled', error_code = 'CANCELLED_BY_OWNER', updated_at = ?
+             WHERE id = ? AND status IN ('pending', 'streaming')`
+          )
+          .run(timestamp, assistant.id);
+      } else {
+        this.#sqlite
+          .prepare(
+            `INSERT INTO messages
+              (id, project_id, chat_id, role, content_type, content, status, run_id, error_code,
+               created_at, updated_at)
+             VALUES (?, ?, ?, 'assistant', 'text', '', 'cancelled', ?, 'CANCELLED_BY_OWNER', ?, ?)`
+          )
+          .run(randomUUID(), run.project_id, run.chat_id, runId, timestamp, timestamp);
+      }
+      this.#sqlite
+        .prepare(
+          `UPDATE runs SET status = 'cancelled', updated_at = ?
+           WHERE id = ? AND status IN ('queued', 'running')`
+        )
+        .run(timestamp, runId);
+      this.#sqlite.exec("COMMIT;");
+      return "cancelled";
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  recoverInterruptedRuns(errorCode = "INTERRUPTED_BY_RESTART"): number {
+    const timestamp = now();
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      this.#sqlite
+        .prepare(
+          `UPDATE messages SET status = 'failed', error_code = ?, updated_at = ?
+           WHERE role = 'assistant' AND status = 'streaming'
+             AND run_id IN (SELECT id FROM runs WHERE status = 'running')`
+        )
+        .run(errorCode, timestamp);
+      const result = this.#sqlite
+        .prepare(
+          `UPDATE runs SET status = 'failed', updated_at = ?
+           WHERE status = 'running'`
+        )
+        .run(timestamp);
+      this.#sqlite.exec("COMMIT;");
+      return Number(result.changes);
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
   }
 }

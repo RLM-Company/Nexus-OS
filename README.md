@@ -21,6 +21,8 @@ Implemented through the current checkpoint:
 - B01-016: provider-neutral Model Gateway with safe fallback and timeouts;
 - B01-017: Manager Core with durable multi-turn context;
 - B01-018: OpenAI-compatible streaming provider adapter and token accounting.
+- B01-019: restart recovery, owner isolation, strict idempotency, durable cancellation, and a
+  browser acceptance gate.
 
 The current vertical slice creates real local projects and can stream either deterministic
 mock-manager responses or a configured OpenAI-compatible model. Tool execution and autonomous
@@ -65,6 +67,10 @@ Run the complete verification pipeline with:
 ```bash
 pnpm check
 ```
+
+The gate runs formatting, a repository secret scan, lint, strict TypeScript, unit and API tests,
+production builds, and the Playwright B0.1 browser scenario. Install the Chromium runtime once on a
+new development machine with `pnpm --filter @nexus/web exec playwright install --with-deps chromium`.
 
 ## Repository rules
 

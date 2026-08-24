@@ -35,6 +35,8 @@ type AcceptedResponse = {
   stream_url: string;
 };
 
+type CancelledRun = { run_id: string; status: "cancelled" };
+
 type ProjectDetail = { project: Project; chat_id: string; messages: Message[] };
 
 type ModelRuntimeStatus = {
@@ -76,9 +78,13 @@ const SendIcon = () => (
 );
 
 const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
+  const headers = new Headers(init?.headers);
+  if (init?.body !== undefined && init.body !== null && !headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
   const response = await fetch(url, {
     ...init,
-    headers: { "content-type": "application/json", ...init?.headers }
+    headers
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
@@ -93,6 +99,14 @@ const clientId = (): string =>
   typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const displayedContent = (message: Message): string | null => {
+  if (message.status === "cancelled") return "Запуск остановлен владельцем.";
+  if (message.status === "failed")
+    return `Запуск завершился с ошибкой: ${message.error_code ?? "UNKNOWN"}.`;
+  if (message.content) return message.content;
+  return null;
+};
 
 const messagePlaceholder = (
   id: string,
@@ -125,6 +139,7 @@ export default function Home() {
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<ModelRuntimeStatus | null>(null);
   const streamRef = useRef<EventSource | null>(null);
@@ -177,6 +192,7 @@ export default function Home() {
 
   const followStream = (accepted: AcceptedResponse): void => {
     streamRef.current?.close();
+    setActiveRunId(accepted.run_id);
     const source = new EventSource(accepted.stream_url);
     streamRef.current = source;
     let assistantId: string | null = null;
@@ -219,6 +235,7 @@ export default function Home() {
       finished = true;
       source.close();
       setSending(false);
+      setActiveRunId(null);
       void refreshProject(accepted.project.id).catch(() => {
         if (assistantId) {
           setMessages((current) =>
@@ -235,16 +252,41 @@ export default function Home() {
       source.close();
       const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
       setSending(false);
+      setActiveRunId(null);
       setError(`Запуск остановлен: ${event.data.error_code}`);
+    });
+
+    source.addEventListener("run.cancelled", () => {
+      finished = true;
+      source.close();
+      setSending(false);
+      setActiveRunId(null);
+      void refreshProject(accepted.project.id);
     });
 
     source.onerror = () => {
       source.close();
       if (!finished) {
         setSending(false);
+        setActiveRunId(null);
         setError("Поток ответа прерван. Сообщения уже сохранены — открой проект повторно.");
       }
     };
+  };
+
+  const cancelRun = async (): Promise<void> => {
+    if (!activeRunId || !activeProject) return;
+    setError(null);
+    try {
+      await api<CancelledRun>(`/api/v1/runs/${activeRunId}/cancel`, { method: "POST" });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось остановить запуск");
+      return;
+    }
+    streamRef.current?.close();
+    setSending(false);
+    setActiveRunId(null);
+    await refreshProject(activeProject.id);
   };
 
   const submit = async (event: FormEvent): Promise<void> => {
@@ -287,6 +329,7 @@ export default function Home() {
     setMessages([]);
     setDraft("");
     setSending(false);
+    setActiveRunId(null);
     setError(null);
   };
 
@@ -410,7 +453,7 @@ export default function Home() {
                       </time>
                     </header>
                     <p>
-                      {message.content || (
+                      {displayedContent(message) || (
                         <span className="typing">
                           Формирую ответ<span>…</span>
                         </span>
@@ -506,10 +549,24 @@ export default function Home() {
                     ? "Enter — отправить · Shift+Enter — новая строка"
                     : "Проект создастся автоматически")}
             </span>
-            <button disabled={!draft.trim() || sending} aria-label="Отправить">
-              {sending ? <span className="spinner" /> : <SendIcon />}
-              {sending ? "Работаю" : activeProject ? "Отправить" : "Запустить"}
-            </button>
+            {sending ? (
+              <button
+                type="button"
+                className="cancel-run"
+                disabled={!activeRunId}
+                onClick={() => void cancelRun()}
+              >
+                <span className="stop-icon" /> Остановить
+              </button>
+            ) : (
+              <button
+                disabled={!draft.trim()}
+                aria-label={activeProject ? "Отправить" : "Запустить"}
+              >
+                <SendIcon />
+                {activeProject ? "Отправить" : "Запустить"}
+              </button>
+            )}
           </div>
         </form>
       </main>

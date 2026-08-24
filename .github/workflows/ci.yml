@@ -37,6 +37,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install Playwright Chromium
+        run: pnpm --filter @nexus/web exec playwright install --with-deps chromium
+
       - name: Run quality gate
         env:
           NEXT_TELEMETRY_DISABLED: "1"

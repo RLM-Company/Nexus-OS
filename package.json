@@ -2,23 +2,17 @@
   "name": "nexus-os",
   "version": "0.1.0",
   "private": true,
-  "description": "Nexus OS B0.1 monorepo",
   "packageManager": "pnpm@11.19.0",
-  "engines": {
-    "node": ">=24.0.0",
-    "pnpm": ">=11.19.0"
-  },
   "scripts": {
     "build": "turbo run build",
-    "db:generate": "pnpm --filter @nexus/db db:generate",
-    "db:migrate": "pnpm build && pnpm --filter @nexus/db db:migrate",
-    "dev": "turbo run dev --parallel",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "check:secrets": "node scripts/check-secrets.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:e2e": "pnpm --filter @nexus/web test:e2e",
     "typecheck": "turbo run typecheck",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
