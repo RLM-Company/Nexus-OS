@@ -744,7 +744,11 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           )
         );
     }
-    if (typeof error === "object" && error !== null && "validation" in error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      ("validation" in error || ("statusCode" in error && error.statusCode === 400))
+    ) {
       return reply
         .status(400)
         .send(errorBody(request.id, "VALIDATION_ERROR", "Request validation failed"));

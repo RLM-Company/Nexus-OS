@@ -190,4 +190,23 @@ describe("project chat API", () => {
     expect(projectStore.getRun(body.run_id)).toMatchObject({ status: "cancelled" });
     expect(projectStore.getAssistantMessage(body.run_id)).toMatchObject({ status: "cancelled" });
   });
+
+  it("keeps malformed empty JSON requests as typed client errors", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: { initial_message: "Проверка JSON", client_message_id: "empty-json-1" }
+    });
+    const { run_id: runId } = created.json<{ run_id: string }>();
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/runs/${runId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: ""
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe("VALIDATION_ERROR");
+  });
 });
