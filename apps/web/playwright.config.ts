@@ -14,6 +14,8 @@ export default defineConfig({
     {
       command: "pnpm --dir ../api exec tsx --conditions=development src/server.ts",
       url: "http://127.0.0.1:3100/api/v1/health",
+      stdout: "pipe",
+      stderr: "pipe",
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
       env: {
