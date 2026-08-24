@@ -16,7 +16,7 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   const created = await createProject;
   expect(created.status(), await created.text()).toBe(201);
   const stream = await streamResponse;
-  expect(stream.status(), await stream.text()).toBe(200);
+  expect(stream.status()).toBe(200);
 
   await expect(page.getByRole("heading", { name: initialTask })).toBeVisible();
   await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
