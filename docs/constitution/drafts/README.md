@@ -55,8 +55,8 @@
 
 ## Общие Конституции
 
-- [`manager-constitution-v1.md`](./manager-constitution-v1.md) — собранная Конституция Менеджера v0.1 для ревью владельцем.
-- [`memory-learning-constitution-v1.md`](./memory-learning-constitution-v1.md) — Конституция памяти и обучения v0.1 для ревью владельцем.\n- [`identity-model-naming-discovery.md`](./identity-model-naming-discovery.md) — отложенный отдельный этап идентичности и названий моделей.
+- [`manager-constitution-v1.md`](./manager-constitution-v1.md) — утверждённая владельцем спецификация Конституции Менеджера v1.0; runtime ещё не подключён.
+- [`memory-learning-constitution-v1.md`](./memory-learning-constitution-v1.md) — утверждённая владельцем спецификация памяти и обучения v1.0; runtime ещё не подключён.\n- [`identity-model-naming-discovery.md`](./identity-model-naming-discovery.md) — отложенный отдельный этап идентичности и названий моделей.
 - [`manager-constitution-discovery.md`](./manager-constitution-discovery.md) — исходный журнал совместно принятых решений.
 
 ## Дополнительные требования
