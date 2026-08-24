@@ -1,15 +1,7 @@
 {
   "suite": "A0-A6 monotonicity vectors",
   "version": "1.1.0",
-  "levels": [
-    "A0",
-    "A1",
-    "A2",
-    "A3",
-    "A4",
-    "A5",
-    "A6"
-  ],
+  "levels": ["A0", "A1", "A2", "A3", "A4", "A5", "A6"],
   "mode_rank": {
     "DENY": 0,
     "CONFIRM": 1,
