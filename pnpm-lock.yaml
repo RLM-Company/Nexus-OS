@@ -119,6 +119,12 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
+  packages/policy-engine:
+    dependencies:
+      "@nexus/contracts":
+        specifier: workspace:*
+        version: link:../contracts
+
 packages:
   "@drizzle-team/brocli@0.10.2":
     resolution:
