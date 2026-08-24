@@ -95,4 +95,5 @@ export const runMigrations = (
 };
 
 export { schema };
+export * from "./policy-store.js";
 export * from "./project-store.js";

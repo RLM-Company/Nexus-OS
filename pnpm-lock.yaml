@@ -105,9 +105,15 @@ importers:
       "@nexus/config":
         specifier: workspace:*
         version: link:../config
+      "@nexus/contracts":
+        specifier: workspace:*
+        version: link:../contracts
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2
+      typebox:
+        specifier: 1.3.16
+        version: 1.3.16
     devDependencies:
       drizzle-kit:
         specifier: 0.31.10
@@ -118,6 +124,24 @@ importers:
       "@nexus/contracts":
         specifier: workspace:*
         version: link:../contracts
+
+  packages/policy-engine:
+    dependencies:
+      "@nexus/contracts":
+        specifier: workspace:*
+        version: link:../contracts
+
+  packages/tool-runtime:
+    dependencies:
+      "@nexus/contracts":
+        specifier: workspace:*
+        version: link:../contracts
+      "@nexus/db":
+        specifier: workspace:*
+        version: link:../db
+      "@nexus/policy-engine":
+        specifier: workspace:*
+        version: link:../policy-engine
 
 packages:
   "@drizzle-team/brocli@0.10.2":

@@ -22,6 +22,20 @@
       "when": 1787257543107,
       "tag": "0002_striped_triathlon",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787571242195,
+      "tag": "0003_exotic_the_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787571704722,
+      "tag": "0004_complete_vision",
+      "breakpoints": true
     }
   ]
 }
