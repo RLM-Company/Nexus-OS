@@ -30,7 +30,7 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   const restored = await restoredProjects;
   expect(restored.status(), await restored.text()).toBe(200);
   await page.locator(".project-list .project-item").first().click();
-  await expect(page.getByText(initialTask, { exact: true })).toBeVisible();
+  await expect(page.locator(".chat-panel .message.user p")).toHaveText(initialTask);
   await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
 
   await page.getByLabel("Сообщение менеджеру").fill("Останови этот тестовый запуск");
