@@ -185,5 +185,9 @@ describe("project chat API", () => {
       status: "cancelled",
       error_code: "CANCELLED_BY_OWNER"
     });
+
+    projectStore.completeRun(body.run_id, "mock", "late-completion");
+    expect(projectStore.getRun(body.run_id)).toMatchObject({ status: "cancelled" });
+    expect(projectStore.getAssistantMessage(body.run_id)).toMatchObject({ status: "cancelled" });
   });
 });

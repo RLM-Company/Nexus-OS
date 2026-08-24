@@ -385,29 +385,41 @@ export class ProjectStore {
     usage?: { inputTokens: number; outputTokens: number }
   ): void {
     const timestamp = now();
-    this.#sqlite
-      .prepare(
-        "UPDATE messages SET status = 'completed', updated_at = ? WHERE run_id = ? AND role = 'assistant'"
-      )
-      .run(timestamp, runId);
-    this.#sqlite
-      .prepare(
-        `UPDATE runs SET status = 'succeeded', provider = ?, model_resolved = ?,
-          input_tokens = ?, output_tokens = ?, updated_at = ? WHERE id = ?`
-      )
-      .run(
-        provider,
-        model,
-        usage?.inputTokens ?? null,
-        usage?.outputTokens ?? null,
-        timestamp,
-        runId
-      );
-    const run = this.getRun(runId);
-    if (run) {
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const result = this.#sqlite
+        .prepare(
+          `UPDATE runs SET status = 'succeeded', provider = ?, model_resolved = ?,
+            input_tokens = ?, output_tokens = ?, updated_at = ?
+           WHERE id = ? AND status IN ('queued', 'running')`
+        )
+        .run(
+          provider,
+          model,
+          usage?.inputTokens ?? null,
+          usage?.outputTokens ?? null,
+          timestamp,
+          runId
+        );
+      if (Number(result.changes) === 0) {
+        this.#sqlite.exec("COMMIT;");
+        return;
+      }
       this.#sqlite
-        .prepare("UPDATE projects SET updated_at = ? WHERE id = ?")
-        .run(timestamp, run.project_id);
+        .prepare(
+          `UPDATE messages SET status = 'completed', updated_at = ?
+           WHERE run_id = ? AND role = 'assistant' AND status IN ('pending', 'streaming')`
+        )
+        .run(timestamp, runId);
+      this.#sqlite
+        .prepare(
+          "UPDATE projects SET updated_at = ? WHERE id = (SELECT project_id FROM runs WHERE id = ?)"
+        )
+        .run(timestamp, runId);
+      this.#sqlite.exec("COMMIT;");
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
     }
   }
 

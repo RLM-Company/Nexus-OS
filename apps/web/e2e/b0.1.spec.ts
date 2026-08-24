@@ -14,7 +14,9 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   );
   await page.getByRole("button", { name: "Запустить" }).click();
   const created = await createProject;
-  expect(created.status(), await created.text()).toBe(201);
+  const createdText = await created.text();
+  expect(created.status(), createdText).toBe(201);
+  const createdBody = JSON.parse(createdText) as { project: { id: string } };
   const stream = await streamResponse;
   expect(stream.status()).toBe(200);
 
@@ -37,7 +39,29 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await page.getByRole("button", { name: "Отправить" }).click();
   const cancel = page.getByRole("button", { name: "Остановить" });
   await expect(cancel).toBeEnabled();
+  const cancelResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/v1/runs/") &&
+      response.url().endsWith("/cancel") &&
+      response.request().method() === "POST"
+  );
+  const cancelledDetail = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/projects/${createdBody.project.id}`) &&
+      response.request().method() === "GET"
+  );
   await cancel.click();
+
+  const cancelled = await cancelResponse;
+  expect(cancelled.status(), await cancelled.text()).toBe(200);
+  const detail = await cancelledDetail;
+  const detailText = await detail.text();
+  expect(detail.status(), detailText).toBe(200);
+  expect(
+    (JSON.parse(detailText) as { messages: Array<{ status: string }> }).messages.some(
+      (message) => message.status === "cancelled"
+    )
+  ).toBe(true);
 
   await expect(page.getByText("Запуск остановлен владельцем.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Остановить" })).toHaveCount(0);
