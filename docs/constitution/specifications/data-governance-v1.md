@@ -1,6 +1,6 @@
 # Data Governance Synmetis AI v1
 
-> Статус: `RESOLUTION DRAFT / NOT RUNTIME`  
+> Статус: `OWNER APPROVED SPECIFICATION / NOT RUNTIME`  
 > Дата: `2026-08-24`  
 > Юридическая реализация требует проверки по странам запуска.
 
