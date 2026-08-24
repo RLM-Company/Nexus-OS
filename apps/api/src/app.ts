@@ -16,6 +16,7 @@ import {
   ProjectDetailResponseSchema,
   ProjectListResponseSchema,
   PERMISSION_MODE_RANK,
+  RunCancelResponseSchema,
   UpdateCapabilityProfileRequestSchema,
   requiresStepUp,
   type ApiError,
@@ -27,9 +28,16 @@ import {
   type ModelRuntimeStatus,
   type ProjectDetailResponse,
   type ProjectListResponse,
+  type RunCancelResponse,
   type StreamEvent
 } from "@nexus/contracts";
-import type { DatabaseHealth, PolicyStore, ProjectStore, StoredMessage } from "@nexus/db";
+import {
+  IdempotencyConflictError,
+  type DatabaseHealth,
+  type PolicyStore,
+  type ProjectStore,
+  type StoredMessage
+} from "@nexus/db";
 import { GatewayRunError, type ModelGateway } from "@nexus/model-gateway";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 
@@ -119,9 +127,15 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         ? false
         : {
             level: dependencies.config.logLevel,
-            redact: ["req.headers.authorization", "req.headers.cookie"]
+            redact: [
+              "req.headers.authorization",
+              "req.headers.cookie",
+              "req.headers.x-step-up-token"
+            ]
           }
   }).withTypeProvider<TypeBoxTypeProvider>();
+
+  const activeRuns = new Map<string, AbortController>();
 
   app.get(
     "/api/v1/health",
@@ -178,7 +192,11 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       {
         schema: {
           body: CreateProjectRequestSchema,
-          response: { 201: MessageAcceptedResponseSchema, 200: MessageAcceptedResponseSchema }
+          response: {
+            201: MessageAcceptedResponseSchema,
+            200: MessageAcceptedResponseSchema,
+            409: ApiErrorSchema
+          }
         }
       },
       async (request, reply) => {
@@ -482,7 +500,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           response: {
             202: MessageAcceptedResponseSchema,
             200: MessageAcceptedResponseSchema,
-            404: ApiErrorSchema
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
           }
         }
       },
@@ -498,6 +517,38 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
         }
         return reply.status(accepted.duplicate ? 200 : 202).send(acceptedResponse(accepted));
+      }
+    );
+
+    app.post(
+      "/api/v1/runs/:runId/cancel",
+      {
+        schema: {
+          params: {
+            type: "object",
+            properties: { runId: { type: "string", minLength: 1 } },
+            required: ["runId"],
+            additionalProperties: false
+          },
+          response: { 200: RunCancelResponseSchema, 404: ApiErrorSchema, 409: ApiErrorSchema }
+        }
+      },
+      async (request, reply) => {
+        const cancelled = store.cancelRun(request.params.runId);
+        if (cancelled === null) {
+          return reply.status(404).send(errorBody(request.id, "RUN_NOT_FOUND", "Run not found"));
+        }
+        if (cancelled === "finished") {
+          return reply
+            .status(409)
+            .send(errorBody(request.id, "RUN_ALREADY_FINISHED", "Run is already finished"));
+        }
+        activeRuns.get(request.params.runId)?.abort(new Error("Run was cancelled by the owner"));
+        const response: RunCancelResponse = {
+          run_id: request.params.runId,
+          status: "cancelled"
+        };
+        return response;
       }
     );
 
@@ -519,6 +570,11 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         if (!run || conversation.length === 0) {
           return reply.status(404).send(errorBody(request.id, "RUN_NOT_FOUND", "Run not found"));
         }
+        if (activeRuns.has(run.id)) {
+          return reply
+            .status(409)
+            .send(errorBody(request.id, "CONFLICT", "Run is already streaming"));
+        }
 
         reply.hijack();
         reply.raw.writeHead(200, {
@@ -529,6 +585,23 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         });
 
         const existing = store.getAssistantMessage(run.id);
+        if (run.status === "cancelled") {
+          sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
+          reply.raw.end();
+          return reply;
+        }
+        if (run.status === "failed") {
+          sendEvent(reply, {
+            type: "run.failed",
+            data: {
+              run_id: run.id,
+              error_code: existing?.error_code ?? "INTERRUPTED",
+              retryable: false
+            }
+          });
+          reply.raw.end();
+          return reply;
+        }
         if (run.status === "succeeded" && existing) {
           completedReplay(
             reply,
@@ -567,8 +640,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             }
           | undefined;
         const controller = new AbortController();
+        activeRuns.set(run.id, controller);
         const onAborted = (): void => controller.abort(new Error("Client disconnected"));
+        const onClosed = (): void => {
+          if (!reply.raw.writableEnded) onAborted();
+        };
         request.raw.once("aborted", onAborted);
+        reply.raw.once("close", onClosed);
         try {
           const modelRequest = manager.buildRequest({
             projectId: run.project_id,
@@ -619,6 +697,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             }
           });
         } catch (error) {
+          if (controller.signal.aborted || store.getRun(run.id)?.status === "cancelled") {
+            store.cancelRun(run.id);
+            if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+              sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
+              reply.raw.end();
+            }
+            return reply;
+          }
           const gatewayError =
             error instanceof GatewayRunError
               ? error
@@ -636,7 +722,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             "Model provider run failed"
           );
         } finally {
+          activeRuns.delete(run.id);
           request.raw.off("aborted", onAborted);
+          reply.raw.off("close", onClosed);
         }
         reply.raw.end();
         return reply;
@@ -645,6 +733,17 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   }
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof IdempotencyConflictError) {
+      return reply
+        .status(409)
+        .send(
+          errorBody(
+            request.id,
+            "IDEMPOTENCY_CONFLICT",
+            "Idempotency key was already used for another request"
+          )
+        );
+    }
     if (typeof error === "object" && error !== null && "validation" in error) {
       return reply
         .status(400)

@@ -129,3 +129,12 @@ export const MessageAcceptedResponseSchema = Type.Object(
   { additionalProperties: false }
 );
 export type MessageAcceptedResponse = Static<typeof MessageAcceptedResponseSchema>;
+
+export const RunCancelResponseSchema = Type.Object(
+  {
+    run_id: EntityIdSchema,
+    status: Type.Literal("cancelled")
+  },
+  { additionalProperties: false }
+);
+export type RunCancelResponse = Static<typeof RunCancelResponseSchema>;

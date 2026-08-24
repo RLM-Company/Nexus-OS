@@ -6,17 +6,14 @@ import { buildModelRuntime } from "./model-runtime.js";
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
 const modelRuntime = buildModelRuntime(config);
-const app = buildApp({
-  config,
-  database,
-  projectStore: new ProjectStore(database.sqlite),
-  policyStore: new PolicyStore(database.sqlite),
-  modelGateway: modelRuntime.gateway,
-  manager: modelRuntime.manager,
-  closeDatabase: () => database.close()
-});
+let app: ReturnType<typeof buildApp> | undefined;
 
 const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+  if (!app) {
+    database.close();
+    process.exitCode = 0;
+    return;
+  }
   app.log.info({ signal }, "Shutting down Nexus API");
   await app.close();
   process.exitCode = 0;
@@ -27,9 +24,28 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
 try {
   await runMigrations(database);
+  const projectStore = new ProjectStore(database.sqlite);
+  const recoveredRuns = projectStore.recoverInterruptedRuns();
+  app = buildApp({
+    config,
+    database,
+    projectStore,
+    policyStore: new PolicyStore(database.sqlite),
+    modelGateway: modelRuntime.gateway,
+    manager: modelRuntime.manager,
+    closeDatabase: () => database.close()
+  });
+  if (recoveredRuns > 0) {
+    app.log.warn({ recoveredRuns }, "Recovered interrupted runs after restart");
+  }
   await app.listen({ host: config.apiHost, port: config.apiPort });
 } catch (error) {
-  app.log.error(error, "Failed to start Nexus API");
-  await app.close();
+  if (app) {
+    app.log.error(error, "Failed to start Nexus API");
+    await app.close();
+  } else {
+    database.close();
+    process.stderr.write("Failed to start Nexus API\n");
+  }
   process.exitCode = 1;
 }

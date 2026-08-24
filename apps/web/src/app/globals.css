@@ -608,6 +608,20 @@ svg {
   color: #77748a;
   background: #2a2840;
 }
+.composer-footer .cancel-run {
+  color: #ffd8dc;
+  background: #4c2933;
+}
+.composer-footer .cancel-run:disabled {
+  color: #8d7479;
+  background: #30262b;
+}
+.stop-icon {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 0.12rem;
+  background: currentColor;
+}
 .spinner {
   width: 0.85rem;
   height: 0.85rem;

@@ -14,6 +14,7 @@ export const ErrorCodeSchema = Type.Union([
   Type.Literal("POLICY_PAUSED"),
   Type.Literal("CHAT_NOT_FOUND"),
   Type.Literal("RUN_NOT_FOUND"),
+  Type.Literal("IDEMPOTENCY_CONFLICT"),
   Type.Literal("ROUTE_NOT_FOUND"),
   Type.Literal("CONFLICT"),
   Type.Literal("RUN_ALREADY_FINISHED"),
