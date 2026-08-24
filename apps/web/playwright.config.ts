@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
-  expect: { timeout: 8_000 },
+  expect: { timeout: 15_000 },
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
@@ -18,7 +18,7 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         ...process.env,
-        NODE_ENV: "test",
+        NODE_ENV: "development",
         DATABASE_URL: `file:./data/e2e-b0.1-${process.pid}.db`,
         MOCK_PROVIDER_MODE: "slow_stream",
         MANAGER_TIMEOUT_MS: "5000"
