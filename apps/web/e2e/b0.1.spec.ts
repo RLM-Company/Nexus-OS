@@ -20,7 +20,7 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
 
   await expect(page.getByRole("heading", { name: initialTask })).toBeVisible();
   await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Отправить" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Остановить" })).toHaveCount(0);
 
   await page.reload();
   await page.locator(".project-list .project-item").first().click();
@@ -34,5 +34,6 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await cancel.click();
 
   await expect(page.getByText("Запуск остановлен владельцем.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Отправить" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Остановить" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Отправить" })).toBeVisible();
 });
