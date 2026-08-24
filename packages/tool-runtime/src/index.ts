@@ -15,12 +15,13 @@ export interface ToolExecutionContext {
   actorId: string;
   idempotencyKey: string;
   objectIds: readonly string[];
+  verdict: PolicyVerdict;
 }
 
 export interface GuardedTool<Input, Output> {
   id: string;
   resolveCapabilities(input: Input): readonly CapabilityId[];
-  supportsScopedExecution: boolean;
+  validateScopedExecution?(input: Input, verdict: PolicyVerdict): boolean;
   execute(input: Input, context: ToolExecutionContext): Promise<Output>;
 }
 
@@ -83,7 +84,11 @@ export class GuardedToolRuntime {
   ): Promise<ToolInvocationResult<Output>> {
     const evaluatedAt = invocation.evaluatedAt ?? new Date().toISOString();
     const registered = this.#tools.get(invocation.toolId);
-    const operationId = invocation.operationId ?? randomUUID();
+    const existingOperation = this.#policyStore.getOperation(
+      invocation.projectId,
+      invocation.idempotencyKey
+    );
+    const operationId = invocation.operationId ?? existingOperation?.operation_id ?? randomUUID();
     if (!registered) {
       const intent: PolicyIntent = {
         operation_id: operationId,
@@ -127,7 +132,7 @@ export class GuardedToolRuntime {
       idempotency_key: invocation.idempotencyKey
     };
 
-    const existing = this.#policyStore.getOperation(intent.project_id, intent.idempotency_key);
+    const existing = existingOperation;
     if (existing) {
       if (JSON.stringify(existing.intent) !== JSON.stringify(intent)) {
         const verdict = pausedVerdict(
@@ -180,12 +185,19 @@ export class GuardedToolRuntime {
       }
     );
 
-    if (verdict.verdict === "ALLOW_WITH_LIMITS" && !registered.supportsScopedExecution) {
-      verdict = {
-        ...verdict,
-        verdict: "PAUSE",
-        reasons: [...verdict.reasons, "Tool cannot enforce the scoped controls required by policy."]
-      };
+    if (verdict.verdict === "ALLOW_WITH_LIMITS") {
+      const limitsAccepted =
+        registered.validateScopedExecution?.(invocation.input, verdict) ?? false;
+      if (!limitsAccepted) {
+        verdict = {
+          ...verdict,
+          verdict: "PAUSE",
+          reasons: [
+            ...verdict.reasons,
+            "Tool did not validate the scoped controls required by policy."
+          ]
+        };
+      }
     }
 
     try {
@@ -226,7 +238,8 @@ export class GuardedToolRuntime {
           projectId: intent.project_id,
           actorId: intent.actor_id,
           idempotencyKey: intent.idempotency_key,
-          objectIds: intent.object_ids
+          objectIds: intent.object_ids,
+          verdict
         });
         this.#policyStore.completeOperation(intent.operation_id, result);
         return { status: "EXECUTED", verdict, result: result as Output, replayed: false };

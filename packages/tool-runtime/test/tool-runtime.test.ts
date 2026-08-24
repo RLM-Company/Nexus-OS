@@ -41,12 +41,10 @@ describe("GuardedToolRuntime", () => {
     runtime.register({
       id: "workspace.write-test",
       resolveCapabilities: () => ["workspace.write"],
-      supportsScopedExecution: true,
       execute
     });
     const invocation = {
       toolId: "workspace.write-test",
-      operationId: "operation-write",
       projectId,
       actorId: "manager",
       objectIds: [projectId],
@@ -68,7 +66,6 @@ describe("GuardedToolRuntime", () => {
     runtime.register({
       id: "send-message",
       resolveCapabilities: () => ["external.communicate"],
-      supportsScopedExecution: true,
       execute
     });
     const invocation = {
@@ -124,7 +121,6 @@ describe("GuardedToolRuntime", () => {
     runtime.register({
       id: "slow-write",
       resolveCapabilities: () => ["workspace.write"],
-      supportsScopedExecution: true,
       execute
     });
     const invocation = {
@@ -153,7 +149,6 @@ describe("GuardedToolRuntime", () => {
     runtime.register({
       id: "unsafe-web-reader",
       resolveCapabilities: () => ["context.web.read"],
-      supportsScopedExecution: false,
       execute
     });
     const result = await runtime.invoke({
