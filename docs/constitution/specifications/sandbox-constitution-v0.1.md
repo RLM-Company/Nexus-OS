@@ -1,6 +1,6 @@
 # Конституция экспериментальной ИИ-песочницы v0.1
 
-> Статус: `CONCEPT RESOLUTION / NOT RUNTIME`  
+> Статус: `OWNER APPROVED CONCEPT / NOT RUNTIME`  
 > Дата: `2026-08-24`
 
 ## 1. Назначение
