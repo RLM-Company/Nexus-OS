@@ -17,27 +17,27 @@
 
 ## 3. Способности
 
-| ID | Способность |
-| --- | --- |
-| `context.web.read` | Интернет и открытые источники |
-| `context.project.read` | История, файлы и память проекта |
-| `context.global.read` | Глобальная память и другие проекты |
-| `workspace.write` | Постоянные внутренние изменения |
-| `integration.private.use` | Работа в подключённых приватных сервисах |
-| `external.communicate` | Сообщения, публикации, встречи и заявки |
-| `audience.expand` | Добавление новых адресатов |
-| `account.manage` | Создание, изменение и закрытие аккаунтов |
-| `production.deploy` | Публичные production-релизы |
-| `finance.spend` | Расход фактически доступных средств |
-| `finance.credit` | Долг, кредит, рассрочка и овердрафт |
-| `legal.accept_terms` | Принятие условий сервисов |
-| `contract.finalize` | Окончательные коммерческие договорённости |
-| `data.disclose` | Передача внутренних и конфиденциальных данных |
-| `agent.manage` | Создание, замена и отключение агентов |
-| `prompt.temporary` | Временные проектные инструкции агентов |
-| `prompt.permanent` | Постоянные промпты агентов |
-| `strategy.change` | Изменение стратегии или цели |
-| `sandbox.experiment` | Запуск изолированных экспериментов |
+| ID                        | Способность                                   |
+| ------------------------- | --------------------------------------------- |
+| `context.web.read`        | Интернет и открытые источники                 |
+| `context.project.read`    | История, файлы и память проекта               |
+| `context.global.read`     | Глобальная память и другие проекты            |
+| `workspace.write`         | Постоянные внутренние изменения               |
+| `integration.private.use` | Работа в подключённых приватных сервисах      |
+| `external.communicate`    | Сообщения, публикации, встречи и заявки       |
+| `audience.expand`         | Добавление новых адресатов                    |
+| `account.manage`          | Создание, изменение и закрытие аккаунтов      |
+| `production.deploy`       | Публичные production-релизы                   |
+| `finance.spend`           | Расход фактически доступных средств           |
+| `finance.credit`          | Долг, кредит, рассрочка и овердрафт           |
+| `legal.accept_terms`      | Принятие условий сервисов                     |
+| `contract.finalize`       | Окончательные коммерческие договорённости     |
+| `data.disclose`           | Передача внутренних и конфиденциальных данных |
+| `agent.manage`            | Создание, замена и отключение агентов         |
+| `prompt.temporary`        | Временные проектные инструкции агентов        |
+| `prompt.permanent`        | Постоянные промпты агентов                    |
+| `strategy.change`         | Изменение стратегии или цели                  |
+| `sandbox.experiment`      | Запуск изолированных экспериментов            |
 
 ## 4. Режимы полномочия
 
@@ -49,27 +49,27 @@
 
 ## 5. Чистые профили
 
-| Способность | A0 | A1 | A2 | A3 | A4 | A5 | A6 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `context.web.read` | DENY | SCOPED | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | FULL |
-| `context.project.read` | DENY | SCOPED | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | FULL |
-| `context.global.read` | DENY | SCOPED | SCOPED | SCOPED | SCOPED | SCOPED | FULL |
-| `workspace.write` | DENY | DENY | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | FULL |
-| `integration.private.use` | DENY | SCOPED, только read-only | SCOPED | SCOPED | SCOPED | AUTONOMOUS по паспорту | FULL |
-| `external.communicate` | DENY | DENY | CONFIRM | AUTONOMOUS по кампании | AUTONOMOUS по кампании | AUTONOMOUS по паспорту | FULL |
-| `audience.expand` | DENY | DENY | CONFIRM | CONFIRM | CONFIRM | AUTONOMOUS по критериям паспорта | FULL |
-| `account.manage` | DENY | DENY | CONFIRM | CONFIRM | CONFIRM | AUTONOMOUS по паспорту | FULL |
-| `production.deploy` | DENY | DENY | CONFIRM | CONFIRM | CONFIRM | CONFIRM первый, далее AUTONOMOUS | FULL |
-| `finance.spend` | DENY | DENY | CONFIRM | CONFIRM | AUTONOMOUS по бюджету | AUTONOMOUS по бюджету | FULL |
-| `finance.credit` | DENY | DENY | DENY | DENY | DENY | DENY | FULL, если законно |
-| `legal.accept_terms` | DENY | DENY | CONFIRM | CONFIRM | CONFIRM | бесплатные стандартные AUTONOMOUS | FULL |
-| `contract.finalize` | DENY | DENY | CONFIRM | CONFIRM | CONFIRM | CONFIRM | FULL |
-| `data.disclose` | DENY | DENY | CONFIRM | AUTONOMOUS для пакета кампании, иначе CONFIRM | AUTONOMOUS для пакета кампании, иначе CONFIRM | AUTONOMOUS по паспорту | FULL в области A6 |
-| `agent.manage` | AUTONOMOUS, только эфемерный анализ | AUTONOMOUS, только эфемерный анализ | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | FULL |
-| `prompt.temporary` | DENY | AUTONOMOUS, только эфемерный анализ | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | FULL |
-| `prompt.permanent` | DENY | DENY | CONFIRM | CONFIRM | CONFIRM | CONFIRM | FULL |
-| `strategy.change` | DENY, разрешён черновик | DENY, разрешён черновик | CONFIRM | CONFIRM | CONFIRM | CONFIRM | FULL |
-| `sandbox.experiment` | DENY | SCOPED | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | AUTONOMOUS | FULL |
+| Способность               | A0                                  | A1                                  | A2         | A3                                            | A4                                            | A5                                | A6                 |
+| ------------------------- | ----------------------------------- | ----------------------------------- | ---------- | --------------------------------------------- | --------------------------------------------- | --------------------------------- | ------------------ |
+| `context.web.read`        | DENY                                | SCOPED                              | AUTONOMOUS | AUTONOMOUS                                    | AUTONOMOUS                                    | AUTONOMOUS                        | FULL               |
+| `context.project.read`    | DENY                                | SCOPED                              | AUTONOMOUS | AUTONOMOUS                                    | AUTONOMOUS                                    | AUTONOMOUS                        | FULL               |
+| `context.global.read`     | DENY                                | SCOPED                              | SCOPED     | SCOPED                                        | SCOPED                                        | SCOPED                            | FULL               |
+| `workspace.write`         | DENY                                | DENY                                | AUTONOMOUS | AUTONOMOUS                                    | AUTONOMOUS                                    | AUTONOMOUS                        | FULL               |
+| `integration.private.use` | DENY                                | SCOPED, только read-only            | SCOPED     | SCOPED                                        | SCOPED                                        | AUTONOMOUS по паспорту            | FULL               |
+| `external.communicate`    | DENY                                | DENY                                | CONFIRM    | AUTONOMOUS по кампании                        | AUTONOMOUS по кампании                        | AUTONOMOUS по паспорту            | FULL               |
+| `audience.expand`         | DENY                                | DENY                                | CONFIRM    | CONFIRM                                       | CONFIRM                                       | AUTONOMOUS по критериям паспорта  | FULL               |
+| `account.manage`          | DENY                                | DENY                                | CONFIRM    | CONFIRM                                       | CONFIRM                                       | AUTONOMOUS по паспорту            | FULL               |
+| `production.deploy`       | DENY                                | DENY                                | CONFIRM    | CONFIRM                                       | CONFIRM                                       | CONFIRM первый, далее AUTONOMOUS  | FULL               |
+| `finance.spend`           | DENY                                | DENY                                | CONFIRM    | CONFIRM                                       | AUTONOMOUS по бюджету                         | AUTONOMOUS по бюджету             | FULL               |
+| `finance.credit`          | DENY                                | DENY                                | DENY       | DENY                                          | DENY                                          | DENY                              | FULL, если законно |
+| `legal.accept_terms`      | DENY                                | DENY                                | CONFIRM    | CONFIRM                                       | CONFIRM                                       | бесплатные стандартные AUTONOMOUS | FULL               |
+| `contract.finalize`       | DENY                                | DENY                                | CONFIRM    | CONFIRM                                       | CONFIRM                                       | CONFIRM                           | FULL               |
+| `data.disclose`           | DENY                                | DENY                                | CONFIRM    | AUTONOMOUS для пакета кампании, иначе CONFIRM | AUTONOMOUS для пакета кампании, иначе CONFIRM | AUTONOMOUS по паспорту            | FULL в области A6  |
+| `agent.manage`            | AUTONOMOUS, только эфемерный анализ | AUTONOMOUS, только эфемерный анализ | AUTONOMOUS | AUTONOMOUS                                    | AUTONOMOUS                                    | AUTONOMOUS                        | FULL               |
+| `prompt.temporary`        | DENY                                | AUTONOMOUS, только эфемерный анализ | AUTONOMOUS | AUTONOMOUS                                    | AUTONOMOUS                                    | AUTONOMOUS                        | FULL               |
+| `prompt.permanent`        | DENY                                | DENY                                | CONFIRM    | CONFIRM                                       | CONFIRM                                       | CONFIRM                           | FULL               |
+| `strategy.change`         | DENY, разрешён черновик             | DENY, разрешён черновик             | CONFIRM    | CONFIRM                                       | CONFIRM                                       | CONFIRM                           | FULL               |
+| `sandbox.experiment`      | DENY                                | SCOPED                              | AUTONOMOUS | AUTONOMOUS                                    | AUTONOMOUS                                    | AUTONOMOUS                        | FULL               |
 
 Конституция и постоянный промпт Менеджера не являются `prompt.permanent`: работающая система не может менять их ни на одном уровне.
 
