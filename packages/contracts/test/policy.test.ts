@@ -6,6 +6,7 @@ import {
   CAPABILITY_IDS,
   CapabilityProfileSchema,
   PermissionContractSchema,
+  PolicyEvaluationEnvelopeSchema,
   PolicyVerdictSchema,
   getCapabilityMode,
   isAtLeastAsAutonomous,
@@ -67,9 +68,7 @@ describe("autonomy policy contracts", () => {
   });
 
   it("uses the strictest affected capability for a compound action", () => {
-    expect(verdictForModes(["FULL", "CONFIRM", "AUTONOMOUS"])).toBe(
-      "NEEDS_CONFIRMATION"
-    );
+    expect(verdictForModes(["FULL", "CONFIRM", "AUTONOMOUS"])).toBe("NEEDS_CONFIRMATION");
     expect(verdictForModes(["FULL", "DENY"])).toBe("DENY");
     expect(verdictForModes(["AUTONOMOUS", "SCOPED"])).toBe("ALLOW_WITH_LIMITS");
     expect(verdictForModes(["FULL", "AUTONOMOUS"])).toBe("ALLOW");
@@ -104,7 +103,12 @@ describe("autonomy policy contracts", () => {
         organizational_role: "account_owner",
         state: "ACTIVE",
         capabilities: [
-          { capability_id: "finance.spend", mode: "AUTONOMOUS", scope: ["budget-1"], conditions: [] }
+          {
+            capability_id: "finance.spend",
+            mode: "AUTONOMOUS",
+            scope: ["budget-1"],
+            conditions: []
+          }
         ],
         purpose: "Operate inside the approved budget",
         object_ids: ["budget-1"],
@@ -131,5 +135,14 @@ describe("autonomy policy contracts", () => {
       })
     ).toBe(false);
     expect(Value.Check(PolicyVerdictSchema, { verdict: "ALLOW" })).toBe(false);
+  });
+
+  it("rejects a policy envelope that omits its auditable verdict", () => {
+    expect(
+      Value.Check(PolicyEvaluationEnvelopeSchema, {
+        contract_version: "1.1.0",
+        permission_contracts: []
+      })
+    ).toBe(false);
   });
 });
