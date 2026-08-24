@@ -2,7 +2,6 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  globalSetup: "./e2e/global-setup.ts",
   timeout: 30_000,
   expect: { timeout: 8_000 },
   retries: process.env.CI ? 1 : 0,
@@ -20,7 +19,7 @@ export default defineConfig({
       env: {
         ...process.env,
         NODE_ENV: "test",
-        DATABASE_URL: "file:./data/e2e-b0.1.db",
+        DATABASE_URL: `file:./data/e2e-b0.1-${process.pid}.db`,
         MOCK_PROVIDER_MODE: "slow_stream",
         MANAGER_TIMEOUT_MS: "5000"
       }
