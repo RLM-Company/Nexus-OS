@@ -104,6 +104,18 @@ const confirmationFromRow = (row: SqlRow): ConfirmationRequest =>
     })
   );
 
+const deniedConfirmationVerdict = (
+  confirmation: ConfirmationRequest,
+  evaluatedAt: string,
+  reason: string
+): PolicyVerdict => ({
+  ...confirmation.verdict,
+  verdict: "DENY",
+  permission_ids: [],
+  reasons: [...confirmation.verdict.reasons, reason],
+  evaluated_at: evaluatedAt
+});
+
 export class PolicyStore {
   readonly #sqlite: DatabaseSync;
 
@@ -348,21 +360,37 @@ export class PolicyStore {
     evaluatedAt = nowIso()
   ): ConfirmationRequest[] {
     this.#transaction(() => {
-      this.#sqlite
-        .prepare(
-          `UPDATE policy_operations SET status = 'DENIED', updated_at = ?
-           WHERE confirmation_id IN (
-             SELECT confirmation_id FROM confirmation_requests
-             WHERE project_id = ? AND status = 'PENDING' AND expires_at < ?
-           )`
-        )
-        .run(evaluatedAt, projectId, evaluatedAt);
-      this.#sqlite
-        .prepare(
-          `UPDATE confirmation_requests SET status = 'EXPIRED', decided_at = ?
-           WHERE project_id = ? AND status = 'PENDING' AND expires_at < ?`
-        )
-        .run(evaluatedAt, projectId, evaluatedAt);
+      const expired = (
+        this.#sqlite
+          .prepare(
+            `SELECT confirmation_id, project_id, operation_id, actor_id, status, intent_json,
+              verdict_json, challenge_nonce, requires_step_up, requested_at, expires_at,
+              decided_at, decided_by, decision_reason
+             FROM confirmation_requests
+             WHERE project_id = ? AND status = 'PENDING' AND expires_at < ?`
+          )
+          .all(projectId, evaluatedAt) as unknown as SqlRow[]
+      ).map(confirmationFromRow);
+      for (const confirmation of expired) {
+        const denied = deniedConfirmationVerdict(
+          confirmation,
+          evaluatedAt,
+          "Confirmation expired before approval."
+        );
+        this.#sqlite
+          .prepare(
+            `UPDATE policy_operations SET status = 'DENIED', verdict_json = ?, updated_at = ?
+             WHERE operation_id = ?`
+          )
+          .run(json(denied), evaluatedAt, confirmation.operation_id);
+        this.#sqlite
+          .prepare(
+            `UPDATE confirmation_requests SET status = 'EXPIRED', decided_at = ?
+             WHERE confirmation_id = ?`
+          )
+          .run(evaluatedAt, confirmation.confirmation_id);
+        this.#recordDecision(confirmation.intent, denied, evaluatedAt);
+      }
     });
     const statement = status
       ? this.#sqlite.prepare(
@@ -400,6 +428,11 @@ export class PolicyStore {
       if (confirmation.status !== "PENDING") return { status: "ALREADY_DECIDED" };
       const decidedAt = input.decidedAt ?? nowIso();
       if (Date.parse(confirmation.expires_at) < Date.parse(decidedAt)) {
+        const denied = deniedConfirmationVerdict(
+          confirmation,
+          decidedAt,
+          "Confirmation expired before approval."
+        );
         this.#sqlite
           .prepare(
             "UPDATE confirmation_requests SET status = 'EXPIRED', decided_at = ? WHERE confirmation_id = ?"
@@ -407,9 +440,11 @@ export class PolicyStore {
           .run(decidedAt, input.confirmationId);
         this.#sqlite
           .prepare(
-            "UPDATE policy_operations SET status = 'DENIED', updated_at = ? WHERE operation_id = ?"
+            `UPDATE policy_operations SET status = 'DENIED', verdict_json = ?, updated_at = ?
+             WHERE operation_id = ?`
           )
-          .run(decidedAt, confirmation.operation_id);
+          .run(json(denied), decidedAt, confirmation.operation_id);
+        this.#recordDecision(confirmation.intent, denied, decidedAt);
         return { status: "EXPIRED" };
       }
       if (
@@ -420,6 +455,11 @@ export class PolicyStore {
         return { status: "STEP_UP_REQUIRED" };
       }
       if (input.decision === "reject") {
+        const denied = deniedConfirmationVerdict(
+          confirmation,
+          decidedAt,
+          "Confirmation was rejected by the owner."
+        );
         this.#sqlite
           .prepare(
             `UPDATE confirmation_requests SET status = 'REJECTED', decided_at = ?, decided_by = ?,
@@ -433,9 +473,11 @@ export class PolicyStore {
           );
         this.#sqlite
           .prepare(
-            "UPDATE policy_operations SET status = 'DENIED', updated_at = ? WHERE operation_id = ?"
+            `UPDATE policy_operations SET status = 'DENIED', verdict_json = ?, updated_at = ?
+             WHERE operation_id = ?`
           )
-          .run(decidedAt, confirmation.operation_id);
+          .run(json(denied), decidedAt, confirmation.operation_id);
+        this.#recordDecision(confirmation.intent, denied, decidedAt);
         const rejected = this.getConfirmation(input.confirmationId);
         if (!rejected) throw new Error("Rejected confirmation disappeared");
         return { status: "REJECTED", confirmation: rejected };

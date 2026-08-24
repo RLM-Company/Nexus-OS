@@ -133,4 +133,28 @@ describe("PolicyStore", () => {
       }).status
     ).toBe("STEP_UP_REQUIRED");
   });
+
+  it("expires stale confirmations and records a terminal deny verdict", () => {
+    const intent: PolicyIntent = {
+      operation_id: "operation-expired",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["external.communicate"],
+      object_ids: ["recipient-2"],
+      purpose: "Send a time-sensitive message",
+      idempotency_key: "expired-confirmation"
+    };
+    store.createConfirmation(
+      intent,
+      confirmationVerdict(intent, "external.communicate"),
+      NOW,
+      1_000
+    );
+    const expired = store.listConfirmations(projectId, "EXPIRED", "2026-08-24T12:00:02.000Z");
+    expect(expired).toHaveLength(1);
+    expect(store.getOperation(projectId, intent.idempotency_key)).toMatchObject({
+      status: "DENIED",
+      verdict: { verdict: "DENY" }
+    });
+  });
 });

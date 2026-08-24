@@ -107,7 +107,7 @@ export class GuardedToolRuntime {
       return { status: "PAUSED", verdict };
     }
 
-    const capabilityIds = [...new Set(registered.resolveCapabilities(invocation.input))];
+    const capabilityIds = [...new Set(registered.resolveCapabilities(invocation.input))].sort();
     if (capabilityIds.length === 0) {
       const intent: PolicyIntent = {
         operation_id: operationId,
@@ -127,7 +127,7 @@ export class GuardedToolRuntime {
       project_id: invocation.projectId,
       actor_id: invocation.actorId,
       capability_ids: capabilityIds,
-      object_ids: invocation.objectIds,
+      object_ids: [...new Set(invocation.objectIds)].sort(),
       purpose: invocation.purpose,
       idempotency_key: invocation.idempotencyKey
     };
