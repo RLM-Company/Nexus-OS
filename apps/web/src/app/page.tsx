@@ -555,7 +555,10 @@ export default function Home() {
                 <span className="stop-icon" /> Остановить
               </button>
             ) : (
-              <button disabled={!draft.trim()} aria-label="Отправить">
+              <button
+                disabled={!draft.trim()}
+                aria-label={activeProject ? "Отправить" : "Запустить"}
+              >
                 <SendIcon />
                 {activeProject ? "Отправить" : "Запустить"}
               </button>
