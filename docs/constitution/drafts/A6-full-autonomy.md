@@ -1,6 +1,6 @@
 # A6 — полная автономность
 
-> Статус: `RESOLUTION DRAFT / NOT RUNTIME`  
+> Статус: `OWNER APPROVED SPECIFICATION / NOT RUNTIME`  
 > Переработано после перекрёстного аудита: 2026-08-24  
 > Название A6 является временным.
 
