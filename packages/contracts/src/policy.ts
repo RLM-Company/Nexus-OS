@@ -178,6 +178,18 @@ export const PolicyVerdictSchema = Type.Object(
 );
 export type PolicyVerdict = Static<typeof PolicyVerdictSchema>;
 
+export const PolicyEvaluationEnvelopeSchema = Type.Object(
+  {
+    contract_version: Type.Literal("1.1.0"),
+    intent: PolicyIntentSchema,
+    profile: CapabilityProfileSchema,
+    permission_contracts: Type.Array(PermissionContractSchema),
+    verdict: PolicyVerdictSchema
+  },
+  { additionalProperties: false }
+);
+export type PolicyEvaluationEnvelope = Static<typeof PolicyEvaluationEnvelopeSchema>;
+
 export const AUTONOMY_LEVELS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6"] as const;
 
 export const CAPABILITY_IDS = [
@@ -224,12 +236,52 @@ const modes = (
 ): LevelModes => ({ A0, A1, A2, A3, A4, A5, A6 });
 
 export const AUTONOMY_MATRIX: AutonomyMatrix = {
-  "context.web.read": modes("DENY", "SCOPED", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"),
-  "context.project.read": modes("DENY", "SCOPED", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"),
+  "context.web.read": modes(
+    "DENY",
+    "SCOPED",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ),
+  "context.project.read": modes(
+    "DENY",
+    "SCOPED",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ),
   "context.global.read": modes("DENY", "SCOPED", "SCOPED", "SCOPED", "SCOPED", "SCOPED", "FULL"),
-  "workspace.write": modes("DENY", "DENY", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"),
-  "integration.private.use": modes("DENY", "SCOPED", "SCOPED", "SCOPED", "SCOPED", "AUTONOMOUS", "FULL"),
-  "external.communicate": modes("DENY", "DENY", "CONFIRM", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"),
+  "workspace.write": modes(
+    "DENY",
+    "DENY",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ),
+  "integration.private.use": modes(
+    "DENY",
+    "SCOPED",
+    "SCOPED",
+    "SCOPED",
+    "SCOPED",
+    "AUTONOMOUS",
+    "FULL"
+  ),
+  "external.communicate": modes(
+    "DENY",
+    "DENY",
+    "CONFIRM",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ),
   "audience.expand": modes("DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "AUTONOMOUS", "FULL"),
   "account.manage": modes("DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "AUTONOMOUS", "FULL"),
   "production.deploy": modes("DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"),
@@ -238,11 +290,35 @@ export const AUTONOMY_MATRIX: AutonomyMatrix = {
   "legal.accept_terms": modes("DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"),
   "contract.finalize": modes("DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"),
   "data.disclose": modes("DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"),
-  "agent.manage": modes("AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"),
-  "prompt.temporary": modes("DENY", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"),
+  "agent.manage": modes(
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ),
+  "prompt.temporary": modes(
+    "DENY",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ),
   "prompt.permanent": modes("DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"),
   "strategy.change": modes("DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"),
-  "sandbox.experiment": modes("DENY", "SCOPED", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL")
+  "sandbox.experiment": modes(
+    "DENY",
+    "SCOPED",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  )
 };
 
 export const CONDITIONAL_EXPANSIONS = [
@@ -272,11 +348,17 @@ export const CONDITIONAL_EXPANSIONS = [
   }
 ] as const;
 
-export function getCapabilityMode(level: AutonomyLevel, capabilityId: CapabilityId): PermissionMode {
+export function getCapabilityMode(
+  level: AutonomyLevel,
+  capabilityId: CapabilityId
+): PermissionMode {
   return AUTONOMY_MATRIX[capabilityId][level];
 }
 
-export function isAtLeastAsAutonomous(candidate: PermissionMode, baseline: PermissionMode): boolean {
+export function isAtLeastAsAutonomous(
+  candidate: PermissionMode,
+  baseline: PermissionMode
+): boolean {
   return PERMISSION_MODE_RANK[candidate] >= PERMISSION_MODE_RANK[baseline];
 }
 
