@@ -3,13 +3,7 @@
   "$id": "https://synmetis.ai/schemas/policy-engine-contract-v1.1.json",
   "title": "Synmetis Policy Engine Evaluation Envelope",
   "type": "object",
-  "required": [
-    "contract_version",
-    "intent",
-    "profile",
-    "permission_contracts",
-    "verdict"
-  ],
+  "required": ["contract_version", "intent", "profile", "permission_contracts", "verdict"],
   "properties": {
     "contract_version": {
       "type": "string",
@@ -205,12 +199,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": [
-              "capability_id",
-              "mode",
-              "scope",
-              "conditions"
-            ],
+            "required": ["capability_id", "mode", "scope", "conditions"],
             "properties": {
               "capability_id": {
                 "anyOf": [
@@ -627,12 +616,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "capability_id",
-                "mode",
-                "scope",
-                "conditions"
-              ],
+              "required": ["capability_id", "mode", "scope", "conditions"],
               "properties": {
                 "capability_id": {
                   "anyOf": [
@@ -788,12 +772,7 @@
           },
           "limits": {
             "type": "object",
-            "required": [
-              "money_minor",
-              "tokens",
-              "operations",
-              "delegation_depth"
-            ],
+            "required": ["money_minor", "tokens", "operations", "delegation_depth"],
             "properties": {
               "money_minor": {
                 "anyOf": [
@@ -848,13 +827,7 @@
           },
           "approval": {
             "type": "object",
-            "required": [
-              "approver_id",
-              "method",
-              "terms_version",
-              "nonce",
-              "approved_at"
-            ],
+            "required": ["approver_id", "method", "terms_version", "nonce", "approved_at"],
             "properties": {
               "approver_id": {
                 "type": "string",
@@ -936,12 +909,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": [
-              "capability_id",
-              "mode",
-              "scope",
-              "conditions"
-            ],
+            "required": ["capability_id", "mode", "scope", "conditions"],
             "properties": {
               "capability_id": {
                 "anyOf": [
