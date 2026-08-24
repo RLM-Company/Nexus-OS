@@ -1,164 +1,321 @@
 {
-  "suite": "A0-A6 monotonicity and safety vectors",
-  "version": "1.0.0",
-  "invariant": "For the same capability, scope, mandate and risk, a higher pure level must not produce a more restrictive outcome than a lower level. Law, immutable core and explicit owner constraints remain hard limits.",
-  "outcome_order": [
-    "deny",
-    "pause",
-    "require_confirmation",
-    "allow_with_controls",
-    "allow"
+  "suite": "A0-A6 monotonicity vectors",
+  "version": "1.1.0",
+  "levels": [
+    "A0",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6"
   ],
+  "mode_rank": {
+    "DENY": 0,
+    "CONFIRM": 1,
+    "SCOPED": 2,
+    "AUTONOMOUS": 3,
+    "FULL": 4
+  },
   "transitions": [
-    [
-      "A0",
-      "A1"
-    ],
-    [
-      "A1",
-      "A2"
-    ],
-    [
-      "A2",
-      "A3"
-    ],
-    [
-      "A3",
-      "A4"
-    ],
-    [
-      "A4",
-      "A5"
-    ],
-    [
-      "A5",
-      "A6"
-    ]
+    {
+      "from": "A0",
+      "to": "A1"
+    },
+    {
+      "from": "A1",
+      "to": "A2"
+    },
+    {
+      "from": "A2",
+      "to": "A3"
+    },
+    {
+      "from": "A3",
+      "to": "A4"
+    },
+    {
+      "from": "A4",
+      "to": "A5"
+    },
+    {
+      "from": "A5",
+      "to": "A6"
+    }
   ],
-  "cases": [
+  "capabilities": [
     {
-      "id": "M-001",
-      "capability": "web_read",
-      "expected_min_level": "A1",
-      "pure_levels": {
-        "A0": "deny",
-        "A1": "allow",
-        "A2": "allow",
-        "A3": "allow",
-        "A4": "allow",
-        "A5": "allow",
-        "A6": "allow"
-      }
+      "capability_id": "context.web.read",
+      "modes": {
+        "A0": "DENY",
+        "A1": "SCOPED",
+        "A2": "AUTONOMOUS",
+        "A3": "AUTONOMOUS",
+        "A4": "AUTONOMOUS",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "M-002",
-      "capability": "integrations",
-      "scenario": "write to an already connected project integration",
-      "expected_min_level": "A2",
-      "pure_levels": {
-        "A0": "deny",
-        "A1": "require_confirmation",
-        "A2": "allow_with_controls",
-        "A3": "allow_with_controls",
-        "A4": "allow_with_controls",
-        "A5": "allow_with_controls",
-        "A6": "allow"
-      }
+      "capability_id": "context.project.read",
+      "modes": {
+        "A0": "DENY",
+        "A1": "SCOPED",
+        "A2": "AUTONOMOUS",
+        "A3": "AUTONOMOUS",
+        "A4": "AUTONOMOUS",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "M-003",
-      "capability": "external_communications",
-      "scenario": "send within an approved campaign",
-      "expected_min_level": "A3",
-      "pure_levels": {
-        "A0": "deny",
-        "A1": "deny",
-        "A2": "require_confirmation",
-        "A3": "allow_with_controls",
-        "A4": "allow_with_controls",
-        "A5": "allow_with_controls",
-        "A6": "allow"
-      }
+      "capability_id": "context.global.read",
+      "modes": {
+        "A0": "DENY",
+        "A1": "SCOPED",
+        "A2": "SCOPED",
+        "A3": "SCOPED",
+        "A4": "SCOPED",
+        "A5": "SCOPED",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "M-004",
-      "capability": "finance",
-      "scenario": "pay existing recipient within reserved budget",
-      "expected_min_level": "A4",
-      "pure_levels": {
-        "A0": "deny",
-        "A1": "deny",
-        "A2": "require_confirmation",
-        "A3": "require_confirmation",
-        "A4": "allow_with_controls",
-        "A5": "allow_with_controls",
-        "A6": "allow"
-      }
+      "capability_id": "workspace.write",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "AUTONOMOUS",
+        "A3": "AUTONOMOUS",
+        "A4": "AUTONOMOUS",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "M-005",
-      "capability": "recipient_discovery",
-      "scenario": "new recipient matches project-passport audience",
-      "expected_min_level": "A5",
-      "pure_levels": {
-        "A0": "deny",
-        "A1": "deny",
-        "A2": "require_confirmation",
-        "A3": "require_confirmation",
-        "A4": "require_confirmation",
-        "A5": "allow_with_controls",
-        "A6": "allow"
-      }
+      "capability_id": "integration.private.use",
+      "modes": {
+        "A0": "DENY",
+        "A1": "SCOPED",
+        "A2": "SCOPED",
+        "A3": "SCOPED",
+        "A4": "SCOPED",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "M-006",
-      "capability": "strategy",
-      "scenario": "change strategy inside an A5 project",
-      "pure_levels": {
-        "A0": "require_confirmation",
-        "A1": "require_confirmation",
-        "A2": "require_confirmation",
-        "A3": "require_confirmation",
-        "A4": "require_confirmation",
-        "A5": "require_confirmation",
-        "A6": "allow"
-      }
+      "capability_id": "external.communicate",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "CONFIRM",
+        "A3": "AUTONOMOUS",
+        "A4": "AUTONOMOUS",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "S-001",
-      "capability": "finance",
-      "scenario": "parallel charges compete for one budget",
-      "all_levels_rule": "atomic_budget_reservation_required"
+      "capability_id": "audience.expand",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "CONFIRM",
+        "A3": "CONFIRM",
+        "A4": "CONFIRM",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "S-002",
-      "capability": "external_communications",
-      "scenario": "retry after timeout",
-      "all_levels_rule": "idempotency_check_required"
+      "capability_id": "account.manage",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "CONFIRM",
+        "A3": "CONFIRM",
+        "A4": "CONFIRM",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "S-003",
-      "capability": "emergency_control",
-      "scenario": "owner emergency stop",
-      "all_levels_rule": "pause_and_revoke_delegated_permissions"
+      "capability_id": "production.deploy",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "CONFIRM",
+        "A3": "CONFIRM",
+        "A4": "CONFIRM",
+        "A5": "CONFIRM",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "S-004",
-      "capability": "training_data",
-      "scenario": "unclear right to use third-party data",
-      "all_levels_rule": "deny_until_data_rights_verified"
+      "capability_id": "finance.spend",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "CONFIRM",
+        "A3": "CONFIRM",
+        "A4": "AUTONOMOUS",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "S-005",
-      "capability": "production_release",
-      "scenario": "local defect isolated to one subsystem",
-      "a5_rule": "pause_minimum_affected_scope"
+      "capability_id": "finance.credit",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "DENY",
+        "A3": "DENY",
+        "A4": "DENY",
+        "A5": "DENY",
+        "A6": "FULL"
+      },
+      "monotonic": true
     },
     {
-      "id": "S-006",
-      "capability": "production_release",
-      "scenario": "systemic non-isolatable threat",
-      "a5_rule": "pause_entire_project"
+      "capability_id": "legal.accept_terms",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "CONFIRM",
+        "A3": "CONFIRM",
+        "A4": "CONFIRM",
+        "A5": "CONFIRM",
+        "A6": "FULL"
+      },
+      "monotonic": true
+    },
+    {
+      "capability_id": "contract.finalize",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "CONFIRM",
+        "A3": "CONFIRM",
+        "A4": "CONFIRM",
+        "A5": "CONFIRM",
+        "A6": "FULL"
+      },
+      "monotonic": true
+    },
+    {
+      "capability_id": "data.disclose",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "CONFIRM",
+        "A3": "CONFIRM",
+        "A4": "CONFIRM",
+        "A5": "CONFIRM",
+        "A6": "FULL"
+      },
+      "monotonic": true
+    },
+    {
+      "capability_id": "agent.manage",
+      "modes": {
+        "A0": "AUTONOMOUS",
+        "A1": "AUTONOMOUS",
+        "A2": "AUTONOMOUS",
+        "A3": "AUTONOMOUS",
+        "A4": "AUTONOMOUS",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
+    },
+    {
+      "capability_id": "prompt.temporary",
+      "modes": {
+        "A0": "DENY",
+        "A1": "AUTONOMOUS",
+        "A2": "AUTONOMOUS",
+        "A3": "AUTONOMOUS",
+        "A4": "AUTONOMOUS",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
+    },
+    {
+      "capability_id": "prompt.permanent",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "CONFIRM",
+        "A3": "CONFIRM",
+        "A4": "CONFIRM",
+        "A5": "CONFIRM",
+        "A6": "FULL"
+      },
+      "monotonic": true
+    },
+    {
+      "capability_id": "strategy.change",
+      "modes": {
+        "A0": "DENY",
+        "A1": "DENY",
+        "A2": "CONFIRM",
+        "A3": "CONFIRM",
+        "A4": "CONFIRM",
+        "A5": "CONFIRM",
+        "A6": "FULL"
+      },
+      "monotonic": true
+    },
+    {
+      "capability_id": "sandbox.experiment",
+      "modes": {
+        "A0": "DENY",
+        "A1": "SCOPED",
+        "A2": "AUTONOMOUS",
+        "A3": "AUTONOMOUS",
+        "A4": "AUTONOMOUS",
+        "A5": "AUTONOMOUS",
+        "A6": "FULL"
+      },
+      "monotonic": true
+    }
+  ],
+  "conditional_expansions": [
+    {
+      "level": "A3",
+      "capability_id": "data.disclose",
+      "condition_id": "approved_campaign_material",
+      "mode": "AUTONOMOUS"
+    },
+    {
+      "level": "A5",
+      "capability_id": "production.deploy",
+      "condition_id": "subsequent_release_after_approved_first_release",
+      "mode": "AUTONOMOUS"
+    },
+    {
+      "level": "A5",
+      "capability_id": "legal.accept_terms",
+      "condition_id": "standard_free_terms",
+      "mode": "AUTONOMOUS"
+    },
+    {
+      "level": "A5",
+      "capability_id": "data.disclose",
+      "condition_id": "project_passport_allows_disclosure",
+      "mode": "AUTONOMOUS"
     }
   ]
 }
