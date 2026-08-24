@@ -1,6 +1,6 @@
 # A0 — базовый чат
 
-> Статус: `RESOLUTION DRAFT / NOT RUNTIME`  
+> Статус: `OWNER APPROVED SPECIFICATION / NOT RUNTIME`  
 > Переработано после перекрёстного аудита: 2026-08-24
 
 ## 1. Назначение
