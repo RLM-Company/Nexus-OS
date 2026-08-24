@@ -1,0 +1,1098 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synmetis.ai/schemas/policy-engine-contract-v1.1.json",
+  "title": "Synmetis Policy Engine Evaluation Envelope",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "intent",
+    "profile",
+    "permission_contracts",
+    "verdict"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.1.0"
+    },
+    "intent": {
+      "type": "object",
+      "required": [
+        "operation_id",
+        "project_id",
+        "actor_id",
+        "capability_ids",
+        "object_ids",
+        "purpose",
+        "idempotency_key"
+      ],
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "actor_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "capability_ids": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "context.web.read"
+              },
+              {
+                "type": "string",
+                "const": "context.project.read"
+              },
+              {
+                "type": "string",
+                "const": "context.global.read"
+              },
+              {
+                "type": "string",
+                "const": "workspace.write"
+              },
+              {
+                "type": "string",
+                "const": "integration.private.use"
+              },
+              {
+                "type": "string",
+                "const": "external.communicate"
+              },
+              {
+                "type": "string",
+                "const": "audience.expand"
+              },
+              {
+                "type": "string",
+                "const": "account.manage"
+              },
+              {
+                "type": "string",
+                "const": "production.deploy"
+              },
+              {
+                "type": "string",
+                "const": "finance.spend"
+              },
+              {
+                "type": "string",
+                "const": "finance.credit"
+              },
+              {
+                "type": "string",
+                "const": "legal.accept_terms"
+              },
+              {
+                "type": "string",
+                "const": "contract.finalize"
+              },
+              {
+                "type": "string",
+                "const": "data.disclose"
+              },
+              {
+                "type": "string",
+                "const": "agent.manage"
+              },
+              {
+                "type": "string",
+                "const": "prompt.temporary"
+              },
+              {
+                "type": "string",
+                "const": "prompt.permanent"
+              },
+              {
+                "type": "string",
+                "const": "strategy.change"
+              },
+              {
+                "type": "string",
+                "const": "sandbox.experiment"
+              }
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "object_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "profile": {
+      "type": "object",
+      "required": [
+        "profile_id",
+        "project_id",
+        "base_level",
+        "grants",
+        "overrides",
+        "version",
+        "issued_at"
+      ],
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "base_level": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "A0"
+            },
+            {
+              "type": "string",
+              "const": "A1"
+            },
+            {
+              "type": "string",
+              "const": "A2"
+            },
+            {
+              "type": "string",
+              "const": "A3"
+            },
+            {
+              "type": "string",
+              "const": "A4"
+            },
+            {
+              "type": "string",
+              "const": "A5"
+            },
+            {
+              "type": "string",
+              "const": "A6"
+            }
+          ]
+        },
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "capability_id",
+              "mode",
+              "scope",
+              "conditions"
+            ],
+            "properties": {
+              "capability_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "context.web.read"
+                  },
+                  {
+                    "type": "string",
+                    "const": "context.project.read"
+                  },
+                  {
+                    "type": "string",
+                    "const": "context.global.read"
+                  },
+                  {
+                    "type": "string",
+                    "const": "workspace.write"
+                  },
+                  {
+                    "type": "string",
+                    "const": "integration.private.use"
+                  },
+                  {
+                    "type": "string",
+                    "const": "external.communicate"
+                  },
+                  {
+                    "type": "string",
+                    "const": "audience.expand"
+                  },
+                  {
+                    "type": "string",
+                    "const": "account.manage"
+                  },
+                  {
+                    "type": "string",
+                    "const": "production.deploy"
+                  },
+                  {
+                    "type": "string",
+                    "const": "finance.spend"
+                  },
+                  {
+                    "type": "string",
+                    "const": "finance.credit"
+                  },
+                  {
+                    "type": "string",
+                    "const": "legal.accept_terms"
+                  },
+                  {
+                    "type": "string",
+                    "const": "contract.finalize"
+                  },
+                  {
+                    "type": "string",
+                    "const": "data.disclose"
+                  },
+                  {
+                    "type": "string",
+                    "const": "agent.manage"
+                  },
+                  {
+                    "type": "string",
+                    "const": "prompt.temporary"
+                  },
+                  {
+                    "type": "string",
+                    "const": "prompt.permanent"
+                  },
+                  {
+                    "type": "string",
+                    "const": "strategy.change"
+                  },
+                  {
+                    "type": "string",
+                    "const": "sandbox.experiment"
+                  }
+                ]
+              },
+              "mode": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "DENY"
+                  },
+                  {
+                    "type": "string",
+                    "const": "CONFIRM"
+                  },
+                  {
+                    "type": "string",
+                    "const": "SCOPED"
+                  },
+                  {
+                    "type": "string",
+                    "const": "AUTONOMOUS"
+                  },
+                  {
+                    "type": "string",
+                    "const": "FULL"
+                  }
+                ]
+              },
+              "scope": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "default": []
+              },
+              "conditions": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "default": []
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 19,
+          "maxItems": 19
+        },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "override_id",
+              "capability_id",
+              "mode",
+              "object_ids",
+              "purpose",
+              "valid_until",
+              "remaining_uses"
+            ],
+            "properties": {
+              "override_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "capability_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "context.web.read"
+                  },
+                  {
+                    "type": "string",
+                    "const": "context.project.read"
+                  },
+                  {
+                    "type": "string",
+                    "const": "context.global.read"
+                  },
+                  {
+                    "type": "string",
+                    "const": "workspace.write"
+                  },
+                  {
+                    "type": "string",
+                    "const": "integration.private.use"
+                  },
+                  {
+                    "type": "string",
+                    "const": "external.communicate"
+                  },
+                  {
+                    "type": "string",
+                    "const": "audience.expand"
+                  },
+                  {
+                    "type": "string",
+                    "const": "account.manage"
+                  },
+                  {
+                    "type": "string",
+                    "const": "production.deploy"
+                  },
+                  {
+                    "type": "string",
+                    "const": "finance.spend"
+                  },
+                  {
+                    "type": "string",
+                    "const": "finance.credit"
+                  },
+                  {
+                    "type": "string",
+                    "const": "legal.accept_terms"
+                  },
+                  {
+                    "type": "string",
+                    "const": "contract.finalize"
+                  },
+                  {
+                    "type": "string",
+                    "const": "data.disclose"
+                  },
+                  {
+                    "type": "string",
+                    "const": "agent.manage"
+                  },
+                  {
+                    "type": "string",
+                    "const": "prompt.temporary"
+                  },
+                  {
+                    "type": "string",
+                    "const": "prompt.permanent"
+                  },
+                  {
+                    "type": "string",
+                    "const": "strategy.change"
+                  },
+                  {
+                    "type": "string",
+                    "const": "sandbox.experiment"
+                  }
+                ]
+              },
+              "mode": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "DENY"
+                  },
+                  {
+                    "type": "string",
+                    "const": "CONFIRM"
+                  },
+                  {
+                    "type": "string",
+                    "const": "SCOPED"
+                  },
+                  {
+                    "type": "string",
+                    "const": "AUTONOMOUS"
+                  },
+                  {
+                    "type": "string",
+                    "const": "FULL"
+                  }
+                ]
+              },
+              "object_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              "purpose": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "valid_until": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "remaining_uses": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "issued_at": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "permission_contracts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "permission_id",
+          "version",
+          "project_id",
+          "subject_id",
+          "organizational_role",
+          "state",
+          "capabilities",
+          "purpose",
+          "object_ids",
+          "valid_from",
+          "valid_until",
+          "limits",
+          "parent_permission_id",
+          "approval"
+        ],
+        "properties": {
+          "permission_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "project_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "subject_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "organizational_role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "account_owner"
+              },
+              {
+                "type": "string",
+                "const": "project_admin"
+              },
+              {
+                "type": "string",
+                "const": "organization_representative"
+              },
+              {
+                "type": "string",
+                "const": "financial_controller"
+              },
+              {
+                "type": "string",
+                "const": "legal_signatory"
+              },
+              {
+                "type": "string",
+                "const": "data_controller"
+              },
+              {
+                "type": "string",
+                "const": "observer"
+              }
+            ]
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "REQUESTED"
+              },
+              {
+                "type": "string",
+                "const": "APPROVED"
+              },
+              {
+                "type": "string",
+                "const": "ACTIVE"
+              },
+              {
+                "type": "string",
+                "const": "SUSPENDED"
+              },
+              {
+                "type": "string",
+                "const": "CONSUMED"
+              },
+              {
+                "type": "string",
+                "const": "EXPIRED"
+              },
+              {
+                "type": "string",
+                "const": "REVOKING"
+              },
+              {
+                "type": "string",
+                "const": "REVOKED"
+              },
+              {
+                "type": "string",
+                "const": "FAILED"
+              }
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "capability_id",
+                "mode",
+                "scope",
+                "conditions"
+              ],
+              "properties": {
+                "capability_id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "context.web.read"
+                    },
+                    {
+                      "type": "string",
+                      "const": "context.project.read"
+                    },
+                    {
+                      "type": "string",
+                      "const": "context.global.read"
+                    },
+                    {
+                      "type": "string",
+                      "const": "workspace.write"
+                    },
+                    {
+                      "type": "string",
+                      "const": "integration.private.use"
+                    },
+                    {
+                      "type": "string",
+                      "const": "external.communicate"
+                    },
+                    {
+                      "type": "string",
+                      "const": "audience.expand"
+                    },
+                    {
+                      "type": "string",
+                      "const": "account.manage"
+                    },
+                    {
+                      "type": "string",
+                      "const": "production.deploy"
+                    },
+                    {
+                      "type": "string",
+                      "const": "finance.spend"
+                    },
+                    {
+                      "type": "string",
+                      "const": "finance.credit"
+                    },
+                    {
+                      "type": "string",
+                      "const": "legal.accept_terms"
+                    },
+                    {
+                      "type": "string",
+                      "const": "contract.finalize"
+                    },
+                    {
+                      "type": "string",
+                      "const": "data.disclose"
+                    },
+                    {
+                      "type": "string",
+                      "const": "agent.manage"
+                    },
+                    {
+                      "type": "string",
+                      "const": "prompt.temporary"
+                    },
+                    {
+                      "type": "string",
+                      "const": "prompt.permanent"
+                    },
+                    {
+                      "type": "string",
+                      "const": "strategy.change"
+                    },
+                    {
+                      "type": "string",
+                      "const": "sandbox.experiment"
+                    }
+                  ]
+                },
+                "mode": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "DENY"
+                    },
+                    {
+                      "type": "string",
+                      "const": "CONFIRM"
+                    },
+                    {
+                      "type": "string",
+                      "const": "SCOPED"
+                    },
+                    {
+                      "type": "string",
+                      "const": "AUTONOMOUS"
+                    },
+                    {
+                      "type": "string",
+                      "const": "FULL"
+                    }
+                  ]
+                },
+                "scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "default": []
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "default": []
+                }
+              },
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "object_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "valid_from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limits": {
+            "type": "object",
+            "required": [
+              "money_minor",
+              "tokens",
+              "operations",
+              "delegation_depth"
+            ],
+            "properties": {
+              "money_minor": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tokens": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "operations": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "delegation_depth": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "parent_permission_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approval": {
+            "type": "object",
+            "required": [
+              "approver_id",
+              "method",
+              "terms_version",
+              "nonce",
+              "approved_at"
+            ],
+            "properties": {
+              "approver_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "method": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "session"
+                  },
+                  {
+                    "type": "string",
+                    "const": "step_up"
+                  }
+                ]
+              },
+              "terms_version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "nonce": {
+                "type": "string",
+                "minLength": 1
+              },
+              "approved_at": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "required": [
+        "operation_id",
+        "verdict",
+        "evaluated_capabilities",
+        "permission_ids",
+        "reasons",
+        "evaluated_at",
+        "policy_version"
+      ],
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "ALLOW"
+            },
+            {
+              "type": "string",
+              "const": "ALLOW_WITH_LIMITS"
+            },
+            {
+              "type": "string",
+              "const": "NEEDS_CONFIRMATION"
+            },
+            {
+              "type": "string",
+              "const": "DENY"
+            },
+            {
+              "type": "string",
+              "const": "PAUSE"
+            }
+          ]
+        },
+        "evaluated_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "capability_id",
+              "mode",
+              "scope",
+              "conditions"
+            ],
+            "properties": {
+              "capability_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "context.web.read"
+                  },
+                  {
+                    "type": "string",
+                    "const": "context.project.read"
+                  },
+                  {
+                    "type": "string",
+                    "const": "context.global.read"
+                  },
+                  {
+                    "type": "string",
+                    "const": "workspace.write"
+                  },
+                  {
+                    "type": "string",
+                    "const": "integration.private.use"
+                  },
+                  {
+                    "type": "string",
+                    "const": "external.communicate"
+                  },
+                  {
+                    "type": "string",
+                    "const": "audience.expand"
+                  },
+                  {
+                    "type": "string",
+                    "const": "account.manage"
+                  },
+                  {
+                    "type": "string",
+                    "const": "production.deploy"
+                  },
+                  {
+                    "type": "string",
+                    "const": "finance.spend"
+                  },
+                  {
+                    "type": "string",
+                    "const": "finance.credit"
+                  },
+                  {
+                    "type": "string",
+                    "const": "legal.accept_terms"
+                  },
+                  {
+                    "type": "string",
+                    "const": "contract.finalize"
+                  },
+                  {
+                    "type": "string",
+                    "const": "data.disclose"
+                  },
+                  {
+                    "type": "string",
+                    "const": "agent.manage"
+                  },
+                  {
+                    "type": "string",
+                    "const": "prompt.temporary"
+                  },
+                  {
+                    "type": "string",
+                    "const": "prompt.permanent"
+                  },
+                  {
+                    "type": "string",
+                    "const": "strategy.change"
+                  },
+                  {
+                    "type": "string",
+                    "const": "sandbox.experiment"
+                  }
+                ]
+              },
+              "mode": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "DENY"
+                  },
+                  {
+                    "type": "string",
+                    "const": "CONFIRM"
+                  },
+                  {
+                    "type": "string",
+                    "const": "SCOPED"
+                  },
+                  {
+                    "type": "string",
+                    "const": "AUTONOMOUS"
+                  },
+                  {
+                    "type": "string",
+                    "const": "FULL"
+                  }
+                ]
+              },
+              "scope": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "default": []
+              },
+              "conditions": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "default": []
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "permission_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "evaluated_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
