@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synmetis.ai/schemas/policy-engine-contract-v1.json",
+  "title": "Synmetis Policy Engine Contract",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "request",
+    "effective_profile",
+    "decision"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "1.0.0"
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "request_id",
+        "project_id",
+        "actor",
+        "capability",
+        "action",
+        "risk",
+        "reversibility"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actor": {
+          "type": "object",
+          "required": [
+            "id",
+            "kind"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "owner",
+                "manager",
+                "agent",
+                "subagent",
+                "system"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "capability": {
+          "enum": [
+            "chat",
+            "web_read",
+            "project_memory",
+            "files",
+            "integrations",
+            "external_communications",
+            "recipient_discovery",
+            "account_creation",
+            "production_release",
+            "finance",
+            "subscriptions",
+            "refunds",
+            "contracts",
+            "strategy",
+            "agent_management",
+            "prompt_management",
+            "data_transfer",
+            "training_data",
+            "emergency_control"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "reversibility": {
+          "enum": [
+            "reversible",
+            "partially_reversible",
+            "irreversible"
+          ]
+        },
+        "estimated_cost": {
+          "type": "object",
+          "properties": {
+            "currency": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "number",
+              "minimum": 0
+            },
+            "tokens": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "effective_profile": {
+      "type": "object",
+      "required": [
+        "base_level",
+        "capability_level",
+        "mandate_id",
+        "permission_revision"
+      ],
+      "properties": {
+        "base_level": {
+          "enum": [
+            "A0",
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "A5",
+            "A6"
+          ]
+        },
+        "capability_level": {
+          "enum": [
+            "A0",
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "A5",
+            "A6"
+          ]
+        },
+        "mandate_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permission_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "budget_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "allowed_channels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "allowed_audience": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "expires_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "requires_step_up": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "outcome",
+        "reason_codes",
+        "required_controls"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "allow",
+            "allow_with_controls",
+            "require_confirmation",
+            "deny",
+            "pause"
+          ]
+        },
+        "reason_codes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "required_controls": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "owner_confirmation",
+              "step_up_authentication",
+              "atomic_budget_reservation",
+              "atomic_token_reservation",
+              "recipient_validation",
+              "legal_review",
+              "data_rights_check",
+              "idempotency_check",
+              "critic_review",
+              "checkpoint",
+              "audit_log",
+              "emergency_stop_check"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "permission_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "trace": {
+      "type": "object",
+      "properties": {
+        "policy_version": {
+          "type": "string"
+        },
+        "evaluated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "matched_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "input_hash": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
