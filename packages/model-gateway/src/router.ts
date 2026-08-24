@@ -4,7 +4,7 @@ import type {
   ModelRegistryEntry,
   ModelRouteRequest
 } from "@nexus/contracts";
-import { ModelRegistry } from "./model-registry.js";
+import type { ModelRegistry } from "./model-registry.js";
 
 export type ModelRouteFailureCode =
   | "NO_ENABLED_MODEL"
