@@ -1,5 +1,7 @@
 import { Type, type Static } from "typebox";
 
+export const POLICY_CONTRACT_VERSION = "1.1.0" as const;
+
 export const AutonomyLevelSchema = Type.Union([
   Type.Literal("A0"),
   Type.Literal("A1"),
@@ -180,7 +182,7 @@ export type PolicyVerdict = Static<typeof PolicyVerdictSchema>;
 
 export const PolicyEvaluationEnvelopeSchema = Type.Object(
   {
-    contract_version: Type.Literal("1.1.0"),
+    contract_version: Type.Literal(POLICY_CONTRACT_VERSION),
     intent: PolicyIntentSchema,
     profile: CapabilityProfileSchema,
     permission_contracts: Type.Array(PermissionContractSchema),
