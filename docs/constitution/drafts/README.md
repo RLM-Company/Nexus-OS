@@ -44,8 +44,8 @@
 
 ## Общие Конституции
 
-- [`manager-constitution-v1.md`](./manager-constitution-v1.md) — Конституция Менеджера v1.1-rc.
-- [`memory-learning-constitution-v1.md`](./memory-learning-constitution-v1.md) — Конституция памяти и обучения v1.1-rc.
+- [`manager-constitution-v1.md`](./manager-constitution-v1.md) — утверждённая Конституция Менеджера v1.1.
+- [`memory-learning-constitution-v1.md`](./memory-learning-constitution-v1.md) — утверждённая Конституция памяти и обучения v1.1.
 - [`identity-model-naming-discovery.md`](./identity-model-naming-discovery.md) — отложенная идентичность и нейминг моделей.
 
 ## Исполняемые спецификации
