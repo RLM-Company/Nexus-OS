@@ -22,7 +22,13 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
   await expect(page.getByRole("button", { name: "Остановить" })).toHaveCount(0);
 
+  const restoredProjects = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/projects") && response.request().method() === "GET"
+  );
   await page.reload();
+  const restored = await restoredProjects;
+  expect(restored.status(), await restored.text()).toBe(200);
   await page.locator(".project-list .project-item").first().click();
   await expect(page.getByText(initialTask, { exact: true })).toBeVisible();
   await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
