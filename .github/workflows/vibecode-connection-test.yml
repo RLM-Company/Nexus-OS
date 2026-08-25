@@ -2,6 +2,11 @@ name: VibeCode connection test
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/b0-2-model-registry-router
+    paths:
+      - .github/workflows/vibecode-connection-test.yml
 
 permissions:
   contents: read
