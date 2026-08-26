@@ -1,7 +1,7 @@
 # VibeCode API Discovery runbook
 
 **Date:** 2026-08-24  
-**Status:** READY / WAITING FOR OWNER-AUTHORIZED ACCESS  
+**Status:** CONNECTION VERIFIED / MODEL METADATA INCOMPLETE
 **Scope:** read-only discovery for the first real B0.2 model route
 
 ## Authorization boundary
@@ -20,6 +20,24 @@ unless separately authorized.
 3. Whether a read-only models/capabilities endpoint exists.
 4. Account/organization scope to inspect.
 5. Any provider documentation that governs retention, training use, and regional processing.
+
+## Verified evidence — 2026-08-25
+
+- The owner configured the server-side repository variables and `MODEL_API_KEY` secret.
+- The authorized GitHub Actions connection test completed successfully with HTTP 200, an SSE
+  response, and at least one provider text delta. The workflow does not print the credential,
+  endpoint value, or raw response content.
+- The official VibeCode site states that request contents and chat history are not stored and that
+  token counters are retained for billing:
+  [vibecode.moe](https://vibecode.moe/).
+- The public Terms state only a general minimum-technical-data and reasonable-security position:
+  [Terms of Service](https://vibecode.moe/terms).
+
+This evidence proves authentication, configured model routing, and streaming availability. It does
+not establish the exact context window, output limit, structured-output/tool/vision support,
+model-specific price, upstream training use, regional processing, or a contractual retention
+period. Therefore no real entry is added to the committed registry yet, and VibeCode remains
+ineligible for confidential or hard-budget routing.
 
 ## Read-only discovery sequence
 
@@ -52,3 +70,10 @@ Stop and request owner input if any of the following occurs:
 The discovery report must record timestamp, endpoints called (without secrets), HTTP outcomes,
 normalized registry diff, schema/test results, and unresolved unknowns. Raw provider responses are
 stored only if they contain no credentials, personal data, or confidential project content.
+
+## Next authorized action
+
+Obtain a secret-free model metadata export from an official account endpoint or provider
+documentation. Record the exact configured model ID and protocol plus every known capability,
+limit, price, and privacy field. Unknown values stay unknown; they are never inferred from a
+successful chat response.

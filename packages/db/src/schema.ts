@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const systemMetadata = sqliteTable("cosmora_system_metadata", {
   key: text("key").primaryKey(),
@@ -77,6 +77,39 @@ export const messages = sqliteTable(
   (table) => [
     index("messages_chat_created_idx").on(table.chatId, table.createdAt),
     uniqueIndex("messages_client_id_unique").on(table.clientMessageId)
+  ]
+);
+
+export const modelUsageLedger = sqliteTable(
+  "model_usage_ledger",
+  {
+    usageId: text("usage_id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    attempt: integer("attempt").notNull(),
+    status: text("status").notNull(),
+    registryVersion: text("registry_version").notNull(),
+    providerId: text("provider_id").notNull(),
+    modelRequested: text("model_requested").notNull(),
+    modelResolved: text("model_resolved"),
+    estimatedInputTokens: integer("estimated_input_tokens").notNull(),
+    maxOutputTokens: integer("max_output_tokens").notNull(),
+    estimatedCostAmount: real("estimated_cost_amount"),
+    actualInputTokens: integer("actual_input_tokens"),
+    actualOutputTokens: integer("actual_output_tokens"),
+    calculatedCostAmount: real("calculated_cost_amount"),
+    currency: text("currency"),
+    errorCode: text("error_code"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("model_usage_ledger_run_attempt_unique").on(table.runId, table.attempt),
+    index("model_usage_ledger_project_created_idx").on(table.projectId, table.createdAt)
   ]
 );
 

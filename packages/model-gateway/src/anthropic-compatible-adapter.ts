@@ -32,6 +32,7 @@ interface MessageStreamEvent {
 
 export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
   readonly id: string;
+  readonly modelId: string;
   readonly #baseUrl: string;
   readonly #apiKey: string;
   readonly #model: string;
@@ -40,6 +41,7 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
 
   constructor(options: AnthropicCompatibleAdapterOptions) {
     this.id = options.id;
+    this.modelId = options.model;
     this.#baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.#apiKey = options.apiKey;
     this.#model = options.model;
@@ -88,7 +90,7 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
 
     let resolvedModel = this.#model;
     let finishReason = "stop";
-    let usage = { inputTokens: 0, outputTokens: 0 };
+    let usage = { inputTokens: null as number | null, outputTokens: null as number | null };
 
     for await (const payload of this.#readDataPayloads(response.body)) {
       let event: MessageStreamEvent;

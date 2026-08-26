@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
+import type { Currency } from "@cosmora/contracts";
 
 export const LOCAL_OWNER_ID = "local-owner";
 
@@ -7,6 +8,13 @@ export class IdempotencyConflictError extends Error {
   constructor() {
     super("Idempotency key was already used for another request");
     this.name = "IdempotencyConflictError";
+  }
+}
+
+export class ModelUsageConflictError extends Error {
+  constructor() {
+    super("Model usage attempt was already reserved for another route");
+    this.name = "ModelUsageConflictError";
   }
 }
 
@@ -46,6 +54,38 @@ export interface StoredRun {
   updated_at: string;
 }
 
+export interface ModelUsageReservation {
+  attempt: number;
+  registry_version: string;
+  provider_id: string;
+  model_id: string;
+  estimated_input_tokens: number;
+  max_output_tokens: number;
+  estimated_cost: { amount: number; currency: Currency } | null;
+}
+
+export interface StoredModelUsage {
+  usage_id: string;
+  run_id: string;
+  project_id: string;
+  attempt: number;
+  status: "reserved" | "committed" | "failed" | "cancelled";
+  registry_version: string;
+  provider_id: string;
+  model_requested: string;
+  model_resolved: string | null;
+  estimated_input_tokens: number;
+  max_output_tokens: number;
+  estimated_cost_amount: number | null;
+  actual_input_tokens: number | null;
+  actual_output_tokens: number | null;
+  calculated_cost_amount: number | null;
+  currency: Currency | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AcceptedMessage {
   project: StoredProject;
   chatId: string;
@@ -59,6 +99,7 @@ type SqlRow = Record<string, unknown>;
 const asProject = (row: SqlRow): StoredProject => row as unknown as StoredProject;
 const asMessage = (row: SqlRow): StoredMessage => row as unknown as StoredMessage;
 const asRun = (row: SqlRow): StoredRun => row as unknown as StoredRun;
+const asModelUsage = (row: SqlRow): StoredModelUsage => row as unknown as StoredModelUsage;
 const now = (): string => new Date().toISOString();
 
 const projectTitle = (message: string): string => {
@@ -301,6 +342,94 @@ export class ProjectStore {
     return row ? asRun(row) : null;
   }
 
+  reserveModelUsage(
+    runId: string,
+    reservation: ModelUsageReservation,
+    ownerId = LOCAL_OWNER_ID
+  ): StoredModelUsage | null {
+    const run = this.getRun(runId, ownerId);
+    if (!run) return null;
+    if (run.status === "succeeded" || run.status === "failed" || run.status === "cancelled") {
+      return null;
+    }
+
+    const existing = this.#sqlite
+      .prepare(
+        `SELECT usage_id, run_id, project_id, attempt, status, registry_version, provider_id,
+          model_requested, model_resolved, estimated_input_tokens, max_output_tokens,
+          estimated_cost_amount, actual_input_tokens, actual_output_tokens,
+          calculated_cost_amount, currency, error_code, created_at, updated_at
+         FROM model_usage_ledger WHERE run_id = ? AND attempt = ?`
+      )
+      .get(runId, reservation.attempt) as SqlRow | undefined;
+    if (existing) {
+      const stored = asModelUsage(existing);
+      const sameRoute =
+        stored.registry_version === reservation.registry_version &&
+        stored.provider_id === reservation.provider_id &&
+        stored.model_requested === reservation.model_id &&
+        stored.estimated_input_tokens === reservation.estimated_input_tokens &&
+        stored.max_output_tokens === reservation.max_output_tokens &&
+        stored.estimated_cost_amount === (reservation.estimated_cost?.amount ?? null) &&
+        stored.currency === (reservation.estimated_cost?.currency ?? null);
+      if (!sameRoute) throw new ModelUsageConflictError();
+      return stored;
+    }
+
+    const timestamp = now();
+    const usageId = randomUUID();
+    this.#sqlite
+      .prepare(
+        `INSERT INTO model_usage_ledger
+          (usage_id, run_id, project_id, attempt, status, registry_version, provider_id,
+           model_requested, estimated_input_tokens, max_output_tokens, estimated_cost_amount,
+           currency, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        usageId,
+        runId,
+        run.project_id,
+        reservation.attempt,
+        reservation.registry_version,
+        reservation.provider_id,
+        reservation.model_id,
+        reservation.estimated_input_tokens,
+        reservation.max_output_tokens,
+        reservation.estimated_cost?.amount ?? null,
+        reservation.estimated_cost?.currency ?? null,
+        timestamp,
+        timestamp
+      );
+    return (
+      this.getModelUsageForRun(runId, ownerId).find(
+        (usage) => usage.attempt === reservation.attempt
+      ) ?? null
+    );
+  }
+
+  getModelUsageForRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredModelUsage[] {
+    if (!this.getRun(runId, ownerId)) return [];
+    return this.#sqlite
+      .prepare(
+        `SELECT usage_id, run_id, project_id, attempt, status, registry_version, provider_id,
+          model_requested, model_resolved, estimated_input_tokens, max_output_tokens,
+          estimated_cost_amount, actual_input_tokens, actual_output_tokens,
+          calculated_cost_amount, currency, error_code, created_at, updated_at
+         FROM model_usage_ledger WHERE run_id = ? ORDER BY attempt ASC`
+      )
+      .all(runId) as unknown as StoredModelUsage[];
+  }
+
+  failModelUsage(runId: string, attempt: number, errorCode: string): void {
+    this.#sqlite
+      .prepare(
+        `UPDATE model_usage_ledger SET status = 'failed', error_code = ?, updated_at = ?
+         WHERE run_id = ? AND attempt = ? AND status = 'reserved'`
+      )
+      .run(errorCode, now(), runId, attempt);
+  }
+
   getRunPrompt(runId: string, ownerId = LOCAL_OWNER_ID): string | null {
     if (!this.getRun(runId, ownerId)) return null;
     const row = this.#get(
@@ -382,7 +511,11 @@ export class ProjectStore {
     runId: string,
     provider: string,
     model: string,
-    usage?: { inputTokens: number; outputTokens: number }
+    usage?: { inputTokens: number | null; outputTokens: number | null },
+    accounting?: {
+      attempt: number;
+      calculatedCost: { amount: number; currency: Currency } | null;
+    }
   ): void {
     const timestamp = now();
     this.#sqlite.exec("BEGIN IMMEDIATE;");
@@ -405,6 +538,28 @@ export class ProjectStore {
         this.#sqlite.exec("COMMIT;");
         return;
       }
+      if (accounting) {
+        const ledgerResult = this.#sqlite
+          .prepare(
+            `UPDATE model_usage_ledger SET status = 'committed', model_resolved = ?,
+              actual_input_tokens = ?, actual_output_tokens = ?, calculated_cost_amount = ?,
+              currency = COALESCE(?, currency), updated_at = ?
+             WHERE run_id = ? AND attempt = ? AND status = 'reserved'`
+          )
+          .run(
+            model,
+            usage?.inputTokens ?? null,
+            usage?.outputTokens ?? null,
+            accounting.calculatedCost?.amount ?? null,
+            accounting.calculatedCost?.currency ?? null,
+            timestamp,
+            runId,
+            accounting.attempt
+          );
+        if (Number(ledgerResult.changes) !== 1) {
+          throw new Error(`Missing reserved model usage attempt ${runId}:${accounting.attempt}`);
+        }
+      }
       this.#sqlite
         .prepare(
           `UPDATE messages SET status = 'completed', updated_at = ?
@@ -425,14 +580,35 @@ export class ProjectStore {
 
   failRun(runId: string, errorCode: string): void {
     const timestamp = now();
-    this.#sqlite
-      .prepare(
-        "UPDATE messages SET status = 'failed', error_code = ?, updated_at = ? WHERE run_id = ? AND role = 'assistant'"
-      )
-      .run(errorCode, timestamp, runId);
-    this.#sqlite
-      .prepare("UPDATE runs SET status = 'failed', updated_at = ? WHERE id = ?")
-      .run(timestamp, runId);
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const runResult = this.#sqlite
+        .prepare(
+          `UPDATE runs SET status = 'failed', updated_at = ?
+           WHERE id = ? AND status IN ('queued', 'running')`
+        )
+        .run(timestamp, runId);
+      if (Number(runResult.changes) === 0) {
+        this.#sqlite.exec("COMMIT;");
+        return;
+      }
+      this.#sqlite
+        .prepare(
+          `UPDATE messages SET status = 'failed', error_code = ?, updated_at = ?
+           WHERE run_id = ? AND role = 'assistant' AND status IN ('pending', 'streaming')`
+        )
+        .run(errorCode, timestamp, runId);
+      this.#sqlite
+        .prepare(
+          `UPDATE model_usage_ledger SET status = 'failed', error_code = ?, updated_at = ?
+           WHERE run_id = ? AND status = 'reserved'`
+        )
+        .run(errorCode, timestamp, runId);
+      this.#sqlite.exec("COMMIT;");
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
   }
 
   cancelRun(runId: string, ownerId = LOCAL_OWNER_ID): "cancelled" | "finished" | null {
@@ -468,6 +644,12 @@ export class ProjectStore {
            WHERE id = ? AND status IN ('queued', 'running')`
         )
         .run(timestamp, runId);
+      this.#sqlite
+        .prepare(
+          `UPDATE model_usage_ledger SET status = 'cancelled', error_code = 'CANCELLED_BY_OWNER',
+            updated_at = ? WHERE run_id = ? AND status = 'reserved'`
+        )
+        .run(timestamp, runId);
       this.#sqlite.exec("COMMIT;");
       return "cancelled";
     } catch (error) {
@@ -484,6 +666,13 @@ export class ProjectStore {
         .prepare(
           `UPDATE messages SET status = 'failed', error_code = ?, updated_at = ?
            WHERE role = 'assistant' AND status = 'streaming'
+             AND run_id IN (SELECT id FROM runs WHERE status = 'running')`
+        )
+        .run(errorCode, timestamp);
+      this.#sqlite
+        .prepare(
+          `UPDATE model_usage_ledger SET status = 'failed', error_code = ?, updated_at = ?
+           WHERE status = 'reserved'
              AND run_id IN (SELECT id FROM runs WHERE status = 'running')`
         )
         .run(errorCode, timestamp);

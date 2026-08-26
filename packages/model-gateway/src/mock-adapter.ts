@@ -37,6 +37,7 @@ const summarize = (prompt: string): string => {
 
 export class MockProviderAdapter implements ModelProviderAdapter {
   readonly id = MOCK_PROVIDER_ID;
+  readonly modelId = MOCK_MODEL_ID;
   readonly #mode: MockProviderMode;
 
   constructor(mode: MockProviderMode = "success") {

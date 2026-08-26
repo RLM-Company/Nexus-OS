@@ -5,7 +5,6 @@ import { buildModelRuntime } from "./model-runtime.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
-const modelRuntime = buildModelRuntime(config);
 let app: ReturnType<typeof buildApp> | undefined;
 
 const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
@@ -24,6 +23,7 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
 try {
   await runMigrations(database);
+  const modelRuntime = buildModelRuntime(config);
   const projectStore = new ProjectStore(database.sqlite);
   const recoveredRuns = projectStore.recoverInterruptedRuns();
   app = buildApp({
@@ -33,6 +33,7 @@ try {
     policyStore: new PolicyStore(database.sqlite),
     modelGateway: modelRuntime.gateway,
     manager: modelRuntime.manager,
+    modelRegistryVersion: modelRuntime.registryVersion,
     closeDatabase: () => database.close()
   });
   if (recoveredRuns > 0) {

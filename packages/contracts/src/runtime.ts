@@ -7,8 +7,9 @@ export const ModelRuntimeStatusSchema = Type.Object(
       Type.Literal("openai-compatible"),
       Type.Literal("anthropic-compatible")
     ]),
-    provider: Type.Union([Type.Literal("mock"), Type.Literal("primary")]),
+    provider: Type.String({ minLength: 1, maxLength: 128 }),
     model: Type.String({ minLength: 1 }),
+    registry_version: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
     credential_configured: Type.Boolean(),
     fallback_to_mock: Type.Boolean()
   },

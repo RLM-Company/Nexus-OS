@@ -20,6 +20,7 @@ export interface ModelRoute {
   model_id: string;
   protocol: ModelRegistryEntry["protocol"];
   estimated_max_cost: { amount: number; currency: Currency } | null;
+  pricing: ModelRegistryEntry["pricing"];
 }
 
 export class ModelRouteError extends Error {
@@ -82,7 +83,7 @@ export class ModelRouter {
     }
     if (request.preferred_model_alias) {
       candidates = candidates.filter((entry) =>
-        entry.aliases.includes(request.preferred_model_alias!)
+        [entry.model_id, ...entry.aliases].includes(request.preferred_model_alias!)
       );
     }
     if (candidates.length === 0) throw new ModelRouteError("PREFERRED_ROUTE_UNAVAILABLE");
@@ -137,7 +138,8 @@ export class ModelRouter {
       provider_id: selected.entry.provider_id,
       model_id: selected.entry.model_id,
       protocol: selected.entry.protocol,
-      estimated_max_cost: selected.estimated
+      estimated_max_cost: selected.estimated,
+      pricing: selected.entry.pricing ? structuredClone(selected.entry.pricing) : null
     };
   }
 }

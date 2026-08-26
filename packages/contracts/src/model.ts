@@ -1,4 +1,5 @@
 import { Type, type Static } from "typebox";
+import { ModelFeatureSchema } from "./model-registry.js";
 import { CurrencySchema, EntityIdSchema } from "./primitives.js";
 
 export const ModelMessageSchema = Type.Object(
@@ -35,7 +36,23 @@ export const ModelRequestSchema = Type.Object(
       {
         preferred_provider: Type.String({ minLength: 1 }),
         preferred_model_alias: Type.String({ minLength: 1 }),
-        fallback_allowed: Type.Boolean()
+        fallback_allowed: Type.Boolean(),
+        required_features: Type.Array(ModelFeatureSchema, { uniqueItems: true }),
+        confidential: Type.Boolean(),
+        estimated_input_tokens: Type.Integer({ minimum: 0 }),
+        max_cost: Type.Union([
+          Type.Object(
+            { amount: Type.Number({ minimum: 0 }), currency: CurrencySchema },
+            { additionalProperties: false }
+          ),
+          Type.Null()
+        ]),
+        optimize_for: Type.Union([
+          Type.Literal("balanced"),
+          Type.Literal("quality"),
+          Type.Literal("latency"),
+          Type.Literal("cost")
+        ])
       },
       { additionalProperties: false }
     ),

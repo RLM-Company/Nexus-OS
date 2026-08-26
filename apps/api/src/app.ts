@@ -38,7 +38,11 @@ import {
   type ProjectStore,
   type StoredMessage
 } from "@cosmora/db";
-import { GatewayRunError, type ModelGateway } from "@cosmora/model-gateway";
+import {
+  GatewayRunError,
+  type ModelGateway,
+  type ModelGatewayStreamEvent
+} from "@cosmora/model-gateway";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 
 export interface AppDependencies {
@@ -48,6 +52,7 @@ export interface AppDependencies {
   policyStore?: PolicyStore;
   modelGateway?: ModelGateway;
   manager?: ManagerService;
+  modelRegistryVersion?: string;
   stepUpVerifier?: (token: string, purpose: string) => Promise<boolean>;
   closeDatabase?: () => void;
 }
@@ -163,8 +168,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     () => {
       const response: ModelRuntimeStatus = {
         mode: dependencies.config.modelProvider,
-        provider: dependencies.config.modelProvider === "mock" ? "mock" : "primary",
+        provider: dependencies.config.modelProviderId,
         model: dependencies.config.modelName,
+        registry_version: dependencies.modelRegistryVersion ?? null,
         credential_configured:
           dependencies.config.modelProvider !== "mock" && Boolean(dependencies.config.modelApiKey),
         fallback_to_mock: dependencies.config.modelFallbackToMock
@@ -631,14 +637,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
 
         let sequence = 0;
         let size = assistant.content.length;
-        let completed:
-          | {
-              provider: string;
-              model: string;
-              finishReason: string;
-              usage?: { inputTokens: number; outputTokens: number };
-            }
-          | undefined;
+        let completed: Extract<ModelGatewayStreamEvent, { type: "response.completed" }> | undefined;
         const controller = new AbortController();
         activeRuns.set(run.id, controller);
         const onAborted = (): void => controller.abort(new Error("Client disconnected"));
@@ -654,7 +653,19 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             messages: conversation
           });
           for await (const event of modelGateway.stream(modelRequest, controller.signal)) {
-            if (event.type === "text.delta") {
+            if (event.type === "route.selected") {
+              const reserved = store.reserveModelUsage(run.id, event.route);
+              if (!reserved) {
+                throw new GatewayRunError(
+                  "ROUTE_UNAVAILABLE",
+                  event.route.provider_id,
+                  "Run cannot reserve the selected model route",
+                  false
+                );
+              }
+            } else if (event.type === "route.failed") {
+              store.failModelUsage(run.id, event.route.attempt, event.errorCode);
+            } else if (event.type === "text.delta") {
               store.appendAssistantDelta(assistant.id, event.delta);
               size += event.delta.length;
               sendEvent(reply, {
@@ -678,7 +689,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               true
             );
           }
-          store.completeRun(run.id, completed.provider, completed.model, completed.usage);
+          store.completeRun(run.id, completed.provider, completed.model, completed.usage, {
+            attempt: completed.route.attempt,
+            calculatedCost: completed.calculatedCost
+          });
           sendEvent(reply, {
             type: "message.completed",
             data: {

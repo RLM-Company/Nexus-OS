@@ -62,7 +62,7 @@ describe("project chat API", () => {
       url: "/api/v1/projects",
       payload: { initial_message: "Проверь сквозной сценарий", client_message_id: "client-2" }
     });
-    const body = created.json<{ project: { id: string }; stream_url: string }>();
+    const body = created.json<{ project: { id: string }; run_id: string; stream_url: string }>();
 
     const stream = await app.inject({ method: "GET", url: body.stream_url });
     expect(stream.statusCode).toBe(200);
@@ -78,6 +78,20 @@ describe("project chat API", () => {
     const messages = project.json<{ messages: Array<{ role: string; status: string }> }>().messages;
     expect(messages).toHaveLength(2);
     expect(messages[1]).toMatchObject({ role: "assistant", status: "completed" });
+    const usage = projectStore.getModelUsageForRun(body.run_id);
+    expect(usage).toEqual([
+      expect.objectContaining({
+        status: "committed",
+        registry_version: "b0.2-bootstrap-1",
+        provider_id: "mock",
+        model_requested: "manager-b0.1",
+        model_resolved: "manager-b0.1",
+        actual_output_tokens: 72,
+        calculated_cost_amount: 0,
+        currency: "USD"
+      })
+    ]);
+    expect(typeof usage[0]?.actual_input_tokens).toBe("number");
 
     const projects = await app.inject({ method: "GET", url: "/api/v1/projects" });
     expect(projects.statusCode).toBe(200);
@@ -131,9 +145,13 @@ describe("project chat API", () => {
     const body = created.json<{ run_id: string; stream_url: string }>();
 
     const firstStream = app.inject({ method: "GET", url: body.stream_url });
-    await vi.waitFor(() => expect(projectStore.getRun(body.run_id)?.status).toBe("running"), {
-      timeout: 2_000
-    });
+    await vi.waitFor(
+      () => {
+        expect(projectStore.getRun(body.run_id)?.status).toBe("running");
+        expect(projectStore.getModelUsageForRun(body.run_id)).toHaveLength(1);
+      },
+      { timeout: 2_000 }
+    );
 
     const duplicateStream = await app.inject({ method: "GET", url: body.stream_url });
     expect(duplicateStream.statusCode).toBe(409);
@@ -149,6 +167,12 @@ describe("project chat API", () => {
     expect(stream.body).toContain("event: run.cancelled");
     expect(projectStore.getRun(body.run_id)).toMatchObject({ status: "cancelled" });
     expect(projectStore.getAssistantMessage(body.run_id)).toMatchObject({ status: "cancelled" });
+    expect(projectStore.getModelUsageForRun(body.run_id)).toEqual([
+      expect.objectContaining({
+        status: "cancelled",
+        error_code: "CANCELLED_BY_OWNER"
+      })
+    ]);
 
     const repeated = await app.inject({
       method: "POST",

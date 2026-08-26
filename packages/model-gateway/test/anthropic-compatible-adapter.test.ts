@@ -17,7 +17,12 @@ const request = (): ModelRequest => ({
   routing: {
     preferred_provider: "primary",
     preferred_model_alias: "manager",
-    fallback_allowed: true
+    fallback_allowed: true,
+    required_features: ["streaming"],
+    confidential: false,
+    estimated_input_tokens: 100,
+    max_cost: null,
+    optimize_for: "balanced"
   },
   idempotency_key: "run-1"
 });

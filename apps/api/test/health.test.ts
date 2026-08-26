@@ -29,6 +29,7 @@ describe("GET /api/v1/health", () => {
       mode: "mock",
       provider: "mock",
       model: "manager",
+      registry_version: null,
       credential_configured: false,
       fallback_to_mock: true
     });
