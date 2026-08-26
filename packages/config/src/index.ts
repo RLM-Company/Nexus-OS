@@ -143,7 +143,7 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
     apiHost: raw.API_HOST ?? "127.0.0.1",
     apiPort,
     webOrigin: raw.WEB_ORIGIN ?? "http://localhost:3000",
-    databaseUrl: raw.DATABASE_URL ?? "file:./data/nexus.db",
+    databaseUrl: raw.DATABASE_URL ?? "file:./data/cosmora.db",
     modelProvider,
     modelBaseUrl: raw.MODEL_BASE_URL ?? null,
     modelApiKey: raw.MODEL_API_KEY ?? null,

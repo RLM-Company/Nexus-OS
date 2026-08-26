@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Nexus OS",
+  title: "Cosmora OS",
   description: "Адаптивная рабочая среда автономных ИИ-агентов"
 };
 

@@ -4,10 +4,10 @@ import type {
   ConfirmationRequest,
   PolicyIntent,
   PolicyVerdict
-} from "@nexus/contracts";
-import { PolicyStoreConflictError } from "@nexus/db";
-import type { PolicyStore } from "@nexus/db";
-import { evaluatePolicy } from "@nexus/policy-engine";
+} from "@cosmora/contracts";
+import { PolicyStoreConflictError } from "@cosmora/db";
+import type { PolicyStore } from "@cosmora/db";
+import { evaluatePolicy } from "@cosmora/policy-engine";
 
 export interface ToolExecutionContext {
   operationId: string;

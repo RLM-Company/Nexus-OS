@@ -17,9 +17,9 @@ describe("SQLite foundation", () => {
       await runMigrations(database);
       const row = database.sqlite
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
-        .get("nexus_system_metadata") as { name?: string } | undefined;
+        .get("cosmora_system_metadata") as { name?: string } | undefined;
 
-      expect(row?.name).toBe("nexus_system_metadata");
+      expect(row?.name).toBe("cosmora_system_metadata");
     } finally {
       database.close();
     }
@@ -98,8 +98,8 @@ describe("SQLite foundation", () => {
   });
 
   it("restores project history after reopening the SQLite file", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "nexus-db-test-"));
-    const file = join(directory, "nexus.db");
+    const directory = mkdtempSync(join(tmpdir(), "cosmora-db-test-"));
+    const file = join(directory, "cosmora.db");
     const first = openDatabase(file);
 
     try {
@@ -129,8 +129,8 @@ describe("SQLite foundation", () => {
   });
 
   it("fails an interrupted streaming run safely after restart", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "nexus-interrupted-test-"));
-    const file = join(directory, "nexus.db");
+    const directory = mkdtempSync(join(tmpdir(), "cosmora-interrupted-test-"));
+    const file = join(directory, "cosmora.db");
     const first = openDatabase(file);
     let runId: string;
 

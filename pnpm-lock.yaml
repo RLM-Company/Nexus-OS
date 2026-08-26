@@ -37,19 +37,19 @@ importers:
       "@fastify/type-provider-typebox":
         specifier: 6.1.0
         version: 6.1.0(typebox@1.3.16)
-      "@nexus/config":
+      "@cosmora/config":
         specifier: workspace:*
         version: link:../../packages/config
-      "@nexus/contracts":
+      "@cosmora/contracts":
         specifier: workspace:*
         version: link:../../packages/contracts
-      "@nexus/core":
+      "@cosmora/core":
         specifier: workspace:*
         version: link:../../packages/core
-      "@nexus/db":
+      "@cosmora/db":
         specifier: workspace:*
         version: link:../../packages/db
-      "@nexus/model-gateway":
+      "@cosmora/model-gateway":
         specifier: workspace:*
         version: link:../../packages/model-gateway
       fastify:
@@ -99,16 +99,16 @@ importers:
 
   packages/core:
     dependencies:
-      "@nexus/contracts":
+      "@cosmora/contracts":
         specifier: workspace:*
         version: link:../contracts
 
   packages/db:
     dependencies:
-      "@nexus/config":
+      "@cosmora/config":
         specifier: workspace:*
         version: link:../config
-      "@nexus/contracts":
+      "@cosmora/contracts":
         specifier: workspace:*
         version: link:../contracts
       drizzle-orm:
@@ -124,25 +124,25 @@ importers:
 
   packages/model-gateway:
     dependencies:
-      "@nexus/contracts":
+      "@cosmora/contracts":
         specifier: workspace:*
         version: link:../contracts
 
   packages/policy-engine:
     dependencies:
-      "@nexus/contracts":
+      "@cosmora/contracts":
         specifier: workspace:*
         version: link:../contracts
 
   packages/tool-runtime:
     dependencies:
-      "@nexus/contracts":
+      "@cosmora/contracts":
         specifier: workspace:*
         version: link:../contracts
-      "@nexus/db":
+      "@cosmora/db":
         specifier: workspace:*
         version: link:../db
-      "@nexus/policy-engine":
+      "@cosmora/policy-engine":
         specifier: workspace:*
         version: link:../policy-engine
 

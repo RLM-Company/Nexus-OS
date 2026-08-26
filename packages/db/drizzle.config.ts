@@ -5,7 +5,7 @@ export default defineConfig({
   schema: "./src/schema.ts",
   out: "./migrations",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "file:./data/nexus.db"
+    url: process.env.DATABASE_URL ?? "file:./data/cosmora.db"
   },
   strict: true,
   verbose: true

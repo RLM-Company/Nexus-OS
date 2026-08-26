@@ -12,7 +12,7 @@ stay outside the web application and Manager prompt.
 
 ## Decision
 
-Nexus uses a versioned, secret-free Model Registry as the only source of routing metadata. Every
+Cosmora uses a versioned, secret-free Model Registry as the only source of routing metadata. Every
 entry has a stable provider/model identity, aliases, protocol, capabilities, context/output limits,
 quality and latency tiers, optional pricing, privacy declarations, and evidence source.
 

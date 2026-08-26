@@ -1,6 +1,6 @@
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
-import type { ServerConfig } from "@nexus/config";
-import type { ManagerService } from "@nexus/core";
+import type { ServerConfig } from "@cosmora/config";
+import type { ManagerService } from "@cosmora/core";
 import {
   ApiErrorSchema,
   AUTONOMY_MATRIX,
@@ -30,15 +30,15 @@ import {
   type ProjectListResponse,
   type RunCancelResponse,
   type StreamEvent
-} from "@nexus/contracts";
+} from "@cosmora/contracts";
 import {
   IdempotencyConflictError,
   type DatabaseHealth,
   type PolicyStore,
   type ProjectStore,
   type StoredMessage
-} from "@nexus/db";
-import { GatewayRunError, type ModelGateway } from "@nexus/model-gateway";
+} from "@cosmora/db";
+import { GatewayRunError, type ModelGateway } from "@cosmora/model-gateway";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 
 export interface AppDependencies {

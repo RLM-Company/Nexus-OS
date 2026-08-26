@@ -1,6 +1,6 @@
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-export const systemMetadata = sqliteTable("nexus_system_metadata", {
+export const systemMetadata = sqliteTable("cosmora_system_metadata", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
   updatedAt: text("updated_at").notNull()

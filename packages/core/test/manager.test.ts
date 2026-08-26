@@ -1,4 +1,4 @@
-import type { Message } from "@nexus/contracts";
+import type { Message } from "@cosmora/contracts";
 import { describe, expect, it } from "vitest";
 import { ManagerService } from "../src/index.js";
 

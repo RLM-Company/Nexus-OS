@@ -1,4 +1,4 @@
-import type { ModelRequest } from "@nexus/contracts";
+import type { ModelRequest } from "@cosmora/contracts";
 
 export interface ProviderUsage {
   inputTokens: number;

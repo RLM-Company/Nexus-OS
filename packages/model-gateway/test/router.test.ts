@@ -2,7 +2,7 @@ import type {
   ModelRegistryDocument,
   ModelRegistryEntry,
   ModelRouteRequest
-} from "@nexus/contracts";
+} from "@cosmora/contracts";
 import { describe, expect, it } from "vitest";
 import { ModelRegistry, ModelRouteError, ModelRouter } from "../src/index.js";
 

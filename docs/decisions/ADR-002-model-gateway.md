@@ -5,7 +5,7 @@
 
 ## Context
 
-Nexus needs one stable manager contract while model vendors, endpoints, model names, prices, and
+Cosmora needs one stable manager contract while model vendors, endpoints, model names, prices, and
 availability can change. Provider credentials must remain server-side, and a failed stream must not
 corrupt durable chat history.
 

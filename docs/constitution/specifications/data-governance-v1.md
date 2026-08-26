@@ -1,4 +1,4 @@
-# Data Governance Synmetis AI v1
+# Data Governance Cosmora AI v1
 
 > Статус: `OWNER APPROVED SPECIFICATION / NOT RUNTIME`  
 > Дата: `2026-08-24`  

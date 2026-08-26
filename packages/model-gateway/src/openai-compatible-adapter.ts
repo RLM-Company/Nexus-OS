@@ -1,4 +1,4 @@
-import type { ModelRequest } from "@nexus/contracts";
+import type { ModelRequest } from "@cosmora/contracts";
 import { GatewayRunError, type ModelProviderAdapter, type ProviderStreamEvent } from "./types.js";
 
 export interface OpenAICompatibleAdapterOptions {

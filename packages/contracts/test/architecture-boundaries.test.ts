@@ -15,7 +15,7 @@ const sourceFiles = (directory: string): string[] =>
 describe("architecture boundaries", () => {
   it("keeps provider adapters and credentials out of the web application", () => {
     const forbidden = [
-      /@nexus\/model-gateway/,
+      /@cosmora\/model-gateway/,
       /openai-compatible-adapter/,
       /anthropic-compatible-adapter/,
       /MODEL_API_KEY/,

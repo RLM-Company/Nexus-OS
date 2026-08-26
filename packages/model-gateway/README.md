@@ -1,6 +1,6 @@
 # Model Gateway
 
-Provider-neutral streaming gateway for Nexus OS.
+Provider-neutral streaming gateway for Cosmora OS.
 
 Implemented adapters:
 

@@ -1,4 +1,4 @@
-# Permission Contract Synmetis AI v1
+# Permission Contract Cosmora AI v1
 
 > Статус: `OWNER APPROVED SPECIFICATION / NOT RUNTIME`  
 > Дата: `2026-08-24`

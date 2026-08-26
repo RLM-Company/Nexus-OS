@@ -6,7 +6,7 @@
 
 ## Context
 
-Nexus OS is starting from an empty repository with a 0–10,000 RUB budget and a solo, AI-assisted development workflow. B0.1 needs a responsive web client, a separate server boundary, shared runtime contracts, deterministic mock streaming, and a zero-cost local database.
+Cosmora OS is starting from an empty repository with a 0–10,000 RUB budget and a solo, AI-assisted development workflow. B0.1 needs a responsive web client, a separate server boundary, shared runtime contracts, deterministic mock streaming, and a zero-cost local database.
 
 The stack must remain understandable to one developer, run on Windows-compatible Node.js tooling, and leave clean seams for PostgreSQL, background workers, a local daemon, and native clients later.
 

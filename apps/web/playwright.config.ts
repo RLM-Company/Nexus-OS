@@ -12,7 +12,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "pnpm --dir ../api exec tsx --conditions=development src/server.ts",
+      command: "pnpm --dir ../api exec node --import tsx --conditions=development src/server.ts",
       url: "http://127.0.0.1:3100/api/v1/health",
       stdout: "pipe",
       stderr: "pipe",
@@ -33,7 +33,7 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         ...process.env,
-        NEXUS_API_ORIGIN: "http://127.0.0.1:3100",
+        COSMORA_API_ORIGIN: "http://127.0.0.1:3100",
         NEXT_TELEMETRY_DISABLED: "1"
       }
     }

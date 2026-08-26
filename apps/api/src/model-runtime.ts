@@ -1,12 +1,12 @@
-import type { ServerConfig } from "@nexus/config";
-import { ManagerService } from "@nexus/core";
+import type { ServerConfig } from "@cosmora/config";
+import { ManagerService } from "@cosmora/core";
 import {
   AnthropicCompatibleAdapter,
   MockProviderAdapter,
   ModelGateway,
   OpenAICompatibleAdapter,
   type ModelProviderAdapter
-} from "@nexus/model-gateway";
+} from "@cosmora/model-gateway";
 
 export interface ModelRuntime {
   gateway: ModelGateway;

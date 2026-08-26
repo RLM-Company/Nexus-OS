@@ -1,4 +1,4 @@
-import type { ModelMessage, ModelRequest } from "@nexus/contracts";
+import type { ModelMessage, ModelRequest } from "@cosmora/contracts";
 import { GatewayRunError, type ModelProviderAdapter, type ProviderStreamEvent } from "./types.js";
 
 export interface AnthropicCompatibleAdapterOptions {

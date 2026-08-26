@@ -17,7 +17,7 @@ import {
   type PolicyIntent,
   type PolicyVerdict,
   type ToolOperationStatus
-} from "@nexus/contracts";
+} from "@cosmora/contracts";
 import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
 

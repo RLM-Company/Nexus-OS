@@ -1,5 +1,5 @@
 {
-  "name": "@nexus/db",
+  "name": "@cosmora/db",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -23,8 +23,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nexus/config": "workspace:*",
-    "@nexus/contracts": "workspace:*",
+    "@cosmora/config": "workspace:*",
+    "@cosmora/contracts": "workspace:*",
     "drizzle-orm": "0.45.2",
     "typebox": "1.3.16"
   },

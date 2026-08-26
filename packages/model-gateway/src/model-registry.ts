@@ -1,4 +1,4 @@
-import type { ModelRegistryDocument, ModelRegistryEntry } from "@nexus/contracts";
+import type { ModelRegistryDocument, ModelRegistryEntry } from "@cosmora/contracts";
 
 const entryKey = (entry: Pick<ModelRegistryEntry, "provider_id" | "model_id">): string =>
   `${entry.provider_id}:${entry.model_id}`;

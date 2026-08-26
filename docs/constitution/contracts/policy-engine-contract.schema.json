@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://synmetis.ai/schemas/policy-engine-contract-v1.1.json",
-  "title": "Synmetis Policy Engine Evaluation Envelope",
+  "$id": "https://cosmora.ai/schemas/policy-engine-contract-v1.1.json",
+  "title": "Cosmora Policy Engine Evaluation Envelope",
   "type": "object",
   "required": ["contract_version", "intent", "profile", "permission_contracts", "verdict"],
   "properties": {

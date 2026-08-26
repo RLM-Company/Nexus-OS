@@ -36,6 +36,13 @@
       "when": 1787571704722,
       "tag": "0004_complete_vision",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787755241380,
+      "tag": "0005_cosmora_system_metadata",
+      "breakpoints": true
     }
   ]
 }

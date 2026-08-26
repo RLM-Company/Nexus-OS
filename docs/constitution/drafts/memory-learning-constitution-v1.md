@@ -1,4 +1,4 @@
-# Конституция памяти и обучения Synmetis AI
+# Конституция памяти и обучения Cosmora AI
 
 > Статус: `OWNER APPROVED SPECIFICATION / NOT RUNTIME`  
 > Версия: `1.1`  

@@ -1,6 +1,6 @@
-# Nexus OS
+# Cosmora OS
 
-This repository contains the B0.1 foundation of Nexus OS.
+This repository contains the B0.1 foundation of Cosmora OS.
 
 ## Current scope
 
@@ -43,7 +43,7 @@ pnpm dev
 
 Web runs at `http://localhost:3000`, API at `http://127.0.0.1:3100`, and health is available at
 `GET /api/v1/health`. A secret-free provider summary is available at
-`GET /api/v1/model-runtime`. The web app proxies `/api/*` to `NEXUS_API_ORIGIN`.
+`GET /api/v1/model-runtime`. The web app proxies `/api/*` to `COSMORA_API_ORIGIN`.
 
 ## Connect a model provider
 
@@ -57,7 +57,7 @@ MODEL_NAME=provider-model-id
 MODEL_FALLBACK_TO_MOCK=true
 ```
 
-The provider must expose an OpenAI-compatible streaming `POST /chat/completions` endpoint. Nexus
+The provider must expose an OpenAI-compatible streaming `POST /chat/completions` endpoint. Cosmora
 does not expose the key through its health or runtime-status APIs. If the provider fails before the
 first response token, optional mock fallback keeps the local workflow usable; after output begins,
 the gateway fails the run instead of mixing responses from two models.
@@ -70,7 +70,7 @@ pnpm check
 
 The gate runs formatting, a repository secret scan, lint, strict TypeScript, unit and API tests,
 production builds, and the Playwright B0.1 browser scenario. Install the Chromium runtime once on a
-new development machine with `pnpm --filter @nexus/web exec playwright install --with-deps chromium`.
+new development machine with `pnpm --filter @cosmora/web exec playwright install --with-deps chromium`.
 
 ## Repository rules
 
