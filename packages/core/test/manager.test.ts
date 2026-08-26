@@ -44,11 +44,16 @@ describe("ManagerService", () => {
       { role: "assistant", content: "Первый ответ" },
       { role: "user", content: "Уточнение" }
     ]);
-    expect(result.routing).toEqual({
+    expect(result.routing).toMatchObject({
       preferred_provider: "primary",
       preferred_model_alias: "manager-model",
-      fallback_allowed: true
+      fallback_allowed: true,
+      required_features: ["streaming"],
+      confidential: false,
+      max_cost: null,
+      optimize_for: "balanced"
     });
+    expect(result.routing.estimated_input_tokens).toBeGreaterThan(0);
     expect(result.constraints).toEqual({ timeout_ms: 45_000, max_output_tokens: 900 });
     expect(result.idempotency_key).toBe("manager-run:run-2");
   });

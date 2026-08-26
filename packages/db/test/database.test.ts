@@ -54,11 +54,23 @@ describe("SQLite foundation", () => {
 
       const assistant = store.startAssistantMessage(accepted.run.id);
       expect(assistant?.status).toBe("streaming");
-      store.appendAssistantDelta(assistant?.id ?? "", "Готово");
-      store.completeRun(accepted.run.id, "mock", "manager-test", {
-        inputTokens: 12,
-        outputTokens: 4
+      store.reserveModelUsage(accepted.run.id, {
+        attempt: 0,
+        registry_version: "test-registry-1",
+        provider_id: "mock",
+        model_id: "manager-test",
+        estimated_input_tokens: 20,
+        max_output_tokens: 100,
+        estimated_cost: { amount: 0, currency: "USD" }
       });
+      store.appendAssistantDelta(assistant?.id ?? "", "Готово");
+      store.completeRun(
+        accepted.run.id,
+        "mock",
+        "manager-test",
+        { inputTokens: 12, outputTokens: 4 },
+        { attempt: 0, calculatedCost: { amount: 0, currency: "USD" } }
+      );
 
       expect(store.getRun(accepted.run.id)).toMatchObject({
         status: "succeeded",
@@ -68,6 +80,26 @@ describe("SQLite foundation", () => {
       expect(store.getAssistantMessage(accepted.run.id)).toMatchObject({
         content: "Готово",
         status: "completed"
+      });
+      expect(store.getModelUsageForRun(accepted.run.id)).toEqual([
+        expect.objectContaining({
+          status: "committed",
+          registry_version: "test-registry-1",
+          provider_id: "mock",
+          model_requested: "manager-test",
+          model_resolved: "manager-test",
+          actual_input_tokens: 12,
+          actual_output_tokens: 4,
+          calculated_cost_amount: 0,
+          currency: "USD"
+        })
+      ]);
+      store.failRun(accepted.run.id, "LATE_ERROR");
+      expect(store.getRun(accepted.run.id)).toMatchObject({ status: "succeeded" });
+      expect(store.getAssistantMessage(accepted.run.id)).toMatchObject({ status: "completed" });
+      expect(store.getModelUsageForRun(accepted.run.id)[0]).toMatchObject({
+        status: "committed",
+        error_code: null
       });
       expect(() =>
         store.createProject("Другой запрос с тем же ключом", "client-project-1")
@@ -140,6 +172,15 @@ describe("SQLite foundation", () => {
       const accepted = store.createProject("Начни длинный ответ", "restart-running-1");
       runId = accepted.run.id;
       const assistant = store.startAssistantMessage(runId);
+      store.reserveModelUsage(runId, {
+        attempt: 0,
+        registry_version: "test-registry-1",
+        provider_id: "mock",
+        model_id: "manager-test",
+        estimated_input_tokens: 20,
+        max_output_tokens: 100,
+        estimated_cost: null
+      });
       store.appendAssistantDelta(assistant?.id ?? "", "Частичный ответ");
     } finally {
       first.close();
@@ -156,6 +197,12 @@ describe("SQLite foundation", () => {
         error_code: "INTERRUPTED_BY_RESTART",
         content: "Частичный ответ"
       });
+      expect(store.getModelUsageForRun(runId)).toEqual([
+        expect.objectContaining({
+          status: "failed",
+          error_code: "INTERRUPTED_BY_RESTART"
+        })
+      ]);
       expect(store.recoverInterruptedRuns()).toBe(0);
     } finally {
       reopened.close();

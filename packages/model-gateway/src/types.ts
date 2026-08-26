@@ -1,8 +1,8 @@
-import type { ModelRequest } from "@cosmora/contracts";
+import type { Currency, ModelRequest } from "@cosmora/contracts";
 
 export interface ProviderUsage {
-  inputTokens: number;
-  outputTokens: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
 }
 
 export type ProviderStreamEvent =
@@ -17,10 +17,41 @@ export type ProviderStreamEvent =
 
 export interface ModelProviderAdapter {
   readonly id: string;
+  readonly modelId: string;
   stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ProviderStreamEvent>;
 }
 
-export type GatewayErrorCode = "PROVIDER_TIMEOUT" | "PROVIDER_ERROR" | "INTERRUPTED";
+export interface ModelRouteAttempt {
+  attempt: number;
+  registry_version: string;
+  provider_id: string;
+  model_id: string;
+  estimated_input_tokens: number;
+  max_output_tokens: number;
+  estimated_cost: { amount: number; currency: Currency } | null;
+}
+
+export type ModelGatewayStreamEvent =
+  | { type: "text.delta"; delta: string }
+  | { type: "route.selected"; route: ModelRouteAttempt }
+  | {
+      type: "route.failed";
+      route: ModelRouteAttempt;
+      errorCode: GatewayErrorCode;
+      retryable: boolean;
+    }
+  | {
+      type: "response.completed";
+      provider: string;
+      model: string;
+      finishReason: string;
+      usage: ProviderUsage;
+      route: ModelRouteAttempt;
+      calculatedCost: { amount: number; currency: Currency } | null;
+    };
+
+export type GatewayErrorCode =
+  "ROUTE_UNAVAILABLE" | "PROVIDER_TIMEOUT" | "PROVIDER_ERROR" | "INTERRUPTED";
 
 export class GatewayRunError extends Error {
   readonly code: GatewayErrorCode;

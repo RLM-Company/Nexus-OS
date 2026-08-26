@@ -41,7 +41,12 @@ describe("shared contracts", () => {
         routing: {
           preferred_provider: "mock",
           preferred_model_alias: "manager",
-          fallback_allowed: false
+          fallback_allowed: false,
+          required_features: ["streaming"],
+          confidential: false,
+          estimated_input_tokens: 100,
+          max_cost: null,
+          optimize_for: "balanced"
         },
         idempotency_key: "stable-key"
       })

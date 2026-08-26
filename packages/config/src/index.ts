@@ -17,6 +17,8 @@ export const RawServerConfigSchema = Type.Object(
         Type.Literal("anthropic-compatible")
       ])
     ),
+    MODEL_PROVIDER_ID: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+    MODEL_REGISTRY_PATH: Type.Optional(Type.String({ minLength: 1 })),
     MODEL_BASE_URL: Type.Optional(Type.String({ pattern: "^https?://" })),
     MODEL_API_KEY: Type.Optional(Type.String({ minLength: 1 })),
     MODEL_NAME: Type.Optional(Type.String({ minLength: 1 })),
@@ -59,6 +61,8 @@ export interface ServerConfig {
   webOrigin: string;
   databaseUrl: string;
   modelProvider: ModelProvider;
+  modelProviderId: string;
+  modelRegistryPath: string | null;
   modelBaseUrl: string | null;
   modelApiKey: string | null;
   modelName: string;
@@ -84,6 +88,8 @@ const configKeys = [
   "WEB_ORIGIN",
   "DATABASE_URL",
   "MODEL_PROVIDER",
+  "MODEL_PROVIDER_ID",
+  "MODEL_REGISTRY_PATH",
   "MODEL_BASE_URL",
   "MODEL_API_KEY",
   "MODEL_NAME",
@@ -118,6 +124,9 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
   }
 
   const modelProvider = raw.MODEL_PROVIDER ?? "mock";
+  if (modelProvider === "mock" && raw.MODEL_PROVIDER_ID && raw.MODEL_PROVIDER_ID !== "mock") {
+    throw new Error("Invalid server configuration: /MODEL_PROVIDER_ID");
+  }
   if (modelProvider !== "mock") {
     for (const key of ["MODEL_BASE_URL", "MODEL_API_KEY", "MODEL_NAME"] as const) {
       if (!raw[key]) throw new Error(`Invalid server configuration: /${key}`);
@@ -145,6 +154,8 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
     webOrigin: raw.WEB_ORIGIN ?? "http://localhost:3000",
     databaseUrl: raw.DATABASE_URL ?? "file:./data/cosmora.db",
     modelProvider,
+    modelProviderId: raw.MODEL_PROVIDER_ID ?? (modelProvider === "mock" ? "mock" : "vibecode"),
+    modelRegistryPath: raw.MODEL_REGISTRY_PATH ?? null,
     modelBaseUrl: raw.MODEL_BASE_URL ?? null,
     modelApiKey: raw.MODEL_API_KEY ?? null,
     modelName: raw.MODEL_NAME ?? "manager",

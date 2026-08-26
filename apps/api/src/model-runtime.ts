@@ -1,25 +1,72 @@
 import type { ServerConfig } from "@cosmora/config";
+import { ModelRegistryDocumentSchema, type ModelRegistryDocument } from "@cosmora/contracts";
 import { ManagerService } from "@cosmora/core";
 import {
   AnthropicCompatibleAdapter,
   MockProviderAdapter,
   ModelGateway,
+  ModelRegistry,
+  ModelRouter,
   OpenAICompatibleAdapter,
   type ModelProviderAdapter
 } from "@cosmora/model-gateway";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Value } from "typebox/value";
+
+const DEFAULT_REGISTRY_PATH = fileURLToPath(
+  new URL("../../../config/model-registry.v1.json", import.meta.url)
+);
 
 export interface ModelRuntime {
   gateway: ModelGateway;
   manager: ManagerService;
+  registryVersion: string;
 }
 
-export const buildModelRuntime = (config: ServerConfig): ModelRuntime => {
+export interface ModelRuntimeOptions {
+  registryDocument?: ModelRegistryDocument;
+}
+
+export const loadModelRegistryDocument = (path: string): ModelRegistryDocument => {
+  let candidate: unknown;
+  try {
+    candidate = JSON.parse(readFileSync(resolve(path), "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(`Failed to read Model Registry from ${path}`, { cause: error });
+  }
+  if (!Value.Check(ModelRegistryDocumentSchema, candidate)) {
+    throw new Error(`Invalid Model Registry document at ${path}`);
+  }
+  return candidate;
+};
+
+export const buildModelRuntime = (
+  config: ServerConfig,
+  options: ModelRuntimeOptions = {}
+): ModelRuntime => {
+  const document =
+    options.registryDocument ??
+    loadModelRegistryDocument(config.modelRegistryPath ?? DEFAULT_REGISTRY_PATH);
+  const registry = new ModelRegistry(document);
+  const router = new ModelRouter(registry);
   const adapters: ModelProviderAdapter[] = [new MockProviderAdapter(config.mockProviderMode)];
-  const preferredProvider = config.modelProvider === "mock" ? "mock" : "primary";
+  const preferredProvider = config.modelProviderId;
 
   if (config.modelProvider !== "mock") {
     if (!config.modelBaseUrl || !config.modelApiKey) {
       throw new Error("External model provider configuration is incomplete");
+    }
+    const registered = registry.get(preferredProvider, config.modelName);
+    if (
+      !registered ||
+      registered.status !== "active" ||
+      registered.protocol !== config.modelProvider
+    ) {
+      throw new Error(
+        `Configured route ${preferredProvider}:${config.modelName} is not active in Model Registry ${registry.version}`
+      );
     }
 
     if (config.modelProvider === "openai-compatible") {
@@ -44,13 +91,18 @@ export const buildModelRuntime = (config: ServerConfig): ModelRuntime => {
   }
 
   return {
-    gateway: new ModelGateway(adapters, config.modelFallbackToMock ? ["mock"] : []),
+    gateway: new ModelGateway(
+      adapters,
+      router,
+      config.modelFallbackToMock && preferredProvider !== "mock" ? ["mock"] : []
+    ),
     manager: new ManagerService({
       preferredProvider,
       preferredModelAlias: config.modelName,
       fallbackAllowed: config.modelFallbackToMock,
       timeoutMs: config.managerTimeoutMs,
       maxOutputTokens: config.managerMaxOutputTokens
-    })
+    }),
+    registryVersion: registry.version
   };
 };

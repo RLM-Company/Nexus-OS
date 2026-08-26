@@ -1,7 +1,7 @@
 # ADR-003: Versioned Model Registry and deterministic routing
 
 **Date:** 2026-08-24  
-**Status:** PROPOSED / IMPLEMENTED IN B0.2 CANDIDATE
+**Status:** ACCEPTED / RUNTIME INTEGRATION IN REVIEW
 
 ## Context
 
@@ -42,5 +42,10 @@ constraint. Ties are resolved by stable provider/model identity.
 
 The bootstrap registry contains only the deterministic mock model. A VibeCode entry is not invented
 from assumptions: it remains absent until authorized discovery provides exact model IDs,
-capabilities, limits, pricing, and data-policy evidence. The existing B0.1 provider path continues
-to work until the registry-backed route is integrated behind the same `ModelRequest` boundary.
+capabilities, limits, pricing, and data-policy evidence.
+
+The B0.2 runtime integration resolves every provider attempt through the Router, verifies that the
+configured adapter identity and model exactly match the selected registry entry, and fails closed
+when they do not. Route attempts are reserved in `model_usage_ledger`; final model, upstream token
+usage, and calculated cost are committed atomically with successful run completion. Failed,
+cancelled, and restart-interrupted attempts receive terminal ledger states.

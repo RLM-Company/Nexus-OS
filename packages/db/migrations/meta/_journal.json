@@ -43,6 +43,13 @@
       "when": 1787755241380,
       "tag": "0005_cosmora_system_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787756411936,
+      "tag": "0006_model_usage_ledger",
+      "breakpoints": true
     }
   ]
 }

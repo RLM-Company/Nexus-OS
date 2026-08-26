@@ -23,6 +23,7 @@ interface CompletionChunk {
 
 export class OpenAICompatibleAdapter implements ModelProviderAdapter {
   readonly id: string;
+  readonly modelId: string;
   readonly #baseUrl: string;
   readonly #apiKey: string;
   readonly #model: string;
@@ -30,6 +31,7 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
 
   constructor(options: OpenAICompatibleAdapterOptions) {
     this.id = options.id;
+    this.modelId = options.model;
     this.#baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.#apiKey = options.apiKey;
     this.#model = options.model;
@@ -67,7 +69,7 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
 
     let resolvedModel = this.#model;
     let finishReason = "stop";
-    let usage = { inputTokens: 0, outputTokens: 0 };
+    let usage = { inputTokens: null as number | null, outputTokens: null as number | null };
 
     for await (const payload of this.#readDataPayloads(response.body)) {
       if (payload === "[DONE]") break;
@@ -91,8 +93,8 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       if (choice?.finish_reason) finishReason = choice.finish_reason;
       if (chunk.usage) {
         usage = {
-          inputTokens: chunk.usage.prompt_tokens ?? 0,
-          outputTokens: chunk.usage.completion_tokens ?? 0
+          inputTokens: chunk.usage.prompt_tokens ?? null,
+          outputTokens: chunk.usage.completion_tokens ?? null
         };
       }
     }

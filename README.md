@@ -23,6 +23,10 @@ Implemented through the current checkpoint:
 - B01-018: OpenAI-compatible streaming provider adapter and token accounting.
 - B01-019: restart recovery, owner isolation, strict idempotency, durable cancellation, and a
   browser acceptance gate.
+- B02-001: versioned Model Registry and deterministic Router with fail-closed privacy, context, and
+  budget filters.
+- B02-002: registry-backed runtime selection and an atomic SQLite Usage Ledger for route attempts,
+  token usage, and calculated cost.
 
 The current vertical slice creates real local projects and can stream either deterministic
 mock-manager responses or a configured OpenAI-compatible model. Tool execution and autonomous
@@ -51,9 +55,11 @@ Keep the API key only in a local `.env` file (never paste it into chat or commit
 
 ```dotenv
 MODEL_PROVIDER=openai-compatible
+MODEL_PROVIDER_ID=vibecode
 MODEL_BASE_URL=https://your-provider.example/v1
 MODEL_API_KEY=your-local-secret
 MODEL_NAME=provider-model-id
+# MODEL_REGISTRY_PATH=/absolute/path/to/model-registry.v1.json
 MODEL_FALLBACK_TO_MOCK=true
 ```
 
@@ -61,6 +67,12 @@ The provider must expose an OpenAI-compatible streaming `POST /chat/completions`
 does not expose the key through its health or runtime-status APIs. If the provider fails before the
 first response token, optional mock fallback keeps the local workflow usable; after output begins,
 the gateway fails the run instead of mixing responses from two models.
+
+An external route starts only when `MODEL_PROVIDER_ID:MODEL_NAME` is active in the selected
+versioned Model Registry and its protocol matches `MODEL_PROVIDER`. Missing, disabled, or
+mismatched metadata fails startup instead of bypassing the Router. Unknown pricing remains allowed
+only for requests without a hard cost limit; unknown privacy never qualifies for confidential
+routing.
 
 Run the complete verification pipeline with:
 

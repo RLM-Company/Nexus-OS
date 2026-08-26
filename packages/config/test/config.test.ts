@@ -10,6 +10,8 @@ describe("loadServerConfig", () => {
       webOrigin: "http://localhost:3000",
       databaseUrl: "file:./data/cosmora.db",
       modelProvider: "mock",
+      modelProviderId: "mock",
+      modelRegistryPath: null,
       modelBaseUrl: null,
       modelApiKey: null,
       modelName: "manager",
@@ -37,6 +39,12 @@ describe("loadServerConfig", () => {
     );
   });
 
+  it("keeps the mock provider identity canonical", () => {
+    expect(() => loadServerConfig({ MODEL_PROVIDER_ID: "external" })).toThrow(
+      "Invalid server configuration: /MODEL_PROVIDER_ID"
+    );
+  });
+
   it.each(["openai-compatible", "anthropic-compatible"] as const)(
     "requires complete %s provider settings",
     (provider) => {
@@ -57,6 +65,7 @@ describe("loadServerConfig", () => {
         })
       ).toMatchObject({
         modelProvider: provider,
+        modelProviderId: "vibecode",
         modelBaseUrl: "https://provider.example/v1",
         modelName: "manager-model",
         modelFallbackToMock: false
