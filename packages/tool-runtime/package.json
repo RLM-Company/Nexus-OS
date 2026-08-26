@@ -1,5 +1,5 @@
 {
-  "name": "@nexus/tool-runtime",
+  "name": "@cosmora/tool-runtime",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -20,8 +20,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nexus/contracts": "workspace:*",
-    "@nexus/db": "workspace:*",
-    "@nexus/policy-engine": "workspace:*"
+    "@cosmora/contracts": "workspace:*",
+    "@cosmora/db": "workspace:*",
+    "@cosmora/policy-engine": "workspace:*"
   }
 }

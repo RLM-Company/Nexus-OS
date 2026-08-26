@@ -1,4 +1,4 @@
-import { loadServerConfig } from "@nexus/config";
+import { loadServerConfig } from "@cosmora/config";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 

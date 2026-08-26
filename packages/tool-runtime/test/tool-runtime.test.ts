@@ -1,4 +1,4 @@
-import { PolicyStore, ProjectStore, openDatabase, runMigrations } from "@nexus/db";
+import { PolicyStore, ProjectStore, openDatabase, runMigrations } from "@cosmora/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GuardedToolRuntime } from "../src/index.js";
 

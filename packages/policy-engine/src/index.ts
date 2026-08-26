@@ -11,7 +11,7 @@ import {
   type PolicyIntent,
   type PolicyVerdict,
   type PolicyVerdictKind
-} from "@nexus/contracts";
+} from "@cosmora/contracts";
 
 export interface PolicyEvaluationOptions {
   evaluatedAt: string;

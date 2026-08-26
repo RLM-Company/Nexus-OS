@@ -6,7 +6,7 @@ import {
   type CapabilityProfile,
   type PermissionContract,
   type PolicyIntent
-} from "@nexus/contracts";
+} from "@cosmora/contracts";
 import { describe, expect, it } from "vitest";
 import { evaluatePolicy } from "../src/index.js";
 

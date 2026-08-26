@@ -1,4 +1,4 @@
-import type { CapabilityId, PolicyIntent, PolicyVerdict } from "@nexus/contracts";
+import type { CapabilityId, PolicyIntent, PolicyVerdict } from "@cosmora/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase, PolicyStore, ProjectStore, runMigrations } from "../src/index.js";
 

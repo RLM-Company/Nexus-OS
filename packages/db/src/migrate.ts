@@ -1,4 +1,4 @@
-import { loadServerConfig } from "@nexus/config";
+import { loadServerConfig } from "@cosmora/config";
 import { openDatabase, runMigrations } from "./index.js";
 
 const config = loadServerConfig();

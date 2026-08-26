@@ -1,8 +1,8 @@
-import type { Message, ModelMessage, ModelRequest } from "@nexus/contracts";
+import type { Message, ModelMessage, ModelRequest } from "@cosmora/contracts";
 
-export const MANAGER_AGENT_ID = "nexus-manager";
+export const MANAGER_AGENT_ID = "cosmora-manager";
 
-export const DEFAULT_MANAGER_SYSTEM_PROMPT = `Ты — Nexus Manager, управляющий менеджер проекта.
+export const DEFAULT_MANAGER_SYSTEM_PROMPT = `Ты — Cosmora Manager, управляющий менеджер проекта.
 
 Твоя задача — превращать запрос владельца в ясный, проверяемый план и вести проект к результату.
 

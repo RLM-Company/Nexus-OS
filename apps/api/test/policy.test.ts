@@ -1,6 +1,6 @@
-import { loadServerConfig } from "@nexus/config";
-import type { PolicyIntent, PolicyVerdict } from "@nexus/contracts";
-import { openDatabase, PolicyStore, ProjectStore, runMigrations } from "@nexus/db";
+import { loadServerConfig } from "@cosmora/config";
+import type { PolicyIntent, PolicyVerdict } from "@cosmora/contracts";
+import { openDatabase, PolicyStore, ProjectStore, runMigrations } from "@cosmora/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { buildModelRuntime } from "../src/model-runtime.js";

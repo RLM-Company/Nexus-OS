@@ -1,4 +1,4 @@
-import type { ModelRequest } from "@nexus/contracts";
+import type { ModelRequest } from "@cosmora/contracts";
 import { GatewayRunError, type ModelProviderAdapter, type ProviderStreamEvent } from "./types.js";
 
 export type MockProviderMode =
@@ -57,7 +57,7 @@ export class MockProviderAdapter implements ModelProviderAdapter {
     const parts = [
       "Принял задачу. ",
       `В проекте зафиксирована цель: «${summarize(prompt)}». `,
-      "Сейчас Nexus работает в безопасном mock-режиме: сообщение уже сохранено в локальной базе, а этот ответ передаётся потоком. ",
+      "Сейчас Cosmora работает в безопасном mock-режиме: сообщение уже сохранено в локальной базе, а этот ответ передаётся потоком. ",
       "Следующий этап подключит настоящего менеджера и исполнителей через Model Gateway."
     ];
 

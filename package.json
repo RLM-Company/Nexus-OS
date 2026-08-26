@@ -1,5 +1,5 @@
 {
-  "name": "nexus-os",
+  "name": "cosmora-os",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.19.0",
@@ -10,7 +10,7 @@
     "check:secrets": "node scripts/check-secrets.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "test:e2e": "pnpm --filter @nexus/web test:e2e",
+    "test:e2e": "pnpm --filter @cosmora/web test:e2e",
     "typecheck": "turbo run typecheck",
     "check": "pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e"
   },

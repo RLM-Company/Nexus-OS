@@ -3,7 +3,7 @@ import type {
   ModelFeature,
   ModelRegistryEntry,
   ModelRouteRequest
-} from "@nexus/contracts";
+} from "@cosmora/contracts";
 import type { ModelRegistry } from "./model-registry.js";
 
 export type ModelRouteFailureCode =

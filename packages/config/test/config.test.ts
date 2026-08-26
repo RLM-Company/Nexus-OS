@@ -8,7 +8,7 @@ describe("loadServerConfig", () => {
       apiHost: "127.0.0.1",
       apiPort: 3100,
       webOrigin: "http://localhost:3000",
-      databaseUrl: "file:./data/nexus.db",
+      databaseUrl: "file:./data/cosmora.db",
       modelProvider: "mock",
       modelBaseUrl: null,
       modelApiKey: null,

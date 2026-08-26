@@ -1,4 +1,4 @@
-import type { ModelRequest } from "@nexus/contracts";
+import type { ModelRequest } from "@cosmora/contracts";
 import { describe, expect, it } from "vitest";
 import {
   GatewayRunError,

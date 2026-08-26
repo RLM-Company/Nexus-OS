@@ -1,5 +1,5 @@
-import { loadServerConfig } from "@nexus/config";
-import { openDatabase, PolicyStore, ProjectStore, runMigrations } from "@nexus/db";
+import { loadServerConfig } from "@cosmora/config";
+import { openDatabase, PolicyStore, ProjectStore, runMigrations } from "@cosmora/db";
 import { buildApp } from "./app.js";
 import { buildModelRuntime } from "./model-runtime.js";
 
@@ -14,7 +14,7 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     process.exitCode = 0;
     return;
   }
-  app.log.info({ signal }, "Shutting down Nexus API");
+  app.log.info({ signal }, "Shutting down Cosmora API");
   await app.close();
   process.exitCode = 0;
 };
@@ -41,11 +41,11 @@ try {
   await app.listen({ host: config.apiHost, port: config.apiPort });
 } catch (error) {
   if (app) {
-    app.log.error(error, "Failed to start Nexus API");
+    app.log.error(error, "Failed to start Cosmora API");
     await app.close();
   } else {
     database.close();
-    process.stderr.write("Failed to start Nexus API\n");
+    process.stderr.write("Failed to start Cosmora API\n");
   }
   process.exitCode = 1;
 }

@@ -1,4 +1,4 @@
-# Execution Safety Synmetis AI v1
+# Execution Safety Cosmora AI v1
 
 > Статус: `OWNER APPROVED SPECIFICATION / NOT RUNTIME`  
 > Дата: `2026-08-24`

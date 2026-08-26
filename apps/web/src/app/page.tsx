@@ -90,7 +90,7 @@ const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
     const body = (await response.json().catch(() => null)) as {
       error?: { message?: string };
     } | null;
-    throw new Error(body?.error?.message ?? `Nexus API returned ${response.status}`);
+    throw new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
   }
   return (await response.json()) as T;
 };
@@ -155,7 +155,7 @@ export default function Home() {
       loadProjects(),
       api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
     ])
-      .catch(() => setError("API Nexus пока недоступен. Запусти web и api вместе."))
+      .catch(() => setError("API Cosmora пока недоступен. Запусти web и api вместе."))
       .finally(() => setLoading(false));
     return () => streamRef.current?.close();
   }, [loadProjects]);
@@ -340,7 +340,7 @@ export default function Home() {
           <span className="brand-mark">
             <SparkIcon />
           </span>
-          <span>Nexus</span>
+          <span>Cosmora</span>
           <span className="version">B0.1</span>
         </div>
 
@@ -389,7 +389,7 @@ export default function Home() {
         <header className="topbar">
           <div>
             <span className="eyebrow">{activeProject ? "Активный проект" : "Рабочая область"}</span>
-            <h1>{activeProject?.title ?? "Nexus Control Center"}</h1>
+            <h1>{activeProject?.title ?? "Cosmora Control Center"}</h1>
           </div>
           <div className="system-status" aria-label="Статус системы">
             <span>
@@ -425,7 +425,7 @@ export default function Home() {
                 <SparkIcon />
               </span>
               <div>
-                <strong>Nexus Manager</strong>
+                <strong>Cosmora Manager</strong>
                 <small>
                   {runtime?.mode === "openai-compatible"
                     ? `${runtime.model} · fallback ${runtime.fallback_to_mock ? "включён" : "выключен"}`
@@ -444,7 +444,7 @@ export default function Home() {
                   </span>
                   <div>
                     <header>
-                      <strong>{message.role === "user" ? "Вы" : "Nexus Manager"}</strong>
+                      <strong>{message.role === "user" ? "Вы" : "Cosmora Manager"}</strong>
                       <time>
                         {new Date(message.created_at).toLocaleTimeString("ru", {
                           hour: "2-digit",
@@ -476,7 +476,7 @@ export default function Home() {
                 От задачи —<br />к управляемому проекту
               </h2>
               <p>
-                Опишите результат. Nexus создаст проект, сохранит контекст и откроет главный чат с
+                Опишите результат. Cosmora создаст проект, сохранит контекст и откроет главный чат с
                 менеджером.
               </p>
             </section>
@@ -544,7 +544,7 @@ export default function Home() {
             <span>
               {error ??
                 (sending
-                  ? "Nexus выполняет запуск…"
+                  ? "Cosmora выполняет запуск…"
                   : chatId
                     ? "Enter — отправить · Shift+Enter — новая строка"
                     : "Проект создастся автоматически")}

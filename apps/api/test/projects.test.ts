@@ -1,5 +1,5 @@
-import { loadServerConfig } from "@nexus/config";
-import { openDatabase, ProjectStore, runMigrations } from "@nexus/db";
+import { loadServerConfig } from "@cosmora/config";
+import { openDatabase, ProjectStore, runMigrations } from "@cosmora/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
