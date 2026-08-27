@@ -18,6 +18,22 @@ export class ModelRegistry {
       if (entry.max_output_tokens > entry.context_window_tokens) {
         throw new Error(`Model output limit exceeds its context window: ${key}`);
       }
+      if (
+        entry.privacy.confidential_compatible &&
+        (entry.privacy.training_usage !== "none" || entry.privacy.retention === "unknown")
+      ) {
+        throw new Error(`Confidential compatibility is not fully declared: ${key}`);
+      }
+      if (entry.status !== "active") continue;
+      if (!entry.source.verified_at || !entry.source.reference?.trim()) {
+        throw new Error(`Active model route is missing verification evidence: ${key}`);
+      }
+      if (!entry.capabilities.streaming) {
+        throw new Error(`Active model route does not support gateway streaming: ${key}`);
+      }
+      if (entry.protocol !== "mock" && entry.source.kind !== "authorized_discovery") {
+        throw new Error(`Active external model route was not authorized through discovery: ${key}`);
+      }
     }
     this.#document = structuredClone(document);
   }

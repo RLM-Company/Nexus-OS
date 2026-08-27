@@ -86,6 +86,99 @@ describe("ModelRegistry", () => {
         new ModelRegistry(document([entry({ context_window_tokens: 100, max_output_tokens: 101 })]))
     ).toThrow("output limit exceeds");
   });
+
+  it("rejects an active route without verification evidence", () => {
+    expect(
+      () =>
+        new ModelRegistry(
+          document([
+            entry({
+              source: {
+                kind: "authorized_discovery",
+                verified_at: null,
+                reference: null
+              }
+            })
+          ])
+        )
+    ).toThrow("missing verification evidence");
+  });
+
+  it("allows an unverified route to remain disabled and unroutable", () => {
+    const registry = new ModelRegistry(
+      document([
+        entry({
+          status: "disabled",
+          capabilities: {
+            streaming: false,
+            structured_output: false,
+            tool_calling: false,
+            vision: false
+          },
+          source: {
+            kind: "static",
+            verified_at: null,
+            reference: null
+          }
+        })
+      ])
+    );
+
+    expect(registry.list()).toHaveLength(1);
+    expectRouteError(() => new ModelRouter(registry).resolve(request()), "NO_ENABLED_MODEL");
+  });
+
+  it("rejects an active route that cannot satisfy the streaming gateway contract", () => {
+    expect(
+      () =>
+        new ModelRegistry(
+          document([
+            entry({
+              capabilities: {
+                streaming: false,
+                structured_output: true,
+                tool_calling: false,
+                vision: false
+              }
+            })
+          ])
+        )
+    ).toThrow("does not support gateway streaming");
+  });
+
+  it("rejects an active external route that bypassed authorized discovery", () => {
+    expect(
+      () =>
+        new ModelRegistry(
+          document([
+            entry({
+              source: {
+                kind: "static",
+                verified_at: "2026-08-24T00:00:00.000Z",
+                reference: "unreviewed-fixture"
+              }
+            })
+          ])
+        )
+    ).toThrow("was not authorized through discovery");
+  });
+
+  it("rejects a contradictory confidential compatibility declaration", () => {
+    expect(
+      () =>
+        new ModelRegistry(
+          document([
+            entry({
+              privacy: {
+                confidential_compatible: true,
+                training_usage: "unknown",
+                retention: "unknown"
+              }
+            })
+          ])
+        )
+    ).toThrow("Confidential compatibility is not fully declared");
+  });
 });
 
 describe("ModelRouter", () => {

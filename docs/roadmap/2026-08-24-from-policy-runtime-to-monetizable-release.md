@@ -56,13 +56,13 @@
 контрактов UI.
 
 **Прогресс на 2026-08-27:** Model Registry, детерминированный Router, registry-backed runtime,
-атомарный Usage Ledger, per-attempt timeout, bounded retry, exponential backoff и exact-route
-circuit breaker слиты в `main`; авторизованный VibeCode streaming-check прошёл. Следующий
-review-инкремент добавляет content-free observability и durable process/project emergency stop.
-После него provider-neutral Secret Resolver убирает значение ключа из parsed-конфига и оставляет
-только server-side разрешение в composition root. Точная metadata реальной модели, выбор production
-Secret Manager backend, проверка structured output/tool calling и финальный B0.2 acceptance gate
-ещё не закрыты.
+атомарный Usage Ledger, reliability layer, content-free observability, durable emergency stop и
+provider-neutral Secret Resolver слиты в `main`; авторизованный VibeCode streaming-check прошёл.
+Registry activation gate находится в review: он запрещает включать внешний маршрут без
+authorized-discovery evidence, verification timestamp и streaming capability, а также отклоняет
+противоречивые confidential-декларации. Точная metadata реальной модели, выбор production Secret
+Manager backend, проверка structured output/tool calling и финальный B0.2 acceptance gate ещё не
+закрыты.
 
 Действия:
 

@@ -67,7 +67,7 @@ const entry = (overrides: Partial<ModelRegistryEntry> = {}): ModelRegistryEntry 
     retention: "zero"
   },
   source: {
-    kind: "static",
+    kind: "authorized_discovery",
     verified_at: "2026-08-24T00:00:00.000Z",
     reference: "test"
   },
