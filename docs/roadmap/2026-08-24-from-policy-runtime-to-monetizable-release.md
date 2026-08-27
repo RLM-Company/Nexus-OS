@@ -60,9 +60,10 @@
 provider-neutral Secret Resolver слиты в `main`; авторизованный VibeCode streaming-check прошёл.
 Registry activation gate находится в review: он запрещает включать внешний маршрут без
 authorized-discovery evidence, verification timestamp и streaming capability, а также отклоняет
-противоречивые confidential-декларации. Точная metadata реальной модели, выбор production Secret
-Manager backend, проверка structured output/tool calling и финальный B0.2 acceptance gate ещё не
-закрыты.
+противоречивые confidential-декларации. Два отдельно авторизованных запроса к
+`claude-sonnet-5` завершены: structured output и forced tool calling не прошли обязательные
+контракты. Точная metadata реальной модели, разрешение privacy-конфликта, выбор production Secret
+Manager backend и финальный B0.2 acceptance gate ещё не закрыты.
 
 Действия:
 
