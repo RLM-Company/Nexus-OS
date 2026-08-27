@@ -471,10 +471,10 @@ export class ProjectStore {
     return row ? asMessage(row) : null;
   }
 
-  startAssistantMessage(runId: string): StoredMessage | null {
-    const run = this.getRun(runId);
+  startAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredMessage | null {
+    const run = this.getRun(runId, ownerId);
     if (!run) return null;
-    const existing = this.getAssistantMessage(runId);
+    const existing = this.getAssistantMessage(runId, ownerId);
     if (existing) return existing;
 
     const timestamp = now();

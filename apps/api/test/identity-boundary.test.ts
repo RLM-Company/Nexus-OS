@@ -1,0 +1,142 @@
+import { loadServerConfig } from "@cosmora/config";
+import {
+  EmergencyStopStore,
+  IdentityStore,
+  openDatabase,
+  ProjectStore,
+  runMigrations
+} from "@cosmora/db";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildApp } from "../src/app.js";
+import { BearerSessionIdentityResolver } from "../src/identity.js";
+import { buildModelRuntime } from "../src/model-runtime.js";
+
+describe("API identity boundary", () => {
+  const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
+  let database: ReturnType<typeof openDatabase>;
+  let identityStore: IdentityStore;
+  let app: ReturnType<typeof buildApp>;
+  let ownerOneToken: string;
+  let ownerTwoToken: string;
+
+  beforeEach(async () => {
+    database = openDatabase(":memory:");
+    await runMigrations(database);
+    identityStore = new IdentityStore(database.sqlite, {
+      now: () => Date.parse("2026-08-27T12:00:00.000Z")
+    });
+    identityStore.registerActor("owner-1", "owner-actor-1", "owner");
+    identityStore.registerActor("owner-2", "owner-actor-2", "owner");
+    ownerOneToken = identityStore.issueSession({
+      ownerId: "owner-1",
+      actorId: "owner-actor-1",
+      assurance: "single_factor",
+      ttlMs: 60_000
+    }).token;
+    ownerTwoToken = identityStore.issueSession({
+      ownerId: "owner-2",
+      actorId: "owner-actor-2",
+      assurance: "single_factor",
+      ttlMs: 60_000
+    }).token;
+    const runtime = await buildModelRuntime(config);
+    app = buildApp({
+      config,
+      database,
+      projectStore: new ProjectStore(database.sqlite),
+      emergencyStopStore: new EmergencyStopStore(database.sqlite),
+      modelGateway: runtime.gateway,
+      manager: runtime.manager,
+      identityResolver: new BearerSessionIdentityResolver(identityStore)
+    });
+  });
+
+  afterEach(async () => {
+    await app.close();
+    database.close();
+  });
+
+  it("requires a valid bearer session outside the public health endpoint", async () => {
+    const health = await app.inject({ method: "GET", url: "/api/v1/health" });
+    const missing = await app.inject({ method: "GET", url: "/api/v1/projects" });
+    const malformed = await app.inject({
+      method: "GET",
+      url: "/api/v1/projects",
+      headers: { authorization: "Bearer malformed" }
+    });
+
+    expect(health.statusCode).toBe(200);
+    expect(missing.statusCode).toBe(401);
+    expect(missing.json<{ error: { code: string } }>().error.code).toBe("UNAUTHORIZED");
+    expect(malformed.statusCode).toBe(401);
+  });
+
+  it("propagates owner and actor identity without leaking session tokens", async () => {
+    const authorization = { authorization: `Bearer ${ownerOneToken}` };
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      headers: authorization,
+      payload: { initial_message: "Owner one project", client_message_id: "identity-owner-1" }
+    });
+    const projectId = created.json<{ project: { id: string } }>().project.id;
+    const hiddenList = await app.inject({
+      method: "GET",
+      url: "/api/v1/projects",
+      headers: { authorization: `Bearer ${ownerTwoToken}` }
+    });
+    const hiddenDetail = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${projectId}`,
+      headers: { authorization: `Bearer ${ownerTwoToken}` }
+    });
+    const stopped = await app.inject({
+      method: "POST",
+      url: "/api/v1/operations/emergency-stop",
+      headers: authorization,
+      payload: { scope: "project", project_id: projectId, reason: "Identity audit test" }
+    });
+
+    expect(created.statusCode).toBe(201);
+    expect(hiddenList.json<{ items: unknown[] }>().items).toHaveLength(0);
+    expect(hiddenDetail.statusCode).toBe(404);
+    expect(stopped.json()).toMatchObject({ activated_by: "owner-actor-1" });
+    expect(created.body).not.toContain(ownerOneToken);
+    expect(stopped.body).not.toContain(ownerOneToken);
+  });
+
+  it("rejects a revoked session immediately", async () => {
+    const issued = identityStore.listSessions("owner-1")[0];
+    expect(issued).toBeDefined();
+    identityStore.revokeSession(
+      issued?.session_id ?? "",
+      "owner-1",
+      "owner-actor-1",
+      "Security logout"
+    );
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/projects",
+      headers: { authorization: `Bearer ${ownerOneToken}` }
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("fails production construction without an explicit resolver", async () => {
+    await app.close();
+    database.close();
+    const productionConfig = { ...config, nodeEnv: "production" as const };
+
+    expect(() =>
+      buildApp({
+        config: productionConfig,
+        database: { ping: () => undefined }
+      })
+    ).toThrow("Production requires an explicit verified identity resolver");
+
+    database = openDatabase(":memory:");
+    await runMigrations(database);
+    app = buildApp({ config, database: { ping: () => undefined } });
+  });
+});

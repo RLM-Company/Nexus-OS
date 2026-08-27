@@ -56,9 +56,13 @@ export class RuntimeMetrics {
     this.#lastFailureAt = new Date().toISOString();
   }
 
-  snapshot(stopStore: EmergencyStopStore, activeRuns: number): RuntimeOperationsStatus {
+  snapshot(
+    stopStore: EmergencyStopStore,
+    activeRuns: number,
+    ownerId?: string
+  ): RuntimeOperationsStatus {
     const processStop = stopStore.getProcessStop();
-    const projectStops = stopStore.countActiveProjectStops();
+    const projectStops = stopStore.countActiveProjectStops(ownerId);
     const alerts: RuntimeOperationsStatus["alerts"] = [];
     if (processStop) {
       alerts.push({

@@ -28,6 +28,7 @@ import {
   type ConfirmationListResponse,
   type EmergencyStopState,
   type HealthResponse,
+  type IdentityContext,
   type MessageAcceptedResponse,
   type ModelRuntimeStatus,
   type ProjectDetailResponse,
@@ -49,7 +50,12 @@ import {
   type ModelGateway,
   type ModelGatewayStreamEvent
 } from "@cosmora/model-gateway";
-import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import {
+  LOCAL_DEVELOPMENT_IDENTITY,
+  StaticIdentityResolver,
+  type RequestIdentityResolver
+} from "./identity.js";
 import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 
 export interface AppDependencies {
@@ -61,6 +67,7 @@ export interface AppDependencies {
   modelGateway?: ModelGateway;
   manager?: ManagerService;
   modelRegistryVersion?: string;
+  identityResolver?: RequestIdentityResolver;
   stepUpVerifier?: (token: string, purpose: string) => Promise<boolean>;
   closeDatabase?: () => void;
   runtimeMetrics?: RuntimeMetrics;
@@ -135,6 +142,15 @@ const completedReplay = (
 };
 
 export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
+  const identityResolver =
+    dependencies.identityResolver ??
+    (dependencies.config.nodeEnv === "production"
+      ? null
+      : new StaticIdentityResolver(LOCAL_DEVELOPMENT_IDENTITY));
+  if (!identityResolver) {
+    throw new Error("Production requires an explicit verified identity resolver");
+  }
+
   const app = Fastify({
     logger:
       dependencies.config.nodeEnv === "test"
@@ -149,8 +165,33 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           }
   }).withTypeProvider<TypeBoxTypeProvider>();
 
-  const activeRuns = new Map<string, { projectId: string; controller: AbortController }>();
+  const activeRuns = new Map<
+    string,
+    { projectId: string; ownerId: string; controller: AbortController }
+  >();
   const runtimeMetrics = dependencies.runtimeMetrics ?? new RuntimeMetrics();
+  const requestIdentities = new WeakMap<FastifyRequest, IdentityContext>();
+  const identityFor = (request: FastifyRequest): IdentityContext => {
+    const identity = requestIdentities.get(request);
+    if (!identity) throw new Error("Authenticated request is missing its identity context");
+    return identity;
+  };
+
+  app.addHook("onRequest", async (request, reply) => {
+    if (request.url.split("?", 1)[0] === "/api/v1/health") return;
+    let identity: IdentityContext | null = null;
+    try {
+      identity = await identityResolver.resolve(request);
+    } catch {
+      app.log.warn({ requestId: request.id }, "Identity resolution failed closed");
+    }
+    if (!identity) {
+      return reply
+        .status(401)
+        .send(errorBody(request.id, "UNAUTHORIZED", "Verified identity is required"));
+    }
+    requestIdentities.set(request, identity);
+  });
 
   app.get(
     "/api/v1/health",
@@ -178,10 +219,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     app.get(
       "/api/v1/operations/status",
       { schema: { response: { 200: RuntimeOperationsStatusSchema } } },
-      () => {
+      (request) => {
+        const identity = identityFor(request);
         const response: RuntimeOperationsStatus = runtimeMetrics.snapshot(
           stopStore,
-          activeRuns.size
+          [...activeRuns.values()].filter((active) => active.ownerId === identity.owner_id).length,
+          identity.owner_id
         );
         return response;
       }
@@ -204,10 +247,16 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             .status(400)
             .send(errorBody(request.id, "VALIDATION_ERROR", "Request validation failed"));
         }
+        const identity = identityFor(request);
         const state =
           request.body.scope === "process"
-            ? stopStore.activateProcess(request.body.reason)
-            : stopStore.activateProject(request.body.project_id as string, request.body.reason);
+            ? stopStore.activateProcess(request.body.reason, identity.actor_id)
+            : stopStore.activateProject(
+                request.body.project_id as string,
+                request.body.reason,
+                identity.actor_id,
+                identity.owner_id
+              );
         if (!state) {
           return reply
             .status(404)
@@ -261,8 +310,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     app.get(
       "/api/v1/projects",
       { schema: { response: { 200: ProjectListResponseSchema } } },
-      () => {
-        const response: ProjectListResponse = { items: store.listProjects() };
+      (request) => {
+        const response: ProjectListResponse = {
+          items: store.listProjects(identityFor(request).owner_id)
+        };
         return response;
       }
     );
@@ -282,7 +333,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       async (request, reply) => {
         const accepted = store.createProject(
           request.body.initial_message,
-          request.body.client_message_id
+          request.body.client_message_id,
+          identityFor(request).owner_id
         );
         dependencies.policyStore?.ensureProfile(accepted.project.id);
         return reply.status(accepted.duplicate ? 200 : 201).send(acceptedResponse(accepted));
@@ -306,6 +358,11 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           }
         },
         async (request, reply) => {
+          if (!store.getProject(request.params.projectId, identityFor(request).owner_id)) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
           const profile = policyStore.ensureProfile(request.params.projectId);
           if (!profile) {
             return reply
@@ -337,7 +394,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           }
         },
         async (request, reply) => {
-          if (!store.getProject(request.params.projectId)) {
+          if (!store.getProject(request.params.projectId, identityFor(request).owner_id)) {
             return reply
               .status(404)
               .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
@@ -401,7 +458,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           }
         },
         async (request, reply) => {
-          if (!store.getProject(request.params.projectId)) {
+          if (!store.getProject(request.params.projectId, identityFor(request).owner_id)) {
             return reply
               .status(404)
               .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
@@ -434,7 +491,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         },
         async (request, reply) => {
           const pending = policyStore.getConfirmation(request.params.confirmationId);
-          if (!pending) {
+          if (!pending || !store.getProject(pending.project_id, identityFor(request).owner_id)) {
             return reply
               .status(404)
               .send(errorBody(request.id, "CONFIRMATION_NOT_FOUND", "Confirmation not found"));
@@ -457,7 +514,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             confirmationId: request.params.confirmationId,
             challengeNonce: request.body.challenge_nonce,
             decision: "approve",
-            decidedBy: "local-owner",
+            decidedBy: identityFor(request).actor_id,
             approvalMethod,
             ...(request.body.reason === undefined ? {} : { reason: request.body.reason })
           });
@@ -504,11 +561,17 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           }
         },
         async (request, reply) => {
+          const pending = policyStore.getConfirmation(request.params.confirmationId);
+          if (!pending || !store.getProject(pending.project_id, identityFor(request).owner_id)) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "CONFIRMATION_NOT_FOUND", "Confirmation not found"));
+          }
           const decision = policyStore.decideConfirmation({
             confirmationId: request.params.confirmationId,
             challengeNonce: request.body.challenge_nonce,
             decision: "reject",
-            decidedBy: "local-owner",
+            decidedBy: identityFor(request).actor_id,
             approvalMethod: "session",
             ...(request.body.reason === undefined ? {} : { reason: request.body.reason })
           });
@@ -550,8 +613,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
       },
       async (request, reply) => {
-        const project = store.getProject(request.params.projectId);
-        const chatId = store.getMainChatId(request.params.projectId);
+        const ownerId = identityFor(request).owner_id;
+        const project = store.getProject(request.params.projectId, ownerId);
+        const chatId = store.getMainChatId(request.params.projectId, ownerId);
         if (!project || !chatId) {
           return reply
             .status(404)
@@ -560,7 +624,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         const response: ProjectDetailResponse = {
           project,
           chat_id: chatId,
-          messages: store.listMessages(project.id)
+          messages: store.listMessages(project.id, ownerId)
         };
         return response;
       }
@@ -589,7 +653,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         const accepted = store.createMessage(
           request.params.projectId,
           request.body.content,
-          request.body.client_message_id
+          request.body.client_message_id,
+          identityFor(request).owner_id
         );
         if (!accepted) {
           return reply
@@ -614,7 +679,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
       },
       async (request, reply) => {
-        const cancelled = store.cancelRun(request.params.runId);
+        const cancelled = store.cancelRun(request.params.runId, identityFor(request).owner_id);
         if (cancelled === null) {
           return reply.status(404).send(errorBody(request.id, "RUN_NOT_FOUND", "Run not found"));
         }
@@ -647,8 +712,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
       },
       async (request, reply) => {
-        const run = store.getRun(request.params.runId);
-        const conversation = store.getConversationForRun(request.params.runId);
+        const ownerId = identityFor(request).owner_id;
+        const run = store.getRun(request.params.runId, ownerId);
+        const conversation = store.getConversationForRun(request.params.runId, ownerId);
         if (!run || conversation.length === 0) {
           return reply.status(404).send(errorBody(request.id, "RUN_NOT_FOUND", "Run not found"));
         }
@@ -666,7 +732,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           "x-accel-buffering": "no"
         });
 
-        const existing = store.getAssistantMessage(run.id);
+        const existing = store.getAssistantMessage(run.id, ownerId);
         if (run.status === "cancelled") {
           sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
           reply.raw.end();
@@ -696,9 +762,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           return reply;
         }
 
-        const blockingStop = dependencies.emergencyStopStore?.getBlockingStop(run.project_id);
+        const blockingStop = dependencies.emergencyStopStore?.getBlockingStop(
+          run.project_id,
+          ownerId
+        );
         if (blockingStop) {
-          store.startAssistantMessage(run.id);
+          store.startAssistantMessage(run.id, ownerId);
           store.failRun(run.id, "EMERGENCY_STOP");
           runtimeMetrics.runFailed("EMERGENCY_STOP");
           sendEvent(reply, {
@@ -713,7 +782,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           return reply;
         }
 
-        const assistant = store.startAssistantMessage(run.id);
+        const assistant = store.startAssistantMessage(run.id, ownerId);
         if (!assistant) {
           reply.raw.end();
           return reply;
@@ -732,7 +801,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         let size = assistant.content.length;
         let completed: Extract<ModelGatewayStreamEvent, { type: "response.completed" }> | undefined;
         const controller = new AbortController();
-        activeRuns.set(run.id, { projectId: run.project_id, controller });
+        activeRuns.set(run.id, { projectId: run.project_id, ownerId, controller });
         runtimeMetrics.runStarted();
         const onAborted = (): void => controller.abort(new Error("Client disconnected"));
         const onClosed = (): void => {
@@ -760,7 +829,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                 },
                 "Model route attempt selected"
               );
-              const reserved = store.reserveModelUsage(run.id, event.route);
+              const reserved = store.reserveModelUsage(run.id, event.route, ownerId);
               if (!reserved) {
                 throw new GatewayRunError(
                   "ROUTE_UNAVAILABLE",
@@ -860,8 +929,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             );
             return reply;
           }
-          if (controller.signal.aborted || store.getRun(run.id)?.status === "cancelled") {
-            store.cancelRun(run.id);
+          if (controller.signal.aborted || store.getRun(run.id, ownerId)?.status === "cancelled") {
+            store.cancelRun(run.id, ownerId);
             runtimeMetrics.runCancelled();
             if (!reply.raw.destroyed && !reply.raw.writableEnded) {
               sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
