@@ -6,7 +6,8 @@
 
 ## Text models visible in the evidence
 
-Prices are USD per 1 million input/output tokens as displayed by VibeCode.
+Prices are USD per 1 million input/output tokens as displayed by VibeCode at capture time. They are
+historical point-in-time evidence, not a current-price guarantee.
 
 | Display name             | Model ID                 |  Input | Output | Additional visible fact                           |
 | ------------------------ | ------------------------ | -----: | -----: | ------------------------------------------------- |
@@ -35,6 +36,18 @@ Prices are USD per 1 million input/output tokens as displayed by VibeCode.
 
 The screenshots also show image-generation products with per-image pricing. Those belong in a
 future tool/capability registry, not the text-model routing table.
+
+## Volatility update
+
+On 2026-08-27, after the screenshots were supplied, the owner reported that Kimi was no longer
+present in the current VibeCode catalog. The ten-file evidence set above does not contain a Kimi
+card, so no exact removal timestamp or removed model ID can be derived from it. The observation is
+recorded as current owner evidence and must not be rewritten into a permanent provider claim.
+
+No Kimi route exists in Cosmora's active Model Registry. A future catalog refresh must mark a
+missing route `disabled`; it must never preserve old availability or substitute another model by
+name. Pricing and availability evidence for every active external route now requires a bounded
+`valid_until` timestamp.
 
 ## Evidence limits
 

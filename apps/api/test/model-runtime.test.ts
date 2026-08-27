@@ -30,6 +30,7 @@ const externalEntry = (overrides: Partial<ModelRegistryEntry> = {}): ModelRegist
   source: {
     kind: "authorized_discovery",
     verified_at: "2026-08-25T00:00:00.000Z",
+    valid_until: "2099-08-25T00:00:00.000Z",
     reference: "authorized-test-fixture"
   },
   ...overrides

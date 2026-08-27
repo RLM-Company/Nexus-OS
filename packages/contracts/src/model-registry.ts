@@ -69,6 +69,7 @@ export const ModelRegistryEntrySchema = Type.Object(
       {
         kind: Type.Union([Type.Literal("static"), Type.Literal("authorized_discovery")]),
         verified_at: Type.Union([IsoDateTimeSchema, Type.Null()]),
+        valid_until: Type.Union([IsoDateTimeSchema, Type.Null()]),
         reference: Type.Union([Type.String({ minLength: 1 }), Type.Null()])
       },
       { additionalProperties: false }

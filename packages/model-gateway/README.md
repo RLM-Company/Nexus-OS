@@ -15,3 +15,7 @@ provider delta, and route events used by the atomic Usage Ledger. A timeout appl
 attempt; retry and fallback counts remain bounded by configuration. Provider credentials are
 resolved asynchronously through the server-only `SecretResolver` boundary and never enter Model
 Registry, Gateway, UI, logs, or parsed configuration.
+
+Active external metadata is time-bounded. Its authorized-discovery source must provide
+`verified_at`, `valid_until`, and an evidence reference; registry construction fails once that
+window expires so stale prices or vanished models cannot remain silently routable.

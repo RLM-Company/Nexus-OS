@@ -69,6 +69,7 @@ const entry = (overrides: Partial<ModelRegistryEntry> = {}): ModelRegistryEntry 
   source: {
     kind: "authorized_discovery",
     verified_at: "2026-08-24T00:00:00.000Z",
+    valid_until: "2099-08-24T00:00:00.000Z",
     reference: "test"
   },
   ...overrides
