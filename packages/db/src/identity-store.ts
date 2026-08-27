@@ -353,7 +353,7 @@ export class IdentityStore {
       .prepare(
         `SELECT event_id, owner_id, actor_id, session_id, event_type, outcome, reason_code,
            created_at
-         FROM identity_audit_events WHERE owner_id = ? ORDER BY created_at ASC, event_id ASC`
+         FROM identity_audit_events WHERE owner_id = ? ORDER BY created_at ASC, rowid ASC`
       )
       .all(ownerId) as unknown as SqlRow[];
     return rows.map(asAuditEvent);
