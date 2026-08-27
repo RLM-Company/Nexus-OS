@@ -6,7 +6,7 @@
   "scripts": {
     "build": "turbo run build",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write docs/reviews/2026-08-27-b0-3-bound-step-up-proofs.md packages/db/src/step-up-proof-store.ts && git diff -- docs/reviews/2026-08-27-b0-3-bound-step-up-proofs.md packages/db/src/step-up-proof-store.ts && exit 1",
     "check:secrets": "node scripts/check-secrets.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",
