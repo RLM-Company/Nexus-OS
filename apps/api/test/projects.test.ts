@@ -18,7 +18,7 @@ describe("project chat API", () => {
   beforeEach(async () => {
     database = openDatabase(":memory:");
     await runMigrations(database);
-    const runtime = buildModelRuntime(config);
+    const runtime = await buildModelRuntime(config);
     projectStore = new ProjectStore(database.sqlite);
     emergencyStopStore = new EmergencyStopStore(database.sqlite);
     app = buildApp({
@@ -116,7 +116,7 @@ describe("project chat API", () => {
     });
     database = openDatabase(":memory:");
     await runMigrations(database);
-    const runtime = buildModelRuntime(retryConfig);
+    const runtime = await buildModelRuntime(retryConfig);
     projectStore = new ProjectStore(database.sqlite);
     emergencyStopStore = new EmergencyStopStore(database.sqlite);
     app = buildApp({

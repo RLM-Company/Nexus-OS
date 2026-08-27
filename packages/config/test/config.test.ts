@@ -13,7 +13,7 @@ describe("loadServerConfig", () => {
       modelProviderId: "mock",
       modelRegistryPath: null,
       modelBaseUrl: null,
-      modelApiKey: null,
+      modelApiKeyConfigured: false,
       modelName: "manager",
       modelFallbackToMock: true,
       modelMaxAttemptsPerRoute: 2,
@@ -74,8 +74,19 @@ describe("loadServerConfig", () => {
         modelProviderId: "vibecode",
         modelBaseUrl: "https://provider.example/v1",
         modelName: "manager-model",
-        modelFallbackToMock: false
+        modelFallbackToMock: false,
+        modelApiKeyConfigured: true
       });
+      expect(
+        JSON.stringify(
+          loadServerConfig({
+            MODEL_PROVIDER: provider,
+            MODEL_BASE_URL: "https://provider.example/v1",
+            MODEL_API_KEY: "must-not-survive-config-loading",
+            MODEL_NAME: "manager-model"
+          })
+        )
+      ).not.toContain("must-not-survive-config-loading");
     }
   );
 

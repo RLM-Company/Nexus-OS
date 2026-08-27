@@ -11,3 +11,7 @@ Fastify server for Cosmora OS. It applies SQLite migrations during startup and e
 The API owns provider credentials. They are never sent to the browser. Operational logs include
 route identity, attempt, error code, token counts, and calculated cost, but never prompts, response
 content, or credentials.
+
+The parsed `ServerConfig` contains only `modelApiKeyConfigured`. The actual key is resolved through
+the asynchronous `SecretResolver` at the API composition boundary and passed directly into the
+server-only adapter.

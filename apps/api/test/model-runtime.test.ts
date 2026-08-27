@@ -42,6 +42,13 @@ const registry = (entries: ModelRegistryEntry[]): ModelRegistryDocument => ({
   entries
 });
 
+const secretResolver = {
+  resolve: async (name: "MODEL_API_KEY"): Promise<string | null> => {
+    await Promise.resolve();
+    return name === "MODEL_API_KEY" ? "test-runtime-secret" : null;
+  }
+};
+
 const externalConfig = () =>
   loadServerConfig({
     NODE_ENV: "test",
@@ -53,9 +60,10 @@ const externalConfig = () =>
   });
 
 describe("buildModelRuntime", () => {
-  it("binds an external adapter only to an active registry route", () => {
-    const runtime = buildModelRuntime(externalConfig(), {
-      registryDocument: registry([externalEntry()])
+  it("binds an external adapter only to an active registry route", async () => {
+    const runtime = await buildModelRuntime(externalConfig(), {
+      registryDocument: registry([externalEntry()]),
+      secretResolver
     });
 
     expect(runtime.registryVersion).toBe("runtime-test-1");
@@ -73,17 +81,28 @@ describe("buildModelRuntime", () => {
     });
   });
 
-  it("fails closed when configured provider metadata is absent or mismatched", () => {
-    expect(() =>
+  it("fails closed when configured provider metadata is absent or mismatched", async () => {
+    await expect(
       buildModelRuntime(externalConfig(), {
-        registryDocument: registry([])
+        registryDocument: registry([]),
+        secretResolver
       })
-    ).toThrow("is not active in Model Registry");
+    ).rejects.toThrow("is not active in Model Registry");
 
-    expect(() =>
+    await expect(
       buildModelRuntime(externalConfig(), {
-        registryDocument: registry([externalEntry({ protocol: "anthropic-compatible" })])
+        registryDocument: registry([externalEntry({ protocol: "anthropic-compatible" })]),
+        secretResolver
       })
-    ).toThrow("is not active in Model Registry");
+    ).rejects.toThrow("is not active in Model Registry");
+  });
+
+  it("fails closed when the secret resolver cannot provide the credential", async () => {
+    await expect(
+      buildModelRuntime(externalConfig(), {
+        registryDocument: registry([externalEntry()]),
+        secretResolver: { resolve: () => Promise.resolve(null) }
+      })
+    ).rejects.toThrow("External model provider configuration is incomplete");
   });
 });
