@@ -12,5 +12,6 @@ The gateway resolves every attempt through the versioned Model Registry before o
 stream. It owns deterministic routing, adapter/model binding, timeout handling, normalized errors,
 bounded retry with exponential backoff, an exact-route circuit breaker, fallback before the first
 provider delta, and route events used by the atomic Usage Ledger. A timeout applies to one provider
-attempt; retry and fallback counts remain bounded by configuration. API keys stay in server
-environment variables.
+attempt; retry and fallback counts remain bounded by configuration. Provider credentials are
+resolved asynchronously through the server-only `SecretResolver` boundary and never enter Model
+Registry, Gateway, UI, logs, or parsed configuration.

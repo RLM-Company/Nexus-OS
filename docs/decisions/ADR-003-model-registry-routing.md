@@ -34,6 +34,11 @@ constraint. Ties are resolved by stable provider/model identity.
 - The registry never stores API keys, authorization headers, cookies, or account secrets.
 - Unknown privacy or price data cannot satisfy confidential or cost-limited requests.
 - Discovery data is accepted only from an owner-authorized provider endpoint or documentation.
+- An active external route must carry a non-empty evidence reference and verification timestamp,
+  use `source.kind = authorized_discovery`, and support the Gateway streaming contract. The
+  registry constructor rejects activation otherwise.
+- `confidential_compatible = true` is valid only with declared no-training use and known
+  retention; contradictory declarations invalidate the registry instead of silently degrading.
 - UI code cannot import Model Gateway or provider adapters.
 - Runtime integration must record registry version, provider, model, estimated cost, and final usage
   in the Decision Trace/Usage Ledger.
