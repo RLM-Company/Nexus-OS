@@ -183,7 +183,7 @@ export class IdentityStore {
   }
 
   resolveSession(token: string): IdentityContext | null {
-    if (!token.startsWith("cosmora_session_") || token.length < 64) return null;
+    if (!/^cosmora_session_[A-Za-z0-9_-]{43,}$/.test(token)) return null;
     const row = this.#sqlite
       .prepare(
         `SELECT s.session_id, s.owner_id, s.actor_id, s.assurance, s.status, s.issued_at,
