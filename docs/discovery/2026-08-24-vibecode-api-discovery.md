@@ -1,7 +1,7 @@
 # VibeCode API Discovery runbook
 
 **Date:** 2026-08-24  
-**Status:** CONNECTION VERIFIED / MODEL METADATA INCOMPLETE
+**Status:** CONNECTION VERIFIED / CAPABILITY PROBES FAILED / MODEL METADATA INCOMPLETE
 **Scope:** read-only discovery for the first real B0.2 model route
 
 ## Authorization boundary
@@ -38,12 +38,18 @@ unless separately authorized.
 - The public homepage's no-request-storage statement conflicts with the public Privacy Policy,
   which permits collection of interaction history for analysis and improvement. Privacy therefore
   remains unknown for confidential routing.
+- Exactly two owner-authorized capability requests were executed against `claude-sonnet-5` through
+  the configured `anthropic-compatible` route. Structured-output schema enforcement and forced
+  tool calling both failed their response contracts despite HTTP 200. The request accounting and
+  exact contracts are recorded in
+  [the capability probe review](../reviews/2026-08-27-b0-2-vibecode-capability-probe.md).
 
 This evidence proves authentication, configured model routing, streaming availability, and the
-displayed catalog price for models visible in the supplied screenshots. It does not establish exact
-context/output limits, structured-output/tool support, upstream training use, regional processing,
-or contractual retention. Therefore no real entry is added to the committed registry yet, and
-VibeCode remains ineligible for confidential routing.
+displayed catalog price for models visible in the supplied screenshots. It negatively establishes
+that the configured `claude-sonnet-5` route did not enforce the tested structured-output or forced
+tool-calling contracts. It does not establish exact context/output limits, upstream training use,
+regional processing, or contractual retention. Therefore no real entry is added to the committed
+registry yet, and VibeCode remains ineligible for confidential routing.
 
 ## Read-only discovery sequence
 
@@ -77,9 +83,9 @@ The discovery report must record timestamp, endpoints called (without secrets), 
 normalized registry diff, schema/test results, and unresolved unknowns. Raw provider responses are
 stored only if they contain no credentials, personal data, or confidential project content.
 
-## Next authorized action
+## Next action
 
-Obtain a secret-free model metadata export from an official account endpoint or provider
-documentation. Record the exact configured model ID and protocol plus every known capability,
-limit, price, and privacy field. Unknown values stay unknown; they are never inferred from a
-successful chat response.
+Obtain a secret-free model metadata export or contractual provider documentation that resolves the
+exact context/output limits and privacy conflict. Production Secret Manager selection remains
+deferred until a production hosting target is chosen. No further paid capability request is
+authorized by this record.
