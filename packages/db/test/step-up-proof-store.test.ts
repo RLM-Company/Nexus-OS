@@ -162,4 +162,44 @@ describe("StepUpProofStore", () => {
       database.close();
     }
   });
+  it("fails closed without violating audit foreign keys for an unpersisted development identity", async () => {
+    const database = openDatabase(":memory:");
+    try {
+      await runMigrations(database);
+      const store = new StepUpProofStore(database.sqlite, {
+        now: () => Date.parse("2026-08-27T12:00:00.000Z")
+      });
+      const identity: IdentityContext = {
+        owner_id: "local-owner",
+        actor_id: "local-owner",
+        actor_kind: "owner",
+        session_id: "local-development-session",
+        assurance: "local",
+        authenticated_at: "2026-08-27T00:00:00.000Z",
+        expires_at: "9999-12-31T23:59:59.999Z"
+      };
+
+      expect(
+        store.consumeProof({
+          token: "malformed",
+          identity,
+          purpose: "autonomy_profile_escalation",
+          challenge: "project:p1:autonomy-profile:1"
+        })
+      ).toBe(false);
+      const audit = database.sqlite
+        .prepare(
+          "SELECT session_id, event_type, outcome FROM identity_audit_events WHERE owner_id = ?"
+        )
+        .get("local-owner");
+
+      expect(audit).toMatchObject({
+        session_id: null,
+        event_type: "step_up.rejected",
+        outcome: "denied"
+      });
+    } finally {
+      database.close();
+    }
+  });
 });

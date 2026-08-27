@@ -271,6 +271,12 @@ export class StepUpProofStore {
     reasonCode: string,
     timestamp: string
   ): void {
+    const persistedSession = this.#sqlite
+      .prepare(
+        `SELECT 1 AS ok FROM identity_sessions
+         WHERE session_id = ? AND owner_id = ? AND actor_id = ?`
+      )
+      .get(identity.session_id, identity.owner_id, identity.actor_id);
     this.#sqlite
       .prepare(
         `INSERT INTO identity_audit_events
@@ -281,7 +287,7 @@ export class StepUpProofStore {
         randomUUID(),
         identity.owner_id,
         identity.actor_id,
-        identity.session_id,
+        persistedSession ? identity.session_id : null,
         eventType,
         outcome,
         reasonCode,
