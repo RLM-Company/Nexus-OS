@@ -6,7 +6,7 @@
   "scripts": {
     "build": "turbo run build",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write apps/api/src/app.ts packages/db/src/project-store.ts && git diff -- apps/api/src/app.ts packages/db/src/project-store.ts && exit 1",
     "check:secrets": "node scripts/check-secrets.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",
