@@ -3,6 +3,7 @@ import { ModelRouteError, type ModelRoute, type ModelRouter } from "./router.js"
 import {
   GatewayRunError,
   type ModelGatewayStreamEvent,
+  type ModelGatewayReliabilityOptions,
   type ModelProviderAdapter,
   type ModelRouteAttempt,
   type ProviderStreamEvent,
@@ -26,18 +27,73 @@ const calculateCost = (
 const isValidTokenCount = (value: number | null): boolean =>
   value === null || (Number.isInteger(value) && value >= 0);
 
+const DEFAULT_RELIABILITY: ModelGatewayReliabilityOptions = {
+  maxAttemptsPerRoute: 2,
+  retryBaseDelayMs: 250,
+  retryMaxDelayMs: 2_000,
+  circuitFailureThreshold: 3,
+  circuitOpenMs: 30_000
+};
+
+const sleep = (delayMs: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason instanceof Error ? signal.reason : new Error("Retry interrupted"));
+      return;
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(signal?.reason instanceof Error ? signal.reason : new Error("Retry interrupted"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+
+interface CircuitState {
+  failures: number;
+  openedAt: number | null;
+  probeInFlight: boolean;
+}
+
 export class ModelGateway {
   readonly #adapters: Map<string, ModelProviderAdapter>;
   readonly #router: ModelRouter;
   readonly #fallbackOrder: string[];
+  readonly #reliability: ModelGatewayReliabilityOptions;
+  readonly #now: () => number;
+  readonly #sleep: (delayMs: number, signal?: AbortSignal) => Promise<void>;
+  readonly #circuits = new Map<string, CircuitState>();
 
-  constructor(adapters: ModelProviderAdapter[], router: ModelRouter, fallbackOrder: string[] = []) {
+  constructor(
+    adapters: ModelProviderAdapter[],
+    router: ModelRouter,
+    fallbackOrder: string[] = [],
+    reliability: Partial<ModelGatewayReliabilityOptions> = {}
+  ) {
     if (new Set(adapters.map((adapter) => adapter.id)).size !== adapters.length) {
       throw new Error("Model provider adapter IDs must be unique");
     }
     this.#adapters = new Map(adapters.map((adapter) => [adapter.id, adapter]));
     this.#router = router;
     this.#fallbackOrder = fallbackOrder;
+    this.#reliability = { ...DEFAULT_RELIABILITY, ...reliability };
+    for (const [name, value] of Object.entries(this.#reliability)) {
+      if (name === "now" || name === "sleep") continue;
+      if (!Number.isInteger(value) || Number(value) < 0) {
+        throw new Error(`Invalid Model Gateway reliability option: ${name}`);
+      }
+    }
+    if (
+      this.#reliability.maxAttemptsPerRoute < 1 ||
+      this.#reliability.circuitFailureThreshold < 1
+    ) {
+      throw new Error("Model Gateway reliability attempts and threshold must be positive");
+    }
+    this.#now = reliability.now ?? Date.now;
+    this.#sleep = reliability.sleep ?? sleep;
   }
 
   hasProvider(providerId: string): boolean {
@@ -54,86 +110,143 @@ export class ModelGateway {
     ].filter((value, index, values) => values.indexOf(value) === index);
 
     let lastError: GatewayRunError | null = null;
-    for (const [attempt, providerId] of providerIds.entries()) {
-      const resolved = this.#resolveAttempt(request, providerId, attempt);
+    let attempt = 0;
+    for (const [providerIndex, providerId] of providerIds.entries()) {
+      const resolved = this.#resolveAttempt(request, providerId, attempt, providerIndex === 0);
       if (resolved instanceof GatewayRunError) {
         lastError = resolved;
         continue;
       }
-      const { adapter, route } = resolved;
-      yield { type: "route.selected", route };
+      const { adapter, modelRoute } = resolved;
+      const circuitKey = `${modelRoute.provider_id}:${modelRoute.model_id}`;
 
-      let emittedText = false;
-      let completed = false;
-      try {
-        for await (const event of this.#streamWithTimeout(adapter, request, externalSignal)) {
-          if (event.type === "text.delta") {
+      for (
+        let routeAttempt = 0;
+        routeAttempt < this.#reliability.maxAttemptsPerRoute;
+        routeAttempt++
+      ) {
+        const route: ModelRouteAttempt = { ...resolved.route, attempt: attempt++ };
+        yield { type: "route.selected", route };
+
+        const circuitAccess = this.#acquireCircuit(circuitKey);
+        if (circuitAccess === null) {
+          lastError = new GatewayRunError(
+            "CIRCUIT_OPEN",
+            providerId,
+            `Model route circuit is open: ${circuitKey}`,
+            true
+          );
+          yield {
+            type: "route.failed",
+            route,
+            errorCode: lastError.code,
+            retryable: lastError.retryable
+          };
+          break;
+        }
+
+        let emittedText = false;
+        let completed = false;
+        let circuitRecorded = false;
+        try {
+          for await (const event of this.#streamWithTimeout(
+            adapter,
+            request,
+            request.constraints.timeout_ms,
+            externalSignal
+          )) {
+            if (event.type === "text.delta") {
+              if (completed) {
+                throw new GatewayRunError(
+                  "PROVIDER_ERROR",
+                  providerId,
+                  "Provider emitted text after completion",
+                  false
+                );
+              }
+              emittedText = true;
+              yield event;
+              continue;
+            }
             if (completed) {
               throw new GatewayRunError(
                 "PROVIDER_ERROR",
                 providerId,
-                "Provider emitted text after completion",
+                "Provider emitted more than one completion event",
                 false
               );
             }
-            emittedText = true;
-            yield event;
-            continue;
+            if (event.provider !== route.provider_id || event.model !== route.model_id) {
+              throw new GatewayRunError(
+                "PROVIDER_ERROR",
+                providerId,
+                `Provider completion identity does not match registry route ${route.provider_id}:${route.model_id}`,
+                false
+              );
+            }
+            if (
+              !isValidTokenCount(event.usage.inputTokens) ||
+              !isValidTokenCount(event.usage.outputTokens)
+            ) {
+              throw new GatewayRunError(
+                "PROVIDER_ERROR",
+                providerId,
+                "Provider returned invalid token usage",
+                false
+              );
+            }
+            completed = true;
+            yield {
+              ...event,
+              route,
+              calculatedCost: calculateCost(modelRoute, event.usage)
+            };
           }
-          if (completed) {
+          if (!completed) {
             throw new GatewayRunError(
               "PROVIDER_ERROR",
               providerId,
-              "Provider emitted more than one completion event",
-              false
+              "Provider stream ended without completion",
+              true
             );
           }
-          if (event.provider !== route.provider_id || event.model !== route.model_id) {
-            throw new GatewayRunError(
-              "PROVIDER_ERROR",
-              providerId,
-              `Provider completion identity does not match registry route ${route.provider_id}:${route.model_id}`,
-              false
-            );
-          }
-          if (
-            !isValidTokenCount(event.usage.inputTokens) ||
-            !isValidTokenCount(event.usage.outputTokens)
-          ) {
-            throw new GatewayRunError(
-              "PROVIDER_ERROR",
-              providerId,
-              "Provider returned invalid token usage",
-              false
-            );
-          }
-          completed = true;
+          this.#recordCircuitSuccess(circuitKey);
+          circuitRecorded = true;
+          return;
+        } catch (error) {
+          const normalized = this.#normalizeError(error, providerId, externalSignal);
+          this.#recordCircuitFailure(circuitKey, normalized);
+          circuitRecorded = true;
           yield {
-            ...event,
+            type: "route.failed",
             route,
-            calculatedCost: calculateCost(resolved.modelRoute, event.usage)
+            errorCode: normalized.code,
+            retryable: normalized.retryable
           };
-        }
-        if (!completed) {
-          throw new GatewayRunError(
-            "PROVIDER_ERROR",
-            providerId,
-            "Provider stream ended without completion",
-            true
+          if (emittedText || normalized.code === "INTERRUPTED") throw normalized;
+          lastError = normalized;
+
+          const canRetry =
+            normalized.retryable && routeAttempt + 1 < this.#reliability.maxAttemptsPerRoute;
+          if (!canRetry) break;
+
+          const retryDelay = Math.min(
+            this.#reliability.retryBaseDelayMs * 2 ** routeAttempt,
+            this.#reliability.retryMaxDelayMs
           );
+          try {
+            await this.#sleep(retryDelay, externalSignal);
+          } catch (sleepError) {
+            throw this.#normalizeError(sleepError, providerId, externalSignal);
+          }
+        } finally {
+          if (!circuitRecorded && circuitAccess === "probe") {
+            this.#releaseCircuitProbe(circuitKey);
+          }
         }
-        return;
-      } catch (error) {
-        const normalized = this.#normalizeError(error, providerId, externalSignal);
-        yield {
-          type: "route.failed",
-          route,
-          errorCode: normalized.code,
-          retryable: normalized.retryable
-        };
-        if (emittedText || !request.routing.fallback_allowed) throw normalized;
-        lastError = normalized;
       }
+
+      if (!request.routing.fallback_allowed && lastError) throw lastError;
     }
 
     throw (
@@ -145,7 +258,8 @@ export class ModelGateway {
   #resolveAttempt(
     request: ModelRequest,
     providerId: string,
-    attempt: number
+    attempt: number,
+    primaryProvider: boolean
   ):
     | { adapter: ModelProviderAdapter; modelRoute: ModelRoute; route: ModelRouteAttempt }
     | GatewayRunError {
@@ -153,7 +267,7 @@ export class ModelGateway {
       role: request.role,
       task_type: request.task_type,
       preferred_provider: providerId,
-      preferred_model_alias: attempt === 0 ? request.routing.preferred_model_alias : null,
+      preferred_model_alias: primaryProvider ? request.routing.preferred_model_alias : null,
       required_features: request.routing.required_features,
       confidential: request.routing.confidential,
       estimated_input_tokens: request.routing.estimated_input_tokens,
@@ -202,8 +316,12 @@ export class ModelGateway {
   async *#streamWithTimeout(
     adapter: ModelProviderAdapter,
     request: ModelRequest,
+    timeoutMs: number,
     externalSignal?: AbortSignal
   ): AsyncGenerator<ProviderStreamEvent> {
+    if (externalSignal?.aborted) {
+      throw new GatewayRunError("INTERRUPTED", adapter.id, "Model run was interrupted", false);
+    }
     const controller = new AbortController();
     let timedOut = false;
     const onExternalAbort = (): void => controller.abort(externalSignal?.reason);
@@ -211,7 +329,7 @@ export class ModelGateway {
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort(new Error("Provider timeout"));
-    }, request.constraints.timeout_ms);
+    }, timeoutMs);
 
     try {
       for await (const event of adapter.stream(request, controller.signal)) yield event;
@@ -233,6 +351,42 @@ export class ModelGateway {
       clearTimeout(timer);
       externalSignal?.removeEventListener("abort", onExternalAbort);
     }
+  }
+
+  #acquireCircuit(key: string): "closed" | "probe" | null {
+    const state = this.#circuits.get(key);
+    if (!state || state.openedAt === null) return "closed";
+    if (this.#now() - state.openedAt < this.#reliability.circuitOpenMs) return null;
+    if (state.probeInFlight) return null;
+    state.probeInFlight = true;
+    return "probe";
+  }
+
+  #releaseCircuitProbe(key: string): void {
+    const state = this.#circuits.get(key);
+    if (state) state.probeInFlight = false;
+  }
+
+  #recordCircuitSuccess(key: string): void {
+    this.#circuits.delete(key);
+  }
+
+  #recordCircuitFailure(key: string, error: GatewayRunError): void {
+    const state = this.#circuits.get(key) ?? {
+      failures: 0,
+      openedAt: null,
+      probeInFlight: false
+    };
+    state.probeInFlight = false;
+    if (error.code !== "PROVIDER_ERROR" && error.code !== "PROVIDER_TIMEOUT") {
+      this.#circuits.set(key, state);
+      return;
+    }
+    state.failures += 1;
+    if (state.failures >= this.#reliability.circuitFailureThreshold) {
+      state.openedAt = this.#now();
+    }
+    this.#circuits.set(key, state);
   }
 
   #normalizeError(

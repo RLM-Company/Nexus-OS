@@ -25,6 +25,11 @@ export const RawServerConfigSchema = Type.Object(
     MODEL_FALLBACK_TO_MOCK: Type.Optional(
       Type.Union([Type.Literal("true"), Type.Literal("false")])
     ),
+    MODEL_MAX_ATTEMPTS_PER_ROUTE: Type.Optional(Type.String({ pattern: "^\\d+$" })),
+    MODEL_RETRY_BASE_DELAY_MS: Type.Optional(Type.String({ pattern: "^\\d+$" })),
+    MODEL_RETRY_MAX_DELAY_MS: Type.Optional(Type.String({ pattern: "^\\d+$" })),
+    MODEL_CIRCUIT_FAILURE_THRESHOLD: Type.Optional(Type.String({ pattern: "^\\d+$" })),
+    MODEL_CIRCUIT_OPEN_MS: Type.Optional(Type.String({ pattern: "^\\d+$" })),
     MANAGER_TIMEOUT_MS: Type.Optional(Type.String({ pattern: "^\\d+$" })),
     MANAGER_MAX_OUTPUT_TOKENS: Type.Optional(Type.String({ pattern: "^\\d+$" })),
     LOG_LEVEL: Type.Optional(
@@ -67,6 +72,11 @@ export interface ServerConfig {
   modelApiKey: string | null;
   modelName: string;
   modelFallbackToMock: boolean;
+  modelMaxAttemptsPerRoute: number;
+  modelRetryBaseDelayMs: number;
+  modelRetryMaxDelayMs: number;
+  modelCircuitFailureThreshold: number;
+  modelCircuitOpenMs: number;
   managerTimeoutMs: number;
   managerMaxOutputTokens: number;
   logLevel: "debug" | "info" | "warn" | "error";
@@ -94,6 +104,11 @@ const configKeys = [
   "MODEL_API_KEY",
   "MODEL_NAME",
   "MODEL_FALLBACK_TO_MOCK",
+  "MODEL_MAX_ATTEMPTS_PER_ROUTE",
+  "MODEL_RETRY_BASE_DELAY_MS",
+  "MODEL_RETRY_MAX_DELAY_MS",
+  "MODEL_CIRCUIT_FAILURE_THRESHOLD",
+  "MODEL_CIRCUIT_OPEN_MS",
   "MANAGER_TIMEOUT_MS",
   "MANAGER_MAX_OUTPUT_TOKENS",
   "LOG_LEVEL",
@@ -147,6 +162,33 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
     throw new Error("Invalid server configuration: /MANAGER_MAX_OUTPUT_TOKENS");
   }
 
+  const boundedInteger = (
+    key:
+      | "MODEL_MAX_ATTEMPTS_PER_ROUTE"
+      | "MODEL_RETRY_BASE_DELAY_MS"
+      | "MODEL_RETRY_MAX_DELAY_MS"
+      | "MODEL_CIRCUIT_FAILURE_THRESHOLD"
+      | "MODEL_CIRCUIT_OPEN_MS",
+    fallback: number,
+    minimum: number,
+    maximum: number
+  ): number => {
+    const value = Number(raw[key] ?? fallback);
+    if (!Number.isInteger(value) || value < minimum || value > maximum) {
+      throw new Error(`Invalid server configuration: /${key}`);
+    }
+    return value;
+  };
+
+  const modelMaxAttemptsPerRoute = boundedInteger("MODEL_MAX_ATTEMPTS_PER_ROUTE", 2, 1, 5);
+  const modelRetryBaseDelayMs = boundedInteger("MODEL_RETRY_BASE_DELAY_MS", 250, 0, 60_000);
+  const modelRetryMaxDelayMs = boundedInteger("MODEL_RETRY_MAX_DELAY_MS", 2_000, 0, 60_000);
+  const modelCircuitFailureThreshold = boundedInteger("MODEL_CIRCUIT_FAILURE_THRESHOLD", 3, 1, 100);
+  const modelCircuitOpenMs = boundedInteger("MODEL_CIRCUIT_OPEN_MS", 30_000, 100, 3_600_000);
+  if (modelRetryMaxDelayMs < modelRetryBaseDelayMs) {
+    throw new Error("Invalid server configuration: /MODEL_RETRY_MAX_DELAY_MS");
+  }
+
   return {
     nodeEnv: raw.NODE_ENV ?? "development",
     apiHost: raw.API_HOST ?? "127.0.0.1",
@@ -160,6 +202,11 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
     modelApiKey: raw.MODEL_API_KEY ?? null,
     modelName: raw.MODEL_NAME ?? "manager",
     modelFallbackToMock: raw.MODEL_FALLBACK_TO_MOCK !== "false",
+    modelMaxAttemptsPerRoute,
+    modelRetryBaseDelayMs,
+    modelRetryMaxDelayMs,
+    modelCircuitFailureThreshold,
+    modelCircuitOpenMs,
     managerTimeoutMs,
     managerMaxOutputTokens,
     logLevel: raw.LOG_LEVEL ?? "info",

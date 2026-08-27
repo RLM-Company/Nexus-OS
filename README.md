@@ -27,6 +27,8 @@ Implemented through the current checkpoint:
   budget filters.
 - B02-002: registry-backed runtime selection and an atomic SQLite Usage Ledger for route attempts,
   token usage, and calculated cost.
+- B02-003: bounded retry with exponential backoff, per-attempt timeout, exact-route circuit breaker,
+  and Usage Ledger records for every selected retry or fallback attempt.
 
 The current vertical slice creates real local projects and can stream either deterministic
 mock-manager responses or a configured OpenAI-compatible model. Tool execution and autonomous
@@ -61,12 +63,23 @@ MODEL_API_KEY=your-local-secret
 MODEL_NAME=provider-model-id
 # MODEL_REGISTRY_PATH=/absolute/path/to/model-registry.v1.json
 MODEL_FALLBACK_TO_MOCK=true
+MODEL_MAX_ATTEMPTS_PER_ROUTE=2
+MODEL_RETRY_BASE_DELAY_MS=250
+MODEL_RETRY_MAX_DELAY_MS=2000
+MODEL_CIRCUIT_FAILURE_THRESHOLD=3
+MODEL_CIRCUIT_OPEN_MS=30000
 ```
 
 The provider must expose an OpenAI-compatible streaming `POST /chat/completions` endpoint. Cosmora
 does not expose the key through its health or runtime-status APIs. If the provider fails before the
 first response token, optional mock fallback keeps the local workflow usable; after output begins,
 the gateway fails the run instead of mixing responses from two models.
+
+Retryable failures are retried only before the first response token and within the configured
+attempt limit. Backoff is bounded, cancellation also interrupts backoff, and repeated failures open
+a circuit for the exact registry route. After the cooldown, one probe is allowed; a successful probe
+closes the circuit. Each retry, blocked circuit attempt, and fallback selection gets its own atomic
+Usage Ledger record.
 
 An external route starts only when `MODEL_PROVIDER_ID:MODEL_NAME` is active in the selected
 versioned Model Registry and its protocol matches `MODEL_PROVIDER`. Missing, disabled, or

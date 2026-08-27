@@ -16,6 +16,11 @@ describe("loadServerConfig", () => {
       modelApiKey: null,
       modelName: "manager",
       modelFallbackToMock: true,
+      modelMaxAttemptsPerRoute: 2,
+      modelRetryBaseDelayMs: 250,
+      modelRetryMaxDelayMs: 2_000,
+      modelCircuitFailureThreshold: 3,
+      modelCircuitOpenMs: 30_000,
       managerTimeoutMs: 60_000,
       managerMaxOutputTokens: 1_200,
       logLevel: "info",
@@ -79,6 +84,39 @@ describe("loadServerConfig", () => {
     );
     expect(() => loadServerConfig({ MANAGER_MAX_OUTPUT_TOKENS: "0" })).toThrow(
       "Invalid server configuration: /MANAGER_MAX_OUTPUT_TOKENS"
+    );
+  });
+
+  it("loads bounded Model Gateway reliability settings", () => {
+    expect(
+      loadServerConfig({
+        MODEL_MAX_ATTEMPTS_PER_ROUTE: "3",
+        MODEL_RETRY_BASE_DELAY_MS: "100",
+        MODEL_RETRY_MAX_DELAY_MS: "500",
+        MODEL_CIRCUIT_FAILURE_THRESHOLD: "4",
+        MODEL_CIRCUIT_OPEN_MS: "5000"
+      })
+    ).toMatchObject({
+      modelMaxAttemptsPerRoute: 3,
+      modelRetryBaseDelayMs: 100,
+      modelRetryMaxDelayMs: 500,
+      modelCircuitFailureThreshold: 4,
+      modelCircuitOpenMs: 5_000
+    });
+  });
+
+  it("rejects unsafe Model Gateway reliability settings", () => {
+    expect(() => loadServerConfig({ MODEL_MAX_ATTEMPTS_PER_ROUTE: "0" })).toThrow(
+      "Invalid server configuration: /MODEL_MAX_ATTEMPTS_PER_ROUTE"
+    );
+    expect(() =>
+      loadServerConfig({
+        MODEL_RETRY_BASE_DELAY_MS: "500",
+        MODEL_RETRY_MAX_DELAY_MS: "100"
+      })
+    ).toThrow("Invalid server configuration: /MODEL_RETRY_MAX_DELAY_MS");
+    expect(() => loadServerConfig({ MODEL_CIRCUIT_OPEN_MS: "0" })).toThrow(
+      "Invalid server configuration: /MODEL_CIRCUIT_OPEN_MS"
     );
   });
 });
