@@ -8,3 +8,4 @@ export * from "./model-registry.js";
 export * from "./policy.js";
 export * from "./primitives.js";
 export * from "./runtime.js";
+export * from "./step-up.js";

@@ -5,13 +5,15 @@ import {
   openDatabase,
   PolicyStore,
   ProjectStore,
-  runMigrations
+  runMigrations,
+  StepUpProofStore
 } from "@cosmora/db";
 import { buildApp } from "./app.js";
 import {
   BearerSessionIdentityResolver,
   LOCAL_DEVELOPMENT_IDENTITY,
-  StaticIdentityResolver
+  StaticIdentityResolver,
+  StoredStepUpProofConsumer
 } from "./identity.js";
 import { buildModelRuntime } from "./model-runtime.js";
 
@@ -41,6 +43,7 @@ try {
   const projectStore = new ProjectStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
+  const stepUpProofStore = new StepUpProofStore(database.sqlite);
   const identityResolver =
     config.nodeEnv === "production"
       ? new BearerSessionIdentityResolver(identityStore)
@@ -62,6 +65,7 @@ try {
     manager: modelRuntime.manager,
     modelRegistryVersion: modelRuntime.registryVersion,
     identityResolver,
+    stepUpProofConsumer: new StoredStepUpProofConsumer(stepUpProofStore),
     closeDatabase: () => database.close()
   });
   if (recoveredRuns > 0) {

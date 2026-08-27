@@ -1,5 +1,5 @@
-import type { IdentityContext } from "@cosmora/contracts";
-import type { IdentityStore } from "@cosmora/db";
+import type { IdentityContext, StepUpPurpose } from "@cosmora/contracts";
+import type { IdentityStore, StepUpProofStore } from "@cosmora/db";
 import type { FastifyRequest } from "fastify";
 
 export interface RequestIdentityResolver {
@@ -41,5 +41,28 @@ export class BearerSessionIdentityResolver implements RequestIdentityResolver {
     const match = /^Bearer ([^\s]+)$/.exec(authorization);
     if (!match?.[1]) return Promise.resolve(null);
     return Promise.resolve(this.#identityStore.resolveSession(match[1]));
+  }
+}
+
+export interface StepUpProofConsumption {
+  token: string;
+  identity: IdentityContext;
+  purpose: StepUpPurpose;
+  challenge: string;
+}
+
+export interface StepUpProofConsumer {
+  consume(input: StepUpProofConsumption): Promise<boolean>;
+}
+
+export class StoredStepUpProofConsumer implements StepUpProofConsumer {
+  readonly #store: StepUpProofStore;
+
+  constructor(store: StepUpProofStore) {
+    this.#store = store;
+  }
+
+  consume(input: StepUpProofConsumption): Promise<boolean> {
+    return Promise.resolve(this.#store.consumeProof(input));
   }
 }
