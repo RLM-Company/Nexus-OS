@@ -57,6 +57,13 @@
       "when": 1787805348433,
       "tag": "0007_perpetual_supernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787853057469,
+      "tag": "0008_identity_core",
+      "breakpoints": true
     }
   ]
 }
