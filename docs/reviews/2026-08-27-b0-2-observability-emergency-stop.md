@@ -38,10 +38,15 @@ Automated coverage proves:
 - active-stream interruption with durable `EMERGENCY_STOP` accounting;
 - operational counters and alert derivation;
 - strict configuration and transport-schema validation.
+- a restart-level incident drill that proves the durable process stop blocks a previously queued
+  run before route selection or Usage Ledger reservation.
 
 ## Remaining B0.2 work
 
-- exact official VibeCode model metadata, privacy, and pricing before registry activation;
+- exact official VibeCode model limits and contractual privacy before registry activation;
 - production Secret Manager integration;
-- structured output and tool-calling verification on a real provider route;
-- final B0.2 acceptance gate and incident drill.
+- a real provider route with verified required capability contracts. The configured VibeCode route
+  failed both authorized structured-output and forced-tool probes.
+
+The provider-neutral acceptance gate and durable incident drill are closed in
+[the B0.2 acceptance review](2026-08-27-b0-2-acceptance.md); the full stage exit remains open.
