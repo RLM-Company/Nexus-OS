@@ -1,6 +1,11 @@
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import { CreateProjectRequestSchema, ModelRequestSchema, StreamEventSchema } from "../src/index.js";
+import {
+  ActivateEmergencyStopRequestSchema,
+  CreateProjectRequestSchema,
+  ModelRequestSchema,
+  StreamEventSchema
+} from "../src/index.js";
 
 describe("shared contracts", () => {
   it("accepts a valid create-project request", () => {
@@ -60,5 +65,21 @@ describe("shared contracts", () => {
         data: { run_id: "run-1", message_id: "message-1", seq: 0, delta: "Я" }
       })
     ).toBe(true);
+  });
+
+  it("accepts the bounded emergency-stop transport shape", () => {
+    expect(
+      Value.Check(ActivateEmergencyStopRequestSchema, {
+        scope: "project",
+        project_id: "project-1",
+        reason: "Unexpected external behavior"
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(ActivateEmergencyStopRequestSchema, {
+        scope: "unknown",
+        reason: "Unknown scope"
+      })
+    ).toBe(false);
   });
 });

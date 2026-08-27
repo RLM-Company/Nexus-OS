@@ -55,11 +55,12 @@
 **Цель:** заменить mock-маршрут первым управляемым реальным модельным маршрутом без изменения
 контрактов UI.
 
-**Прогресс на 2026-08-26:** Model Registry, детерминированный Router, registry-backed runtime и
-атомарный Usage Ledger слиты в `main`; авторизованный VibeCode streaming-check прошёл. Следующий
-review-инкремент добавляет per-attempt timeout, bounded retry, exponential backoff и exact-route
-circuit breaker. Точная metadata реальной модели, observability/emergency stop, проверка structured
-output/tool calling и финальный B0.2 acceptance gate ещё не закрыты.
+**Прогресс на 2026-08-27:** Model Registry, детерминированный Router, registry-backed runtime,
+атомарный Usage Ledger, per-attempt timeout, bounded retry, exponential backoff и exact-route
+circuit breaker слиты в `main`; авторизованный VibeCode streaming-check прошёл. Следующий
+review-инкремент добавляет content-free observability и durable process/project emergency stop.
+Точная metadata реальной модели, Secret Manager, проверка structured output/tool calling и
+финальный B0.2 acceptance gate ещё не закрыты.
 
 Действия:
 

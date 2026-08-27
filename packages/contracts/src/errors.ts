@@ -20,6 +20,7 @@ export const ErrorCodeSchema = Type.Union([
   Type.Literal("RUN_ALREADY_FINISHED"),
   Type.Literal("PROVIDER_TIMEOUT"),
   Type.Literal("PROVIDER_ERROR"),
+  Type.Literal("EMERGENCY_STOP"),
   Type.Literal("INTERRUPTED"),
   Type.Literal("INTERNAL_ERROR")
 ]);

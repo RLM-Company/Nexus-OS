@@ -601,9 +601,12 @@ export class ProjectStore {
       this.#sqlite
         .prepare(
           `UPDATE model_usage_ledger SET status = 'failed', error_code = ?, updated_at = ?
-           WHERE run_id = ? AND status = 'reserved'`
+           WHERE run_id = ? AND (
+             status = 'reserved' OR
+             (? = 'EMERGENCY_STOP' AND status = 'failed' AND error_code = 'INTERRUPTED')
+           )`
         )
-        .run(errorCode, timestamp, runId);
+        .run(errorCode, timestamp, runId, errorCode);
       this.#sqlite.exec("COMMIT;");
     } catch (error) {
       this.#sqlite.exec("ROLLBACK;");

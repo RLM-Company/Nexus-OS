@@ -29,6 +29,8 @@ Implemented through the current checkpoint:
   token usage, and calculated cost.
 - B02-003: bounded retry with exponential backoff, per-attempt timeout, exact-route circuit breaker,
   and Usage Ledger records for every selected retry or fallback attempt.
+- B02-004: content-free runtime metrics, structured model-route logs, durable process/project
+  emergency stops, and fail-closed interruption of queued or active runs.
 
 The current vertical slice creates real local projects and can stream either deterministic
 mock-manager responses or a configured OpenAI-compatible model. Tool execution and autonomous
@@ -50,6 +52,7 @@ pnpm dev
 Web runs at `http://localhost:3000`, API at `http://127.0.0.1:3100`, and health is available at
 `GET /api/v1/health`. A secret-free provider summary is available at
 `GET /api/v1/model-runtime`. The web app proxies `/api/*` to `COSMORA_API_ORIGIN`.
+Operational counters and active safety alerts are available at `GET /api/v1/operations/status`.
 
 ## Connect a model provider
 
@@ -68,6 +71,7 @@ MODEL_RETRY_BASE_DELAY_MS=250
 MODEL_RETRY_MAX_DELAY_MS=2000
 MODEL_CIRCUIT_FAILURE_THRESHOLD=3
 MODEL_CIRCUIT_OPEN_MS=30000
+RUNTIME_EMERGENCY_STOP=false
 ```
 
 The provider must expose an OpenAI-compatible streaming `POST /chat/completions` endpoint. Cosmora
@@ -80,6 +84,28 @@ attempt limit. Backoff is bounded, cancellation also interrupts backoff, and rep
 a circuit for the exact registry route. After the cooldown, one probe is allowed; a successful probe
 closes the circuit. Each retry, blocked circuit attempt, and fallback selection gets its own atomic
 Usage Ledger record.
+
+## Emergency stop
+
+`POST /api/v1/operations/emergency-stop` activates a durable stop for the whole API process or one
+owner-bound project. Activating a stop immediately aborts matching active model runs, fails queued
+runs before provider selection, and persists `EMERGENCY_STOP` in run/message/accounting state.
+
+```json
+{ "scope": "process", "reason": "Incident containment" }
+```
+
+```json
+{
+  "scope": "project",
+  "project_id": "project-id",
+  "reason": "Unexpected external behavior"
+}
+```
+
+`RUNTIME_EMERGENCY_STOP=true` activates the same process-wide fail-closed state during startup. A
+stop survives restart. The HTTP API intentionally has no resume endpoint until owner identity and
+step-up verification are implemented; recovery must use an audited operator flow.
 
 An external route starts only when `MODEL_PROVIDER_ID:MODEL_NAME` is active in the selected
 versioned Model Registry and its protocol matches `MODEL_PROVIDER`. Missing, disabled, or

@@ -30,6 +30,9 @@ export const RawServerConfigSchema = Type.Object(
     MODEL_RETRY_MAX_DELAY_MS: Type.Optional(Type.String({ pattern: "^\\d+$" })),
     MODEL_CIRCUIT_FAILURE_THRESHOLD: Type.Optional(Type.String({ pattern: "^\\d+$" })),
     MODEL_CIRCUIT_OPEN_MS: Type.Optional(Type.String({ pattern: "^\\d+$" })),
+    RUNTIME_EMERGENCY_STOP: Type.Optional(
+      Type.Union([Type.Literal("true"), Type.Literal("false")])
+    ),
     MANAGER_TIMEOUT_MS: Type.Optional(Type.String({ pattern: "^\\d+$" })),
     MANAGER_MAX_OUTPUT_TOKENS: Type.Optional(Type.String({ pattern: "^\\d+$" })),
     LOG_LEVEL: Type.Optional(
@@ -77,6 +80,7 @@ export interface ServerConfig {
   modelRetryMaxDelayMs: number;
   modelCircuitFailureThreshold: number;
   modelCircuitOpenMs: number;
+  runtimeEmergencyStop: boolean;
   managerTimeoutMs: number;
   managerMaxOutputTokens: number;
   logLevel: "debug" | "info" | "warn" | "error";
@@ -109,6 +113,7 @@ const configKeys = [
   "MODEL_RETRY_MAX_DELAY_MS",
   "MODEL_CIRCUIT_FAILURE_THRESHOLD",
   "MODEL_CIRCUIT_OPEN_MS",
+  "RUNTIME_EMERGENCY_STOP",
   "MANAGER_TIMEOUT_MS",
   "MANAGER_MAX_OUTPUT_TOKENS",
   "LOG_LEVEL",
@@ -207,6 +212,7 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
     modelRetryMaxDelayMs,
     modelCircuitFailureThreshold,
     modelCircuitOpenMs,
+    runtimeEmergencyStop: raw.RUNTIME_EMERGENCY_STOP === "true",
     managerTimeoutMs,
     managerMaxOutputTokens,
     logLevel: raw.LOG_LEVEL ?? "info",

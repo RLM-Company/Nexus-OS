@@ -113,6 +113,25 @@ export const modelUsageLedger = sqliteTable(
   ]
 );
 
+export const emergencyStops = sqliteTable(
+  "emergency_stops",
+  {
+    scopeKey: text("scope_key").primaryKey(),
+    scope: text("scope").notNull(),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    active: integer("active", { mode: "boolean" }).notNull(),
+    reason: text("reason").notNull(),
+    activatedAt: text("activated_at").notNull(),
+    activatedBy: text("activated_by").notNull(),
+    clearedAt: text("cleared_at"),
+    clearedBy: text("cleared_by")
+  },
+  (table) => [
+    index("emergency_stops_scope_active_idx").on(table.scope, table.active),
+    uniqueIndex("emergency_stops_project_unique").on(table.projectId)
+  ]
+);
+
 export const autonomyProfiles = sqliteTable("autonomy_profiles", {
   projectId: text("project_id")
     .primaryKey()

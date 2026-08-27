@@ -1,5 +1,11 @@
 import { loadServerConfig } from "@cosmora/config";
-import { openDatabase, PolicyStore, ProjectStore, runMigrations } from "@cosmora/db";
+import {
+  EmergencyStopStore,
+  openDatabase,
+  PolicyStore,
+  ProjectStore,
+  runMigrations
+} from "@cosmora/db";
 import { buildApp } from "./app.js";
 import { buildModelRuntime } from "./model-runtime.js";
 
@@ -25,11 +31,19 @@ try {
   await runMigrations(database);
   const modelRuntime = buildModelRuntime(config);
   const projectStore = new ProjectStore(database.sqlite);
+  const emergencyStopStore = new EmergencyStopStore(database.sqlite);
+  if (config.runtimeEmergencyStop) {
+    emergencyStopStore.activateProcess(
+      "RUNTIME_EMERGENCY_STOP environment switch",
+      "system:environment"
+    );
+  }
   const recoveredRuns = projectStore.recoverInterruptedRuns();
   app = buildApp({
     config,
     database,
     projectStore,
+    emergencyStopStore,
     policyStore: new PolicyStore(database.sqlite),
     modelGateway: modelRuntime.gateway,
     manager: modelRuntime.manager,
