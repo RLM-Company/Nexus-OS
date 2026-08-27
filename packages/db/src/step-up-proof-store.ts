@@ -84,11 +84,8 @@ export class StepUpProofStore {
          JOIN identity_actors a ON a.actor_id = s.actor_id
          WHERE s.session_id = ? AND s.owner_id = ? AND s.actor_id = ?`
       )
-      .get(
-        input.identity.session_id,
-        input.identity.owner_id,
-        input.identity.actor_id
-      ) as SqlRow | undefined;
+      .get(input.identity.session_id, input.identity.owner_id, input.identity.actor_id) as
+      SqlRow | undefined;
     if (
       !session ||
       session.session_status !== "active" ||
@@ -127,13 +124,7 @@ export class StepUpProofStore {
           issuedAt,
           expiresAt
         );
-      this.#recordAudit(
-        input.identity,
-        "step_up.issued",
-        "success",
-        "STEP_UP_ISSUED",
-        issuedAt
-      );
+      this.#recordAudit(input.identity, "step_up.issued", "success", "STEP_UP_ISSUED", issuedAt);
       this.#sqlite.exec("COMMIT;");
     } catch (error) {
       this.#sqlite.exec("ROLLBACK;");
@@ -154,13 +145,7 @@ export class StepUpProofStore {
       input.challenge.length === 0 ||
       input.challenge.length > 512
     ) {
-      this.#recordAudit(
-        input.identity,
-        "step_up.rejected",
-        "denied",
-        "STEP_UP_INVALID",
-        timestamp
-      );
+      this.#recordAudit(input.identity, "step_up.rejected", "denied", "STEP_UP_INVALID", timestamp);
       return false;
     }
 
@@ -173,13 +158,7 @@ export class StepUpProofStore {
       )
       .get(tokenHash) as SqlRow | undefined;
     if (!row) {
-      this.#recordAudit(
-        input.identity,
-        "step_up.rejected",
-        "denied",
-        "STEP_UP_UNKNOWN",
-        timestamp
-      );
+      this.#recordAudit(input.identity, "step_up.rejected", "denied", "STEP_UP_UNKNOWN", timestamp);
       return false;
     }
 
@@ -203,15 +182,11 @@ export class StepUpProofStore {
 
     if (Date.parse(proof.expires_at) <= nowMs) {
       this.#sqlite
-        .prepare("UPDATE step_up_proofs SET status = 'expired' WHERE proof_id = ? AND status = 'active'")
+        .prepare(
+          "UPDATE step_up_proofs SET status = 'expired' WHERE proof_id = ? AND status = 'active'"
+        )
         .run(proof.proof_id);
-      this.#recordAudit(
-        input.identity,
-        "step_up.rejected",
-        "denied",
-        "STEP_UP_EXPIRED",
-        timestamp
-      );
+      this.#recordAudit(input.identity, "step_up.rejected", "denied", "STEP_UP_EXPIRED", timestamp);
       return false;
     }
 
@@ -223,12 +198,7 @@ export class StepUpProofStore {
          WHERE s.session_id = ? AND s.owner_id = ? AND s.actor_id = ?
            AND s.status = 'active' AND a.status = 'active' AND s.expires_at > ?`
       )
-      .get(
-        input.identity.session_id,
-        input.identity.owner_id,
-        input.identity.actor_id,
-        timestamp
-      );
+      .get(input.identity.session_id, input.identity.owner_id, input.identity.actor_id, timestamp);
     if (!activeIdentity) {
       this.#recordAudit(
         input.identity,
@@ -289,11 +259,7 @@ export class StepUpProofStore {
     if (challenge.length === 0 || challenge.length > 512) {
       throw new Error("Step-up challenge length is outside the allowed range");
     }
-    if (
-      !Number.isFinite(ttlMs) ||
-      ttlMs < MIN_PROOF_TTL_MS ||
-      ttlMs > MAX_PROOF_TTL_MS
-    ) {
+    if (!Number.isFinite(ttlMs) || ttlMs < MIN_PROOF_TTL_MS || ttlMs > MAX_PROOF_TTL_MS) {
       throw new Error("Step-up proof TTL is outside the allowed range");
     }
   }

@@ -21,10 +21,10 @@ identity provider remains a separate deployment decision.
 
 ## Request bindings
 
-| Operation | Purpose | Challenge |
-|---|---|---|
+| Operation                                               | Purpose                       | Challenge                                                |
+| ------------------------------------------------------- | ----------------------------- | -------------------------------------------------------- |
 | Raise an autonomy profile into a step-up-required state | `autonomy_profile_escalation` | `project:{projectId}:autonomy-profile:{expectedVersion}` |
-| Approve a critical tool confirmation | `critical_tool_confirmation` | Existing confirmation `challenge_nonce` |
+| Approve a critical tool confirmation                    | `critical_tool_confirmation`  | Existing confirmation `challenge_nonce`                  |
 
 ## Verification
 
