@@ -23,7 +23,7 @@ export class StaticIdentityResolver implements RequestIdentityResolver {
     this.#identity = Object.freeze({ ...identity });
   }
 
-  resolve(_request: FastifyRequest): Promise<IdentityContext> {
+  resolve(): Promise<IdentityContext> {
     return Promise.resolve(this.#identity);
   }
 }
