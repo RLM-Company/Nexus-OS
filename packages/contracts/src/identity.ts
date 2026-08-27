@@ -80,7 +80,10 @@ export const IdentityAuditEventSchema = Type.Object(
       Type.Literal("session.issued"),
       Type.Literal("session.revoked"),
       Type.Literal("session.expired"),
-      Type.Literal("actor.disabled")
+      Type.Literal("actor.disabled"),
+      Type.Literal("step_up.issued"),
+      Type.Literal("step_up.consumed"),
+      Type.Literal("step_up.rejected")
     ]),
     outcome: Type.Union([Type.Literal("success"), Type.Literal("denied")]),
     reason_code: Type.Union([Type.String({ minLength: 1, maxLength: 128 }), Type.Null()]),

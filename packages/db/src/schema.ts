@@ -68,6 +68,34 @@ export const identityAuditEvents = sqliteTable(
   ]
 );
 
+export const stepUpProofs = sqliteTable(
+  "step_up_proofs",
+  {
+    proofId: text("proof_id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => identitySessions.sessionId, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    purpose: text("purpose").notNull(),
+    challengeHash: text("challenge_hash").notNull(),
+    status: text("status").notNull(),
+    issuedAt: text("issued_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    consumedAt: text("consumed_at")
+  },
+  (table) => [
+    uniqueIndex("step_up_proofs_token_hash_unique").on(table.tokenHash),
+    index("step_up_proofs_owner_status_expires_idx").on(
+      table.ownerId,
+      table.status,
+      table.expiresAt
+    ),
+    index("step_up_proofs_session_status_idx").on(table.sessionId, table.status)
+  ]
+);
+
 export const projects = sqliteTable(
   "projects",
   {

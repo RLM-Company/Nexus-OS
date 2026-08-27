@@ -54,7 +54,8 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import {
   LOCAL_DEVELOPMENT_IDENTITY,
   StaticIdentityResolver,
-  type RequestIdentityResolver
+  type RequestIdentityResolver,
+  type StepUpProofConsumer
 } from "./identity.js";
 import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 
@@ -68,7 +69,7 @@ export interface AppDependencies {
   manager?: ManagerService;
   modelRegistryVersion?: string;
   identityResolver?: RequestIdentityResolver;
-  stepUpVerifier?: (token: string, purpose: string) => Promise<boolean>;
+  stepUpProofConsumer?: StepUpProofConsumer;
   closeDatabase?: () => void;
   runtimeMetrics?: RuntimeMetrics;
 }
@@ -394,7 +395,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           }
         },
         async (request, reply) => {
-          if (!store.getProject(request.params.projectId, identityFor(request).owner_id)) {
+          const identity = identityFor(request);
+          if (!store.getProject(request.params.projectId, identity.owner_id)) {
             return reply
               .status(404)
               .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
@@ -404,8 +406,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             const token = stepUpToken(request.headers["x-step-up-token"]);
             const verified =
               token !== null &&
-              dependencies.stepUpVerifier !== undefined &&
-              (await dependencies.stepUpVerifier(token, "autonomy_profile_escalation"));
+              dependencies.stepUpProofConsumer !== undefined &&
+              (await dependencies.stepUpProofConsumer.consume({
+                token,
+                identity,
+                purpose: "autonomy_profile_escalation",
+                challenge: `project:${request.params.projectId}:autonomy-profile:${request.body.expected_version}`
+              }));
             if (!verified) {
               return reply
                 .status(403)
@@ -490,8 +497,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           }
         },
         async (request, reply) => {
+          const identity = identityFor(request);
           const pending = policyStore.getConfirmation(request.params.confirmationId);
-          if (!pending || !store.getProject(pending.project_id, identityFor(request).owner_id)) {
+          if (!pending || !store.getProject(pending.project_id, identity.owner_id)) {
             return reply
               .status(404)
               .send(errorBody(request.id, "CONFIRMATION_NOT_FOUND", "Confirmation not found"));
@@ -501,8 +509,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             const token = stepUpToken(request.headers["x-step-up-token"]);
             const verified =
               token !== null &&
-              dependencies.stepUpVerifier !== undefined &&
-              (await dependencies.stepUpVerifier(token, "critical_tool_confirmation"));
+              dependencies.stepUpProofConsumer !== undefined &&
+              (await dependencies.stepUpProofConsumer.consume({
+                token,
+                identity,
+                purpose: "critical_tool_confirmation",
+                challenge: request.body.challenge_nonce
+              }));
             if (!verified) {
               return reply
                 .status(403)
@@ -514,7 +527,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             confirmationId: request.params.confirmationId,
             challengeNonce: request.body.challenge_nonce,
             decision: "approve",
-            decidedBy: identityFor(request).actor_id,
+            decidedBy: identity.actor_id,
             approvalMethod,
             ...(request.body.reason === undefined ? {} : { reason: request.body.reason })
           });

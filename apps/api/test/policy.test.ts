@@ -3,6 +3,7 @@ import type { PolicyIntent, PolicyVerdict } from "@cosmora/contracts";
 import { openDatabase, PolicyStore, ProjectStore, runMigrations } from "@cosmora/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
+import type { StepUpProofConsumption } from "../src/identity.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
 
 describe("autonomy and confirmation API", () => {
@@ -11,6 +12,7 @@ describe("autonomy and confirmation API", () => {
   let policyStore: PolicyStore;
   let app: ReturnType<typeof buildApp>;
   let projectId: string;
+  let consumedStepUps: StepUpProofConsumption[];
 
   beforeEach(async () => {
     database = openDatabase(":memory:");
@@ -18,6 +20,7 @@ describe("autonomy and confirmation API", () => {
     const projectStore = new ProjectStore(database.sqlite);
     policyStore = new PolicyStore(database.sqlite);
     const runtime = await buildModelRuntime(config);
+    consumedStepUps = [];
     app = buildApp({
       config,
       database,
@@ -25,7 +28,12 @@ describe("autonomy and confirmation API", () => {
       policyStore,
       modelGateway: runtime.gateway,
       manager: runtime.manager,
-      stepUpVerifier: (token) => Promise.resolve(token === "valid-step-up")
+      stepUpProofConsumer: {
+        consume: (input) => {
+          consumedStepUps.push(input);
+          return Promise.resolve(input.token === "valid-step-up");
+        }
+      }
     });
     const created = await app.inject({
       method: "POST",
@@ -88,6 +96,16 @@ describe("autonomy and confirmation API", () => {
     });
     expect(approved.statusCode).toBe(200);
     expect(approved.json<{ profile: { base_level: string } }>().profile.base_level).toBe("A6");
+    expect(consumedStepUps).toHaveLength(1);
+    expect(consumedStepUps[0]).toMatchObject({
+      purpose: "autonomy_profile_escalation",
+      challenge: `project:${projectId}:autonomy-profile:1`,
+      identity: {
+        owner_id: "local-owner",
+        actor_id: "local-owner",
+        session_id: "local-development-session"
+      }
+    });
   });
 
   it("exposes pending confirmation cards and enforces nonce plus step-up", async () => {
@@ -135,5 +153,15 @@ describe("autonomy and confirmation API", () => {
     });
     expect(approved.statusCode).toBe(200);
     expect(approved.json<{ status: string }>().status).toBe("APPROVED");
+    expect(consumedStepUps).toHaveLength(1);
+    expect(consumedStepUps[0]).toMatchObject({
+      purpose: "critical_tool_confirmation",
+      challenge: confirmation.challenge_nonce,
+      identity: {
+        owner_id: "local-owner",
+        actor_id: "local-owner",
+        session_id: "local-development-session"
+      }
+    });
   });
 });
