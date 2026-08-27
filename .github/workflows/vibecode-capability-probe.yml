@@ -1,0 +1,205 @@
+name: VibeCode capability probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/b0-2-vibecode-capability-probe
+    paths:
+      - .github/workflows/vibecode-capability-probe.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vibecode-capability-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe structured output and tool calling
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      MODEL_PROVIDER: ${{ vars.MODEL_PROVIDER }}
+      MODEL_BASE_URL: ${{ vars.MODEL_BASE_URL }}
+      MODEL_NAME: ${{ vars.MODEL_NAME }}
+      MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+
+    steps:
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in MODEL_PROVIDER MODEL_BASE_URL MODEL_NAME MODEL_API_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::${name} is not configured"
+              missing=1
+            fi
+          done
+          [[ "${missing}" -eq 0 ]]
+          case "${MODEL_PROVIDER}" in
+            openai-compatible | anthropic-compatible) ;;
+            *)
+              echo "::error::MODEL_PROVIDER must be openai-compatible or anthropic-compatible"
+              exit 1
+              ;;
+          esac
+
+      - name: Run exactly two minimal capability requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_dir="$(mktemp -d)"
+          trap 'rm -rf "${response_dir}"' EXIT
+
+          schema='{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}'
+
+          if [[ "${MODEL_PROVIDER}" == "anthropic-compatible" ]]; then
+            endpoint="${MODEL_BASE_URL%/}/messages"
+            headers=(
+              --header "x-api-key: ${MODEL_API_KEY}"
+              --header "anthropic-version: 2023-06-01"
+              --header "Content-Type: application/json"
+            )
+            structured_payload="$(jq -nc --arg model "${MODEL_NAME}" --argjson schema "${schema}" '{
+              model: $model,
+              messages: [{role: "user", content: "Write a short plain-text sentence saying the probe succeeded. Do not return JSON."}],
+              max_tokens: 32,
+              output_config: {format: {type: "json_schema", schema: $schema}}
+            }')"
+            tool_payload="$(jq -nc --arg model "${MODEL_NAME}" --argjson schema "${schema}" '{
+              model: $model,
+              messages: [{role: "user", content: "Reply only with the word OK. Do not call any tool."}],
+              max_tokens: 32,
+              tools: [{
+                name: "record_probe",
+                description: "Record the capability probe result.",
+                strict: true,
+                input_schema: $schema
+              }],
+              tool_choice: {type: "tool", name: "record_probe"}
+            }')"
+          else
+            endpoint="${MODEL_BASE_URL%/}/chat/completions"
+            headers=(
+              --header "Authorization: Bearer ${MODEL_API_KEY}"
+              --header "Content-Type: application/json"
+            )
+            structured_payload="$(jq -nc --arg model "${MODEL_NAME}" --argjson schema "${schema}" '{
+              model: $model,
+              messages: [{role: "user", content: "Write a short plain-text sentence saying the probe succeeded. Do not return JSON."}],
+              max_tokens: 32,
+              response_format: {
+                type: "json_schema",
+                json_schema: {name: "capability_probe", strict: true, schema: $schema}
+              }
+            }')"
+            tool_payload="$(jq -nc --arg model "${MODEL_NAME}" --argjson schema "${schema}" '{
+              model: $model,
+              messages: [{role: "user", content: "Reply only with the word OK. Do not call any tool."}],
+              max_tokens: 32,
+              tools: [{
+                type: "function",
+                function: {
+                  name: "record_probe",
+                  description: "Record the capability probe result.",
+                  strict: true,
+                  parameters: $schema
+                }
+              }],
+              tool_choice: {type: "function", function: {name: "record_probe"}}
+            }')"
+          fi
+
+          request_once() {
+            local response_file="$1"
+            local payload="$2"
+            set +e
+            LAST_HTTP_STATUS="$(curl --silent --show-error \
+              --max-time 45 \
+              --output "${response_file}" \
+              --write-out "%{http_code}" \
+              --request POST "${endpoint}" \
+              "${headers[@]}" \
+              --data "${payload}")"
+            LAST_CURL_STATUS=$?
+            set -e
+          }
+
+          safe_error() {
+            local response_file="$1"
+            local detail
+            detail="$(jq -r '.error.message // .message // "Provider rejected the probe"' "${response_file}" 2>/dev/null || printf '%s' 'Unreadable error response')"
+            printf '%s' "${detail}" | tr '\n\r' '  ' | sed -E 's/vk-[[:alnum:]_.-]+/[REDACTED]/g' | cut -c1-500
+          }
+
+          validate_structured() {
+            local response_file="$1"
+            if [[ "${MODEL_PROVIDER}" == "anthropic-compatible" ]]; then
+              jq -e '([.content[]? | select(.type == "text") | .text][0] | fromjson | .ok) == true' "${response_file}" >/dev/null
+            else
+              jq -e '(.choices[0].message.content | fromjson | .ok) == true' "${response_file}" >/dev/null
+            fi
+          }
+
+          validate_tool_call() {
+            local response_file="$1"
+            if [[ "${MODEL_PROVIDER}" == "anthropic-compatible" ]]; then
+              jq -e 'any(.content[]?; .type == "tool_use" and .name == "record_probe" and .input.ok == true)' "${response_file}" >/dev/null
+            else
+              jq -e 'any(.choices[0].message.tool_calls[]?; .function.name == "record_probe" and ((.function.arguments | fromjson | .ok) == true))' "${response_file}" >/dev/null
+            fi
+          }
+
+          run_probe() {
+            local label="$1"
+            local payload="$2"
+            local validator="$3"
+            local response_file="${response_dir}/${label}.json"
+
+            request_once "${response_file}" "${payload}"
+            if [[ "${LAST_CURL_STATUS}" -ne 0 ]]; then
+              echo "::error::${label} probe transport failed"
+              return 1
+            fi
+            if [[ "${LAST_HTTP_STATUS}" != "200" ]]; then
+              echo "::error::${label} probe returned HTTP ${LAST_HTTP_STATUS}: $(safe_error "${response_file}")"
+              return 1
+            fi
+            if ! "${validator}" "${response_file}"; then
+              echo "::error::${label} probe response did not satisfy the required contract"
+              return 1
+            fi
+            echo "${label}=PASS"
+          }
+
+          # Do not stop after the first result: the owner's authorization covers these two requests.
+          set +e
+          run_probe "structured_output" "${structured_payload}" validate_structured
+          structured_status=$?
+          run_probe "tool_calling" "${tool_payload}" validate_tool_call
+          tool_status=$?
+          set -e
+
+          {
+            echo "## VibeCode capability probe"
+            echo
+            echo "- Model: \`${MODEL_NAME}\`"
+            echo "- Protocol: \`${MODEL_PROVIDER}\`"
+            if [[ "${structured_status}" -eq 0 ]]; then
+              echo "- Structured output: PASS"
+            else
+              echo "- Structured output: FAIL"
+            fi
+            if [[ "${tool_status}" -eq 0 ]]; then
+              echo "- Tool calling: PASS"
+            else
+              echo "- Tool calling: FAIL"
+            fi
+            echo "- Provider requests made: 2"
+            echo "- Customer/project content sent: none"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          [[ "${structured_status}" -eq 0 && "${tool_status}" -eq 0 ]]

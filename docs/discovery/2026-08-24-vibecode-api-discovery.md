@@ -32,12 +32,18 @@ unless separately authorized.
   [vibecode.moe](https://vibecode.moe/).
 - The public Terms state only a general minimum-technical-data and reasonable-security position:
   [Terms of Service](https://vibecode.moe/terms).
+- Owner-supplied catalog screenshots now establish exact visible model IDs and displayed prices for
+  a subset of Claude, GPT, Gemini, Grok, and DeepSeek routes. The normalized, hashed evidence is in
+  [the public catalog evidence record](2026-08-27-vibecode-public-catalog-evidence.md).
+- The public homepage's no-request-storage statement conflicts with the public Privacy Policy,
+  which permits collection of interaction history for analysis and improvement. Privacy therefore
+  remains unknown for confidential routing.
 
-This evidence proves authentication, configured model routing, and streaming availability. It does
-not establish the exact context window, output limit, structured-output/tool/vision support,
-model-specific price, upstream training use, regional processing, or a contractual retention
-period. Therefore no real entry is added to the committed registry yet, and VibeCode remains
-ineligible for confidential or hard-budget routing.
+This evidence proves authentication, configured model routing, streaming availability, and the
+displayed catalog price for models visible in the supplied screenshots. It does not establish exact
+context/output limits, structured-output/tool support, upstream training use, regional processing,
+or contractual retention. Therefore no real entry is added to the committed registry yet, and
+VibeCode remains ineligible for confidential routing.
 
 ## Read-only discovery sequence
 
