@@ -1,12 +1,18 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
 import {
   EmergencyStopStore,
+  IdentityStore,
   openDatabase,
   PolicyStore,
   ProjectStore,
   runMigrations
 } from "@cosmora/db";
 import { buildApp } from "./app.js";
+import {
+  BearerSessionIdentityResolver,
+  LOCAL_DEVELOPMENT_IDENTITY,
+  StaticIdentityResolver
+} from "./identity.js";
 import { buildModelRuntime } from "./model-runtime.js";
 
 const config = loadServerConfig();
@@ -34,6 +40,11 @@ try {
   });
   const projectStore = new ProjectStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
+  const identityStore = new IdentityStore(database.sqlite);
+  const identityResolver =
+    config.nodeEnv === "production"
+      ? new BearerSessionIdentityResolver(identityStore)
+      : new StaticIdentityResolver(LOCAL_DEVELOPMENT_IDENTITY);
   if (config.runtimeEmergencyStop) {
     emergencyStopStore.activateProcess(
       "RUNTIME_EMERGENCY_STOP environment switch",
@@ -50,6 +61,7 @@ try {
     modelGateway: modelRuntime.gateway,
     manager: modelRuntime.manager,
     modelRegistryVersion: modelRuntime.registryVersion,
+    identityResolver,
     closeDatabase: () => database.close()
   });
   if (recoveredRuns > 0) {
