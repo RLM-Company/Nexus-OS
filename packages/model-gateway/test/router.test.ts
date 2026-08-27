@@ -37,6 +37,7 @@ const entry = (overrides: Partial<ModelRegistryEntry> = {}): ModelRegistryEntry 
   source: {
     kind: "authorized_discovery",
     verified_at: "2026-08-24T00:00:00.000Z",
+    valid_until: "2099-08-24T00:00:00.000Z",
     reference: "discovery-fixture"
   },
   ...overrides
@@ -96,6 +97,7 @@ describe("ModelRegistry", () => {
               source: {
                 kind: "authorized_discovery",
                 verified_at: null,
+                valid_until: null,
                 reference: null
               }
             })
@@ -118,6 +120,7 @@ describe("ModelRegistry", () => {
           source: {
             kind: "static",
             verified_at: null,
+            valid_until: null,
             reference: null
           }
         })
@@ -155,12 +158,69 @@ describe("ModelRegistry", () => {
               source: {
                 kind: "static",
                 verified_at: "2026-08-24T00:00:00.000Z",
+                valid_until: "2099-08-24T00:00:00.000Z",
                 reference: "unreviewed-fixture"
               }
             })
           ])
         )
     ).toThrow("was not authorized through discovery");
+  });
+
+  it("rejects active external metadata without a bounded validity window", () => {
+    expect(
+      () =>
+        new ModelRegistry(
+          document([
+            entry({
+              source: {
+                kind: "authorized_discovery",
+                verified_at: "2026-08-24T00:00:00.000Z",
+                valid_until: null,
+                reference: "non-expiring-fixture"
+              }
+            })
+          ])
+        )
+    ).toThrow("missing evidence expiry");
+  });
+
+  it("fails closed when external price and availability evidence has expired", () => {
+    expect(
+      () =>
+        new ModelRegistry(
+          document([
+            entry({
+              source: {
+                kind: "authorized_discovery",
+                verified_at: "2026-08-24T00:00:00.000Z",
+                valid_until: "2026-08-25T00:00:00.000Z",
+                reference: "expired-fixture"
+              }
+            })
+          ]),
+          { now: () => Date.parse("2026-08-25T00:00:00.000Z") }
+        )
+    ).toThrow("evidence has expired");
+  });
+
+  it("rejects an evidence window that does not follow its verification time", () => {
+    expect(
+      () =>
+        new ModelRegistry(
+          document([
+            entry({
+              source: {
+                kind: "authorized_discovery",
+                verified_at: "2026-08-25T00:00:00.000Z",
+                valid_until: "2026-08-24T00:00:00.000Z",
+                reference: "reversed-window-fixture"
+              }
+            })
+          ]),
+          { now: () => Date.parse("2026-08-23T00:00:00.000Z") }
+        )
+    ).toThrow("expiry is not after verification");
   });
 
   it("rejects a contradictory confidential compatibility declaration", () => {

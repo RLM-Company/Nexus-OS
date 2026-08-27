@@ -35,8 +35,12 @@ constraint. Ties are resolved by stable provider/model identity.
 - Unknown privacy or price data cannot satisfy confidential or cost-limited requests.
 - Discovery data is accepted only from an owner-authorized provider endpoint or documentation.
 - An active external route must carry a non-empty evidence reference and verification timestamp,
-  use `source.kind = authorized_discovery`, and support the Gateway streaming contract. The
-  registry constructor rejects activation otherwise.
+  an explicit `valid_until`, use `source.kind = authorized_discovery`, and support the Gateway
+  streaming contract. The registry constructor rejects activation otherwise and also fails startup
+  once the evidence window expires.
+- Catalog availability and pricing are point-in-time evidence, not permanent model properties.
+  A refresh creates a new registry version; a missing model is disabled rather than silently
+  replaced by a similarly named route.
 - `confidential_compatible = true` is valid only with declared no-training use and known
   retention; contradictory declarations invalidate the registry instead of silently degrading.
 - UI code cannot import Model Gateway or provider adapters.

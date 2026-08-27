@@ -65,7 +65,10 @@ authorized-discovery evidence, verification timestamp и streaming capability, �
 контракты. Provider-neutral acceptance и restart-level incident drill закрыты: аварийная остановка
 сохраняется после перезапуска и блокирует queued run до выбора маршрута и Usage Ledger. Полный выход
 из B0.2 остаётся открытым: нужны точные limits реальной модели, разрешение privacy-конфликта, маршрут
-с подтверждёнными обязательными capabilities и выбор production Secret Manager backend.
+с подтверждёнными обязательными capabilities и выбор production Secret Manager backend. Цены и
+доступность внешних моделей теперь считаются временным evidence: активная запись обязана иметь
+`valid_until`, а просроченный Registry fail-closed блокирует запуск. Исчезновение Kimi из текущей
+витрины не создаёт автоматическую замену и не влияет на Registry, где Kimi не был активирован.
 
 Действия:
 

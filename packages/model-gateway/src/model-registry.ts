@@ -3,13 +3,19 @@ import type { ModelRegistryDocument, ModelRegistryEntry } from "@cosmora/contrac
 const entryKey = (entry: Pick<ModelRegistryEntry, "provider_id" | "model_id">): string =>
   `${entry.provider_id}:${entry.model_id}`;
 
+export interface ModelRegistryOptions {
+  now?: () => number;
+}
+
 export class ModelRegistry {
   readonly #document: ModelRegistryDocument;
 
-  constructor(document: ModelRegistryDocument) {
+  constructor(document: ModelRegistryDocument, options: ModelRegistryOptions = {}) {
     if (document.schema_version !== 1 || !document.registry_version.trim()) {
       throw new Error("Unsupported or invalid model registry document");
     }
+    const currentTime = (options.now ?? Date.now)();
+    if (!Number.isFinite(currentTime)) throw new Error("Invalid Model Registry clock");
     const keys = new Set<string>();
     for (const entry of document.entries) {
       const key = entryKey(entry);
@@ -33,6 +39,22 @@ export class ModelRegistry {
       }
       if (entry.protocol !== "mock" && entry.source.kind !== "authorized_discovery") {
         throw new Error(`Active external model route was not authorized through discovery: ${key}`);
+      }
+      if (entry.protocol !== "mock") {
+        if (!entry.source.valid_until) {
+          throw new Error(`Active external model route is missing evidence expiry: ${key}`);
+        }
+        const verifiedAt = Date.parse(entry.source.verified_at);
+        const validUntil = Date.parse(entry.source.valid_until);
+        if (!Number.isFinite(verifiedAt) || !Number.isFinite(validUntil)) {
+          throw new Error(`Model Registry evidence timestamps are invalid: ${key}`);
+        }
+        if (validUntil <= verifiedAt) {
+          throw new Error(`Model Registry evidence expiry is not after verification: ${key}`);
+        }
+        if (validUntil <= currentTime) {
+          throw new Error(`Model Registry evidence has expired: ${key}`);
+        }
       }
     }
     this.#document = structuredClone(document);
