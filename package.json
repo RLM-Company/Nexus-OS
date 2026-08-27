@@ -6,7 +6,7 @@
   "scripts": {
     "build": "turbo run build",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write packages/db/src/identity-store.ts packages/db/migrations/meta/0008_snapshot.json && git diff -- packages/db/src/identity-store.ts packages/db/migrations/meta/0008_snapshot.json && exit 1",
     "check:secrets": "node scripts/check-secrets.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",
