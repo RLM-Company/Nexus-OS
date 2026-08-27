@@ -763,9 +763,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
 
         const blockingStop = dependencies.emergencyStopStore?.getBlockingStop(
-      run.project_id,
-      ownerId
-    );
+          run.project_id,
+          ownerId
+        );
         if (blockingStop) {
           store.startAssistantMessage(run.id, ownerId);
           store.failRun(run.id, "EMERGENCY_STOP");
