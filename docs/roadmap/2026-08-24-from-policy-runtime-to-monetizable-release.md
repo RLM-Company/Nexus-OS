@@ -59,8 +59,10 @@
 атомарный Usage Ledger, per-attempt timeout, bounded retry, exponential backoff и exact-route
 circuit breaker слиты в `main`; авторизованный VibeCode streaming-check прошёл. Следующий
 review-инкремент добавляет content-free observability и durable process/project emergency stop.
-Точная metadata реальной модели, Secret Manager, проверка structured output/tool calling и
-финальный B0.2 acceptance gate ещё не закрыты.
+После него provider-neutral Secret Resolver убирает значение ключа из parsed-конфига и оставляет
+только server-side разрешение в composition root. Точная metadata реальной модели, выбор production
+Secret Manager backend, проверка structured output/tool calling и финальный B0.2 acceptance gate
+ещё не закрыты.
 
 Действия:
 

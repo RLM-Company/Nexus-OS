@@ -1,6 +1,8 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
+export * from "./secrets.js";
+
 export const RawServerConfigSchema = Type.Object(
   {
     NODE_ENV: Type.Optional(
@@ -72,7 +74,7 @@ export interface ServerConfig {
   modelProviderId: string;
   modelRegistryPath: string | null;
   modelBaseUrl: string | null;
-  modelApiKey: string | null;
+  modelApiKeyConfigured: boolean;
   modelName: string;
   modelFallbackToMock: boolean;
   modelMaxAttemptsPerRoute: number;
@@ -204,7 +206,7 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
     modelProviderId: raw.MODEL_PROVIDER_ID ?? (modelProvider === "mock" ? "mock" : "vibecode"),
     modelRegistryPath: raw.MODEL_REGISTRY_PATH ?? null,
     modelBaseUrl: raw.MODEL_BASE_URL ?? null,
-    modelApiKey: raw.MODEL_API_KEY ?? null,
+    modelApiKeyConfigured: Boolean(raw.MODEL_API_KEY),
     modelName: raw.MODEL_NAME ?? "manager",
     modelFallbackToMock: raw.MODEL_FALLBACK_TO_MOCK !== "false",
     modelMaxAttemptsPerRoute,

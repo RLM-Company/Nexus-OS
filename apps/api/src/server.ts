@@ -1,4 +1,4 @@
-import { loadServerConfig } from "@cosmora/config";
+import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
 import {
   EmergencyStopStore,
   openDatabase,
@@ -29,7 +29,9 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
 try {
   await runMigrations(database);
-  const modelRuntime = buildModelRuntime(config);
+  const modelRuntime = await buildModelRuntime(config, {
+    secretResolver: new EnvironmentSecretResolver()
+  });
   const projectStore = new ProjectStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   if (config.runtimeEmergencyStop) {

@@ -1,4 +1,4 @@
-import type { ServerConfig } from "@cosmora/config";
+import { EnvironmentSecretResolver, type SecretResolver, type ServerConfig } from "@cosmora/config";
 import { ModelRegistryDocumentSchema, type ModelRegistryDocument } from "@cosmora/contracts";
 import { ManagerService } from "@cosmora/core";
 import {
@@ -27,6 +27,7 @@ export interface ModelRuntime {
 
 export interface ModelRuntimeOptions {
   registryDocument?: ModelRegistryDocument;
+  secretResolver?: SecretResolver;
 }
 
 export const loadModelRegistryDocument = (path: string): ModelRegistryDocument => {
@@ -42,10 +43,10 @@ export const loadModelRegistryDocument = (path: string): ModelRegistryDocument =
   return candidate;
 };
 
-export const buildModelRuntime = (
+export const buildModelRuntime = async (
   config: ServerConfig,
   options: ModelRuntimeOptions = {}
-): ModelRuntime => {
+): Promise<ModelRuntime> => {
   const document =
     options.registryDocument ??
     loadModelRegistryDocument(config.modelRegistryPath ?? DEFAULT_REGISTRY_PATH);
@@ -55,7 +56,10 @@ export const buildModelRuntime = (
   const preferredProvider = config.modelProviderId;
 
   if (config.modelProvider !== "mock") {
-    if (!config.modelBaseUrl || !config.modelApiKey) {
+    const apiKey = await (options.secretResolver ?? new EnvironmentSecretResolver()).resolve(
+      "MODEL_API_KEY"
+    );
+    if (!config.modelBaseUrl || !apiKey) {
       throw new Error("External model provider configuration is incomplete");
     }
     const registered = registry.get(preferredProvider, config.modelName);
@@ -74,7 +78,7 @@ export const buildModelRuntime = (
         new OpenAICompatibleAdapter({
           id: preferredProvider,
           baseUrl: config.modelBaseUrl,
-          apiKey: config.modelApiKey,
+          apiKey,
           model: config.modelName
         })
       );
@@ -83,7 +87,7 @@ export const buildModelRuntime = (
         new AnthropicCompatibleAdapter({
           id: preferredProvider,
           baseUrl: config.modelBaseUrl,
-          apiKey: config.modelApiKey,
+          apiKey,
           model: config.modelName
         })
       );

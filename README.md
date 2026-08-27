@@ -31,6 +31,8 @@ Implemented through the current checkpoint:
   and Usage Ledger records for every selected retry or fallback attempt.
 - B02-004: content-free runtime metrics, structured model-route logs, durable process/project
   emergency stops, and fail-closed interruption of queued or active runs.
+- B02-005: asynchronous provider-neutral Secret Resolver; parsed runtime configuration retains only
+  credential presence and never the credential value.
 
 The current vertical slice creates real local projects and can stream either deterministic
 mock-manager responses or a configured OpenAI-compatible model. Tool execution and autonomous
@@ -112,6 +114,12 @@ versioned Model Registry and its protocol matches `MODEL_PROVIDER`. Missing, dis
 mismatched metadata fails startup instead of bypassing the Router. Unknown pricing remains allowed
 only for requests without a hard cost limit; unknown privacy never qualifies for confidential
 routing.
+
+`loadServerConfig` validates that a credential exists but discards its value after parsing. The API
+composition root resolves `MODEL_API_KEY` asynchronously immediately before constructing the
+server-only provider adapter. The current resolver reads process environment/GitHub Secrets; a
+managed secret backend can replace it through the same interface without changing Gateway or UI
+contracts.
 
 Run the complete verification pipeline with:
 

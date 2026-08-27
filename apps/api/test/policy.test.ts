@@ -17,7 +17,7 @@ describe("autonomy and confirmation API", () => {
     await runMigrations(database);
     const projectStore = new ProjectStore(database.sqlite);
     policyStore = new PolicyStore(database.sqlite);
-    const runtime = buildModelRuntime(config);
+    const runtime = await buildModelRuntime(config);
     app = buildApp({
       config,
       database,

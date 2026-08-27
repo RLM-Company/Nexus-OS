@@ -26,10 +26,14 @@ All model access goes through `packages/model-gateway`.
   pricing for the selected model is configured.
 - Credentials are read only from server environment variables and are excluded from logs, API
   responses, browser code, and version control.
+- Parsed application configuration retains only credential presence. The credential value is
+  resolved asynchronously at the API composition boundary through a provider-neutral
+  `SecretResolver` and passed directly into the selected server-only adapter.
 
 ## Consequences
 
 Connecting either supported protocol requires configuration rather than changes to Manager Core.
 Provider-specific features such as tool-use content blocks require explicit adapter support before
 they can be enabled. The mock adapter remains available for deterministic tests and offline
-development.
+development. The initial resolver uses process environment/GitHub Secrets; selecting and connecting
+a production managed secret backend remains a deployment decision.
