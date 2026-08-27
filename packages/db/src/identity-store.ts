@@ -254,12 +254,7 @@ export class IdentityStore {
       .all(ownerId) as unknown as IdentitySession[];
   }
 
-  revokeSession(
-    sessionId: string,
-    ownerId: string,
-    revokedBy: string,
-    reason: string
-  ): boolean {
+  revokeSession(sessionId: string, ownerId: string, revokedBy: string, reason: string): boolean {
     const session = this.getSession(sessionId, ownerId);
     if (!session || session.status !== "active") return false;
     const timestamp = this.#nowIso();
@@ -379,16 +374,7 @@ export class IdentityStore {
           (event_id, owner_id, actor_id, session_id, event_type, outcome, reason_code, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(
-        randomUUID(),
-        ownerId,
-        actorId,
-        sessionId,
-        eventType,
-        outcome,
-        reasonCode,
-        createdAt
-      );
+      .run(randomUUID(), ownerId, actorId, sessionId, eventType, outcome, reasonCode, createdAt);
   }
 
   #nowMs(): number {
