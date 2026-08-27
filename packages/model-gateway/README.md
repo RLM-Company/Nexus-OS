@@ -10,5 +10,7 @@ Implemented adapters:
 
 The gateway resolves every attempt through the versioned Model Registry before opening the provider
 stream. It owns deterministic routing, adapter/model binding, timeout handling, normalized errors,
-fallback before the first provider delta, and route events used by the atomic Usage Ledger. API keys
-stay in server environment variables.
+bounded retry with exponential backoff, an exact-route circuit breaker, fallback before the first
+provider delta, and route events used by the atomic Usage Ledger. A timeout applies to one provider
+attempt; retry and fallback counts remain bounded by configuration. API keys stay in server
+environment variables.

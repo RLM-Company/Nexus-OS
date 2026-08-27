@@ -94,7 +94,14 @@ export const buildModelRuntime = (
     gateway: new ModelGateway(
       adapters,
       router,
-      config.modelFallbackToMock && preferredProvider !== "mock" ? ["mock"] : []
+      config.modelFallbackToMock && preferredProvider !== "mock" ? ["mock"] : [],
+      {
+        maxAttemptsPerRoute: config.modelMaxAttemptsPerRoute,
+        retryBaseDelayMs: config.modelRetryBaseDelayMs,
+        retryMaxDelayMs: config.modelRetryMaxDelayMs,
+        circuitFailureThreshold: config.modelCircuitFailureThreshold,
+        circuitOpenMs: config.modelCircuitOpenMs
+      }
     ),
     manager: new ManagerService({
       preferredProvider,

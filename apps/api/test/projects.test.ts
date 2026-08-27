@@ -100,6 +100,44 @@ describe("project chat API", () => {
     expect(preview?.length).toBeLessThanOrEqual(240);
   });
 
+  it("persists every retry as a separate failed Usage Ledger attempt", async () => {
+    await app.close();
+    database.close();
+
+    const retryConfig = loadServerConfig({
+      NODE_ENV: "test",
+      MOCK_PROVIDER_MODE: "provider_error",
+      MODEL_MAX_ATTEMPTS_PER_ROUTE: "2",
+      MODEL_RETRY_BASE_DELAY_MS: "0",
+      MODEL_RETRY_MAX_DELAY_MS: "0"
+    });
+    database = openDatabase(":memory:");
+    await runMigrations(database);
+    const runtime = buildModelRuntime(retryConfig);
+    projectStore = new ProjectStore(database.sqlite);
+    app = buildApp({
+      config: retryConfig,
+      database,
+      projectStore,
+      modelGateway: runtime.gateway,
+      manager: runtime.manager
+    });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: { initial_message: "Проверь retry ledger", client_message_id: "retry-ledger-1" }
+    });
+    const body = created.json<{ run_id: string; stream_url: string }>();
+    const stream = await app.inject({ method: "GET", url: body.stream_url });
+
+    expect(stream.body).toContain("event: run.failed");
+    expect(projectStore.getModelUsageForRun(body.run_id)).toEqual([
+      expect.objectContaining({ attempt: 0, status: "failed", error_code: "PROVIDER_ERROR" }),
+      expect.objectContaining({ attempt: 1, status: "failed", error_code: "PROVIDER_ERROR" })
+    ]);
+  });
+
   it("returns typed not-found errors", async () => {
     const response = await app.inject({
       method: "POST",

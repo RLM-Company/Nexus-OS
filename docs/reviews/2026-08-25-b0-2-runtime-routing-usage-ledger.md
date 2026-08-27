@@ -1,7 +1,7 @@
 # B0.2 review: runtime routing and atomic Usage Ledger
 
 **Date:** 2026-08-25
-**Status:** CANDIDATE / CI PENDING
+**Status:** MERGED / FOLLOW-UP IN PROGRESS
 
 ## Scope
 
@@ -42,7 +42,7 @@
 ## Explicitly deferred
 
 - committing a VibeCode registry entry before exact model metadata is available;
-- retry policy and circuit breaker;
+- retry policy and circuit breaker (implemented by the B02-003 follow-up);
 - process-wide emergency stop;
 - metrics exporter and alerting;
 - confidential routing approval;

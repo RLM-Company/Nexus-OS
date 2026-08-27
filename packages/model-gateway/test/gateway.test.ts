@@ -149,7 +149,8 @@ describe("ModelGateway", () => {
         }),
         entry()
       ]),
-      ["mock"]
+      ["mock"],
+      { maxAttemptsPerRoute: 1 }
     );
     const events = await collectGateway(
       gateway.stream(
@@ -168,6 +169,50 @@ describe("ModelGateway", () => {
       expect.objectContaining({ type: "route.failed", errorCode: "PROVIDER_ERROR" })
     );
     expect(events.at(-1)).toMatchObject({ type: "response.completed", provider: "mock" });
+  });
+
+  it("retries a retryable route failure before fallback and records each attempt", async () => {
+    let calls = 0;
+    const flaky: ModelProviderAdapter = {
+      id: "mock",
+      modelId: "manager-b0.1",
+      stream: async function* () {
+        await Promise.resolve();
+        calls += 1;
+        if (calls === 1) {
+          throw new GatewayRunError("PROVIDER_ERROR", "mock", "Unavailable", true);
+        }
+        yield {
+          type: "response.completed",
+          provider: "mock",
+          model: "manager-b0.1",
+          finishReason: "stop",
+          usage: { inputTokens: 10, outputTokens: 2 }
+        };
+      }
+    };
+    const gateway = new ModelGateway([flaky], router([entry()]), [], {
+      maxAttemptsPerRoute: 2,
+      retryBaseDelayMs: 0,
+      retryMaxDelayMs: 0
+    });
+    const events = await collectGateway(
+      gateway.stream(request({ routing: { ...request().routing, fallback_allowed: false } }))
+    );
+
+    expect(calls).toBe(2);
+    expect(
+      events.filter((event) => event.type === "route.selected").map((event) => event.route.attempt)
+    ).toEqual([0, 1]);
+    expect(events.find((event) => event.type === "route.failed")).toMatchObject({
+      type: "route.failed",
+      route: { attempt: 0 },
+      retryable: true
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: "response.completed",
+      route: { attempt: 1 }
+    });
   });
 
   it("does not fall back after partial provider output", async () => {
@@ -208,6 +253,52 @@ describe("ModelGateway", () => {
     ).rejects.toMatchObject({ code: "PROVIDER_ERROR", provider: "primary" });
   });
 
+  it("does not retry a non-retryable provider failure", async () => {
+    let calls = 0;
+    const rejected: ModelProviderAdapter = {
+      id: "mock",
+      modelId: "manager-b0.1",
+      stream: async function* () {
+        await Promise.resolve();
+        calls += 1;
+        yield* [] as ProviderStreamEvent[];
+        throw new GatewayRunError("PROVIDER_ERROR", "mock", "Rejected", false);
+      }
+    };
+    const gateway = new ModelGateway([rejected], router([entry()]), [], {
+      maxAttemptsPerRoute: 3,
+      retryBaseDelayMs: 0,
+      retryMaxDelayMs: 0
+    });
+
+    await expect(collectGateway(gateway.stream(request()))).rejects.toMatchObject({
+      code: "PROVIDER_ERROR",
+      retryable: false
+    });
+    expect(calls).toBe(1);
+  });
+
+  it("does not open a provider stream when cancellation already happened", async () => {
+    let calls = 0;
+    const adapter: ModelProviderAdapter = {
+      id: "mock",
+      modelId: "manager-b0.1",
+      stream: async function* () {
+        await Promise.resolve();
+        calls += 1;
+        yield* [] as ProviderStreamEvent[];
+      }
+    };
+    const gateway = new ModelGateway([adapter], router([entry()]));
+    const controller = new AbortController();
+    controller.abort(new Error("Cancelled"));
+
+    await expect(
+      collectGateway(gateway.stream(request(), controller.signal))
+    ).rejects.toMatchObject({ code: "INTERRUPTED", retryable: false });
+    expect(calls).toBe(0);
+  });
+
   it("normalizes provider timeouts and records the failed route", async () => {
     const gateway = new ModelGateway([new MockProviderAdapter("timeout")], router([entry()]));
     await expect(
@@ -220,6 +311,113 @@ describe("ModelGateway", () => {
         )
       )
     ).rejects.toMatchObject({ code: "PROVIDER_TIMEOUT", retryable: true });
+  });
+
+  it("opens a route circuit and permits one successful probe after cooldown", async () => {
+    let calls = 0;
+    let currentTime = 0;
+    const recovering: ModelProviderAdapter = {
+      id: "mock",
+      modelId: "manager-b0.1",
+      stream: async function* () {
+        await Promise.resolve();
+        calls += 1;
+        if (calls <= 2) {
+          throw new GatewayRunError("PROVIDER_ERROR", "mock", "Unavailable", true);
+        }
+        yield {
+          type: "response.completed",
+          provider: "mock",
+          model: "manager-b0.1",
+          finishReason: "stop",
+          usage: { inputTokens: 10, outputTokens: 2 }
+        };
+      }
+    };
+    const gateway = new ModelGateway([recovering], router([entry()]), [], {
+      maxAttemptsPerRoute: 1,
+      circuitFailureThreshold: 2,
+      circuitOpenMs: 1_000,
+      now: () => currentTime
+    });
+    const noFallback = request({
+      routing: { ...request().routing, fallback_allowed: false }
+    });
+
+    await expect(collectGateway(gateway.stream(noFallback))).rejects.toMatchObject({
+      code: "PROVIDER_ERROR"
+    });
+    await expect(collectGateway(gateway.stream(noFallback))).rejects.toMatchObject({
+      code: "PROVIDER_ERROR"
+    });
+    await expect(collectGateway(gateway.stream(noFallback))).rejects.toMatchObject({
+      code: "CIRCUIT_OPEN",
+      retryable: true
+    });
+    expect(calls).toBe(2);
+
+    currentTime = 1_000;
+    await expect(collectGateway(gateway.stream(noFallback))).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "response.completed", provider: "mock" })
+      ])
+    );
+    expect(calls).toBe(3);
+  });
+
+  it("releases a half-open probe when its stream consumer stops early", async () => {
+    let calls = 0;
+    let currentTime = 0;
+    const recovering: ModelProviderAdapter = {
+      id: "mock",
+      modelId: "manager-b0.1",
+      stream: async function* () {
+        await Promise.resolve();
+        calls += 1;
+        if (calls === 1) {
+          throw new GatewayRunError("PROVIDER_ERROR", "mock", "Unavailable", true);
+        }
+        if (calls === 2) {
+          yield { type: "text.delta", delta: "probe" };
+          return;
+        }
+        yield {
+          type: "response.completed",
+          provider: "mock",
+          model: "manager-b0.1",
+          finishReason: "stop",
+          usage: { inputTokens: 10, outputTokens: 2 }
+        };
+      }
+    };
+    const gateway = new ModelGateway([recovering], router([entry()]), [], {
+      maxAttemptsPerRoute: 1,
+      circuitFailureThreshold: 1,
+      circuitOpenMs: 1_000,
+      now: () => currentTime
+    });
+    const noFallback = request({
+      routing: { ...request().routing, fallback_allowed: false }
+    });
+
+    await expect(collectGateway(gateway.stream(noFallback))).rejects.toMatchObject({
+      code: "PROVIDER_ERROR"
+    });
+    currentTime = 1_000;
+    const probe = gateway.stream(noFallback);
+    await expect(probe.next()).resolves.toMatchObject({ value: { type: "route.selected" } });
+    await expect(probe.next()).resolves.toEqual({
+      done: false,
+      value: { type: "text.delta", delta: "probe" }
+    });
+    await probe.return(undefined);
+
+    await expect(collectGateway(gateway.stream(noFallback))).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "response.completed", provider: "mock" })
+      ])
+    );
+    expect(calls).toBe(3);
   });
 
   it("fails closed when no adapter matches the selected registry model", async () => {
