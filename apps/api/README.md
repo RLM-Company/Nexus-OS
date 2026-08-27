@@ -4,6 +4,10 @@ Fastify server for Cosmora OS. It applies SQLite migrations during startup and e
 
 - `GET /api/v1/health` for API and database readiness;
 - `GET /api/v1/model-runtime` for a secret-free provider summary;
+- `GET /api/v1/operations/status` for content-free runtime counters and safety alerts;
+- `POST /api/v1/operations/emergency-stop` for durable process/project execution stops;
 - project, message, and SSE run routes under `/api/v1`.
 
-The API owns provider credentials. They are never sent to the browser.
+The API owns provider credentials. They are never sent to the browser. Operational logs include
+route identity, attempt, error code, token counts, and calculated cost, but never prompts, response
+content, or credentials.

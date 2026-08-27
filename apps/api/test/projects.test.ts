@@ -1,5 +1,5 @@
 import { loadServerConfig } from "@cosmora/config";
-import { openDatabase, ProjectStore, runMigrations } from "@cosmora/db";
+import { EmergencyStopStore, openDatabase, ProjectStore, runMigrations } from "@cosmora/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
@@ -12,6 +12,7 @@ describe("project chat API", () => {
   });
   let database: ReturnType<typeof openDatabase>;
   let projectStore: ProjectStore;
+  let emergencyStopStore: EmergencyStopStore;
   let app: ReturnType<typeof buildApp>;
 
   beforeEach(async () => {
@@ -19,10 +20,12 @@ describe("project chat API", () => {
     await runMigrations(database);
     const runtime = buildModelRuntime(config);
     projectStore = new ProjectStore(database.sqlite);
+    emergencyStopStore = new EmergencyStopStore(database.sqlite);
     app = buildApp({
       config,
       database,
       projectStore,
+      emergencyStopStore,
       modelGateway: runtime.gateway,
       manager: runtime.manager
     });
@@ -115,10 +118,12 @@ describe("project chat API", () => {
     await runMigrations(database);
     const runtime = buildModelRuntime(retryConfig);
     projectStore = new ProjectStore(database.sqlite);
+    emergencyStopStore = new EmergencyStopStore(database.sqlite);
     app = buildApp({
       config: retryConfig,
       database,
       projectStore,
+      emergencyStopStore,
       modelGateway: runtime.gateway,
       manager: runtime.manager
     });
@@ -147,6 +152,87 @@ describe("project chat API", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json<{ error: { code: string } }>().error.code).toBe("PROJECT_NOT_FOUND");
+  });
+
+  it("blocks a queued run after a project emergency stop and reports operational status", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: { initial_message: "Не запускай модель", client_message_id: "stop-queued-1" }
+    });
+    const body = created.json<{ project: { id: string }; run_id: string; stream_url: string }>();
+
+    const stopped = await app.inject({
+      method: "POST",
+      url: "/api/v1/operations/emergency-stop",
+      payload: {
+        scope: "project",
+        project_id: body.project.id,
+        reason: "Owner containment test"
+      }
+    });
+    const stream = await app.inject({ method: "GET", url: body.stream_url });
+    const status = await app.inject({ method: "GET", url: "/api/v1/operations/status" });
+
+    expect(stopped.statusCode, stopped.body).toBe(200);
+    expect(stopped.json()).toMatchObject({
+      scope: "project",
+      project_id: body.project.id,
+      active: true
+    });
+    expect(stream.body).toContain('"error_code":"EMERGENCY_STOP"');
+    expect(projectStore.getRun(body.run_id)).toMatchObject({ status: "failed" });
+    expect(projectStore.getAssistantMessage(body.run_id)).toMatchObject({
+      status: "failed",
+      error_code: "EMERGENCY_STOP"
+    });
+    expect(status.json()).toMatchObject({
+      active_runs: 0,
+      process_stop: null,
+      active_project_stops: 1,
+      metrics: {
+        runs_started: 0,
+        runs_failed: 1,
+        route_attempts: 0,
+        route_failures: { EMERGENCY_STOP: 1 }
+      },
+      alerts: [expect.objectContaining({ code: "PROJECT_EMERGENCY_STOP" })]
+    });
+  });
+
+  it("interrupts an active run with a process emergency stop", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: { initial_message: "Начни длинный ответ", client_message_id: "stop-active-1" }
+    });
+    const body = created.json<{ run_id: string; stream_url: string }>();
+    const pendingStream = app.inject({ method: "GET", url: body.stream_url });
+
+    await vi.waitFor(() => expect(projectStore.getRun(body.run_id)?.status).toBe("running"), {
+      timeout: 2_000
+    });
+    const stopped = await app.inject({
+      method: "POST",
+      url: "/api/v1/operations/emergency-stop",
+      payload: { scope: "process", reason: "Provider incident" }
+    });
+    const stream = await pendingStream;
+    const status = await app.inject({ method: "GET", url: "/api/v1/operations/status" });
+
+    expect(stopped.statusCode).toBe(200);
+    expect(stream.body).toContain("event: run.failed");
+    expect(stream.body).toContain('"error_code":"EMERGENCY_STOP"');
+    expect(projectStore.getRun(body.run_id)).toMatchObject({ status: "failed" });
+    expect(projectStore.getModelUsageForRun(body.run_id)).toEqual([
+      expect.objectContaining({ status: "failed", error_code: "EMERGENCY_STOP" })
+    ]);
+    expect(status.json()).toMatchObject({
+      active_runs: 0,
+      process_stop: { scope: "process", active: true },
+      metrics: { runs_started: 1, runs_failed: 1, route_attempts: 1 },
+      alerts: [expect.objectContaining({ code: "PROCESS_EMERGENCY_STOP" })]
+    });
   });
 
   it("does not expose another owner's project or run", async () => {

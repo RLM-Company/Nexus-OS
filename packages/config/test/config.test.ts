@@ -21,6 +21,7 @@ describe("loadServerConfig", () => {
       modelRetryMaxDelayMs: 2_000,
       modelCircuitFailureThreshold: 3,
       modelCircuitOpenMs: 30_000,
+      runtimeEmergencyStop: false,
       managerTimeoutMs: 60_000,
       managerMaxOutputTokens: 1_200,
       logLevel: "info",
@@ -117,6 +118,13 @@ describe("loadServerConfig", () => {
     ).toThrow("Invalid server configuration: /MODEL_RETRY_MAX_DELAY_MS");
     expect(() => loadServerConfig({ MODEL_CIRCUIT_OPEN_MS: "0" })).toThrow(
       "Invalid server configuration: /MODEL_CIRCUIT_OPEN_MS"
+    );
+  });
+
+  it("loads the fail-closed process emergency switch", () => {
+    expect(loadServerConfig({ RUNTIME_EMERGENCY_STOP: "true" }).runtimeEmergencyStop).toBe(true);
+    expect(() => loadServerConfig({ RUNTIME_EMERGENCY_STOP: "yes" })).toThrow(
+      "Invalid server configuration: /RUNTIME_EMERGENCY_STOP"
     );
   });
 });

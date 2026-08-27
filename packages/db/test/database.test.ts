@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  EmergencyStopStore,
   IdempotencyConflictError,
   openDatabase,
   ProjectStore,
@@ -20,6 +21,11 @@ describe("SQLite foundation", () => {
         .get("cosmora_system_metadata") as { name?: string } | undefined;
 
       expect(row?.name).toBe("cosmora_system_metadata");
+      expect(
+        database.sqlite
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+          .get("emergency_stops")
+      ).toMatchObject({ name: "emergency_stops" });
     } finally {
       database.close();
     }
@@ -126,6 +132,53 @@ describe("SQLite foundation", () => {
       expect(store.getRun(hidden.run.id, "other-owner")).not.toBeNull();
     } finally {
       database.close();
+    }
+  });
+
+  it("persists fail-closed process and owner-bound project emergency stops", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "cosmora-stop-test-"));
+    const file = join(directory, "cosmora.db");
+    const first = openDatabase(file);
+    let projectId: string;
+
+    try {
+      await runMigrations(first);
+      const projects = new ProjectStore(first.sqlite);
+      const stops = new EmergencyStopStore(first.sqlite);
+      projectId = projects.createProject("Останови проект", "stop-project-1").project.id;
+      const hidden = projects.createProject("Чужой проект", "stop-other-1", "other-owner").project
+        .id;
+
+      expect(stops.activateProject(projectId, "Owner requested stop")).toMatchObject({
+        scope: "project",
+        project_id: projectId,
+        active: true
+      });
+      expect(stops.activateProject(hidden, "Unauthorized stop")).toBeNull();
+      expect(stops.countActiveProjectStops()).toBe(1);
+      expect(stops.activateProcess("Incident containment", "system:operator")).toMatchObject({
+        scope: "process",
+        project_id: null,
+        activated_by: "system:operator"
+      });
+      expect(stops.getBlockingStop(projectId)?.scope).toBe("process");
+    } finally {
+      first.close();
+    }
+
+    const reopened = openDatabase(file);
+    try {
+      await runMigrations(reopened);
+      const stops = new EmergencyStopStore(reopened.sqlite);
+      expect(stops.getProcessStop()).toMatchObject({ reason: "Incident containment" });
+      expect(stops.getProjectStop(projectId)).toMatchObject({ reason: "Owner requested stop" });
+      expect(stops.clearProcess("system:recovery")).toBe(true);
+      expect(stops.getBlockingStop(projectId)?.scope).toBe("project");
+      expect(stops.clearProject(projectId, "system:recovery")).toBe(true);
+      expect(stops.getBlockingStop(projectId)).toBeNull();
+    } finally {
+      reopened.close();
+      rmSync(directory, { recursive: true, force: true });
     }
   });
 

@@ -3,6 +3,7 @@ import type { ServerConfig } from "@cosmora/config";
 import type { ManagerService } from "@cosmora/core";
 import {
   ApiErrorSchema,
+  ActivateEmergencyStopRequestSchema,
   AUTONOMY_MATRIX,
   CapabilityProfileResponseSchema,
   ConfirmationDecisionRequestSchema,
@@ -10,6 +11,7 @@ import {
   ConfirmationRequestSchema,
   CreateMessageRequestSchema,
   CreateProjectRequestSchema,
+  EmergencyStopStateSchema,
   HealthResponseSchema,
   MessageAcceptedResponseSchema,
   ModelRuntimeStatusSchema,
@@ -17,23 +19,27 @@ import {
   ProjectListResponseSchema,
   PERMISSION_MODE_RANK,
   RunCancelResponseSchema,
+  RuntimeOperationsStatusSchema,
   UpdateCapabilityProfileRequestSchema,
   requiresStepUp,
   type ApiError,
   type CapabilityId,
   type CapabilityProfileResponse,
   type ConfirmationListResponse,
+  type EmergencyStopState,
   type HealthResponse,
   type MessageAcceptedResponse,
   type ModelRuntimeStatus,
   type ProjectDetailResponse,
   type ProjectListResponse,
   type RunCancelResponse,
+  type RuntimeOperationsStatus,
   type StreamEvent
 } from "@cosmora/contracts";
 import {
   IdempotencyConflictError,
   type DatabaseHealth,
+  type EmergencyStopStore,
   type PolicyStore,
   type ProjectStore,
   type StoredMessage
@@ -44,17 +50,20 @@ import {
   type ModelGatewayStreamEvent
 } from "@cosmora/model-gateway";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 
 export interface AppDependencies {
   config: ServerConfig;
   database: DatabaseHealth;
   projectStore?: ProjectStore;
+  emergencyStopStore?: EmergencyStopStore;
   policyStore?: PolicyStore;
   modelGateway?: ModelGateway;
   manager?: ManagerService;
   modelRegistryVersion?: string;
   stepUpVerifier?: (token: string, purpose: string) => Promise<boolean>;
   closeDatabase?: () => void;
+  runtimeMetrics?: RuntimeMetrics;
 }
 
 const stepUpToken = (value: string | string[] | undefined): string | null =>
@@ -140,7 +149,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           }
   }).withTypeProvider<TypeBoxTypeProvider>();
 
-  const activeRuns = new Map<string, AbortController>();
+  const activeRuns = new Map<string, { projectId: string; controller: AbortController }>();
+  const runtimeMetrics = dependencies.runtimeMetrics ?? new RuntimeMetrics();
 
   app.get(
     "/api/v1/health",
@@ -161,6 +171,70 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       return reply.status(database === "ok" ? 200 : 503).send(response);
     }
   );
+
+  if (dependencies.emergencyStopStore) {
+    const stopStore = dependencies.emergencyStopStore;
+
+    app.get(
+      "/api/v1/operations/status",
+      { schema: { response: { 200: RuntimeOperationsStatusSchema } } },
+      () => {
+        const response: RuntimeOperationsStatus = runtimeMetrics.snapshot(
+          stopStore,
+          activeRuns.size
+        );
+        return response;
+      }
+    );
+
+    app.post(
+      "/api/v1/operations/emergency-stop",
+      {
+        schema: {
+          body: ActivateEmergencyStopRequestSchema,
+          response: { 200: EmergencyStopStateSchema, 400: ApiErrorSchema, 404: ApiErrorSchema }
+        }
+      },
+      async (request, reply) => {
+        if (
+          (request.body.scope === "project" && !request.body.project_id) ||
+          (request.body.scope === "process" && request.body.project_id !== undefined)
+        ) {
+          return reply
+            .status(400)
+            .send(errorBody(request.id, "VALIDATION_ERROR", "Request validation failed"));
+        }
+        const state =
+          request.body.scope === "process"
+            ? stopStore.activateProcess(request.body.reason)
+            : stopStore.activateProject(request.body.project_id as string, request.body.reason);
+        if (!state) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+
+        let interruptedRuns = 0;
+        for (const active of activeRuns.values()) {
+          if (state.scope === "process" || active.projectId === state.project_id) {
+            active.controller.abort(new EmergencyStopActivatedError());
+            interruptedRuns += 1;
+          }
+        }
+        app.log.error(
+          {
+            scope: state.scope,
+            projectId: state.project_id,
+            interruptedRuns,
+            activatedBy: state.activated_by
+          },
+          "Emergency stop activated"
+        );
+        const response: EmergencyStopState = state;
+        return response;
+      }
+    );
+  }
 
   app.get(
     "/api/v1/model-runtime",
@@ -549,7 +623,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             .status(409)
             .send(errorBody(request.id, "RUN_ALREADY_FINISHED", "Run is already finished"));
         }
-        activeRuns.get(request.params.runId)?.abort(new Error("Run was cancelled by the owner"));
+        activeRuns
+          .get(request.params.runId)
+          ?.controller.abort(new Error("Run was cancelled by the owner"));
         const response: RunCancelResponse = {
           run_id: request.params.runId,
           status: "cancelled"
@@ -620,6 +696,23 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           return reply;
         }
 
+        const blockingStop = dependencies.emergencyStopStore?.getBlockingStop(run.project_id);
+        if (blockingStop) {
+          store.startAssistantMessage(run.id);
+          store.failRun(run.id, "EMERGENCY_STOP");
+          runtimeMetrics.runFailed("EMERGENCY_STOP");
+          sendEvent(reply, {
+            type: "run.failed",
+            data: { run_id: run.id, error_code: "EMERGENCY_STOP", retryable: false }
+          });
+          app.log.warn(
+            { runId: run.id, projectId: run.project_id, stopScope: blockingStop.scope },
+            "Model run blocked by emergency stop"
+          );
+          reply.raw.end();
+          return reply;
+        }
+
         const assistant = store.startAssistantMessage(run.id);
         if (!assistant) {
           reply.raw.end();
@@ -639,7 +732,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         let size = assistant.content.length;
         let completed: Extract<ModelGatewayStreamEvent, { type: "response.completed" }> | undefined;
         const controller = new AbortController();
-        activeRuns.set(run.id, controller);
+        activeRuns.set(run.id, { projectId: run.project_id, controller });
+        runtimeMetrics.runStarted();
         const onAborted = (): void => controller.abort(new Error("Client disconnected"));
         const onClosed = (): void => {
           if (!reply.raw.writableEnded) onAborted();
@@ -654,6 +748,18 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           });
           for await (const event of modelGateway.stream(modelRequest, controller.signal)) {
             if (event.type === "route.selected") {
+              runtimeMetrics.routeSelected();
+              app.log.info(
+                {
+                  runId: run.id,
+                  projectId: run.project_id,
+                  attempt: event.route.attempt,
+                  provider: event.route.provider_id,
+                  model: event.route.model_id,
+                  registryVersion: event.route.registry_version
+                },
+                "Model route attempt selected"
+              );
               const reserved = store.reserveModelUsage(run.id, event.route);
               if (!reserved) {
                 throw new GatewayRunError(
@@ -664,6 +770,19 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                 );
               }
             } else if (event.type === "route.failed") {
+              runtimeMetrics.routeFailed(event.errorCode);
+              app.log.warn(
+                {
+                  runId: run.id,
+                  projectId: run.project_id,
+                  attempt: event.route.attempt,
+                  provider: event.route.provider_id,
+                  model: event.route.model_id,
+                  errorCode: event.errorCode,
+                  retryable: event.retryable
+                },
+                "Model route attempt failed"
+              );
               store.failModelUsage(run.id, event.route.attempt, event.errorCode);
             } else if (event.type === "text.delta") {
               store.appendAssistantDelta(assistant.id, event.delta);
@@ -693,6 +812,20 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             attempt: completed.route.attempt,
             calculatedCost: completed.calculatedCost
           });
+          runtimeMetrics.runCompleted();
+          app.log.info(
+            {
+              runId: run.id,
+              projectId: run.project_id,
+              attempt: completed.route.attempt,
+              provider: completed.provider,
+              model: completed.model,
+              inputTokens: completed.usage.inputTokens,
+              outputTokens: completed.usage.outputTokens,
+              calculatedCost: completed.calculatedCost
+            },
+            "Model run completed"
+          );
           sendEvent(reply, {
             type: "message.completed",
             data: {
@@ -711,8 +844,25 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             }
           });
         } catch (error) {
+          if (controller.signal.reason instanceof EmergencyStopActivatedError) {
+            store.failRun(run.id, "EMERGENCY_STOP");
+            runtimeMetrics.runFailed("EMERGENCY_STOP");
+            if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+              sendEvent(reply, {
+                type: "run.failed",
+                data: { run_id: run.id, error_code: "EMERGENCY_STOP", retryable: false }
+              });
+              reply.raw.end();
+            }
+            app.log.error(
+              { runId: run.id, projectId: run.project_id },
+              "Active model run interrupted by emergency stop"
+            );
+            return reply;
+          }
           if (controller.signal.aborted || store.getRun(run.id)?.status === "cancelled") {
             store.cancelRun(run.id);
+            runtimeMetrics.runCancelled();
             if (!reply.raw.destroyed && !reply.raw.writableEnded) {
               sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
               reply.raw.end();
@@ -727,6 +877,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                 });
           const code = gatewayError.code;
           store.failRun(run.id, code);
+          runtimeMetrics.runFailed(code);
           sendEvent(reply, {
             type: "run.failed",
             data: { run_id: run.id, error_code: code, retryable: gatewayError.retryable }
@@ -776,6 +927,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   app.setNotFoundHandler((request, reply) =>
     reply.status(404).send(errorBody(request.id, "ROUTE_NOT_FOUND", "Route not found"))
   );
+
+  app.addHook("onClose", () => {
+    for (const active of activeRuns.values()) {
+      active.controller.abort(new Error("API process is shutting down"));
+    }
+  });
 
   if (dependencies.closeDatabase) {
     app.addHook("onClose", () => dependencies.closeDatabase?.());
