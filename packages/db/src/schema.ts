@@ -6,6 +6,68 @@ export const systemMetadata = sqliteTable("cosmora_system_metadata", {
   updatedAt: text("updated_at").notNull()
 });
 
+export const identityActors = sqliteTable(
+  "identity_actors",
+  {
+    actorId: text("actor_id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    kind: text("kind").notNull(),
+    status: text("status").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [index("identity_actors_owner_status_idx").on(table.ownerId, table.status)]
+);
+
+export const identitySessions = sqliteTable(
+  "identity_sessions",
+  {
+    sessionId: text("session_id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => identityActors.actorId, { onDelete: "restrict" }),
+    tokenHash: text("token_hash").notNull(),
+    assurance: text("assurance").notNull(),
+    status: text("status").notNull(),
+    issuedAt: text("issued_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    lastSeenAt: text("last_seen_at").notNull(),
+    revokedAt: text("revoked_at"),
+    revokedBy: text("revoked_by"),
+    revokeReason: text("revoke_reason")
+  },
+  (table) => [
+    uniqueIndex("identity_sessions_token_hash_unique").on(table.tokenHash),
+    index("identity_sessions_owner_status_expires_idx").on(
+      table.ownerId,
+      table.status,
+      table.expiresAt
+    ),
+    index("identity_sessions_actor_status_idx").on(table.actorId, table.status)
+  ]
+);
+
+export const identityAuditEvents = sqliteTable(
+  "identity_audit_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    sessionId: text("session_id").references(() => identitySessions.sessionId, {
+      onDelete: "set null"
+    }),
+    eventType: text("event_type").notNull(),
+    outcome: text("outcome").notNull(),
+    reasonCode: text("reason_code"),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    index("identity_audit_owner_created_idx").on(table.ownerId, table.createdAt),
+    index("identity_audit_session_created_idx").on(table.sessionId, table.createdAt)
+  ]
+);
+
 export const projects = sqliteTable(
   "projects",
   {

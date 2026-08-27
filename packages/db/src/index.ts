@@ -96,5 +96,6 @@ export const runMigrations = (
 
 export { schema };
 export * from "./emergency-stop-store.js";
+export * from "./identity-store.js";
 export * from "./policy-store.js";
 export * from "./project-store.js";
