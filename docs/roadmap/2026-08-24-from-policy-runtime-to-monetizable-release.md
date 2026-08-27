@@ -62,8 +62,10 @@ Registry activation gate находится в review: он запрещает �
 authorized-discovery evidence, verification timestamp и streaming capability, а также отклоняет
 противоречивые confidential-декларации. Два отдельно авторизованных запроса к
 `claude-sonnet-5` завершены: structured output и forced tool calling не прошли обязательные
-контракты. Точная metadata реальной модели, разрешение privacy-конфликта, выбор production Secret
-Manager backend и финальный B0.2 acceptance gate ещё не закрыты.
+контракты. Provider-neutral acceptance и restart-level incident drill закрыты: аварийная остановка
+сохраняется после перезапуска и блокирует queued run до выбора маршрута и Usage Ledger. Полный выход
+из B0.2 остаётся открытым: нужны точные limits реальной модели, разрешение privacy-конфликта, маршрут
+с подтверждёнными обязательными capabilities и выбор production Secret Manager backend.
 
 Действия:
 
