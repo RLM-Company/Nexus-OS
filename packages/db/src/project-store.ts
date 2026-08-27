@@ -471,10 +471,7 @@ export class ProjectStore {
     return row ? asMessage(row) : null;
   }
 
-  startAssistantMessage(
-    runId: string,
-    ownerId = LOCAL_OWNER_ID
-  ): StoredMessage | null {
+  startAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredMessage | null {
     const run = this.getRun(runId, ownerId);
     if (!run) return null;
     const existing = this.getAssistantMessage(runId, ownerId);

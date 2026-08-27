@@ -50,11 +50,7 @@ import {
   type ModelGateway,
   type ModelGatewayStreamEvent
 } from "@cosmora/model-gateway";
-import Fastify, {
-  type FastifyInstance,
-  type FastifyReply,
-  type FastifyRequest
-} from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import {
   LOCAL_DEVELOPMENT_IDENTITY,
   StaticIdentityResolver,
@@ -766,7 +762,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           return reply;
         }
 
-        const blockingStop = dependencies.emergencyStopStore?.getBlockingStop(run.project_id, ownerId);
+        const blockingStop = dependencies.emergencyStopStore?.getBlockingStop(
+      run.project_id,
+      ownerId
+    );
         if (blockingStop) {
           store.startAssistantMessage(run.id, ownerId);
           store.failRun(run.id, "EMERGENCY_STOP");
