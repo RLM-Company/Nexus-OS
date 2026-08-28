@@ -1,3 +1,5 @@
+export * from "./agent-delegation.js";
+
 import {
   CONDITIONAL_EXPANSIONS,
   PERMISSION_MODE_RANK,

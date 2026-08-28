@@ -1,7 +1,7 @@
 # ADR-004: Agent Studio and modular agent composition
 
 **Date:** 2026-08-26  
-**Status:** OWNER APPROVED SPECIFICATION / NOT RUNTIME
+**Status:** OWNER APPROVED SPECIFICATION / CONTRACTS IMPLEMENTED / NOT RUNTIME
 
 ## Context
 
@@ -103,3 +103,14 @@ one; each path produces the same auditable composed-agent record.
 Implementation work will introduce a pattern registry, agent-instance registry, instruction
 composer, lifecycle events and Agent Studio UI. This ADR does not authorise their runtime
 implementation or change existing A0–A6 permissions by itself.
+
+## Contract implementation boundary
+
+The shared contracts now represent function definitions, behaviour patterns, immutable composition
+blueprints, bounded grants, memory scope, lifecycle state and replacement handoffs. Pattern content
+cannot carry capability, tool, data or budget fields. A pure Policy Engine validator rejects any
+child blueprint that changes owner/project, expands capabilities/tools/data/objects/budget/expiry,
+or fails to reduce delegation depth.
+
+These contracts are not an Agent Registry, instruction composer, final Manager prompt or runtime
+permission. Persisting, activating and executing an agent remain later gated increments.
