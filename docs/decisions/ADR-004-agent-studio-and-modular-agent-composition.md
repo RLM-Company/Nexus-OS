@@ -1,7 +1,7 @@
 # ADR-004: Agent Studio and modular agent composition
 
 **Date:** 2026-08-26  
-**Status:** OWNER APPROVED SPECIFICATION / CONTRACTS IMPLEMENTED / NOT RUNTIME
+**Status:** OWNER APPROVED SPECIFICATION / CONTRACTS + PATTERN LIBRARY IMPLEMENTED / NOT RUNTIME
 
 ## Context
 
@@ -100,9 +100,9 @@ Cosmora can use a compact, understandable user interface while retaining a flexi
 team. The user chooses a ready-made team, builds one manually, or asks the Manager to assemble
 one; each path produces the same auditable composed-agent record.
 
-Implementation work will introduce a pattern registry, agent-instance registry, instruction
-composer, lifecycle events and Agent Studio UI. This ADR does not authorise their runtime
-implementation or change existing A0–A6 permissions by itself.
+Implementation work will introduce an agent-instance registry, instruction composer, lifecycle
+events and Agent Studio UI. This ADR does not authorise their runtime implementation or change
+existing A0–A6 permissions by itself.
 
 ## Contract implementation boundary
 
@@ -113,4 +113,16 @@ child blueprint that changes owner/project, expands capabilities/tools/data/obje
 or fails to reduce delegation depth.
 
 These contracts are not an Agent Registry, instruction composer, final Manager prompt or runtime
-permission. Persisting, activating and executing an agent remain later gated increments.
+permission. Activating and executing an agent remain later gated increments.
+
+## Pattern Library persistence boundary
+
+Function definitions and behaviour patterns now have immutable, append-only versions in the
+database. Product records are readable but cannot be created through the owner store. Owner and
+project records are isolated by owner/project binding, and project-scoped writes require an
+existing project owned by the same owner. Archiving a pattern appends a terminal version instead
+of deleting history.
+
+The store accepts pattern instructions and compatibility metadata only. It rejects unknown fields,
+requires every allowed function to be visible in the same scope and does not expose activation,
+instruction composition, model routing, grants, tools, execution or HTTP endpoints.
