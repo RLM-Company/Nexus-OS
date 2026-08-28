@@ -18,6 +18,8 @@ describe("API identity boundary", () => {
   let app: ReturnType<typeof buildApp>;
   let ownerOneToken: string;
   let ownerTwoToken: string;
+  let agentToken: string;
+  let systemToken: string;
 
   beforeEach(async () => {
     database = openDatabase(":memory:");
@@ -36,6 +38,20 @@ describe("API identity boundary", () => {
     ownerTwoToken = identityStore.issueSession({
       ownerId: "owner-2",
       actorId: "owner-actor-2",
+      assurance: "single_factor",
+      ttlMs: 60_000
+    }).token;
+    identityStore.registerActor("owner-1", "agent-actor-1", "agent");
+    identityStore.registerActor("owner-1", "system-actor-1", "system");
+    agentToken = identityStore.issueSession({
+      ownerId: "owner-1",
+      actorId: "agent-actor-1",
+      assurance: "single_factor",
+      ttlMs: 60_000
+    }).token;
+    systemToken = identityStore.issueSession({
+      ownerId: "owner-1",
+      actorId: "system-actor-1",
       assurance: "single_factor",
       ttlMs: 60_000
     }).token;
@@ -69,6 +85,27 @@ describe("API identity boundary", () => {
     expect(missing.statusCode).toBe(401);
     expect(missing.json<{ error: { code: string } }>().error.code).toBe("UNAUTHORIZED");
     expect(malformed.statusCode).toBe(401);
+  });
+
+  it("denies valid agent and system sessions at the owner API boundary", async () => {
+    for (const token of [agentToken, systemToken]) {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/projects",
+        headers: { authorization: `Bearer ${token}` }
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json<{ error: { code: string } }>().error.code).toBe("FORBIDDEN");
+      expect(response.body).not.toContain(token);
+    }
+
+    const ownerResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/projects",
+      headers: { authorization: `Bearer ${ownerOneToken}` }
+    });
+    expect(ownerResponse.statusCode).toBe(200);
   });
 
   it("propagates owner and actor identity without leaking session tokens", async () => {

@@ -52,6 +52,7 @@ import {
 } from "@cosmora/model-gateway";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import {
+  canAccessOwnerApi,
   LOCAL_DEVELOPMENT_IDENTITY,
   StaticIdentityResolver,
   type RequestIdentityResolver,
@@ -190,6 +191,19 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       return reply
         .status(401)
         .send(errorBody(request.id, "UNAUTHORIZED", "Verified identity is required"));
+    }
+    if (!canAccessOwnerApi(identity)) {
+      app.log.warn(
+        {
+          requestId: request.id,
+          actorId: identity.actor_id,
+          actorKind: identity.actor_kind
+        },
+        "Non-owner actor denied at owner API boundary"
+      );
+      return reply
+        .status(403)
+        .send(errorBody(request.id, "FORBIDDEN", "Owner authority is required"));
     }
     requestIdentities.set(request, identity);
   });
