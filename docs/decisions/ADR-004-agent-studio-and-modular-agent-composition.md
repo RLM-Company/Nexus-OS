@@ -1,7 +1,7 @@
 # ADR-004: Agent Studio and modular agent composition
 
 **Date:** 2026-08-26  
-**Status:** OWNER APPROVED / CONTRACTS + PATTERNS + BLUEPRINTS IMPLEMENTED / NOT RUNTIME
+**Status:** OWNER APPROVED / CONTRACTS + PATTERNS + BLUEPRINTS + PROPOSALS IMPLEMENTED / NOT RUNTIME
 
 ## Context
 
@@ -138,3 +138,18 @@ The model-profile reference is stored as an inert versioned reference. Persisten
 that a provider route exists or may be activated. There is no instance creation, lifecycle
 transition, delegation, instruction composition, model routing, permission issuance, tool access or
 HTTP endpoint in this increment.
+
+## Agent instance proposal persistence boundary
+
+Agent-instance records may now be created only in the `proposed` state. Each proposal is bound to
+one owner, project and exact immutable blueprint version. A root proposal requires a visible
+blueprint with an unexpired grant. A delegated proposal additionally references a proposed parent
+from the same owner and project.
+
+Delegated proposals fail closed unless the caller injects a Policy Engine delegation validator. The
+validator must explicitly allow the exact parent and child blueprints with no denial reasons before
+the child proposal is persisted. The database independently constrains this increment to
+`status = proposed` and `closed_at = NULL`, including for direct SQL writes.
+
+This boundary does not activate agents, issue permissions, compose instructions, select a provider,
+call a model or tool, persist handoffs, perform lifecycle transitions or expose an HTTP endpoint.
