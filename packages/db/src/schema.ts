@@ -1,4 +1,14 @@
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+import {
+  check,
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex
+} from "drizzle-orm/sqlite-core";
 
 export const systemMetadata = sqliteTable("cosmora_system_metadata", {
   key: text("key").primaryKey(),
@@ -107,6 +117,74 @@ export const projects = sqliteTable(
     updatedAt: text("updated_at").notNull()
   },
   (table) => [index("projects_owner_updated_idx").on(table.ownerId, table.updatedAt)]
+);
+
+export const agentFunctionDefinitions = sqliteTable(
+  "agent_function_definitions",
+  {
+    functionId: text("function_id").notNull(),
+    version: integer("version").notNull(),
+    scope: text("scope").notNull(),
+    ownerId: text("owner_id"),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    resultContract: text("result_contract").notNull(),
+    createdByActorId: text("created_by_actor_id").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.functionId, table.version] }),
+    index("agent_functions_visibility_idx").on(
+      table.scope,
+      table.ownerId,
+      table.projectId,
+      table.functionId,
+      table.version
+    ),
+    check(
+      "agent_functions_scope_binding_check",
+      sql`(${table.scope} = 'product' AND ${table.ownerId} IS NULL AND ${table.projectId} IS NULL)
+          OR (${table.scope} = 'owner' AND ${table.ownerId} IS NOT NULL AND ${table.projectId} IS NULL)
+          OR (${table.scope} = 'project' AND ${table.ownerId} IS NOT NULL AND ${table.projectId} IS NOT NULL)`
+    )
+  ]
+);
+
+export const behaviorPatterns = sqliteTable(
+  "behavior_patterns",
+  {
+    patternId: text("pattern_id").notNull(),
+    version: integer("version").notNull(),
+    scope: text("scope").notNull(),
+    ownerId: text("owner_id"),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    instructions: text("instructions").notNull(),
+    allowedFunctionIdsJson: text("allowed_function_ids_json").notNull(),
+    knownLimitationsJson: text("known_limitations_json").notNull(),
+    testStatus: text("test_status").notNull(),
+    createdByActorId: text("created_by_actor_id").notNull(),
+    createdAt: text("created_at").notNull(),
+    archivedAt: text("archived_at")
+  },
+  (table) => [
+    primaryKey({ columns: [table.patternId, table.version] }),
+    index("behavior_patterns_visibility_idx").on(
+      table.scope,
+      table.ownerId,
+      table.projectId,
+      table.patternId,
+      table.version
+    ),
+    check(
+      "behavior_patterns_scope_binding_check",
+      sql`(${table.scope} = 'product' AND ${table.ownerId} IS NULL AND ${table.projectId} IS NULL)
+          OR (${table.scope} = 'owner' AND ${table.ownerId} IS NOT NULL AND ${table.projectId} IS NULL)
+          OR (${table.scope} = 'project' AND ${table.ownerId} IS NOT NULL AND ${table.projectId} IS NOT NULL)`
+    )
+  ]
 );
 
 export const chats = sqliteTable(
