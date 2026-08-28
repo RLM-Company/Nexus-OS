@@ -1,4 +1,5 @@
 export * from "./agent-delegation.js";
+export * from "./agent-instruction-plan.js";
 
 import {
   CONDITIONAL_EXPANSIONS,

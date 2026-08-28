@@ -133,6 +133,9 @@ importers:
       "@cosmora/contracts":
         specifier: workspace:*
         version: link:../contracts
+      typebox:
+        specifier: 1.3.16
+        version: 1.3.16
 
   packages/tool-runtime:
     dependencies:

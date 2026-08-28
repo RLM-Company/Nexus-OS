@@ -139,6 +139,87 @@ export const AgentBlueprintSchema = Type.Object(
 );
 export type AgentBlueprint = Static<typeof AgentBlueprintSchema>;
 
+export const VersionedInstructionTextSourceSchema = Type.Object(
+  {
+    source_ref: VersionedAgentReferenceSchema,
+    instructions: Type.String({ minLength: 1, maxLength: 100_000 })
+  },
+  { additionalProperties: false }
+);
+export type VersionedInstructionTextSource = Static<typeof VersionedInstructionTextSourceSchema>;
+
+export const AgentInstructionPrecedenceSchema = Type.Tuple([
+  Type.Literal("constitution"),
+  Type.Literal("policy"),
+  Type.Literal("function"),
+  Type.Literal("behavior"),
+  Type.Literal("task")
+]);
+export type AgentInstructionPrecedence = Static<typeof AgentInstructionPrecedenceSchema>;
+
+export const AgentInstructionPlanSchema = Type.Object(
+  {
+    plan_version: Type.Literal(1),
+    executable: Type.Literal(false),
+    blueprint_ref: VersionedAgentReferenceSchema,
+    owner_id: EntityIdSchema,
+    project_id: EntityIdSchema,
+    model_profile_ref: VersionedAgentReferenceSchema,
+    precedence: AgentInstructionPrecedenceSchema,
+    layers: Type.Object(
+      {
+        constitution: Type.Object(
+          {
+            authority: Type.Literal("constitution"),
+            source: VersionedInstructionTextSourceSchema
+          },
+          { additionalProperties: false }
+        ),
+        policy: Type.Object(
+          {
+            authority: Type.Literal("policy"),
+            source: VersionedInstructionTextSourceSchema
+          },
+          { additionalProperties: false }
+        ),
+        function: Type.Object(
+          {
+            authority: Type.Literal("function"),
+            definition: AgentFunctionDefinitionSchema,
+            declared_grant: AgentGrantSchema,
+            memory_scope: AgentMemoryScopeSchema,
+            task_contract: Type.String({ minLength: 1, maxLength: 20_000 }),
+            start_condition: Type.String({ minLength: 1, maxLength: 2_000 }),
+            close_conditions: Type.Array(Type.String({ minLength: 1, maxLength: 2_000 }), {
+              minItems: 1,
+              maxItems: 50
+            })
+          },
+          { additionalProperties: false }
+        ),
+        behavior: Type.Object(
+          {
+            authority: Type.Literal("behavior"),
+            pattern: BehaviorPatternSchema
+          },
+          { additionalProperties: false }
+        ),
+        task: Type.Object(
+          {
+            authority: Type.Literal("task"),
+            task_id: EntityIdSchema,
+            instructions: Type.String({ minLength: 1, maxLength: 20_000 })
+          },
+          { additionalProperties: false }
+        )
+      },
+      { additionalProperties: false }
+    )
+  },
+  { additionalProperties: false }
+);
+export type AgentInstructionPlan = Static<typeof AgentInstructionPlanSchema>;
+
 export const AgentInstanceStatusSchema = Type.Union([
   Type.Literal("proposed"),
   Type.Literal("active"),
