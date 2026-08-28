@@ -122,6 +122,39 @@ describe("IdentityStore", () => {
     }
   });
 
+  it("reconciles expired sessions when the owner lists session inventory", async () => {
+    const database = openDatabase(":memory:");
+    let now = Date.parse("2026-08-27T12:00:00.000Z");
+
+    try {
+      await runMigrations(database);
+      const store = new IdentityStore(database.sqlite, { now: () => now });
+      store.registerActor("owner-1", "actor-1", "owner");
+      const issued = store.issueSession({
+        ownerId: "owner-1",
+        actorId: "actor-1",
+        assurance: "single_factor",
+        ttlMs: 60_000
+      });
+
+      now += 60_000;
+      expect(store.listSessions("owner-1")).toEqual([
+        expect.objectContaining({
+          session_id: issued.session.session_id,
+          status: "expired"
+        })
+      ]);
+      expect(store.listAuditEvents("owner-1").map((event) => event.event_type)).toEqual([
+        "session.issued",
+        "session.expired"
+      ]);
+      expect(store.listSessions("owner-1")[0]?.status).toBe("expired");
+      expect(store.listAuditEvents("owner-1")).toHaveLength(2);
+    } finally {
+      database.close();
+    }
+  });
+
   it("revokes every active owner session without affecting another owner", async () => {
     const database = openDatabase(":memory:");
 

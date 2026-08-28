@@ -56,6 +56,28 @@ export const IdentitySessionSchema = Type.Object(
 );
 export type IdentitySession = Static<typeof IdentitySessionSchema>;
 
+export const OwnerSessionViewSchema = Type.Object(
+  {
+    ...IdentitySessionSchema.properties,
+    actor_kind: ActorKindSchema,
+    current: Type.Boolean()
+  },
+  { additionalProperties: false }
+);
+export type OwnerSessionView = Static<typeof OwnerSessionViewSchema>;
+
+export const OwnerSessionListResponseSchema = Type.Object(
+  { items: Type.Array(OwnerSessionViewSchema) },
+  { additionalProperties: false }
+);
+export type OwnerSessionListResponse = Static<typeof OwnerSessionListResponseSchema>;
+
+export const RevokeSessionRequestSchema = Type.Object(
+  { reason: Type.String({ minLength: 1, maxLength: 256 }) },
+  { additionalProperties: false }
+);
+export type RevokeSessionRequest = Static<typeof RevokeSessionRequestSchema>;
+
 export const IdentityContextSchema = Type.Object(
   {
     owner_id: EntityIdSchema,

@@ -59,6 +59,7 @@ describe("API identity boundary", () => {
     app = buildApp({
       config,
       database,
+      identityStore,
       projectStore: new ProjectStore(database.sqlite),
       emergencyStopStore: new EmergencyStopStore(database.sqlite),
       modelGateway: runtime.gateway,
@@ -106,6 +107,96 @@ describe("API identity boundary", () => {
       headers: { authorization: `Bearer ${ownerOneToken}` }
     });
     expect(ownerResponse.statusCode).toBe(200);
+  });
+
+  it("lists only owner-bound session metadata and revokes sessions idempotently", async () => {
+    const ownerOneHeaders = { authorization: `Bearer ${ownerOneToken}` };
+    const ownerTwoHeaders = { authorization: `Bearer ${ownerTwoToken}` };
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/v1/identity/sessions",
+      headers: ownerOneHeaders
+    });
+    const sessions = listed.json<{ items: Array<Record<string, unknown>> }>().items;
+    const agentSessionId = identityStore
+      .listSessions("owner-1")
+      .find((session) => session.actor_id === "agent-actor-1")?.session_id;
+
+    expect(listed.statusCode).toBe(200);
+    expect(sessions).toHaveLength(3);
+    expect(sessions.filter((session) => session.current === true)).toHaveLength(1);
+    expect(sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ actor_kind: "owner", current: true }),
+        expect.objectContaining({ actor_kind: "agent", current: false }),
+        expect.objectContaining({ actor_kind: "system", current: false })
+      ])
+    );
+    expect(listed.body).not.toContain(ownerOneToken);
+    expect(listed.body).not.toContain(agentToken);
+    expect(listed.body).not.toContain(systemToken);
+
+    const crossOwner = await app.inject({
+      method: "POST",
+      url: `/api/v1/identity/sessions/${agentSessionId ?? "missing"}/revoke`,
+      headers: ownerTwoHeaders,
+      payload: { reason: "Cross-owner attempt" }
+    });
+    expect(crossOwner.statusCode).toBe(404);
+    expect(crossOwner.json<{ error: { code: string } }>().error.code).toBe(
+      "IDENTITY_SESSION_NOT_FOUND"
+    );
+    expect(identityStore.resolveSession(agentToken)).not.toBeNull();
+
+    const revoked = await app.inject({
+      method: "POST",
+      url: `/api/v1/identity/sessions/${agentSessionId ?? "missing"}/revoke`,
+      headers: ownerOneHeaders,
+      payload: { reason: "Lost agent device" }
+    });
+    const repeated = await app.inject({
+      method: "POST",
+      url: `/api/v1/identity/sessions/${agentSessionId ?? "missing"}/revoke`,
+      headers: ownerOneHeaders,
+      payload: { reason: "Repeated request" }
+    });
+
+    expect(revoked.statusCode).toBe(200);
+    expect(revoked.json()).toMatchObject({
+      actor_kind: "agent",
+      current: false,
+      status: "revoked",
+      revoke_reason: "Lost agent device"
+    });
+    expect(repeated.statusCode).toBe(200);
+    expect(repeated.json()).toMatchObject({
+      status: "revoked",
+      revoke_reason: "Lost agent device"
+    });
+    expect(identityStore.resolveSession(agentToken)).toBeNull();
+  });
+
+  it("revokes the current owner session after returning a safe response", async () => {
+    const currentSessionId = identityStore
+      .listSessions("owner-1")
+      .find((session) => session.actor_id === "owner-actor-1")?.session_id;
+    const headers = { authorization: `Bearer ${ownerOneToken}` };
+    const revoked = await app.inject({
+      method: "POST",
+      url: `/api/v1/identity/sessions/${currentSessionId ?? "missing"}/revoke`,
+      headers,
+      payload: { reason: "Owner logout" }
+    });
+    const afterRevoke = await app.inject({
+      method: "GET",
+      url: "/api/v1/identity/sessions",
+      headers
+    });
+
+    expect(revoked.statusCode).toBe(200);
+    expect(revoked.json()).toMatchObject({ current: true, status: "revoked" });
+    expect(revoked.body).not.toContain(ownerOneToken);
+    expect(afterRevoke.statusCode).toBe(401);
   });
 
   it("propagates owner and actor identity without leaking session tokens", async () => {
