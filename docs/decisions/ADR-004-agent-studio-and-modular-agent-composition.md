@@ -1,7 +1,7 @@
 # ADR-004: Agent Studio and modular agent composition
 
 **Date:** 2026-08-26  
-**Status:** OWNER APPROVED / CONTRACTS + PATTERNS + BLUEPRINTS + PROPOSALS IMPLEMENTED / NOT RUNTIME
+**Status:** OWNER APPROVED / CONTRACTS + PERSISTENCE + INSTRUCTION PLANS IMPLEMENTED / NOT RUNTIME
 
 ## Context
 
@@ -153,3 +153,20 @@ the child proposal is persisted. The database independently constrains this incr
 
 This boundary does not activate agents, issue permissions, compose instructions, select a provider,
 call a model or tool, persist handoffs, perform lifecycle transitions or expose an HTTP endpoint.
+
+## Non-executable instruction plan boundary
+
+Agent Studio may now build a structured preview plan with fixed authority order:
+Constitution, active project policy, function and declared blueprint constraints, behavior pattern,
+then the current task. The composer derives authority labels itself, requires exact blueprint
+function/pattern versions, checks owner/project visibility and rejects archived or incompatible
+patterns. Caller-owned objects are cloned so later mutation cannot change an existing plan.
+
+The plan is explicitly marked `executable: false` and is not serialized into model messages.
+Adversarial text inside a behavior pattern remains data in the behavior layer; its wording cannot
+change the structural authority label. The contract does not prove that supplied Constitution or
+policy text is authentic, so a future trusted composition root must resolve those exact versioned
+sources. It also does not detect semantic natural-language conflicts or remove them.
+
+This increment does not author the final Manager prompt, activate an instance, evaluate runtime
+permissions, choose a provider, call a model/tool or expose an HTTP endpoint.
