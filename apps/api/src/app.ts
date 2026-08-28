@@ -276,7 +276,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           response: { 200: OwnerSessionViewSchema, 404: ApiErrorSchema }
         }
       },
-      (request, reply) => {
+      async (request, reply) => {
         const identity = identityFor(request);
         const existing = identityStore
           .listSessions(identity.owner_id)
