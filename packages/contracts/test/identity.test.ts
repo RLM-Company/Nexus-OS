@@ -1,6 +1,7 @@
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import {
+  IdentityAuditListResponseSchema,
   IdentityContextSchema,
   IdentitySessionSchema,
   OwnerSessionViewSchema
@@ -19,6 +20,30 @@ describe("identity contracts", () => {
         expires_at: "2026-08-27T13:00:00.000Z"
       })
     ).toBe(true);
+  });
+
+  it("bounds the public identity audit response", () => {
+    const event = {
+      event_id: "event-1",
+      owner_id: "owner-1",
+      actor_id: "owner-actor-1",
+      session_id: "session-1",
+      event_type: "session.issued",
+      outcome: "success",
+      reason_code: null,
+      created_at: "2026-08-27T12:00:00.000Z"
+    };
+
+    expect(Value.Check(IdentityAuditListResponseSchema, { items: [event], limit: 50 })).toBe(true);
+    expect(Value.Check(IdentityAuditListResponseSchema, { items: [event], limit: 101 })).toBe(
+      false
+    );
+    expect(
+      Value.Check(IdentityAuditListResponseSchema, {
+        items: [{ ...event, token: "secret" }],
+        limit: 50
+      })
+    ).toBe(false);
   });
 
   it("never includes a raw token in the public session contract", () => {

@@ -122,6 +122,54 @@ describe("IdentityStore", () => {
     }
   });
 
+  it("returns bounded recent audit events only for the requested owner", async () => {
+    const database = openDatabase(":memory:");
+
+    try {
+      await runMigrations(database);
+      const store = new IdentityStore(database.sqlite, {
+        now: () => Date.parse("2026-08-27T12:00:00.000Z")
+      });
+      store.registerActor("owner-1", "actor-1", "owner");
+      store.registerActor("owner-2", "actor-2", "owner");
+      const first = store.issueSession({
+        ownerId: "owner-1",
+        actorId: "actor-1",
+        assurance: "single_factor",
+        ttlMs: 60_000
+      });
+      const second = store.issueSession({
+        ownerId: "owner-1",
+        actorId: "actor-1",
+        assurance: "multi_factor",
+        ttlMs: 60_000
+      });
+      store.issueSession({
+        ownerId: "owner-2",
+        actorId: "actor-2",
+        assurance: "local",
+        ttlMs: 60_000
+      });
+
+      expect(store.listRecentAuditEvents("owner-1", 1)).toEqual([
+        expect.objectContaining({
+          owner_id: "owner-1",
+          session_id: second.session.session_id
+        })
+      ]);
+      expect(store.listRecentAuditEvents("owner-1", 2).map((event) => event.session_id)).toEqual([
+        second.session.session_id,
+        first.session.session_id
+      ]);
+      expect(store.listRecentAuditEvents("owner-2", 100)).toHaveLength(1);
+      expect(() => store.listRecentAuditEvents("owner-1", 0)).toThrow(
+        "Identity audit limit must be an integer between 1 and 100"
+      );
+    } finally {
+      database.close();
+    }
+  });
+
   it("reconciles expired sessions when the owner lists session inventory", async () => {
     const database = openDatabase(":memory:");
     let now = Date.parse("2026-08-27T12:00:00.000Z");

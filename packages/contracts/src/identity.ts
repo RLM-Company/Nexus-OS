@@ -114,3 +114,12 @@ export const IdentityAuditEventSchema = Type.Object(
   { additionalProperties: false }
 );
 export type IdentityAuditEvent = Static<typeof IdentityAuditEventSchema>;
+
+export const IdentityAuditListResponseSchema = Type.Object(
+  {
+    items: Type.Array(IdentityAuditEventSchema, { maxItems: 100 }),
+    limit: Type.Integer({ minimum: 1, maximum: 100 })
+  },
+  { additionalProperties: false }
+);
+export type IdentityAuditListResponse = Static<typeof IdentityAuditListResponseSchema>;

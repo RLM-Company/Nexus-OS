@@ -176,6 +176,39 @@ describe("API identity boundary", () => {
     expect(identityStore.resolveSession(agentToken)).toBeNull();
   });
 
+  it("returns bounded recent identity audit events inside the owner boundary", async () => {
+    const ownerOne = await app.inject({
+      method: "GET",
+      url: "/api/v1/identity/audit-events?limit=2",
+      headers: { authorization: `Bearer ${ownerOneToken}` }
+    });
+    const ownerTwo = await app.inject({
+      method: "GET",
+      url: "/api/v1/identity/audit-events",
+      headers: { authorization: `Bearer ${ownerTwoToken}` }
+    });
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/api/v1/identity/audit-events?limit=101",
+      headers: { authorization: `Bearer ${ownerOneToken}` }
+    });
+
+    expect(ownerOne.statusCode).toBe(200);
+    expect(ownerOne.json<{ items: Array<{ owner_id: string }>; limit: number }>()).toMatchObject({
+      limit: 2,
+      items: [{ owner_id: "owner-1" }, { owner_id: "owner-1" }]
+    });
+    expect(ownerTwo.statusCode).toBe(200);
+    expect(
+      ownerTwo
+        .json<{ items: Array<{ owner_id: string }> }>()
+        .items.every((event) => event.owner_id === "owner-2")
+    ).toBe(true);
+    expect(ownerOne.body).not.toContain(ownerOneToken);
+    expect(ownerOne.body).not.toContain(agentToken);
+    expect(invalid.statusCode).toBe(400);
+  });
+
   it("revokes the current owner session after returning a safe response", async () => {
     const currentSessionId = identityStore
       .listSessions("owner-1")
