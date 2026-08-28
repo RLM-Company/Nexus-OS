@@ -4,6 +4,7 @@ Fastify server for Cosmora OS. It applies SQLite migrations during startup and e
 
 - `GET /api/v1/health` for API and database readiness;
 - `GET /api/v1/identity/sessions` for owner-bound token-free session inventory;
+- `GET /api/v1/identity/audit-events` for a bounded, content-free recent security history;
 - `POST /api/v1/identity/sessions/:sessionId/revoke` for idempotent owner session revocation;
 - `GET /api/v1/model-runtime` for a secret-free provider summary;
 - `GET /api/v1/operations/status` for content-free runtime counters and safety alerts;

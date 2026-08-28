@@ -386,6 +386,23 @@ export class IdentityStore {
     }
   }
 
+  listRecentAuditEvents(ownerId: string, limit: number): IdentityAuditEvent[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("Identity audit limit must be an integer between 1 and 100");
+    }
+    const rows = this.#sqlite
+      .prepare(
+        `SELECT event_id, owner_id, actor_id, session_id, event_type, outcome, reason_code,
+           created_at
+         FROM identity_audit_events
+         WHERE owner_id = ?
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT ?`
+      )
+      .all(ownerId, limit) as unknown as SqlRow[];
+    return rows.map(asAuditEvent);
+  }
+
   listAuditEvents(ownerId: string): IdentityAuditEvent[] {
     const rows = this.#sqlite
       .prepare(

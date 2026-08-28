@@ -13,6 +13,7 @@ import {
   CreateProjectRequestSchema,
   EmergencyStopStateSchema,
   HealthResponseSchema,
+  IdentityAuditListResponseSchema,
   MessageAcceptedResponseSchema,
   ModelRuntimeStatusSchema,
   OwnerSessionListResponseSchema,
@@ -31,6 +32,7 @@ import {
   type ConfirmationListResponse,
   type EmergencyStopState,
   type HealthResponse,
+  type IdentityAuditListResponse,
   type IdentityContext,
   type IdentitySession,
   type MessageAcceptedResponse,
@@ -257,6 +259,30 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           items: identityStore
             .listSessions(identity.owner_id)
             .map((session) => sessionView(session, identity.session_id))
+        };
+        return response;
+      }
+    );
+
+    app.get(
+      "/api/v1/identity/audit-events",
+      {
+        schema: {
+          querystring: {
+            type: "object",
+            properties: {
+              limit: { type: "integer", minimum: 1, maximum: 100, default: 50 }
+            },
+            additionalProperties: false
+          },
+          response: { 200: IdentityAuditListResponseSchema, 400: ApiErrorSchema }
+        }
+      },
+      (request) => {
+        const limit = request.query.limit ?? 50;
+        const response: IdentityAuditListResponse = {
+          items: identityStore.listRecentAuditEvents(identityFor(request).owner_id, limit),
+          limit
         };
         return response;
       }
