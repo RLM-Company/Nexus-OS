@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -116,7 +117,10 @@ export const projects = sqliteTable(
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
   },
-  (table) => [index("projects_owner_updated_idx").on(table.ownerId, table.updatedAt)]
+  (table) => [
+    index("projects_owner_updated_idx").on(table.ownerId, table.updatedAt),
+    uniqueIndex("projects_id_owner_unique").on(table.id, table.ownerId)
+  ]
 );
 
 export const agentFunctionDefinitions = sqliteTable(
@@ -183,6 +187,50 @@ export const behaviorPatterns = sqliteTable(
       sql`(${table.scope} = 'product' AND ${table.ownerId} IS NULL AND ${table.projectId} IS NULL)
           OR (${table.scope} = 'owner' AND ${table.ownerId} IS NOT NULL AND ${table.projectId} IS NULL)
           OR (${table.scope} = 'project' AND ${table.ownerId} IS NOT NULL AND ${table.projectId} IS NOT NULL)`
+    )
+  ]
+);
+
+export const agentBlueprints = sqliteTable(
+  "agent_blueprints",
+  {
+    blueprintId: text("blueprint_id").notNull(),
+    version: integer("version").notNull(),
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id").notNull(),
+    functionId: text("function_id").notNull(),
+    functionVersion: integer("function_version").notNull(),
+    patternId: text("pattern_id").notNull(),
+    patternVersion: integer("pattern_version").notNull(),
+    modelProfileId: text("model_profile_id").notNull(),
+    modelProfileVersion: integer("model_profile_version").notNull(),
+    grantJson: text("grant_json").notNull(),
+    memoryScopeJson: text("memory_scope_json").notNull(),
+    taskContract: text("task_contract").notNull(),
+    startCondition: text("start_condition").notNull(),
+    closeConditionsJson: text("close_conditions_json").notNull(),
+    createdByActorId: text("created_by_actor_id").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.blueprintId, table.version] }),
+    foreignKey({
+      columns: [table.projectId, table.ownerId],
+      foreignColumns: [projects.id, projects.ownerId]
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.functionId, table.functionVersion],
+      foreignColumns: [agentFunctionDefinitions.functionId, agentFunctionDefinitions.version]
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.patternId, table.patternVersion],
+      foreignColumns: [behaviorPatterns.patternId, behaviorPatterns.version]
+    }).onDelete("restrict"),
+    index("agent_blueprints_owner_project_idx").on(
+      table.ownerId,
+      table.projectId,
+      table.blueprintId,
+      table.version
     )
   ]
 );

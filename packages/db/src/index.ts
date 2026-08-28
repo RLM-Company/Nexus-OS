@@ -95,6 +95,7 @@ export const runMigrations = (
 };
 
 export { schema };
+export * from "./agent-blueprint-store.js";
 export * from "./emergency-stop-store.js";
 export * from "./identity-store.js";
 export * from "./pattern-library-store.js";

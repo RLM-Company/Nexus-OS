@@ -1,7 +1,7 @@
 # ADR-004: Agent Studio and modular agent composition
 
 **Date:** 2026-08-26  
-**Status:** OWNER APPROVED SPECIFICATION / CONTRACTS + PATTERN LIBRARY IMPLEMENTED / NOT RUNTIME
+**Status:** OWNER APPROVED / CONTRACTS + PATTERNS + BLUEPRINTS IMPLEMENTED / NOT RUNTIME
 
 ## Context
 
@@ -126,3 +126,15 @@ of deleting history.
 The store accepts pattern instructions and compatibility metadata only. It rejects unknown fields,
 requires every allowed function to be visible in the same scope and does not expose activation,
 instruction composition, model routing, grants, tools, execution or HTTP endpoints.
+
+## Blueprint Registry persistence boundary
+
+Project-bound agent blueprints now have immutable, append-only database versions. A new version
+must belong to the same owner and project, reference an exact visible function and non-archived
+compatible pattern, bind its grant to that project and carry a future expiry. Referenced function
+and pattern versions are protected from deletion so historical blueprints remain reproducible.
+
+The model-profile reference is stored as an inert versioned reference. Persistence does not prove
+that a provider route exists or may be activated. There is no instance creation, lifecycle
+transition, delegation, instruction composition, model routing, permission issuance, tool access or
+HTTP endpoint in this increment.
