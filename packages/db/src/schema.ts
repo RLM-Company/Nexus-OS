@@ -214,6 +214,12 @@ export const agentBlueprints = sqliteTable(
   },
   (table) => [
     primaryKey({ columns: [table.blueprintId, table.version] }),
+    uniqueIndex("agent_blueprints_binding_unique").on(
+      table.blueprintId,
+      table.version,
+      table.ownerId,
+      table.projectId
+    ),
     foreignKey({
       columns: [table.projectId, table.ownerId],
       foreignColumns: [projects.id, projects.ownerId]
@@ -231,6 +237,52 @@ export const agentBlueprints = sqliteTable(
       table.projectId,
       table.blueprintId,
       table.version
+    )
+  ]
+);
+
+export const agentInstances = sqliteTable(
+  "agent_instances",
+  {
+    instanceId: text("instance_id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id").notNull(),
+    blueprintId: text("blueprint_id").notNull(),
+    blueprintVersion: integer("blueprint_version").notNull(),
+    parentInstanceId: text("parent_instance_id"),
+    status: text("status").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    closedAt: text("closed_at")
+  },
+  (table) => [
+    uniqueIndex("agent_instances_binding_unique").on(
+      table.instanceId,
+      table.ownerId,
+      table.projectId
+    ),
+    foreignKey({
+      columns: [table.blueprintId, table.blueprintVersion, table.ownerId, table.projectId],
+      foreignColumns: [
+        agentBlueprints.blueprintId,
+        agentBlueprints.version,
+        agentBlueprints.ownerId,
+        agentBlueprints.projectId
+      ]
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.parentInstanceId, table.ownerId, table.projectId],
+      foreignColumns: [table.instanceId, table.ownerId, table.projectId]
+    }).onDelete("restrict"),
+    index("agent_instances_owner_project_status_idx").on(
+      table.ownerId,
+      table.projectId,
+      table.status,
+      table.createdAt
+    ),
+    check(
+      "agent_instances_proposed_only_check",
+      sql`${table.status} = 'proposed' AND ${table.closedAt} IS NULL`
     )
   ]
 );
