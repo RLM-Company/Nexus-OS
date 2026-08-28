@@ -15,3 +15,8 @@ content, or credentials.
 The parsed `ServerConfig` contains only `modelApiKeyConfigured`. The actual key is resolved through
 the asynchronous `SecretResolver` at the API composition boundary and passed directly into the
 server-only adapter.
+
+The external `/api/v1` surface is the owner control plane. A valid bearer session for an
+`agent` or `system` actor is authenticated and then denied with `FORBIDDEN`; those actors do not
+inherit owner authority. Future agent execution must use a separate internal boundary with explicit
+project/capability grants. `GET /api/v1/health` remains public.

@@ -6,6 +6,9 @@ export interface RequestIdentityResolver {
   resolve(request: FastifyRequest): Promise<IdentityContext | null>;
 }
 
+export const canAccessOwnerApi = (identity: IdentityContext): boolean =>
+  identity.actor_kind === "owner";
+
 export const LOCAL_DEVELOPMENT_IDENTITY: IdentityContext = Object.freeze({
   owner_id: "local-owner",
   actor_id: "local-owner",
