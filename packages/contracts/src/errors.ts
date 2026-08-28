@@ -4,6 +4,7 @@ export const ErrorCodeSchema = Type.Union([
   Type.Literal("VALIDATION_ERROR"),
   Type.Literal("UNAUTHORIZED"),
   Type.Literal("FORBIDDEN"),
+  Type.Literal("IDENTITY_SESSION_NOT_FOUND"),
   Type.Literal("PROJECT_NOT_FOUND"),
   Type.Literal("AUTONOMY_PROFILE_CONFLICT"),
   Type.Literal("CONFIRMATION_NOT_FOUND"),

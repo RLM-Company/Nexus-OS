@@ -1,6 +1,10 @@
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import { IdentityContextSchema, IdentitySessionSchema } from "../src/index.js";
+import {
+  IdentityContextSchema,
+  IdentitySessionSchema,
+  OwnerSessionViewSchema
+} from "../src/index.js";
 
 describe("identity contracts", () => {
   it("accepts a provider-neutral verified identity context", () => {
@@ -34,5 +38,20 @@ describe("identity contracts", () => {
 
     expect(Value.Check(IdentitySessionSchema, session)).toBe(true);
     expect(Value.Check(IdentitySessionSchema, { ...session, token: "secret" })).toBe(false);
+    expect(
+      Value.Check(OwnerSessionViewSchema, {
+        ...session,
+        actor_kind: "owner",
+        current: true
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(OwnerSessionViewSchema, {
+        ...session,
+        actor_kind: "owner",
+        current: true,
+        token: "secret"
+      })
+    ).toBe(false);
   });
 });

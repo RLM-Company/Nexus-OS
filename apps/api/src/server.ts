@@ -58,6 +58,7 @@ try {
   app = buildApp({
     config,
     database,
+    identityStore,
     projectStore,
     emergencyStopStore,
     policyStore: new PolicyStore(database.sqlite),

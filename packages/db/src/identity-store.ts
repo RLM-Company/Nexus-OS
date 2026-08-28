@@ -245,13 +245,51 @@ export class IdentityStore {
   }
 
   listSessions(ownerId: string): IdentitySession[] {
-    return this.#sqlite
+    const timestamp = this.#nowIso();
+    const expired = this.#sqlite
+      .prepare(
+        `SELECT session_id, actor_id FROM identity_sessions
+         WHERE owner_id = ? AND status = 'active' AND expires_at <= ?`
+      )
+      .all(ownerId, timestamp) as unknown as SqlRow[];
+
+    if (expired.length > 0) {
+      this.#sqlite.exec("BEGIN IMMEDIATE;");
+      try {
+        for (const session of expired) {
+          const result = this.#sqlite
+            .prepare(
+              `UPDATE identity_sessions SET status = 'expired'
+               WHERE session_id = ? AND owner_id = ? AND status = 'active'`
+            )
+            .run(String(session.session_id), ownerId);
+          if (Number(result.changes) === 1) {
+            this.#recordAudit(
+              ownerId,
+              String(session.actor_id),
+              String(session.session_id),
+              "session.expired",
+              "denied",
+              "SESSION_EXPIRED",
+              timestamp
+            );
+          }
+        }
+        this.#sqlite.exec("COMMIT;");
+      } catch (error) {
+        this.#sqlite.exec("ROLLBACK;");
+        throw error;
+      }
+    }
+
+    const rows = this.#sqlite
       .prepare(
         `SELECT session_id, owner_id, actor_id, assurance, status, issued_at, expires_at,
            last_seen_at, revoked_at, revoked_by, revoke_reason
          FROM identity_sessions WHERE owner_id = ? ORDER BY issued_at DESC`
       )
-      .all(ownerId) as unknown as IdentitySession[];
+      .all(ownerId) as unknown as SqlRow[];
+    return rows.map(asSession);
   }
 
   revokeSession(sessionId: string, ownerId: string, revokedBy: string, reason: string): boolean {

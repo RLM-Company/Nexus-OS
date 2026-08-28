@@ -15,9 +15,12 @@ import {
   HealthResponseSchema,
   MessageAcceptedResponseSchema,
   ModelRuntimeStatusSchema,
+  OwnerSessionListResponseSchema,
+  OwnerSessionViewSchema,
   ProjectDetailResponseSchema,
   ProjectListResponseSchema,
   PERMISSION_MODE_RANK,
+  RevokeSessionRequestSchema,
   RunCancelResponseSchema,
   RuntimeOperationsStatusSchema,
   UpdateCapabilityProfileRequestSchema,
@@ -29,8 +32,11 @@ import {
   type EmergencyStopState,
   type HealthResponse,
   type IdentityContext,
+  type IdentitySession,
   type MessageAcceptedResponse,
   type ModelRuntimeStatus,
+  type OwnerSessionListResponse,
+  type OwnerSessionView,
   type ProjectDetailResponse,
   type ProjectListResponse,
   type RunCancelResponse,
@@ -41,6 +47,7 @@ import {
   IdempotencyConflictError,
   type DatabaseHealth,
   type EmergencyStopStore,
+  type IdentityStore,
   type PolicyStore,
   type ProjectStore,
   type StoredMessage
@@ -63,6 +70,7 @@ import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 export interface AppDependencies {
   config: ServerConfig;
   database: DatabaseHealth;
+  identityStore?: IdentityStore;
   projectStore?: ProjectStore;
   emergencyStopStore?: EmergencyStopStore;
   policyStore?: PolicyStore;
@@ -227,6 +235,82 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       return reply.status(database === "ok" ? 200 : 503).send(response);
     }
   );
+
+  if (dependencies.identityStore) {
+    const identityStore = dependencies.identityStore;
+    const sessionView = (
+      session: IdentitySession,
+      currentSessionId: string
+    ): OwnerSessionView => {
+      const actor = identityStore.getActor(session.actor_id, session.owner_id);
+      if (!actor) throw new Error("Identity session references a missing actor");
+      return {
+        ...session,
+        actor_kind: actor.kind,
+        current: session.session_id === currentSessionId
+      };
+    };
+
+    app.get(
+      "/api/v1/identity/sessions",
+      { schema: { response: { 200: OwnerSessionListResponseSchema } } },
+      (request) => {
+        const identity = identityFor(request);
+        const response: OwnerSessionListResponse = {
+          items: identityStore
+            .listSessions(identity.owner_id)
+            .map((session) => sessionView(session, identity.session_id))
+        };
+        return response;
+      }
+    );
+
+    app.post(
+      "/api/v1/identity/sessions/:sessionId/revoke",
+      {
+        schema: {
+          params: {
+            type: "object",
+            properties: { sessionId: { type: "string", minLength: 1 } },
+            required: ["sessionId"],
+            additionalProperties: false
+          },
+          body: RevokeSessionRequestSchema,
+          response: { 200: OwnerSessionViewSchema, 404: ApiErrorSchema }
+        }
+      },
+      (request, reply) => {
+        const identity = identityFor(request);
+        const existing = identityStore
+          .listSessions(identity.owner_id)
+          .find((session) => session.session_id === request.params.sessionId);
+        if (!existing) {
+          return reply
+            .status(404)
+            .send(
+              errorBody(request.id, "IDENTITY_SESSION_NOT_FOUND", "Identity session not found")
+            );
+        }
+        if (existing.status === "active") {
+          identityStore.revokeSession(
+            existing.session_id,
+            identity.owner_id,
+            identity.actor_id,
+            request.body.reason
+          );
+        }
+        const updated = identityStore.getSession(existing.session_id, identity.owner_id);
+        if (!updated) {
+          return reply
+            .status(404)
+            .send(
+              errorBody(request.id, "IDENTITY_SESSION_NOT_FOUND", "Identity session not found")
+            );
+        }
+        return sessionView(updated, identity.session_id);
+      }
+    );
+  }
 
   if (dependencies.emergencyStopStore) {
     const stopStore = dependencies.emergencyStopStore;
