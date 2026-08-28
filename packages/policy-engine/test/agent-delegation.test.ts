@@ -53,67 +53,67 @@ describe("validateAgentDelegation", () => {
   });
 
   it.each([
-    ["owner", (value: AgentBlueprint) => ({ ...value, owner_id: "owner-2" })],
-    ["project", (value: AgentBlueprint) => ({ ...value, project_id: "project-2" })],
+    ["owner", (value: AgentBlueprint): AgentBlueprint => ({ ...value, owner_id: "owner-2" })],
+    ["project", (value: AgentBlueprint): AgentBlueprint => ({ ...value, project_id: "project-2" })],
     [
       "capability",
-      (value: AgentBlueprint) => ({
+      (value: AgentBlueprint): AgentBlueprint => ({
         ...value,
         grant: { ...value.grant, capability_ids: [...value.grant.capability_ids, "finance.spend"] }
       })
     ],
     [
       "tool",
-      (value: AgentBlueprint) => ({
+      (value: AgentBlueprint): AgentBlueprint => ({
         ...value,
         grant: { ...value.grant, tool_ids: [...value.grant.tool_ids, "payments"] }
       })
     ],
     [
       "data",
-      (value: AgentBlueprint) => ({
+      (value: AgentBlueprint): AgentBlueprint => ({
         ...value,
         grant: { ...value.grant, data_scope_ids: [...value.grant.data_scope_ids, "global-memory"] }
       })
     ],
     [
       "object",
-      (value: AgentBlueprint) => ({
+      (value: AgentBlueprint): AgentBlueprint => ({
         ...value,
         grant: { ...value.grant, object_ids: [...value.grant.object_ids, "artifact-2"] }
       })
     ],
     [
       "money",
-      (value: AgentBlueprint) => ({
+      (value: AgentBlueprint): AgentBlueprint => ({
         ...value,
         grant: { ...value.grant, budget: { ...value.grant.budget, money_minor: 2_000 } }
       })
     ],
     [
       "tokens",
-      (value: AgentBlueprint) => ({
+      (value: AgentBlueprint): AgentBlueprint => ({
         ...value,
         grant: { ...value.grant, budget: { ...value.grant.budget, tokens: 200_000 } }
       })
     ],
     [
       "operations",
-      (value: AgentBlueprint) => ({
+      (value: AgentBlueprint): AgentBlueprint => ({
         ...value,
         grant: { ...value.grant, budget: { ...value.grant.budget, operations: 200 } }
       })
     ],
     [
       "delegation depth",
-      (value: AgentBlueprint) => ({
+      (value: AgentBlueprint): AgentBlueprint => ({
         ...value,
         grant: { ...value.grant, delegation_depth: 2 }
       })
     ],
     [
       "expiry",
-      (value: AgentBlueprint) => ({
+      (value: AgentBlueprint): AgentBlueprint => ({
         ...value,
         grant: { ...value.grant, valid_until: "2026-08-28T20:00:00.000Z" }
       })
