@@ -238,10 +238,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
 
   if (dependencies.identityStore) {
     const identityStore = dependencies.identityStore;
-    const sessionView = (
-      session: IdentitySession,
-      currentSessionId: string
-    ): OwnerSessionView => {
+    const sessionView = (session: IdentitySession, currentSessionId: string): OwnerSessionView => {
       const actor = identityStore.getActor(session.actor_id, session.owner_id);
       if (!actor) throw new Error("Identity session references a missing actor");
       return {
