@@ -10,6 +10,7 @@ import {
   runMigrations,
   type DatabaseHandle
 } from "@cosmora/db";
+import { validateAgentDelegation } from "@cosmora/policy-engine";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { BearerSessionIdentityResolver } from "../src/identity.js";
@@ -43,7 +44,12 @@ const patternBody = (functionId: string) => ({
   test_status: "untested" as const
 });
 
-const blueprintBody = (functionId: string, functionVersion: number, patternId: string) => ({
+const blueprintBody = (
+  functionId: string,
+  functionVersion: number,
+  patternId: string,
+  delegationDepth = 0
+) => ({
   function_ref: { id: functionId, version: functionVersion },
   behavior_pattern_ref: { id: patternId, version: 1 },
   model_profile_ref: { id: "cosmora-mars", version: 1 },
@@ -53,7 +59,7 @@ const blueprintBody = (functionId: string, functionVersion: number, patternId: s
     data_scope_ids: ["project-memory"],
     object_ids: [PROJECT_ONE],
     budget: { currency: "USD", money_minor: 0, tokens: 10_000, operations: 0 },
-    delegation_depth: 0,
+    delegation_depth: delegationDepth,
     valid_until: "2026-08-30T09:00:00.000Z"
   },
   memory_scope: {
@@ -106,7 +112,10 @@ describe("Agent Studio owner write API", () => {
 
     const patterns = new PatternLibraryStore(database.sqlite, { now: () => NOW });
     const blueprints = new AgentBlueprintStore(database.sqlite, { now: () => NOW });
-    const instances = new AgentInstanceStore(database.sqlite, { now: () => NOW });
+    const instances = new AgentInstanceStore(database.sqlite, {
+      now: () => NOW,
+      delegationValidator: validateAgentDelegation
+    });
     app = buildApp({
       config,
       database,
@@ -216,7 +225,7 @@ describe("Agent Studio owner write API", () => {
       method: "POST",
       url: `${base}/blueprints`,
       headers: { ...headers, "idempotency-key": "create-blueprint-1" },
-      payload: blueprintBody(agentFunction.function_id, 2, pattern.pattern_id)
+      payload: blueprintBody(agentFunction.function_id, 2, pattern.pattern_id, 1)
     });
     expect(createdBlueprint.statusCode).toBe(201);
     const blueprint = createdBlueprint.json<{
@@ -236,7 +245,7 @@ describe("Agent Studio owner write API", () => {
       url: `${base}/blueprints/${blueprint.blueprint_id}/versions`,
       headers,
       payload: {
-        ...blueprintBody(agentFunction.function_id, 2, pattern.pattern_id),
+        ...blueprintBody(agentFunction.function_id, 2, pattern.pattern_id, 1),
         expected_version: 1,
         task_contract: "Review and return the bounded project result."
       }
@@ -266,6 +275,86 @@ describe("Agent Studio owner write API", () => {
     expect(replayedProposal.statusCode).toBe(200);
     expect(replayedProposal.headers["idempotency-replayed"]).toBe("true");
     expect(replayedProposal.json<{ instance_id: string }>().instance_id).toBe(proposal.instance_id);
+
+    const childBlueprintResponse = await app.inject({
+      method: "POST",
+      url: `${base}/blueprints`,
+      headers: { ...headers, "idempotency-key": "create-child-blueprint-1" },
+      payload: {
+        ...blueprintBody(agentFunction.function_id, 2, pattern.pattern_id, 0),
+        task_contract: "Return one delegated, bounded project result."
+      }
+    });
+    expect(childBlueprintResponse.statusCode).toBe(201);
+    const childBlueprint = childBlueprintResponse.json<{
+      blueprint_id: string;
+      version: number;
+    }>();
+    const delegatedProposal = await app.inject({
+      method: "POST",
+      url: `${base}/proposals/delegated`,
+      headers: { ...headers, "idempotency-key": "create-delegated-proposal-1" },
+      payload: {
+        parent_instance_id: proposal.instance_id,
+        blueprint_ref: { id: childBlueprint.blueprint_id, version: childBlueprint.version }
+      }
+    });
+    expect(delegatedProposal.statusCode).toBe(201);
+    const delegated = delegatedProposal.json<{
+      instance_id: string;
+      status: string;
+      parent_instance_id: string | null;
+    }>();
+    expect(delegated).toMatchObject({
+      status: "proposed",
+      parent_instance_id: proposal.instance_id
+    });
+    const delegatedReplay = await app.inject({
+      method: "POST",
+      url: `${base}/proposals/delegated`,
+      headers: { ...headers, "idempotency-key": "create-delegated-proposal-1" },
+      payload: {
+        parent_instance_id: proposal.instance_id,
+        blueprint_ref: { id: childBlueprint.blueprint_id, version: childBlueprint.version }
+      }
+    });
+    expect(delegatedReplay.statusCode).toBe(200);
+    expect(delegatedReplay.json<{ instance_id: string }>().instance_id).toBe(delegated.instance_id);
+
+    const expandedBlueprintResponse = await app.inject({
+      method: "POST",
+      url: `${base}/blueprints`,
+      headers: { ...headers, "idempotency-key": "create-expanded-child-blueprint-1" },
+      payload: {
+        ...blueprintBody(agentFunction.function_id, 2, pattern.pattern_id, 0),
+        grant: {
+          ...blueprintBody(agentFunction.function_id, 2, pattern.pattern_id, 0).grant,
+          budget: { currency: "USD", money_minor: 0, tokens: 20_000, operations: 0 }
+        }
+      }
+    });
+    expect(expandedBlueprintResponse.statusCode).toBe(201);
+    const expandedBlueprint = expandedBlueprintResponse.json<{
+      blueprint_id: string;
+      version: number;
+    }>();
+    const deniedDelegation = await app.inject({
+      method: "POST",
+      url: `${base}/proposals/delegated`,
+      headers: { ...headers, "idempotency-key": "deny-expanded-delegation-1" },
+      payload: {
+        parent_instance_id: proposal.instance_id,
+        blueprint_ref: { id: expandedBlueprint.blueprint_id, version: expandedBlueprint.version }
+      }
+    });
+    expect(deniedDelegation.statusCode).toBe(403);
+    expect(deniedDelegation.json<{ error: { code: string } }>().error.code).toBe("POLICY_DENIED");
+    const proposalsAfterDenial = await app.inject({
+      method: "GET",
+      url: `${base}/proposals`,
+      headers
+    });
+    expect(proposalsAfterDenial.json<{ items: unknown[] }>().items).toHaveLength(2);
 
     const archived = await app.inject({
       method: "POST",
@@ -297,9 +386,12 @@ describe("Agent Studio owner write API", () => {
         object_ref: { id: string; version: number };
       }>;
     }>().items;
-    expect(events).toHaveLength(8);
+    expect(events).toHaveLength(11);
     expect(events.map((event) => event.operation)).toEqual([
       "pattern.archive",
+      "blueprint.create",
+      "proposal.delegated",
+      "blueprint.create",
       "proposal.root",
       "blueprint.version",
       "blueprint.create",
@@ -318,7 +410,7 @@ describe("Agent Studio owner write API", () => {
     expect(decisionEvents.body).not.toContain(patternBody(agentFunction.function_id).instructions);
   });
 
-  it("keeps path ownership authoritative and leaves delegated proposals non-writable", async () => {
+  it("keeps path ownership authoritative and delegated proposals fail closed", async () => {
     const base = `/api/v1/projects/${PROJECT_ONE}/agent-studio`;
     const crossOwner = await app.inject({
       method: "POST",
@@ -382,12 +474,18 @@ describe("Agent Studio owner write API", () => {
     const delegatedProposalAttempt = await app.inject({
       method: "POST",
       url: `${base}/proposals/delegated`,
-      headers: { authorization: `Bearer ${ownerOneToken}` },
-      payload: { blueprint_ref: { id: "blueprint", version: 1 } }
+      headers: {
+        authorization: `Bearer ${ownerOneToken}`,
+        "idempotency-key": "missing-delegation-objects"
+      },
+      payload: {
+        parent_instance_id: "missing-parent",
+        blueprint_ref: { id: "blueprint", version: 1 }
+      }
     });
     expect(delegatedProposalAttempt.statusCode).toBe(404);
     expect(delegatedProposalAttempt.json<{ error: { code: string } }>().error.code).toBe(
-      "ROUTE_NOT_FOUND"
+      "AGENT_STUDIO_OBJECT_NOT_FOUND"
     );
   });
 });

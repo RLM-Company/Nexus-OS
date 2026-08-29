@@ -35,6 +35,7 @@ import {
   OwnerSessionViewSchema,
   ProjectDetailResponseSchema,
   ProjectListResponseSchema,
+  ProposeDelegatedAgentRequestSchema,
   ProposeRootAgentRequestSchema,
   PERMISSION_MODE_RANK,
   RevokeSessionRequestSchema,
@@ -71,6 +72,7 @@ import {
   AgentBlueprintNotFoundError,
   AgentBlueprintValidationError,
   type AgentBlueprintStore,
+  AgentInstanceDelegationError,
   AgentInstanceNotFoundError,
   AgentInstanceValidationError,
   type AgentInstanceStore,
@@ -216,6 +218,17 @@ const sendAgentStudioMutationError = (
           request.id,
           "IDEMPOTENCY_CONFLICT",
           "Idempotency key was already used for another Agent Studio create request"
+        )
+      );
+  }
+  if (error instanceof AgentInstanceDelegationError) {
+    return reply
+      .status(403)
+      .send(
+        errorBody(
+          request.id,
+          "POLICY_DENIED",
+          "Delegated agent proposal is outside the parent grant"
         )
       );
   }
@@ -723,6 +736,56 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             execute: () =>
               instances.proposeRoot(identity, {
                 project_id: request.params.projectId,
+                blueprint_ref: request.body.blueprint_ref
+              }),
+            reference_of: (value) => ({ id: value.instance_id, version: 1 }),
+            resolve: (reference) =>
+              instances.getInstance(identity, request.params.projectId, reference.id)
+          });
+          return reply
+            .header("idempotency-replayed", String(result.replayed))
+            .status(result.replayed ? 200 : 201)
+            .send(result.value);
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/proposals/delegated",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          headers: AgentStudioCreateHeadersSchema,
+          body: ProposeDelegatedAgentRequestSchema,
+          response: {
+            200: AgentInstanceSchema,
+            201: AgentInstanceSchema,
+            400: ApiErrorSchema,
+            403: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        try {
+          const result = mutations.create(identity, {
+            project_id: request.params.projectId,
+            idempotency_key: request.headers["idempotency-key"],
+            operation: "proposal.delegated",
+            request: request.body,
+            execute: () =>
+              instances.proposeDelegated(identity, {
+                project_id: request.params.projectId,
+                parent_instance_id: request.body.parent_instance_id,
                 blueprint_ref: request.body.blueprint_ref
               }),
             reference_of: (value) => ({ id: value.instance_id, version: 1 }),

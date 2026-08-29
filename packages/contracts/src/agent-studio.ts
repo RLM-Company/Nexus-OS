@@ -367,6 +367,15 @@ export const ProposeRootAgentRequestSchema = Type.Object(
 );
 export type ProposeRootAgentRequest = Static<typeof ProposeRootAgentRequestSchema>;
 
+export const ProposeDelegatedAgentRequestSchema = Type.Object(
+  {
+    parent_instance_id: EntityIdSchema,
+    blueprint_ref: VersionedAgentReferenceSchema
+  },
+  { additionalProperties: false }
+);
+export type ProposeDelegatedAgentRequest = Static<typeof ProposeDelegatedAgentRequestSchema>;
+
 export const AgentStudioDecisionOperationSchema = Type.Union([
   Type.Literal("function.create"),
   Type.Literal("function.version"),
@@ -375,7 +384,8 @@ export const AgentStudioDecisionOperationSchema = Type.Union([
   Type.Literal("pattern.archive"),
   Type.Literal("blueprint.create"),
   Type.Literal("blueprint.version"),
-  Type.Literal("proposal.root")
+  Type.Literal("proposal.root"),
+  Type.Literal("proposal.delegated")
 ]);
 export type AgentStudioDecisionOperation = Static<typeof AgentStudioDecisionOperationSchema>;
 
