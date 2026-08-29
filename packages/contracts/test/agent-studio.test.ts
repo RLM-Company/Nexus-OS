@@ -6,6 +6,8 @@ import {
   AgentInstructionPlanSchema,
   AgentInstanceSchema,
   BehaviorPatternSchema,
+  CreateAgentBlueprintRequestSchema,
+  CreateBehaviorPatternRequestSchema,
   type AgentBlueprint
 } from "../src/index.js";
 
@@ -75,6 +77,61 @@ describe("Agent Studio contracts", () => {
         capability_ids: ["finance.spend"],
         tool_ids: ["payments"],
         budget: { money_minor: 1_000_000 }
+      })
+    ).toBe(false);
+  });
+
+  it("keeps owner write requests project-bound and free of runtime fields", () => {
+    const patternRequest = {
+      name: "Skeptical analyst",
+      description: "Tests claims and records uncertainty.",
+      instructions: "Challenge unsupported claims and cite evidence.",
+      allowed_function_ids: ["researcher"],
+      known_limitations: [],
+      test_status: "untested"
+    };
+    const blueprintRequest = {
+      function_ref: { id: "researcher", version: 1 },
+      behavior_pattern_ref: { id: "skeptical-analyst", version: 1 },
+      model_profile_ref: { id: "cosmora-mars", version: 1 },
+      grant: {
+        capability_ids: ["context.project.read"],
+        tool_ids: [],
+        data_scope_ids: ["project-memory"],
+        object_ids: ["project-1"],
+        budget: { currency: "USD", money_minor: 0, tokens: 10_000, operations: 0 },
+        delegation_depth: 0,
+        valid_until: "2026-08-30T12:00:00.000Z"
+      },
+      memory_scope: {
+        read_mode: "project_segments",
+        source_ids: ["project-memory"],
+        write_back: "result_and_evidence"
+      },
+      task_contract: "Return a bounded result.",
+      start_condition: "A later activation increment approves it.",
+      close_conditions: ["The result is accepted."]
+    };
+
+    expect(Value.Check(CreateBehaviorPatternRequestSchema, patternRequest)).toBe(true);
+    expect(
+      Value.Check(CreateBehaviorPatternRequestSchema, {
+        ...patternRequest,
+        tool_ids: ["runtime-tool"]
+      })
+    ).toBe(false);
+    expect(Value.Check(CreateAgentBlueprintRequestSchema, blueprintRequest)).toBe(true);
+    expect(
+      Value.Check(CreateAgentBlueprintRequestSchema, {
+        ...blueprintRequest,
+        project_id: "attacker-project",
+        status: "active"
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(CreateAgentBlueprintRequestSchema, {
+        ...blueprintRequest,
+        grant: { ...blueprintRequest.grant, project_id: "attacker-project" }
       })
     ).toBe(false);
   });

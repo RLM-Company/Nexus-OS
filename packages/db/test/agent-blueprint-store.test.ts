@@ -1,6 +1,7 @@
 import type { AgentGrant, AgentMemoryScope } from "@cosmora/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  AgentBlueprintConflictError,
   AgentBlueprintNotFoundError,
   AgentBlueprintStore,
   AgentBlueprintValidationError,
@@ -152,10 +153,23 @@ describe("AgentBlueprintStore", () => {
       const input = blueprintInput("project-1", agentFunction.function_id, pattern.pattern_id);
       const first = store.createBlueprint(owner, input);
       input.close_conditions[0] = "Caller mutation must not alter the stored row.";
-      const second = store.createBlueprintVersion(owner, first.blueprint_id, {
-        ...blueprintVersionInput("project-1", agentFunction.function_id, pattern.pattern_id),
-        task_contract: "Review the bounded research result."
-      });
+      const second = store.createBlueprintVersion(
+        owner,
+        first.blueprint_id,
+        {
+          ...blueprintVersionInput("project-1", agentFunction.function_id, pattern.pattern_id),
+          task_contract: "Review the bounded research result."
+        },
+        1
+      );
+      expect(() =>
+        store.createBlueprintVersion(
+          owner,
+          first.blueprint_id,
+          blueprintVersionInput("project-1", agentFunction.function_id, pattern.pattern_id),
+          1
+        )
+      ).toThrow(AgentBlueprintConflictError);
       patterns.archivePattern(owner, pattern.pattern_id);
 
       expect(second.version).toBe(2);

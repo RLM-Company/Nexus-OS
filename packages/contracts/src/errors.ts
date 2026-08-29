@@ -6,6 +6,7 @@ export const ErrorCodeSchema = Type.Union([
   Type.Literal("FORBIDDEN"),
   Type.Literal("IDENTITY_SESSION_NOT_FOUND"),
   Type.Literal("PROJECT_NOT_FOUND"),
+  Type.Literal("AGENT_STUDIO_OBJECT_NOT_FOUND"),
   Type.Literal("AUTONOMY_PROFILE_CONFLICT"),
   Type.Literal("CONFIRMATION_NOT_FOUND"),
   Type.Literal("CONFIRMATION_EXPIRED"),

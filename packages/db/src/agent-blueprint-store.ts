@@ -47,6 +47,13 @@ export class AgentBlueprintNotFoundError extends Error {
   }
 }
 
+export class AgentBlueprintConflictError extends Error {
+  constructor() {
+    super("Agent blueprint version changed");
+    this.name = "AgentBlueprintConflictError";
+  }
+}
+
 const CREATE_KEYS = new Set([
   "project_id",
   "function_ref",
@@ -147,12 +154,16 @@ export class AgentBlueprintStore {
   createBlueprintVersion(
     identity: BlueprintIdentity,
     blueprintId: string,
-    input: CreateAgentBlueprintVersionInput
+    input: CreateAgentBlueprintVersionInput,
+    expectedVersion?: number
   ): AgentBlueprint {
     assertExactKeys(input, VERSION_KEYS);
     return this.#transaction(() => {
       const latest = this.#getLatestOwned(identity.owner_id, blueprintId);
       if (!latest) throw new AgentBlueprintNotFoundError();
+      if (expectedVersion !== undefined && latest.version !== expectedVersion) {
+        throw new AgentBlueprintConflictError();
+      }
       const timestamp = this.#timestamp();
       const detached = structuredClone(input);
       const candidate: AgentBlueprint = {

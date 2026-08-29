@@ -206,12 +206,16 @@ export class PatternLibraryStore {
   createFunctionVersion(
     identity: PatternLibraryIdentity,
     functionId: string,
-    input: CreateAgentFunctionVersionInput
+    input: CreateAgentFunctionVersionInput,
+    expectedVersion?: number
   ): AgentFunctionDefinition {
     assertExactKeys(input, FUNCTION_VERSION_KEYS, "Agent function version");
     return this.#transaction(() => {
       const latest = this.#getLatestOwnedFunction(identity.owner_id, functionId);
       if (!latest) throw new PatternLibraryNotFoundError();
+      if (expectedVersion !== undefined && latest.version !== expectedVersion) {
+        throw new PatternLibraryConflictError("Agent function version changed");
+      }
       this.#assertProjectBinding(identity.owner_id, latest.project_id);
       const candidate: AgentFunctionDefinition = {
         ...latest,
@@ -292,12 +296,16 @@ export class PatternLibraryStore {
   createPatternVersion(
     identity: PatternLibraryIdentity,
     patternId: string,
-    input: CreateBehaviorPatternVersionInput
+    input: CreateBehaviorPatternVersionInput,
+    expectedVersion?: number
   ): BehaviorPattern {
     assertExactKeys(input, PATTERN_VERSION_KEYS, "Behavior pattern version");
     return this.#transaction(() => {
       const latest = this.#getLatestOwnedPattern(identity.owner_id, patternId);
       if (!latest) throw new PatternLibraryNotFoundError();
+      if (expectedVersion !== undefined && latest.version !== expectedVersion) {
+        throw new PatternLibraryConflictError("Behavior pattern version changed");
+      }
       if (latest.archived_at !== null) {
         throw new PatternLibraryConflictError("Archived patterns cannot be revised");
       }

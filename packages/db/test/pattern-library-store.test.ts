@@ -2,6 +2,7 @@ import type { DatabaseHandle } from "../src/index.js";
 import { describe, expect, it } from "vitest";
 import {
   openDatabase,
+  PatternLibraryConflictError,
   PatternLibraryNotFoundError,
   PatternLibraryStore,
   PatternLibraryValidationError,
@@ -90,26 +91,63 @@ describe("PatternLibraryStore", () => {
       const owner = identity("owner-1");
       const firstFunction = store.createFunction(owner, functionDraft());
       nowMs += 1_000;
-      const secondFunction = store.createFunctionVersion(owner, firstFunction.function_id, {
-        name: "Evidence researcher",
-        description: firstFunction.description,
-        result_contract: firstFunction.result_contract
-      });
+      const secondFunction = store.createFunctionVersion(
+        owner,
+        firstFunction.function_id,
+        {
+          name: "Evidence researcher",
+          description: firstFunction.description,
+          result_contract: firstFunction.result_contract
+        },
+        1
+      );
 
       expect(firstFunction.version).toBe(1);
       expect(secondFunction.version).toBe(2);
       expect(store.getFunction(owner, firstFunction.function_id, 1)?.name).toBe("Researcher");
+      expect(() =>
+        store.createFunctionVersion(
+          owner,
+          firstFunction.function_id,
+          {
+            name: "Stale revision",
+            description: firstFunction.description,
+            result_contract: firstFunction.result_contract
+          },
+          1
+        )
+      ).toThrow(PatternLibraryConflictError);
 
       const firstPattern = store.createPattern(owner, patternDraft([firstFunction.function_id]));
       nowMs += 1_000;
-      const secondPattern = store.createPatternVersion(owner, firstPattern.pattern_id, {
-        name: "Evidence-first sceptic",
-        description: firstPattern.description,
-        instructions: firstPattern.instructions,
-        allowed_function_ids: [firstFunction.function_id],
-        known_limitations: firstPattern.known_limitations,
-        test_status: "untested"
-      });
+      const secondPattern = store.createPatternVersion(
+        owner,
+        firstPattern.pattern_id,
+        {
+          name: "Evidence-first sceptic",
+          description: firstPattern.description,
+          instructions: firstPattern.instructions,
+          allowed_function_ids: [firstFunction.function_id],
+          known_limitations: firstPattern.known_limitations,
+          test_status: "untested"
+        },
+        1
+      );
+      expect(() =>
+        store.createPatternVersion(
+          owner,
+          firstPattern.pattern_id,
+          {
+            name: "Stale pattern revision",
+            description: firstPattern.description,
+            instructions: firstPattern.instructions,
+            allowed_function_ids: [firstFunction.function_id],
+            known_limitations: firstPattern.known_limitations,
+            test_status: "untested"
+          },
+          1
+        )
+      ).toThrow(PatternLibraryConflictError);
       nowMs += 1_000;
       const archived = store.archivePattern(owner, firstPattern.pattern_id);
 

@@ -1,7 +1,7 @@
 # ADR-004: Agent Studio and modular agent composition
 
 **Date:** 2026-08-26  
-**Status:** OWNER APPROVED / CONTRACTS + PERSISTENCE + INSTRUCTION PLANS + OWNER READ API IMPLEMENTED / NOT RUNTIME
+**Status:** OWNER APPROVED / CONTRACTS + PERSISTENCE + INSTRUCTION PLANS + OWNER CATALOG API IMPLEMENTED / NOT RUNTIME
 
 ## Context
 
@@ -183,6 +183,28 @@ another owner's project receives the same not-found response as an unknown proje
 system identities are rejected by the existing owner-only API boundary. The routes are registered
 only when the three Agent Studio stores are explicitly supplied to the application.
 
-This is a read-only control-plane surface. It does not create or version functions, patterns or
-blueprints; propose or activate agents; compose executable instructions; issue grants; select a
-provider; call a model or tool; perform lifecycle transitions; or add any external integration.
+These four routes form a read-only control-plane surface. They do not mutate catalog objects or
+instances, compose executable instructions, issue grants, select a provider, call a model or tool,
+perform lifecycle transitions or add any external integration.
+
+## Owner catalog write boundary
+
+The owner API may now create project-scoped function definitions, behavior patterns and inert agent
+blueprints; append immutable versions of those objects; and archive a project pattern by appending
+its terminal version. The project binding is always derived from the authenticated URL and cannot
+be supplied or overridden by the request body. Product- and owner-scoped catalog writes are not
+exposed by these project routes.
+
+Version writes require the caller's `expected_version`. The store compares it with the latest
+version inside the same database transaction and returns a conflict instead of overwriting or
+silently appending from stale state. Pattern archive remains idempotent. Cross-project object IDs
+are treated as absent even when both projects belong to the same owner.
+
+Blueprint requests may declare bounded capabilities, tools, data, objects and budgets, but those
+fields remain inert blueprint data. The API does not turn a declaration into a permission. The
+model-profile reference is likewise stored without proving or activating a provider route.
+
+Fresh object creation does not yet have a durable idempotency key, so automated clients must not
+retry a timed-out create request until a later idempotency increment. There is still no HTTP route
+for root or delegated proposals, activation, lifecycle transitions, executable instruction
+composition, grants, provider/model/tool calls, external actions or production deployment.
