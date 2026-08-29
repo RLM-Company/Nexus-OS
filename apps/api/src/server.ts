@@ -12,6 +12,7 @@ import {
   runMigrations,
   StepUpProofStore
 } from "@cosmora/db";
+import { validateAgentDelegation } from "@cosmora/policy-engine";
 import { buildApp } from "./app.js";
 import {
   BearerSessionIdentityResolver,
@@ -68,7 +69,9 @@ try {
     policyStore: new PolicyStore(database.sqlite),
     patternLibraryStore: new PatternLibraryStore(database.sqlite),
     agentBlueprintStore: new AgentBlueprintStore(database.sqlite),
-    agentInstanceStore: new AgentInstanceStore(database.sqlite),
+    agentInstanceStore: new AgentInstanceStore(database.sqlite, {
+      delegationValidator: validateAgentDelegation
+    }),
     agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite),
     modelGateway: modelRuntime.gateway,
     manager: modelRuntime.manager,

@@ -52,6 +52,9 @@ importers:
       "@cosmora/model-gateway":
         specifier: workspace:*
         version: link:../../packages/model-gateway
+      "@cosmora/policy-engine":
+        specifier: workspace:*
+        version: link:../../packages/policy-engine
       fastify:
         specifier: 5.12.1
         version: 5.12.1

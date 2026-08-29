@@ -259,3 +259,20 @@ project, and agent identities remain rejected.
 This trace records control-plane changes only. It is not a runtime event log, does not activate an
 agent, issue authority, expose secrets, render executable instructions, call models/tools or perform
 external actions.
+
+## Owner delegated proposal Policy Engine boundary
+
+The owner API may now save a delegated child proposal only when it names an existing proposed
+parent instance and an exact child blueprint in the same project. The server composition root wires
+the Policy Engine delegation validator explicitly; the instance store still fails closed when no
+validator is configured.
+
+The validator requires the same owner/project, subset capabilities, tools, data scopes and objects,
+non-increasing money/token/operation budgets, the same currency, an expiry no later than the
+parent's, and strictly lower delegation depth. A denial returns a generic policy error and persists
+neither the child nor an idempotency/Decision Trace record. An allowed request is idempotent and
+atomically records one content-free `proposal.delegated` event.
+
+Parent and child remain `proposed`. This boundary does not activate either instance, issue their
+declared grants, compose executable instructions, route a model, call a tool or perform an external
+action.

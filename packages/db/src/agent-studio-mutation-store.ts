@@ -15,7 +15,7 @@ type SqlRow = Record<string, unknown>;
 
 export type AgentStudioCreateOperation = Extract<
   AgentStudioDecisionOperation,
-  "function.create" | "pattern.create" | "blueprint.create" | "proposal.root"
+  "function.create" | "pattern.create" | "blueprint.create" | "proposal.root" | "proposal.delegated"
 >;
 
 export interface AgentStudioMutationStoreOptions {

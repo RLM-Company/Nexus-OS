@@ -203,23 +203,25 @@ describe("Agent Studio owner read API", () => {
     }
   });
 
-  it("denies agent sessions and exposes no proposal or activation route", async () => {
+  it("denies agent sessions and exposes no activation route", async () => {
     const base = `/api/v1/projects/${PROJECT_ONE}/agent-studio`;
     const denied = await app.inject({
       method: "GET",
       url: `${base}/functions`,
       headers: { authorization: `Bearer ${agentToken}` }
     });
-    const writeAttempt = await app.inject({
+    const activationAttempt = await app.inject({
       method: "POST",
-      url: `${base}/proposals/delegated`,
+      url: `${base}/proposals/agent-instance-1/activate`,
       headers: { authorization: `Bearer ${ownerOneToken}` },
-      payload: { blueprint_ref: { id: "blueprint", version: 1 } }
+      payload: {}
     });
 
     expect(denied.statusCode).toBe(403);
-    expect(writeAttempt.statusCode).toBe(404);
-    expect(writeAttempt.json<{ error: { code: string } }>().error.code).toBe("ROUTE_NOT_FOUND");
+    expect(activationAttempt.statusCode).toBe(404);
+    expect(activationAttempt.json<{ error: { code: string } }>().error.code).toBe(
+      "ROUTE_NOT_FOUND"
+    );
   });
 
   it("rejects malformed query parameters without reading the store", async () => {

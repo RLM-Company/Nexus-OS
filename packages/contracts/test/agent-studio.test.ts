@@ -9,6 +9,7 @@ import {
   BehaviorPatternSchema,
   CreateAgentBlueprintRequestSchema,
   CreateBehaviorPatternRequestSchema,
+  ProposeDelegatedAgentRequestSchema,
   type AgentBlueprint
 } from "../src/index.js";
 
@@ -60,6 +61,22 @@ describe("Agent Studio contracts", () => {
       Value.Check(AgentStudioDecisionEventSchema, {
         ...event,
         instructions: "Prompt text must never be copied into the decision trace."
+      })
+    ).toBe(false);
+  });
+
+  it("keeps delegated proposal requests limited to parent and exact blueprint references", () => {
+    const request = {
+      parent_instance_id: "parent-instance-1",
+      blueprint_ref: { id: "child-blueprint-1", version: 2 }
+    };
+
+    expect(Value.Check(ProposeDelegatedAgentRequestSchema, request)).toBe(true);
+    expect(
+      Value.Check(ProposeDelegatedAgentRequestSchema, {
+        ...request,
+        status: "active",
+        capability_ids: ["finance.spend"]
       })
     ).toBe(false);
   });
