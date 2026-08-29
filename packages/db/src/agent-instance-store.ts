@@ -98,7 +98,7 @@ export class AgentInstanceStore {
     const timestamp = this.#timestamp();
     const blueprint = this.#loadBlueprint(identity, input.project_id, input.blueprint_ref);
     this.#assertUnexpired(blueprint, timestamp);
-    return this.#transaction(() => this.#insertProposal(identity, blueprint, null, timestamp));
+    return this.#insertProposal(identity, blueprint, null, timestamp);
   }
 
   proposeDelegated(

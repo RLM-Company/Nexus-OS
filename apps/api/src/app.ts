@@ -7,6 +7,7 @@ import {
   AgentFunctionListResponseSchema,
   AgentFunctionDefinitionSchema,
   AgentInstanceListResponseSchema,
+  AgentInstanceSchema,
   ApiErrorSchema,
   ActivateEmergencyStopRequestSchema,
   AUTONOMY_MATRIX,
@@ -33,6 +34,7 @@ import {
   OwnerSessionViewSchema,
   ProjectDetailResponseSchema,
   ProjectListResponseSchema,
+  ProposeRootAgentRequestSchema,
   PERMISSION_MODE_RANK,
   RevokeSessionRequestSchema,
   RunCancelResponseSchema,
@@ -67,6 +69,8 @@ import {
   AgentBlueprintNotFoundError,
   AgentBlueprintValidationError,
   type AgentBlueprintStore,
+  AgentInstanceNotFoundError,
+  AgentInstanceValidationError,
   type AgentInstanceStore,
   AgentStudioIdempotencyConflictError,
   type AgentStudioMutationStore,
@@ -188,7 +192,8 @@ const sendAgentStudioMutationError = (
 ): FastifyReply => {
   if (
     error instanceof PatternLibraryNotFoundError ||
-    error instanceof AgentBlueprintNotFoundError
+    error instanceof AgentBlueprintNotFoundError ||
+    error instanceof AgentInstanceNotFoundError
   ) {
     return reply
       .status(404)
@@ -218,6 +223,7 @@ const sendAgentStudioMutationError = (
   if (
     error instanceof PatternLibraryValidationError ||
     error instanceof AgentBlueprintValidationError ||
+    error instanceof AgentInstanceValidationError ||
     error instanceof AgentStudioMutationValidationError
   ) {
     return reply
@@ -648,6 +654,54 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           items: instances.listInstances(identity, request.params.projectId)
         };
         return response;
+      }
+    );
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/proposals",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          headers: AgentStudioCreateHeadersSchema,
+          body: ProposeRootAgentRequestSchema,
+          response: {
+            200: AgentInstanceSchema,
+            201: AgentInstanceSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        try {
+          const result = mutations.create(identity, {
+            project_id: request.params.projectId,
+            idempotency_key: request.headers["idempotency-key"],
+            operation: "proposal.root",
+            request: request.body,
+            execute: () =>
+              instances.proposeRoot(identity, {
+                project_id: request.params.projectId,
+                blueprint_ref: request.body.blueprint_ref
+              }),
+            reference_of: (value) => ({ id: value.instance_id, version: 1 }),
+            resolve: (reference) =>
+              instances.getInstance(identity, request.params.projectId, reference.id)
+          });
+          return reply
+            .header("idempotency-replayed", String(result.replayed))
+            .status(result.replayed ? 200 : 201)
+            .send(result.value);
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
       }
     );
 

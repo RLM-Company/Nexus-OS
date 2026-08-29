@@ -206,7 +206,7 @@ describe("Agent Studio owner read API", () => {
     });
     const writeAttempt = await app.inject({
       method: "POST",
-      url: `${base}/proposals`,
+      url: `${base}/proposals/delegated`,
       headers: { authorization: `Bearer ${ownerOneToken}` },
       payload: { blueprint_ref: { id: "blueprint", version: 1 } }
     });

@@ -24,7 +24,7 @@
 
 ## Deliberately absent
 
-- root or delegated proposal HTTP writes;
+- root or delegated proposal HTTP writes (root implemented in the following isolated increment);
 - idempotency around network calls or external side effects;
 - activation and lifecycle transitions;
 - executable prompt composition;
