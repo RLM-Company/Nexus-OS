@@ -1,9 +1,12 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
 import {
+  AgentBlueprintStore,
+  AgentInstanceStore,
   EmergencyStopStore,
   IdentityStore,
   openDatabase,
   PolicyStore,
+  PatternLibraryStore,
   ProjectStore,
   runMigrations,
   StepUpProofStore
@@ -62,6 +65,9 @@ try {
     projectStore,
     emergencyStopStore,
     policyStore: new PolicyStore(database.sqlite),
+    patternLibraryStore: new PatternLibraryStore(database.sqlite),
+    agentBlueprintStore: new AgentBlueprintStore(database.sqlite),
+    agentInstanceStore: new AgentInstanceStore(database.sqlite),
     modelGateway: modelRuntime.gateway,
     manager: modelRuntime.manager,
     modelRegistryVersion: modelRuntime.registryVersion,

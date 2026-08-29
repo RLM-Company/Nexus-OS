@@ -2,9 +2,13 @@ import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { ServerConfig } from "@cosmora/config";
 import type { ManagerService } from "@cosmora/core";
 import {
+  AgentBlueprintListResponseSchema,
+  AgentFunctionListResponseSchema,
+  AgentInstanceListResponseSchema,
   ApiErrorSchema,
   ActivateEmergencyStopRequestSchema,
   AUTONOMY_MATRIX,
+  BehaviorPatternListResponseSchema,
   CapabilityProfileResponseSchema,
   ConfirmationDecisionRequestSchema,
   ConfirmationListResponseSchema,
@@ -27,6 +31,10 @@ import {
   UpdateCapabilityProfileRequestSchema,
   requiresStepUp,
   type ApiError,
+  type AgentBlueprintListResponse,
+  type AgentFunctionListResponse,
+  type AgentInstanceListResponse,
+  type BehaviorPatternListResponse,
   type CapabilityId,
   type CapabilityProfileResponse,
   type ConfirmationListResponse,
@@ -46,11 +54,14 @@ import {
   type StreamEvent
 } from "@cosmora/contracts";
 import {
+  type AgentBlueprintStore,
+  type AgentInstanceStore,
   IdempotencyConflictError,
   type DatabaseHealth,
   type EmergencyStopStore,
   type IdentityStore,
   type PolicyStore,
+  type PatternLibraryStore,
   type ProjectStore,
   type StoredMessage
 } from "@cosmora/db";
@@ -60,6 +71,7 @@ import {
   type ModelGatewayStreamEvent
 } from "@cosmora/model-gateway";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import { Type } from "typebox";
 import {
   canAccessOwnerApi,
   LOCAL_DEVELOPMENT_IDENTITY,
@@ -76,6 +88,9 @@ export interface AppDependencies {
   projectStore?: ProjectStore;
   emergencyStopStore?: EmergencyStopStore;
   policyStore?: PolicyStore;
+  patternLibraryStore?: PatternLibraryStore;
+  agentBlueprintStore?: AgentBlueprintStore;
+  agentInstanceStore?: AgentInstanceStore;
   modelGateway?: ModelGateway;
   manager?: ManagerService;
   modelRegistryVersion?: string;
@@ -107,6 +122,16 @@ const errorBody = (
   message: string,
   retryable = false
 ): ApiError => ({ error: { code, message, request_id: requestId, retryable } });
+
+const AgentStudioProjectParamsSchema = Type.Object(
+  { projectId: Type.String({ minLength: 1 }) },
+  { additionalProperties: false }
+);
+
+const AgentStudioPatternQuerySchema = Type.Object(
+  { include_archived: Type.Optional(Type.Boolean({ default: false })) },
+  { additionalProperties: false }
+);
 
 const acceptedResponse = (
   accepted: NonNullable<ReturnType<ProjectStore["createMessage"]>>
@@ -423,6 +448,113 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       return response;
     }
   );
+
+  if (
+    dependencies.projectStore &&
+    dependencies.patternLibraryStore &&
+    dependencies.agentBlueprintStore &&
+    dependencies.agentInstanceStore
+  ) {
+    const projectStore = dependencies.projectStore;
+    const patterns = dependencies.patternLibraryStore;
+    const blueprints = dependencies.agentBlueprintStore;
+    const instances = dependencies.agentInstanceStore;
+    const isOwnedProject = (projectId: string, ownerId: string): boolean =>
+      projectStore.getProject(projectId, ownerId) !== null;
+
+    app.get(
+      "/api/v1/projects/:projectId/agent-studio/functions",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          response: { 200: AgentFunctionListResponseSchema, 404: ApiErrorSchema }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        const response: AgentFunctionListResponse = {
+          items: patterns.listFunctions(identity, request.params.projectId)
+        };
+        return response;
+      }
+    );
+
+    app.get(
+      "/api/v1/projects/:projectId/agent-studio/patterns",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          querystring: AgentStudioPatternQuerySchema,
+          response: { 200: BehaviorPatternListResponseSchema, 404: ApiErrorSchema }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        const response: BehaviorPatternListResponse = {
+          items: patterns.listPatterns(
+            identity,
+            request.params.projectId,
+            request.query.include_archived ?? false
+          )
+        };
+        return response;
+      }
+    );
+
+    app.get(
+      "/api/v1/projects/:projectId/agent-studio/blueprints",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          response: { 200: AgentBlueprintListResponseSchema, 404: ApiErrorSchema }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        const response: AgentBlueprintListResponse = {
+          items: blueprints.listBlueprints(identity, request.params.projectId)
+        };
+        return response;
+      }
+    );
+
+    app.get(
+      "/api/v1/projects/:projectId/agent-studio/proposals",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          response: { 200: AgentInstanceListResponseSchema, 404: ApiErrorSchema }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        const response: AgentInstanceListResponse = {
+          items: instances.listInstances(identity, request.params.projectId)
+        };
+        return response;
+      }
+    );
+  }
 
   if (dependencies.projectStore && dependencies.modelGateway && dependencies.manager) {
     const store = dependencies.projectStore;
