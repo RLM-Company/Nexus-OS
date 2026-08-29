@@ -1,7 +1,7 @@
 # ADR-004: Agent Studio and modular agent composition
 
 **Date:** 2026-08-26  
-**Status:** OWNER APPROVED / CONTRACTS + PERSISTENCE + INSTRUCTION PLANS IMPLEMENTED / NOT RUNTIME
+**Status:** OWNER APPROVED / CONTRACTS + PERSISTENCE + INSTRUCTION PLANS + OWNER READ API IMPLEMENTED / NOT RUNTIME
 
 ## Context
 
@@ -170,3 +170,19 @@ sources. It also does not detect semantic natural-language conflicts or remove t
 
 This increment does not author the final Manager prompt, activate an instance, evaluate runtime
 permissions, choose a provider, call a model/tool or expose an HTTP endpoint.
+
+## Owner control-plane read boundary
+
+The owner API may now read four project-bound Agent Studio views: visible function definitions,
+visible behavior patterns, immutable blueprint versions and proposed agent instances. Archived
+patterns are excluded by default and require an explicit query flag. All responses use shared,
+validated contracts instead of exposing raw persistence rows.
+
+Every route first verifies that the authenticated owner owns the requested project. A request for
+another owner's project receives the same not-found response as an unknown project, and agent or
+system identities are rejected by the existing owner-only API boundary. The routes are registered
+only when the three Agent Studio stores are explicitly supplied to the application.
+
+This is a read-only control-plane surface. It does not create or version functions, patterns or
+blueprints; propose or activate agents; compose executable instructions; issue grants; select a
+provider; call a model or tool; perform lifecycle transitions; or add any external integration.

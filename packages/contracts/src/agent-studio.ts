@@ -245,6 +245,30 @@ export const AgentInstanceSchema = Type.Object(
 );
 export type AgentInstance = Static<typeof AgentInstanceSchema>;
 
+export const AgentFunctionListResponseSchema = Type.Object(
+  { items: Type.Array(AgentFunctionDefinitionSchema) },
+  { additionalProperties: false }
+);
+export type AgentFunctionListResponse = Static<typeof AgentFunctionListResponseSchema>;
+
+export const BehaviorPatternListResponseSchema = Type.Object(
+  { items: Type.Array(BehaviorPatternSchema) },
+  { additionalProperties: false }
+);
+export type BehaviorPatternListResponse = Static<typeof BehaviorPatternListResponseSchema>;
+
+export const AgentBlueprintListResponseSchema = Type.Object(
+  { items: Type.Array(AgentBlueprintSchema) },
+  { additionalProperties: false }
+);
+export type AgentBlueprintListResponse = Static<typeof AgentBlueprintListResponseSchema>;
+
+export const AgentInstanceListResponseSchema = Type.Object(
+  { items: Type.Array(AgentInstanceSchema) },
+  { additionalProperties: false }
+);
+export type AgentInstanceListResponse = Static<typeof AgentInstanceListResponseSchema>;
+
 export const AgentHandoffSchema = Type.Object(
   {
     handoff_id: EntityIdSchema,
