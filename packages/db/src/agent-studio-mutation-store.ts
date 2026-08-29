@@ -5,7 +5,8 @@ import type { IdentityContext, VersionedAgentReference } from "@cosmora/contract
 type MutationIdentity = Pick<IdentityContext, "owner_id" | "actor_id">;
 type SqlRow = Record<string, unknown>;
 
-export type AgentStudioCreateOperation = "function.create" | "pattern.create" | "blueprint.create";
+export type AgentStudioCreateOperation =
+  "function.create" | "pattern.create" | "blueprint.create" | "proposal.root";
 
 export interface AgentStudioMutationStoreOptions {
   now?: () => number;

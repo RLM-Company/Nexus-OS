@@ -244,6 +244,29 @@ describe("Agent Studio owner write API", () => {
     expect(blueprintVersion.statusCode).toBe(201);
     expect(blueprintVersion.json<{ version: number }>().version).toBe(2);
 
+    const createdProposal = await app.inject({
+      method: "POST",
+      url: `${base}/proposals`,
+      headers: { ...headers, "idempotency-key": "create-root-proposal-1" },
+      payload: { blueprint_ref: { id: blueprint.blueprint_id, version: 2 } }
+    });
+    expect(createdProposal.statusCode).toBe(201);
+    const proposal = createdProposal.json<{
+      instance_id: string;
+      status: string;
+      parent_instance_id: string | null;
+    }>();
+    expect(proposal).toMatchObject({ status: "proposed", parent_instance_id: null });
+    const replayedProposal = await app.inject({
+      method: "POST",
+      url: `${base}/proposals`,
+      headers: { ...headers, "idempotency-key": "create-root-proposal-1" },
+      payload: { blueprint_ref: { id: blueprint.blueprint_id, version: 2 } }
+    });
+    expect(replayedProposal.statusCode).toBe(200);
+    expect(replayedProposal.headers["idempotency-replayed"]).toBe("true");
+    expect(replayedProposal.json<{ instance_id: string }>().instance_id).toBe(proposal.instance_id);
+
     const archived = await app.inject({
       method: "POST",
       url: `${base}/patterns/${pattern.pattern_id}/archive`,
@@ -262,7 +285,7 @@ describe("Agent Studio owner write API", () => {
     expect(repeatedArchive.json<{ version: number }>().version).toBe(3);
   });
 
-  it("keeps path ownership authoritative and leaves proposals non-writable", async () => {
+  it("keeps path ownership authoritative and leaves delegated proposals non-writable", async () => {
     const base = `/api/v1/projects/${PROJECT_ONE}/agent-studio`;
     const crossOwner = await app.inject({
       method: "POST",
@@ -323,13 +346,15 @@ describe("Agent Studio owner write API", () => {
       "AGENT_STUDIO_OBJECT_NOT_FOUND"
     );
 
-    const proposalAttempt = await app.inject({
+    const delegatedProposalAttempt = await app.inject({
       method: "POST",
-      url: `${base}/proposals`,
+      url: `${base}/proposals/delegated`,
       headers: { authorization: `Bearer ${ownerOneToken}` },
       payload: { blueprint_ref: { id: "blueprint", version: 1 } }
     });
-    expect(proposalAttempt.statusCode).toBe(404);
-    expect(proposalAttempt.json<{ error: { code: string } }>().error.code).toBe("ROUTE_NOT_FOUND");
+    expect(delegatedProposalAttempt.statusCode).toBe(404);
+    expect(delegatedProposalAttempt.json<{ error: { code: string } }>().error.code).toBe(
+      "ROUTE_NOT_FOUND"
+    );
   });
 });

@@ -361,6 +361,12 @@ export type CreateAgentBlueprintVersionRequest = Static<
   typeof CreateAgentBlueprintVersionRequestSchema
 >;
 
+export const ProposeRootAgentRequestSchema = Type.Object(
+  { blueprint_ref: VersionedAgentReferenceSchema },
+  { additionalProperties: false }
+);
+export type ProposeRootAgentRequest = Static<typeof ProposeRootAgentRequestSchema>;
+
 export const AgentFunctionListResponseSchema = Type.Object(
   { items: Type.Array(AgentFunctionDefinitionSchema) },
   { additionalProperties: false }

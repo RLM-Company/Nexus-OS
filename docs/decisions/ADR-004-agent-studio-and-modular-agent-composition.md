@@ -1,7 +1,7 @@
 # ADR-004: Agent Studio and modular agent composition
 
 **Date:** 2026-08-26  
-**Status:** OWNER APPROVED / CONTRACTS + PERSISTENCE + INSTRUCTION PLANS + OWNER CATALOG API + CREATE IDEMPOTENCY IMPLEMENTED / NOT RUNTIME
+**Status:** OWNER APPROVED / CONTRACTS + PERSISTENCE + OWNER CATALOG + ROOT PROPOSAL API IMPLEMENTED / NOT RUNTIME
 
 ## Context
 
@@ -205,23 +205,39 @@ fields remain inert blueprint data. The API does not turn a declaration into a p
 model-profile reference is likewise stored without proving or activating a provider route.
 
 Fresh object creation requires durable idempotency as described below. There is still no HTTP route
-for root or delegated proposals, activation, lifecycle transitions, executable instruction
-composition, grants, provider/model/tool calls, external actions or production deployment.
+for delegated proposals, activation, lifecycle transitions, executable instruction composition,
+grants, provider/model/tool calls, external actions or production deployment.
 
 ## Durable create idempotency boundary
 
-Every fresh function, pattern and blueprint creation request now requires an `Idempotency-Key`.
+Every fresh function, pattern, blueprint and root-proposal creation request now requires an
+`Idempotency-Key`.
 The database binds that key to one owner, project, operation type, canonical request hash and exact
 created object version in the same `BEGIN IMMEDIATE` transaction as the domain write. An exact
 replay, including after a process/database restart, returns the original object without executing
 the write again. Reusing the key with a different operation or request returns a typed conflict.
 
-The ledger stores only SHA-256 of the canonical request and the immutable result reference; it does
-not duplicate pattern instructions, prompts or blueprint declarations. Project ownership is also
-enforced by a composite database foreign key. If the domain write or ledger insert fails, both are
-rolled back. Version writes continue to use `expected_version`, and archive remains inherently
-idempotent, so they do not use this fresh-create mechanism.
+The ledger stores only SHA-256 of the canonical request and a stable result reference; it does not
+duplicate pattern instructions, prompts or blueprint declarations. Versioned catalog results use
+their exact version, while the immutable unversioned proposal record uses revision marker `1`.
+Project ownership is also enforced by a composite database foreign key. If the domain write or
+ledger insert fails, both are rolled back. Version writes continue to use `expected_version`, and
+archive remains inherently idempotent, so they do not use this fresh-create mechanism.
 
-This mechanism executes callbacks only for the three local database catalog creates. It is not a
-generic wrapper for network calls or external side effects. It still does not expose proposal
-writes, activate agents, grant permissions, compose executable prompts or call models/tools.
+This mechanism executes callbacks only for local database catalog creates and root proposals. It is
+not a generic wrapper for network calls or external side effects. It does not expose delegated
+proposal writes, activate agents, grant permissions, compose executable prompts or call
+models/tools.
+
+## Owner root proposal API boundary
+
+The owner may now create a root agent-instance proposal from one exact visible blueprint version in
+their project. The project is derived from the authenticated path, the blueprint grant must still
+be unexpired, and the database continues to enforce `status = proposed`, `closed_at = NULL` and a
+null parent. Creation uses the same durable replay protection, so a retry returns the original
+instance instead of adding a second proposal.
+
+The root proposal is a saved plan candidate, not a running agent. No activation or lifecycle route
+exists; no permission is issued; no instruction plan is rendered into model messages; and no
+provider, model, tool, network or external action is invoked. Delegated proposals remain absent
+from the owner API and still require a separate Policy Engine delegation boundary.
