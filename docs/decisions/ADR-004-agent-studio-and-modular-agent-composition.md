@@ -279,7 +279,8 @@ action.
 
 ## Owner read-only Agent Studio UI boundary
 
-The web control center now exposes a dedicated `/agent-studio?project=<id>` overview. It reads the
+The web control center now links to a dedicated `/agent-studio?project=<id>` overview from its main
+navigation. It reads the
 existing owner-bound function, pattern, blueprint, proposal and Decision Trace endpoints in
 parallel and presents only bounded metadata. Pattern instruction text, function result contracts,
 task contracts and grants beyond expiry/delegation depth are not rendered by this overview.

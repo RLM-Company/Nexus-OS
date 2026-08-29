@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 
 test("shows a read-only Agent Studio control surface", async ({ page, request }) => {
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Agent Studio" })).toHaveAttribute(
+    "href",
+    "/agent-studio"
+  );
+
   const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
     data: {
       initial_message: "Create an empty project for the Agent Studio UI check.",

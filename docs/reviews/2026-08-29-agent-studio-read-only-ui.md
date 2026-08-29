@@ -7,6 +7,8 @@
 ## Implemented
 
 - Dedicated responsive `/agent-studio?project=<id>` route.
+- Discoverable `Agent Studio` link in the main Control Center navigation, preserving the active
+  project ID when one is open.
 - Project ID selector and parallel loading of the five existing owner-bound read APIs.
 - Summary counts, proposed team tree, blueprint references, function/pattern summaries and newest
   content-free Decision Trace events.
