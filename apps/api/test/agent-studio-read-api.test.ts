@@ -195,7 +195,7 @@ describe("Agent Studio owner read API", () => {
     }
   });
 
-  it("denies agent sessions and exposes no write route", async () => {
+  it("denies agent sessions and exposes no proposal or activation route", async () => {
     const base = `/api/v1/projects/${PROJECT_ONE}/agent-studio`;
     const denied = await app.inject({
       method: "GET",
@@ -204,9 +204,9 @@ describe("Agent Studio owner read API", () => {
     });
     const writeAttempt = await app.inject({
       method: "POST",
-      url: `${base}/functions`,
+      url: `${base}/proposals`,
       headers: { authorization: `Bearer ${ownerOneToken}` },
-      payload: { name: "Unexpected write" }
+      payload: { blueprint_ref: { id: "blueprint", version: 1 } }
     });
 
     expect(denied.statusCode).toBe(403);

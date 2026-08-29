@@ -245,6 +245,122 @@ export const AgentInstanceSchema = Type.Object(
 );
 export type AgentInstance = Static<typeof AgentInstanceSchema>;
 
+export const CreateAgentFunctionRequestSchema = Type.Object(
+  {
+    name: Type.String({ minLength: 1, maxLength: 120 }),
+    description: Type.String({ minLength: 1, maxLength: 2_000 }),
+    result_contract: Type.String({ minLength: 1, maxLength: 20_000 })
+  },
+  { additionalProperties: false }
+);
+export type CreateAgentFunctionRequest = Static<typeof CreateAgentFunctionRequestSchema>;
+
+export const CreateAgentFunctionVersionRequestSchema = Type.Object(
+  {
+    expected_version: Type.Integer({ minimum: 1 }),
+    name: Type.String({ minLength: 1, maxLength: 120 }),
+    description: Type.String({ minLength: 1, maxLength: 2_000 }),
+    result_contract: Type.String({ minLength: 1, maxLength: 20_000 })
+  },
+  { additionalProperties: false }
+);
+export type CreateAgentFunctionVersionRequest = Static<
+  typeof CreateAgentFunctionVersionRequestSchema
+>;
+
+export const CreateBehaviorPatternRequestSchema = Type.Object(
+  {
+    name: Type.String({ minLength: 1, maxLength: 120 }),
+    description: Type.String({ minLength: 1, maxLength: 2_000 }),
+    instructions: Type.String({ minLength: 1, maxLength: 100_000 }),
+    allowed_function_ids: Type.Array(EntityIdSchema, {
+      minItems: 1,
+      maxItems: 100,
+      uniqueItems: true
+    }),
+    known_limitations: Type.Array(Type.String({ minLength: 1, maxLength: 1_000 }), {
+      maxItems: 50
+    }),
+    test_status: BehaviorPatternTestStatusSchema
+  },
+  { additionalProperties: false }
+);
+export type CreateBehaviorPatternRequest = Static<typeof CreateBehaviorPatternRequestSchema>;
+
+export const CreateBehaviorPatternVersionRequestSchema = Type.Object(
+  {
+    expected_version: Type.Integer({ minimum: 1 }),
+    name: Type.String({ minLength: 1, maxLength: 120 }),
+    description: Type.String({ minLength: 1, maxLength: 2_000 }),
+    instructions: Type.String({ minLength: 1, maxLength: 100_000 }),
+    allowed_function_ids: Type.Array(EntityIdSchema, {
+      minItems: 1,
+      maxItems: 100,
+      uniqueItems: true
+    }),
+    known_limitations: Type.Array(Type.String({ minLength: 1, maxLength: 1_000 }), {
+      maxItems: 50
+    }),
+    test_status: BehaviorPatternTestStatusSchema
+  },
+  { additionalProperties: false }
+);
+export type CreateBehaviorPatternVersionRequest = Static<
+  typeof CreateBehaviorPatternVersionRequestSchema
+>;
+
+export const AgentGrantInputSchema = Type.Object(
+  {
+    capability_ids: Type.Array(CapabilityIdSchema, { maxItems: 19, uniqueItems: true }),
+    tool_ids: Type.Array(EntityIdSchema, { maxItems: 100, uniqueItems: true }),
+    data_scope_ids: Type.Array(EntityIdSchema, { maxItems: 1_000, uniqueItems: true }),
+    object_ids: Type.Array(EntityIdSchema, { maxItems: 1_000, uniqueItems: true }),
+    budget: Type.Object(
+      {
+        currency: CurrencySchema,
+        money_minor: Type.Integer({ minimum: 0 }),
+        tokens: Type.Integer({ minimum: 0 }),
+        operations: Type.Integer({ minimum: 0 })
+      },
+      { additionalProperties: false }
+    ),
+    delegation_depth: Type.Integer({ minimum: 0, maximum: 16 }),
+    valid_until: IsoDateTimeSchema
+  },
+  { additionalProperties: false }
+);
+export type AgentGrantInput = Static<typeof AgentGrantInputSchema>;
+
+const AgentBlueprintInputProperties = {
+  function_ref: VersionedAgentReferenceSchema,
+  behavior_pattern_ref: VersionedAgentReferenceSchema,
+  model_profile_ref: VersionedAgentReferenceSchema,
+  grant: AgentGrantInputSchema,
+  memory_scope: AgentMemoryScopeSchema,
+  task_contract: Type.String({ minLength: 1, maxLength: 20_000 }),
+  start_condition: Type.String({ minLength: 1, maxLength: 2_000 }),
+  close_conditions: Type.Array(Type.String({ minLength: 1, maxLength: 2_000 }), {
+    minItems: 1,
+    maxItems: 50
+  })
+};
+
+export const CreateAgentBlueprintRequestSchema = Type.Object(AgentBlueprintInputProperties, {
+  additionalProperties: false
+});
+export type CreateAgentBlueprintRequest = Static<typeof CreateAgentBlueprintRequestSchema>;
+
+export const CreateAgentBlueprintVersionRequestSchema = Type.Object(
+  {
+    expected_version: Type.Integer({ minimum: 1 }),
+    ...AgentBlueprintInputProperties
+  },
+  { additionalProperties: false }
+);
+export type CreateAgentBlueprintVersionRequest = Static<
+  typeof CreateAgentBlueprintVersionRequestSchema
+>;
+
 export const AgentFunctionListResponseSchema = Type.Object(
   { items: Type.Array(AgentFunctionDefinitionSchema) },
   { additionalProperties: false }

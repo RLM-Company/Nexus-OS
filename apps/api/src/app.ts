@@ -3,17 +3,26 @@ import type { ServerConfig } from "@cosmora/config";
 import type { ManagerService } from "@cosmora/core";
 import {
   AgentBlueprintListResponseSchema,
+  AgentBlueprintSchema,
   AgentFunctionListResponseSchema,
+  AgentFunctionDefinitionSchema,
   AgentInstanceListResponseSchema,
   ApiErrorSchema,
   ActivateEmergencyStopRequestSchema,
   AUTONOMY_MATRIX,
   BehaviorPatternListResponseSchema,
+  BehaviorPatternSchema,
   CapabilityProfileResponseSchema,
   ConfirmationDecisionRequestSchema,
   ConfirmationListResponseSchema,
   ConfirmationRequestSchema,
   CreateMessageRequestSchema,
+  CreateAgentBlueprintRequestSchema,
+  CreateAgentBlueprintVersionRequestSchema,
+  CreateAgentFunctionRequestSchema,
+  CreateAgentFunctionVersionRequestSchema,
+  CreateBehaviorPatternRequestSchema,
+  CreateBehaviorPatternVersionRequestSchema,
   CreateProjectRequestSchema,
   EmergencyStopStateSchema,
   HealthResponseSchema,
@@ -54,9 +63,15 @@ import {
   type StreamEvent
 } from "@cosmora/contracts";
 import {
+  AgentBlueprintConflictError,
+  AgentBlueprintNotFoundError,
+  AgentBlueprintValidationError,
   type AgentBlueprintStore,
   type AgentInstanceStore,
   IdempotencyConflictError,
+  PatternLibraryConflictError,
+  PatternLibraryNotFoundError,
+  PatternLibraryValidationError,
   type DatabaseHealth,
   type EmergencyStopStore,
   type IdentityStore,
@@ -132,6 +147,64 @@ const AgentStudioPatternQuerySchema = Type.Object(
   { include_archived: Type.Optional(Type.Boolean({ default: false })) },
   { additionalProperties: false }
 );
+
+const AgentStudioFunctionParamsSchema = Type.Object(
+  {
+    projectId: Type.String({ minLength: 1 }),
+    functionId: Type.String({ minLength: 1 })
+  },
+  { additionalProperties: false }
+);
+
+const AgentStudioPatternParamsSchema = Type.Object(
+  {
+    projectId: Type.String({ minLength: 1 }),
+    patternId: Type.String({ minLength: 1 })
+  },
+  { additionalProperties: false }
+);
+
+const AgentStudioBlueprintParamsSchema = Type.Object(
+  {
+    projectId: Type.String({ minLength: 1 }),
+    blueprintId: Type.String({ minLength: 1 })
+  },
+  { additionalProperties: false }
+);
+
+const sendAgentStudioMutationError = (
+  error: unknown,
+  request: FastifyRequest,
+  reply: FastifyReply
+): FastifyReply => {
+  if (
+    error instanceof PatternLibraryNotFoundError ||
+    error instanceof AgentBlueprintNotFoundError
+  ) {
+    return reply
+      .status(404)
+      .send(
+        errorBody(request.id, "AGENT_STUDIO_OBJECT_NOT_FOUND", "Agent Studio object not found")
+      );
+  }
+  if (
+    error instanceof PatternLibraryConflictError ||
+    error instanceof AgentBlueprintConflictError
+  ) {
+    return reply
+      .status(409)
+      .send(errorBody(request.id, "CONFLICT", "Agent Studio object changed; refresh and retry"));
+  }
+  if (
+    error instanceof PatternLibraryValidationError ||
+    error instanceof AgentBlueprintValidationError
+  ) {
+    return reply
+      .status(400)
+      .send(errorBody(request.id, "VALIDATION_ERROR", "Agent Studio request is invalid"));
+  }
+  throw error;
+};
 
 const acceptedResponse = (
   accepted: NonNullable<ReturnType<ProjectStore["createMessage"]>>
@@ -552,6 +625,323 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           items: instances.listInstances(identity, request.params.projectId)
         };
         return response;
+      }
+    );
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/functions",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          body: CreateAgentFunctionRequestSchema,
+          response: {
+            201: AgentFunctionDefinitionSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        try {
+          return reply.status(201).send(
+            patterns.createFunction(identity, {
+              project_id: request.params.projectId,
+              ...request.body
+            })
+          );
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/functions/:functionId/versions",
+      {
+        schema: {
+          params: AgentStudioFunctionParamsSchema,
+          body: CreateAgentFunctionVersionRequestSchema,
+          response: {
+            201: AgentFunctionDefinitionSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        const current = patterns
+          .listFunctions(identity, request.params.projectId)
+          .find(
+            (item) =>
+              item.function_id === request.params.functionId &&
+              item.project_id === request.params.projectId
+          );
+        if (!current) {
+          return reply
+            .status(404)
+            .send(
+              errorBody(
+                request.id,
+                "AGENT_STUDIO_OBJECT_NOT_FOUND",
+                "Agent Studio object not found"
+              )
+            );
+        }
+        const { expected_version: expectedVersion, ...input } = request.body;
+        try {
+          return reply
+            .status(201)
+            .send(
+              patterns.createFunctionVersion(
+                identity,
+                request.params.functionId,
+                input,
+                expectedVersion
+              )
+            );
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/patterns",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          body: CreateBehaviorPatternRequestSchema,
+          response: {
+            201: BehaviorPatternSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        try {
+          return reply.status(201).send(
+            patterns.createPattern(identity, {
+              project_id: request.params.projectId,
+              ...request.body
+            })
+          );
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/patterns/:patternId/versions",
+      {
+        schema: {
+          params: AgentStudioPatternParamsSchema,
+          body: CreateBehaviorPatternVersionRequestSchema,
+          response: {
+            201: BehaviorPatternSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        const current = patterns
+          .listPatterns(identity, request.params.projectId, true)
+          .find(
+            (item) =>
+              item.pattern_id === request.params.patternId &&
+              item.project_id === request.params.projectId
+          );
+        if (!current) {
+          return reply
+            .status(404)
+            .send(
+              errorBody(
+                request.id,
+                "AGENT_STUDIO_OBJECT_NOT_FOUND",
+                "Agent Studio object not found"
+              )
+            );
+        }
+        const { expected_version: expectedVersion, ...input } = request.body;
+        try {
+          return reply
+            .status(201)
+            .send(
+              patterns.createPatternVersion(
+                identity,
+                request.params.patternId,
+                input,
+                expectedVersion
+              )
+            );
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/patterns/:patternId/archive",
+      {
+        schema: {
+          params: AgentStudioPatternParamsSchema,
+          response: {
+            200: BehaviorPatternSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        const current = patterns
+          .listPatterns(identity, request.params.projectId, true)
+          .find(
+            (item) =>
+              item.pattern_id === request.params.patternId &&
+              item.project_id === request.params.projectId
+          );
+        if (!current) {
+          return reply
+            .status(404)
+            .send(
+              errorBody(
+                request.id,
+                "AGENT_STUDIO_OBJECT_NOT_FOUND",
+                "Agent Studio object not found"
+              )
+            );
+        }
+        try {
+          return patterns.archivePattern(identity, request.params.patternId);
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/blueprints",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          body: CreateAgentBlueprintRequestSchema,
+          response: {
+            201: AgentBlueprintSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        try {
+          return reply.status(201).send(
+            blueprints.createBlueprint(identity, {
+              ...request.body,
+              project_id: request.params.projectId,
+              grant: { ...request.body.grant, project_id: request.params.projectId }
+            })
+          );
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/blueprints/:blueprintId/versions",
+      {
+        schema: {
+          params: AgentStudioBlueprintParamsSchema,
+          body: CreateAgentBlueprintVersionRequestSchema,
+          response: {
+            201: AgentBlueprintSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        const current = blueprints
+          .listBlueprints(identity, request.params.projectId)
+          .find((item) => item.blueprint_id === request.params.blueprintId);
+        if (!current) {
+          return reply
+            .status(404)
+            .send(
+              errorBody(
+                request.id,
+                "AGENT_STUDIO_OBJECT_NOT_FOUND",
+                "Agent Studio object not found"
+              )
+            );
+        }
+        const { expected_version: expectedVersion, ...input } = request.body;
+        try {
+          return reply.status(201).send(
+            blueprints.createBlueprintVersion(
+              identity,
+              request.params.blueprintId,
+              {
+                ...input,
+                grant: { ...input.grant, project_id: request.params.projectId }
+              },
+              expectedVersion
+            )
+          );
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
       }
     );
   }
