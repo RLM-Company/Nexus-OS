@@ -2,6 +2,7 @@ import { loadServerConfig } from "@cosmora/config";
 import {
   AgentBlueprintStore,
   AgentInstanceStore,
+  AgentStudioMutationStore,
   IdentityStore,
   openDatabase,
   PatternLibraryStore,
@@ -114,6 +115,7 @@ describe("Agent Studio owner write API", () => {
       patternLibraryStore: patterns,
       agentBlueprintStore: blueprints,
       agentInstanceStore: instances,
+      agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite, { now: () => NOW }),
       identityResolver: new BearerSessionIdentityResolver(identityStore)
     });
   });
@@ -130,7 +132,7 @@ describe("Agent Studio owner write API", () => {
     const createdFunction = await app.inject({
       method: "POST",
       url: `${base}/functions`,
-      headers,
+      headers: { ...headers, "idempotency-key": "create-function-1" },
       payload: functionBody
     });
     expect(createdFunction.statusCode).toBe(201);
@@ -140,6 +142,26 @@ describe("Agent Studio owner write API", () => {
       project_id: string;
     }>();
     expect(agentFunction).toMatchObject({ version: 1, project_id: PROJECT_ONE });
+    expect(createdFunction.headers["idempotency-replayed"]).toBe("false");
+
+    const replayedFunction = await app.inject({
+      method: "POST",
+      url: `${base}/functions`,
+      headers: { ...headers, "idempotency-key": "create-function-1" },
+      payload: functionBody
+    });
+    expect(replayedFunction.statusCode).toBe(200);
+    expect(replayedFunction.headers["idempotency-replayed"]).toBe("true");
+    expect(replayedFunction.json<{ function_id: string }>().function_id).toBe(
+      agentFunction.function_id
+    );
+    const conflictingReplay = await app.inject({
+      method: "POST",
+      url: `${base}/functions`,
+      headers: { ...headers, "idempotency-key": "create-function-1" },
+      payload: { ...functionBody, name: "Different request" }
+    });
+    expect(conflictingReplay.statusCode).toBe(409);
 
     const crossProjectVersion = await app.inject({
       method: "POST",
@@ -171,7 +193,7 @@ describe("Agent Studio owner write API", () => {
     const createdPattern = await app.inject({
       method: "POST",
       url: `${base}/patterns`,
-      headers,
+      headers: { ...headers, "idempotency-key": "create-pattern-1" },
       payload: patternBody(agentFunction.function_id)
     });
     expect(createdPattern.statusCode).toBe(201);
@@ -193,7 +215,7 @@ describe("Agent Studio owner write API", () => {
     const createdBlueprint = await app.inject({
       method: "POST",
       url: `${base}/blueprints`,
-      headers,
+      headers: { ...headers, "idempotency-key": "create-blueprint-1" },
       payload: blueprintBody(agentFunction.function_id, 2, pattern.pattern_id)
     });
     expect(createdBlueprint.statusCode).toBe(201);
@@ -245,7 +267,10 @@ describe("Agent Studio owner write API", () => {
     const crossOwner = await app.inject({
       method: "POST",
       url: `${base}/functions`,
-      headers: { authorization: `Bearer ${ownerTwoToken}` },
+      headers: {
+        authorization: `Bearer ${ownerTwoToken}`,
+        "idempotency-key": "cross-owner-create"
+      },
       payload: functionBody
     });
     expect(crossOwner.statusCode).toBe(404);
@@ -254,15 +279,32 @@ describe("Agent Studio owner write API", () => {
     const agentDenied = await app.inject({
       method: "POST",
       url: `${base}/functions`,
-      headers: { authorization: `Bearer ${agentToken}` },
+      headers: {
+        authorization: `Bearer ${agentToken}`,
+        "idempotency-key": "agent-create"
+      },
       payload: functionBody
     });
     expect(agentDenied.statusCode).toBe(403);
 
+    const missingIdempotencyKey = await app.inject({
+      method: "POST",
+      url: `${base}/functions`,
+      headers: { authorization: `Bearer ${ownerOneToken}` },
+      payload: functionBody
+    });
+    expect(missingIdempotencyKey.statusCode).toBe(400);
+    expect(missingIdempotencyKey.json<{ error: { code: string } }>().error.code).toBe(
+      "VALIDATION_ERROR"
+    );
+
     const malformedPattern = await app.inject({
       method: "POST",
       url: `${base}/patterns`,
-      headers: { authorization: `Bearer ${ownerOneToken}` },
+      headers: {
+        authorization: `Bearer ${ownerOneToken}`,
+        "idempotency-key": "malformed-pattern"
+      },
       payload: { ...patternBody("function-id"), tool_ids: ["forbidden-authority-field"] }
     });
     expect(malformedPattern.statusCode).toBe(400);

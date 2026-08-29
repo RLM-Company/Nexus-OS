@@ -241,6 +241,40 @@ export const agentBlueprints = sqliteTable(
   ]
 );
 
+export const agentStudioMutations = sqliteTable(
+  "agent_studio_mutations",
+  {
+    mutationId: text("mutation_id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    operationType: text("operation_type").notNull(),
+    requestHash: text("request_hash").notNull(),
+    resultId: text("result_id").notNull(),
+    resultVersion: integer("result_version").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("agent_studio_mutations_owner_project_key_unique").on(
+      table.ownerId,
+      table.projectId,
+      table.idempotencyKey
+    ),
+    index("agent_studio_mutations_owner_project_created_idx").on(
+      table.ownerId,
+      table.projectId,
+      table.createdAt
+    ),
+    foreignKey({
+      columns: [table.projectId, table.ownerId],
+      foreignColumns: [projects.id, projects.ownerId],
+      name: "agent_studio_mutations_project_owner_fk"
+    }).onDelete("cascade"),
+    check("agent_studio_mutations_result_version_check", sql`${table.resultVersion} >= 1`)
+  ]
+);
+
 export const agentInstances = sqliteTable(
   "agent_instances",
   {

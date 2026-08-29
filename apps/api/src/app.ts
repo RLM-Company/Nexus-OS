@@ -68,6 +68,9 @@ import {
   AgentBlueprintValidationError,
   type AgentBlueprintStore,
   type AgentInstanceStore,
+  AgentStudioIdempotencyConflictError,
+  type AgentStudioMutationStore,
+  AgentStudioMutationValidationError,
   IdempotencyConflictError,
   PatternLibraryConflictError,
   PatternLibraryNotFoundError,
@@ -106,6 +109,7 @@ export interface AppDependencies {
   patternLibraryStore?: PatternLibraryStore;
   agentBlueprintStore?: AgentBlueprintStore;
   agentInstanceStore?: AgentInstanceStore;
+  agentStudioMutationStore?: AgentStudioMutationStore;
   modelGateway?: ModelGateway;
   manager?: ManagerService;
   modelRegistryVersion?: string;
@@ -148,6 +152,11 @@ const AgentStudioPatternQuerySchema = Type.Object(
   { additionalProperties: false }
 );
 
+const AgentStudioCreateHeadersSchema = Type.Object(
+  { "idempotency-key": Type.String({ minLength: 1, maxLength: 256 }) },
+  { additionalProperties: true }
+);
+
 const AgentStudioFunctionParamsSchema = Type.Object(
   {
     projectId: Type.String({ minLength: 1 }),
@@ -187,6 +196,17 @@ const sendAgentStudioMutationError = (
         errorBody(request.id, "AGENT_STUDIO_OBJECT_NOT_FOUND", "Agent Studio object not found")
       );
   }
+  if (error instanceof AgentStudioIdempotencyConflictError) {
+    return reply
+      .status(409)
+      .send(
+        errorBody(
+          request.id,
+          "IDEMPOTENCY_CONFLICT",
+          "Idempotency key was already used for another Agent Studio create request"
+        )
+      );
+  }
   if (
     error instanceof PatternLibraryConflictError ||
     error instanceof AgentBlueprintConflictError
@@ -197,7 +217,8 @@ const sendAgentStudioMutationError = (
   }
   if (
     error instanceof PatternLibraryValidationError ||
-    error instanceof AgentBlueprintValidationError
+    error instanceof AgentBlueprintValidationError ||
+    error instanceof AgentStudioMutationValidationError
   ) {
     return reply
       .status(400)
@@ -526,12 +547,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     dependencies.projectStore &&
     dependencies.patternLibraryStore &&
     dependencies.agentBlueprintStore &&
-    dependencies.agentInstanceStore
+    dependencies.agentInstanceStore &&
+    dependencies.agentStudioMutationStore
   ) {
     const projectStore = dependencies.projectStore;
     const patterns = dependencies.patternLibraryStore;
     const blueprints = dependencies.agentBlueprintStore;
     const instances = dependencies.agentInstanceStore;
+    const mutations = dependencies.agentStudioMutationStore;
     const isOwnedProject = (projectId: string, ownerId: string): boolean =>
       projectStore.getProject(projectId, ownerId) !== null;
 
@@ -633,8 +656,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       {
         schema: {
           params: AgentStudioProjectParamsSchema,
+          headers: AgentStudioCreateHeadersSchema,
           body: CreateAgentFunctionRequestSchema,
           response: {
+            200: AgentFunctionDefinitionSchema,
             201: AgentFunctionDefinitionSchema,
             400: ApiErrorSchema,
             404: ApiErrorSchema,
@@ -650,12 +675,29 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
         }
         try {
-          return reply.status(201).send(
-            patterns.createFunction(identity, {
-              project_id: request.params.projectId,
-              ...request.body
-            })
-          );
+          const result = mutations.create(identity, {
+            project_id: request.params.projectId,
+            idempotency_key: request.headers["idempotency-key"],
+            operation: "function.create",
+            request: request.body,
+            execute: () =>
+              patterns.createFunction(identity, {
+                project_id: request.params.projectId,
+                ...request.body
+              }),
+            reference_of: (value) => ({ id: value.function_id, version: value.version }),
+            resolve: (reference) =>
+              patterns.getFunction(
+                identity,
+                reference.id,
+                reference.version,
+                request.params.projectId
+              )
+          });
+          return reply
+            .header("idempotency-replayed", String(result.replayed))
+            .status(result.replayed ? 200 : 201)
+            .send(result.value);
         } catch (error) {
           return sendAgentStudioMutationError(error, request, reply);
         }
@@ -724,8 +766,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       {
         schema: {
           params: AgentStudioProjectParamsSchema,
+          headers: AgentStudioCreateHeadersSchema,
           body: CreateBehaviorPatternRequestSchema,
           response: {
+            200: BehaviorPatternSchema,
             201: BehaviorPatternSchema,
             400: ApiErrorSchema,
             404: ApiErrorSchema,
@@ -741,12 +785,29 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
         }
         try {
-          return reply.status(201).send(
-            patterns.createPattern(identity, {
-              project_id: request.params.projectId,
-              ...request.body
-            })
-          );
+          const result = mutations.create(identity, {
+            project_id: request.params.projectId,
+            idempotency_key: request.headers["idempotency-key"],
+            operation: "pattern.create",
+            request: request.body,
+            execute: () =>
+              patterns.createPattern(identity, {
+                project_id: request.params.projectId,
+                ...request.body
+              }),
+            reference_of: (value) => ({ id: value.pattern_id, version: value.version }),
+            resolve: (reference) =>
+              patterns.getPattern(
+                identity,
+                reference.id,
+                reference.version,
+                request.params.projectId
+              )
+          });
+          return reply
+            .header("idempotency-replayed", String(result.replayed))
+            .status(result.replayed ? 200 : 201)
+            .send(result.value);
         } catch (error) {
           return sendAgentStudioMutationError(error, request, reply);
         }
@@ -861,8 +922,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       {
         schema: {
           params: AgentStudioProjectParamsSchema,
+          headers: AgentStudioCreateHeadersSchema,
           body: CreateAgentBlueprintRequestSchema,
           response: {
+            200: AgentBlueprintSchema,
             201: AgentBlueprintSchema,
             400: ApiErrorSchema,
             404: ApiErrorSchema,
@@ -878,13 +941,30 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
         }
         try {
-          return reply.status(201).send(
-            blueprints.createBlueprint(identity, {
-              ...request.body,
-              project_id: request.params.projectId,
-              grant: { ...request.body.grant, project_id: request.params.projectId }
-            })
-          );
+          const result = mutations.create(identity, {
+            project_id: request.params.projectId,
+            idempotency_key: request.headers["idempotency-key"],
+            operation: "blueprint.create",
+            request: request.body,
+            execute: () =>
+              blueprints.createBlueprint(identity, {
+                ...request.body,
+                project_id: request.params.projectId,
+                grant: { ...request.body.grant, project_id: request.params.projectId }
+              }),
+            reference_of: (value) => ({ id: value.blueprint_id, version: value.version }),
+            resolve: (reference) =>
+              blueprints.getBlueprint(
+                identity,
+                reference.id,
+                reference.version,
+                request.params.projectId
+              )
+          });
+          return reply
+            .header("idempotency-replayed", String(result.replayed))
+            .status(result.replayed ? 200 : 201)
+            .send(result.value);
         } catch (error) {
           return sendAgentStudioMutationError(error, request, reply);
         }

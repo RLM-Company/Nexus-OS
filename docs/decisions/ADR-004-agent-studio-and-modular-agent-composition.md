@@ -1,7 +1,7 @@
 # ADR-004: Agent Studio and modular agent composition
 
 **Date:** 2026-08-26  
-**Status:** OWNER APPROVED / CONTRACTS + PERSISTENCE + INSTRUCTION PLANS + OWNER CATALOG API IMPLEMENTED / NOT RUNTIME
+**Status:** OWNER APPROVED / CONTRACTS + PERSISTENCE + INSTRUCTION PLANS + OWNER CATALOG API + CREATE IDEMPOTENCY IMPLEMENTED / NOT RUNTIME
 
 ## Context
 
@@ -204,7 +204,24 @@ Blueprint requests may declare bounded capabilities, tools, data, objects and bu
 fields remain inert blueprint data. The API does not turn a declaration into a permission. The
 model-profile reference is likewise stored without proving or activating a provider route.
 
-Fresh object creation does not yet have a durable idempotency key, so automated clients must not
-retry a timed-out create request until a later idempotency increment. There is still no HTTP route
+Fresh object creation requires durable idempotency as described below. There is still no HTTP route
 for root or delegated proposals, activation, lifecycle transitions, executable instruction
 composition, grants, provider/model/tool calls, external actions or production deployment.
+
+## Durable create idempotency boundary
+
+Every fresh function, pattern and blueprint creation request now requires an `Idempotency-Key`.
+The database binds that key to one owner, project, operation type, canonical request hash and exact
+created object version in the same `BEGIN IMMEDIATE` transaction as the domain write. An exact
+replay, including after a process/database restart, returns the original object without executing
+the write again. Reusing the key with a different operation or request returns a typed conflict.
+
+The ledger stores only SHA-256 of the canonical request and the immutable result reference; it does
+not duplicate pattern instructions, prompts or blueprint declarations. Project ownership is also
+enforced by a composite database foreign key. If the domain write or ledger insert fails, both are
+rolled back. Version writes continue to use `expected_version`, and archive remains inherently
+idempotent, so they do not use this fresh-create mechanism.
+
+This mechanism executes callbacks only for the three local database catalog creates. It is not a
+generic wrapper for network calls or external side effects. It still does not expose proposal
+writes, activate agents, grant permissions, compose executable prompts or call models/tools.

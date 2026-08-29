@@ -25,7 +25,7 @@
 
 ## Deliberately absent
 
-- durable idempotency for fresh object creation;
+- durable idempotency for fresh object creation (implemented in the following isolated increment);
 - root or delegated proposal writes;
 - instance activation and lifecycle transitions;
 - Decision Trace integration beyond immutable authorship and timestamps;
@@ -33,5 +33,6 @@
 - provider/model routing, paid calls, tools and external actions;
 - UI and production deployment.
 
-Until durable create idempotency exists, an automated client must not blindly retry a timed-out
-creation request. This control-plane API alone cannot start or execute an agent.
+At the time of this review, an automated client could not safely retry a timed-out creation
+request. The following isolated idempotency increment closes that limitation. This control-plane
+API alone cannot start or execute an agent.
