@@ -283,6 +283,39 @@ describe("Agent Studio owner write API", () => {
       headers
     });
     expect(repeatedArchive.json<{ version: number }>().version).toBe(3);
+
+    const decisionEvents = await app.inject({
+      method: "GET",
+      url: `${base}/decision-events?limit=100`,
+      headers
+    });
+    expect(decisionEvents.statusCode).toBe(200);
+    const events = decisionEvents.json<{
+      items: Array<{
+        operation: string;
+        object_type: string;
+        object_ref: { id: string; version: number };
+      }>;
+    }>().items;
+    expect(events).toHaveLength(8);
+    expect(events.map((event) => event.operation)).toEqual([
+      "pattern.archive",
+      "proposal.root",
+      "blueprint.version",
+      "blueprint.create",
+      "pattern.version",
+      "pattern.create",
+      "function.version",
+      "function.create"
+    ]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        object_type: "proposal",
+        object_ref: { id: proposal.instance_id, version: 1 }
+      })
+    );
+    expect(decisionEvents.body).not.toContain(functionBody.result_contract);
+    expect(decisionEvents.body).not.toContain(patternBody(agentFunction.function_id).instructions);
   });
 
   it("keeps path ownership authoritative and leaves delegated proposals non-writable", async () => {

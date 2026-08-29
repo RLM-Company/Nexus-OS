@@ -275,6 +275,34 @@ export const agentStudioMutations = sqliteTable(
   ]
 );
 
+export const agentStudioDecisionEvents = sqliteTable(
+  "agent_studio_decision_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    operationType: text("operation_type").notNull(),
+    objectType: text("object_type").notNull(),
+    objectId: text("object_id").notNull(),
+    objectVersion: integer("object_version").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    index("agent_studio_decision_events_owner_project_created_idx").on(
+      table.ownerId,
+      table.projectId,
+      table.createdAt
+    ),
+    foreignKey({
+      columns: [table.projectId, table.ownerId],
+      foreignColumns: [projects.id, projects.ownerId],
+      name: "agent_studio_decision_events_project_owner_fk"
+    }).onDelete("cascade"),
+    check("agent_studio_decision_events_object_version_check", sql`${table.objectVersion} >= 1`)
+  ]
+);
+
 export const agentInstances = sqliteTable(
   "agent_instances",
   {

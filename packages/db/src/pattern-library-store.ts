@@ -510,6 +510,7 @@ export class PatternLibraryStore {
   }
 
   #transaction<T>(work: () => T): T {
+    if (this.#sqlite.isTransaction) return work();
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
       const result = work();

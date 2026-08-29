@@ -1,12 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { IdentityContext, VersionedAgentReference } from "@cosmora/contracts";
+import {
+  AgentStudioDecisionEventSchema,
+  type AgentStudioDecisionEvent,
+  type AgentStudioDecisionObjectType,
+  type AgentStudioDecisionOperation,
+  type IdentityContext,
+  type VersionedAgentReference
+} from "@cosmora/contracts";
+import { Value } from "typebox/value";
 
 type MutationIdentity = Pick<IdentityContext, "owner_id" | "actor_id">;
 type SqlRow = Record<string, unknown>;
 
-export type AgentStudioCreateOperation =
-  "function.create" | "pattern.create" | "blueprint.create" | "proposal.root";
+export type AgentStudioCreateOperation = Extract<
+  AgentStudioDecisionOperation,
+  "function.create" | "pattern.create" | "blueprint.create" | "proposal.root"
+>;
 
 export interface AgentStudioMutationStoreOptions {
   now?: () => number;
@@ -26,6 +36,14 @@ export interface AgentStudioCreateMutation<T> {
 export interface AgentStudioMutationResult<T> {
   value: T;
   replayed: boolean;
+}
+
+export interface AgentStudioChangeMutation<T> {
+  project_id: string;
+  operation: Exclude<AgentStudioDecisionOperation, AgentStudioCreateOperation>;
+  execute: () => T;
+  reference_of: (value: T) => VersionedAgentReference;
+  changed?: (value: T) => boolean;
 }
 
 export class AgentStudioIdempotencyConflictError extends Error {
@@ -70,6 +88,13 @@ const requestHash = (operation: AgentStudioCreateOperation, request: unknown): s
   createHash("sha256")
     .update(`${operation}\n${canonicalJson(request)}`, "utf8")
     .digest("hex");
+
+const objectTypeFor = (operation: AgentStudioDecisionOperation): AgentStudioDecisionObjectType => {
+  if (operation.startsWith("function.")) return "function";
+  if (operation.startsWith("pattern.")) return "pattern";
+  if (operation.startsWith("blueprint.")) return "blueprint";
+  return "proposal";
+};
 
 export class AgentStudioMutationStore {
   readonly #sqlite: DatabaseSync;
@@ -124,6 +149,7 @@ export class AgentStudioMutationStore {
       if (!reference.id || !Number.isInteger(reference.version) || reference.version < 1) {
         throw new AgentStudioMutationValidationError("Create result reference is invalid");
       }
+      const createdAt = this.#timestamp();
       this.#sqlite
         .prepare(
           `INSERT INTO agent_studio_mutations
@@ -141,13 +167,108 @@ export class AgentStudioMutationStore {
           hash,
           reference.id,
           reference.version,
-          this.#timestamp()
+          createdAt
         );
+      this.#insertDecisionEvent(
+        identity,
+        mutation.project_id,
+        mutation.operation,
+        reference,
+        createdAt
+      );
       return { value, replayed: false };
     });
   }
 
+  change<T>(identity: MutationIdentity, mutation: AgentStudioChangeMutation<T>): T {
+    return this.#transaction(() => {
+      const value = mutation.execute();
+      if (mutation.changed?.(value) === false) return value;
+      const reference = mutation.reference_of(value);
+      if (!reference.id || !Number.isInteger(reference.version) || reference.version < 1) {
+        throw new AgentStudioMutationValidationError("Change result reference is invalid");
+      }
+      this.#insertDecisionEvent(
+        identity,
+        mutation.project_id,
+        mutation.operation,
+        reference,
+        this.#timestamp()
+      );
+      return value;
+    });
+  }
+
+  listDecisionEvents(
+    identity: MutationIdentity,
+    projectId: string,
+    limit = 50
+  ): AgentStudioDecisionEvent[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new AgentStudioMutationValidationError(
+        "Agent Studio decision event limit must be an integer between 1 and 100"
+      );
+    }
+    return this.#sqlite
+      .prepare(
+        `SELECT event_id, owner_id, project_id, actor_id, operation_type, object_type,
+          object_id, object_version, created_at
+         FROM agent_studio_decision_events
+         WHERE owner_id = ? AND project_id = ?
+         ORDER BY created_at DESC, rowid DESC LIMIT ?`
+      )
+      .all(identity.owner_id, projectId, limit)
+      .map((row) => this.#asDecisionEvent(row));
+  }
+
+  #insertDecisionEvent(
+    identity: MutationIdentity,
+    projectId: string,
+    operation: AgentStudioDecisionOperation,
+    reference: VersionedAgentReference,
+    createdAt: string
+  ): void {
+    this.#sqlite
+      .prepare(
+        `INSERT INTO agent_studio_decision_events
+          (event_id, owner_id, project_id, actor_id, operation_type, object_type,
+           object_id, object_version, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        this.#id(),
+        identity.owner_id,
+        projectId,
+        identity.actor_id,
+        operation,
+        objectTypeFor(operation),
+        reference.id,
+        reference.version,
+        createdAt
+      );
+  }
+
+  #asDecisionEvent(row: SqlRow): AgentStudioDecisionEvent {
+    const event: AgentStudioDecisionEvent = {
+      event_id: String(row.event_id),
+      owner_id: String(row.owner_id),
+      project_id: String(row.project_id),
+      actor_id: String(row.actor_id),
+      operation: row.operation_type as AgentStudioDecisionOperation,
+      object_type: row.object_type as AgentStudioDecisionObjectType,
+      object_ref: { id: String(row.object_id), version: Number(row.object_version) },
+      created_at: String(row.created_at)
+    };
+    if (!Value.Check(AgentStudioDecisionEventSchema, event)) {
+      throw new AgentStudioMutationCorruptDataError(
+        "Stored Agent Studio decision event violates its contract"
+      );
+    }
+    return event;
+  }
+
   #transaction<T>(callback: () => T): T {
+    if (this.#sqlite.isTransaction) return callback();
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
       const result = callback();

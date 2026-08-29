@@ -58,6 +58,13 @@ describe("AgentStudioMutationStore", () => {
         .prepare("SELECT * FROM agent_studio_mutations")
         .get();
       expect(JSON.stringify(mutationRow)).not.toContain(request.result_contract);
+      expect(firstMutations.listDecisionEvents(identity, PROJECT_ID)).toEqual([
+        expect.objectContaining({
+          operation: "function.create",
+          object_type: "function",
+          object_ref: { id: functionId, version: 1 }
+        })
+      ]);
       firstDatabase.close();
 
       const restartedDatabase = openDatabase(databasePath);
@@ -86,6 +93,7 @@ describe("AgentStudioMutationStore", () => {
       });
       expect(replayed).toMatchObject({ replayed: true, value: { function_id: functionId } });
       expect(restartedPatterns.listFunctions(identity, PROJECT_ID)).toHaveLength(1);
+      expect(restartedMutations.listDecisionEvents(identity, PROJECT_ID)).toHaveLength(1);
       restartedDatabase.close();
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -135,6 +143,66 @@ describe("AgentStudioMutationStore", () => {
       expect(
         database.sqlite.prepare("SELECT COUNT(*) AS count FROM agent_studio_mutations").get()
       ).toEqual({ count: 1 });
+      expect(
+        database.sqlite.prepare("SELECT COUNT(*) AS count FROM agent_studio_decision_events").get()
+      ).toEqual({ count: 1 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("records version changes atomically without storing changed content", async () => {
+    const database = openDatabase(":memory:");
+    try {
+      await runMigrations(database);
+      insertProject(database);
+      const patterns = new PatternLibraryStore(database.sqlite, { now: () => NOW });
+      const mutations = new AgentStudioMutationStore(database.sqlite, { now: () => NOW });
+      const created = mutations.create(identity, {
+        project_id: PROJECT_ID,
+        idempotency_key: "create-before-version",
+        operation: "function.create",
+        request,
+        execute: () => patterns.createFunction(identity, { project_id: PROJECT_ID, ...request }),
+        reference_of: (value) => ({ id: value.function_id, version: value.version }),
+        resolve: (reference) =>
+          patterns.getFunction(identity, reference.id, reference.version, PROJECT_ID)
+      }).value;
+      const sensitiveResultContract = "Return confidential bounded evidence.";
+      const versioned = mutations.change(identity, {
+        project_id: PROJECT_ID,
+        operation: "function.version",
+        execute: () =>
+          patterns.createFunctionVersion(
+            identity,
+            created.function_id,
+            { ...request, result_contract: sensitiveResultContract },
+            1
+          ),
+        reference_of: (value) => ({ id: value.function_id, version: value.version })
+      });
+
+      expect(versioned.version).toBe(2);
+      const events = mutations.listDecisionEvents(identity, PROJECT_ID);
+      expect(events.map((event) => event.operation)).toEqual([
+        "function.version",
+        "function.create"
+      ]);
+      expect(JSON.stringify(events)).not.toContain(sensitiveResultContract);
+
+      expect(() =>
+        mutations.change(identity, {
+          project_id: PROJECT_ID,
+          operation: "function.version",
+          execute: () => {
+            patterns.createFunctionVersion(identity, created.function_id, request, 2);
+            throw new Error("Injected failure after version write");
+          },
+          reference_of: () => ({ id: created.function_id, version: 3 })
+        })
+      ).toThrow(/Injected failure/);
+      expect(patterns.listFunctions(identity, PROJECT_ID)[0]?.version).toBe(2);
+      expect(mutations.listDecisionEvents(identity, PROJECT_ID)).toHaveLength(2);
     } finally {
       database.close();
     }

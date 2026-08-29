@@ -367,6 +367,41 @@ export const ProposeRootAgentRequestSchema = Type.Object(
 );
 export type ProposeRootAgentRequest = Static<typeof ProposeRootAgentRequestSchema>;
 
+export const AgentStudioDecisionOperationSchema = Type.Union([
+  Type.Literal("function.create"),
+  Type.Literal("function.version"),
+  Type.Literal("pattern.create"),
+  Type.Literal("pattern.version"),
+  Type.Literal("pattern.archive"),
+  Type.Literal("blueprint.create"),
+  Type.Literal("blueprint.version"),
+  Type.Literal("proposal.root")
+]);
+export type AgentStudioDecisionOperation = Static<typeof AgentStudioDecisionOperationSchema>;
+
+export const AgentStudioDecisionObjectTypeSchema = Type.Union([
+  Type.Literal("function"),
+  Type.Literal("pattern"),
+  Type.Literal("blueprint"),
+  Type.Literal("proposal")
+]);
+export type AgentStudioDecisionObjectType = Static<typeof AgentStudioDecisionObjectTypeSchema>;
+
+export const AgentStudioDecisionEventSchema = Type.Object(
+  {
+    event_id: EntityIdSchema,
+    owner_id: EntityIdSchema,
+    project_id: EntityIdSchema,
+    actor_id: EntityIdSchema,
+    operation: AgentStudioDecisionOperationSchema,
+    object_type: AgentStudioDecisionObjectTypeSchema,
+    object_ref: VersionedAgentReferenceSchema,
+    created_at: IsoDateTimeSchema
+  },
+  { additionalProperties: false }
+);
+export type AgentStudioDecisionEvent = Static<typeof AgentStudioDecisionEventSchema>;
+
 export const AgentFunctionListResponseSchema = Type.Object(
   { items: Type.Array(AgentFunctionDefinitionSchema) },
   { additionalProperties: false }
@@ -390,6 +425,14 @@ export const AgentInstanceListResponseSchema = Type.Object(
   { additionalProperties: false }
 );
 export type AgentInstanceListResponse = Static<typeof AgentInstanceListResponseSchema>;
+
+export const AgentStudioDecisionEventListResponseSchema = Type.Object(
+  { items: Type.Array(AgentStudioDecisionEventSchema, { maxItems: 100 }) },
+  { additionalProperties: false }
+);
+export type AgentStudioDecisionEventListResponse = Static<
+  typeof AgentStudioDecisionEventListResponseSchema
+>;
 
 export const AgentHandoffSchema = Type.Object(
   {
