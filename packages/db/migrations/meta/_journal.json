@@ -92,6 +92,13 @@
       "when": 1787921765688,
       "tag": "0012_agent_instance_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1788000088726,
+      "tag": "0013_agent_studio_mutation_idempotency",
+      "breakpoints": true
     }
   ]
 }

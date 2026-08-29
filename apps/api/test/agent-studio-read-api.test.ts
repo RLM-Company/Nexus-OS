@@ -2,6 +2,7 @@ import { loadServerConfig } from "@cosmora/config";
 import {
   AgentBlueprintStore,
   AgentInstanceStore,
+  AgentStudioMutationStore,
   IdentityStore,
   openDatabase,
   PatternLibraryStore,
@@ -147,6 +148,7 @@ describe("Agent Studio owner read API", () => {
       patternLibraryStore: patterns,
       agentBlueprintStore: blueprints,
       agentInstanceStore: instances,
+      agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite, { now: () => NOW }),
       identityResolver: new BearerSessionIdentityResolver(identityStore)
     });
   });
