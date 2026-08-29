@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 type Project = {
@@ -352,6 +353,16 @@ export default function Home() {
           <button className={!activeProject ? "nav-item active" : "nav-item"} onClick={newProject}>
             <GridIcon /> Рабочая область
           </button>
+          <Link
+            className="nav-item"
+            href={
+              activeProject
+                ? `/agent-studio?project=${encodeURIComponent(activeProject.id)}`
+                : "/agent-studio"
+            }
+          >
+            <ShieldIcon /> Agent Studio
+          </Link>
           <span className="nav-label">Проекты</span>
           <div className="project-list">
             {projects.map((project) => (
