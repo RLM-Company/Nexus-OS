@@ -5,6 +5,7 @@ import {
   AgentHandoffSchema,
   AgentInstructionPlanSchema,
   AgentInstanceSchema,
+  AgentStudioDecisionEventSchema,
   BehaviorPatternSchema,
   CreateAgentBlueprintRequestSchema,
   CreateBehaviorPatternRequestSchema,
@@ -42,6 +43,27 @@ const blueprint = (patternId: string): AgentBlueprint => ({
 });
 
 describe("Agent Studio contracts", () => {
+  it("keeps decision events content-free and bound to one object version", () => {
+    const event = {
+      event_id: "decision-event-1",
+      owner_id: "owner-1",
+      project_id: "project-1",
+      actor_id: "owner-actor-1",
+      operation: "pattern.version",
+      object_type: "pattern",
+      object_ref: { id: "skeptical-analyst", version: 4 },
+      created_at: "2026-08-29T12:00:00.000Z"
+    };
+
+    expect(Value.Check(AgentStudioDecisionEventSchema, event)).toBe(true);
+    expect(
+      Value.Check(AgentStudioDecisionEventSchema, {
+        ...event,
+        instructions: "Prompt text must never be copied into the decision trace."
+      })
+    ).toBe(false);
+  });
+
   it("keeps function and behaviour pattern independently replaceable", () => {
     const skeptical = blueprint("skeptical-analyst");
     const academic = blueprint("careful-academic");

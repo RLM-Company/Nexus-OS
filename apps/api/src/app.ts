@@ -8,6 +8,7 @@ import {
   AgentFunctionDefinitionSchema,
   AgentInstanceListResponseSchema,
   AgentInstanceSchema,
+  AgentStudioDecisionEventListResponseSchema,
   ApiErrorSchema,
   ActivateEmergencyStopRequestSchema,
   AUTONOMY_MATRIX,
@@ -45,6 +46,7 @@ import {
   type AgentBlueprintListResponse,
   type AgentFunctionListResponse,
   type AgentInstanceListResponse,
+  type AgentStudioDecisionEventListResponse,
   type BehaviorPatternListResponse,
   type CapabilityId,
   type CapabilityProfileResponse,
@@ -153,6 +155,11 @@ const AgentStudioProjectParamsSchema = Type.Object(
 
 const AgentStudioPatternQuerySchema = Type.Object(
   { include_archived: Type.Optional(Type.Boolean({ default: false })) },
+  { additionalProperties: false }
+);
+
+const AgentStudioDecisionEventQuerySchema = Type.Object(
+  { limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 50 })) },
   { additionalProperties: false }
 );
 
@@ -657,6 +664,33 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       }
     );
 
+    app.get(
+      "/api/v1/projects/:projectId/agent-studio/decision-events",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          querystring: AgentStudioDecisionEventQuerySchema,
+          response: { 200: AgentStudioDecisionEventListResponseSchema, 404: ApiErrorSchema }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        const response: AgentStudioDecisionEventListResponse = {
+          items: mutations.listDecisionEvents(
+            identity,
+            request.params.projectId,
+            request.query.limit ?? 50
+          )
+        };
+        return response;
+      }
+    );
+
     app.post(
       "/api/v1/projects/:projectId/agent-studio/proposals",
       {
@@ -799,16 +833,20 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
         const { expected_version: expectedVersion, ...input } = request.body;
         try {
-          return reply
-            .status(201)
-            .send(
-              patterns.createFunctionVersion(
-                identity,
-                request.params.functionId,
-                input,
-                expectedVersion
-              )
-            );
+          return reply.status(201).send(
+            mutations.change(identity, {
+              project_id: request.params.projectId,
+              operation: "function.version",
+              execute: () =>
+                patterns.createFunctionVersion(
+                  identity,
+                  request.params.functionId,
+                  input,
+                  expectedVersion
+                ),
+              reference_of: (value) => ({ id: value.function_id, version: value.version })
+            })
+          );
         } catch (error) {
           return sendAgentStudioMutationError(error, request, reply);
         }
@@ -909,16 +947,20 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
         const { expected_version: expectedVersion, ...input } = request.body;
         try {
-          return reply
-            .status(201)
-            .send(
-              patterns.createPatternVersion(
-                identity,
-                request.params.patternId,
-                input,
-                expectedVersion
-              )
-            );
+          return reply.status(201).send(
+            mutations.change(identity, {
+              project_id: request.params.projectId,
+              operation: "pattern.version",
+              execute: () =>
+                patterns.createPatternVersion(
+                  identity,
+                  request.params.patternId,
+                  input,
+                  expectedVersion
+                ),
+              reference_of: (value) => ({ id: value.pattern_id, version: value.version })
+            })
+          );
         } catch (error) {
           return sendAgentStudioMutationError(error, request, reply);
         }
@@ -964,7 +1006,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             );
         }
         try {
-          return patterns.archivePattern(identity, request.params.patternId);
+          return mutations.change(identity, {
+            project_id: request.params.projectId,
+            operation: "pattern.archive",
+            execute: () => patterns.archivePattern(identity, request.params.patternId),
+            reference_of: (value) => ({ id: value.pattern_id, version: value.version }),
+            changed: () => current.archived_at === null
+          });
         } catch (error) {
           return sendAgentStudioMutationError(error, request, reply);
         }
@@ -1063,15 +1111,21 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         const { expected_version: expectedVersion, ...input } = request.body;
         try {
           return reply.status(201).send(
-            blueprints.createBlueprintVersion(
-              identity,
-              request.params.blueprintId,
-              {
-                ...input,
-                grant: { ...input.grant, project_id: request.params.projectId }
-              },
-              expectedVersion
-            )
+            mutations.change(identity, {
+              project_id: request.params.projectId,
+              operation: "blueprint.version",
+              execute: () =>
+                blueprints.createBlueprintVersion(
+                  identity,
+                  request.params.blueprintId,
+                  {
+                    ...input,
+                    grant: { ...input.grant, project_id: request.params.projectId }
+                  },
+                  expectedVersion
+                ),
+              reference_of: (value) => ({ id: value.blueprint_id, version: value.version })
+            })
           );
         } catch (error) {
           return sendAgentStudioMutationError(error, request, reply);

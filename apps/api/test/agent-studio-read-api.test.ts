@@ -189,7 +189,13 @@ describe("Agent Studio owner read API", () => {
     const headers = { authorization: `Bearer ${ownerTwoToken}` };
     const base = `/api/v1/projects/${PROJECT_ONE}/agent-studio`;
 
-    for (const resource of ["functions", "patterns", "blueprints", "proposals"]) {
+    for (const resource of [
+      "functions",
+      "patterns",
+      "blueprints",
+      "proposals",
+      "decision-events"
+    ]) {
       const response = await app.inject({ method: "GET", url: `${base}/${resource}`, headers });
       expect(response.statusCode).toBe(404);
       expect(response.json<{ error: { code: string } }>().error.code).toBe("PROJECT_NOT_FOUND");

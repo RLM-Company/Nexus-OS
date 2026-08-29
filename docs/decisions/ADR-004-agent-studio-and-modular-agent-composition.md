@@ -241,3 +241,21 @@ The root proposal is a saved plan candidate, not a running agent. No activation 
 exists; no permission is issued; no instruction plan is rendered into model messages; and no
 provider, model, tool, network or external action is invoked. Delegated proposals remain absent
 from the owner API and still require a separate Policy Engine delegation boundary.
+
+## Content-free Decision Trace boundary
+
+Every successful owner API mutation of a project function, behavior pattern, blueprint or root
+proposal now appends one Decision Trace event in the same database transaction. Events record only
+the owner, project, actor, operation, object type, exact object reference and timestamp. They never
+copy request bodies, function result contracts, pattern instructions, blueprint declarations,
+prompts or task content.
+
+Exact idempotent create/proposal replays do not append another event. Repeated archive calls also do
+not add duplicates. Failed domain writes and failed event inserts roll back together, including
+version writes whose stores join the outer transaction. The owner may read up to 100 newest events
+through a project-bound endpoint; another owner's project is indistinguishable from an unknown
+project, and agent identities remain rejected.
+
+This trace records control-plane changes only. It is not a runtime event log, does not activate an
+agent, issue authority, expose secrets, render executable instructions, call models/tools or perform
+external actions.
