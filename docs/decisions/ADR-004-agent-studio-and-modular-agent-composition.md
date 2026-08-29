@@ -276,3 +276,15 @@ atomically records one content-free `proposal.delegated` event.
 Parent and child remain `proposed`. This boundary does not activate either instance, issue their
 declared grants, compose executable instructions, route a model, call a tool or perform an external
 action.
+
+## Owner read-only Agent Studio UI boundary
+
+The web control center now exposes a dedicated `/agent-studio?project=<id>` overview. It reads the
+existing owner-bound function, pattern, blueprint, proposal and Decision Trace endpoints in
+parallel and presents only bounded metadata. Pattern instruction text, function result contracts,
+task contracts and grants beyond expiry/delegation depth are not rendered by this overview.
+
+The page is deliberately read-only: it has no create, edit, archive, delegation or activation
+control. Every displayed instance is labelled `proposed`, and the safety banner states that agents
+are not running. The route does not compose instructions, issue authority, call models/tools or
+perform external actions.
