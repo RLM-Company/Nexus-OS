@@ -85,10 +85,13 @@ export default function CatalogControls({
     setError(null);
     try {
       if (selectedFunction) {
-        await postJson(`${base}/functions/${encodeURIComponent(selectedFunction.function_id)}/versions`, {
-          ...payload,
-          expected_version: selectedFunction.version
-        });
+        await postJson(
+          `${base}/functions/${encodeURIComponent(selectedFunction.function_id)}/versions`,
+          {
+            ...payload,
+            expected_version: selectedFunction.version
+          }
+        );
         setNotice(`Новая версия функции сохранена: v${selectedFunction.version + 1}.`);
       } else {
         await postJson(`${base}/functions`, payload);
@@ -123,7 +126,12 @@ export default function CatalogControls({
       known_limitations: limitations,
       test_status: formString(form, "pattern-status") || "untested"
     };
-    if (!payload.name || !payload.description || !payload.instructions || allowedFunctionIds.length === 0) {
+    if (
+      !payload.name ||
+      !payload.description ||
+      !payload.instructions ||
+      allowedFunctionIds.length === 0
+    ) {
       return;
     }
 
@@ -132,10 +140,13 @@ export default function CatalogControls({
     setError(null);
     try {
       if (selectedPattern) {
-        await postJson(`${base}/patterns/${encodeURIComponent(selectedPattern.pattern_id)}/versions`, {
-          ...payload,
-          expected_version: selectedPattern.version
-        });
+        await postJson(
+          `${base}/patterns/${encodeURIComponent(selectedPattern.pattern_id)}/versions`,
+          {
+            ...payload,
+            expected_version: selectedPattern.version
+          }
+        );
         setNotice(`Новая версия паттерна сохранена: v${selectedPattern.version + 1}.`);
       } else {
         await postJson(`${base}/patterns`, payload);
@@ -162,7 +173,9 @@ export default function CatalogControls({
         <form onSubmit={(event) => void saveFunction(event)}>
           <div className={styles.heading}>
             <span>Function</span>
-            <strong>{selectedFunction ? `Новая версия v${selectedFunction.version + 1}` : "Новая функция"}</strong>
+            <strong>
+              {selectedFunction ? `Новая версия v${selectedFunction.version + 1}` : "Новая функция"}
+            </strong>
           </div>
           <label htmlFor="function-target">Режим</label>
           <select
@@ -197,14 +210,20 @@ export default function CatalogControls({
             disabled={pending !== null}
           />
           <button disabled={pending !== null}>
-            {pending === "function" ? "Сохраняю…" : selectedFunction ? "Создать версию" : "Создать функцию"}
+            {pending === "function"
+              ? "Сохраняю…"
+              : selectedFunction
+                ? "Создать версию"
+                : "Создать функцию"}
           </button>
         </form>
 
         <form onSubmit={(event) => void savePattern(event)}>
           <div className={styles.heading}>
             <span>Behavior pattern</span>
-            <strong>{selectedPattern ? `Новая версия v${selectedPattern.version + 1}` : "Новый паттерн"}</strong>
+            <strong>
+              {selectedPattern ? `Новая версия v${selectedPattern.version + 1}` : "Новый паттерн"}
+            </strong>
           </div>
           <label htmlFor="pattern-target">Режим</label>
           <select
@@ -248,7 +267,9 @@ export default function CatalogControls({
                   value={item.function_id}
                   disabled={pending !== null}
                 />
-                <span>{item.name} · v{item.version}</span>
+                <span>
+                  {item.name} · v{item.version}
+                </span>
               </label>
             ))}
             {functionOptions.length === 0 && <small>Сначала создайте хотя бы одну функцию.</small>}
@@ -261,14 +282,23 @@ export default function CatalogControls({
             disabled={pending !== null}
           />
           <label htmlFor="pattern-status">Статус тестирования</label>
-          <select id="pattern-status" name="pattern-status" defaultValue="untested" disabled={pending !== null}>
+          <select
+            id="pattern-status"
+            name="pattern-status"
+            defaultValue="untested"
+            disabled={pending !== null}
+          >
             <option value="untested">untested</option>
             <option value="verified">verified</option>
             <option value="restricted">restricted</option>
             <option value="rejected">rejected</option>
           </select>
           <button disabled={pending !== null || functionOptions.length === 0}>
-            {pending === "pattern" ? "Сохраняю…" : selectedPattern ? "Создать версию" : "Создать паттерн"}
+            {pending === "pattern"
+              ? "Сохраняю…"
+              : selectedPattern
+                ? "Создать версию"
+                : "Создать паттерн"}
           </button>
         </form>
       </div>
