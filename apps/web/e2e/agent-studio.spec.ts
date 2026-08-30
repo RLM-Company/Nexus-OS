@@ -31,15 +31,21 @@ test("edits the immutable Agent Studio catalog through new versions", async ({ p
 
   await page.locator("#function-target").selectOption({ index: 1 });
   await page.locator("#function-name").fill("UI evidence researcher");
-  await page.locator("#function-description").fill("Collects bounded evidence and challenges gaps.");
-  await page.locator("#function-result-contract").fill("Return evidence, gaps, and open questions.");
+  await page
+    .locator("#function-description")
+    .fill("Collects bounded evidence and challenges gaps.");
+  await page
+    .locator("#function-result-contract")
+    .fill("Return evidence, gaps, and open questions.");
   await page.getByRole("button", { name: "Создать версию" }).first().click();
   await expect(page.getByText("Новая версия функции сохранена: v2.")).toBeVisible();
   await expect(page.getByText("UI evidence researcher")).toBeVisible();
 
   await page.locator("#pattern-name").fill("UI skeptic");
   await page.locator("#pattern-description").fill("Challenges unsupported project claims.");
-  await page.locator("#pattern-instructions").fill("Separate facts from inference and show uncertainty.");
+  await page
+    .locator("#pattern-instructions")
+    .fill("Separate facts from inference and show uncertainty.");
   await page.locator('input[name="pattern-function"]').first().check();
   await page.locator("#pattern-limitations").fill("Can over-weight missing evidence.");
   await page.getByRole("button", { name: "Создать паттерн" }).click();
@@ -48,8 +54,12 @@ test("edits the immutable Agent Studio catalog through new versions", async ({ p
 
   await page.locator("#pattern-target").selectOption({ index: 1 });
   await page.locator("#pattern-name").fill("UI evidence-first skeptic");
-  await page.locator("#pattern-description").fill("Challenges claims and prioritizes direct evidence.");
-  await page.locator("#pattern-instructions").fill("Prefer direct evidence, then identify uncertainty.");
+  await page
+    .locator("#pattern-description")
+    .fill("Challenges claims and prioritizes direct evidence.");
+  await page
+    .locator("#pattern-instructions")
+    .fill("Prefer direct evidence, then identify uncertainty.");
   await page.locator('input[name="pattern-function"]').first().check();
   await page.locator("#pattern-status").selectOption("verified");
   await page.getByRole("button", { name: "Создать версию" }).last().click();
