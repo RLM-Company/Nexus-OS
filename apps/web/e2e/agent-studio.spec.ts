@@ -7,6 +7,62 @@ type CreatedBlueprint = { blueprint_id: string; version: number };
 
 const exactRefValue = (reference: Reference): string => JSON.stringify(reference);
 
+const createProject = async (request: Parameters<typeof test>[0] extends never ? never : never) => request;
+
+test("edits the immutable Agent Studio catalog through new versions", async ({ page, request }) => {
+  const nonce = `${Date.now()}`;
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create an empty project for the Agent Studio catalog editor check.",
+      client_message_id: `agent-studio-catalog-e2e-${nonce}`
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectBody = (await created.json()) as { project: { id: string } };
+  const projectId = projectBody.project.id;
+
+  await page.goto(`/agent-studio?project=${encodeURIComponent(projectId)}`);
+  await expect(page.getByText("Versioned catalog")).toBeVisible();
+
+  await page.locator("#function-name").fill("UI researcher");
+  await page.locator("#function-description").fill("Collects evidence from the project context.");
+  await page.locator("#function-result-contract").fill("Return evidence and open questions.");
+  await page.getByRole("button", { name: "Создать функцию" }).click();
+  await expect(page.getByText("Функция создана как immutable v1.")).toBeVisible();
+  await expect(page.getByText("UI researcher")).toBeVisible();
+
+  await page.locator("#function-target").selectOption({ index: 1 });
+  await page.locator("#function-name").fill("UI evidence researcher");
+  await page.locator("#function-description").fill("Collects bounded evidence and challenges gaps.");
+  await page.locator("#function-result-contract").fill("Return evidence, gaps, and open questions.");
+  await page.getByRole("button", { name: "Создать версию" }).first().click();
+  await expect(page.getByText("Новая версия функции сохранена: v2.")).toBeVisible();
+  await expect(page.getByText("UI evidence researcher")).toBeVisible();
+
+  await page.locator("#pattern-name").fill("UI skeptic");
+  await page.locator("#pattern-description").fill("Challenges unsupported project claims.");
+  await page.locator("#pattern-instructions").fill("Separate facts from inference and show uncertainty.");
+  await page.locator('input[name="pattern-function"]').first().check();
+  await page.locator("#pattern-limitations").fill("Can over-weight missing evidence.");
+  await page.getByRole("button", { name: "Создать паттерн" }).click();
+  await expect(page.getByText("Паттерн создан как immutable v1.")).toBeVisible();
+  await expect(page.getByText("UI skeptic")).toBeVisible();
+
+  await page.locator("#pattern-target").selectOption({ index: 1 });
+  await page.locator("#pattern-name").fill("UI evidence-first skeptic");
+  await page.locator("#pattern-description").fill("Challenges claims and prioritizes direct evidence.");
+  await page.locator("#pattern-instructions").fill("Prefer direct evidence, then identify uncertainty.");
+  await page.locator('input[name="pattern-function"]').first().check();
+  await page.locator("#pattern-status").selectOption("verified");
+  await page.getByRole("button", { name: "Создать версию" }).last().click();
+  await expect(page.getByText("Новая версия паттерна сохранена: v2.")).toBeVisible();
+  await expect(page.getByText("UI evidence-first skeptic")).toBeVisible();
+
+  await expect(page.getByText("Новая версия функции")).toBeVisible();
+  await expect(page.getByText("Новая версия паттерна")).toBeVisible();
+  await expect(page.getByRole("button", { name: /актив/i })).toHaveCount(0);
+});
+
 test("saves proposal-only Agent Studio team changes without activation", async ({
   page,
   request
