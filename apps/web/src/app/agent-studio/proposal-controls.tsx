@@ -39,6 +39,11 @@ const parseExactRef = (value: string): Reference => {
   return { id: parsed.id, version: parsed.version };
 };
 
+const formString = (form: FormData, name: string): string => {
+  const value = form.get(name);
+  return typeof value === "string" ? value : "";
+};
+
 const shortId = (value: string): string => (value.length > 16 ? `${value.slice(0, 13)}…` : value);
 
 const postProposal = async <T,>(url: string, payload: unknown): Promise<T> => {
@@ -94,7 +99,7 @@ export default function ProposalControls({
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    const rawRef = String(form.get("root-blueprint") ?? "");
+    const rawRef = formString(form, "root-blueprint");
     if (!rawRef) return;
 
     setPending("root");
@@ -116,8 +121,8 @@ export default function ProposalControls({
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    const parentInstanceId = String(form.get("parent-instance") ?? "");
-    const rawRef = String(form.get("child-blueprint") ?? "");
+    const parentInstanceId = formString(form, "parent-instance");
+    const rawRef = formString(form, "child-blueprint");
     if (!parentInstanceId || !rawRef) return;
 
     setPending("delegated");
