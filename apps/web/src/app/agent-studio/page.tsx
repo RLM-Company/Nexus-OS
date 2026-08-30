@@ -56,7 +56,7 @@ const emptyData: StudioData = {
   patterns: [],
   blueprints: [],
   proposals: [],
-  events: []
+  events: [],
 };
 
 const api = async <T,>(url: string): Promise<T> => {
@@ -70,13 +70,14 @@ const api = async <T,>(url: string): Promise<T> => {
   return (await response.json()) as T;
 };
 
-const shortId = (value: string): string => (value.length > 16 ? `${value.slice(0, 13)}…` : value);
+const shortId = (value: string): string =>
+  value.length > 16 ? `${value.slice(0, 13)}…` : value;
 const dateTime = (value: string): string =>
   new Date(value).toLocaleString("ru", {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
   });
 
 const operationLabel: Record<string, string> = {
@@ -88,7 +89,7 @@ const operationLabel: Record<string, string> = {
   "blueprint.create": "Создан чертёж",
   "blueprint.version": "Новая версия чертежа",
   "proposal.root": "Предложен корневой агент",
-  "proposal.delegated": "Предложен дочерний агент"
+  "proposal.delegated": "Предложен дочерний агент",
 };
 
 export default function AgentStudioPage() {
@@ -108,14 +109,14 @@ export default function AgentStudioPage() {
         api<{ items: BehaviorPattern[] }>(`${base}/patterns`),
         api<{ items: Blueprint[] }>(`${base}/blueprints`),
         api<{ items: Proposal[] }>(`${base}/proposals`),
-        api<{ items: DecisionEvent[] }>(`${base}/decision-events?limit=50`)
+        api<{ items: DecisionEvent[] }>(`${base}/decision-events?limit=50`),
       ]);
       setData({
         functions: functions.items,
         patterns: patterns.items,
         blueprints: blueprints.items,
         proposals: proposals.items,
-        events: events.items
+        events: events.items,
       });
     } catch (cause) {
       setData(emptyData);
@@ -203,7 +204,7 @@ export default function AgentStudioPage() {
               ["Функции", data.functions.length],
               ["Паттерны", data.patterns.length],
               ["Чертежи", data.blueprints.length],
-              ["Предложения", data.proposals.length]
+              ["Предложения", data.proposals.length],
             ].map(([label, value]) => (
               <article key={String(label)}>
                 <span>{label}</span>
