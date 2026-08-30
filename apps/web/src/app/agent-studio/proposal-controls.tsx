@@ -39,7 +39,8 @@ const parseExactRef = (value: string): Reference => {
   return { id: parsed.id, version: parsed.version };
 };
 
-const shortId = (value: string): string => (value.length > 16 ? `${value.slice(0, 13)}…` : value);
+const shortId = (value: string): string =>
+  value.length > 16 ? `${value.slice(0, 13)}…` : value;
 
 const postProposal = async <T,>(url: string, payload: unknown): Promise<T> => {
   const response = await fetch(url, {
@@ -204,7 +205,9 @@ export default function ProposalControls({
               </option>
             ))}
           </select>
-          <button disabled={pending !== null || parents.length === 0 || childBlueprints.length === 0}>
+          <button
+            disabled={pending !== null || parents.length === 0 || childBlueprints.length === 0}
+          >
             {pending === "delegated" ? "Проверяю…" : "Сохранить delegated proposal"}
           </button>
           <small>
