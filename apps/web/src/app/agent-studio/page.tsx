@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import ProposalControls from "./proposal-controls";
 import styles from "./agent-studio.module.css";
 
 type Reference = { id: string; version: number };
@@ -151,7 +152,7 @@ export default function AgentStudioPage() {
           </div>
         </div>
         <div className={styles.safety}>
-          <i /> Только просмотр · агенты не запущены
+          <i /> Control plane · агенты не запущены
         </div>
         <Link href="/" className={styles.back}>
           ← Рабочая область
@@ -163,8 +164,9 @@ export default function AgentStudioPage() {
           <span className={styles.eyebrow}>Конструктор команды</span>
           <h1>Структура агентов под контролем владельца</h1>
           <p>
-            Просматривайте функции, паттерны, чертежи и предложенную команду. Этот экран ничего не
-            активирует и не выдаёт агентам полномочия.
+            Просматривайте функции, паттерны и чертежи, а также сохраняйте предложения команды.
+            Этот экран не активирует агентов, не выдаёт им полномочия и не запускает модель или
+            инструмент.
           </p>
         </div>
         <form className={styles.projectForm} onSubmit={openProject}>
@@ -221,6 +223,12 @@ export default function AgentStudioPage() {
                   Обновить
                 </button>
               </header>
+              <ProposalControls
+                projectId={projectId}
+                blueprints={data.blueprints}
+                proposals={data.proposals}
+                onSaved={() => load(projectId)}
+              />
               <div className={styles.list}>
                 {data.proposals.map((proposal) => (
                   <article className={styles.proposal} key={proposal.instance_id}>
