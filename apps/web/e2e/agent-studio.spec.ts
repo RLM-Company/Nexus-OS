@@ -7,19 +7,22 @@ type CreatedBlueprint = { blueprint_id: string; version: number };
 
 const exactRefValue = (reference: Reference): string => JSON.stringify(reference);
 
-test("saves proposal-only Agent Studio team changes without activation", async ({ page, request }) => {
+test("saves proposal-only Agent Studio team changes without activation", async ({
+  page,
+  request
+}) => {
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Agent Studio" })).toHaveAttribute(
     "href",
-    "/agent-studio",
+    "/agent-studio"
   );
 
   const nonce = `${Date.now()}`;
   const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
     data: {
       initial_message: "Create an empty project for the Agent Studio UI check.",
-      client_message_id: `agent-studio-e2e-${nonce}`,
-    },
+      client_message_id: `agent-studio-e2e-${nonce}`
+    }
   });
   expect(created.ok()).toBeTruthy();
   const projectBody = (await created.json()) as { project: { id: string } };
@@ -31,8 +34,8 @@ test("saves proposal-only Agent Studio team changes without activation", async (
     data: {
       name: "E2E researcher",
       description: "Collects bounded evidence for the browser acceptance test.",
-      result_contract: "Return findings and evidence references.",
-    },
+      result_contract: "Return findings and evidence references."
+    }
   });
   expect(functionResponse.ok()).toBeTruthy();
   const agentFunction = (await functionResponse.json()) as CreatedFunction;
@@ -45,8 +48,8 @@ test("saves proposal-only Agent Studio team changes without activation", async (
       instructions: "Separate facts from inference and identify counter-evidence.",
       allowed_function_ids: [agentFunction.function_id],
       known_limitations: ["May over-weight missing evidence."],
-      test_status: "untested",
-    },
+      test_status: "untested"
+    }
   });
   expect(patternResponse.ok()).toBeTruthy();
   const pattern = (await patternResponse.json()) as CreatedPattern;
@@ -62,21 +65,21 @@ test("saves proposal-only Agent Studio team changes without activation", async (
       object_ids: [projectId],
       budget: { currency: "USD", money_minor: 0, tokens: 1_000, operations: 0 },
       delegation_depth: delegationDepth,
-      valid_until: "2030-01-01T00:00:00.000Z",
+      valid_until: "2030-01-01T00:00:00.000Z"
     },
     memory_scope: {
       read_mode: "project_segments",
       source_ids: ["project-memory"],
-      write_back: "result_and_evidence",
+      write_back: "result_and_evidence"
     },
     task_contract: "Return the bounded browser acceptance result.",
     start_condition: "A later activation increment explicitly approves the proposal.",
-    close_conditions: ["The result is accepted."],
+    close_conditions: ["The result is accepted."]
   });
 
   const parentBlueprintResponse = await request.post(`${base}/blueprints`, {
     headers: { "idempotency-key": `agent-studio-parent-blueprint-${nonce}` },
-    data: blueprintBody(1),
+    data: blueprintBody(1)
   });
   expect(parentBlueprintResponse.ok()).toBeTruthy();
   const parentBlueprint = (await parentBlueprintResponse.json()) as CreatedBlueprint;
@@ -85,8 +88,8 @@ test("saves proposal-only Agent Studio team changes without activation", async (
     headers: { "idempotency-key": `agent-studio-child-blueprint-${nonce}` },
     data: {
       ...blueprintBody(0),
-      task_contract: "Return one delegated browser acceptance result.",
-    },
+      task_contract: "Return one delegated browser acceptance result."
+    }
   });
   expect(childBlueprintResponse.ok()).toBeTruthy();
   const childBlueprint = (await childBlueprintResponse.json()) as CreatedBlueprint;
@@ -94,7 +97,7 @@ test("saves proposal-only Agent Studio team changes without activation", async (
   await page.goto(`/agent-studio?project=${encodeURIComponent(projectId)}`);
 
   await expect(
-    page.getByRole("heading", { name: "Структура агентов под контролем владельца" }),
+    page.getByRole("heading", { name: "Структура агентов под контролем владельца" })
   ).toBeVisible();
   await expect(page.getByText("Control plane · агенты не запущены")).toBeVisible();
   await expect(page.getByText("Proposal-only")).toBeVisible();
@@ -103,20 +106,24 @@ test("saves proposal-only Agent Studio team changes without activation", async (
 
   await page
     .locator("#root-blueprint")
-    .selectOption(exactRefValue({ id: parentBlueprint.blueprint_id, version: parentBlueprint.version }));
+    .selectOption(
+      exactRefValue({ id: parentBlueprint.blueprint_id, version: parentBlueprint.version })
+    );
   await page.getByRole("button", { name: "Сохранить root proposal" }).click();
   await expect(
-    page.getByText("Корневое предложение сохранено. Агент остаётся в состоянии proposed."),
+    page.getByText("Корневое предложение сохранено. Агент остаётся в состоянии proposed.")
   ).toBeVisible();
   await expect(page.locator("article").filter({ hasText: "Корневой агент" })).toHaveCount(1);
 
   await page.locator("#parent-instance").selectOption({ index: 1 });
   await page
     .locator("#child-blueprint")
-    .selectOption(exactRefValue({ id: childBlueprint.blueprint_id, version: childBlueprint.version }));
+    .selectOption(
+      exactRefValue({ id: childBlueprint.blueprint_id, version: childBlueprint.version })
+    );
   await page.getByRole("button", { name: "Сохранить delegated proposal" }).click();
   await expect(
-    page.getByText("Дочернее предложение сохранено после проверки Policy Engine."),
+    page.getByText("Дочернее предложение сохранено после проверки Policy Engine.")
   ).toBeVisible();
   await expect(page.locator("article").filter({ hasText: "Дочерний агент" })).toHaveCount(1);
 
