@@ -22,11 +22,18 @@ type CatalogControlsProps = {
   onSaved: () => Promise<void> | void;
 };
 
-type MutationKind = "function" | "pattern";
+type MutationKind = "function" | "pattern" | "archive";
 
 const formString = (form: FormData, name: string): string => {
   const value = form.get(name);
   return typeof value === "string" ? value.trim() : "";
+};
+
+const readError = async (response: Response): Promise<Error> => {
+  const body = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  return new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
 };
 
 const postJson = async (url: string, payload: unknown): Promise<void> => {
@@ -40,12 +47,12 @@ const postJson = async (url: string, payload: unknown): Promise<void> => {
     body: JSON.stringify(payload)
   });
 
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: { message?: string };
-    } | null;
-    throw new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
-  }
+  if (!response.ok) throw await readError(response);
+};
+
+const postAction = async (url: string): Promise<void> => {
+  const response = await fetch(url, { method: "POST", cache: "no-store" });
+  if (!response.ok) throw await readError(response);
 };
 
 export default function CatalogControls({
@@ -57,16 +64,22 @@ export default function CatalogControls({
   const [pending, setPending] = useState<MutationKind | null>(null);
   const [functionTarget, setFunctionTarget] = useState("");
   const [patternTarget, setPatternTarget] = useState("");
+  const [archiveTarget, setArchiveTarget] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const selectedFunction = functions.find((item) => item.function_id === functionTarget);
   const selectedPattern = patterns.find((item) => item.pattern_id === patternTarget);
+  const selectedArchivePattern = patterns.find((item) => item.pattern_id === archiveTarget);
   const base = `/api/v1/projects/${encodeURIComponent(projectId)}/agent-studio`;
 
   const functionOptions = useMemo(
     () => [...functions].sort((a, b) => a.name.localeCompare(b.name, "ru")),
     [functions]
+  );
+  const patternOptions = useMemo(
+    () => [...patterns].sort((a, b) => a.name.localeCompare(b.name, "ru")),
+    [patterns]
   );
 
   const saveFunction = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -162,6 +175,30 @@ export default function CatalogControls({
     }
   };
 
+  const archivePattern = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (!selectedArchivePattern) return;
+
+    setPending("archive");
+    setNotice(null);
+    setError(null);
+    try {
+      await postAction(
+        `${base}/patterns/${encodeURIComponent(selectedArchivePattern.pattern_id)}/archive`
+      );
+      setArchiveTarget("");
+      setPatternTarget("");
+      await onSaved();
+      setNotice(
+        "Паттерн архивирован. Новые композиции больше не увидят его в активном каталоге."
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось архивировать паттерн");
+    } finally {
+      setPending(null);
+    }
+  };
+
   return (
     <div className={styles.editor}>
       <div className={styles.boundary}>
@@ -233,7 +270,7 @@ export default function CatalogControls({
             disabled={pending !== null}
           >
             <option value="">Создать новую v1</option>
-            {patterns.map((item) => (
+            {patternOptions.map((item) => (
               <option key={item.pattern_id} value={item.pattern_id}>
                 Новая версия · {item.name} · v{item.version}
               </option>
@@ -302,6 +339,31 @@ export default function CatalogControls({
           </button>
         </form>
       </div>
+
+      <form className={styles.archive} onSubmit={(event) => void archivePattern(event)}>
+        <div>
+          <strong>Архив паттерна</strong>
+          <span>Архивная версия исключается из активного каталога и новых композиций.</span>
+        </div>
+        <select
+          id="archive-pattern-target"
+          aria-label="Паттерн для архивации"
+          value={archiveTarget}
+          onChange={(event) => setArchiveTarget(event.target.value)}
+          disabled={pending !== null || patternOptions.length === 0}
+          required
+        >
+          <option value="">Выберите активный паттерн</option>
+          {patternOptions.map((item) => (
+            <option key={item.pattern_id} value={item.pattern_id}>
+              {item.name} · v{item.version}
+            </option>
+          ))}
+        </select>
+        <button disabled={pending !== null || !selectedArchivePattern}>
+          {pending === "archive" ? "Архивирую…" : "Архивировать паттерн"}
+        </button>
+      </form>
 
       {notice && <p className={styles.notice}>{notice}</p>}
       {error && <p className={styles.error}>{error}</p>}
