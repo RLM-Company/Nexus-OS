@@ -47,9 +47,9 @@ const postProposal = async <T,>(url: string, payload: unknown): Promise<T> => {
     cache: "no-store",
     headers: {
       "content-type": "application/json",
-      "idempotency-key": `agent-studio-ui-${crypto.randomUUID()}`
+      "idempotency-key": `agent-studio-ui-${crypto.randomUUID()}`,
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -66,7 +66,7 @@ export default function ProposalControls({
   projectId,
   blueprints,
   proposals,
-  onSaved
+  onSaved,
 }: ProposalControlsProps) {
   const [pending, setPending] = useState<"root" | "delegated" | null>(null);
   const [selectedParentId, setSelectedParentId] = useState("");
@@ -75,7 +75,7 @@ export default function ProposalControls({
 
   const parents = useMemo(
     () => proposals.filter((proposal) => proposal.blueprint.grant.delegation_depth > 0),
-    [proposals]
+    [proposals],
   );
   const selectedParent = parents.find((proposal) => proposal.instance_id === selectedParentId);
   const childBlueprints = useMemo(() => {
@@ -84,7 +84,7 @@ export default function ProposalControls({
     return blueprints.filter(
       (blueprint) =>
         blueprint.grant.delegation_depth < selectedParent.blueprint.grant.delegation_depth &&
-        Date.parse(blueprint.grant.valid_until) <= parentExpiry
+        Date.parse(blueprint.grant.valid_until) <= parentExpiry,
     );
   }, [blueprints, selectedParent]);
 
@@ -126,7 +126,7 @@ export default function ProposalControls({
     try {
       await postProposal(`${base}/proposals/delegated`, {
         parent_instance_id: parentInstanceId,
-        blueprint_ref: parseExactRef(rawRef)
+        blueprint_ref: parseExactRef(rawRef),
       });
       await onSaved();
       setNotice("Дочернее предложение сохранено после проверки Policy Engine.");
