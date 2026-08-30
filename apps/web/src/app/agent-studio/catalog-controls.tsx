@@ -189,9 +189,7 @@ export default function CatalogControls({
       setArchiveTarget("");
       setPatternTarget("");
       await onSaved();
-      setNotice(
-        "Паттерн архивирован. Новые композиции больше не увидят его в активном каталоге."
-      );
+      setNotice("Паттерн архивирован. Новые композиции больше не увидят его в активном каталоге.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось архивировать паттерн");
     } finally {
