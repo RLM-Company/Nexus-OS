@@ -104,6 +104,10 @@ test("saves proposal-only Agent Studio team changes without activation", async (
   await expect(page.getByRole("heading", { name: "Предложенные агенты" })).toBeVisible();
   await expect(page.getByText("В этом проекте пока нет предложенных агентов.")).toBeVisible();
 
+  const proposalCards = page.locator("article").filter({
+    has: page.locator("em").filter({ hasText: "proposed" })
+  });
+
   await page
     .locator("#root-blueprint")
     .selectOption(
@@ -113,7 +117,7 @@ test("saves proposal-only Agent Studio team changes without activation", async (
   await expect(
     page.getByText("Корневое предложение сохранено. Агент остаётся в состоянии proposed.")
   ).toBeVisible();
-  await expect(page.locator("article").filter({ hasText: "Корневой агент" })).toHaveCount(1);
+  await expect(proposalCards.filter({ hasText: "Корневой агент" })).toHaveCount(1);
 
   await page.locator("#parent-instance").selectOption({ index: 1 });
   await page
@@ -125,7 +129,7 @@ test("saves proposal-only Agent Studio team changes without activation", async (
   await expect(
     page.getByText("Дочернее предложение сохранено после проверки Policy Engine.")
   ).toBeVisible();
-  await expect(page.locator("article").filter({ hasText: "Дочерний агент" })).toHaveCount(1);
+  await expect(proposalCards.filter({ hasText: "Дочерний агент" })).toHaveCount(1);
 
   await expect(page.getByText("Предложен корневой агент")).toBeVisible();
   await expect(page.getByText("Предложен дочерний агент")).toBeVisible();
