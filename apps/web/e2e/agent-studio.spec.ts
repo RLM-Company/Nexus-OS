@@ -27,7 +27,7 @@ test("edits the immutable Agent Studio catalog through new versions", async ({ p
   await page.locator("#function-result-contract").fill("Return evidence and open questions.");
   await page.getByRole("button", { name: "Создать функцию" }).click();
   await expect(page.getByText("Функция создана как immutable v1.")).toBeVisible();
-  await expect(page.getByText("UI researcher")).toBeVisible();
+  await expect(page.getByText("UI researcher", { exact: true })).toBeVisible();
 
   await page.locator("#function-target").selectOption({ index: 1 });
   await page.locator("#function-name").fill("UI evidence researcher");
@@ -39,7 +39,7 @@ test("edits the immutable Agent Studio catalog through new versions", async ({ p
     .fill("Return evidence, gaps, and open questions.");
   await page.getByRole("button", { name: "Создать версию" }).first().click();
   await expect(page.getByText("Новая версия функции сохранена: v2.")).toBeVisible();
-  await expect(page.getByText("UI evidence researcher")).toBeVisible();
+  await expect(page.getByText("UI evidence researcher", { exact: true })).toBeVisible();
 
   await page.locator("#pattern-name").fill("UI skeptic");
   await page.locator("#pattern-description").fill("Challenges unsupported project claims.");
@@ -50,7 +50,7 @@ test("edits the immutable Agent Studio catalog through new versions", async ({ p
   await page.locator("#pattern-limitations").fill("Can over-weight missing evidence.");
   await page.getByRole("button", { name: "Создать паттерн" }).click();
   await expect(page.getByText("Паттерн создан как immutable v1.")).toBeVisible();
-  await expect(page.getByText("UI skeptic")).toBeVisible();
+  await expect(page.getByText("UI skeptic", { exact: true })).toBeVisible();
 
   await page.locator("#pattern-target").selectOption({ index: 1 });
   await page.locator("#pattern-name").fill("UI evidence-first skeptic");
@@ -64,10 +64,10 @@ test("edits the immutable Agent Studio catalog through new versions", async ({ p
   await page.locator("#pattern-status").selectOption("verified");
   await page.getByRole("button", { name: "Создать версию" }).last().click();
   await expect(page.getByText("Новая версия паттерна сохранена: v2.")).toBeVisible();
-  await expect(page.getByText("UI evidence-first skeptic")).toBeVisible();
+  await expect(page.getByText("UI evidence-first skeptic", { exact: true })).toBeVisible();
 
-  await expect(page.getByText("Новая версия функции")).toBeVisible();
-  await expect(page.getByText("Новая версия паттерна")).toBeVisible();
+  await expect(page.getByText("Новая версия функции", { exact: true })).toBeVisible();
+  await expect(page.getByText("Новая версия паттерна", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /актив/i })).toHaveCount(0);
 });
 
