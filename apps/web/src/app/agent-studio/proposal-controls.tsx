@@ -29,7 +29,11 @@ const exactRefValue = (blueprint: Blueprint): string =>
 
 const parseExactRef = (value: string): Reference => {
   const parsed = JSON.parse(value) as Partial<Reference>;
-  if (typeof parsed.id !== "string" || !Number.isInteger(parsed.version)) {
+  if (
+    typeof parsed.id !== "string" ||
+    typeof parsed.version !== "number" ||
+    !Number.isInteger(parsed.version)
+  ) {
     throw new Error("Некорректная ссылка на blueprint");
   }
   return { id: parsed.id, version: parsed.version };
@@ -88,7 +92,8 @@ export default function ProposalControls({
 
   const saveRoot = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const rawRef = String(form.get("root-blueprint") ?? "");
     if (!rawRef) return;
 
@@ -99,7 +104,7 @@ export default function ProposalControls({
       await postProposal(`${base}/proposals`, { blueprint_ref: parseExactRef(rawRef) });
       await onSaved();
       setNotice("Корневое предложение сохранено. Агент остаётся в состоянии proposed.");
-      event.currentTarget.reset();
+      formElement.reset();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось сохранить предложение");
     } finally {
@@ -109,7 +114,8 @@ export default function ProposalControls({
 
   const saveDelegated = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const parentInstanceId = String(form.get("parent-instance") ?? "");
     const rawRef = String(form.get("child-blueprint") ?? "");
     if (!parentInstanceId || !rawRef) return;
@@ -124,7 +130,7 @@ export default function ProposalControls({
       });
       await onSaved();
       setNotice("Дочернее предложение сохранено после проверки Policy Engine.");
-      event.currentTarget.reset();
+      formElement.reset();
       setSelectedParentId("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Policy Engine отклонил предложение");
@@ -154,7 +160,8 @@ export default function ProposalControls({
                 key={`${blueprint.blueprint_id}:${blueprint.version}`}
                 value={exactRefValue(blueprint)}
               >
-                {shortId(blueprint.blueprint_id)} · v{blueprint.version} · {blueprint.model_profile_ref.id}
+                {shortId(blueprint.blueprint_id)} · v{blueprint.version} ·{" "}
+                {blueprint.model_profile_ref.id}
               </option>
             ))}
           </select>
@@ -192,14 +199,17 @@ export default function ProposalControls({
                 key={`${blueprint.blueprint_id}:${blueprint.version}`}
                 value={exactRefValue(blueprint)}
               >
-                {shortId(blueprint.blueprint_id)} · v{blueprint.version} · depth {blueprint.grant.delegation_depth}
+                {shortId(blueprint.blueprint_id)} · v{blueprint.version} · depth{" "}
+                {blueprint.grant.delegation_depth}
               </option>
             ))}
           </select>
           <button disabled={pending !== null || parents.length === 0 || childBlueprints.length === 0}>
             {pending === "delegated" ? "Проверяю…" : "Сохранить delegated proposal"}
           </button>
-          <small>Финальную проверку сужения полномочий всегда выполняет Policy Engine на сервере.</small>
+          <small>
+            Финальную проверку сужения полномочий всегда выполняет Policy Engine на сервере.
+          </small>
         </form>
       </div>
 
