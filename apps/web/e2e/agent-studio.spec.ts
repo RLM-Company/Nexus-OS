@@ -7,8 +7,6 @@ type CreatedBlueprint = { blueprint_id: string; version: number };
 
 const exactRefValue = (reference: Reference): string => JSON.stringify(reference);
 
-const createProject = async (request: Parameters<typeof test>[0] extends never ? never : never) => request;
-
 test("edits the immutable Agent Studio catalog through new versions", async ({ page, request }) => {
   const nonce = `${Date.now()}`;
   const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
