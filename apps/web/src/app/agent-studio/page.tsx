@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import CatalogControls from "./catalog-controls";
 import ProposalControls from "./proposal-controls";
 import styles from "./agent-studio.module.css";
 
@@ -164,9 +165,9 @@ export default function AgentStudioPage() {
           <span className={styles.eyebrow}>Конструктор команды</span>
           <h1>Структура агентов под контролем владельца</h1>
           <p>
-            Просматривайте функции, паттерны и чертежи, а также сохраняйте предложения команды. Этот
-            экран не активирует агентов, не выдаёт им полномочия и не запускает модель или
-            инструмент.
+            Создавайте версионируемый каталог функций и паттернов, просматривайте чертежи и
+            сохраняйте предложения команды. Этот экран не активирует агентов, не выдаёт им
+            полномочия и не запускает модель или инструмент.
           </p>
         </div>
         <form className={styles.projectForm} onSubmit={openProject}>
@@ -295,6 +296,12 @@ export default function AgentStudioPage() {
                   <h2>Функции и паттерны</h2>
                 </div>
               </header>
+              <CatalogControls
+                projectId={projectId}
+                functions={data.functions}
+                patterns={data.patterns}
+                onSaved={() => load(projectId)}
+              />
               <div className={styles.catalogColumns}>
                 <div>
                   <h3>Функции</h3>
