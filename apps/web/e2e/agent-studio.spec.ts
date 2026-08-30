@@ -68,6 +68,16 @@ test("edits the immutable Agent Studio catalog through new versions", async ({ p
 
   await expect(page.getByText("Новая версия функции", { exact: true })).toBeVisible();
   await expect(page.getByText("Новая версия паттерна", { exact: true })).toBeVisible();
+
+  await page.locator("#archive-pattern-target").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "Архивировать паттерн" }).click();
+  await expect(
+    page.getByText(
+      "Паттерн архивирован. Новые композиции больше не увидят его в активном каталоге."
+    )
+  ).toBeVisible();
+  await expect(page.getByText("UI evidence-first skeptic", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Паттерн архивирован", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /актив/i })).toHaveCount(0);
 });
 
