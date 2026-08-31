@@ -63,7 +63,9 @@ export const validateRuntimeContextMaterialization = (input: {
     }
     for (const sourceId of artifact.source_ids) {
       if (!allowedSourceIds.has(sourceId)) {
-        issues.push(`Artifact ${artifact.artifact_id} uses an undeclared context source: ${sourceId}`);
+        issues.push(
+          `Artifact ${artifact.artifact_id} uses an undeclared context source: ${sourceId}`
+        );
       }
     }
   }
