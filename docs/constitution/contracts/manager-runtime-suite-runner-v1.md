@@ -23,6 +23,10 @@
 
 Нерелевантные bundles не влияют на verdict, но записываются в `unused_observation_set_ids`, чтобы evidence input оставался прозрачным.
 
+## Fresh-base verification
+
+Финальный CI перед merge принимается только для PR merge commit, у которого первый parent совпадает с указанным `Verification target`. Если `main` изменился после запуска CI, target обновляется и полный quality gate запускается заново.
+
 ## Граница полномочий
 
 Suite runner не имеет права:
