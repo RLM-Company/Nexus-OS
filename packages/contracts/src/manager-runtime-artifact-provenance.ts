@@ -38,7 +38,7 @@ export const validateRuntimeArtifactProvenance = (input: {
           `Artifact ${artifact.artifact_id} references cross-project provenance ${sourceArtifactId}`
         );
       }
-      if (sourceArtifact.created_at > artifact.created_at) {
+      if (Date.parse(sourceArtifact.created_at) > Date.parse(artifact.created_at)) {
         issues.push(
           `Artifact ${artifact.artifact_id} references source artifact created later: ${sourceArtifactId}`
         );
