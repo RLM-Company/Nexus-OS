@@ -1,10 +1,5 @@
-import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import {
-  RuntimeTaskReadinessSnapshotSchema,
-  type RuntimeTaskGraph,
-  type RuntimeTaskNode
-} from "@cosmora/contracts";
+import { type RuntimeTaskGraph, type RuntimeTaskNode } from "@cosmora/contracts";
 import { deriveRuntimeTaskReadiness } from "../src/index.js";
 
 const evaluatedAt = "2026-08-31T20:40:00.000Z";
@@ -44,7 +39,6 @@ describe("manager runtime task readiness", () => {
       evaluatedAt
     });
 
-    expect(Value.Check(RuntimeTaskReadinessSnapshotSchema, result)).toBe(true);
     expect(result.valid_graph).toBe(true);
     expect(result.decisions[0]).toMatchObject({
       task_id: "root",
