@@ -7,7 +7,10 @@ type CreatedBlueprint = { blueprint_id: string; version: number };
 
 const exactRefValue = (reference: Reference): string => JSON.stringify(reference);
 
-test("edits the immutable Agent Studio catalog through new versions", async ({ page, request }) => {
+test("edits the immutable Agent Studio catalog and blueprint registry through new versions", async ({
+  page,
+  request
+}) => {
   const nonce = `${Date.now()}`;
   const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
     data: {
@@ -65,6 +68,23 @@ test("edits the immutable Agent Studio catalog through new versions", async ({ p
   await page.getByRole("button", { name: "Создать версию" }).last().click();
   await expect(page.getByText("Новая версия паттерна сохранена: v2.")).toBeVisible();
   await expect(page.getByText("UI evidence-first skeptic", { exact: true })).toBeVisible();
+
+  await expect(page.getByText("Declared grant only")).toBeVisible();
+  await page.locator("#blueprint-function").selectOption({ index: 1 });
+  await page.locator("#blueprint-pattern").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "Создать blueprint v1" }).click();
+  await expect(
+    page.getByText("Чертёж сохранён как immutable v1. Агент не активирован.")
+  ).toBeVisible();
+  await expect(page.getByText("Создан чертёж", { exact: true })).toBeVisible();
+
+  await page.locator("#blueprint-target").selectOption({ index: 1 });
+  await page
+    .locator("#task-contract")
+    .fill("Return the bounded project result with explicit evidence references.");
+  await page.getByRole("button", { name: "Создать blueprint v2" }).click();
+  await expect(page.getByText("Новая версия чертежа сохранена: v2.")).toBeVisible();
+  await expect(page.getByText("Новая версия чертежа", { exact: true })).toBeVisible();
 
   await expect(page.getByText("Новая версия функции", { exact: true })).toBeVisible();
   await expect(page.getByText("Новая версия паттерна", { exact: true })).toBeVisible();
