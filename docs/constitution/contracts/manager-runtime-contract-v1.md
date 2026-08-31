@@ -103,7 +103,7 @@ Role contract не является permission contract. Ни одна роль 
 
 ## 6. Обязательные системные сценарии
 
-`MANAGER_RUNTIME_SCENARIOS` содержит 13 machine-readable release gates:
+`MANAGER_RUNTIME_SCENARIOS` покрывает 13 обязательных категорий release gate:
 
 1. `agent_conflict`;
 2. `critic`;
@@ -119,17 +119,19 @@ Role contract не является permission contract. Ни одна роль 
 12. `cross_project_leak`;
 13. `false_critic`.
 
-Каждый сценарий имеет:
+Категория `autonomy` представлена семью отдельными gate-векторами — по одному для `A0`, `A1`, `A2`, `A3`, `A4`, `A5` и `A6`. Поэтому наличие одной проверки среднего уровня нельзя ошибочно выдать за покрытие всей шкалы.
+
+Каждый scenario record имеет:
 
 - стабильный `scenario_id`;
 - категорию;
 - fixture refs;
-- autonomy level;
+- конкретный autonomy level;
 - структурированные assertions;
 - invariant IDs;
 - список runtime-инкрементов, для которых он обязателен.
 
-`validateScenarioCoverage` fail-closed возвращает ошибку, если из каталога исчезла хотя бы одна обязательная категория.
+`validateScenarioCoverage` fail-closed возвращает ошибку, если из каталога исчезла хотя бы одна обязательная категория. Отдельный contract test требует точного набора `A0–A6` внутри autonomy-сценариев.
 
 ## 7. Что намеренно не решено этим контрактом
 
