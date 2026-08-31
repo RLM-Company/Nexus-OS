@@ -15,7 +15,7 @@ export const validateRuntimeCheckpointAgainstGraph = (input: {
   if (input.checkpoint.graph_id !== input.graph.graph_id) {
     issues.push("Runtime checkpoint belongs to another task graph");
   }
-  if (input.checkpoint.created_at < input.graph.created_at) {
+  if (Date.parse(input.checkpoint.created_at) < Date.parse(input.graph.created_at)) {
     issues.push("Runtime checkpoint cannot predate its task graph");
   }
 
