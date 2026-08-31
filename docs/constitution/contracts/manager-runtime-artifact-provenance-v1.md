@@ -1,7 +1,8 @@
 # Manager Runtime Artifact Provenance v1
 
 > Статус: `SEMANTIC PROVENANCE VALIDATION / NO RUNTIME AUTHORITY`  
-> Дата: `2026-08-31`
+> Дата: `2026-08-31`  
+> Verification target: `main@163683438536fab9d19d260020cc681dec8e78cd`
 
 ## Назначение
 
