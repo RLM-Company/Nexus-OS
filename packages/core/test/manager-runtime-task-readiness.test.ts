@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type RuntimeTaskGraph, type RuntimeTaskNode } from "@cosmora/contracts";
+import type { RuntimeTaskGraph, RuntimeTaskNode } from "@cosmora/contracts";
 import { deriveRuntimeTaskReadiness } from "../src/index.js";
 
 const evaluatedAt = "2026-08-31T20:40:00.000Z";
