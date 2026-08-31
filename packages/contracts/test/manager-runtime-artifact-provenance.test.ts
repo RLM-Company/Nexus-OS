@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { validateRuntimeArtifactProvenance, type RuntimeArtifact } from "../src/index.js";
+import { validateRuntimeArtifactProvenance } from "../src/index.js";
+import type { RuntimeArtifact } from "../src/index.js";
 
 const artifact = (input: {
   id: string;
