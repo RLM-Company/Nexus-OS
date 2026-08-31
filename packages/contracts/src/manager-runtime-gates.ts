@@ -64,6 +64,15 @@ export const ScenarioObservationSchema = Type.Union([
 ]);
 export type ScenarioObservation = Static<typeof ScenarioObservationSchema>;
 
+export const ScenarioObservationBundleSchema = Type.Object(
+  {
+    scenario_id: EntityIdSchema,
+    observations: Type.Array(ScenarioObservationSchema, { maxItems: 100 })
+  },
+  { additionalProperties: false }
+);
+export type ScenarioObservationBundle = Static<typeof ScenarioObservationBundleSchema>;
+
 export const ScenarioGateStatusSchema = Type.Union([Type.Literal("PASS"), Type.Literal("FAIL")]);
 export type ScenarioGateStatus = Static<typeof ScenarioGateStatusSchema>;
 
@@ -93,3 +102,18 @@ export const ManagerRuntimeScenarioGateResultSchema = Type.Object(
 export type ManagerRuntimeScenarioGateResult = Static<
   typeof ManagerRuntimeScenarioGateResultSchema
 >;
+
+export const ManagerRuntimeReleaseGateResultSchema = Type.Object(
+  {
+    increment_id: EntityIdSchema,
+    status: ScenarioGateStatusSchema,
+    required_scenario_ids: Type.Array(EntityIdSchema, { maxItems: 1_000, uniqueItems: true }),
+    scenario_results: Type.Array(ManagerRuntimeScenarioGateResultSchema, { maxItems: 1_000 }),
+    catalog_issues: Type.Array(Type.String({ minLength: 1, maxLength: 2_000 }), {
+      maxItems: 1_000
+    }),
+    evaluated_at: IsoDateTimeSchema
+  },
+  { additionalProperties: false }
+);
+export type ManagerRuntimeReleaseGateResult = Static<typeof ManagerRuntimeReleaseGateResultSchema>;
