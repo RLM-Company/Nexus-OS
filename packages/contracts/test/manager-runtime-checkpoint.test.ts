@@ -51,9 +51,9 @@ const checkpoint = (): RuntimeCheckpoint => ({
 
 describe("manager runtime checkpoint semantics", () => {
   it("accepts a complete project-bound checkpoint for its graph", () => {
-    expect(validateRuntimeCheckpointAgainstGraph({ checkpoint: checkpoint(), graph: graph() })).toEqual(
-      []
-    );
+    expect(
+      validateRuntimeCheckpointAgainstGraph({ checkpoint: checkpoint(), graph: graph() })
+    ).toEqual([]);
   });
 
   it("rejects cross-project or wrong-graph checkpoints", () => {
