@@ -28,14 +28,20 @@ export const validateRuntimeArtifactProvenance = (input: {
 
       const sourceArtifact = byId.get(sourceArtifactId);
       if (sourceArtifact === undefined) {
-        issues.push(`Artifact ${artifact.artifact_id} references unknown source artifact ${sourceArtifactId}`);
+        issues.push(
+          `Artifact ${artifact.artifact_id} references unknown source artifact ${sourceArtifactId}`
+        );
         continue;
       }
       if (sourceArtifact.project_id !== artifact.project_id) {
-        issues.push(`Artifact ${artifact.artifact_id} references cross-project provenance ${sourceArtifactId}`);
+        issues.push(
+          `Artifact ${artifact.artifact_id} references cross-project provenance ${sourceArtifactId}`
+        );
       }
       if (sourceArtifact.created_at > artifact.created_at) {
-        issues.push(`Artifact ${artifact.artifact_id} references source artifact created later: ${sourceArtifactId}`);
+        issues.push(
+          `Artifact ${artifact.artifact_id} references source artifact created later: ${sourceArtifactId}`
+        );
       }
     }
   }
