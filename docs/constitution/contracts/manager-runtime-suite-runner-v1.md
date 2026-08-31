@@ -36,4 +36,4 @@ Suite runner не имеет права:
 - записывать project memory;
 - активировать Agent Studio proposals.
 
-И `PASS`, и `FAIL` являются только release-gate результатом. Они не являются командой на запуск runtime.
+И `PASS`, и `FAIL` являются только release-gate результатом. Они не являются командой на запуск runtime. Новые upstream validation layers остаются самостоятельными обязательными границами и не могут считаться пройденными только из-за aggregate `PASS`.
