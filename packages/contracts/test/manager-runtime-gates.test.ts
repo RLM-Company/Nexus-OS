@@ -1,9 +1,6 @@
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import {
-  ManagerRuntimeScenarioGateResultSchema,
-  ScenarioObservationSchema
-} from "../src/index.js";
+import { ManagerRuntimeScenarioGateResultSchema, ScenarioObservationSchema } from "../src/index.js";
 
 const evaluatedAt = "2026-08-31T18:00:00.000Z";
 
