@@ -94,4 +94,15 @@ describe("manager runtime checkpoint semantics", () => {
       "Runtime checkpoint cannot predate its task graph"
     );
   });
+
+  it("orders optional milliseconds by instant instead of raw text", () => {
+    const value = checkpoint();
+    const targetGraph = graph();
+    targetGraph.created_at = "2026-08-31T18:20:00.001Z";
+    value.created_at = "2026-08-31T18:20:00Z";
+
+    expect(
+      validateRuntimeCheckpointAgainstGraph({ checkpoint: value, graph: targetGraph })
+    ).toContain("Runtime checkpoint cannot predate its task graph");
+  });
 });
