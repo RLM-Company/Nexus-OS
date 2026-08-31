@@ -78,7 +78,9 @@ describe("manager runtime scenario suite runner", () => {
     });
 
     expect(result.status).toBe("FAIL");
-    expect(result.catalog_issues).toContain("Missing required runtime scenario: cross_project_leak");
+    expect(result.catalog_issues).toContain(
+      "Missing required runtime scenario: cross_project_leak"
+    );
   });
 
   it("propagates a failing nested scenario into the aggregate verdict", () => {
@@ -97,7 +99,9 @@ describe("manager runtime scenario suite runner", () => {
 
     expect(result.status).toBe("FAIL");
     expect(
-      result.results.find((scenarioResult) => scenarioResult.scenario_id === "runtime-critic-serious-v1")
+      result.results.find(
+        (scenarioResult) => scenarioResult.scenario_id === "runtime-critic-serious-v1"
+      )
     ).toMatchObject({ status: "FAIL" });
   });
 
