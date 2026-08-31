@@ -87,6 +87,18 @@ describe("manager runtime artifact provenance", () => {
     expect(issues).toContain("Artifact derived references source artifact created later: future");
   });
 
+  it("orders optional milliseconds by instant instead of raw text", () => {
+    const issues = validateRuntimeArtifactProvenance({
+      projectId: "project-1",
+      artifacts: [
+        artifact({ id: "future", createdAt: "2026-08-31T20:00:00.001Z" }),
+        artifact({ id: "derived", createdAt: "2026-08-31T20:00:00Z", sources: ["future"] })
+      ]
+    });
+
+    expect(issues).toContain("Artifact derived references source artifact created later: future");
+  });
+
   it("rejects provenance cycles", () => {
     const issues = validateRuntimeArtifactProvenance({
       projectId: "project-1",
