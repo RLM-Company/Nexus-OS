@@ -135,7 +135,9 @@ export const RuntimeRoleContractSchema = Type.Object(
 );
 export type RuntimeRoleContract = Static<typeof RuntimeRoleContractSchema>;
 
-export const MANAGER_RUNTIME_ROLE_CONTRACTS: Readonly<Record<ManagerRuntimeRole, RuntimeRoleContract>> = {
+export const MANAGER_RUNTIME_ROLE_CONTRACTS: Readonly<
+  Record<ManagerRuntimeRole, RuntimeRoleContract>
+> = {
   manager: {
     contract_version: MANAGER_RUNTIME_CONTRACT_VERSION,
     role: "manager",
@@ -457,7 +459,9 @@ export const validateCriticVerdict = (verdict: CriticVerdict): string[] => {
   return issues;
 };
 
-export const validateScenarioCoverage = (scenarios: readonly ManagerRuntimeScenario[]): string[] => {
+export const validateScenarioCoverage = (
+  scenarios: readonly ManagerRuntimeScenario[]
+): string[] => {
   const present = new Set(scenarios.map((scenario) => scenario.category));
   return REQUIRED_MANAGER_RUNTIME_SCENARIOS.filter((category) => !present.has(category)).map(
     (category) => `Missing required runtime scenario: ${category}`
