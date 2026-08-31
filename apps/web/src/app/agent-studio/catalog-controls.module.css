@@ -64,7 +64,8 @@
 }
 .forms input,
 .forms textarea,
-.forms select {
+.forms select,
+.archive select {
   width: 100%;
   min-width: 0;
   padding: 0.62rem 0.65rem;
@@ -81,7 +82,8 @@
 }
 .forms input:focus,
 .forms textarea:focus,
-.forms select:focus {
+.forms select:focus,
+.archive select:focus {
   border-color: rgba(179, 168, 255, 0.42);
 }
 .forms fieldset {
@@ -106,7 +108,8 @@
   color: #a7adba;
   font-size: 0.6rem;
 }
-.forms button {
+.forms button,
+.archive button {
   margin-top: 0.18rem;
   padding: 0.62rem 0.7rem;
   border: 0;
@@ -119,7 +122,9 @@
 .forms button:disabled,
 .forms input:disabled,
 .forms textarea:disabled,
-.forms select:disabled {
+.forms select:disabled,
+.archive button:disabled,
+.archive select:disabled {
   cursor: not-allowed;
   opacity: 0.48;
 }
@@ -128,6 +133,40 @@
   font-size: 0.56rem;
   line-height: 1.45;
 }
+
+.archive {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+  padding: 0.72rem;
+  border: 1px solid rgba(255, 113, 129, 0.1);
+  border-radius: 0.7rem;
+  background: rgba(255, 91, 110, 0.025);
+}
+.archive > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.24rem;
+}
+.archive strong {
+  color: #ffc0c8;
+  font-size: 0.66rem;
+}
+.archive span {
+  color: #727c8f;
+  font-size: 0.57rem;
+  line-height: 1.4;
+}
+.archive button {
+  color: #ffd7dc;
+  border: 1px solid rgba(255, 113, 129, 0.18);
+  background: rgba(255, 91, 110, 0.08);
+  white-space: nowrap;
+}
+
 .notice,
 .error {
   margin: 0.65rem 0 0;
@@ -148,7 +187,8 @@
 }
 
 @media (max-width: 700px) {
-  .forms {
+  .forms,
+  .archive {
     grid-template-columns: 1fr;
   }
   .boundary {
@@ -157,5 +197,8 @@
   }
   .boundary span {
     text-align: left;
+  }
+  .archive button {
+    width: 100%;
   }
 }
