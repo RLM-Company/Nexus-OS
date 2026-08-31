@@ -134,9 +134,7 @@ export default function ControlCenterPage() {
         api<{ profile: CapabilityProfile }>(
           `/api/v1/projects/${encodeURIComponent(id)}/autonomy-profile`
         ),
-        api<{ items: Confirmation[] }>(
-          `/api/v1/projects/${encodeURIComponent(id)}/confirmations`
-        ),
+        api<{ items: Confirmation[] }>(`/api/v1/projects/${encodeURIComponent(id)}/confirmations`),
         api<OperationsStatus>("/api/v1/operations/status")
       ]);
       setData({
@@ -227,7 +225,9 @@ export default function ControlCenterPage() {
         <section className={styles.emptyState}>
           <span>CONTROL PLANE</span>
           <h2>Выберите проект</h2>
-          <p>Профиль автономности и подтверждения всегда загружаются в границах выбранного проекта.</p>
+          <p>
+            Профиль автономности и подтверждения всегда загружаются в границах выбранного проекта.
+          </p>
         </section>
       ) : data ? (
         <>
@@ -377,7 +377,9 @@ export default function ControlCenterPage() {
                 <span className={styles.eyebrow}>Runtime operations</span>
                 <h2>Аварийный контур и метрики</h2>
               </div>
-              <span className={styles.generated}>снимок {dateTime(data.operations.generated_at)}</span>
+              <span className={styles.generated}>
+                снимок {dateTime(data.operations.generated_at)}
+              </span>
             </header>
 
             <div className={styles.operationGrid}>
@@ -385,7 +387,8 @@ export default function ControlCenterPage() {
                 <span>Process emergency stop</span>
                 <strong>{data.operations.process_stop ? "ACTIVE" : "CLEAR"}</strong>
                 <small>
-                  {data.operations.process_stop?.reason ?? "Глобальная аварийная остановка не активна"}
+                  {data.operations.process_stop?.reason ??
+                    "Глобальная аварийная остановка не активна"}
                 </small>
               </article>
               <article>
@@ -394,7 +397,8 @@ export default function ControlCenterPage() {
                   {data.operations.metrics.runs_completed}/{data.operations.metrics.runs_started}
                 </strong>
                 <small>
-                  failed {data.operations.metrics.runs_failed} · cancelled {data.operations.metrics.runs_cancelled}
+                  failed {data.operations.metrics.runs_failed} · cancelled{" "}
+                  {data.operations.metrics.runs_cancelled}
                 </small>
               </article>
               <article>
