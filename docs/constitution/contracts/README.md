@@ -12,9 +12,18 @@ This directory translates approved Cosmora specifications into machine-readable 
 
 ## Manager runtime files
 
-- `manager-runtime-contract-v1.md` — Step 6 role, task graph, artifact, critic, conflict and scenario boundary.
-- `packages/contracts/src/manager-runtime.ts` — TypeBox runtime schemas and structural validators.
-- `packages/contracts/src/manager-runtime-scenarios.ts` — the mandatory machine-readable Step 6 scenario catalog.
+- `manager-runtime-contract-v1.md` — Step 6 role, task graph, artifact, critic, conflict, recovery and scenario boundary.
+- `manager-runtime-conflict-validation-v1.md` — conflict lifecycle and manager-only arbitration boundary.
+- `manager-runtime-context-materialization-v1.md` — task, role, memory, data-class and source materialization boundary.
+- `manager-runtime-checkpoint-validation-v1.md` — project/task checkpoint validation without restored authority.
+- `manager-runtime-task-readiness-v1.md` — pure dependency readiness derivation.
+- `manager-runtime-artifact-provenance-v1.md` — closed same-project provenance graph validation.
+- `manager-runtime-artifact-task-binding-v1.md` — artifact binding to graph, task, role, inputs, output kind and chronology.
+- `manager-runtime-scenario-runner-v1.md` — deterministic assertion-to-observation release gate.
+- `manager-runtime-suite-runner-v1.md` — aggregate fail-closed release verdict for one runtime increment.
+- `packages/contracts/src/manager-runtime*.ts` — TypeBox schemas, canonical catalogs and semantic validators.
+- `packages/core/src/manager-runtime*.ts` — deterministic readiness and scenario gate evaluators.
+- `packages/contracts/test/manager-runtime*.test.ts` and `packages/core/test/manager-runtime*.test.ts` — executable contract coverage.
 
 ## Policy evaluation order
 
