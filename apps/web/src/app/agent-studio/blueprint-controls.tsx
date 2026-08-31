@@ -213,9 +213,7 @@ export default function BlueprintControls({
           ...(isVersion ? {} : { "idempotency-key": `agent-studio-ui-${crypto.randomUUID()}` })
         },
         body: JSON.stringify(
-          selectedBlueprint
-            ? { ...payload, expected_version: selectedBlueprint.version }
-            : payload
+          selectedBlueprint ? { ...payload, expected_version: selectedBlueprint.version } : payload
         )
       });
       if (!response.ok) throw await readError(response);
@@ -381,7 +379,11 @@ export default function BlueprintControls({
         <div className={styles.rowFour}>
           <label>
             <span>Currency</span>
-            <input name="currency" defaultValue={defaults?.grant.budget.currency ?? "USD"} required />
+            <input
+              name="currency"
+              defaultValue={defaults?.grant.budget.currency ?? "USD"}
+              required
+            />
           </label>
           <label>
             <span>Money minor</span>
@@ -515,7 +517,9 @@ export default function BlueprintControls({
         </label>
 
         <button
-          disabled={pending || !selectedFunction || !selectedPattern || eligiblePatterns.length === 0}
+          disabled={
+            pending || !selectedFunction || !selectedPattern || eligiblePatterns.length === 0
+          }
         >
           {pending
             ? "Сохраняю…"
