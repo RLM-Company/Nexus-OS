@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import BlueprintControls from "./blueprint-controls";
 import CatalogControls from "./catalog-controls";
 import ProposalControls from "./proposal-controls";
 import styles from "./agent-studio.module.css";
@@ -18,6 +19,7 @@ type BehaviorPattern = {
   version: number;
   name: string;
   description: string;
+  allowed_function_ids: string[];
   test_status: "untested" | "verified" | "restricted" | "rejected";
   archived_at: string | null;
 };
@@ -27,7 +29,28 @@ type Blueprint = {
   function_ref: Reference;
   behavior_pattern_ref: Reference;
   model_profile_ref: Reference;
-  grant: { delegation_depth: number; valid_until: string };
+  grant: {
+    capability_ids: string[];
+    tool_ids: string[];
+    data_scope_ids: string[];
+    object_ids: string[];
+    budget: {
+      currency: string;
+      money_minor: number;
+      tokens: number;
+      operations: number;
+    };
+    delegation_depth: number;
+    valid_until: string;
+  };
+  memory_scope: {
+    read_mode: "none" | "task" | "project_segments" | "handoff";
+    source_ids: string[];
+    write_back: "none" | "result_only" | "result_and_evidence";
+  };
+  task_contract: string;
+  start_condition: string;
+  close_conditions: string[];
 };
 type Proposal = {
   instance_id: string;
@@ -165,8 +188,8 @@ export default function AgentStudioPage() {
           <span className={styles.eyebrow}>Конструктор команды</span>
           <h1>Структура агентов под контролем владельца</h1>
           <p>
-            Создавайте версионируемый каталог функций и паттернов, просматривайте чертежи и
-            сохраняйте предложения команды. Этот экран не активирует агентов, не выдаёт им
+            Создавайте версионируемые функции, паттерны и чертежи, затем сохраняйте предложения
+            команды. Этот экран не активирует агентов, не превращает declared grant в реальные
             полномочия и не запускает модель или инструмент.
           </p>
         </div>
@@ -337,6 +360,13 @@ export default function AgentStudioPage() {
                   <h2>Чертежи агентов</h2>
                 </div>
               </header>
+              <BlueprintControls
+                projectId={projectId}
+                functions={data.functions}
+                patterns={data.patterns}
+                blueprints={data.blueprints}
+                onSaved={() => load(projectId)}
+              />
               <div className={styles.list}>
                 {data.blueprints.map((item) => (
                   <article className={styles.blueprint} key={item.blueprint_id}>
