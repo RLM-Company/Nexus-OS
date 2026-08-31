@@ -6,6 +6,7 @@ export * from "./health.js";
 export * from "./identity.js";
 export * from "./manager-runtime.js";
 export * from "./manager-runtime-conflict.js";
+export * from "./manager-runtime-context-validation.js";
 export * from "./manager-runtime-gates.js";
 export * from "./manager-runtime-scenario-validation.js";
 export * from "./manager-runtime-scenarios.js";
