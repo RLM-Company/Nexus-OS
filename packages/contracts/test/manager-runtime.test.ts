@@ -11,8 +11,8 @@ import {
   RuntimeTaskGraphSchema,
   criticPauseScopeFor,
   validateCriticVerdict,
+  validateManagerRuntimeScenarioCatalog,
   validateRuntimeTaskGraph,
-  validateScenarioCoverage,
   type CriticVerdict,
   type RuntimeTaskGraph,
   type RuntimeTaskNode
@@ -172,7 +172,7 @@ describe("Manager runtime contracts", () => {
     for (const scenario of MANAGER_RUNTIME_SCENARIOS) {
       expect(Value.Check(ManagerRuntimeScenarioSchema, scenario), scenario.scenario_id).toBe(true);
     }
-    expect(validateScenarioCoverage(MANAGER_RUNTIME_SCENARIOS)).toEqual([]);
+    expect(validateManagerRuntimeScenarioCatalog(MANAGER_RUNTIME_SCENARIOS)).toEqual([]);
 
     const autonomyLevels = MANAGER_RUNTIME_SCENARIOS.filter(
       (scenario) => scenario.category === "autonomy"
@@ -183,6 +183,27 @@ describe("Manager runtime contracts", () => {
 
     expect(new Set(MANAGER_RUNTIME_SCENARIOS.map((scenario) => scenario.scenario_id)).size).toBe(
       MANAGER_RUNTIME_SCENARIOS.length
+    );
+  });
+
+  it("fails closed when a required category, autonomy level or scenario ID is invalid", () => {
+    const withoutEmergencyStop = MANAGER_RUNTIME_SCENARIOS.filter(
+      (scenario) => scenario.category !== "emergency_stop"
+    );
+    expect(validateManagerRuntimeScenarioCatalog(withoutEmergencyStop)).toContain(
+      "Missing required runtime scenario: emergency_stop"
+    );
+
+    const withoutA6 = MANAGER_RUNTIME_SCENARIOS.filter(
+      (scenario) => !(scenario.category === "autonomy" && scenario.autonomy_level === "A6")
+    );
+    expect(validateManagerRuntimeScenarioCatalog(withoutA6)).toContain(
+      "Missing autonomy runtime scenario for A6"
+    );
+
+    const duplicate = [...MANAGER_RUNTIME_SCENARIOS, MANAGER_RUNTIME_SCENARIOS[0]];
+    expect(validateManagerRuntimeScenarioCatalog(duplicate)).toContain(
+      `Duplicate runtime scenario_id: ${MANAGER_RUNTIME_SCENARIOS[0].scenario_id}`
     );
   });
 });
