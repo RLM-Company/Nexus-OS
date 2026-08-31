@@ -31,7 +31,10 @@ export const validateAgentConflictLifecycle = (conflict: AgentConflict): string[
     }
   }
 
-  if (conflict.resolved_at !== null && conflict.resolved_at < conflict.created_at) {
+  if (
+    conflict.resolved_at !== null &&
+    Date.parse(conflict.resolved_at) < Date.parse(conflict.created_at)
+  ) {
     issues.push("Agent conflict cannot resolve before it was created");
   }
 
