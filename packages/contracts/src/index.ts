@@ -10,6 +10,7 @@ export * from "./manager-runtime-gates.js";
 export * from "./manager-runtime-scenario-validation.js";
 export * from "./manager-runtime-scenarios.js";
 export * from "./manager-runtime-state.js";
+export * from "./manager-runtime-suite-gates.js";
 export * from "./model.js";
 export * from "./model-registry.js";
 export * from "./policy.js";
