@@ -1,7 +1,4 @@
-import {
-  validateScenarioCoverage,
-  type ManagerRuntimeScenario
-} from "./manager-runtime.js";
+import { validateScenarioCoverage, type ManagerRuntimeScenario } from "./manager-runtime.js";
 
 const EXPECTED_AUTONOMY_LEVELS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6"] as const;
 
