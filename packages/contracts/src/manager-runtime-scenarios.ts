@@ -42,20 +42,110 @@ export const MANAGER_RUNTIME_SCENARIOS = [
   },
   {
     contract_version: MANAGER_RUNTIME_CONTRACT_VERSION,
-    scenario_id: "runtime-autonomy-verdict-v1",
+    scenario_id: "runtime-autonomy-a0-v1",
     category: "autonomy",
-    title: "Manager planning cannot widen an A3 policy verdict",
+    title: "A0 keeps web context denied",
+    required_for: ["manager-runtime-v1", "policy-runtime-v1"],
+    fixture_refs: ["fixture-autonomy-a0-v1"],
+    autonomy_level: "A0",
+    assertions: [
+      { kind: "policy_verdict", operation_id: "a0-web-read", expected: "DENY" }
+    ],
+    invariant_ids: ["policy_is_authoritative", "manager_cannot_expand_permissions"]
+  },
+  {
+    contract_version: MANAGER_RUNTIME_CONTRACT_VERSION,
+    scenario_id: "runtime-autonomy-a1-v1",
+    category: "autonomy",
+    title: "A1 keeps web context scoped",
+    required_for: ["manager-runtime-v1", "policy-runtime-v1"],
+    fixture_refs: ["fixture-autonomy-a1-v1"],
+    autonomy_level: "A1",
+    assertions: [
+      {
+        kind: "policy_verdict",
+        operation_id: "a1-web-read",
+        expected: "ALLOW_WITH_LIMITS"
+      }
+    ],
+    invariant_ids: ["policy_is_authoritative", "scoped_access_remains_scoped"]
+  },
+  {
+    contract_version: MANAGER_RUNTIME_CONTRACT_VERSION,
+    scenario_id: "runtime-autonomy-a2-v1",
+    category: "autonomy",
+    title: "A2 requires confirmation before external communication",
+    required_for: ["manager-runtime-v1", "policy-runtime-v1"],
+    fixture_refs: ["fixture-autonomy-a2-v1"],
+    autonomy_level: "A2",
+    assertions: [
+      {
+        kind: "policy_verdict",
+        operation_id: "a2-external-communication",
+        expected: "NEEDS_CONFIRMATION"
+      }
+    ],
+    invariant_ids: ["policy_is_authoritative", "confirmation_cannot_be_fabricated"]
+  },
+  {
+    contract_version: MANAGER_RUNTIME_CONTRACT_VERSION,
+    scenario_id: "runtime-autonomy-a3-v1",
+    category: "autonomy",
+    title: "A3 still requires confirmation for production deployment",
     required_for: ["manager-runtime-v1", "policy-runtime-v1"],
     fixture_refs: ["fixture-autonomy-a3-v1"],
     autonomy_level: "A3",
     assertions: [
       {
         kind: "policy_verdict",
-        operation_id: "production-release-operation",
+        operation_id: "a3-production-release",
         expected: "NEEDS_CONFIRMATION"
       }
     ],
     invariant_ids: ["policy_is_authoritative", "manager_cannot_expand_permissions"]
+  },
+  {
+    contract_version: MANAGER_RUNTIME_CONTRACT_VERSION,
+    scenario_id: "runtime-autonomy-a4-v1",
+    category: "autonomy",
+    title: "A4 allows policy-authorized spending without weakening immutable controls",
+    required_for: ["manager-runtime-v1", "policy-runtime-v1"],
+    fixture_refs: ["fixture-autonomy-a4-v1"],
+    autonomy_level: "A4",
+    assertions: [
+      { kind: "policy_verdict", operation_id: "a4-budgeted-spend", expected: "ALLOW" }
+    ],
+    invariant_ids: ["policy_is_authoritative", "budget_and_ledger_controls_remain_required"]
+  },
+  {
+    contract_version: MANAGER_RUNTIME_CONTRACT_VERSION,
+    scenario_id: "runtime-autonomy-a5-v1",
+    category: "autonomy",
+    title: "A5 keeps the first production release confirmation-gated without its condition",
+    required_for: ["manager-runtime-v1", "policy-runtime-v1"],
+    fixture_refs: ["fixture-autonomy-a5-v1"],
+    autonomy_level: "A5",
+    assertions: [
+      {
+        kind: "policy_verdict",
+        operation_id: "a5-first-production-release",
+        expected: "NEEDS_CONFIRMATION"
+      }
+    ],
+    invariant_ids: ["policy_is_authoritative", "conditional_expansion_requires_condition"]
+  },
+  {
+    contract_version: MANAGER_RUNTIME_CONTRACT_VERSION,
+    scenario_id: "runtime-autonomy-a6-v1",
+    category: "autonomy",
+    title: "A6 uses FULL only after verified profile escalation and still cannot bypass system safety",
+    required_for: ["manager-runtime-v1", "policy-runtime-v1", "step-up-v1"],
+    fixture_refs: ["fixture-autonomy-a6-verified-v1"],
+    autonomy_level: "A6",
+    assertions: [
+      { kind: "policy_verdict", operation_id: "a6-credit-capability", expected: "ALLOW" }
+    ],
+    invariant_ids: ["a6_requires_verified_step_up", "immutable_safety_survives_a6"]
   },
   {
     contract_version: MANAGER_RUNTIME_CONTRACT_VERSION,
