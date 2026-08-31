@@ -18,7 +18,9 @@ export const runManagerRuntimeScenarioSuite = (input: {
   );
 
   if (requiredScenarios.length === 0) {
-    catalogIssues.push(`No runtime scenarios are registered for increment ${input.targetIncrement}`);
+    catalogIssues.push(
+      `No runtime scenarios are registered for increment ${input.targetIncrement}`
+    );
   }
 
   const setsByScenarioId = new Map<string, ScenarioObservationSet[]>();
