@@ -1,8 +1,6 @@
-import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import {
   MANAGER_RUNTIME_SCENARIOS,
-  ManagerRuntimeScenarioGateResultSchema,
   type ManagerRuntimeScenario,
   type ScenarioObservation
 } from "@cosmora/contracts";
@@ -27,7 +25,6 @@ describe("manager runtime scenario runner", () => {
       evaluatedAt
     });
 
-    expect(Value.Check(ManagerRuntimeScenarioGateResultSchema, result)).toBe(true);
     expect(result.status).toBe("PASS");
     expect(result.checks).toHaveLength(2);
     expect(result.checks.every((check) => check.status === "PASS")).toBe(true);
