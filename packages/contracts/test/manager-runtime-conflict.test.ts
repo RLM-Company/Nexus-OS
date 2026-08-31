@@ -81,6 +81,19 @@ describe("manager runtime conflict semantics", () => {
     );
   });
 
+  it("orders optional milliseconds by instant instead of raw text", () => {
+    const conflict: AgentConflict = {
+      ...baseConflict("resolved"),
+      resolution_artifact_id: "decision-1",
+      created_at: "2026-08-31T18:00:00.001Z",
+      resolved_at: "2026-08-31T18:00:00Z"
+    };
+
+    expect(validateAgentConflictLifecycle(conflict)).toContain(
+      "Agent conflict cannot resolve before it was created"
+    );
+  });
+
   it("keeps arbitration authority exclusive to the declared role contract", () => {
     expect(roleCanArbitrateAgentConflict("manager")).toBe(true);
     for (const role of ["architect", "researcher", "analyst", "critic"] as const) {
