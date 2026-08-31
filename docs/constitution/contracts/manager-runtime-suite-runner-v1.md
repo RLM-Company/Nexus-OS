@@ -2,7 +2,7 @@
 
 > Статус: `AGGREGATE RELEASE GATE / NO RUNTIME AUTHORITY`  
 > Дата: `2026-08-31`  
-> Verification target: `main@936ed77260e07d7614264a153ff252be322e53a5`
+> Verification target: `main@dfdf32e9485bf9baa84393b62456dc74641b93fb`
 
 ## Назначение
 
