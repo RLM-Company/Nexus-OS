@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("shows the project autonomy profile and runtime state without mutating policy", async ({
+test("previews an authority diff before applying an autonomy profile change", async ({
   page,
   request
 }) => {
@@ -22,7 +22,7 @@ test("shows the project autonomy profile and runtime state without mutating poli
 
   await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
 
-  await expect(page.getByText("Read-only overview")).toBeVisible();
+  await expect(page.getByText("Preview before apply")).toBeVisible();
   await expect(
     page.getByRole("heading", {
       name: "Полномочия, подтверждения и аварийное состояние — в одном месте"
@@ -39,13 +39,36 @@ test("shows the project autonomy profile and runtime state without mutating poli
   await expect(page.getByText("Нет ожидающих подтверждений.")).toBeVisible();
   await expect(page.getByText("CLEAR", { exact: true })).toBeVisible();
 
+  await page.getByRole("button", { name: "Выбрать уровень A4" }).click();
+  const authorityDiff = page.getByRole("region", {
+    name: "Проверка перед изменением уровня"
+  });
+  await expect(authorityDiff).toBeVisible();
+  await expect(authorityDiff).toContainText("A3 → A4");
+  await expect(authorityDiff).toContainText("finance.spend");
+  await expect(authorityDiff).toContainText("CONFIRM");
+  await expect(authorityDiff).toContainText("AUTONOMOUS");
+
+  const beforeApply = await request.get(profileUrl);
+  expect(beforeApply.ok()).toBeTruthy();
+  expect(
+    ((await beforeApply.json()) as { profile: { base_level: string; version: number } }).profile
+  ).toMatchObject({ base_level: "A3", version: 2 });
+
+  await page.getByLabel("Я проверил изменения полномочий и хочу применить их.").check();
+  await page.getByRole("button", { name: "Применить A4" }).click();
+
+  await expect(levelMetric).toContainText("A4");
+  await expect(levelMetric).toContainText("profile v3");
+  await expect(page.getByRole("status")).toContainText("Уровень автономии изменён на A4");
+
   await expect(page.getByRole("button", { name: /approve|подтверд/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /reject|отклон/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /emergency|аварийн/i })).toHaveCount(0);
 
-  const after = await request.get(profileUrl);
-  expect(after.ok()).toBeTruthy();
+  const afterApply = await request.get(profileUrl);
+  expect(afterApply.ok()).toBeTruthy();
   expect(
-    ((await after.json()) as { profile: { base_level: string; version: number } }).profile
-  ).toMatchObject({ base_level: "A3", version: 2 });
+    ((await afterApply.json()) as { profile: { base_level: string; version: number } }).profile
+  ).toMatchObject({ base_level: "A4", version: 3 });
 });

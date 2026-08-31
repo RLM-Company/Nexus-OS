@@ -264,6 +264,18 @@ export const CapabilityProfileResponseSchema = Type.Object(
 );
 export type CapabilityProfileResponse = Static<typeof CapabilityProfileResponseSchema>;
 
+export const CapabilityProfilePreviewResponseSchema = Type.Object(
+  {
+    current_version: Type.Integer({ minimum: 1 }),
+    proposed_profile: CapabilityProfileSchema,
+    requires_step_up: Type.Boolean()
+  },
+  { additionalProperties: false }
+);
+export type CapabilityProfilePreviewResponse = Static<
+  typeof CapabilityProfilePreviewResponseSchema
+>;
+
 export const AUTONOMY_LEVELS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6"] as const;
 
 export const CAPABILITY_IDS = [

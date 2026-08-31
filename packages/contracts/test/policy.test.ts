@@ -4,10 +4,12 @@ import {
   AUTONOMY_LEVELS,
   AUTONOMY_MATRIX,
   CAPABILITY_IDS,
+  CapabilityProfilePreviewResponseSchema,
   CapabilityProfileSchema,
   PermissionContractSchema,
   PolicyEvaluationEnvelopeSchema,
   PolicyVerdictSchema,
+  createCapabilityProfile,
   getCapabilityMode,
   isAtLeastAsAutonomous,
   verdictForModes
@@ -89,6 +91,22 @@ describe("autonomy policy contracts", () => {
         overrides: [],
         version: 1,
         issued_at: "2026-08-24T12:00:00Z"
+      })
+    ).toBe(true);
+  });
+
+  it("accepts a non-mutating capability profile preview", () => {
+    expect(
+      Value.Check(CapabilityProfilePreviewResponseSchema, {
+        current_version: 1,
+        proposed_profile: createCapabilityProfile({
+          profileId: "profile-1",
+          projectId: "project-1",
+          baseLevel: "A4",
+          version: 2,
+          issuedAt: "2026-08-31T21:45:00Z"
+        }),
+        requires_step_up: false
       })
     ).toBe(true);
   });
