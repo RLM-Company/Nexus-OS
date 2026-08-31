@@ -87,7 +87,9 @@ const observationMatches = (
     case "runtime_state":
       return observation.kind === "runtime_state" && observation.actual === assertion.expected;
     case "artifact_visibility":
-      return observation.kind === "artifact_visibility" && observation.visible === assertion.visible;
+      return (
+        observation.kind === "artifact_visibility" && observation.visible === assertion.visible
+      );
     case "operation_effect_count":
       return (
         observation.kind === "operation_effect_count" && observation.actual === assertion.expected
