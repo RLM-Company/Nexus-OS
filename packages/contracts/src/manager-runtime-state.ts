@@ -81,10 +81,7 @@ export const validateRuntimeContextEnvelope = (context: RuntimeContextEnvelope):
   ) {
     issues.push("D4 private chat context cannot write back to persistent memory");
   }
-  if (
-    context.memory_scope.read_mode === "none" &&
-    context.memory_scope.source_ids.length > 0
-  ) {
+  if (context.memory_scope.read_mode === "none" && context.memory_scope.source_ids.length > 0) {
     issues.push("Memory source IDs require a non-none memory read mode");
   }
 
@@ -103,9 +100,7 @@ export const validateRuntimeArtifactExchange = (input: {
     issues.push("Artifact exchange crosses the target project boundary");
   }
   if (!roleContract.accepts.includes(input.artifact.kind as RuntimeArtifactKind)) {
-    issues.push(
-      `Role ${input.targetRole} does not accept artifact kind ${input.artifact.kind}`
-    );
+    issues.push(`Role ${input.targetRole} does not accept artifact kind ${input.artifact.kind}`);
   }
   if (input.artifact.instruction_treatment !== "data_only") {
     issues.push("Artifact exchange attempted to introduce a new instruction authority");
