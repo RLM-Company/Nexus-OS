@@ -94,10 +94,31 @@ type CenterData = {
   operations: OperationsStatus;
 };
 
+type ProfilePreview = {
+  current_version: number;
+  proposed_profile: CapabilityProfile;
+  requires_step_up: boolean;
+};
+
+type ApiOptions = {
+  method?: "GET" | "POST" | "PUT";
+  body?: unknown;
+  headers?: Record<string, string>;
+};
+
 const LEVELS: AutonomyLevel[] = ["A0", "A1", "A2", "A3", "A4", "A5", "A6"];
 
-const api = async <T,>(url: string): Promise<T> => {
-  const response = await fetch(url, { cache: "no-store" });
+const api = async <T,>(url: string, options: ApiOptions = {}): Promise<T> => {
+  const headers =
+    options.body === undefined
+      ? options.headers
+      : { "content-type": "application/json", ...options.headers };
+  const response = await fetch(url, {
+    cache: "no-store",
+    method: options.method ?? "GET",
+    ...(headers ? { headers } : {}),
+    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) ?? "null" })
+  });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
       error?: { message?: string };
@@ -124,11 +145,21 @@ export default function ControlCenterPage() {
   const [draftProjectId, setDraftProjectId] = useState("");
   const [data, setData] = useState<CenterData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [preview, setPreview] = useState<ProfilePreview | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [stepUpToken, setStepUpToken] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (id: string): Promise<void> => {
     setLoading(true);
     setError(null);
+    setNotice(null);
+    setPreview(null);
+    setAcknowledged(false);
+    setStepUpToken("");
     try {
       const [profileResponse, confirmationsResponse, operations] = await Promise.all([
         api<{ profile: CapabilityProfile }>(
@@ -159,6 +190,7 @@ export default function ControlCenterPage() {
 
   const openProject = (event: FormEvent): void => {
     event.preventDefault();
+    if (previewing || applying) return;
     const id = draftProjectId.trim();
     if (!id) return;
     window.history.replaceState(null, "", `/control-center?project=${encodeURIComponent(id)}`);
@@ -175,6 +207,84 @@ export default function ControlCenterPage() {
     [data]
   );
 
+  const profileChanges = useMemo(() => {
+    if (!data || !preview) return [];
+    const currentModes = new Map(
+      data.profile.grants.map((grant) => [grant.capability_id, grant.mode] as const)
+    );
+    return preview.proposed_profile.grants.flatMap((grant) => {
+      const from = currentModes.get(grant.capability_id);
+      return from && from !== grant.mode
+        ? [{ capability_id: grant.capability_id, from, to: grant.mode }]
+        : [];
+    });
+  }, [data, preview]);
+
+  const previewLevel = async (level: AutonomyLevel): Promise<void> => {
+    if (!data || level === data.profile.base_level || previewing || applying) return;
+    setPreviewing(true);
+    setPreview(null);
+    setAcknowledged(false);
+    setStepUpToken("");
+    setNotice(null);
+    setError(null);
+    try {
+      const nextPreview = await api<ProfilePreview>(
+        `/api/v1/projects/${encodeURIComponent(data.profile.project_id)}/autonomy-profile/preview`,
+        {
+          method: "POST",
+          body: {
+            base_level: level,
+            overrides: data.profile.overrides,
+            expected_version: data.profile.version
+          }
+        }
+      );
+      setPreview(nextPreview);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось построить preview полномочий");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const applyPreview = async (): Promise<void> => {
+    if (!data || !preview || !acknowledged || applying) return;
+    const token = stepUpToken.trim();
+    if (preview.requires_step_up && !token) {
+      setError("Для этого уровня нужен одноразовый step-up токен");
+      return;
+    }
+    setApplying(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await api<{ profile: CapabilityProfile }>(
+        `/api/v1/projects/${encodeURIComponent(data.profile.project_id)}/autonomy-profile`,
+        {
+          method: "PUT",
+          ...(preview.requires_step_up ? { headers: { "x-step-up-token": token } } : {}),
+          body: {
+            base_level: preview.proposed_profile.base_level,
+            overrides: preview.proposed_profile.overrides,
+            expected_version: preview.current_version
+          }
+        }
+      );
+      setData((current) => (current ? { ...current, profile: response.profile } : current));
+      setPreview(null);
+      setAcknowledged(false);
+      setNotice(
+        `Уровень автономии изменён на ${response.profile.base_level}; активна версия ${response.profile.version}.`
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось применить профиль полномочий");
+    } finally {
+      setStepUpToken("");
+      setApplying(false);
+    }
+  };
+
   return (
     <main className={styles.shell}>
       <header className={styles.topbar}>
@@ -186,7 +296,7 @@ export default function ControlCenterPage() {
           </div>
         </div>
         <div className={styles.readOnly}>
-          <i /> Read-only overview
+          <i /> Preview before apply
         </div>
         <Link href="/" className={styles.back}>
           ← Рабочая область
@@ -198,8 +308,9 @@ export default function ControlCenterPage() {
           <span className={styles.eyebrow}>Policy Runtime</span>
           <h1>Полномочия, подтверждения и аварийное состояние — в одном месте</h1>
           <p>
-            Этот первый экран шага 5 только показывает фактическое состояние Policy Runtime. Он не
-            меняет A0–A6, не подтверждает действия и не включает emergency stop.
+            Уровень A0–A6 теперь можно изменить только после серверного preview и явной проверки
+            разницы. Подтверждения и emergency stop в этом блоке по-прежнему доступны только для
+            просмотра.
           </p>
         </div>
         <form className={styles.projectForm} onSubmit={openProject}>
@@ -212,14 +323,23 @@ export default function ControlCenterPage() {
               placeholder="project-id"
               autoComplete="off"
             />
-            <button disabled={!draftProjectId.trim() || loading}>
+            <button disabled={!draftProjectId.trim() || loading || previewing || applying}>
               {loading ? "Загрузка…" : "Открыть"}
             </button>
           </div>
         </form>
       </section>
 
-      {error && <p className={styles.error}>{error}</p>}
+      {error && (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p className={styles.notice} role="status" aria-live="polite">
+          {notice}
+        </p>
+      )}
 
       {!projectId ? (
         <section className={styles.emptyState}>
@@ -256,12 +376,124 @@ export default function ControlCenterPage() {
 
           <section className={styles.levelStrip} aria-label="Шкала автономности A0–A6">
             {LEVELS.map((level) => (
-              <div key={level} data-active={level === data.profile.base_level}>
+              <button
+                type="button"
+                key={level}
+                data-active={level === data.profile.base_level}
+                data-selected={level === preview?.proposed_profile.base_level}
+                aria-label={`Выбрать уровень ${level}`}
+                aria-pressed={
+                  level === data.profile.base_level ||
+                  level === preview?.proposed_profile.base_level
+                }
+                disabled={
+                  level === data.profile.base_level ||
+                  level === preview?.proposed_profile.base_level ||
+                  loading ||
+                  previewing ||
+                  applying
+                }
+                onClick={() => void previewLevel(level)}
+              >
                 <strong>{level}</strong>
-                <span>{level === data.profile.base_level ? "текущий" : ""}</span>
-              </div>
+                <span>
+                  {level === data.profile.base_level
+                    ? "текущий"
+                    : level === preview?.proposed_profile.base_level
+                      ? "preview"
+                      : "выбрать"}
+                </span>
+              </button>
             ))}
           </section>
+
+          {previewing && (
+            <p className={styles.previewing} role="status">
+              Рассчитываю точную разницу полномочий…
+            </p>
+          )}
+
+          {preview && (
+            <section className={styles.changePreview} aria-labelledby="authority-preview-title">
+              <header>
+                <div>
+                  <span className={styles.eyebrow}>Authority diff</span>
+                  <h2 id="authority-preview-title">Проверка перед изменением уровня</h2>
+                </div>
+                <strong>
+                  {data.profile.base_level} → {preview.proposed_profile.base_level}
+                </strong>
+              </header>
+              <p className={styles.previewExplanation}>
+                Preview рассчитан сервером для profile v{preview.current_version}. Профиль ещё не
+                изменён.
+              </p>
+              <div className={styles.diffList} aria-label="Изменения полномочий">
+                {profileChanges.map((change) => (
+                  <article key={change.capability_id}>
+                    <span>{change.capability_id}</span>
+                    <div>
+                      <em data-mode={change.from}>{change.from}</em>
+                      <b aria-hidden="true">→</b>
+                      <em data-mode={change.to}>{change.to}</em>
+                    </div>
+                  </article>
+                ))}
+                {profileChanges.length === 0 && (
+                  <p className={styles.muted}>Эффективные режимы capabilities не изменятся.</p>
+                )}
+              </div>
+
+              <label className={styles.acknowledgement}>
+                <input
+                  type="checkbox"
+                  checked={acknowledged}
+                  onChange={(event) => setAcknowledged(event.target.checked)}
+                />
+                <span>Я проверил изменения полномочий и хочу применить их.</span>
+              </label>
+
+              {preview.requires_step_up && (
+                <label className={styles.stepUp}>
+                  <span>Одноразовый step-up токен</span>
+                  <input
+                    type="password"
+                    value={stepUpToken}
+                    onChange={(event) => setStepUpToken(event.target.value)}
+                    autoComplete="one-time-code"
+                    placeholder="Требуется для полного доступа"
+                  />
+                  <small>Токен не сохраняется и очищается сразу после запроса.</small>
+                </label>
+              )}
+
+              <div className={styles.previewActions}>
+                <button
+                  type="button"
+                  className={styles.applyButton}
+                  disabled={
+                    !acknowledged || applying || (preview.requires_step_up && !stepUpToken.trim())
+                  }
+                  onClick={() => void applyPreview()}
+                >
+                  {applying ? "Применяю…" : `Применить ${preview.proposed_profile.base_level}`}
+                </button>
+                <button
+                  type="button"
+                  className={styles.cancelButton}
+                  disabled={applying}
+                  onClick={() => {
+                    setPreview(null);
+                    setAcknowledged(false);
+                    setStepUpToken("");
+                    setError(null);
+                  }}
+                >
+                  Отменить
+                </button>
+              </div>
+            </section>
+          )}
 
           <div className={styles.grid}>
             <section className={styles.panel}>

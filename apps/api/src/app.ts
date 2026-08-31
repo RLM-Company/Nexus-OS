@@ -14,6 +14,7 @@ import {
   AUTONOMY_MATRIX,
   BehaviorPatternListResponseSchema,
   BehaviorPatternSchema,
+  CapabilityProfilePreviewResponseSchema,
   CapabilityProfileResponseSchema,
   ConfirmationDecisionRequestSchema,
   ConfirmationListResponseSchema,
@@ -42,6 +43,7 @@ import {
   RunCancelResponseSchema,
   RuntimeOperationsStatusSchema,
   UpdateCapabilityProfileRequestSchema,
+  createCapabilityProfile,
   requiresStepUp,
   type ApiError,
   type AgentBlueprintListResponse,
@@ -50,6 +52,7 @@ import {
   type AgentStudioDecisionEventListResponse,
   type BehaviorPatternListResponse,
   type CapabilityId,
+  type CapabilityProfilePreviewResponse,
   type CapabilityProfileResponse,
   type ConfirmationListResponse,
   type EmergencyStopState,
@@ -1265,6 +1268,67 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
           }
           const response: CapabilityProfileResponse = { profile };
+          return response;
+        }
+      );
+
+      app.post(
+        "/api/v1/projects/:projectId/autonomy-profile/preview",
+        {
+          schema: {
+            params: {
+              type: "object",
+              properties: { projectId: { type: "string", minLength: 1 } },
+              required: ["projectId"],
+              additionalProperties: false
+            },
+            body: UpdateCapabilityProfileRequestSchema,
+            response: {
+              200: CapabilityProfilePreviewResponseSchema,
+              404: ApiErrorSchema,
+              409: ApiErrorSchema
+            }
+          }
+        },
+        async (request, reply) => {
+          const identity = identityFor(request);
+          if (!store.getProject(request.params.projectId, identity.owner_id)) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          const current = policyStore.getProfile(request.params.projectId);
+          if (!current) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          if (current.version !== request.body.expected_version) {
+            return reply
+              .status(409)
+              .send(
+                errorBody(
+                  request.id,
+                  "AUTONOMY_PROFILE_CONFLICT",
+                  "Autonomy profile version changed"
+                )
+              );
+          }
+          const response: CapabilityProfilePreviewResponse = {
+            current_version: current.version,
+            proposed_profile: createCapabilityProfile({
+              profileId: current.profile_id,
+              projectId: current.project_id,
+              baseLevel: request.body.base_level,
+              overrides: request.body.overrides,
+              version: current.version + 1,
+              issuedAt: new Date().toISOString()
+            }),
+            requires_step_up: profileUpdateRequiresStepUp(
+              request.body.base_level,
+              request.body.overrides
+            )
+          };
           return response;
         }
       );

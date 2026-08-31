@@ -80,6 +80,50 @@ describe("autonomy and confirmation API", () => {
     expect(stale.statusCode).toBe(409);
   });
 
+  it("previews authority changes without mutating the stored profile", async () => {
+    const preview = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${projectId}/autonomy-profile/preview`,
+      payload: { base_level: "A4", overrides: [], expected_version: 1 }
+    });
+    expect(preview.statusCode).toBe(200);
+    expect(
+      preview.json<{
+        current_version: number;
+        proposed_profile: { base_level: string; version: number };
+        requires_step_up: boolean;
+      }>()
+    ).toMatchObject({
+      current_version: 1,
+      proposed_profile: { base_level: "A4", version: 2 },
+      requires_step_up: false
+    });
+
+    const stored = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/autonomy-profile`
+    });
+    expect(
+      stored.json<{ profile: { base_level: string; version: number } }>().profile
+    ).toMatchObject({ base_level: "A0", version: 1 });
+
+    const a6Preview = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${projectId}/autonomy-profile/preview`,
+      payload: { base_level: "A6", overrides: [], expected_version: 1 }
+    });
+    expect(a6Preview.statusCode).toBe(200);
+    expect(a6Preview.json<{ requires_step_up: boolean }>().requires_step_up).toBe(true);
+    expect(consumedStepUps).toHaveLength(0);
+
+    const stale = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${projectId}/autonomy-profile/preview`,
+      payload: { base_level: "A4", overrides: [], expected_version: 0 }
+    });
+    expect(stale.statusCode).toBe(409);
+  });
+
   it("requires verified step-up before enabling A6", async () => {
     const denied = await app.inject({
       method: "PUT",
