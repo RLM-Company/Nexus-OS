@@ -69,7 +69,9 @@ const criticVerdict = (
 
 describe("Manager runtime contracts", () => {
   it("keeps all five roles project-bound and unable to bypass policy or issue authority", () => {
-    expect(Object.keys(MANAGER_RUNTIME_ROLE_CONTRACTS).sort()).toEqual([...MANAGER_RUNTIME_ROLES].sort());
+    expect(Object.keys(MANAGER_RUNTIME_ROLE_CONTRACTS).sort()).toEqual(
+      [...MANAGER_RUNTIME_ROLES].sort()
+    );
 
     for (const role of MANAGER_RUNTIME_ROLES) {
       const contract = MANAGER_RUNTIME_ROLE_CONTRACTS[role];
@@ -112,7 +114,10 @@ describe("Manager runtime contracts", () => {
 
     expect(Value.Check(RuntimeArtifactSchema, artifact)).toBe(true);
     expect(
-      Value.Check(RuntimeArtifactSchema, { ...artifact, instruction_treatment: "execute_as_instruction" })
+      Value.Check(RuntimeArtifactSchema, {
+        ...artifact,
+        instruction_treatment: "execute_as_instruction"
+      })
     ).toBe(false);
   });
 
@@ -163,14 +168,19 @@ describe("Manager runtime contracts", () => {
     );
   });
 
-  it("ships one valid machine-readable release gate for every required Step 6 scenario", () => {
+  it("ships valid release gates for every Step 6 category and all A0-A6 levels", () => {
     for (const scenario of MANAGER_RUNTIME_SCENARIOS) {
       expect(Value.Check(ManagerRuntimeScenarioSchema, scenario), scenario.scenario_id).toBe(true);
     }
     expect(validateScenarioCoverage(MANAGER_RUNTIME_SCENARIOS)).toEqual([]);
-    expect(new Set(MANAGER_RUNTIME_SCENARIOS.map((scenario) => scenario.category)).size).toBe(
-      MANAGER_RUNTIME_SCENARIOS.length
-    );
+
+    const autonomyLevels = MANAGER_RUNTIME_SCENARIOS.filter(
+      (scenario) => scenario.category === "autonomy"
+    )
+      .map((scenario) => scenario.autonomy_level)
+      .sort();
+    expect(autonomyLevels).toEqual(["A0", "A1", "A2", "A3", "A4", "A5", "A6"]);
+
     expect(new Set(MANAGER_RUNTIME_SCENARIOS.map((scenario) => scenario.scenario_id)).size).toBe(
       MANAGER_RUNTIME_SCENARIOS.length
     );
