@@ -8,8 +8,7 @@ import {
   RuntimeDataClassSchema,
   RuntimeTaskStatusSchema,
   type ManagerRuntimeRole,
-  type RuntimeArtifact,
-  type RuntimeArtifactKind
+  type RuntimeArtifact
 } from "./manager-runtime.js";
 import { EntityIdSchema, IsoDateTimeSchema } from "./primitives.js";
 
@@ -99,7 +98,7 @@ export const validateRuntimeArtifactExchange = (input: {
   if (input.artifact.project_id !== input.targetProjectId) {
     issues.push("Artifact exchange crosses the target project boundary");
   }
-  if (!roleContract.accepts.includes(input.artifact.kind as RuntimeArtifactKind)) {
+  if (!roleContract.accepts.includes(input.artifact.kind)) {
     issues.push(`Role ${input.targetRole} does not accept artifact kind ${input.artifact.kind}`);
   }
   if (input.artifact.instruction_treatment !== "data_only") {
