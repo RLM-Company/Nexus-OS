@@ -50,6 +50,7 @@ type Confirmation = {
     reasons: string[];
   };
   status: ConfirmationStatus;
+  challenge_nonce: string;
   requires_step_up: boolean;
   requested_at: string;
   expires_at: string;
@@ -150,6 +151,11 @@ export default function ControlCenterPage() {
   const [preview, setPreview] = useState<ProfilePreview | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [stepUpToken, setStepUpToken] = useState("");
+  const [selectedConfirmationId, setSelectedConfirmationId] = useState<string | null>(null);
+  const [decisionReason, setDecisionReason] = useState("");
+  const [decisionAcknowledged, setDecisionAcknowledged] = useState(false);
+  const [confirmationStepUpToken, setConfirmationStepUpToken] = useState("");
+  const [deciding, setDeciding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -160,6 +166,10 @@ export default function ControlCenterPage() {
     setPreview(null);
     setAcknowledged(false);
     setStepUpToken("");
+    setSelectedConfirmationId(null);
+    setDecisionReason("");
+    setDecisionAcknowledged(false);
+    setConfirmationStepUpToken("");
     try {
       const [profileResponse, confirmationsResponse, operations] = await Promise.all([
         api<{ profile: CapabilityProfile }>(
@@ -190,7 +200,7 @@ export default function ControlCenterPage() {
 
   const openProject = (event: FormEvent): void => {
     event.preventDefault();
-    if (previewing || applying) return;
+    if (previewing || applying || deciding) return;
     const id = draftProjectId.trim();
     if (!id) return;
     window.history.replaceState(null, "", `/control-center?project=${encodeURIComponent(id)}`);
@@ -205,6 +215,11 @@ export default function ControlCenterPage() {
   const confirmationHistory = useMemo(
     () => data?.confirmations.filter((item) => item.status !== "PENDING") ?? [],
     [data]
+  );
+  const selectedConfirmation = useMemo(
+    () =>
+      pendingConfirmations.find((item) => item.confirmation_id === selectedConfirmationId) ?? null,
+    [pendingConfirmations, selectedConfirmationId]
   );
 
   const profileChanges = useMemo(() => {
@@ -221,11 +236,15 @@ export default function ControlCenterPage() {
   }, [data, preview]);
 
   const previewLevel = async (level: AutonomyLevel): Promise<void> => {
-    if (!data || level === data.profile.base_level || previewing || applying) return;
+    if (!data || level === data.profile.base_level || previewing || applying || deciding) return;
     setPreviewing(true);
     setPreview(null);
     setAcknowledged(false);
     setStepUpToken("");
+    setSelectedConfirmationId(null);
+    setDecisionReason("");
+    setDecisionAcknowledged(false);
+    setConfirmationStepUpToken("");
     setNotice(null);
     setError(null);
     try {
@@ -249,7 +268,7 @@ export default function ControlCenterPage() {
   };
 
   const applyPreview = async (): Promise<void> => {
-    if (!data || !preview || !acknowledged || applying) return;
+    if (!data || !preview || !acknowledged || applying || deciding) return;
     const token = stepUpToken.trim();
     if (preview.requires_step_up && !token) {
       setError("Для этого уровня нужен одноразовый step-up токен");
@@ -285,6 +304,74 @@ export default function ControlCenterPage() {
     }
   };
 
+  const reviewConfirmation = (confirmationId: string): void => {
+    if (previewing || applying || deciding) return;
+    setPreview(null);
+    setAcknowledged(false);
+    setStepUpToken("");
+    setSelectedConfirmationId(confirmationId);
+    setDecisionReason("");
+    setDecisionAcknowledged(false);
+    setConfirmationStepUpToken("");
+    setNotice(null);
+    setError(null);
+  };
+
+  const decideConfirmation = async (decision: "approve" | "reject"): Promise<void> => {
+    if (!selectedConfirmation || !decisionAcknowledged || deciding) return;
+    const reason = decisionReason.trim();
+    const token = confirmationStepUpToken.trim();
+    if (decision === "reject" && !reason) {
+      setError("Для отклонения укажите причину");
+      return;
+    }
+    if (decision === "approve" && selectedConfirmation.requires_step_up && !token) {
+      setError("Для критического одобрения нужен одноразовый step-up токен");
+      return;
+    }
+    setDeciding(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await api<Confirmation>(
+        `/api/v1/confirmations/${encodeURIComponent(selectedConfirmation.confirmation_id)}/${decision}`,
+        {
+          method: "POST",
+          ...(decision === "approve" && selectedConfirmation.requires_step_up
+            ? { headers: { "x-step-up-token": token } }
+            : {}),
+          body: {
+            challenge_nonce: selectedConfirmation.challenge_nonce,
+            ...(reason ? { reason } : {})
+          }
+        }
+      );
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              confirmations: current.confirmations.map((item) =>
+                item.confirmation_id === updated.confirmation_id ? updated : item
+              )
+            }
+          : current
+      );
+      setSelectedConfirmationId(null);
+      setDecisionReason("");
+      setDecisionAcknowledged(false);
+      setNotice(
+        decision === "approve"
+          ? "Действие одобрено; решение сохранено Policy Runtime."
+          : "Действие отклонено; причина сохранена в истории."
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось сохранить решение владельца");
+    } finally {
+      setConfirmationStepUpToken("");
+      setDeciding(false);
+    }
+  };
+
   return (
     <main className={styles.shell}>
       <header className={styles.topbar}>
@@ -296,7 +383,7 @@ export default function ControlCenterPage() {
           </div>
         </div>
         <div className={styles.readOnly}>
-          <i /> Preview before apply
+          <i /> Guarded owner actions
         </div>
         <Link href="/" className={styles.back}>
           ← Рабочая область
@@ -309,8 +396,8 @@ export default function ControlCenterPage() {
           <h1>Полномочия, подтверждения и аварийное состояние — в одном месте</h1>
           <p>
             Уровень A0–A6 теперь можно изменить только после серверного preview и явной проверки
-            разницы. Подтверждения и emergency stop в этом блоке по-прежнему доступны только для
-            просмотра.
+            разницы. Ожидающие действия проходят отдельную проверку перед approve/reject; emergency
+            stop в этом блоке пока доступен только для просмотра.
           </p>
         </div>
         <form className={styles.projectForm} onSubmit={openProject}>
@@ -323,7 +410,9 @@ export default function ControlCenterPage() {
               placeholder="project-id"
               autoComplete="off"
             />
-            <button disabled={!draftProjectId.trim() || loading || previewing || applying}>
+            <button
+              disabled={!draftProjectId.trim() || loading || previewing || applying || deciding}
+            >
               {loading ? "Загрузка…" : "Открыть"}
             </button>
           </div>
@@ -391,7 +480,8 @@ export default function ControlCenterPage() {
                   level === preview?.proposed_profile.base_level ||
                   loading ||
                   previewing ||
-                  applying
+                  applying ||
+                  deciding
                 }
                 onClick={() => void previewLevel(level)}
               >
@@ -564,11 +654,122 @@ export default function ControlCenterPage() {
                       <strong>{confirmation.intent.purpose}</strong>
                       <em data-status={confirmation.status}>{confirmation.status}</em>
                     </div>
-                    <p>{confirmation.intent.capability_ids.join(" · ")}</p>
-                    <small>
-                      {confirmation.requires_step_up ? "step-up required" : "session approval"} ·
-                      expires {dateTime(confirmation.expires_at)}
-                    </small>
+                    <dl className={styles.confirmationDetails}>
+                      <div>
+                        <dt>Действие</dt>
+                        <dd>{confirmation.intent.capability_ids.join(" · ")}</dd>
+                      </div>
+                      <div>
+                        <dt>Цель / объект</dt>
+                        <dd>
+                          {confirmation.intent.object_ids.length > 0
+                            ? confirmation.intent.object_ids.join(" · ")
+                            : "Без конкретного объекта"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Риск</dt>
+                        <dd>{confirmation.verdict.reasons.join(" · ")}</dd>
+                      </div>
+                      <div>
+                        <dt>Ожидаемый эффект</dt>
+                        <dd>{confirmation.intent.purpose}</dd>
+                      </div>
+                      <div>
+                        <dt>Срок решения</dt>
+                        <dd>{dateTime(confirmation.expires_at)}</dd>
+                      </div>
+                    </dl>
+
+                    {selectedConfirmationId !== confirmation.confirmation_id ? (
+                      <button
+                        type="button"
+                        className={styles.reviewButton}
+                        disabled={previewing || applying || deciding}
+                        onClick={() => reviewConfirmation(confirmation.confirmation_id)}
+                      >
+                        Рассмотреть
+                      </button>
+                    ) : (
+                      <section
+                        className={styles.decisionPanel}
+                        aria-label={`Решение по операции ${confirmation.operation_id}`}
+                      >
+                        <p>
+                          {confirmation.requires_step_up
+                            ? "Критическое одобрение требует step-up. Отклонение остаётся доступно без него."
+                            : "Решение будет записано от текущей сессии владельца."}
+                        </p>
+                        <label className={styles.decisionReason}>
+                          <span>Комментарий владельца</span>
+                          <textarea
+                            value={decisionReason}
+                            onChange={(event) => setDecisionReason(event.target.value)}
+                            maxLength={2000}
+                            placeholder="Обязателен для отклонения"
+                          />
+                        </label>
+                        <label className={styles.acknowledgement}>
+                          <input
+                            type="checkbox"
+                            checked={decisionAcknowledged}
+                            onChange={(event) => setDecisionAcknowledged(event.target.checked)}
+                          />
+                          <span>Я проверил действие, цель, объекты, риск и срок.</span>
+                        </label>
+
+                        {confirmation.requires_step_up && (
+                          <label className={styles.stepUp}>
+                            <span>Одноразовый step-up токен для одобрения</span>
+                            <input
+                              type="password"
+                              value={confirmationStepUpToken}
+                              onChange={(event) => setConfirmationStepUpToken(event.target.value)}
+                              autoComplete="one-time-code"
+                              placeholder="Для кнопки «Одобрить»"
+                            />
+                            <small>Токен не нужен для отказа и очищается после запроса.</small>
+                          </label>
+                        )}
+
+                        <div className={styles.decisionActions}>
+                          <button
+                            type="button"
+                            className={styles.approveButton}
+                            disabled={
+                              !decisionAcknowledged ||
+                              deciding ||
+                              (confirmation.requires_step_up && !confirmationStepUpToken.trim())
+                            }
+                            onClick={() => void decideConfirmation("approve")}
+                          >
+                            {deciding ? "Сохраняю…" : "Одобрить"}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.rejectButton}
+                            disabled={!decisionAcknowledged || !decisionReason.trim() || deciding}
+                            onClick={() => void decideConfirmation("reject")}
+                          >
+                            Отклонить
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.cancelButton}
+                            disabled={deciding}
+                            onClick={() => {
+                              setSelectedConfirmationId(null);
+                              setDecisionReason("");
+                              setDecisionAcknowledged(false);
+                              setConfirmationStepUpToken("");
+                              setError(null);
+                            }}
+                          >
+                            Закрыть
+                          </button>
+                        </div>
+                      </section>
+                    )}
                   </article>
                 ))}
                 {pendingConfirmations.length === 0 && (
@@ -592,8 +793,12 @@ export default function ControlCenterPage() {
                       <strong>{confirmation.intent.purpose}</strong>
                       <em data-status={confirmation.status}>{confirmation.status}</em>
                     </div>
-                    <p>{confirmation.verdict.reasons.join(" · ")}</p>
-                    <small>решение {dateTime(confirmation.decided_at)}</small>
+                    <p>
+                      {confirmation.decision_reason ?? confirmation.verdict.reasons.join(" · ")}
+                    </p>
+                    <small>
+                      решение {dateTime(confirmation.decided_at)} · {confirmation.decided_by ?? "—"}
+                    </small>
                   </article>
                 ))}
                 {confirmationHistory.length === 0 && (
