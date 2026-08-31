@@ -1,17 +1,22 @@
-# Policy Engine contracts
+# Constitution implementation contracts
 
-Status: `IMPLEMENTATION DRAFT / NOT RUNTIME`  
-Version: `1.0.0`  
+Status: `IMPLEMENTATION CONTRACTS / NOT RUNTIME`  
 Constitution baseline: `OWNER APPROVED v1.1`
 
-This package translates the approved A0–A6 specifications into machine-readable inputs and decisions without changing the constitutions.
+This directory translates approved Cosmora specifications into machine-readable implementation boundaries without changing the constitutions or final agent prompts.
 
-## Files
+## Policy Engine files
 
 - `policy-engine-contract.schema.json` — canonical request, effective capability profile, decision, required controls and trace.
 - `autonomy-monotonicity-vectors.json` — executable test vectors for all six level transitions and critical safety invariants.
 
-## Evaluation order
+## Manager runtime files
+
+- `manager-runtime-contract-v1.md` — Step 6 role, task graph, artifact, critic, conflict and scenario boundary.
+- `packages/contracts/src/manager-runtime.ts` — TypeBox runtime schemas and structural validators.
+- `packages/contracts/src/manager-runtime-scenarios.ts` — the mandatory machine-readable Step 6 scenario catalog.
+
+## Policy evaluation order
 
 1. Resolve the effective level for the requested capability.
 2. Apply immutable legal and system-core limits.
@@ -24,6 +29,4 @@ This package translates the approved A0–A6 specifications into machine-readabl
 
 A higher pure autonomy level may remove product confirmations but may not bypass law, the immutable core, an explicit owner constraint, emergency stop, or integrity controls required to prevent duplicate or inconsistent execution.
 
-## Next implementation step
-
-Add a deterministic evaluator and CI tests that validate this schema, all vectors, permission revocation, hybrid profiles and concurrent ledger behavior.
+Manager runtime contracts add no new authority. They define how roles exchange bounded artifacts and which system scenarios must pass before later runtime increments can ship.
