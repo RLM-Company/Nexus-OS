@@ -437,13 +437,16 @@
   font-size: 0.57rem;
 }
 
-.previewActions {
+.previewActions,
+.decisionActions {
   display: flex;
   margin-top: 0.8rem;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
-.previewActions button {
+.previewActions button,
+.decisionActions button {
   padding: 0.7rem 0.9rem;
   border-radius: 0.65rem;
   font-weight: 720;
@@ -461,7 +464,8 @@
   background: rgba(255, 255, 255, 0.025);
 }
 
-.previewActions button:disabled {
+.previewActions button:disabled,
+.decisionActions button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -620,6 +624,108 @@
   line-height: 1.45;
 }
 
+.confirmationDetails {
+  display: grid;
+  margin: 0.65rem 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.confirmationDetails div {
+  min-width: 0;
+  padding: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.confirmationDetails dt {
+  margin-bottom: 0.25rem;
+  color: #626b7d;
+  font-size: 0.52rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.confirmationDetails dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #aab1bf;
+  font-size: 0.6rem;
+  line-height: 1.45;
+}
+
+.reviewButton {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(179, 168, 255, 0.16);
+  border-radius: 0.6rem;
+  color: #c1b9f8;
+  background: rgba(179, 168, 255, 0.045);
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reviewButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.decisionPanel {
+  margin-top: 0.7rem;
+  padding: 0.7rem;
+  border: 1px solid rgba(179, 168, 255, 0.16);
+  border-radius: 0.68rem;
+  background: rgba(10, 14, 23, 0.68);
+}
+
+.decisionPanel > p {
+  margin-top: 0;
+  color: #9aa4b5;
+}
+
+.decisionReason {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: #8f98aa;
+  font-size: 0.62rem;
+}
+
+.decisionReason textarea {
+  min-height: 4.5rem;
+  padding: 0.65rem;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.6rem;
+  outline: 0;
+  color: #fff;
+  background: #080c14;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.decisionReason textarea:focus {
+  border-color: rgba(179, 168, 255, 0.4);
+}
+
+.previewActions button:not(:disabled),
+.decisionActions button:not(:disabled) {
+  cursor: pointer;
+}
+
+.approveButton {
+  border: 0;
+  color: #102019;
+  background: linear-gradient(135deg, #b9f2d8, #68cfa2);
+}
+
+.rejectButton {
+  border: 1px solid rgba(255, 113, 129, 0.2);
+  color: #ffc0c8;
+  background: rgba(255, 91, 110, 0.06);
+}
+
 .cardTop em[data-status="PENDING"] {
   color: #e6c47b;
 }
@@ -725,6 +831,10 @@
   }
 
   .diffList {
+    grid-template-columns: 1fr;
+  }
+
+  .confirmationDetails {
     grid-template-columns: 1fr;
   }
 }

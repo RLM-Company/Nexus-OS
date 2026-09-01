@@ -22,7 +22,7 @@ test("previews an authority diff before applying an autonomy profile change", as
 
   await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
 
-  await expect(page.getByText("Preview before apply")).toBeVisible();
+  await expect(page.getByText("Guarded owner actions")).toBeVisible();
   await expect(
     page.getByRole("heading", {
       name: "Полномочия, подтверждения и аварийное состояние — в одном месте"
@@ -71,4 +71,175 @@ test("previews an authority diff before applying an autonomy profile change", as
   expect(
     ((await afterApply.json()) as { profile: { base_level: string; version: number } }).profile
   ).toMatchObject({ base_level: "A4", version: 3 });
+});
+
+test("requires explicit review before approving or rejecting confirmation cards", async ({
+  page,
+  request
+}) => {
+  const nonce = `${Date.now()}`;
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a project for confirmation decision browser checks.",
+      client_message_id: `confirmation-control-e2e-${nonce}`
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+
+  const confirmation = (input: {
+    id: string;
+    operationId: string;
+    capabilityId: string;
+    objectId: string;
+    purpose: string;
+    challengeNonce: string;
+    requiresStepUp: boolean;
+  }) => ({
+    confirmation_id: input.id,
+    project_id: projectId,
+    operation_id: input.operationId,
+    actor_id: "manager",
+    intent: {
+      operation_id: input.operationId,
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: [input.capabilityId],
+      object_ids: [input.objectId],
+      purpose: input.purpose,
+      idempotency_key: `${input.operationId}-once`
+    },
+    verdict: {
+      operation_id: input.operationId,
+      verdict: "NEEDS_CONFIRMATION",
+      evaluated_capabilities: [
+        { capability_id: input.capabilityId, mode: "CONFIRM", scope: [], conditions: [] }
+      ],
+      permission_ids: [],
+      reasons: ["Owner confirmation required"],
+      evaluated_at: "2026-08-31T22:20:00.000Z",
+      policy_version: "1.1.0"
+    },
+    status: "PENDING",
+    challenge_nonce: input.challengeNonce,
+    requires_step_up: input.requiresStepUp,
+    requested_at: "2026-08-31T22:20:00.000Z",
+    expires_at: "2026-09-01T22:20:00.000Z",
+    decided_at: null,
+    decided_by: null,
+    decision_reason: null
+  });
+
+  const critical = confirmation({
+    id: "critical-confirmation-e2e",
+    operationId: "critical-operation-e2e",
+    capabilityId: "finance.spend",
+    objectId: "invoice-browser-1",
+    purpose: "Pay an approved browser-test invoice",
+    challengeNonce: "critical-challenge-nonce-e2e",
+    requiresStepUp: true
+  });
+  const routine = confirmation({
+    id: "routine-confirmation-e2e",
+    operationId: "routine-operation-e2e",
+    capabilityId: "external.communicate",
+    objectId: "campaign-browser-1",
+    purpose: "Publish a campaign update",
+    challengeNonce: "routine-challenge-nonce-e2e",
+    requiresStepUp: false
+  });
+
+  await page.route(`**/api/v1/projects/${projectId}/confirmations`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [critical, routine] })
+    });
+  });
+  await page.route("**/api/v1/confirmations/critical-confirmation-e2e/approve", async (route) => {
+    const body = route.request().postDataJSON() as {
+      challenge_nonce: string;
+      reason?: string;
+    };
+    expect(body).toEqual({
+      challenge_nonce: critical.challenge_nonce,
+      reason: "Approved inside the current budget"
+    });
+    expect(route.request().headers()["x-step-up-token"]).toBe("browser-step-up-proof");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...critical,
+        status: "APPROVED",
+        decided_at: "2026-08-31T22:21:00.000Z",
+        decided_by: "local-owner",
+        decision_reason: body.reason ?? null
+      })
+    });
+  });
+  await page.route("**/api/v1/confirmations/routine-confirmation-e2e/reject", async (route) => {
+    const body = route.request().postDataJSON() as {
+      challenge_nonce: string;
+      reason?: string;
+    };
+    expect(body).toEqual({
+      challenge_nonce: routine.challenge_nonce,
+      reason: "Campaign timing is not approved"
+    });
+    expect(route.request().headers()["x-step-up-token"]).toBeUndefined();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...routine,
+        status: "REJECTED",
+        decided_at: "2026-08-31T22:22:00.000Z",
+        decided_by: "local-owner",
+        decision_reason: body.reason ?? null
+      })
+    });
+  });
+
+  await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
+
+  const pendingMetric = page.locator("article").filter({ hasText: "Ожидают решения" }).first();
+  await expect(pendingMetric).toContainText("2");
+
+  const criticalCard = page
+    .locator("article")
+    .filter({ hasText: "Pay an approved browser-test invoice" })
+    .first();
+  await expect(criticalCard).toContainText("invoice-browser-1");
+  await expect(criticalCard).toContainText("Owner confirmation required");
+  await criticalCard.getByRole("button", { name: "Рассмотреть" }).click();
+  const approve = criticalCard.getByRole("button", { name: "Одобрить" });
+  await expect(approve).toBeDisabled();
+  await criticalCard.getByLabel("Комментарий владельца").fill("Approved inside the current budget");
+  await criticalCard.getByLabel("Я проверил действие, цель, объекты, риск и срок.").check();
+  await expect(approve).toBeDisabled();
+  await criticalCard
+    .getByLabel("Одноразовый step-up токен для одобрения")
+    .fill("browser-step-up-proof");
+  await approve.click();
+
+  await expect(page.getByRole("status")).toContainText("Действие одобрено");
+  await expect(pendingMetric).toContainText("1");
+  await expect(page.getByLabel("Одноразовый step-up токен для одобрения")).toHaveCount(0);
+
+  const routineCard = page
+    .locator("article")
+    .filter({ hasText: "Publish a campaign update" })
+    .first();
+  await routineCard.getByRole("button", { name: "Рассмотреть" }).click();
+  const reject = routineCard.getByRole("button", { name: "Отклонить" });
+  await expect(reject).toBeDisabled();
+  await routineCard.getByLabel("Комментарий владельца").fill("Campaign timing is not approved");
+  await routineCard.getByLabel("Я проверил действие, цель, объекты, риск и срок.").check();
+  await reject.click();
+
+  await expect(page.getByRole("status")).toContainText("Действие отклонено");
+  await expect(page.getByText("Нет ожидающих подтверждений.")).toBeVisible();
+  await expect(page.locator('[data-status="APPROVED"]')).toHaveCount(1);
+  await expect(page.locator('[data-status="REJECTED"]')).toHaveCount(1);
 });

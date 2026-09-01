@@ -208,4 +208,50 @@ describe("autonomy and confirmation API", () => {
       }
     });
   });
+
+  it("records a reasoned rejection without consuming step-up proof", async () => {
+    const intent: PolicyIntent = {
+      operation_id: "rejected-critical-operation",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["finance.spend"],
+      object_ids: ["invoice-2"],
+      purpose: "Pay an invoice that is not approved",
+      idempotency_key: "rejected-critical-operation-once"
+    };
+    const verdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "NEEDS_CONFIRMATION",
+      evaluated_capabilities: [
+        { capability_id: "finance.spend", mode: "CONFIRM", scope: [], conditions: [] }
+      ],
+      permission_ids: [],
+      reasons: ["Owner confirmation required"],
+      evaluated_at: "2026-08-31T22:15:00.000Z",
+      policy_version: "1.1.0"
+    };
+    const confirmation = policyStore.createConfirmation(intent, verdict, new Date().toISOString());
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/api/v1/confirmations/${confirmation.confirmation_id}/reject`,
+      payload: {
+        challenge_nonce: confirmation.challenge_nonce,
+        reason: "Invoice is outside the approved budget"
+      }
+    });
+    expect(rejected.statusCode).toBe(200);
+    expect(
+      rejected.json<{
+        status: string;
+        decision_reason: string | null;
+        decided_by: string | null;
+      }>()
+    ).toMatchObject({
+      status: "REJECTED",
+      decision_reason: "Invoice is outside the approved budget",
+      decided_by: "local-owner"
+    });
+    expect(consumedStepUps).toHaveLength(0);
+  });
 });
