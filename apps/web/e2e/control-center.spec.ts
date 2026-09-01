@@ -37,7 +37,11 @@ test("previews an authority diff before applying an autonomy profile change", as
   await expect(capabilitiesMetric).toContainText("19");
   await expect(page.locator("[data-mode]")).toHaveCount(19);
   await expect(page.getByText("Нет ожидающих подтверждений.")).toBeVisible();
-  await expect(page.getByText("CLEAR", { exact: true })).toBeVisible();
+  const processStopCard = page
+    .locator("article")
+    .filter({ hasText: "Process emergency stop" })
+    .first();
+  await expect(processStopCard).toContainText("CLEAR");
 
   await page.getByRole("button", { name: "Выбрать уровень A4" }).click();
   const authorityDiff = page.getByRole("region", {
@@ -64,13 +68,165 @@ test("previews an authority diff before applying an autonomy profile change", as
 
   await expect(page.getByRole("button", { name: /approve|подтверд/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /reject|отклон/i })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /emergency|аварийн/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Активировать stop проекта" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /resume|возобновить|снять остановку/i })
+  ).toHaveCount(0);
 
   const afterApply = await request.get(profileUrl);
   expect(afterApply.ok()).toBeTruthy();
   expect(
     ((await afterApply.json()) as { profile: { base_level: string; version: number } }).profile
   ).toMatchObject({ base_level: "A4", version: 3 });
+});
+
+test("activates and reloads a durable project emergency stop without exposing resume", async ({
+  page,
+  request
+}) => {
+  const nonce = `${Date.now()}`;
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a project for the emergency-stop browser check.",
+      client_message_id: `project-stop-e2e-${nonce}`
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+  const stopStatusUrl = `http://127.0.0.1:3100/api/v1/operations/emergency-stop?project_id=${encodeURIComponent(projectId)}`;
+
+  await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
+
+  const activate = page.getByRole("button", { name: "Активировать stop проекта" });
+  await expect(activate).toBeDisabled();
+  await page.getByLabel("Причина аварийной остановки").fill("Unexpected project behavior");
+  await expect(activate).toBeDisabled();
+  await page
+    .getByLabel("Я понимаю: новые и активные runs этого проекта будут остановлены.")
+    .check();
+  await activate.click();
+
+  await expect(page.getByRole("status")).toContainText("Project emergency stop активирован");
+  const projectStopCard = page.locator("article").filter({ hasText: "Selected project stop" });
+  await expect(projectStopCard).toContainText("ACTIVE");
+  await expect(projectStopCard).toContainText("Unexpected project behavior");
+
+  const stored = await request.get(stopStatusUrl);
+  expect(stored.ok()).toBeTruthy();
+  expect((await stored.json()) as Record<string, unknown>).toMatchObject({
+    scope: "project",
+    project_id: projectId,
+    active: true,
+    reason: "Unexpected project behavior"
+  });
+
+  await page.reload();
+  await expect(projectStopCard).toContainText("ACTIVE");
+  await expect(projectStopCard).toContainText("Unexpected project behavior");
+  await expect(page.getByText("Project emergency stop уже активен")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /resume|возобновить|снять остановку/i })
+  ).toHaveCount(0);
+});
+
+test("requires explicit process-stop intent and omits a project id", async ({ page, request }) => {
+  const nonce = `${Date.now()}`;
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a project for the process-stop browser contract.",
+      client_message_id: `process-stop-e2e-${nonce}`
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+  const activatedAt = "2026-09-01T04:00:00.000Z";
+  const processStop = {
+    scope: "process",
+    project_id: null,
+    active: true,
+    reason: "Contain the full runtime",
+    activated_at: activatedAt,
+    activated_by: "local-owner"
+  } as const;
+  let processStopRequests = 0;
+
+  await page.route("**/api/v1/operations/emergency-stop", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    processStopRequests += 1;
+    expect(route.request().postDataJSON()).toEqual({
+      scope: "process",
+      reason: "Contain the full runtime"
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(processStop)
+    });
+  });
+  await page.route("**/api/v1/operations/status", async (route) => {
+    if (processStopRequests === 0) {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        generated_at: activatedAt,
+        active_runs: 0,
+        process_stop: processStop,
+        active_project_stops: 0,
+        metrics: {
+          runs_started: 0,
+          runs_completed: 0,
+          runs_failed: 0,
+          runs_cancelled: 0,
+          route_attempts: 0,
+          route_failures: {
+            ROUTE_UNAVAILABLE: 0,
+            PROVIDER_TIMEOUT: 0,
+            PROVIDER_ERROR: 0,
+            CIRCUIT_OPEN: 0,
+            INTERRUPTED: 0,
+            EMERGENCY_STOP: 0
+          },
+          last_failure_at: null
+        },
+        alerts: [
+          {
+            code: "PROCESS_EMERGENCY_STOP",
+            severity: "critical",
+            message: "Process emergency stop is active."
+          }
+        ]
+      })
+    });
+  });
+
+  await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
+  await page.getByRole("button", { name: "Весь процесс" }).click();
+  const activate = page.getByRole("button", { name: "Активировать stop процесса" });
+  await page.getByLabel("Причина аварийной остановки").fill("Contain the full runtime");
+  await expect(activate).toBeDisabled();
+  await page
+    .getByLabel("Я понимаю: новые и активные runs всех проектов будут остановлены.")
+    .check();
+  await activate.click();
+
+  await expect(page.getByRole("status")).toContainText("Process emergency stop активирован");
+  expect(processStopRequests).toBe(1);
+  const processStopCard = page
+    .locator("article")
+    .filter({ hasText: "Process emergency stop" })
+    .first();
+  await expect(processStopCard).toContainText("ACTIVE");
+  await expect(processStopCard).toContainText("Contain the full runtime");
+  await expect(
+    page.getByRole("button", { name: /resume|возобновить|снять остановку/i })
+  ).toHaveCount(0);
 });
 
 test("requires explicit review before approving or rejecting confirmation cards", async ({

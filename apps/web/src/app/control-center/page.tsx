@@ -93,6 +93,7 @@ type CenterData = {
   profile: CapabilityProfile;
   confirmations: Confirmation[];
   operations: OperationsStatus;
+  projectStop: EmergencyStop | null;
 };
 
 type ProfilePreview = {
@@ -156,8 +157,13 @@ export default function ControlCenterPage() {
   const [decisionAcknowledged, setDecisionAcknowledged] = useState(false);
   const [confirmationStepUpToken, setConfirmationStepUpToken] = useState("");
   const [deciding, setDeciding] = useState(false);
+  const [stopScope, setStopScope] = useState<"project" | "process">("project");
+  const [stopReason, setStopReason] = useState("");
+  const [stopAcknowledged, setStopAcknowledged] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const actionPending = previewing || applying || deciding || stopping;
 
   const load = useCallback(async (id: string): Promise<void> => {
     setLoading(true);
@@ -170,18 +176,25 @@ export default function ControlCenterPage() {
     setDecisionReason("");
     setDecisionAcknowledged(false);
     setConfirmationStepUpToken("");
+    setStopScope("project");
+    setStopReason("");
+    setStopAcknowledged(false);
     try {
-      const [profileResponse, confirmationsResponse, operations] = await Promise.all([
+      const [profileResponse, confirmationsResponse, operations, projectStop] = await Promise.all([
         api<{ profile: CapabilityProfile }>(
           `/api/v1/projects/${encodeURIComponent(id)}/autonomy-profile`
         ),
         api<{ items: Confirmation[] }>(`/api/v1/projects/${encodeURIComponent(id)}/confirmations`),
-        api<OperationsStatus>("/api/v1/operations/status")
+        api<OperationsStatus>("/api/v1/operations/status"),
+        api<EmergencyStop | null>(
+          `/api/v1/operations/emergency-stop?project_id=${encodeURIComponent(id)}`
+        )
       ]);
       setData({
         profile: profileResponse.profile,
         confirmations: confirmationsResponse.items,
-        operations
+        operations,
+        projectStop
       });
     } catch (cause) {
       setData(null);
@@ -200,7 +213,7 @@ export default function ControlCenterPage() {
 
   const openProject = (event: FormEvent): void => {
     event.preventDefault();
-    if (previewing || applying || deciding) return;
+    if (actionPending) return;
     const id = draftProjectId.trim();
     if (!id) return;
     window.history.replaceState(null, "", `/control-center?project=${encodeURIComponent(id)}`);
@@ -221,6 +234,8 @@ export default function ControlCenterPage() {
       pendingConfirmations.find((item) => item.confirmation_id === selectedConfirmationId) ?? null,
     [pendingConfirmations, selectedConfirmationId]
   );
+  const selectedStop =
+    data?.operations.process_stop ?? (stopScope === "project" ? data?.projectStop : null);
 
   const profileChanges = useMemo(() => {
     if (!data || !preview) return [];
@@ -236,7 +251,7 @@ export default function ControlCenterPage() {
   }, [data, preview]);
 
   const previewLevel = async (level: AutonomyLevel): Promise<void> => {
-    if (!data || level === data.profile.base_level || previewing || applying || deciding) return;
+    if (!data || level === data.profile.base_level || actionPending) return;
     setPreviewing(true);
     setPreview(null);
     setAcknowledged(false);
@@ -268,7 +283,7 @@ export default function ControlCenterPage() {
   };
 
   const applyPreview = async (): Promise<void> => {
-    if (!data || !preview || !acknowledged || applying || deciding) return;
+    if (!data || !preview || !acknowledged || actionPending) return;
     const token = stepUpToken.trim();
     if (preview.requires_step_up && !token) {
       setError("Для этого уровня нужен одноразовый step-up токен");
@@ -305,7 +320,7 @@ export default function ControlCenterPage() {
   };
 
   const reviewConfirmation = (confirmationId: string): void => {
-    if (previewing || applying || deciding) return;
+    if (actionPending) return;
     setPreview(null);
     setAcknowledged(false);
     setStepUpToken("");
@@ -318,7 +333,7 @@ export default function ControlCenterPage() {
   };
 
   const decideConfirmation = async (decision: "approve" | "reject"): Promise<void> => {
-    if (!selectedConfirmation || !decisionAcknowledged || deciding) return;
+    if (!selectedConfirmation || !decisionAcknowledged || actionPending) return;
     const reason = decisionReason.trim();
     const token = confirmationStepUpToken.trim();
     if (decision === "reject" && !reason) {
@@ -372,6 +387,64 @@ export default function ControlCenterPage() {
     }
   };
 
+  const selectStopScope = (scope: "project" | "process"): void => {
+    if (actionPending || scope === stopScope) return;
+    setStopScope(scope);
+    setStopReason("");
+    setStopAcknowledged(false);
+    setNotice(null);
+    setError(null);
+  };
+
+  const activateEmergencyStop = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (!data || actionPending || selectedStop) return;
+    const reason = stopReason.trim();
+    if (!reason) {
+      setError("Укажите причину аварийной остановки");
+      return;
+    }
+    if (!stopAcknowledged) {
+      setError("Подтвердите, что вы понимаете область и эффект остановки");
+      return;
+    }
+
+    setStopping(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const activated = await api<EmergencyStop>("/api/v1/operations/emergency-stop", {
+        method: "POST",
+        body: {
+          scope: stopScope,
+          ...(stopScope === "project" ? { project_id: data.profile.project_id } : {}),
+          reason
+        }
+      });
+      const operations = await api<OperationsStatus>("/api/v1/operations/status");
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              operations,
+              projectStop: activated.scope === "project" ? activated : current.projectStop
+            }
+          : current
+      );
+      setStopReason("");
+      setStopAcknowledged(false);
+      setNotice(
+        activated.scope === "process"
+          ? "Process emergency stop активирован. Все runs остановлены; возобновление через UI недоступно."
+          : "Project emergency stop активирован. Runs проекта остановлены; возобновление через UI недоступно."
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось активировать emergency stop");
+    } finally {
+      setStopping(false);
+    }
+  };
+
   return (
     <main className={styles.shell}>
       <header className={styles.topbar}>
@@ -396,8 +469,8 @@ export default function ControlCenterPage() {
           <h1>Полномочия, подтверждения и аварийное состояние — в одном месте</h1>
           <p>
             Уровень A0–A6 теперь можно изменить только после серверного preview и явной проверки
-            разницы. Ожидающие действия проходят отдельную проверку перед approve/reject; emergency
-            stop в этом блоке пока доступен только для просмотра.
+            разницы. Ожидающие действия проходят отдельную проверку перед approve/reject, а
+            emergency stop можно активировать для проекта или всего процесса без скрытого resume.
           </p>
         </div>
         <form className={styles.projectForm} onSubmit={openProject}>
@@ -410,9 +483,7 @@ export default function ControlCenterPage() {
               placeholder="project-id"
               autoComplete="off"
             />
-            <button
-              disabled={!draftProjectId.trim() || loading || previewing || applying || deciding}
-            >
+            <button disabled={!draftProjectId.trim() || loading || actionPending}>
               {loading ? "Загрузка…" : "Открыть"}
             </button>
           </div>
@@ -479,9 +550,7 @@ export default function ControlCenterPage() {
                   level === data.profile.base_level ||
                   level === preview?.proposed_profile.base_level ||
                   loading ||
-                  previewing ||
-                  applying ||
-                  deciding
+                  actionPending
                 }
                 onClick={() => void previewLevel(level)}
               >
@@ -562,7 +631,9 @@ export default function ControlCenterPage() {
                   type="button"
                   className={styles.applyButton}
                   disabled={
-                    !acknowledged || applying || (preview.requires_step_up && !stepUpToken.trim())
+                    !acknowledged ||
+                    actionPending ||
+                    (preview.requires_step_up && !stepUpToken.trim())
                   }
                   onClick={() => void applyPreview()}
                 >
@@ -571,7 +642,7 @@ export default function ControlCenterPage() {
                 <button
                   type="button"
                   className={styles.cancelButton}
-                  disabled={applying}
+                  disabled={actionPending}
                   onClick={() => {
                     setPreview(null);
                     setAcknowledged(false);
@@ -685,7 +756,7 @@ export default function ControlCenterPage() {
                       <button
                         type="button"
                         className={styles.reviewButton}
-                        disabled={previewing || applying || deciding}
+                        disabled={actionPending}
                         onClick={() => reviewConfirmation(confirmation.confirmation_id)}
                       >
                         Рассмотреть
@@ -738,7 +809,7 @@ export default function ControlCenterPage() {
                             className={styles.approveButton}
                             disabled={
                               !decisionAcknowledged ||
-                              deciding ||
+                              actionPending ||
                               (confirmation.requires_step_up && !confirmationStepUpToken.trim())
                             }
                             onClick={() => void decideConfirmation("approve")}
@@ -748,7 +819,9 @@ export default function ControlCenterPage() {
                           <button
                             type="button"
                             className={styles.rejectButton}
-                            disabled={!decisionAcknowledged || !decisionReason.trim() || deciding}
+                            disabled={
+                              !decisionAcknowledged || !decisionReason.trim() || actionPending
+                            }
                             onClick={() => void decideConfirmation("reject")}
                           >
                             Отклонить
@@ -756,7 +829,7 @@ export default function ControlCenterPage() {
                           <button
                             type="button"
                             className={styles.cancelButton}
-                            disabled={deciding}
+                            disabled={actionPending}
                             onClick={() => {
                               setSelectedConfirmationId(null);
                               setDecisionReason("");
@@ -819,6 +892,117 @@ export default function ControlCenterPage() {
               </span>
             </header>
 
+            <form
+              className={styles.stopControl}
+              aria-labelledby="emergency-stop-title"
+              onSubmit={(event) => void activateEmergencyStop(event)}
+            >
+              <div className={styles.stopIntro}>
+                <div>
+                  <span className={styles.eyebrow}>Owner safety action</span>
+                  <h3 id="emergency-stop-title">Активировать emergency stop</h3>
+                  <p>
+                    Остановка применяется сервером и сохраняется после рестарта. Она не выдаёт новых
+                    полномочий, поэтому step-up не требуется.
+                  </p>
+                </div>
+                <div
+                  className={styles.stopScope}
+                  role="group"
+                  aria-label="Область аварийной остановки"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={stopScope === "project"}
+                    disabled={loading || actionPending}
+                    onClick={() => selectStopScope("project")}
+                  >
+                    Только выбранный проект
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={stopScope === "process"}
+                    disabled={loading || actionPending}
+                    onClick={() => selectStopScope("process")}
+                  >
+                    Весь процесс
+                  </button>
+                </div>
+              </div>
+
+              <div className={styles.stopImpact}>
+                <strong>
+                  {stopScope === "project"
+                    ? `Проект ${shortId(data.profile.project_id)}`
+                    : "Все проекты и активные runs"}
+                </strong>
+                <span>
+                  {stopScope === "project"
+                    ? "Будут прерваны активные и заблокированы новые runs только этого проекта."
+                    : "Будут прерваны активные и заблокированы новые runs всего API-процесса."}
+                </span>
+              </div>
+
+              {selectedStop ? (
+                <div className={styles.activeStop}>
+                  <strong>
+                    {selectedStop.scope === "process"
+                      ? "Process emergency stop уже активен"
+                      : "Project emergency stop уже активен"}
+                  </strong>
+                  <span>{selectedStop.reason}</span>
+                  <small>
+                    {dateTime(selectedStop.activated_at)} · {selectedStop.activated_by}
+                  </small>
+                </div>
+              ) : (
+                <>
+                  <label className={styles.stopReason}>
+                    <span>Причина аварийной остановки</span>
+                    <textarea
+                      value={stopReason}
+                      onChange={(event) => setStopReason(event.target.value)}
+                      minLength={1}
+                      maxLength={500}
+                      required
+                      placeholder="Что произошло и почему выполнение нужно остановить"
+                    />
+                    <small>{stopReason.length}/500 · причина попадёт в аварийный аудит</small>
+                  </label>
+
+                  <label className={styles.stopAcknowledgement}>
+                    <input
+                      type="checkbox"
+                      checked={stopAcknowledged}
+                      onChange={(event) => setStopAcknowledged(event.target.checked)}
+                    />
+                    <span>
+                      {stopScope === "project"
+                        ? "Я понимаю: новые и активные runs этого проекта будут остановлены."
+                        : "Я понимаю: новые и активные runs всех проектов будут остановлены."}
+                    </span>
+                  </label>
+
+                  <button
+                    type="submit"
+                    className={styles.stopButton}
+                    disabled={!stopReason.trim() || !stopAcknowledged || loading || actionPending}
+                  >
+                    {stopping
+                      ? "Активирую…"
+                      : stopScope === "project"
+                        ? "Активировать stop проекта"
+                        : "Активировать stop процесса"}
+                  </button>
+                </>
+              )}
+
+              <p className={styles.noResume}>
+                В Control Center нет кнопки resume. Снятие остановки остаётся отдельным аудируемым
+                операторским действием.
+              </p>
+            </form>
+
             <div className={styles.operationGrid}>
               <article data-stop={data.operations.process_stop ? "active" : "clear"}>
                 <span>Process emergency stop</span>
@@ -826,6 +1010,13 @@ export default function ControlCenterPage() {
                 <small>
                   {data.operations.process_stop?.reason ??
                     "Глобальная аварийная остановка не активна"}
+                </small>
+              </article>
+              <article data-stop={data.projectStop ? "active" : "clear"}>
+                <span>Selected project stop</span>
+                <strong>{data.projectStop ? "ACTIVE" : "CLEAR"}</strong>
+                <small>
+                  {data.projectStop?.reason ?? "Остановка выбранного проекта не активна"}
                 </small>
               </article>
               <article>

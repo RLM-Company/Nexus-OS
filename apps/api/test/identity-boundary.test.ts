@@ -257,13 +257,34 @@ describe("API identity boundary", () => {
       headers: authorization,
       payload: { scope: "project", project_id: projectId, reason: "Identity audit test" }
     });
+    const visibleStop = await app.inject({
+      method: "GET",
+      url: `/api/v1/operations/emergency-stop?project_id=${projectId}`,
+      headers: authorization
+    });
+    const hiddenStop = await app.inject({
+      method: "GET",
+      url: `/api/v1/operations/emergency-stop?project_id=${projectId}`,
+      headers: { authorization: `Bearer ${ownerTwoToken}` }
+    });
 
     expect(created.statusCode).toBe(201);
     expect(hiddenList.json<{ items: unknown[] }>().items).toHaveLength(0);
     expect(hiddenDetail.statusCode).toBe(404);
     expect(stopped.json()).toMatchObject({ activated_by: "owner-actor-1" });
+    expect(visibleStop.statusCode).toBe(200);
+    expect(visibleStop.json()).toMatchObject({
+      scope: "project",
+      project_id: projectId,
+      active: true,
+      reason: "Identity audit test",
+      activated_by: "owner-actor-1"
+    });
+    expect(hiddenStop.statusCode).toBe(200);
+    expect(hiddenStop.json()).toBeNull();
     expect(created.body).not.toContain(ownerOneToken);
     expect(stopped.body).not.toContain(ownerOneToken);
+    expect(visibleStop.body).not.toContain(ownerOneToken);
   });
 
   it("rejects a revoked session immediately", async () => {
