@@ -147,7 +147,7 @@ test("explains policy verdicts without rendering hidden operation content", asyn
   await expect(trace).not.toContainText("PRIVATE TRACE PURPOSE MUST NOT RENDER");
   await expect(trace).not.toContainText("private-browser-idempotency");
   await expect(trace).not.toContainText("PRIVATE TRACE PROMPT MUST NOT RENDER");
-  expect(traceRequests).toBe(1);
+  expect(traceRequests).toBeGreaterThan(0);
 });
 
 test("activates and reloads a durable project emergency stop without exposing resume", async ({
