@@ -152,6 +152,80 @@ describe("autonomy and confirmation API", () => {
     });
   });
 
+  it("returns a bounded content-minimized Policy Decision Trace", async () => {
+    const intent: PolicyIntent = {
+      operation_id: "trace-operation",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["external.communicate"],
+      object_ids: ["campaign-trace-api"],
+      purpose: "Private campaign content must not appear in Decision Trace",
+      idempotency_key: "private-trace-idempotency-key"
+    };
+    const verdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "NEEDS_CONFIRMATION",
+      evaluated_capabilities: [
+        {
+          capability_id: "external.communicate",
+          mode: "CONFIRM",
+          scope: ["private-audience-segment"],
+          conditions: []
+        }
+      ],
+      permission_ids: ["internal-permission-id"],
+      reasons: ["Owner confirmation required"],
+      evaluated_at: "2026-09-01T10:00:00.000Z",
+      policy_version: "1.1.0"
+    };
+    policyStore.createConfirmation(intent, verdict, "2026-09-01T10:00:00.000Z");
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/decision-trace?limit=1`
+    });
+    const invalid = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/decision-trace?limit=101`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(
+      response.json<{
+        items: Array<{
+          operation_id: string;
+          project_id: string;
+          actor_id: string;
+          verdict: string;
+          capability_ids: string[];
+          object_ids: string[];
+          reasons: string[];
+          policy_version: string;
+        }>;
+        limit: number;
+      }>()
+    ).toMatchObject({
+      limit: 1,
+      items: [
+        {
+          operation_id: "trace-operation",
+          project_id: projectId,
+          actor_id: "manager",
+          verdict: "NEEDS_CONFIRMATION",
+          capability_ids: ["external.communicate"],
+          object_ids: ["campaign-trace-api"],
+          reasons: ["Owner confirmation required"],
+          policy_version: "1.1.0"
+        }
+      ]
+    });
+    expect(response.body).not.toContain(intent.purpose);
+    expect(response.body).not.toContain(intent.idempotency_key);
+    expect(response.body).not.toContain("private-audience-segment");
+    expect(response.body).not.toContain("internal-permission-id");
+    expect(invalid.statusCode).toBe(400);
+  });
+
   it("exposes pending confirmation cards and enforces nonce plus step-up", async () => {
     const intent: PolicyIntent = {
       operation_id: "critical-operation",

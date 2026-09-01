@@ -80,6 +80,76 @@ test("previews an authority diff before applying an autonomy profile change", as
   ).toMatchObject({ base_level: "A4", version: 3 });
 });
 
+test("explains policy verdicts without rendering hidden operation content", async ({
+  page,
+  request
+}) => {
+  const nonce = `${Date.now()}`;
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a project for the Policy Decision Trace browser check.",
+      client_message_id: `decision-trace-e2e-${nonce}`
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+  let traceRequests = 0;
+
+  await page.route(
+    (url) =>
+      url.pathname === `/api/v1/projects/${projectId}/decision-trace` &&
+      url.searchParams.get("limit") === "50",
+    async (route) => {
+      traceRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [
+            {
+              decision_id: "decision-browser-1",
+              operation_id: "publish-campaign-browser-1",
+              project_id: projectId,
+              actor_id: "manager",
+              verdict: "NEEDS_CONFIRMATION",
+              capability_ids: ["external.communicate"],
+              object_ids: ["campaign-browser-1"],
+              reasons: ["Owner confirmation required"],
+              purpose: "PRIVATE TRACE PURPOSE MUST NOT RENDER",
+              idempotency_key: "private-browser-idempotency",
+              request_body: { prompt: "PRIVATE TRACE PROMPT MUST NOT RENDER" },
+              policy_version: "1.1.0",
+              evaluated_at: "2026-09-01T10:00:00.000Z",
+              created_at: "2026-09-01T10:00:00.000Z"
+            }
+          ],
+          limit: 50
+        })
+      });
+    }
+  );
+
+  await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
+
+  const trace = page.getByRole("region", {
+    name: "Почему Policy Runtime принял решение"
+  });
+  await expect(trace).toBeVisible();
+  await expect(trace).toContainText("Нужно подтверждение");
+  await expect(trace).toContainText("NEEDS_CONFIRMATION");
+  await expect(trace).toContainText("Owner confirmation required");
+  await expect(trace).toContainText("external.communicate");
+  await expect(trace).toContainText("campaign-browser-1");
+  await expect(trace).toContainText("manager");
+  await expect(trace).toContainText("publish-campaign-browser-1");
+  await expect(trace).toContainText("policy 1.1.0");
+  await expect(trace).toContainText("request/result");
+  await expect(trace).not.toContainText("PRIVATE TRACE PURPOSE MUST NOT RENDER");
+  await expect(trace).not.toContainText("private-browser-idempotency");
+  await expect(trace).not.toContainText("PRIVATE TRACE PROMPT MUST NOT RENDER");
+  expect(traceRequests).toBeGreaterThan(0);
+});
+
 test("activates and reloads a durable project emergency stop without exposing resume", async ({
   page,
   request

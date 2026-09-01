@@ -1,8 +1,10 @@
 import { loadServerConfig } from "@cosmora/config";
+import type { PolicyIntent, PolicyVerdict } from "@cosmora/contracts";
 import {
   EmergencyStopStore,
   IdentityStore,
   openDatabase,
+  PolicyStore,
   ProjectStore,
   runMigrations
 } from "@cosmora/db";
@@ -15,6 +17,7 @@ describe("API identity boundary", () => {
   const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
   let database: ReturnType<typeof openDatabase>;
   let identityStore: IdentityStore;
+  let policyStore: PolicyStore;
   let app: ReturnType<typeof buildApp>;
   let ownerOneToken: string;
   let ownerTwoToken: string;
@@ -56,12 +59,14 @@ describe("API identity boundary", () => {
       ttlMs: 60_000
     }).token;
     const runtime = await buildModelRuntime(config);
+    policyStore = new PolicyStore(database.sqlite);
     app = buildApp({
       config,
       database,
       identityStore,
       projectStore: new ProjectStore(database.sqlite),
       emergencyStopStore: new EmergencyStopStore(database.sqlite),
+      policyStore,
       modelGateway: runtime.gateway,
       manager: runtime.manager,
       identityResolver: new BearerSessionIdentityResolver(identityStore)
@@ -241,6 +246,42 @@ describe("API identity boundary", () => {
       payload: { initial_message: "Owner one project", client_message_id: "identity-owner-1" }
     });
     const projectId = created.json<{ project: { id: string } }>().project.id;
+    const traceIntent: PolicyIntent = {
+      operation_id: "owner-bound-trace-operation",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["external.communicate"],
+      object_ids: ["campaign-owner-1"],
+      purpose: "Owner one private campaign purpose",
+      idempotency_key: "owner-one-private-idempotency"
+    };
+    const traceVerdict: PolicyVerdict = {
+      operation_id: traceIntent.operation_id,
+      verdict: "NEEDS_CONFIRMATION",
+      evaluated_capabilities: [
+        {
+          capability_id: "external.communicate",
+          mode: "CONFIRM",
+          scope: [],
+          conditions: []
+        }
+      ],
+      permission_ids: [],
+      reasons: ["Owner confirmation required"],
+      evaluated_at: "2026-09-01T10:00:00.000Z",
+      policy_version: "1.1.0"
+    };
+    policyStore.createConfirmation(traceIntent, traceVerdict, "2026-09-01T10:00:00.000Z");
+    const visibleTrace = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/decision-trace`,
+      headers: authorization
+    });
+    const hiddenTrace = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/decision-trace`,
+      headers: { authorization: `Bearer ${ownerTwoToken}` }
+    });
     const hiddenList = await app.inject({
       method: "GET",
       url: "/api/v1/projects",
@@ -269,6 +310,24 @@ describe("API identity boundary", () => {
     });
 
     expect(created.statusCode).toBe(201);
+    expect(visibleTrace.statusCode).toBe(200);
+    expect(visibleTrace.json()).toMatchObject({
+      limit: 50,
+      items: [
+        {
+          project_id: projectId,
+          actor_id: "manager",
+          verdict: "NEEDS_CONFIRMATION",
+          object_ids: ["campaign-owner-1"]
+        }
+      ]
+    });
+    expect(visibleTrace.body).not.toContain(traceIntent.purpose);
+    expect(visibleTrace.body).not.toContain(traceIntent.idempotency_key);
+    expect(visibleTrace.body).not.toContain(ownerOneToken);
+    expect(hiddenTrace.statusCode).toBe(404);
+    expect(hiddenTrace.json<{ error: { code: string } }>().error.code).toBe("PROJECT_NOT_FOUND");
+    expect(hiddenTrace.body).not.toContain("owner-bound-trace-operation");
     expect(hiddenList.json<{ items: unknown[] }>().items).toHaveLength(0);
     expect(hiddenDetail.statusCode).toBe(404);
     expect(stopped.json()).toMatchObject({ activated_by: "owner-actor-1" });

@@ -59,6 +59,27 @@ type Confirmation = {
   decision_reason: string | null;
 };
 
+type PolicyVerdictKind = "ALLOW" | "ALLOW_WITH_LIMITS" | "NEEDS_CONFIRMATION" | "DENY" | "PAUSE";
+
+type PolicyDecisionTraceEvent = {
+  decision_id: string;
+  operation_id: string;
+  project_id: string;
+  actor_id: string;
+  verdict: PolicyVerdictKind;
+  capability_ids: string[];
+  object_ids: string[];
+  reasons: string[];
+  policy_version: string;
+  evaluated_at: string;
+  created_at: string;
+};
+
+type PolicyDecisionTrace = {
+  items: PolicyDecisionTraceEvent[];
+  limit: number;
+};
+
 type EmergencyStop = {
   scope: "process" | "project";
   project_id: string | null;
@@ -92,6 +113,7 @@ type OperationsStatus = {
 type CenterData = {
   profile: CapabilityProfile;
   confirmations: Confirmation[];
+  decisionTrace: PolicyDecisionTrace;
   operations: OperationsStatus;
   projectStop: EmergencyStop | null;
 };
@@ -109,6 +131,14 @@ type ApiOptions = {
 };
 
 const LEVELS: AutonomyLevel[] = ["A0", "A1", "A2", "A3", "A4", "A5", "A6"];
+
+const VERDICT_LABELS: Record<PolicyVerdictKind, string> = {
+  ALLOW: "Разрешено",
+  ALLOW_WITH_LIMITS: "Разрешено с ограничениями",
+  NEEDS_CONFIRMATION: "Нужно подтверждение",
+  DENY: "Отклонено",
+  PAUSE: "Приостановлено"
+};
 
 const api = async <T,>(url: string, options: ApiOptions = {}): Promise<T> => {
   const headers =
@@ -180,19 +210,26 @@ export default function ControlCenterPage() {
     setStopReason("");
     setStopAcknowledged(false);
     try {
-      const [profileResponse, confirmationsResponse, operations, projectStop] = await Promise.all([
-        api<{ profile: CapabilityProfile }>(
-          `/api/v1/projects/${encodeURIComponent(id)}/autonomy-profile`
-        ),
-        api<{ items: Confirmation[] }>(`/api/v1/projects/${encodeURIComponent(id)}/confirmations`),
-        api<OperationsStatus>("/api/v1/operations/status"),
-        api<EmergencyStop | null>(
-          `/api/v1/operations/emergency-stop?project_id=${encodeURIComponent(id)}`
-        )
-      ]);
+      const [profileResponse, confirmationsResponse, decisionTrace, operations, projectStop] =
+        await Promise.all([
+          api<{ profile: CapabilityProfile }>(
+            `/api/v1/projects/${encodeURIComponent(id)}/autonomy-profile`
+          ),
+          api<{ items: Confirmation[] }>(
+            `/api/v1/projects/${encodeURIComponent(id)}/confirmations`
+          ),
+          api<PolicyDecisionTrace>(
+            `/api/v1/projects/${encodeURIComponent(id)}/decision-trace?limit=50`
+          ),
+          api<OperationsStatus>("/api/v1/operations/status"),
+          api<EmergencyStop | null>(
+            `/api/v1/operations/emergency-stop?project_id=${encodeURIComponent(id)}`
+          )
+        ]);
       setData({
         profile: profileResponse.profile,
         confirmations: confirmationsResponse.items,
+        decisionTrace,
         operations,
         projectStop
       });
@@ -469,8 +506,9 @@ export default function ControlCenterPage() {
           <h1>Полномочия, подтверждения и аварийное состояние — в одном месте</h1>
           <p>
             Уровень A0–A6 теперь можно изменить только после серверного preview и явной проверки
-            разницы. Ожидающие действия проходят отдельную проверку перед approve/reject, а
-            emergency stop можно активировать для проекта или всего процесса без скрытого resume.
+            разницы. Ожидающие действия проходят отдельную проверку перед approve/reject, а Policy
+            Decision Trace объясняет решения без содержимого задач, а emergency stop можно
+            активировать для проекта или всего процесса без скрытого resume.
           </p>
         </div>
         <form className={styles.projectForm} onSubmit={openProject}>
@@ -880,6 +918,69 @@ export default function ControlCenterPage() {
               </div>
             </section>
           </div>
+
+          <section className={styles.decisionTrace} aria-labelledby="policy-decision-trace-title">
+            <header>
+              <div>
+                <span className={styles.eyebrow}>Policy Decision Trace</span>
+                <h2 id="policy-decision-trace-title">Почему Policy Runtime принял решение</h2>
+              </div>
+              <span className={styles.generated}>
+                {data.decisionTrace.items.length} из последних {data.decisionTrace.limit}
+              </span>
+            </header>
+
+            <p className={styles.traceBoundary}>
+              Журнал показывает только actor, operation, capabilities, точные ссылки на объекты,
+              verdict и причины Policy Runtime. Purpose, idempotency keys, request/result, prompts и
+              секреты через этот API не выдаются.
+            </p>
+
+            <div className={styles.traceList}>
+              {data.decisionTrace.items.map((decision) => (
+                <article key={decision.decision_id} data-verdict={decision.verdict}>
+                  <div className={styles.traceTop}>
+                    <strong>{VERDICT_LABELS[decision.verdict]}</strong>
+                    <em data-verdict={decision.verdict}>{decision.verdict}</em>
+                  </div>
+                  <p>{decision.reasons.join(" · ")}</p>
+                  <dl className={styles.traceDetails}>
+                    <div>
+                      <dt>Capabilities</dt>
+                      <dd>{decision.capability_ids.join(" · ")}</dd>
+                    </div>
+                    <div>
+                      <dt>Объекты</dt>
+                      <dd>
+                        {decision.object_ids.length > 0
+                          ? decision.object_ids.join(" · ")
+                          : "Без конкретного объекта"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Actor</dt>
+                      <dd>{decision.actor_id}</dd>
+                    </div>
+                    <div>
+                      <dt>Operation</dt>
+                      <dd>{decision.operation_id}</dd>
+                    </div>
+                  </dl>
+                  <small>
+                    {dateTime(decision.created_at)} · policy {decision.policy_version}
+                    {decision.evaluated_at === decision.created_at
+                      ? ""
+                      : ` · оценено ${dateTime(decision.evaluated_at)}`}
+                  </small>
+                </article>
+              ))}
+              {data.decisionTrace.items.length === 0 && (
+                <p className={styles.muted}>
+                  Policy Runtime ещё не записывал решений для этого проекта.
+                </p>
+              )}
+            </div>
+          </section>
 
           <section className={styles.operations}>
             <header>
