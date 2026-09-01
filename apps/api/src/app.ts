@@ -500,6 +500,20 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       }
     );
 
+    app.get(
+      "/api/v1/operations/emergency-stop",
+      {
+        schema: {
+          querystring: Type.Object(
+            { project_id: Type.String({ minLength: 1 }) },
+            { additionalProperties: false }
+          ),
+          response: { 200: Type.Union([EmergencyStopStateSchema, Type.Null()]) }
+        }
+      },
+      (request) => stopStore.getProjectStop(request.query.project_id, identityFor(request).owner_id)
+    );
+
     app.post(
       "/api/v1/operations/emergency-stop",
       {
