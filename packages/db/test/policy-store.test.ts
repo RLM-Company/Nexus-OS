@@ -106,6 +106,73 @@ describe("PolicyStore", () => {
     expect(store.getConfirmation(confirmation.confirmation_id)?.status).toBe("CONSUMED");
   });
 
+  it("returns bounded content-minimized decisions without duplicate replay events", () => {
+    const intent: PolicyIntent = {
+      operation_id: "operation-trace",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["external.communicate"],
+      object_ids: ["campaign-trace-1"],
+      purpose: "Sensitive campaign copy must stay out of Decision Trace",
+      idempotency_key: "private-idempotency-key"
+    };
+    const verdict: PolicyVerdict = {
+      ...confirmationVerdict(intent, "external.communicate"),
+      evaluated_capabilities: [
+        {
+          capability_id: "external.communicate",
+          mode: "CONFIRM",
+          scope: ["private-audience-segment"],
+          conditions: []
+        }
+      ],
+      permission_ids: ["internal-permission-id"]
+    };
+    const first = store.createConfirmation(intent, verdict, NOW);
+    const replay = store.createConfirmation(intent, verdict, NOW);
+
+    expect(replay.confirmation_id).toBe(first.confirmation_id);
+    expect(store.listDecisionTrace(projectId)).toHaveLength(1);
+    expect(store.listDecisionTrace(projectId)).toEqual([
+      expect.objectContaining({
+        operation_id: intent.operation_id,
+        project_id: projectId,
+        actor_id: "manager",
+        verdict: "NEEDS_CONFIRMATION",
+        capability_ids: ["external.communicate"],
+        object_ids: ["campaign-trace-1"],
+        reasons: ["Owner confirmation is required."],
+        policy_version: "1.1.0"
+      })
+    ]);
+    const serialized = JSON.stringify(store.listDecisionTrace(projectId));
+    expect(serialized).not.toContain(intent.purpose);
+    expect(serialized).not.toContain(intent.idempotency_key);
+    expect(serialized).not.toContain("private-audience-segment");
+    expect(serialized).not.toContain("internal-permission-id");
+
+    expect(
+      store.decideConfirmation({
+        confirmationId: first.confirmation_id,
+        challengeNonce: first.challenge_nonce,
+        decision: "reject",
+        decidedBy: "local-owner",
+        approvalMethod: "session",
+        reason: "Owner rejected the operation",
+        decidedAt: "2026-08-24T12:01:00.000Z"
+      }).status
+    ).toBe("REJECTED");
+    expect(store.listDecisionTrace(projectId, 1)).toEqual([
+      expect.objectContaining({
+        operation_id: intent.operation_id,
+        verdict: "DENY",
+        reasons: ["Owner confirmation is required.", "Confirmation was rejected by the owner."]
+      })
+    ]);
+    expect(() => store.listDecisionTrace(projectId, 0)).toThrow(RangeError);
+    expect(() => store.listDecisionTrace(projectId, 101)).toThrow(RangeError);
+  });
+
   it("refuses a session-only approval for a critical capability", () => {
     const intent: PolicyIntent = {
       operation_id: "operation-finance",

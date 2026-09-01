@@ -180,6 +180,33 @@ export const PolicyVerdictSchema = Type.Object(
 );
 export type PolicyVerdict = Static<typeof PolicyVerdictSchema>;
 
+export const PolicyDecisionTraceEventSchema = Type.Object(
+  {
+    decision_id: Type.String({ minLength: 1, maxLength: 128 }),
+    operation_id: Type.String({ minLength: 1, maxLength: 128 }),
+    project_id: Type.String({ minLength: 1, maxLength: 128 }),
+    actor_id: Type.String({ minLength: 1, maxLength: 128 }),
+    verdict: PolicyVerdictKindSchema,
+    capability_ids: Type.Array(CapabilityIdSchema, { minItems: 1, uniqueItems: true }),
+    object_ids: Type.Array(Type.String({ minLength: 1 })),
+    reasons: Type.Array(Type.String({ minLength: 1 })),
+    policy_version: Type.String({ minLength: 1 }),
+    evaluated_at: Type.String({ minLength: 1 }),
+    created_at: Type.String({ minLength: 1 })
+  },
+  { additionalProperties: false }
+);
+export type PolicyDecisionTraceEvent = Static<typeof PolicyDecisionTraceEventSchema>;
+
+export const PolicyDecisionTraceListResponseSchema = Type.Object(
+  {
+    items: Type.Array(PolicyDecisionTraceEventSchema, { maxItems: 100 }),
+    limit: Type.Integer({ minimum: 1, maximum: 100 })
+  },
+  { additionalProperties: false }
+);
+export type PolicyDecisionTraceListResponse = Static<typeof PolicyDecisionTraceListResponseSchema>;
+
 export const PolicyEvaluationEnvelopeSchema = Type.Object(
   {
     contract_version: Type.Literal(POLICY_CONTRACT_VERSION),

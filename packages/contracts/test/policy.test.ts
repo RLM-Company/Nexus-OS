@@ -7,6 +7,8 @@ import {
   CapabilityProfilePreviewResponseSchema,
   CapabilityProfileSchema,
   PermissionContractSchema,
+  PolicyDecisionTraceEventSchema,
+  PolicyDecisionTraceListResponseSchema,
   PolicyEvaluationEnvelopeSchema,
   PolicyVerdictSchema,
   createCapabilityProfile,
@@ -74,6 +76,36 @@ describe("autonomy policy contracts", () => {
     expect(verdictForModes(["FULL", "DENY"])).toBe("DENY");
     expect(verdictForModes(["AUTONOMOUS", "SCOPED"])).toBe("ALLOW_WITH_LIMITS");
     expect(verdictForModes(["FULL", "AUTONOMOUS"])).toBe("ALLOW");
+  });
+
+  it("accepts only content-minimized policy Decision Trace events", () => {
+    const event = {
+      decision_id: "decision-1",
+      operation_id: "operation-1",
+      project_id: "project-1",
+      actor_id: "manager",
+      verdict: "NEEDS_CONFIRMATION",
+      capability_ids: ["external.communicate"],
+      object_ids: ["campaign-1"],
+      reasons: ["Owner confirmation is required."],
+      policy_version: "1.1.0",
+      evaluated_at: "2026-09-01T10:00:00.000Z",
+      created_at: "2026-09-01T10:00:00.000Z"
+    } as const;
+
+    expect(Value.Check(PolicyDecisionTraceEventSchema, event)).toBe(true);
+    expect(
+      Value.Check(PolicyDecisionTraceEventSchema, {
+        ...event,
+        purpose: "Sensitive task content must not cross the trace contract."
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(PolicyDecisionTraceListResponseSchema, {
+        items: [event],
+        limit: 50
+      })
+    ).toBe(true);
   });
 
   it("accepts a complete capability profile", () => {

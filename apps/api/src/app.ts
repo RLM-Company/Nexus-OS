@@ -36,6 +36,7 @@ import {
   OwnerSessionViewSchema,
   ProjectDetailResponseSchema,
   ProjectListResponseSchema,
+  PolicyDecisionTraceListResponseSchema,
   ProposeDelegatedAgentRequestSchema,
   ProposeRootAgentRequestSchema,
   PERMISSION_MODE_RANK,
@@ -66,6 +67,7 @@ import {
   type OwnerSessionView,
   type ProjectDetailResponse,
   type ProjectListResponse,
+  type PolicyDecisionTraceListResponse,
   type RunCancelResponse,
   type RuntimeOperationsStatus,
   type StreamEvent
@@ -164,6 +166,11 @@ const AgentStudioPatternQuerySchema = Type.Object(
 );
 
 const AgentStudioDecisionEventQuerySchema = Type.Object(
+  { limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 50 })) },
+  { additionalProperties: false }
+);
+
+const PolicyDecisionTraceQuerySchema = Type.Object(
   { limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 50 })) },
   { additionalProperties: false }
 );
@@ -1282,6 +1289,30 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
           }
           const response: CapabilityProfileResponse = { profile };
+          return response;
+        }
+      );
+
+      app.get(
+        "/api/v1/projects/:projectId/decision-trace",
+        {
+          schema: {
+            params: AgentStudioProjectParamsSchema,
+            querystring: PolicyDecisionTraceQuerySchema,
+            response: { 200: PolicyDecisionTraceListResponseSchema, 404: ApiErrorSchema }
+          }
+        },
+        async (request, reply) => {
+          if (!store.getProject(request.params.projectId, identityFor(request).owner_id)) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          const limit = request.query.limit ?? 50;
+          const response: PolicyDecisionTraceListResponse = {
+            items: policyStore.listDecisionTrace(request.params.projectId, limit),
+            limit
+          };
           return response;
         }
       );

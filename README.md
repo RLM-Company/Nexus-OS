@@ -13,8 +13,8 @@ agent runtime.
 - Agent Studio catalogs, blueprints and owner/delegated proposal flows with idempotent writes and
   Decision Trace records;
 - Autonomy Control Center with the canonical A0–A6 profile, authority-diff preview, version-checked
-  apply, confirmation review, guarded approve/reject, durable emergency-stop activation and
-  operational status;
+  apply, confirmation review, guarded approve/reject, content-minimized Policy Decision Trace,
+  durable emergency-stop activation and operational status;
 - owner-bound API identity, project isolation, session revocation and bound one-time step-up proof
   enforcement for critical mutations.
 
@@ -38,8 +38,8 @@ agent runtime.
 - Manager and worker agents do not execute task graphs or make model calls as agents yet.
 - External tool effects and the local daemon are not connected to an autonomous agent loop.
 - Manager Runtime Step 6 is accepted as `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`.
-- Roadmap Step 5 remains incomplete: point-override editing, owner-facing Decision Trace,
-  cost/limit controls and explicit `RECOVERY_REQUIRED` handling still need UI slices.
+- Roadmap Step 5 remains incomplete: point-override editing, cost/limit controls and explicit
+  `RECOVERY_REQUIRED` handling still need UI slices.
 - The final Manager system prompt belongs to roadmap Step 7 and must be written with the owner.
 - No production provider or production Secret Manager backend has been selected.
 - The first closed paid beta remains limited to A0–A2; A3–A6 require later security and economic
@@ -62,7 +62,10 @@ Web runs at `http://localhost:3000`, API at `http://127.0.0.1:3100`, and health 
 `GET /api/v1/health`. A secret-free provider summary is available at
 `GET /api/v1/model-runtime`. The web app proxies `/api/*` to `COSMORA_API_ORIGIN`.
 Operational counters and active safety alerts are available at `GET /api/v1/operations/status`.
-The owner-facing autonomy UI is available at `/control-center`, and Agent Studio at
+The bounded owner-only Policy Decision Trace is available at
+`GET /api/v1/projects/:projectId/decision-trace?limit=50`; its response excludes purpose,
+idempotency keys, request/result payloads, prompts, secrets and raw grants. The owner-facing
+autonomy UI is available at `/control-center`, and Agent Studio at
 `/agent-studio`.
 
 ## Connect a model provider

@@ -4,6 +4,7 @@ import {
   CapabilityProfileSchema,
   ConfirmationRequestSchema,
   PermissionContractSchema,
+  PolicyDecisionTraceEventSchema,
   PolicyIntentSchema,
   PolicyVerdictSchema,
   createCapabilityProfile,
@@ -14,6 +15,7 @@ import {
   type ConfirmationRequest,
   type ConfirmationStatus,
   type PermissionContract,
+  type PolicyDecisionTraceEvent,
   type PolicyIntent,
   type PolicyVerdict,
   type ToolOperationStatus
@@ -82,6 +84,38 @@ const asOperation = (row: SqlRow): StoredPolicyOperation => ({
   created_at: String(row.created_at),
   updated_at: String(row.updated_at)
 });
+
+const decisionTraceFromRow = (row: SqlRow): PolicyDecisionTraceEvent => {
+  const intent = parseChecked<PolicyIntent>(PolicyIntentSchema, row.intent_json);
+  const verdict = parseChecked<PolicyVerdict>(PolicyVerdictSchema, row.verdict_json);
+  const projectId = String(row.project_id);
+  const operationId = String(row.operation_id);
+  if (
+    intent.project_id !== projectId ||
+    intent.operation_id !== operationId ||
+    verdict.operation_id !== operationId ||
+    verdict.verdict !== String(row.verdict)
+  ) {
+    throw new Error("Stored policy decision bindings failed validation");
+  }
+  const event: PolicyDecisionTraceEvent = {
+    decision_id: String(row.decision_id),
+    operation_id: operationId,
+    project_id: projectId,
+    actor_id: intent.actor_id,
+    verdict: verdict.verdict,
+    capability_ids: [...intent.capability_ids],
+    object_ids: [...intent.object_ids],
+    reasons: [...verdict.reasons],
+    policy_version: verdict.policy_version,
+    evaluated_at: verdict.evaluated_at,
+    created_at: String(row.created_at)
+  };
+  if (!Value.Check(PolicyDecisionTraceEventSchema, event)) {
+    throw new Error("Stored policy decision trace failed validation");
+  }
+  return event;
+};
 
 const confirmationFromRow = (row: SqlRow): ConfirmationRequest =>
   parseChecked<ConfirmationRequest>(
@@ -251,6 +285,22 @@ export class PolicyStore {
       idempotencyKey
     );
     return row ? asOperation(row) : null;
+  }
+
+  listDecisionTrace(projectId: string, limit = 50): PolicyDecisionTraceEvent[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new RangeError("Policy Decision Trace limit must be an integer between 1 and 100");
+    }
+    const rows = this.#sqlite
+      .prepare(
+        `SELECT decision_id, operation_id, project_id, verdict, intent_json, verdict_json,
+          created_at
+         FROM policy_decisions
+         WHERE project_id = ?
+         ORDER BY created_at DESC, rowid DESC LIMIT ?`
+      )
+      .all(projectId, limit) as unknown as SqlRow[];
+    return rows.map(decisionTraceFromRow);
   }
 
   #assertSameIntent(existing: StoredPolicyOperation, intent: PolicyIntent): void {
