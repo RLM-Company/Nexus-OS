@@ -1,42 +1,49 @@
 # Cosmora OS
 
-This repository contains the B0.1 foundation of Cosmora OS.
+Cosmora OS is an owner-controlled, policy-gated AI project workspace. This repository contains the
+integrated product and safety foundations; it does not yet contain an autonomous Manager or worker
+agent runtime.
 
-## Current scope
+## Current integrated scope
 
-Implemented through the current checkpoint:
+### Product surfaces
 
-- B01-001: technology ADR;
-- B01-002: pnpm monorepo scaffold;
-- B01-003: shared TypeScript, ESLint, Prettier, and task configuration;
-- B01-004: shared runtime contracts;
-- B01-005: typed server configuration;
-- B01-006: Fastify API with a database-aware health check;
-- B01-007: responsive Next.js application shell;
-- B01-008: SQLite connection and reproducible Drizzle migrations.
-- B01-009–B01-012: persisted projects, main chats, messages, runs, and idempotency;
-- B01-013: typed project and message API;
-- B01-014: SSE mock-manager response with durable message history;
-- B01-015: interactive desktop and mobile project chat.
-- B01-016: provider-neutral Model Gateway with safe fallback and timeouts;
-- B01-017: Manager Core with durable multi-turn context;
-- B01-018: OpenAI-compatible streaming provider adapter and token accounting.
-- B01-019: restart recovery, owner isolation, strict idempotency, durable cancellation, and a
-  browser acceptance gate.
-- B02-001: versioned Model Registry and deterministic Router with fail-closed privacy, context, and
-  budget filters.
-- B02-002: registry-backed runtime selection and an atomic SQLite Usage Ledger for route attempts,
-  token usage, and calculated cost.
-- B02-003: bounded retry with exponential backoff, per-attempt timeout, exact-route circuit breaker,
-  and Usage Ledger records for every selected retry or fallback attempt.
-- B02-004: content-free runtime metrics, structured model-route logs, durable process/project
-  emergency stops, and fail-closed interruption of queued or active runs.
-- B02-005: asynchronous provider-neutral Secret Resolver; parsed runtime configuration retains only
-  credential presence and never the credential value.
+- responsive Next.js project shell with persisted projects, chat, streaming, cancellation and
+  restart recovery;
+- Agent Studio catalogs, blueprints and owner/delegated proposal flows with idempotent writes and
+  Decision Trace records;
+- Autonomy Control Center with the canonical A0–A6 profile, authority-diff preview, version-checked
+  apply, confirmation review, guarded approve/reject and operational status;
+- owner-bound API identity, project isolation, session revocation and bound one-time step-up proof
+  enforcement for critical mutations.
 
-The current vertical slice creates real local projects and can stream either deterministic
-mock-manager responses or a configured OpenAI-compatible model. Tool execution and autonomous
-worker agents are intentionally not connected yet.
+### Runtime foundations
+
+- SQLite persistence for projects, chats, messages, runs, identity, policy state, confirmations,
+  permissions, operations, audit and usage accounting;
+- provider-neutral Model Gateway with a versioned Model Registry, deterministic Router, bounded
+  retry, timeout, exact-route circuit breaker and safe fallback;
+- atomic Usage Ledger, content-free runtime metrics, structured route logs, Secret Resolver and
+  durable process/project emergency stops;
+- canonical Policy Runtime contracts for 19 capabilities and monotonic autonomy levels A0–A6,
+  deterministic evaluation, optimistic profile versions, overrides and fail-closed tool guards;
+- Manager Runtime Step 6 contract foundation: bounded role, task graph, context, artifact,
+  provenance, conflict, checkpoint, readiness and deterministic scenario release-gate contracts;
+- 19 canonical Manager Runtime scenario entries covering all 13 required categories and every
+  autonomy level A0–A6.
+
+## Current boundary
+
+- Manager and worker agents do not execute task graphs or make model calls as agents yet.
+- External tool effects and the local daemon are not connected to an autonomous agent loop.
+- Manager Runtime Step 6 is accepted as `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`.
+- Roadmap Step 5 remains incomplete: point-override editing, owner-facing Decision Trace,
+  cost/limit controls, emergency-stop mutation and explicit `RECOVERY_REQUIRED` handling still need
+  UI slices.
+- The final Manager system prompt belongs to roadmap Step 7 and must be written with the owner.
+- No production provider or production Secret Manager backend has been selected.
+- The first closed paid beta remains limited to A0–A2; A3–A6 require later security and economic
+  gates.
 
 ## Requirements
 
@@ -55,6 +62,8 @@ Web runs at `http://localhost:3000`, API at `http://127.0.0.1:3100`, and health 
 `GET /api/v1/health`. A secret-free provider summary is available at
 `GET /api/v1/model-runtime`. The web app proxies `/api/*` to `COSMORA_API_ORIGIN`.
 Operational counters and active safety alerts are available at `GET /api/v1/operations/status`.
+The owner-facing autonomy UI is available at `/control-center`, and Agent Studio at
+`/agent-studio`.
 
 ## Connect a model provider
 
@@ -84,8 +93,21 @@ the gateway fails the run instead of mixing responses from two models.
 Retryable failures are retried only before the first response token and within the configured
 attempt limit. Backoff is bounded, cancellation also interrupts backoff, and repeated failures open
 a circuit for the exact registry route. After the cooldown, one probe is allowed; a successful probe
-closes the circuit. Each retry, blocked circuit attempt, and fallback selection gets its own atomic
+closes the circuit. Each retry, blocked circuit attempt and fallback selection gets its own atomic
 Usage Ledger record.
+
+An external route starts only when `MODEL_PROVIDER_ID:MODEL_NAME` is active in the selected
+versioned Model Registry and its protocol matches `MODEL_PROVIDER`. Missing, disabled, expired or
+mismatched metadata fails closed instead of bypassing the Router. Unknown pricing remains allowed
+only for requests without a hard cost limit; unknown privacy never qualifies for confidential
+routing. External route metadata must be backed by dated evidence; Cosmora does not infer model
+capabilities or silently substitute another model.
+
+`loadServerConfig` validates that a credential exists but discards its value after parsing. The API
+composition root resolves `MODEL_API_KEY` asynchronously immediately before constructing the
+server-only provider adapter. The current resolver reads process environment/GitHub Secrets; a
+managed secret backend can replace it through the same interface without changing Gateway or UI
+contracts.
 
 ## Emergency stop
 
@@ -106,20 +128,10 @@ runs before provider selection, and persists `EMERGENCY_STOP` in run/message/acc
 ```
 
 `RUNTIME_EMERGENCY_STOP=true` activates the same process-wide fail-closed state during startup. A
-stop survives restart. The HTTP API intentionally has no resume endpoint until owner identity and
-step-up verification are implemented; recovery must use an audited operator flow.
+stop survives restart. The HTTP API intentionally has no unaudited resume endpoint; recovery must
+use an explicit operator flow.
 
-An external route starts only when `MODEL_PROVIDER_ID:MODEL_NAME` is active in the selected
-versioned Model Registry and its protocol matches `MODEL_PROVIDER`. Missing, disabled, or
-mismatched metadata fails startup instead of bypassing the Router. Unknown pricing remains allowed
-only for requests without a hard cost limit; unknown privacy never qualifies for confidential
-routing.
-
-`loadServerConfig` validates that a credential exists but discards its value after parsing. The API
-composition root resolves `MODEL_API_KEY` asynchronously immediately before constructing the
-server-only provider adapter. The current resolver reads process environment/GitHub Secrets; a
-managed secret backend can replace it through the same interface without changing Gateway or UI
-contracts.
+## Verification
 
 Run the complete verification pipeline with:
 
@@ -128,15 +140,19 @@ pnpm check
 ```
 
 The gate runs formatting, a repository secret scan, lint, strict TypeScript, unit and API tests,
-production builds, and the Playwright B0.1 browser scenario. Install the Chromium runtime once on a
-new development machine with `pnpm --filter @cosmora/web exec playwright install --with-deps chromium`.
+production builds and all Playwright browser scenarios. Install the Chromium runtime once on a new
+development machine with
+`pnpm --filter @cosmora/web exec playwright install --with-deps chromium`.
 
 ## Repository rules
 
 - Provider SDKs belong behind `packages/model-gateway`.
 - Shared API schemas belong in `packages/contracts`.
+- Every tool execution must pass through `packages/tool-runtime` and Policy Runtime.
 - Secrets are server-only and never committed.
 - Future packages reference local packages with `workspace:*`.
 
-See `docs/decisions/ADR-001-technology-stack.md` and
-`docs/decisions/ADR-002-model-gateway.md` for accepted architecture decisions.
+See `docs/decisions/ADR-001-technology-stack.md`,
+`docs/decisions/ADR-002-model-gateway.md`, the
+`docs/roadmap/2026-08-24-from-policy-runtime-to-monetizable-release.md` roadmap and the latest
+document under `docs/checkpoints/` for the current verified boundary.
