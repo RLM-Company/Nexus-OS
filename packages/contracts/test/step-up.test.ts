@@ -23,6 +23,7 @@ describe("step-up proof contracts", () => {
 
   it("allows only registered security purposes", () => {
     expect(Value.Check(StepUpPurposeSchema, "autonomy_profile_escalation")).toBe(true);
+    expect(Value.Check(StepUpPurposeSchema, "project_usage_limit_expansion")).toBe(true);
     expect(Value.Check(StepUpPurposeSchema, "arbitrary_action")).toBe(false);
   });
 });
