@@ -1241,7 +1241,10 @@ export default function ControlCenterPage() {
               )}
 
               {overrideEditorOpen && (
-                <form className={styles.overrideEditor} onSubmit={previewOverrideEditor}>
+                <form
+                  className={styles.overrideEditor}
+                  onSubmit={(event) => void previewOverrideEditor(event)}
+                >
                   <div className={styles.overrideEditorIntro}>
                     <strong>{editingOverrideId ? "Изменить override" : "Новый override"}</strong>
                     <span>Пустые значения не заменяются скрытыми defaults.</span>
