@@ -206,6 +206,63 @@ test("shows exact project usage without exposing provider routes or invented pri
   await expect(usage).not.toContainText("PRIVATE PROMPT MUST NOT RENDER");
 });
 
+test("previews and applies a versioned project hard limit before requiring step-up to expand it", async ({
+  page,
+  request
+}) => {
+  const nonce = `${Date.now()}`;
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a project for the hard-limit browser check.",
+      client_message_id: `usage-limit-e2e-${nonce}`
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+  const limitUrl = `http://127.0.0.1:3100/api/v1/projects/${encodeURIComponent(projectId)}/usage-limit`;
+
+  await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
+
+  const usage = page.getByRole("region", { name: "Расходы и лимиты проекта" });
+  await expect(usage).toContainText("НЕ НАСТРОЕН");
+  await expect(page.getByLabel("Всего токенов")).toHaveValue("");
+  await expect(page.getByLabel("Стоимость")).toHaveValue("");
+
+  await page.getByLabel("Всего токенов").fill("10000");
+  await page.getByLabel("Стоимость").fill("2");
+  await page.getByRole("button", { name: "Проверить hard limit" }).click();
+
+  const preview = page.getByRole("region", { name: "Preview hard limit проекта" });
+  await expect(preview).toContainText("будущая v2");
+  await expect(preview).toContainText("10 000");
+  await expect(preview).toContainText("2,00 USD");
+  await expect(preview).toContainText("step-up не требуется");
+  await page
+    .getByLabel(
+      "Я проверил накопительный потолок и понимаю, что новые резервы сверх него будут отклонены до обращения к провайдеру."
+    )
+    .check();
+  await page.getByRole("button", { name: "Применить hard limit" }).click();
+
+  await expect(page.getByRole("status")).toContainText("Hard limit проекта сохранён как версия 2");
+  await expect(usage).toContainText("АКТИВЕН · v2");
+  const stored = await request.get(limitUrl);
+  expect(stored.ok()).toBeTruthy();
+  expect((await stored.json()) as Record<string, unknown>).toMatchObject({
+    limit: {
+      version: 2,
+      max_total_tokens: 10_000,
+      max_cost: { amount: 2, currency: "USD" }
+    }
+  });
+
+  await page.getByLabel("Всего токенов").fill("20000");
+  await page.getByRole("button", { name: "Проверить hard limit" }).click();
+  await expect(preview).toContainText("расширяет или снимает потолок и требует step-up");
+  await expect(page.getByLabel("Одноразовый step-up токен")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Применить hard limit" })).toBeDisabled();
+});
+
 test("activates and reloads a durable project emergency stop without exposing resume", async ({
   page,
   request

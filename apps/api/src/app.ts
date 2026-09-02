@@ -36,6 +36,8 @@ import {
   OwnerSessionViewSchema,
   ProjectDetailResponseSchema,
   ProjectListResponseSchema,
+  ProjectUsageLimitPreviewResponseSchema,
+  ProjectUsageLimitResponseSchema,
   ProjectUsageSummarySchema,
   PolicyDecisionTraceListResponseSchema,
   ProposeDelegatedAgentRequestSchema,
@@ -45,6 +47,7 @@ import {
   RunCancelResponseSchema,
   RuntimeOperationsStatusSchema,
   UpdateCapabilityProfileRequestSchema,
+  UpdateProjectUsageLimitRequestSchema,
   createCapabilityProfile,
   requiresStepUp,
   type ApiError,
@@ -68,6 +71,9 @@ import {
   type OwnerSessionView,
   type ProjectDetailResponse,
   type ProjectListResponse,
+  type ProjectUsageLimit,
+  type ProjectUsageLimitPreviewResponse,
+  type ProjectUsageLimitResponse,
   type ProjectUsageSummary,
   type PolicyDecisionTraceListResponse,
   type RunCancelResponse,
@@ -90,6 +96,8 @@ import {
   PatternLibraryConflictError,
   PatternLibraryNotFoundError,
   PatternLibraryValidationError,
+  ProjectUsageLimitExceededError,
+  UsageLimitConflictError,
   type DatabaseHealth,
   type EmergencyStopStore,
   type IdentityStore,
@@ -151,6 +159,24 @@ const profileUpdateRequiresStepUp = (
         PERMISSION_MODE_RANK[override.mode] >
           PERMISSION_MODE_RANK[AUTONOMY_MATRIX[override.capability_id][baseLevel]])
   );
+
+const usageLimitUpdateRequiresStepUp = (
+  current: ProjectUsageLimit,
+  next: {
+    max_total_tokens: number | null;
+    max_cost: { amount: number; currency: "USD" | "RUB" } | null;
+  }
+): boolean => {
+  const expandsTokens =
+    current.max_total_tokens !== null &&
+    (next.max_total_tokens === null || next.max_total_tokens > current.max_total_tokens);
+  const expandsCost =
+    current.max_cost !== null &&
+    (next.max_cost === null ||
+      next.max_cost.currency !== current.max_cost.currency ||
+      next.max_cost.amount > current.max_cost.amount);
+  return expandsTokens || expandsCost;
+};
 
 const errorBody = (
   requestId: string,
@@ -1260,6 +1286,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           identityFor(request).owner_id
         );
         dependencies.policyStore?.ensureProfile(accepted.project.id);
+        dependencies.usageStore?.ensureLimit(accepted.project.id, identityFor(request).owner_id);
         return reply.status(accepted.duplicate ? 200 : 201).send(acceptedResponse(accepted));
       }
     );
@@ -1295,6 +1322,144 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           }
           const response: ProjectUsageSummary = summary;
           return response;
+        }
+      );
+
+      app.get(
+        "/api/v1/projects/:projectId/usage-limit",
+        {
+          schema: {
+            params: AgentStudioProjectParamsSchema,
+            response: { 200: ProjectUsageLimitResponseSchema, 404: ApiErrorSchema }
+          }
+        },
+        async (request, reply) => {
+          const ownerId = identityFor(request).owner_id;
+          const limit = usageStore.ensureLimit(request.params.projectId, ownerId);
+          if (!limit) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          const response: ProjectUsageLimitResponse = { limit };
+          return response;
+        }
+      );
+
+      app.post(
+        "/api/v1/projects/:projectId/usage-limit/preview",
+        {
+          schema: {
+            params: AgentStudioProjectParamsSchema,
+            body: UpdateProjectUsageLimitRequestSchema,
+            response: {
+              200: ProjectUsageLimitPreviewResponseSchema,
+              404: ApiErrorSchema,
+              409: ApiErrorSchema
+            }
+          }
+        },
+        async (request, reply) => {
+          const ownerId = identityFor(request).owner_id;
+          const current = usageStore.ensureLimit(request.params.projectId, ownerId);
+          if (!current) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          if (current.version !== request.body.expected_version) {
+            return reply
+              .status(409)
+              .send(
+                errorBody(request.id, "USAGE_LIMIT_CONFLICT", "Project usage limit version changed")
+              );
+          }
+          const proposedLimit: ProjectUsageLimit = {
+            project_id: current.project_id,
+            version: current.version + 1,
+            max_total_tokens: request.body.max_total_tokens,
+            max_cost: request.body.max_cost,
+            created_at: current.created_at,
+            updated_at: new Date().toISOString()
+          };
+          const response: ProjectUsageLimitPreviewResponse = {
+            current_version: current.version,
+            proposed_limit: proposedLimit,
+            requires_step_up: usageLimitUpdateRequiresStepUp(current, request.body)
+          };
+          return response;
+        }
+      );
+
+      app.put(
+        "/api/v1/projects/:projectId/usage-limit",
+        {
+          schema: {
+            params: AgentStudioProjectParamsSchema,
+            body: UpdateProjectUsageLimitRequestSchema,
+            response: {
+              200: ProjectUsageLimitResponseSchema,
+              403: ApiErrorSchema,
+              404: ApiErrorSchema,
+              409: ApiErrorSchema
+            }
+          }
+        },
+        async (request, reply) => {
+          const identity = identityFor(request);
+          const current = usageStore.ensureLimit(request.params.projectId, identity.owner_id);
+          if (!current) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          if (current.version !== request.body.expected_version) {
+            return reply
+              .status(409)
+              .send(
+                errorBody(request.id, "USAGE_LIMIT_CONFLICT", "Project usage limit version changed")
+              );
+          }
+          if (usageLimitUpdateRequiresStepUp(current, request.body)) {
+            const token = stepUpToken(request.headers["x-step-up-token"]);
+            const verified =
+              token !== null &&
+              dependencies.stepUpProofConsumer !== undefined &&
+              (await dependencies.stepUpProofConsumer.consume({
+                token,
+                identity,
+                purpose: "project_usage_limit_expansion",
+                challenge: `project:${request.params.projectId}:usage-limit:${request.body.expected_version}`
+              }));
+            if (!verified) {
+              return reply
+                .status(403)
+                .send(errorBody(request.id, "STEP_UP_REQUIRED", "Step-up verification required"));
+            }
+          }
+          try {
+            const response: ProjectUsageLimitResponse = {
+              limit: usageStore.updateLimit(
+                request.params.projectId,
+                request.body,
+                identity.owner_id
+              )
+            };
+            return response;
+          } catch (error) {
+            if (error instanceof UsageLimitConflictError) {
+              return reply
+                .status(409)
+                .send(
+                  errorBody(
+                    request.id,
+                    "USAGE_LIMIT_CONFLICT",
+                    "Project usage limit version changed"
+                  )
+                );
+            }
+            throw error;
+          }
         }
       );
     }
@@ -1991,6 +2156,20 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
               reply.raw.end();
             }
+            return reply;
+          }
+          if (error instanceof ProjectUsageLimitExceededError) {
+            store.failRun(run.id, error.code);
+            runtimeMetrics.runFailed("USAGE_LIMIT_EXCEEDED");
+            sendEvent(reply, {
+              type: "run.failed",
+              data: { run_id: run.id, error_code: error.code, retryable: false }
+            });
+            app.log.warn(
+              { runId: run.id, projectId: run.project_id, limitCode: error.code },
+              "Model route blocked by project usage limit"
+            );
+            reply.raw.end();
             return reply;
           }
           const gatewayError =

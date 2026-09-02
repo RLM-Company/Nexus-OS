@@ -443,6 +443,36 @@ export const modelUsageLedger = sqliteTable(
   ]
 );
 
+export const projectUsageLimits = sqliteTable(
+  "project_usage_limits",
+  {
+    projectId: text("project_id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    version: integer("version").notNull(),
+    maxTotalTokens: integer("max_total_tokens"),
+    maxCostAmount: real("max_cost_amount"),
+    currency: text("currency"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId, table.ownerId],
+      foreignColumns: [projects.id, projects.ownerId]
+    }).onDelete("cascade"),
+    check("project_usage_limits_version_check", sql`${table.version} >= 1`),
+    check(
+      "project_usage_limits_token_check",
+      sql`${table.maxTotalTokens} IS NULL OR ${table.maxTotalTokens} >= 1`
+    ),
+    check(
+      "project_usage_limits_cost_check",
+      sql`(${table.maxCostAmount} IS NULL AND ${table.currency} IS NULL)
+          OR (${table.maxCostAmount} > 0 AND ${table.currency} IN ('USD', 'RUB'))`
+    )
+  ]
+);
+
 export const emergencyStops = sqliteTable(
   "emergency_stops",
   {

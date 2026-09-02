@@ -55,7 +55,8 @@ const GatewayFailureCountersSchema = Type.Object(
     PROVIDER_ERROR: Type.Integer({ minimum: 0 }),
     CIRCUIT_OPEN: Type.Integer({ minimum: 0 }),
     INTERRUPTED: Type.Integer({ minimum: 0 }),
-    EMERGENCY_STOP: Type.Integer({ minimum: 0 })
+    EMERGENCY_STOP: Type.Integer({ minimum: 0 }),
+    USAGE_LIMIT_EXCEEDED: Type.Integer({ minimum: 0 })
   },
   { additionalProperties: false }
 );

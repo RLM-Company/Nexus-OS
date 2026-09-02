@@ -18,6 +18,19 @@ export class ModelUsageConflictError extends Error {
   }
 }
 
+export type ProjectUsageLimitFailureCode =
+  "PROJECT_TOKEN_LIMIT_EXCEEDED" | "PROJECT_COST_LIMIT_EXCEEDED" | "PROJECT_USAGE_EVIDENCE_MISSING";
+
+export class ProjectUsageLimitExceededError extends Error {
+  readonly code: ProjectUsageLimitFailureCode;
+
+  constructor(code: ProjectUsageLimitFailureCode) {
+    super(`Project usage reservation denied: ${code}`);
+    this.name = "ProjectUsageLimitExceededError";
+    this.code = code;
+  }
+}
+
 export interface StoredProject {
   id: string;
   title: string;
@@ -101,6 +114,9 @@ const asMessage = (row: SqlRow): StoredMessage => row as unknown as StoredMessag
 const asRun = (row: SqlRow): StoredRun => row as unknown as StoredRun;
 const asModelUsage = (row: SqlRow): StoredModelUsage => row as unknown as StoredModelUsage;
 const now = (): string => new Date().toISOString();
+
+const finiteNonNegative = (value: number | null): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 const projectTitle = (message: string): string => {
   const normalized = message.replace(/\s+/g, " ").trim();
@@ -353,59 +369,162 @@ export class ProjectStore {
       return null;
     }
 
-    const existing = this.#sqlite
-      .prepare(
-        `SELECT usage_id, run_id, project_id, attempt, status, registry_version, provider_id,
-          model_requested, model_resolved, estimated_input_tokens, max_output_tokens,
-          estimated_cost_amount, actual_input_tokens, actual_output_tokens,
-          calculated_cost_amount, currency, error_code, created_at, updated_at
-         FROM model_usage_ledger WHERE run_id = ? AND attempt = ?`
-      )
-      .get(runId, reservation.attempt) as SqlRow | undefined;
-    if (existing) {
-      const stored = asModelUsage(existing);
-      const sameRoute =
-        stored.registry_version === reservation.registry_version &&
-        stored.provider_id === reservation.provider_id &&
-        stored.model_requested === reservation.model_id &&
-        stored.estimated_input_tokens === reservation.estimated_input_tokens &&
-        stored.max_output_tokens === reservation.max_output_tokens &&
-        stored.estimated_cost_amount === (reservation.estimated_cost?.amount ?? null) &&
-        stored.currency === (reservation.estimated_cost?.currency ?? null);
-      if (!sameRoute) throw new ModelUsageConflictError();
-      return stored;
-    }
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const existing = this.#sqlite
+        .prepare(
+          `SELECT usage_id, run_id, project_id, attempt, status, registry_version, provider_id,
+            model_requested, model_resolved, estimated_input_tokens, max_output_tokens,
+            estimated_cost_amount, actual_input_tokens, actual_output_tokens,
+            calculated_cost_amount, currency, error_code, created_at, updated_at
+           FROM model_usage_ledger WHERE run_id = ? AND attempt = ?`
+        )
+        .get(runId, reservation.attempt) as SqlRow | undefined;
+      if (existing) {
+        const stored = asModelUsage(existing);
+        const sameRoute =
+          stored.registry_version === reservation.registry_version &&
+          stored.provider_id === reservation.provider_id &&
+          stored.model_requested === reservation.model_id &&
+          stored.estimated_input_tokens === reservation.estimated_input_tokens &&
+          stored.max_output_tokens === reservation.max_output_tokens &&
+          stored.estimated_cost_amount === (reservation.estimated_cost?.amount ?? null) &&
+          stored.currency === (reservation.estimated_cost?.currency ?? null);
+        if (!sameRoute) throw new ModelUsageConflictError();
+        this.#sqlite.exec("COMMIT;");
+        return stored;
+      }
 
-    const timestamp = now();
-    const usageId = randomUUID();
-    this.#sqlite
-      .prepare(
-        `INSERT INTO model_usage_ledger
-          (usage_id, run_id, project_id, attempt, status, registry_version, provider_id,
-           model_requested, estimated_input_tokens, max_output_tokens, estimated_cost_amount,
-           currency, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        usageId,
-        runId,
-        run.project_id,
-        reservation.attempt,
-        reservation.registry_version,
-        reservation.provider_id,
-        reservation.model_id,
-        reservation.estimated_input_tokens,
-        reservation.max_output_tokens,
-        reservation.estimated_cost?.amount ?? null,
-        reservation.estimated_cost?.currency ?? null,
-        timestamp,
-        timestamp
-      );
-    return (
-      this.getModelUsageForRun(runId, ownerId).find(
-        (usage) => usage.attempt === reservation.attempt
-      ) ?? null
-    );
+      const limit = this.#sqlite
+        .prepare(
+          `SELECT max_total_tokens, max_cost_amount, currency
+           FROM project_usage_limits WHERE project_id = ? AND owner_id = ?`
+        )
+        .get(run.project_id, ownerId) as
+        | {
+            max_total_tokens: number | null;
+            max_cost_amount: number | null;
+            currency: Currency | null;
+          }
+        | undefined;
+      if (limit && (limit.max_total_tokens !== null || limit.max_cost_amount !== null)) {
+        const accounted = this.#sqlite
+          .prepare(
+            `SELECT usage_id, run_id, project_id, attempt, status, registry_version, provider_id,
+              model_requested, model_resolved, estimated_input_tokens, max_output_tokens,
+              estimated_cost_amount, actual_input_tokens, actual_output_tokens,
+              calculated_cost_amount, currency, error_code, created_at, updated_at
+             FROM model_usage_ledger
+             WHERE project_id = ? AND status IN ('reserved', 'committed')`
+          )
+          .all(run.project_id) as unknown as StoredModelUsage[];
+
+        if (limit.max_total_tokens !== null) {
+          if (!Number.isInteger(limit.max_total_tokens) || limit.max_total_tokens < 1) {
+            throw new ProjectUsageLimitExceededError("PROJECT_USAGE_EVIDENCE_MISSING");
+          }
+          let usedTokens = 0;
+          for (const usage of accounted) {
+            const input =
+              usage.status === "committed"
+                ? usage.actual_input_tokens
+                : usage.estimated_input_tokens;
+            const output =
+              usage.status === "committed" ? usage.actual_output_tokens : usage.max_output_tokens;
+            if (!finiteNonNegative(input) || !finiteNonNegative(output)) {
+              throw new ProjectUsageLimitExceededError("PROJECT_USAGE_EVIDENCE_MISSING");
+            }
+            usedTokens += input + output;
+          }
+          if (
+            !Number.isInteger(reservation.estimated_input_tokens) ||
+            !Number.isInteger(reservation.max_output_tokens) ||
+            reservation.estimated_input_tokens < 0 ||
+            reservation.max_output_tokens < 1
+          ) {
+            throw new ProjectUsageLimitExceededError("PROJECT_USAGE_EVIDENCE_MISSING");
+          }
+          if (
+            usedTokens + reservation.estimated_input_tokens + reservation.max_output_tokens >
+            limit.max_total_tokens
+          ) {
+            throw new ProjectUsageLimitExceededError("PROJECT_TOKEN_LIMIT_EXCEEDED");
+          }
+        }
+
+        if (limit.max_cost_amount !== null) {
+          if (
+            !finiteNonNegative(limit.max_cost_amount) ||
+            limit.max_cost_amount === 0 ||
+            (limit.currency !== "USD" && limit.currency !== "RUB")
+          ) {
+            throw new ProjectUsageLimitExceededError("PROJECT_USAGE_EVIDENCE_MISSING");
+          }
+          let usedCost = 0;
+          for (const usage of accounted) {
+            const amount =
+              usage.status === "committed"
+                ? usage.calculated_cost_amount
+                : usage.estimated_cost_amount;
+            if (!finiteNonNegative(amount) || usage.currency !== limit.currency) {
+              throw new ProjectUsageLimitExceededError("PROJECT_USAGE_EVIDENCE_MISSING");
+            }
+            usedCost += amount;
+          }
+          if (
+            !reservation.estimated_cost ||
+            reservation.estimated_cost.currency !== limit.currency ||
+            !finiteNonNegative(reservation.estimated_cost.amount)
+          ) {
+            throw new ProjectUsageLimitExceededError("PROJECT_USAGE_EVIDENCE_MISSING");
+          }
+          if (usedCost + reservation.estimated_cost.amount > limit.max_cost_amount) {
+            throw new ProjectUsageLimitExceededError("PROJECT_COST_LIMIT_EXCEEDED");
+          }
+        }
+      }
+
+      const timestamp = now();
+      const usageId = randomUUID();
+      this.#sqlite
+        .prepare(
+          `INSERT INTO model_usage_ledger
+            (usage_id, run_id, project_id, attempt, status, registry_version, provider_id,
+             model_requested, estimated_input_tokens, max_output_tokens, estimated_cost_amount,
+             currency, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          usageId,
+          runId,
+          run.project_id,
+          reservation.attempt,
+          reservation.registry_version,
+          reservation.provider_id,
+          reservation.model_id,
+          reservation.estimated_input_tokens,
+          reservation.max_output_tokens,
+          reservation.estimated_cost?.amount ?? null,
+          reservation.estimated_cost?.currency ?? null,
+          timestamp,
+          timestamp
+        );
+      const inserted = this.#sqlite
+        .prepare(
+          `SELECT usage_id, run_id, project_id, attempt, status, registry_version, provider_id,
+            model_requested, model_resolved, estimated_input_tokens, max_output_tokens,
+            estimated_cost_amount, actual_input_tokens, actual_output_tokens,
+            calculated_cost_amount, currency, error_code, created_at, updated_at
+           FROM model_usage_ledger WHERE usage_id = ?`
+        )
+        .get(usageId) as SqlRow | undefined;
+      if (!inserted) throw new Error("Reserved model usage was not persisted");
+      this.#sqlite.exec("COMMIT;");
+      return asModelUsage(inserted);
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
   }
 
   getModelUsageForRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredModelUsage[] {

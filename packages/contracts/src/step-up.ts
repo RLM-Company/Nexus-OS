@@ -3,7 +3,8 @@ import { EntityIdSchema, IsoDateTimeSchema } from "./primitives.js";
 
 export const StepUpPurposeSchema = Type.Union([
   Type.Literal("autonomy_profile_escalation"),
-  Type.Literal("critical_tool_confirmation")
+  Type.Literal("critical_tool_confirmation"),
+  Type.Literal("project_usage_limit_expansion")
 ]);
 export type StepUpPurpose = Static<typeof StepUpPurposeSchema>;
 
