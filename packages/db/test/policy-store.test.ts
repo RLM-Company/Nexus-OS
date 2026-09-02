@@ -33,11 +33,7 @@ describe("PolicyStore", () => {
 
   it("creates an A0 profile and updates it with compare-and-swap versioning", () => {
     const initial = store.ensureProfile(projectId, NOW);
-    expect(initial).toMatchObject({
-      project_id: projectId,
-      base_level: "A0",
-      version: 1
-    });
+    expect(initial).toMatchObject({ project_id: projectId, base_level: "A0", version: 1 });
     expect(initial?.grants).toHaveLength(19);
 
     const updated = store.updateProfile({
@@ -277,12 +273,7 @@ describe("PolicyStore", () => {
       operation_id: intent.operation_id,
       verdict: "ALLOW",
       evaluated_capabilities: [
-        {
-          capability_id: "workspace.write",
-          mode: "AUTONOMOUS",
-          scope: [],
-          conditions: []
-        }
+        { capability_id: "workspace.write", mode: "AUTONOMOUS", scope: [], conditions: [] }
       ],
       permission_ids: [],
       reasons: ["Finite override allowed the exact project object."],
@@ -325,10 +316,7 @@ describe("PolicyStore", () => {
       operation_id: "finite-operation-2",
       idempotency_key: "finite-write-2"
     };
-    const secondVerdict: PolicyVerdict = {
-      ...verdict,
-      operation_id: secondIntent.operation_id
-    };
+    const secondVerdict: PolicyVerdict = { ...verdict, operation_id: secondIntent.operation_id };
     expect(store.reserveAllowed(secondIntent, secondVerdict, authority, NOW).status).toBe(
       "AUTHORITY_CHANGED"
     );
@@ -339,10 +327,7 @@ describe("PolicyStore", () => {
     expect(store.reserveAllowed(secondIntent, secondVerdict, refreshedAuthority, NOW).status).toBe(
       "RESERVED"
     );
-    expect(store.getProfile(projectId)).toMatchObject({
-      version: 4,
-      overrides: []
-    });
+    expect(store.getProfile(projectId)).toMatchObject({ version: 4, overrides: [] });
   });
 
   it("refuses a session-only approval for a critical capability", () => {

@@ -43,11 +43,7 @@ export interface StoredPolicyOperation {
 }
 
 export type ConfirmationDecisionResult =
-  | {
-      status: "APPROVED";
-      confirmation: ConfirmationRequest;
-      permission: PermissionContract;
-    }
+  | { status: "APPROVED"; confirmation: ConfirmationRequest; permission: PermissionContract }
   | { status: "REJECTED"; confirmation: ConfirmationRequest }
   | {
       status: "NOT_FOUND" | "NONCE_MISMATCH" | "ALREADY_DECIDED" | "EXPIRED" | "STEP_UP_REQUIRED";
@@ -56,10 +52,7 @@ export type ConfirmationDecisionResult =
 export type ReservationResult =
   | { status: "RESERVED"; operation: StoredPolicyOperation }
   | { status: "REPLAY"; operation: StoredPolicyOperation }
-  | {
-      status: "BLOCKED" | "RECOVERY_REQUIRED";
-      operation: StoredPolicyOperation;
-    }
+  | { status: "BLOCKED" | "RECOVERY_REQUIRED"; operation: StoredPolicyOperation }
   | { status: "PERMISSION_EXHAUSTED" | "AUTHORITY_CHANGED" };
 
 export interface ReservationAuthoritySnapshot {
@@ -639,12 +632,7 @@ export class PolicyStore {
         object_ids: confirmation.intent.object_ids,
         valid_from: decidedAt,
         valid_until: confirmation.expires_at,
-        limits: {
-          money_minor: null,
-          tokens: null,
-          operations: 1,
-          delegation_depth: 0
-        },
+        limits: { money_minor: null, tokens: null, operations: 1, delegation_depth: 0 },
         parent_permission_id: null,
         approval: {
           approver_id: input.decidedBy,
@@ -786,7 +774,7 @@ export class PolicyStore {
       }
       const finiteOverrideIds = new Set(
         appliedOverrides.flatMap((override) =>
-          override?.remaining_uses === null || override === undefined ? [] : [override.override_id]
+          override === undefined || override.remaining_uses === null ? [] : [override.override_id]
         )
       );
       const nextProfile: CapabilityProfile | null =
@@ -803,12 +791,7 @@ export class PolicyStore {
                 }
                 return override.remaining_uses === 1
                   ? []
-                  : [
-                      {
-                        ...override,
-                        remaining_uses: override.remaining_uses - 1
-                      }
-                    ];
+                  : [{ ...override, remaining_uses: override.remaining_uses - 1 }];
               }),
               version: profile.version + 1,
               issued_at: timestamp

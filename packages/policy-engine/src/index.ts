@@ -96,10 +96,7 @@ const activePermissionGrants = (
   capabilityId: CapabilityId,
   now: number
 ): Array<{ contract: PermissionContract; grant: CapabilityGrant }> => {
-  const matches: Array<{
-    contract: PermissionContract;
-    grant: CapabilityGrant;
-  }> = [];
+  const matches: Array<{ contract: PermissionContract; grant: CapabilityGrant }> = [];
 
   for (const contract of contracts) {
     if (
@@ -131,12 +128,7 @@ const resolveCapability = (
   const baseGrants = input.profile.grants.filter((grant) => grant.capability_id === capabilityId);
   if (baseGrants.length !== 1) {
     return {
-      grant: {
-        capability_id: capabilityId,
-        mode: "DENY",
-        scope: [],
-        conditions: []
-      },
+      grant: { capability_id: capabilityId, mode: "DENY", scope: [], conditions: [] },
       permissionIds: [],
       reasons: [
         `Expected exactly one profile grant for ${capabilityId}; found ${baseGrants.length}.`

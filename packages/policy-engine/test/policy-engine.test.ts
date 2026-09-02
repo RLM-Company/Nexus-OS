@@ -56,12 +56,7 @@ const permission = (
   object_ids: [],
   valid_from: "2026-08-24T00:00:00Z",
   valid_until: null,
-  limits: {
-    money_minor: null,
-    tokens: null,
-    operations: null,
-    delegation_depth: 0
-  },
+  limits: { money_minor: null, tokens: null, operations: null, delegation_depth: 0 },
   parent_permission_id: null,
   approval: {
     approver_id: "owner-1",
@@ -76,11 +71,7 @@ const permission = (
 describe("evaluatePolicy", () => {
   it("denies an A0 web action", () => {
     const verdict = evaluatePolicy(
-      {
-        intent: intent(["context.web.read"]),
-        profile: profile("A0"),
-        permissionContracts: []
-      },
+      { intent: intent(["context.web.read"]), profile: profile("A0"), permissionContracts: [] },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("DENY");
@@ -88,11 +79,7 @@ describe("evaluatePolicy", () => {
 
   it("allows an A2 persistent workspace action", () => {
     const verdict = evaluatePolicy(
-      {
-        intent: intent(["workspace.write"]),
-        profile: profile("A2"),
-        permissionContracts: []
-      },
+      { intent: intent(["workspace.write"]), profile: profile("A2"), permissionContracts: [] },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("ALLOW");
@@ -160,9 +147,7 @@ describe("evaluatePolicy", () => {
         intent: intent(["contract.finalize"]),
         profile: profile("A3"),
         permissionContracts: [
-          permission("contract.finalize", "AUTONOMOUS", {
-            object_ids: ["contract-2"]
-          })
+          permission("contract.finalize", "AUTONOMOUS", { object_ids: ["contract-2"] })
         ]
       },
       { evaluatedAt: NOW }
@@ -256,11 +241,7 @@ describe("evaluatePolicy", () => {
 
   it("applies a named A5 conditional expansion", () => {
     const verdict = evaluatePolicy(
-      {
-        intent: intent(["production.deploy"]),
-        profile: profile("A5"),
-        permissionContracts: []
-      },
+      { intent: intent(["production.deploy"]), profile: profile("A5"), permissionContracts: [] },
       {
         evaluatedAt: NOW,
         activeConditionIds: ["subsequent_release_after_approved_first_release"]
@@ -270,16 +251,9 @@ describe("evaluatePolicy", () => {
   });
 
   it("denies cross-project evaluation", () => {
-    const crossProjectIntent = {
-      ...intent(["workspace.write"]),
-      project_id: "project-2"
-    };
+    const crossProjectIntent = { ...intent(["workspace.write"]), project_id: "project-2" };
     const verdict = evaluatePolicy(
-      {
-        intent: crossProjectIntent,
-        profile: profile("A6"),
-        permissionContracts: []
-      },
+      { intent: crossProjectIntent, profile: profile("A6"), permissionContracts: [] },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("DENY");
@@ -291,11 +265,7 @@ describe("evaluatePolicy", () => {
     if (first === undefined) throw new Error("Fixture has no grants");
     ambiguous.grants.push(first);
     const verdict = evaluatePolicy(
-      {
-        intent: intent([first.capability_id]),
-        profile: ambiguous,
-        permissionContracts: []
-      },
+      { intent: intent([first.capability_id]), profile: ambiguous, permissionContracts: [] },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("PAUSE");
@@ -325,11 +295,7 @@ describe("evaluatePolicy", () => {
 
   it("keeps every A6 capability fully autonomous", () => {
     const verdict = evaluatePolicy(
-      {
-        intent: intent([...CAPABILITY_IDS]),
-        profile: profile("A6"),
-        permissionContracts: []
-      },
+      { intent: intent([...CAPABILITY_IDS]), profile: profile("A6"), permissionContracts: [] },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("ALLOW");

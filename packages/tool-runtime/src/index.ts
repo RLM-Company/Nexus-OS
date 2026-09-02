@@ -39,27 +39,10 @@ export interface ToolInvocation<Input> {
 }
 
 export type ToolInvocationResult<Output> =
-  | {
-      status: "EXECUTED";
-      verdict: PolicyVerdict;
-      result: Output;
-      replayed: false;
-    }
-  | {
-      status: "EXECUTED";
-      verdict: PolicyVerdict;
-      result: Output;
-      replayed: true;
-    }
-  | {
-      status: "WAITING_CONFIRMATION";
-      verdict: PolicyVerdict;
-      confirmation: ConfirmationRequest;
-    }
-  | {
-      status: "DENIED" | "PAUSED" | "RECOVERY_REQUIRED";
-      verdict: PolicyVerdict;
-    }
+  | { status: "EXECUTED"; verdict: PolicyVerdict; result: Output; replayed: false }
+  | { status: "EXECUTED"; verdict: PolicyVerdict; result: Output; replayed: true }
+  | { status: "WAITING_CONFIRMATION"; verdict: PolicyVerdict; confirmation: ConfirmationRequest }
+  | { status: "DENIED" | "PAUSED" | "RECOVERY_REQUIRED"; verdict: PolicyVerdict }
   | { status: "FAILED"; verdict: PolicyVerdict; errorCode: string };
 
 const asReplay = <Output>(value: unknown): Output => value as Output;
@@ -172,11 +155,7 @@ export class GuardedToolRuntime {
           ? this.#policyStore.getConfirmation(existing.confirmation_id)
           : null;
         if (confirmation) {
-          return {
-            status: "WAITING_CONFIRMATION",
-            verdict: existing.verdict,
-            confirmation
-          };
+          return { status: "WAITING_CONFIRMATION", verdict: existing.verdict, confirmation };
         }
       }
       if (existing.status === "RESERVED") {
@@ -250,10 +229,7 @@ export class GuardedToolRuntime {
         };
       }
       if (reservation.status === "RECOVERY_REQUIRED") {
-        return {
-          status: "RECOVERY_REQUIRED",
-          verdict: reservation.operation.verdict
-        };
+        return { status: "RECOVERY_REQUIRED", verdict: reservation.operation.verdict };
       }
       if (reservation.status === "AUTHORITY_CHANGED") {
         const blocked = pausedVerdict(
@@ -282,12 +258,7 @@ export class GuardedToolRuntime {
           verdict
         });
         this.#policyStore.completeOperation(intent.operation_id, result);
-        return {
-          status: "EXECUTED",
-          verdict,
-          result: result as Output,
-          replayed: false
-        };
+        return { status: "EXECUTED", verdict, result: result as Output, replayed: false };
       } catch (error) {
         const errorCode = error instanceof Error ? error.name : "TOOL_EXECUTION_ERROR";
         this.#policyStore.failOperation(intent.operation_id, errorCode);

@@ -55,16 +55,8 @@ describe("GuardedToolRuntime", () => {
     };
     const first = await runtime.invoke<typeof invocation.input, { doubled: number }>(invocation);
     const replay = await runtime.invoke<typeof invocation.input, { doubled: number }>(invocation);
-    expect(first).toMatchObject({
-      status: "EXECUTED",
-      result: { doubled: 8 },
-      replayed: false
-    });
-    expect(replay).toMatchObject({
-      status: "EXECUTED",
-      result: { doubled: 8 },
-      replayed: true
-    });
+    expect(first).toMatchObject({ status: "EXECUTED", result: { doubled: 8 }, replayed: false });
+    expect(replay).toMatchObject({ status: "EXECUTED", result: { doubled: 8 }, replayed: true });
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
@@ -107,16 +99,10 @@ describe("GuardedToolRuntime", () => {
 
     const first = await runtime.invoke(invocation);
     expect(first).toMatchObject({ status: "EXECUTED", replayed: false });
-    expect(policyStore.getProfile(projectId)).toMatchObject({
-      version: 3,
-      overrides: []
-    });
+    expect(policyStore.getProfile(projectId)).toMatchObject({ version: 3, overrides: [] });
     const replay = await runtime.invoke(invocation);
     expect(replay).toMatchObject({ status: "EXECUTED", replayed: true });
-    expect(policyStore.getProfile(projectId)).toMatchObject({
-      version: 3,
-      overrides: []
-    });
+    expect(policyStore.getProfile(projectId)).toMatchObject({ version: 3, overrides: [] });
 
     const exhausted = await runtime.invoke({
       ...invocation,
@@ -168,10 +154,7 @@ describe("GuardedToolRuntime", () => {
       status: "FAILED",
       errorCode: "Error"
     });
-    expect(policyStore.getProfile(projectId)).toMatchObject({
-      version: 3,
-      overrides: []
-    });
+    expect(policyStore.getProfile(projectId)).toMatchObject({ version: 3, overrides: [] });
     expect((await runtime.invoke(invocation)).status).toBe("PAUSED");
     expect(execute).toHaveBeenCalledTimes(1);
   });
