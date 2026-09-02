@@ -14,8 +14,8 @@ agent runtime.
   Decision Trace records;
 - Autonomy Control Center with the canonical A0–A6 profile, authority-diff preview, version-checked
   apply, confirmation review, guarded approve/reject, content-minimized Policy Decision Trace,
-  content-free project Usage Ledger summary, durable emergency-stop activation and operational
-  status;
+  content-free project Usage Ledger summary, versioned token/cost hard-limit preview and apply,
+  durable emergency-stop activation and operational status;
 - owner-bound API identity, project isolation, session revocation and bound one-time step-up proof
   enforcement for critical mutations.
 
@@ -25,8 +25,8 @@ agent runtime.
   permissions, operations, audit and usage accounting;
 - provider-neutral Model Gateway with a versioned Model Registry, deterministic Router, bounded
   retry, timeout, exact-route circuit breaker and safe fallback;
-- atomic Usage Ledger, content-free runtime metrics, structured route logs, Secret Resolver and
-  durable process/project emergency stops;
+- atomic Usage Ledger with fail-closed project ceilings, content-free runtime metrics, structured
+  route logs, Secret Resolver and durable process/project emergency stops;
 - canonical Policy Runtime contracts for 19 capabilities and monotonic autonomy levels A0–A6,
   deterministic evaluation, optimistic profile versions, overrides and fail-closed tool guards;
 - Manager Runtime Step 6 contract foundation: bounded role, task graph, context, artifact,
@@ -39,8 +39,8 @@ agent runtime.
 - Manager and worker agents do not execute task graphs or make model calls as agents yet.
 - External tool effects and the local daemon are not connected to an autonomous agent loop.
 - Manager Runtime Step 6 is accepted as `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`.
-- Roadmap Step 5 remains incomplete: point-override editing, owner-configured hard cost/token limits
-  and explicit `RECOVERY_REQUIRED` handling still need UI slices.
+- Roadmap Step 5 remains incomplete: point-override editing and explicit `RECOVERY_REQUIRED`
+  handling still need UI slices.
 - The final Manager system prompt belongs to roadmap Step 7 and must be written with the owner.
 - No production provider or production Secret Manager backend has been selected.
 - The first closed paid beta remains limited to A0–A2; A3–A6 require later security and economic
@@ -69,7 +69,11 @@ idempotency keys, request/result payloads, prompts, secrets and raw grants. The 
 project usage summary is available at `GET /api/v1/projects/:projectId/usage-summary`; it returns
 aggregate token and currency totals while excluding run, provider, model, Registry and content
 details. The owner-facing autonomy UI is available at `/control-center`, and Agent Studio at
-`/agent-studio`.
+`/agent-studio`. Project hard limits are read at
+`GET /api/v1/projects/:projectId/usage-limit`, previewed at
+`POST /api/v1/projects/:projectId/usage-limit/preview`, and version-checked changes are applied at
+`PUT /api/v1/projects/:projectId/usage-limit`. Increasing, removing or changing the currency of an
+existing ceiling requires a bound one-time step-up proof.
 
 ## Connect a model provider
 
@@ -106,8 +110,10 @@ An external route starts only when `MODEL_PROVIDER_ID:MODEL_NAME` is active in t
 versioned Model Registry and its protocol matches `MODEL_PROVIDER`. Missing, disabled, expired or
 mismatched metadata fails closed instead of bypassing the Router. Unknown pricing remains allowed
 only for requests without a hard cost limit; unknown privacy never qualifies for confidential
-routing. External route metadata must be backed by dated evidence; Cosmora does not infer model
-capabilities or silently substitute another model.
+routing. A configured project ceiling is checked atomically against committed usage and active
+reservations before a new route reservation is created; missing token/cost evidence or a currency
+mismatch fails closed. There is no automatic top-up. External route metadata must be backed by
+dated evidence; Cosmora does not infer model capabilities or silently substitute another model.
 
 `loadServerConfig` validates that a credential exists but discards its value after parsing. The API
 composition root resolves `MODEL_API_KEY` asynchronously immediately before constructing the

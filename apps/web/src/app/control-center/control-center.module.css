@@ -930,6 +930,11 @@
   background: rgba(230, 196, 123, 0.035);
 }
 
+.usageGrid article[data-limit="active"] {
+  border-color: rgba(91, 220, 168, 0.22);
+  background: rgba(91, 220, 168, 0.045);
+}
+
 .usageGrid span,
 .usageCosts span {
   color: #687286;
@@ -950,6 +955,11 @@
   font-size: 0.72rem;
 }
 
+.usageGrid article[data-limit="active"] strong {
+  color: #91daba;
+  font-size: 0.72rem;
+}
+
 .usageGrid small,
 .usageCosts small {
   color: #626b7d;
@@ -962,6 +972,126 @@
   margin-top: 0.55rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.55rem;
+}
+
+.limitControl {
+  margin-top: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(91, 220, 168, 0.14);
+  border-radius: 0.68rem;
+  background: linear-gradient(135deg, rgba(91, 220, 168, 0.035), rgba(8, 12, 20, 0.48));
+}
+
+.limitIntro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.limitIntro h3 {
+  margin: 0.25rem 0 0;
+  color: #e1e4ea;
+  font-size: 0.82rem;
+}
+
+.limitIntro > span {
+  color: #626b7d;
+  font-size: 0.56rem;
+}
+
+.limitFields {
+  display: grid;
+  margin-top: 0.7rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.limitFields label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.limitFields label > span {
+  color: #828c9e;
+  font-size: 0.58rem;
+}
+
+.limitFields input,
+.limitFields select {
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.58rem;
+  outline: 0;
+  color: #eef0f4;
+  background: #080c14;
+  font: inherit;
+  font-size: 0.65rem;
+}
+
+.limitFields input:focus,
+.limitFields select:focus {
+  border-color: rgba(91, 220, 168, 0.38);
+}
+
+.limitFields input:disabled,
+.limitFields select:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.limitPreviewButton {
+  margin-top: 0.6rem;
+  padding: 0.62rem 0.78rem;
+  border: 1px solid rgba(91, 220, 168, 0.2);
+  border-radius: 0.58rem;
+  color: #b8f0d7;
+  background: rgba(91, 220, 168, 0.065);
+  font-size: 0.61rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.limitPreviewButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.limitPreview {
+  margin-top: 0.65rem;
+  padding: 0.7rem;
+  border: 1px solid rgba(179, 168, 255, 0.15);
+  border-radius: 0.62rem;
+  background: rgba(8, 12, 20, 0.55);
+}
+
+.limitPreview > div:first-child {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.limitPreview strong {
+  color: #d8dce5;
+  font-size: 0.64rem;
+}
+
+.limitPreview > div:first-child > span {
+  color: #9eb5aa;
+  font-size: 0.6rem;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.limitPreview > p {
+  margin: 0.55rem 0 0;
+  color: #7f899a;
+  font-size: 0.59rem;
+  line-height: 1.5;
 }
 
 .usageBoundary {
@@ -1238,6 +1368,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .limitFields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .stopIntro {
     grid-template-columns: 1fr;
   }
@@ -1280,8 +1414,17 @@
   }
 
   .usageGrid,
-  .usageCosts {
+  .usageCosts,
+  .limitFields {
     grid-template-columns: 1fr;
+  }
+
+  .limitPreview > div:first-child {
+    flex-direction: column;
+  }
+
+  .limitPreview > div:first-child > span {
+    text-align: left;
   }
 
   .stopScope {

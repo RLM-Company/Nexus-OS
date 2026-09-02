@@ -45,3 +45,57 @@ export const ProjectUsageSummarySchema = Type.Object(
   { additionalProperties: false }
 );
 export type ProjectUsageSummary = Static<typeof ProjectUsageSummarySchema>;
+
+const NullableProjectTokenLimitSchema = Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]);
+
+const NullableProjectCostLimitSchema = Type.Union([
+  Type.Object(
+    {
+      amount: Type.Number({ exclusiveMinimum: 0 }),
+      currency: CurrencySchema
+    },
+    { additionalProperties: false }
+  ),
+  Type.Null()
+]);
+
+export const ProjectUsageLimitSchema = Type.Object(
+  {
+    project_id: EntityIdSchema,
+    version: Type.Integer({ minimum: 1 }),
+    max_total_tokens: NullableProjectTokenLimitSchema,
+    max_cost: NullableProjectCostLimitSchema,
+    created_at: IsoDateTimeSchema,
+    updated_at: IsoDateTimeSchema
+  },
+  { additionalProperties: false }
+);
+export type ProjectUsageLimit = Static<typeof ProjectUsageLimitSchema>;
+
+export const UpdateProjectUsageLimitRequestSchema = Type.Object(
+  {
+    expected_version: Type.Integer({ minimum: 1 }),
+    max_total_tokens: NullableProjectTokenLimitSchema,
+    max_cost: NullableProjectCostLimitSchema
+  },
+  { additionalProperties: false }
+);
+export type UpdateProjectUsageLimitRequest = Static<typeof UpdateProjectUsageLimitRequestSchema>;
+
+export const ProjectUsageLimitResponseSchema = Type.Object(
+  { limit: ProjectUsageLimitSchema },
+  { additionalProperties: false }
+);
+export type ProjectUsageLimitResponse = Static<typeof ProjectUsageLimitResponseSchema>;
+
+export const ProjectUsageLimitPreviewResponseSchema = Type.Object(
+  {
+    current_version: Type.Integer({ minimum: 1 }),
+    proposed_limit: ProjectUsageLimitSchema,
+    requires_step_up: Type.Boolean()
+  },
+  { additionalProperties: false }
+);
+export type ProjectUsageLimitPreviewResponse = Static<
+  typeof ProjectUsageLimitPreviewResponseSchema
+>;

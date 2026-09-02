@@ -33,6 +33,6 @@ extra private provider/model/prompt fields and proves that the UI does not rende
 
 ## Remaining Step 5 work
 
-The next cost increment must add an owner-configured, version-checked hard limit and fail-closed
-reservation enforcement without inventing default amounts. Point-override editing and explicit
-`RECOVERY_REQUIRED` handling also remain open.
+The versioned hard-limit increment is now implemented and reviewed separately in
+`2026-09-02-control-center-project-hard-limits.md`. Point-override editing and explicit
+`RECOVERY_REQUIRED` handling remain open.

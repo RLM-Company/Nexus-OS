@@ -2,7 +2,7 @@ import type { RuntimeOperationsStatus } from "@cosmora/contracts";
 import type { EmergencyStopStore } from "@cosmora/db";
 import type { GatewayErrorCode } from "@cosmora/model-gateway";
 
-export type RuntimeFailureCode = GatewayErrorCode | "EMERGENCY_STOP";
+export type RuntimeFailureCode = GatewayErrorCode | "EMERGENCY_STOP" | "USAGE_LIMIT_EXCEEDED";
 
 const emptyFailures = (): Record<RuntimeFailureCode, number> => ({
   ROUTE_UNAVAILABLE: 0,
@@ -10,7 +10,8 @@ const emptyFailures = (): Record<RuntimeFailureCode, number> => ({
   PROVIDER_ERROR: 0,
   CIRCUIT_OPEN: 0,
   INTERRUPTED: 0,
-  EMERGENCY_STOP: 0
+  EMERGENCY_STOP: 0,
+  USAGE_LIMIT_EXCEEDED: 0
 });
 
 export class EmergencyStopActivatedError extends Error {

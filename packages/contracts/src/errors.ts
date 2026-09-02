@@ -8,6 +8,7 @@ export const ErrorCodeSchema = Type.Union([
   Type.Literal("PROJECT_NOT_FOUND"),
   Type.Literal("AGENT_STUDIO_OBJECT_NOT_FOUND"),
   Type.Literal("AUTONOMY_PROFILE_CONFLICT"),
+  Type.Literal("USAGE_LIMIT_CONFLICT"),
   Type.Literal("CONFIRMATION_NOT_FOUND"),
   Type.Literal("CONFIRMATION_EXPIRED"),
   Type.Literal("CONFIRMATION_ALREADY_DECIDED"),

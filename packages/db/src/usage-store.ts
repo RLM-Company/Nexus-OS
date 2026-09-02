@@ -1,5 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Currency, ProjectUsageSummary, UsageCurrencyTotal } from "@cosmora/contracts";
+import type {
+  Currency,
+  ProjectUsageLimit,
+  ProjectUsageSummary,
+  UpdateProjectUsageLimitRequest,
+  UsageCurrencyTotal
+} from "@cosmora/contracts";
 import { LOCAL_OWNER_ID } from "./project-store.js";
 
 type UsageStatus = "reserved" | "committed" | "failed" | "cancelled";
@@ -13,6 +19,23 @@ interface UsageRow {
   actual_output_tokens: unknown;
   calculated_cost_amount: unknown;
   currency: unknown;
+}
+
+interface UsageLimitRow {
+  project_id: unknown;
+  version: unknown;
+  max_total_tokens: unknown;
+  max_cost_amount: unknown;
+  currency: unknown;
+  created_at: unknown;
+  updated_at: unknown;
+}
+
+export class UsageLimitConflictError extends Error {
+  constructor() {
+    super("Project usage limit version changed");
+    this.name = "UsageLimitConflictError";
+  }
 }
 
 const nonNegativeNumber = (value: unknown, field: string): number => {
@@ -42,11 +65,123 @@ const currency = (value: unknown): Currency => {
   throw new Error("Invalid Usage Ledger value: currency");
 };
 
+const usageLimit = (row: UsageLimitRow): ProjectUsageLimit => {
+  if (
+    typeof row.project_id !== "string" ||
+    typeof row.version !== "number" ||
+    !Number.isInteger(row.version) ||
+    row.version < 1 ||
+    typeof row.created_at !== "string" ||
+    typeof row.updated_at !== "string"
+  ) {
+    throw new Error("Invalid project usage limit");
+  }
+  const maxTotalTokens =
+    row.max_total_tokens === null
+      ? null
+      : nonNegativeNumber(row.max_total_tokens, "max_total_tokens");
+  if (maxTotalTokens !== null && (!Number.isInteger(maxTotalTokens) || maxTotalTokens < 1)) {
+    throw new Error("Invalid project usage limit: max_total_tokens");
+  }
+  const amount =
+    row.max_cost_amount === null ? null : nonNegativeNumber(row.max_cost_amount, "max_cost_amount");
+  if ((amount === null) !== (row.currency === null) || amount === 0) {
+    throw new Error("Invalid project usage limit: max_cost");
+  }
+  return {
+    project_id: row.project_id,
+    version: row.version,
+    max_total_tokens: maxTotalTokens,
+    max_cost: amount === null ? null : { amount, currency: currency(row.currency) },
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+};
+
 export class UsageStore {
   readonly #sqlite: DatabaseSync;
 
   constructor(sqlite: DatabaseSync) {
     this.#sqlite = sqlite;
+  }
+
+  getLimit(projectId: string, ownerId = LOCAL_OWNER_ID): ProjectUsageLimit | null {
+    const row = this.#sqlite
+      .prepare(
+        `SELECT project_id, version, max_total_tokens, max_cost_amount, currency,
+          created_at, updated_at
+         FROM project_usage_limits WHERE project_id = ? AND owner_id = ?`
+      )
+      .get(projectId, ownerId) as unknown as UsageLimitRow | undefined;
+    return row ? usageLimit(row) : null;
+  }
+
+  ensureLimit(
+    projectId: string,
+    ownerId = LOCAL_OWNER_ID,
+    timestamp = new Date().toISOString()
+  ): ProjectUsageLimit | null {
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const project = this.#sqlite
+        .prepare("SELECT id FROM projects WHERE id = ? AND owner_id = ?")
+        .get(projectId, ownerId);
+      if (!project) {
+        this.#sqlite.exec("COMMIT;");
+        return null;
+      }
+      this.#sqlite
+        .prepare(
+          `INSERT INTO project_usage_limits
+            (project_id, owner_id, version, max_total_tokens, max_cost_amount, currency,
+             created_at, updated_at)
+           VALUES (?, ?, 1, NULL, NULL, NULL, ?, ?)
+           ON CONFLICT(project_id) DO NOTHING`
+        )
+        .run(projectId, ownerId, timestamp, timestamp);
+      const limit = this.getLimit(projectId, ownerId);
+      this.#sqlite.exec("COMMIT;");
+      if (!limit) throw new Error("Project usage limit initialization failed");
+      return limit;
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  updateLimit(
+    projectId: string,
+    input: UpdateProjectUsageLimitRequest,
+    ownerId = LOCAL_OWNER_ID,
+    timestamp = new Date().toISOString()
+  ): ProjectUsageLimit {
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const result = this.#sqlite
+        .prepare(
+          `UPDATE project_usage_limits
+           SET version = version + 1, max_total_tokens = ?, max_cost_amount = ?, currency = ?,
+             updated_at = ?
+           WHERE project_id = ? AND owner_id = ? AND version = ?`
+        )
+        .run(
+          input.max_total_tokens,
+          input.max_cost?.amount ?? null,
+          input.max_cost?.currency ?? null,
+          timestamp,
+          projectId,
+          ownerId,
+          input.expected_version
+        );
+      if (Number(result.changes) !== 1) throw new UsageLimitConflictError();
+      const limit = this.getLimit(projectId, ownerId);
+      if (!limit) throw new Error("Updated project usage limit is missing");
+      this.#sqlite.exec("COMMIT;");
+      return limit;
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
   }
 
   getProjectSummary(

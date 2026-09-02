@@ -135,11 +135,27 @@ type UsageSummary = {
   unknown_reserved_cost_attempts: number;
 };
 
+type UsageLimit = {
+  project_id: string;
+  version: number;
+  max_total_tokens: number | null;
+  max_cost: { amount: number; currency: "USD" | "RUB" } | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type UsageLimitPreview = {
+  current_version: number;
+  proposed_limit: UsageLimit;
+  requires_step_up: boolean;
+};
+
 type CenterData = {
   profile: CapabilityProfile;
   confirmations: Confirmation[];
   decisionTrace: PolicyDecisionTrace;
   usage: UsageSummary;
+  usageLimit: UsageLimit;
   operations: OperationsStatus;
   projectStop: EmergencyStop | null;
 };
@@ -216,6 +232,14 @@ export default function ControlCenterPage() {
   const [preview, setPreview] = useState<ProfilePreview | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [stepUpToken, setStepUpToken] = useState("");
+  const [limitTokens, setLimitTokens] = useState("");
+  const [limitCost, setLimitCost] = useState("");
+  const [limitCurrency, setLimitCurrency] = useState<"USD" | "RUB">("USD");
+  const [limitPreview, setLimitPreview] = useState<UsageLimitPreview | null>(null);
+  const [limitAcknowledged, setLimitAcknowledged] = useState(false);
+  const [limitStepUpToken, setLimitStepUpToken] = useState("");
+  const [limitPreviewing, setLimitPreviewing] = useState(false);
+  const [limitApplying, setLimitApplying] = useState(false);
   const [selectedConfirmationId, setSelectedConfirmationId] = useState<string | null>(null);
   const [decisionReason, setDecisionReason] = useState("");
   const [decisionAcknowledged, setDecisionAcknowledged] = useState(false);
@@ -227,7 +251,8 @@ export default function ControlCenterPage() {
   const [stopping, setStopping] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const actionPending = previewing || applying || deciding || stopping;
+  const actionPending =
+    previewing || applying || limitPreviewing || limitApplying || deciding || stopping;
 
   const load = useCallback(async (id: string): Promise<void> => {
     setLoading(true);
@@ -236,6 +261,9 @@ export default function ControlCenterPage() {
     setPreview(null);
     setAcknowledged(false);
     setStepUpToken("");
+    setLimitPreview(null);
+    setLimitAcknowledged(false);
+    setLimitStepUpToken("");
     setSelectedConfirmationId(null);
     setDecisionReason("");
     setDecisionAcknowledged(false);
@@ -249,6 +277,7 @@ export default function ControlCenterPage() {
         confirmationsResponse,
         decisionTrace,
         usage,
+        usageLimitResponse,
         operations,
         projectStop
       ] = await Promise.all([
@@ -260,6 +289,7 @@ export default function ControlCenterPage() {
           `/api/v1/projects/${encodeURIComponent(id)}/decision-trace?limit=50`
         ),
         api<UsageSummary>(`/api/v1/projects/${encodeURIComponent(id)}/usage-summary`),
+        api<{ limit: UsageLimit }>(`/api/v1/projects/${encodeURIComponent(id)}/usage-limit`),
         api<OperationsStatus>("/api/v1/operations/status"),
         api<EmergencyStop | null>(
           `/api/v1/operations/emergency-stop?project_id=${encodeURIComponent(id)}`
@@ -270,9 +300,21 @@ export default function ControlCenterPage() {
         confirmations: confirmationsResponse.items,
         decisionTrace,
         usage,
+        usageLimit: usageLimitResponse.limit,
         operations,
         projectStop
       });
+      setLimitTokens(
+        usageLimitResponse.limit.max_total_tokens === null
+          ? ""
+          : String(usageLimitResponse.limit.max_total_tokens)
+      );
+      setLimitCost(
+        usageLimitResponse.limit.max_cost === null
+          ? ""
+          : String(usageLimitResponse.limit.max_cost.amount)
+      );
+      setLimitCurrency(usageLimitResponse.limit.max_cost?.currency ?? "USD");
     } catch (cause) {
       setData(null);
       setError(cause instanceof Error ? cause.message : "Не удалось загрузить Control Center");
@@ -393,6 +435,106 @@ export default function ControlCenterPage() {
     } finally {
       setStepUpToken("");
       setApplying(false);
+    }
+  };
+
+  const resetLimitPreview = (): void => {
+    setLimitPreview(null);
+    setLimitAcknowledged(false);
+    setLimitStepUpToken("");
+  };
+
+  const limitInput = (): {
+    expected_version: number;
+    max_total_tokens: number | null;
+    max_cost: { amount: number; currency: "USD" | "RUB" } | null;
+  } | null => {
+    if (!data) return null;
+    const tokenText = limitTokens.trim();
+    const costText = limitCost.trim();
+    if (tokenText && !/^\d+$/.test(tokenText)) {
+      setError("Лимит токенов должен быть целым положительным числом");
+      return null;
+    }
+    const maxTotalTokens = tokenText ? Number(tokenText) : null;
+    if (maxTotalTokens !== null && (!Number.isSafeInteger(maxTotalTokens) || maxTotalTokens < 1)) {
+      setError("Лимит токенов должен быть безопасным целым числом больше нуля");
+      return null;
+    }
+    if (costText && !/^\d+(?:[.,]\d+)?$/.test(costText)) {
+      setError("Лимит стоимости должен быть положительным числом");
+      return null;
+    }
+    const maxCostAmount = costText ? Number(costText.replace(",", ".")) : null;
+    if (maxCostAmount !== null && (!Number.isFinite(maxCostAmount) || maxCostAmount <= 0)) {
+      setError("Лимит стоимости должен быть конечным числом больше нуля");
+      return null;
+    }
+    return {
+      expected_version: data.usageLimit.version,
+      max_total_tokens: maxTotalTokens,
+      max_cost: maxCostAmount === null ? null : { amount: maxCostAmount, currency: limitCurrency }
+    };
+  };
+
+  const previewUsageLimit = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (!data || actionPending) return;
+    setError(null);
+    setNotice(null);
+    resetLimitPreview();
+    const input = limitInput();
+    if (!input) return;
+    setLimitPreviewing(true);
+    try {
+      const nextPreview = await api<UsageLimitPreview>(
+        `/api/v1/projects/${encodeURIComponent(data.profile.project_id)}/usage-limit/preview`,
+        { method: "POST", body: input }
+      );
+      setLimitPreview(nextPreview);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось проверить hard limit");
+    } finally {
+      setLimitPreviewing(false);
+    }
+  };
+
+  const applyUsageLimit = async (): Promise<void> => {
+    if (!data || !limitPreview || !limitAcknowledged || actionPending) return;
+    const token = limitStepUpToken.trim();
+    if (limitPreview.requires_step_up && !token) {
+      setError("Для расширения или снятия hard limit нужен одноразовый step-up токен");
+      return;
+    }
+    setLimitApplying(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await api<{ limit: UsageLimit }>(
+        `/api/v1/projects/${encodeURIComponent(data.profile.project_id)}/usage-limit`,
+        {
+          method: "PUT",
+          ...(limitPreview.requires_step_up ? { headers: { "x-step-up-token": token } } : {}),
+          body: {
+            expected_version: limitPreview.current_version,
+            max_total_tokens: limitPreview.proposed_limit.max_total_tokens,
+            max_cost: limitPreview.proposed_limit.max_cost
+          }
+        }
+      );
+      setData((current) => (current ? { ...current, usageLimit: response.limit } : current));
+      setLimitTokens(
+        response.limit.max_total_tokens === null ? "" : String(response.limit.max_total_tokens)
+      );
+      setLimitCost(response.limit.max_cost === null ? "" : String(response.limit.max_cost.amount));
+      setLimitCurrency(response.limit.max_cost?.currency ?? limitCurrency);
+      resetLimitPreview();
+      setNotice(`Hard limit проекта сохранён как версия ${response.limit.version}.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось применить hard limit");
+    } finally {
+      setLimitStepUpToken("");
+      setLimitApplying(false);
     }
   };
 
@@ -1056,10 +1198,29 @@ export default function ControlCenterPage() {
                   failed {data.usage.attempts.failed} · cancelled {data.usage.attempts.cancelled}
                 </small>
               </article>
-              <article data-limit="unset">
+              <article
+                data-limit={
+                  data.usageLimit.max_total_tokens === null && data.usageLimit.max_cost === null
+                    ? "unset"
+                    : "active"
+                }
+              >
                 <span>Hard limit проекта</span>
-                <strong>НЕ НАСТРОЕН</strong>
-                <small>панель пока наблюдает журнал и не обещает блокировку</small>
+                <strong>
+                  {data.usageLimit.max_total_tokens === null && data.usageLimit.max_cost === null
+                    ? "НЕ НАСТРОЕН"
+                    : `АКТИВЕН · v${data.usageLimit.version}`}
+                </strong>
+                <small>
+                  токены{" "}
+                  {data.usageLimit.max_total_tokens === null
+                    ? "без потолка"
+                    : integer(data.usageLimit.max_total_tokens)}{" "}
+                  · стоимость{" "}
+                  {data.usageLimit.max_cost === null
+                    ? "без потолка"
+                    : money(data.usageLimit.max_cost.amount, data.usageLimit.max_cost.currency)}
+                </small>
               </article>
             </div>
 
@@ -1076,9 +1237,155 @@ export default function ControlCenterPage() {
               )}
             </div>
 
+            <form
+              className={styles.limitControl}
+              aria-labelledby="project-limit-control-title"
+              onSubmit={(event) => void previewUsageLimit(event)}
+            >
+              <div className={styles.limitIntro}>
+                <div>
+                  <span className={styles.eyebrow}>Owner hard ceiling</span>
+                  <h3 id="project-limit-control-title">Настроить накопительный hard limit</h3>
+                </div>
+                <span>limit v{data.usageLimit.version}</span>
+              </div>
+
+              <div className={styles.limitFields}>
+                <label>
+                  <span>Всего токенов</span>
+                  <input
+                    value={limitTokens}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="Пусто — без лимита"
+                    disabled={actionPending}
+                    onChange={(event) => {
+                      setLimitTokens(event.target.value);
+                      resetLimitPreview();
+                    }}
+                  />
+                </label>
+                <label>
+                  <span>Стоимость</span>
+                  <input
+                    value={limitCost}
+                    inputMode="decimal"
+                    autoComplete="off"
+                    placeholder="Пусто — без лимита"
+                    disabled={actionPending}
+                    onChange={(event) => {
+                      setLimitCost(event.target.value);
+                      resetLimitPreview();
+                    }}
+                  />
+                </label>
+                <label>
+                  <span>Валюта стоимости</span>
+                  <select
+                    value={limitCurrency}
+                    disabled={actionPending || !limitCost.trim()}
+                    onChange={(event) => {
+                      setLimitCurrency(event.target.value as "USD" | "RUB");
+                      resetLimitPreview();
+                    }}
+                  >
+                    <option value="USD">USD</option>
+                    <option value="RUB">RUB</option>
+                  </select>
+                </label>
+              </div>
+
+              <button className={styles.limitPreviewButton} disabled={actionPending}>
+                {limitPreviewing ? "Проверяю…" : "Проверить hard limit"}
+              </button>
+
+              {limitPreview && (
+                <section className={styles.limitPreview} aria-label="Preview hard limit проекта">
+                  <div>
+                    <strong>
+                      Серверный preview · будущая v{limitPreview.proposed_limit.version}
+                    </strong>
+                    <span>
+                      токены{" "}
+                      {limitPreview.proposed_limit.max_total_tokens === null
+                        ? "без потолка"
+                        : integer(limitPreview.proposed_limit.max_total_tokens)}{" "}
+                      · стоимость{" "}
+                      {limitPreview.proposed_limit.max_cost === null
+                        ? "без потолка"
+                        : money(
+                            limitPreview.proposed_limit.max_cost.amount,
+                            limitPreview.proposed_limit.max_cost.currency
+                          )}
+                    </span>
+                  </div>
+                  <p>
+                    {limitPreview.requires_step_up
+                      ? "Изменение расширяет или снимает потолок и требует step-up."
+                      : "Изменение не расширяет действующий потолок; step-up не требуется."}
+                  </p>
+
+                  <label className={styles.acknowledgement}>
+                    <input
+                      type="checkbox"
+                      checked={limitAcknowledged}
+                      onChange={(event) => setLimitAcknowledged(event.target.checked)}
+                    />
+                    <span>
+                      Я проверил накопительный потолок и понимаю, что новые резервы сверх него будут
+                      отклонены до обращения к провайдеру.
+                    </span>
+                  </label>
+
+                  {limitPreview.requires_step_up && (
+                    <label className={styles.stepUp}>
+                      <span>Одноразовый step-up токен</span>
+                      <input
+                        type="password"
+                        value={limitStepUpToken}
+                        onChange={(event) => setLimitStepUpToken(event.target.value)}
+                        autoComplete="one-time-code"
+                        placeholder="Для расширения или снятия потолка"
+                      />
+                      <small>Токен не сохраняется и очищается после запроса.</small>
+                    </label>
+                  )}
+
+                  <div className={styles.previewActions}>
+                    <button
+                      type="button"
+                      className={styles.applyButton}
+                      disabled={
+                        !limitAcknowledged ||
+                        actionPending ||
+                        (limitPreview.requires_step_up && !limitStepUpToken.trim())
+                      }
+                      onClick={() => void applyUsageLimit()}
+                    >
+                      {limitApplying ? "Применяю…" : "Применить hard limit"}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.cancelButton}
+                      disabled={actionPending}
+                      onClick={() => {
+                        resetLimitPreview();
+                        setError(null);
+                      }}
+                    >
+                      Отменить preview
+                    </button>
+                  </div>
+                </section>
+              )}
+            </form>
+
             <p className={styles.usageBoundary}>
-              Показаны только суммарные токены, статусы и стоимость в исходной валюте журнала.
-              Провайдер, модель, Registry route, запросы и содержимое сообщений не выдаются.
+              Hard limit проверяется атомарно по накопленным committed и активным reserved значениям
+              до создания нового резерва. При включённом потолке неизвестные токены, цена или другая
+              валюта закрывают маршрут без вызова провайдера. Автопополнения нет. Показаны только
+              суммарные токены, статусы и стоимость в исходной валюте журнала. Провайдер, модель,
+              Registry route, запросы и содержимое сообщений не выдаются.
               {data.usage.unknown_committed_cost_attempts > 0
                 ? ` Стоимость не подтверждена для ${data.usage.unknown_committed_cost_attempts} завершённых попыток.`
                 : ""}
