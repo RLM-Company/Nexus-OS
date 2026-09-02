@@ -8,7 +8,7 @@ import {
   type PolicyIntent
 } from "@cosmora/contracts";
 import { describe, expect, it } from "vitest";
-import { evaluatePolicy } from "../src/index.js";
+import { evaluatePolicy, getAppliedOverrideIds } from "../src/index.js";
 
 const NOW = "2026-08-24T12:00:00Z";
 
@@ -156,25 +156,87 @@ describe("evaluatePolicy", () => {
   });
 
   it("lets a profile override reduce autonomy", () => {
+    const restricted = profile("A5", [
+      {
+        override_id: "owner-stop",
+        capability_id: "external.communicate",
+        mode: "DENY",
+        object_ids: ["project-1"],
+        purpose: "Pause outbound communication",
+        valid_until: null,
+        remaining_uses: 2
+      }
+    ]);
     const verdict = evaluatePolicy(
       {
         intent: intent(["external.communicate"]),
-        profile: profile("A5", [
-          {
-            override_id: "owner-stop",
-            capability_id: "external.communicate",
-            mode: "DENY",
-            object_ids: ["project-1"],
-            purpose: "Pause outbound communication",
-            valid_until: null,
-            remaining_uses: null
-          }
-        ]),
+        profile: restricted,
         permissionContracts: []
       },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("DENY");
+    expect(getAppliedOverrideIds(restricted, intent(["external.communicate"]), NOW)).toEqual([
+      "owner-stop"
+    ]);
+  });
+
+  it("reports no applied override for expired, out-of-scope, or conflicting candidates", () => {
+    const overrideBase = {
+      capability_id: "external.communicate" as const,
+      object_ids: ["project-1"],
+      purpose: "Bounded outbound communication",
+      remaining_uses: 1
+    };
+    expect(
+      getAppliedOverrideIds(
+        profile("A3", [
+          {
+            ...overrideBase,
+            override_id: "expired",
+            mode: "DENY",
+            valid_until: "2026-08-24T11:59:59.000Z"
+          }
+        ]),
+        intent(["external.communicate"]),
+        NOW
+      )
+    ).toEqual([]);
+    expect(
+      getAppliedOverrideIds(
+        profile("A3", [
+          {
+            ...overrideBase,
+            override_id: "other-object",
+            mode: "DENY",
+            object_ids: ["project-2"],
+            valid_until: null
+          }
+        ]),
+        intent(["external.communicate"]),
+        NOW
+      )
+    ).toEqual([]);
+    expect(
+      getAppliedOverrideIds(
+        profile("A3", [
+          {
+            ...overrideBase,
+            override_id: "allow",
+            mode: "AUTONOMOUS",
+            valid_until: null
+          },
+          {
+            ...overrideBase,
+            override_id: "deny",
+            mode: "DENY",
+            valid_until: null
+          }
+        ]),
+        intent(["external.communicate"]),
+        NOW
+      )
+    ).toEqual([]);
   });
 
   it("applies a named A5 conditional expansion", () => {

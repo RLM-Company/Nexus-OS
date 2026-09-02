@@ -318,7 +318,13 @@ describe("autonomy and confirmation API", () => {
       evaluated_at: "2026-09-02T04:00:00.000Z",
       policy_version: "1.1.0"
     };
-    policyStore.reserveAllowed(intent, verdict, "2026-09-02T04:01:00.000Z");
+    const profile = policyStore.ensureProfile(projectId)!;
+    policyStore.reserveAllowed(
+      intent,
+      verdict,
+      { profileVersion: profile.version, appliedOverrideIds: [] },
+      "2026-09-02T04:01:00.000Z"
+    );
 
     const response = await app.inject({
       method: "GET",

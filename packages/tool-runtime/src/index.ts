@@ -7,7 +7,7 @@ import type {
 } from "@cosmora/contracts";
 import { PolicyStoreConflictError } from "@cosmora/db";
 import type { PolicyStore } from "@cosmora/db";
-import { evaluatePolicy } from "@cosmora/policy-engine";
+import { evaluatePolicy, getAppliedOverrideIds } from "@cosmora/policy-engine";
 
 export interface ToolExecutionContext {
   operationId: string;
@@ -211,7 +211,15 @@ export class GuardedToolRuntime {
         return { status, verdict };
       }
 
-      const reservation = this.#policyStore.reserveAllowed(intent, verdict, evaluatedAt);
+      const reservation = this.#policyStore.reserveAllowed(
+        intent,
+        verdict,
+        {
+          profileVersion: profile.version,
+          appliedOverrideIds: getAppliedOverrideIds(profile, intent, evaluatedAt)
+        },
+        evaluatedAt
+      );
       if (reservation.status === "REPLAY") {
         return {
           status: "EXECUTED",
@@ -222,6 +230,14 @@ export class GuardedToolRuntime {
       }
       if (reservation.status === "RECOVERY_REQUIRED") {
         return { status: "RECOVERY_REQUIRED", verdict: reservation.operation.verdict };
+      }
+      if (reservation.status === "AUTHORITY_CHANGED") {
+        const blocked = pausedVerdict(
+          intent,
+          evaluatedAt,
+          "Autonomy profile changed or an applicable point override was exhausted after policy evaluation."
+        );
+        return { status: "PAUSED", verdict: blocked };
       }
       if (reservation.status !== "RESERVED") {
         const blocked = pausedVerdict(

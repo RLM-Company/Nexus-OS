@@ -29,7 +29,8 @@ agent runtime.
 - atomic Usage Ledger with fail-closed project ceilings, content-free runtime metrics, structured
   route logs, Secret Resolver and durable process/project emergency stops;
 - canonical Policy Runtime contracts for 19 capabilities and monotonic autonomy levels A0–A6,
-  deterministic evaluation, optimistic profile versions, overrides and fail-closed tool guards;
+  deterministic evaluation, optimistic profile versions, atomic finite-use override consumption
+  and fail-closed tool guards;
 - Manager Runtime Step 6 contract foundation: bounded role, task graph, context, artifact,
   provenance, conflict, checkpoint, readiness and deterministic scenario release-gate contracts;
 - 19 canonical Manager Runtime scenario entries covering all 13 required categories and every
@@ -40,8 +41,9 @@ agent runtime.
 - Manager and worker agents do not execute task graphs or make model calls as agents yet.
 - External tool effects and the local daemon are not connected to an autonomous agent loop.
 - Manager Runtime Step 6 is accepted as `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`.
-- Roadmap Step 5 owner-facing control slices are implemented. Finite-use override counters remain
-  read-only until Tool Runtime has atomic override-consumption semantics.
+- Roadmap Step 5 owner-facing control slices are implemented. Finite-use override counters are
+  consumed atomically by Tool Runtime but remain read-only in the owner UI pending a separately
+  tested mutation slice.
 - The final Manager system prompt belongs to roadmap Step 7 and must be written with the owner.
 - No production provider or production Secret Manager backend has been selected.
 - The first closed paid beta remains limited to A0–A2; A3–A6 require later security and economic

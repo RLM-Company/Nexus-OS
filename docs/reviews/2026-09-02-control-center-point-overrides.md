@@ -28,13 +28,17 @@ an explicit timestamp. A missing expiry remains `null`; it is not replaced with 
 
 ## Finite-use boundary
 
-The current Policy Engine reads `remaining_uses`, but Tool Runtime does not yet atomically decrement
-profile override counters when reserving an operation. The UI therefore does not create or alter a
-finite-use value. New overrides use `null`; an existing finite value is preserved during edits and
-shown as declared state only. Exposing a mutable counter before atomic consumption would create a
-false safety claim.
+Tool Runtime now atomically validates and consumes stored finite-use overrides with the policy
+operation reservation, as reviewed separately in
+`2026-09-02-finite-override-consumption.md`. Idempotent replay does not consume another use, and the
+last use removes the override from the next versioned profile.
 
-Expiration is enforceable today: Policy Engine ignores an override after its valid timestamp. The
+This editor still does not create or alter a finite-use value. New overrides use `null`; an existing
+finite value is preserved during edits and shown as declared state only. The owner-facing counter
+mutation is intentionally held for a separate UI/API evidence slice even though runtime enforcement
+is now present.
+
+Expiration remains enforceable: Policy Engine ignores an override after its valid timestamp. The
 editor rejects invalid or already elapsed new timestamps before preview.
 
 ## Evidence

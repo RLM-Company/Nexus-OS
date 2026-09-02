@@ -67,6 +67,29 @@ const isUsableOverride = (
   (override.valid_until === null || Date.parse(override.valid_until) >= now) &&
   coversObjects(override.object_ids, objectIds);
 
+const usableOverridesForCapability = (
+  profile: CapabilityProfile,
+  capabilityId: CapabilityId,
+  objectIds: readonly string[],
+  now: number
+): CapabilityOverride[] =>
+  profile.overrides.filter((override) => isUsableOverride(override, capabilityId, objectIds, now));
+
+export function getAppliedOverrideIds(
+  profile: CapabilityProfile,
+  intent: PolicyIntent,
+  evaluatedAt: string
+): string[] {
+  const now = Date.parse(evaluatedAt);
+  if (!Number.isFinite(now)) return [];
+  return intent.capability_ids.flatMap((capabilityId) => {
+    const overrides = usableOverridesForCapability(profile, capabilityId, intent.object_ids, now);
+    const modes = new Set(overrides.map((override) => override.mode));
+    const applied = modes.size === 1 ? overrides[0] : undefined;
+    return applied ? [applied.override_id] : [];
+  });
+}
+
 const activePermissionGrants = (
   contracts: readonly PermissionContract[],
   intent: PolicyIntent,
@@ -148,8 +171,11 @@ const resolveCapability = (
     }
   }
 
-  const overrides = input.profile.overrides.filter((override) =>
-    isUsableOverride(override, capabilityId, input.intent.object_ids, now)
+  const overrides = usableOverridesForCapability(
+    input.profile,
+    capabilityId,
+    input.intent.object_ids,
+    now
   );
   const overrideModes = new Set(overrides.map((override) => override.mode));
   if (overrideModes.size > 1) {
