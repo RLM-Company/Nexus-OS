@@ -44,6 +44,7 @@ rendered; it also proves that the recovery region exposes no retry, replay, resu
 button. Existing Tool Runtime coverage verifies that a duplicate reserved operation returns
 `RECOVERY_REQUIRED` while the executor is called only once.
 
-## Remaining Step 5 work
+## Step 5 status
 
-Point-override editing remains open.
+Point-override editing is implemented and reviewed separately in
+`2026-09-02-control-center-point-overrides.md`. All Step 5 owner-facing slices are now present.

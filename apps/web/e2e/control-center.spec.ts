@@ -59,7 +59,11 @@ test("previews an authority diff before applying an autonomy profile change", as
     ((await beforeApply.json()) as { profile: { base_level: string; version: number } }).profile
   ).toMatchObject({ base_level: "A3", version: 2 });
 
-  await page.getByLabel("Я проверил изменения полномочий и хочу применить их.").check();
+  await page
+    .getByLabel(
+      "Я проверил базовые полномочия, точные объекты, режим, назначение и срок и хочу применить профиль."
+    )
+    .check();
   await page.getByRole("button", { name: "Применить A4" }).click();
 
   await expect(levelMetric).toContainText("A4");
@@ -78,6 +82,101 @@ test("previews an authority diff before applying an autonomy profile change", as
   expect(
     ((await afterApply.json()) as { profile: { base_level: string; version: number } }).profile
   ).toMatchObject({ base_level: "A4", version: 3 });
+});
+
+test("previews, applies, and removes a point override without hidden defaults", async ({
+  page,
+  request
+}) => {
+  const nonce = `${Date.now()}`;
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a project for the point-override browser check.",
+      client_message_id: `point-override-e2e-${nonce}`
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+  const profileUrl = `http://127.0.0.1:3100/api/v1/projects/${encodeURIComponent(projectId)}/autonomy-profile`;
+  const updated = await request.put(profileUrl, {
+    data: { base_level: "A3", overrides: [], expected_version: 1 }
+  });
+  expect(updated.ok()).toBeTruthy();
+
+  await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
+
+  const overrides = page.getByRole("region", { name: "Точечные исключения" });
+  await expect(overrides).toContainText("Точечных overrides сейчас нет.");
+  await page.getByRole("button", { name: "Добавить точечный override" }).click();
+  await expect(page.getByLabel("Capability override")).toHaveValue("");
+  await expect(page.getByLabel("Режим override")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Проверить override" })).toBeDisabled();
+
+  await page.getByLabel("Capability override").selectOption("external.communicate");
+  await page.getByLabel("Режим override").selectOption("DENY");
+  await page.getByLabel("Object IDs override").fill("campaign-point-override-1");
+  await page
+    .getByLabel("Назначение override")
+    .fill("Restrict outbound communication for this exact campaign");
+  await page.getByRole("button", { name: "Проверить override" }).click();
+
+  const preview = page.getByRole("region", { name: "Проверка точечного override" });
+  await expect(preview).toContainText("overrides 0 → 1");
+  await expect(preview).toContainText("Добавление");
+  await expect(preview).toContainText("external.communicate");
+  await expect(preview).toContainText("— → DENY");
+  await expect(preview).toContainText("campaign-point-override-1");
+  await expect(preview).toContainText("Restrict outbound communication for this exact campaign");
+  await expect(preview).not.toContainText("Одноразовый step-up токен");
+  await page
+    .getByLabel(
+      "Я проверил базовые полномочия, точные объекты, режим, назначение и срок и хочу применить профиль."
+    )
+    .check();
+  await page.getByRole("button", { name: "Применить override" }).click();
+
+  await expect(page.getByRole("status")).toContainText(
+    "Точечные overrides обновлены; активна версия профиля 3"
+  );
+  await expect(overrides).toContainText("external.communicate");
+  await expect(overrides).toContainText("DENY");
+  await expect(overrides).toContainText("campaign-point-override-1");
+  const stored = await request.get(profileUrl);
+  expect(stored.ok()).toBeTruthy();
+  expect((await stored.json()) as Record<string, unknown>).toMatchObject({
+    profile: {
+      base_level: "A3",
+      version: 3,
+      overrides: [
+        {
+          capability_id: "external.communicate",
+          mode: "DENY",
+          object_ids: ["campaign-point-override-1"],
+          purpose: "Restrict outbound communication for this exact campaign",
+          valid_until: null,
+          remaining_uses: null
+        }
+      ]
+    }
+  });
+
+  await overrides.getByRole("button", { name: "Удалить через preview" }).click();
+  await expect(preview).toContainText("overrides 1 → 0");
+  await expect(preview).toContainText("Удаление");
+  await expect(preview).toContainText("DENY → —");
+  await page
+    .getByLabel(
+      "Я проверил базовые полномочия, точные объекты, режим, назначение и срок и хочу применить профиль."
+    )
+    .check();
+  await page.getByRole("button", { name: "Применить override" }).click();
+  await expect(overrides).toContainText("Точечных overrides сейчас нет.");
+
+  const removed = await request.get(profileUrl);
+  expect(removed.ok()).toBeTruthy();
+  expect((await removed.json()) as Record<string, unknown>).toMatchObject({
+    profile: { base_level: "A3", version: 4, overrides: [] }
+  });
 });
 
 test("explains policy verdicts without rendering hidden operation content", async ({

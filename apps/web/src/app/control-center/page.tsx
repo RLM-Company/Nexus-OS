@@ -184,6 +184,11 @@ type ProfilePreview = {
   requires_step_up: boolean;
 };
 
+type OverrideChange =
+  | { kind: "ADDED"; next: CapabilityOverride }
+  | { kind: "UPDATED"; current: CapabilityOverride; next: CapabilityOverride }
+  | { kind: "REMOVED"; current: CapabilityOverride };
+
 type ApiOptions = {
   method?: "GET" | "POST" | "PUT";
   body?: unknown;
@@ -191,6 +196,7 @@ type ApiOptions = {
 };
 
 const LEVELS: AutonomyLevel[] = ["A0", "A1", "A2", "A3", "A4", "A5", "A6"];
+const PERMISSION_MODES: PermissionMode[] = ["DENY", "CONFIRM", "SCOPED", "AUTONOMOUS", "FULL"];
 
 const VERDICT_LABELS: Record<PolicyVerdictKind, string> = {
   ALLOW: "Разрешено",
@@ -232,6 +238,14 @@ const dateTime = (value: string | null): string => {
   });
 };
 
+const dateTimeInput = (value: string | null): string => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
 const integer = (value: number): string => new Intl.NumberFormat("ru-RU").format(value);
 
 const money = (amount: number, currency: "USD" | "RUB"): string =>
@@ -250,6 +264,13 @@ export default function ControlCenterPage() {
   const [preview, setPreview] = useState<ProfilePreview | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [stepUpToken, setStepUpToken] = useState("");
+  const [overrideEditorOpen, setOverrideEditorOpen] = useState(false);
+  const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
+  const [overrideCapability, setOverrideCapability] = useState("");
+  const [overrideMode, setOverrideMode] = useState<PermissionMode | "">("");
+  const [overrideObjects, setOverrideObjects] = useState("");
+  const [overridePurpose, setOverridePurpose] = useState("");
+  const [overrideValidUntil, setOverrideValidUntil] = useState("");
   const [limitTokens, setLimitTokens] = useState("");
   const [limitCost, setLimitCost] = useState("");
   const [limitCurrency, setLimitCurrency] = useState<"USD" | "RUB">("USD");
@@ -279,6 +300,13 @@ export default function ControlCenterPage() {
     setPreview(null);
     setAcknowledged(false);
     setStepUpToken("");
+    setOverrideEditorOpen(false);
+    setEditingOverrideId(null);
+    setOverrideCapability("");
+    setOverrideMode("");
+    setOverrideObjects("");
+    setOverridePurpose("");
+    setOverrideValidUntil("");
     setLimitPreview(null);
     setLimitAcknowledged(false);
     setLimitStepUpToken("");
@@ -392,12 +420,165 @@ export default function ControlCenterPage() {
     });
   }, [data, preview]);
 
+  const overrideChanges = useMemo<OverrideChange[]>(() => {
+    if (!data || !preview) return [];
+    const current = new Map(
+      data.profile.overrides.map((override) => [override.override_id, override])
+    );
+    const proposed = new Map(
+      preview.proposed_profile.overrides.map((override) => [override.override_id, override])
+    );
+    const changes: OverrideChange[] = [];
+    for (const next of preview.proposed_profile.overrides) {
+      const existing = current.get(next.override_id);
+      if (!existing) {
+        changes.push({ kind: "ADDED", next });
+      } else if (JSON.stringify(existing) !== JSON.stringify(next)) {
+        changes.push({ kind: "UPDATED", current: existing, next });
+      }
+    }
+    for (const existing of data.profile.overrides) {
+      if (!proposed.has(existing.override_id)) changes.push({ kind: "REMOVED", current: existing });
+    }
+    return changes;
+  }, [data, preview]);
+
+  const resetOverrideEditor = (): void => {
+    setOverrideEditorOpen(false);
+    setEditingOverrideId(null);
+    setOverrideCapability("");
+    setOverrideMode("");
+    setOverrideObjects("");
+    setOverridePurpose("");
+    setOverrideValidUntil("");
+  };
+
+  const startNewOverride = (): void => {
+    if (actionPending) return;
+    setEditingOverrideId(null);
+    setOverrideCapability("");
+    setOverrideMode("");
+    setOverrideObjects("");
+    setOverridePurpose("");
+    setOverrideValidUntil("");
+    setOverrideEditorOpen(true);
+    setError(null);
+  };
+
+  const startEditingOverride = (override: CapabilityOverride): void => {
+    if (actionPending) return;
+    setEditingOverrideId(override.override_id);
+    setOverrideCapability(override.capability_id);
+    setOverrideMode(override.mode);
+    setOverrideObjects(override.object_ids.join("\n"));
+    setOverridePurpose(override.purpose);
+    setOverrideValidUntil(dateTimeInput(override.valid_until));
+    setOverrideEditorOpen(true);
+    setError(null);
+  };
+
+  const previewOverrides = async (overrides: CapabilityOverride[]): Promise<void> => {
+    if (!data || actionPending) return;
+    setPreviewing(true);
+    setPreview(null);
+    setAcknowledged(false);
+    setStepUpToken("");
+    setSelectedConfirmationId(null);
+    setDecisionReason("");
+    setDecisionAcknowledged(false);
+    setConfirmationStepUpToken("");
+    setNotice(null);
+    setError(null);
+    try {
+      const nextPreview = await api<ProfilePreview>(
+        `/api/v1/projects/${encodeURIComponent(data.profile.project_id)}/autonomy-profile/preview`,
+        {
+          method: "POST",
+          body: {
+            base_level: data.profile.base_level,
+            overrides,
+            expected_version: data.profile.version
+          }
+        }
+      );
+      setPreview(nextPreview);
+      resetOverrideEditor();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось построить preview override");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const previewOverrideEditor = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (!data || actionPending) return;
+    const capability = data.profile.grants.find(
+      (grant) => grant.capability_id === overrideCapability
+    )?.capability_id;
+    const objectIds = [...new Set(overrideObjects.split(/\r?\n/u).map((value) => value.trim()))]
+      .filter(Boolean)
+      .sort();
+    const purpose = overridePurpose.trim();
+    if (!capability || !overrideMode) {
+      setError("Явно выберите capability и итоговый режим override");
+      return;
+    }
+    if (objectIds.length === 0) {
+      setError("Укажите хотя бы один точный object ID, по одному на строку");
+      return;
+    }
+    if (!purpose) {
+      setError("Укажите назначение точечного override");
+      return;
+    }
+    let validUntil: string | null = null;
+    if (overrideValidUntil) {
+      const timestamp = new Date(overrideValidUntil).getTime();
+      if (!Number.isFinite(timestamp) || timestamp <= Date.now()) {
+        setError("Срок override должен быть корректным моментом в будущем");
+        return;
+      }
+      validUntil = new Date(timestamp).toISOString();
+    }
+    const existing = editingOverrideId
+      ? data.profile.overrides.find((override) => override.override_id === editingOverrideId)
+      : undefined;
+    if (editingOverrideId && !existing) {
+      setError("Редактируемый override уже отсутствует; перезагрузите профиль");
+      return;
+    }
+    const next: CapabilityOverride = {
+      override_id: existing?.override_id ?? `override-${crypto.randomUUID()}`,
+      capability_id: capability,
+      mode: overrideMode,
+      object_ids: objectIds,
+      purpose,
+      valid_until: validUntil,
+      remaining_uses: existing?.remaining_uses ?? null
+    };
+    const overrides = existing
+      ? data.profile.overrides.map((override) =>
+          override.override_id === existing.override_id ? next : override
+        )
+      : [...data.profile.overrides, next];
+    await previewOverrides(overrides);
+  };
+
+  const previewOverrideRemoval = async (overrideId: string): Promise<void> => {
+    if (!data || actionPending) return;
+    await previewOverrides(
+      data.profile.overrides.filter((override) => override.override_id !== overrideId)
+    );
+  };
+
   const previewLevel = async (level: AutonomyLevel): Promise<void> => {
     if (!data || level === data.profile.base_level || actionPending) return;
     setPreviewing(true);
     setPreview(null);
     setAcknowledged(false);
     setStepUpToken("");
+    resetOverrideEditor();
     setSelectedConfirmationId(null);
     setDecisionReason("");
     setDecisionAcknowledged(false);
@@ -428,9 +609,10 @@ export default function ControlCenterPage() {
     if (!data || !preview || !acknowledged || actionPending) return;
     const token = stepUpToken.trim();
     if (preview.requires_step_up && !token) {
-      setError("Для этого уровня нужен одноразовый step-up токен");
+      setError("Для этого изменения профиля нужен одноразовый step-up токен");
       return;
     }
+    const changedLevel = data.profile.base_level !== preview.proposed_profile.base_level;
     setApplying(true);
     setError(null);
     setNotice(null);
@@ -450,8 +632,11 @@ export default function ControlCenterPage() {
       setData((current) => (current ? { ...current, profile: response.profile } : current));
       setPreview(null);
       setAcknowledged(false);
+      resetOverrideEditor();
       setNotice(
-        `Уровень автономии изменён на ${response.profile.base_level}; активна версия ${response.profile.version}.`
+        changedLevel
+          ? `Уровень автономии изменён на ${response.profile.base_level}; активна версия ${response.profile.version}.`
+          : `Точечные overrides обновлены; активна версия профиля ${response.profile.version}.`
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось применить профиль полномочий");
@@ -710,10 +895,10 @@ export default function ControlCenterPage() {
           <span className={styles.eyebrow}>Policy Runtime</span>
           <h1>Полномочия, подтверждения и аварийное состояние — в одном месте</h1>
           <p>
-            Уровень A0–A6 теперь можно изменить только после серверного preview и явной проверки
-            разницы. Ожидающие действия проходят отдельную проверку перед approve/reject, а Policy
-            Decision Trace объясняет решения без содержимого задач, а emergency stop можно
-            активировать для проекта или всего процесса без скрытого resume.
+            Уровень A0–A6 и точечные object-scoped overrides изменяются только после серверного
+            preview и явной проверки разницы. Ожидающие действия проходят отдельную проверку перед
+            approve/reject, Policy Decision Trace объясняет решения без содержимого задач, а
+            emergency stop можно активировать для проекта или всего процесса без скрытого resume.
           </p>
         </div>
         <form className={styles.projectForm} onSubmit={openProject}>
@@ -820,10 +1005,16 @@ export default function ControlCenterPage() {
               <header>
                 <div>
                   <span className={styles.eyebrow}>Authority diff</span>
-                  <h2 id="authority-preview-title">Проверка перед изменением уровня</h2>
+                  <h2 id="authority-preview-title">
+                    {data.profile.base_level === preview.proposed_profile.base_level
+                      ? "Проверка точечного override"
+                      : "Проверка перед изменением уровня"}
+                  </h2>
                 </div>
                 <strong>
-                  {data.profile.base_level} → {preview.proposed_profile.base_level}
+                  {data.profile.base_level === preview.proposed_profile.base_level
+                    ? `overrides ${data.profile.overrides.length} → ${preview.proposed_profile.overrides.length}`
+                    : `${data.profile.base_level} → ${preview.proposed_profile.base_level}`}
                 </strong>
               </header>
               <p className={styles.previewExplanation}>
@@ -846,13 +1037,75 @@ export default function ControlCenterPage() {
                 )}
               </div>
 
+              {overrideChanges.length > 0 && (
+                <div className={styles.overrideDiff} aria-label="Изменения точечных overrides">
+                  <h3>Точные изменения overrides</h3>
+                  <div>
+                    {overrideChanges.map((change) => {
+                      const before = change.kind === "ADDED" ? null : change.current;
+                      const after = change.kind === "REMOVED" ? null : change.next;
+                      const visible = after ?? before;
+                      if (!visible) return null;
+                      return (
+                        <article
+                          key={`${change.kind}-${visible.override_id}`}
+                          data-change={change.kind}
+                        >
+                          <header>
+                            <strong>
+                              {change.kind === "ADDED"
+                                ? "Добавление"
+                                : change.kind === "UPDATED"
+                                  ? "Изменение"
+                                  : "Удаление"}
+                            </strong>
+                            <em>{visible.capability_id}</em>
+                          </header>
+                          <dl>
+                            <div>
+                              <dt>Режим</dt>
+                              <dd>
+                                {before?.mode ?? "—"} → {after?.mode ?? "—"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Объекты</dt>
+                              <dd>
+                                {before?.object_ids.join(" · ") ?? "—"} →{" "}
+                                {after?.object_ids.join(" · ") ?? "—"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Назначение</dt>
+                              <dd>
+                                {before?.purpose ?? "—"} → {after?.purpose ?? "—"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Срок</dt>
+                              <dd>
+                                {dateTime(before?.valid_until ?? null)} →{" "}
+                                {dateTime(after?.valid_until ?? null)}
+                              </dd>
+                            </div>
+                          </dl>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <label className={styles.acknowledgement}>
                 <input
                   type="checkbox"
                   checked={acknowledged}
                   onChange={(event) => setAcknowledged(event.target.checked)}
                 />
-                <span>Я проверил изменения полномочий и хочу применить их.</span>
+                <span>
+                  Я проверил базовые полномочия, точные объекты, режим, назначение и срок и хочу
+                  применить профиль.
+                </span>
               </label>
 
               {preview.requires_step_up && (
@@ -863,7 +1116,7 @@ export default function ControlCenterPage() {
                     value={stepUpToken}
                     onChange={(event) => setStepUpToken(event.target.value)}
                     autoComplete="one-time-code"
-                    placeholder="Требуется для полного доступа"
+                    placeholder="Требуется для расширения критических полномочий"
                   />
                   <small>Токен не сохраняется и очищается сразу после запроса.</small>
                 </label>
@@ -880,7 +1133,11 @@ export default function ControlCenterPage() {
                   }
                   onClick={() => void applyPreview()}
                 >
-                  {applying ? "Применяю…" : `Применить ${preview.proposed_profile.base_level}`}
+                  {applying
+                    ? "Применяю…"
+                    : data.profile.base_level === preview.proposed_profile.base_level
+                      ? "Применить override"
+                      : `Применить ${preview.proposed_profile.base_level}`}
                 </button>
                 <button
                   type="button"
@@ -904,7 +1161,7 @@ export default function ControlCenterPage() {
               <header>
                 <div>
                   <span className={styles.eyebrow}>Capability profile</span>
-                  <h2>Фактические полномочия</h2>
+                  <h2>Базовые полномочия</h2>
                 </div>
                 <span className={styles.meta}>{shortId(data.profile.profile_id)}</span>
               </header>
@@ -923,14 +1180,18 @@ export default function ControlCenterPage() {
               </div>
             </section>
 
-            <section className={styles.panel}>
+            <section className={styles.panel} aria-labelledby="point-overrides-title">
               <header>
                 <div>
                   <span className={styles.eyebrow}>Overrides</span>
-                  <h2>Точечные исключения</h2>
+                  <h2 id="point-overrides-title">Точечные исключения</h2>
                 </div>
                 <span className={styles.meta}>{data.profile.overrides.length}</span>
               </header>
+              <p className={styles.overrideBoundary}>
+                Override действует только для явно перечисленных object IDs. Любое изменение сначала
+                проходит серверный preview профиля и отдельное подтверждение владельца.
+              </p>
               <div className={styles.cardList}>
                 {data.profile.overrides.map((override) => (
                   <article key={override.override_id}>
@@ -940,15 +1201,142 @@ export default function ControlCenterPage() {
                     </div>
                     <p>{override.purpose}</p>
                     <small>
-                      objects {override.object_ids.length} · uses {override.remaining_uses ?? "∞"} ·
-                      до {dateTime(override.valid_until)}
+                      objects {override.object_ids.join(" · ")} · declared uses{" "}
+                      {override.remaining_uses ?? "без счётчика"} · до{" "}
+                      {dateTime(override.valid_until)}
                     </small>
+                    <div className={styles.overrideActions}>
+                      <button
+                        type="button"
+                        disabled={actionPending}
+                        onClick={() => startEditingOverride(override)}
+                      >
+                        Изменить
+                      </button>
+                      <button
+                        type="button"
+                        data-action="remove"
+                        disabled={actionPending}
+                        onClick={() => void previewOverrideRemoval(override.override_id)}
+                      >
+                        Удалить через preview
+                      </button>
+                    </div>
                   </article>
                 ))}
                 {data.profile.overrides.length === 0 && (
                   <p className={styles.muted}>Точечных overrides сейчас нет.</p>
                 )}
               </div>
+
+              {!overrideEditorOpen && (
+                <button
+                  type="button"
+                  className={styles.overrideEditorToggle}
+                  disabled={actionPending || preview !== null}
+                  onClick={startNewOverride}
+                >
+                  Добавить точечный override
+                </button>
+              )}
+
+              {overrideEditorOpen && (
+                <form className={styles.overrideEditor} onSubmit={previewOverrideEditor}>
+                  <div className={styles.overrideEditorIntro}>
+                    <strong>{editingOverrideId ? "Изменить override" : "Новый override"}</strong>
+                    <span>Пустые значения не заменяются скрытыми defaults.</span>
+                  </div>
+                  <div className={styles.overrideFields}>
+                    <label>
+                      <span>Capability</span>
+                      <select
+                        aria-label="Capability override"
+                        value={overrideCapability}
+                        disabled={actionPending}
+                        onChange={(event) => setOverrideCapability(event.target.value)}
+                      >
+                        <option value="">Выберите явно</option>
+                        {data.profile.grants.map((grant) => (
+                          <option key={grant.capability_id} value={grant.capability_id}>
+                            {grant.capability_id} · base {grant.mode}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Итоговый режим</span>
+                      <select
+                        aria-label="Режим override"
+                        value={overrideMode}
+                        disabled={actionPending}
+                        onChange={(event) =>
+                          setOverrideMode(event.target.value as PermissionMode | "")
+                        }
+                      >
+                        <option value="">Выберите явно</option>
+                        {PERMISSION_MODES.map((mode) => (
+                          <option key={mode} value={mode}>
+                            {mode}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Действует до · необязательно</span>
+                      <input
+                        type="datetime-local"
+                        aria-label="Срок override"
+                        value={overrideValidUntil}
+                        disabled={actionPending}
+                        onChange={(event) => setOverrideValidUntil(event.target.value)}
+                      />
+                    </label>
+                    <label className={styles.overrideWide}>
+                      <span>Точные object IDs · по одному на строку</span>
+                      <textarea
+                        aria-label="Object IDs override"
+                        value={overrideObjects}
+                        disabled={actionPending}
+                        onChange={(event) => setOverrideObjects(event.target.value)}
+                        placeholder="project-or-resource-id"
+                      />
+                    </label>
+                    <label className={styles.overrideWide}>
+                      <span>Назначение</span>
+                      <textarea
+                        aria-label="Назначение override"
+                        value={overridePurpose}
+                        disabled={actionPending}
+                        maxLength={2000}
+                        onChange={(event) => setOverridePurpose(event.target.value)}
+                        placeholder="Почему именно этот режим нужен для этих объектов"
+                      />
+                    </label>
+                  </div>
+                  <p className={styles.overrideCounterBoundary}>
+                    Новые overrides создаются без счётчика использований. Существующее конечное
+                    значение сохраняется при редактировании, но UI не создаёт и не меняет его до
+                    появления атомарного runtime-consumption.
+                  </p>
+                  <div className={styles.overrideEditorActions}>
+                    <button
+                      type="submit"
+                      disabled={
+                        actionPending ||
+                        !overrideCapability ||
+                        !overrideMode ||
+                        !overrideObjects.trim() ||
+                        !overridePurpose.trim()
+                      }
+                    >
+                      Проверить override
+                    </button>
+                    <button type="button" disabled={actionPending} onClick={resetOverrideEditor}>
+                      Отменить
+                    </button>
+                  </div>
+                </form>
+              )}
             </section>
           </div>
 

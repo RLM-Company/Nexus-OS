@@ -389,6 +389,87 @@
   font-size: 0.65rem;
 }
 
+.overrideDiff {
+  margin-top: 0.7rem;
+}
+
+.overrideDiff h3 {
+  margin: 0 0 0.45rem;
+  color: #9aa4b5;
+  font-size: 0.64rem;
+  font-weight: 680;
+}
+
+.overrideDiff > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.overrideDiff article {
+  min-width: 0;
+  padding: 0.68rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 2px solid rgba(179, 168, 255, 0.52);
+  border-radius: 0.62rem;
+  background: rgba(255, 255, 255, 0.016);
+}
+
+.overrideDiff article[data-change="ADDED"] {
+  border-left-color: rgba(91, 220, 168, 0.7);
+}
+
+.overrideDiff article[data-change="REMOVED"] {
+  border-left-color: rgba(232, 113, 129, 0.7);
+}
+
+.overrideDiff header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.overrideDiff header strong {
+  color: #d5d9e1;
+  font-size: 0.62rem;
+}
+
+.overrideDiff header em {
+  overflow: hidden;
+  color: #a9a0e8;
+  font-size: 0.54rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+}
+
+.overrideDiff dl {
+  display: grid;
+  margin: 0.55rem 0 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.overrideDiff dl div {
+  min-width: 0;
+}
+
+.overrideDiff dt {
+  margin-bottom: 0.15rem;
+  color: #5f697b;
+  font-size: 0.48rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.overrideDiff dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #929bab;
+  font-size: 0.56rem;
+  line-height: 1.42;
+}
+
 .acknowledgement {
   display: flex;
   margin-top: 0.75rem;
@@ -631,6 +712,153 @@
   color: #858e9f;
   font-size: 0.6rem;
   line-height: 1.45;
+}
+
+.overrideBoundary {
+  margin: 0 0 0.65rem;
+  color: #727c8f;
+  font-size: 0.59rem;
+  line-height: 1.5;
+}
+
+.overrideActions {
+  display: flex;
+  margin-top: 0.55rem;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.overrideActions button,
+.overrideEditorActions button,
+.overrideEditorToggle {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid rgba(179, 168, 255, 0.16);
+  border-radius: 0.55rem;
+  color: #c1b9f8;
+  background: rgba(179, 168, 255, 0.045);
+  font-size: 0.58rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.overrideActions button[data-action="remove"] {
+  border-color: rgba(255, 113, 129, 0.16);
+  color: #e8a5ad;
+  background: rgba(255, 91, 110, 0.035);
+}
+
+.overrideActions button:disabled,
+.overrideEditorActions button:disabled,
+.overrideEditorToggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+
+.overrideEditorToggle {
+  margin-top: 0.65rem;
+}
+
+.overrideEditor {
+  margin-top: 0.65rem;
+  padding: 0.7rem;
+  border: 1px solid rgba(179, 168, 255, 0.15);
+  border-radius: 0.65rem;
+  background: rgba(8, 12, 20, 0.55);
+}
+
+.overrideEditorIntro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.overrideEditorIntro strong {
+  color: #d8dce5;
+  font-size: 0.65rem;
+}
+
+.overrideEditorIntro span {
+  color: #6e7789;
+  font-size: 0.54rem;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.overrideFields {
+  display: grid;
+  margin-top: 0.65rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.overrideFields label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.32rem;
+}
+
+.overrideFields label > span {
+  color: #828c9e;
+  font-size: 0.56rem;
+}
+
+.overrideFields input,
+.overrideFields select,
+.overrideFields textarea {
+  min-width: 0;
+  padding: 0.62rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.56rem;
+  outline: 0;
+  color: #eef0f4;
+  background: #080c14;
+  font: inherit;
+  font-size: 0.62rem;
+}
+
+.overrideFields textarea {
+  min-height: 4.3rem;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.overrideFields input:focus,
+.overrideFields select:focus,
+.overrideFields textarea:focus {
+  border-color: rgba(179, 168, 255, 0.38);
+}
+
+.overrideFields input:disabled,
+.overrideFields select:disabled,
+.overrideFields textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.overrideFields .overrideWide {
+  grid-column: 1 / -1;
+}
+
+.overrideCounterBoundary {
+  margin: 0.6rem 0 0;
+  color: #706c61;
+  font-size: 0.54rem;
+  line-height: 1.5;
+}
+
+.overrideEditorActions {
+  display: flex;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.overrideEditorActions button:first-child {
+  border-color: rgba(91, 220, 168, 0.2);
+  color: #b8f0d7;
+  background: rgba(91, 220, 168, 0.055);
 }
 
 .confirmationDetails {
@@ -1430,7 +1658,8 @@
     grid-template-columns: 1fr;
   }
 
-  .diffList {
+  .diffList,
+  .overrideDiff > div {
     grid-template-columns: 1fr;
   }
 
@@ -1485,8 +1714,14 @@
   }
 
   .operationGrid,
-  .traceDetails {
+  .traceDetails,
+  .overrideDiff dl,
+  .overrideFields {
     grid-template-columns: 1fr;
+  }
+
+  .overrideFields .overrideWide {
+    grid-column: auto;
   }
 
   .usageGrid,
