@@ -481,6 +481,7 @@
 .panel,
 .operations,
 .decisionTrace,
+.recoveryPanel,
 .usagePanel {
   min-width: 0;
   padding: 1rem;
@@ -492,6 +493,7 @@
 .panel > header,
 .operations > header,
 .decisionTrace > header,
+.recoveryPanel > header,
 .usagePanel > header {
   display: flex;
   align-items: flex-start;
@@ -503,6 +505,7 @@
 .panel h2,
 .operations h2,
 .decisionTrace h2,
+.recoveryPanel h2,
 .usagePanel h2 {
   margin: 0.25rem 0 0;
   font-size: 1rem;
@@ -755,6 +758,7 @@
 }
 
 .decisionTrace,
+.recoveryPanel,
 .usagePanel,
 .operations {
   max-width: 82rem;
@@ -762,7 +766,8 @@
   margin-left: auto;
 }
 
-.decisionTrace {
+.decisionTrace,
+.recoveryPanel {
   margin-bottom: 0.8rem;
 }
 
@@ -897,6 +902,76 @@
 }
 
 .traceList > .muted {
+  grid-column: 1 / -1;
+}
+
+.recoveryPanel {
+  border-color: rgba(230, 196, 123, 0.16);
+  background:
+    radial-gradient(circle at 88% 12%, rgba(230, 196, 123, 0.07), transparent 30%),
+    rgba(13, 18, 28, 0.72);
+}
+
+.recoveryBoundary {
+  max-width: 68rem;
+  margin: 0 0 0.8rem;
+  color: #9b8d6b;
+  font-size: 0.62rem;
+  line-height: 1.55;
+}
+
+.recoveryList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.recoveryList article {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid rgba(230, 196, 123, 0.14);
+  border-left: 2px solid rgba(230, 196, 123, 0.72);
+  border-radius: 0.68rem;
+  background: rgba(230, 196, 123, 0.025);
+}
+
+.recoveryTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.recoveryTop strong {
+  color: #ded4ba;
+  font-size: 0.72rem;
+}
+
+.recoveryTop em {
+  flex: 0 0 auto;
+  padding: 0.24rem 0.4rem;
+  border: 1px solid rgba(230, 196, 123, 0.18);
+  border-radius: 999px;
+  color: #e6c47b;
+  background: rgba(230, 196, 123, 0.05);
+  font-size: 0.5rem;
+  font-style: normal;
+  letter-spacing: 0.04em;
+}
+
+.recoveryList article > p {
+  margin: 0.5rem 0;
+  color: #aaa083;
+  font-size: 0.64rem;
+  line-height: 1.5;
+}
+
+.recoveryList small {
+  color: #746b56;
+  font-size: 0.54rem;
+}
+
+.recoveryList > .muted {
   grid-column: 1 / -1;
 }
 
@@ -1360,7 +1435,8 @@
   }
 
   .confirmationDetails,
-  .traceList {
+  .traceList,
+  .recoveryList {
     grid-template-columns: 1fr;
   }
 

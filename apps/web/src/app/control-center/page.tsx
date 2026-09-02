@@ -80,6 +80,23 @@ type PolicyDecisionTrace = {
   limit: number;
 };
 
+type PolicyRecoveryRequiredOperation = {
+  operation_id: string;
+  project_id: string;
+  actor_id: string;
+  recovery_status: "RECOVERY_REQUIRED";
+  capability_ids: string[];
+  object_ids: string[];
+  reasons: string[];
+  policy_version: string;
+  reserved_at: string;
+};
+
+type PolicyRecoveryRequiredList = {
+  items: PolicyRecoveryRequiredOperation[];
+  limit: number;
+};
+
 type EmergencyStop = {
   scope: "process" | "project";
   project_id: string | null;
@@ -154,6 +171,7 @@ type CenterData = {
   profile: CapabilityProfile;
   confirmations: Confirmation[];
   decisionTrace: PolicyDecisionTrace;
+  recoveryRequired: PolicyRecoveryRequiredList;
   usage: UsageSummary;
   usageLimit: UsageLimit;
   operations: OperationsStatus;
@@ -276,6 +294,7 @@ export default function ControlCenterPage() {
         profileResponse,
         confirmationsResponse,
         decisionTrace,
+        recoveryRequired,
         usage,
         usageLimitResponse,
         operations,
@@ -288,6 +307,9 @@ export default function ControlCenterPage() {
         api<PolicyDecisionTrace>(
           `/api/v1/projects/${encodeURIComponent(id)}/decision-trace?limit=50`
         ),
+        api<PolicyRecoveryRequiredList>(
+          `/api/v1/projects/${encodeURIComponent(id)}/recovery-required?limit=50`
+        ),
         api<UsageSummary>(`/api/v1/projects/${encodeURIComponent(id)}/usage-summary`),
         api<{ limit: UsageLimit }>(`/api/v1/projects/${encodeURIComponent(id)}/usage-limit`),
         api<OperationsStatus>("/api/v1/operations/status"),
@@ -299,6 +321,7 @@ export default function ControlCenterPage() {
         profile: profileResponse.profile,
         confirmations: confirmationsResponse.items,
         decisionTrace,
+        recoveryRequired,
         usage,
         usageLimit: usageLimitResponse.limit,
         operations,
@@ -1160,6 +1183,68 @@ export default function ControlCenterPage() {
                 <p className={styles.muted}>
                   Policy Runtime ещё не записывал решений для этого проекта.
                 </p>
+              )}
+            </div>
+          </section>
+
+          <section
+            className={styles.recoveryPanel}
+            aria-labelledby="policy-recovery-required-title"
+          >
+            <header>
+              <div>
+                <span className={styles.eyebrow}>Recovery boundary</span>
+                <h2 id="policy-recovery-required-title">Операции, требующие сверки</h2>
+              </div>
+              <span className={styles.generated}>
+                {data.recoveryRequired.items.length} из последних {data.recoveryRequired.limit}
+              </span>
+            </header>
+
+            <p className={styles.recoveryBoundary}>
+              Эти операции остались в RESERVED, поэтому внешний результат неизвестен. Control Center
+              не повторяет, не возобновляет и не завершает их автоматически: владелец сначала
+              сверяет результат во внешней системе. Purpose, idempotency key, request, result и
+              секреты здесь не раскрываются.
+            </p>
+
+            <div className={styles.recoveryList}>
+              {data.recoveryRequired.items.map((operation) => (
+                <article key={operation.operation_id}>
+                  <div className={styles.recoveryTop}>
+                    <strong>Внешний результат неизвестен</strong>
+                    <em>{operation.recovery_status}</em>
+                  </div>
+                  <p>{operation.reasons.join(" · ")}</p>
+                  <dl className={styles.traceDetails}>
+                    <div>
+                      <dt>Capabilities</dt>
+                      <dd>{operation.capability_ids.join(" · ")}</dd>
+                    </div>
+                    <div>
+                      <dt>Объекты</dt>
+                      <dd>
+                        {operation.object_ids.length > 0
+                          ? operation.object_ids.join(" · ")
+                          : "Без конкретного объекта"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Actor</dt>
+                      <dd>{operation.actor_id}</dd>
+                    </div>
+                    <div>
+                      <dt>Operation</dt>
+                      <dd>{operation.operation_id}</dd>
+                    </div>
+                  </dl>
+                  <small>
+                    резерв {dateTime(operation.reserved_at)} · policy {operation.policy_version}
+                  </small>
+                </article>
+              ))}
+              {data.recoveryRequired.items.length === 0 && (
+                <p className={styles.muted}>Незавершённых RESERVED-операций нет.</p>
               )}
             </div>
           </section>

@@ -173,6 +173,61 @@ describe("PolicyStore", () => {
     expect(() => store.listDecisionTrace(projectId, 101)).toThrow(RangeError);
   });
 
+  it("lists reserved operations as content-minimized recovery-required records", () => {
+    const intent: PolicyIntent = {
+      operation_id: "operation-recovery",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["external.communicate"],
+      object_ids: ["campaign-recovery-1"],
+      purpose: "Private campaign content must stay out of recovery views",
+      idempotency_key: "private-recovery-idempotency"
+    };
+    const verdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "ALLOW",
+      evaluated_capabilities: [
+        {
+          capability_id: "external.communicate",
+          mode: "AUTONOMOUS",
+          scope: ["private-recipient-list"],
+          conditions: []
+        }
+      ],
+      permission_ids: [],
+      reasons: ["Operation was allowed by the active profile."],
+      evaluated_at: NOW,
+      policy_version: "1.1.0"
+    };
+
+    expect(store.reserveAllowed(intent, verdict, "2026-09-02T04:00:00.000Z").status).toBe(
+      "RESERVED"
+    );
+    expect(store.reserveAllowed(intent, verdict).status).toBe("RECOVERY_REQUIRED");
+    expect(store.listRecoveryRequired(projectId)).toEqual([
+      {
+        operation_id: intent.operation_id,
+        project_id: projectId,
+        actor_id: "manager",
+        recovery_status: "RECOVERY_REQUIRED",
+        capability_ids: ["external.communicate"],
+        object_ids: ["campaign-recovery-1"],
+        reasons: ["Operation was allowed by the active profile."],
+        policy_version: "1.1.0",
+        reserved_at: "2026-09-02T04:00:00.000Z"
+      }
+    ]);
+    const serialized = JSON.stringify(store.listRecoveryRequired(projectId));
+    expect(serialized).not.toContain(intent.purpose);
+    expect(serialized).not.toContain(intent.idempotency_key);
+    expect(serialized).not.toContain("private-recipient-list");
+    expect(() => store.listRecoveryRequired(projectId, 0)).toThrow(RangeError);
+    expect(() => store.listRecoveryRequired(projectId, 101)).toThrow(RangeError);
+
+    store.completeOperation(intent.operation_id, { private: "result" });
+    expect(store.listRecoveryRequired(projectId)).toEqual([]);
+  });
+
   it("refuses a session-only approval for a critical capability", () => {
     const intent: PolicyIntent = {
       operation_id: "operation-finance",

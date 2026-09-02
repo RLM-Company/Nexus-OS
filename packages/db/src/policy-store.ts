@@ -6,6 +6,7 @@ import {
   PermissionContractSchema,
   PolicyDecisionTraceEventSchema,
   PolicyIntentSchema,
+  PolicyRecoveryRequiredOperationSchema,
   PolicyVerdictSchema,
   createCapabilityProfile,
   requiresStepUp,
@@ -17,6 +18,7 @@ import {
   type PermissionContract,
   type PolicyDecisionTraceEvent,
   type PolicyIntent,
+  type PolicyRecoveryRequiredOperation,
   type PolicyVerdict,
   type ToolOperationStatus
 } from "@cosmora/contracts";
@@ -115,6 +117,36 @@ const decisionTraceFromRow = (row: SqlRow): PolicyDecisionTraceEvent => {
     throw new Error("Stored policy decision trace failed validation");
   }
   return event;
+};
+
+const recoveryRequiredFromRow = (row: SqlRow): PolicyRecoveryRequiredOperation => {
+  const intent = parseChecked<PolicyIntent>(PolicyIntentSchema, row.intent_json);
+  const verdict = parseChecked<PolicyVerdict>(PolicyVerdictSchema, row.verdict_json);
+  const projectId = String(row.project_id);
+  const operationId = String(row.operation_id);
+  if (
+    intent.project_id !== projectId ||
+    intent.operation_id !== operationId ||
+    verdict.operation_id !== operationId ||
+    row.status !== "RESERVED"
+  ) {
+    throw new Error("Stored recovery-required operation bindings failed validation");
+  }
+  const operation: PolicyRecoveryRequiredOperation = {
+    operation_id: operationId,
+    project_id: projectId,
+    actor_id: intent.actor_id,
+    recovery_status: "RECOVERY_REQUIRED",
+    capability_ids: [...intent.capability_ids],
+    object_ids: [...intent.object_ids],
+    reasons: [...verdict.reasons],
+    policy_version: verdict.policy_version,
+    reserved_at: String(row.updated_at)
+  };
+  if (!Value.Check(PolicyRecoveryRequiredOperationSchema, operation)) {
+    throw new Error("Stored recovery-required operation failed validation");
+  }
+  return operation;
 };
 
 const confirmationFromRow = (row: SqlRow): ConfirmationRequest =>
@@ -301,6 +333,21 @@ export class PolicyStore {
       )
       .all(projectId, limit) as unknown as SqlRow[];
     return rows.map(decisionTraceFromRow);
+  }
+
+  listRecoveryRequired(projectId: string, limit = 50): PolicyRecoveryRequiredOperation[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new RangeError("Recovery-required limit must be an integer between 1 and 100");
+    }
+    const rows = this.#sqlite
+      .prepare(
+        `SELECT operation_id, project_id, status, intent_json, verdict_json, updated_at
+         FROM policy_operations
+         WHERE project_id = ? AND status = 'RESERVED'
+         ORDER BY updated_at DESC, rowid DESC LIMIT ?`
+      )
+      .all(projectId, limit) as unknown as SqlRow[];
+    return rows.map(recoveryRequiredFromRow);
   }
 
   #assertSameIntent(existing: StoredPolicyOperation, intent: PolicyIntent): void {
