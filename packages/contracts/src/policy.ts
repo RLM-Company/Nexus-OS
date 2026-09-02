@@ -207,6 +207,33 @@ export const PolicyDecisionTraceListResponseSchema = Type.Object(
 );
 export type PolicyDecisionTraceListResponse = Static<typeof PolicyDecisionTraceListResponseSchema>;
 
+export const PolicyRecoveryRequiredOperationSchema = Type.Object(
+  {
+    operation_id: Type.String({ minLength: 1, maxLength: 128 }),
+    project_id: Type.String({ minLength: 1, maxLength: 128 }),
+    actor_id: Type.String({ minLength: 1, maxLength: 128 }),
+    recovery_status: Type.Literal("RECOVERY_REQUIRED"),
+    capability_ids: Type.Array(CapabilityIdSchema, { minItems: 1, uniqueItems: true }),
+    object_ids: Type.Array(Type.String({ minLength: 1 })),
+    reasons: Type.Array(Type.String({ minLength: 1 })),
+    policy_version: Type.String({ minLength: 1 }),
+    reserved_at: Type.String({ minLength: 1 })
+  },
+  { additionalProperties: false }
+);
+export type PolicyRecoveryRequiredOperation = Static<typeof PolicyRecoveryRequiredOperationSchema>;
+
+export const PolicyRecoveryRequiredListResponseSchema = Type.Object(
+  {
+    items: Type.Array(PolicyRecoveryRequiredOperationSchema, { maxItems: 100 }),
+    limit: Type.Integer({ minimum: 1, maximum: 100 })
+  },
+  { additionalProperties: false }
+);
+export type PolicyRecoveryRequiredListResponse = Static<
+  typeof PolicyRecoveryRequiredListResponseSchema
+>;
+
 export const PolicyEvaluationEnvelopeSchema = Type.Object(
   {
     contract_version: Type.Literal(POLICY_CONTRACT_VERSION),

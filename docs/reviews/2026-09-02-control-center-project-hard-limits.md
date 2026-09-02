@@ -46,4 +46,5 @@ and applied, and expansion exposes the step-up boundary.
 
 ## Remaining Step 5 work
 
-Point-override editing and explicit `RECOVERY_REQUIRED` handling remain open.
+Explicit `RECOVERY_REQUIRED` visibility is now implemented and reviewed separately in
+`2026-09-02-control-center-recovery-required.md`. Point-override editing remains open.

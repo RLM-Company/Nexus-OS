@@ -15,7 +15,8 @@ agent runtime.
 - Autonomy Control Center with the canonical A0–A6 profile, authority-diff preview, version-checked
   apply, confirmation review, guarded approve/reject, content-minimized Policy Decision Trace,
   content-free project Usage Ledger summary, versioned token/cost hard-limit preview and apply,
-  durable emergency-stop activation and operational status;
+  read-only `RECOVERY_REQUIRED` reconciliation queue, durable emergency-stop activation and
+  operational status;
 - owner-bound API identity, project isolation, session revocation and bound one-time step-up proof
   enforcement for critical mutations.
 
@@ -39,8 +40,7 @@ agent runtime.
 - Manager and worker agents do not execute task graphs or make model calls as agents yet.
 - External tool effects and the local daemon are not connected to an autonomous agent loop.
 - Manager Runtime Step 6 is accepted as `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`.
-- Roadmap Step 5 remains incomplete: point-override editing and explicit `RECOVERY_REQUIRED`
-  handling still need UI slices.
+- Roadmap Step 5 remains incomplete: point-override editing still needs an owner-facing UI slice.
 - The final Manager system prompt belongs to roadmap Step 7 and must be written with the owner.
 - No production provider or production Secret Manager backend has been selected.
 - The first closed paid beta remains limited to A0–A2; A3–A6 require later security and economic
@@ -66,10 +66,14 @@ Operational counters and active safety alerts are available at `GET /api/v1/oper
 The bounded owner-only Policy Decision Trace is available at
 `GET /api/v1/projects/:projectId/decision-trace?limit=50`; its response excludes purpose,
 idempotency keys, request/result payloads, prompts, secrets and raw grants. The owner-facing
-project usage summary is available at `GET /api/v1/projects/:projectId/usage-summary`; it returns
-aggregate token and currency totals while excluding run, provider, model, Registry and content
-details. The owner-facing autonomy UI is available at `/control-center`, and Agent Studio at
-`/agent-studio`. Project hard limits are read at
+recovery queue is available at
+`GET /api/v1/projects/:projectId/recovery-required?limit=50`; it derives only persisted
+`RESERVED` operations, exposes no replay material and offers no mutation or retry action. The
+owner-facing project usage summary is available at
+`GET /api/v1/projects/:projectId/usage-summary`; it returns aggregate token and currency totals
+while excluding run, provider, model, Registry and content details. The owner-facing autonomy UI
+is available at `/control-center`, and Agent Studio at `/agent-studio`. Project hard limits are
+read at
 `GET /api/v1/projects/:projectId/usage-limit`, previewed at
 `POST /api/v1/projects/:projectId/usage-limit/preview`, and version-checked changes are applied at
 `PUT /api/v1/projects/:projectId/usage-limit`. Increasing, removing or changing the currency of an

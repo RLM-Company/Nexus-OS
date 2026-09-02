@@ -9,6 +9,7 @@ import { buildModelRuntime } from "../src/model-runtime.js";
 describe("autonomy and confirmation API", () => {
   const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
   let database: ReturnType<typeof openDatabase>;
+  let projectStore: ProjectStore;
   let policyStore: PolicyStore;
   let app: ReturnType<typeof buildApp>;
   let projectId: string;
@@ -17,7 +18,7 @@ describe("autonomy and confirmation API", () => {
   beforeEach(async () => {
     database = openDatabase(":memory:");
     await runMigrations(database);
-    const projectStore = new ProjectStore(database.sqlite);
+    projectStore = new ProjectStore(database.sqlite);
     policyStore = new PolicyStore(database.sqlite);
     const runtime = await buildModelRuntime(config);
     consumedStepUps = [];
@@ -224,6 +225,78 @@ describe("autonomy and confirmation API", () => {
     expect(response.body).not.toContain("private-audience-segment");
     expect(response.body).not.toContain("internal-permission-id");
     expect(invalid.statusCode).toBe(400);
+  });
+
+  it("returns owner-bound recovery-required operations without replay material", async () => {
+    const intent: PolicyIntent = {
+      operation_id: "recovery-operation-api",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["external.communicate"],
+      object_ids: ["campaign-recovery-api"],
+      purpose: "Private campaign content must not appear in recovery API",
+      idempotency_key: "private-recovery-api-key"
+    };
+    const verdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "ALLOW",
+      evaluated_capabilities: [
+        {
+          capability_id: "external.communicate",
+          mode: "AUTONOMOUS",
+          scope: ["private-audience-segment"],
+          conditions: []
+        }
+      ],
+      permission_ids: [],
+      reasons: ["Operation was allowed by the active profile."],
+      evaluated_at: "2026-09-02T04:00:00.000Z",
+      policy_version: "1.1.0"
+    };
+    policyStore.reserveAllowed(intent, verdict, "2026-09-02T04:01:00.000Z");
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/recovery-required?limit=1`
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      items: [
+        {
+          operation_id: intent.operation_id,
+          project_id: projectId,
+          actor_id: "manager",
+          recovery_status: "RECOVERY_REQUIRED",
+          capability_ids: ["external.communicate"],
+          object_ids: ["campaign-recovery-api"],
+          reasons: ["Operation was allowed by the active profile."],
+          policy_version: "1.1.0",
+          reserved_at: "2026-09-02T04:01:00.000Z"
+        }
+      ],
+      limit: 1
+    });
+    expect(response.body).not.toContain(intent.purpose);
+    expect(response.body).not.toContain(intent.idempotency_key);
+    expect(response.body).not.toContain("private-audience-segment");
+
+    const invalid = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/recovery-required?limit=101`
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const hidden = projectStore.createProject(
+      "Hidden recovery project",
+      "hidden-recovery-project",
+      "other-owner"
+    );
+    const hiddenResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${hidden.project.id}/recovery-required`
+    });
+    expect(hiddenResponse.statusCode).toBe(404);
+    expect(hiddenResponse.body).not.toContain(hidden.run.id);
   });
 
   it("exposes pending confirmation cards and enforces nonce plus step-up", async () => {

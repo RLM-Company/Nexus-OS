@@ -10,8 +10,8 @@ The Autonomy Control Center now reads a strict project summary from the existing
 Ledger. The owner can see committed input/output tokens, the active reserved token upper bound,
 attempt outcomes, committed cost and reserved estimated cost in each recorded currency.
 
-This is an honest visibility slice. It does not claim that a project hard limit exists yet and it
-does not add a budget mutation or a new execution path.
+This is an honest visibility slice. The later hard-limit increment is documented separately; this
+summary endpoint itself does not mutate a budget or add a new execution path.
 
 ## Boundary
 
@@ -34,5 +34,6 @@ extra private provider/model/prompt fields and proves that the UI does not rende
 ## Remaining Step 5 work
 
 The versioned hard-limit increment is now implemented and reviewed separately in
-`2026-09-02-control-center-project-hard-limits.md`. Point-override editing and explicit
-`RECOVERY_REQUIRED` handling remain open.
+`2026-09-02-control-center-project-hard-limits.md`. Explicit `RECOVERY_REQUIRED` visibility is now
+implemented and reviewed separately in `2026-09-02-control-center-recovery-required.md`.
+Point-override editing remains open.

@@ -10,6 +10,8 @@ import {
   PolicyDecisionTraceEventSchema,
   PolicyDecisionTraceListResponseSchema,
   PolicyEvaluationEnvelopeSchema,
+  PolicyRecoveryRequiredListResponseSchema,
+  PolicyRecoveryRequiredOperationSchema,
   PolicyVerdictSchema,
   createCapabilityProfile,
   getCapabilityMode,
@@ -105,6 +107,33 @@ describe("autonomy policy contracts", () => {
         items: [event],
         limit: 50
       })
+    ).toBe(true);
+  });
+
+  it("accepts only content-minimized recovery-required operations", () => {
+    const operation = {
+      operation_id: "operation-recovery-1",
+      project_id: "project-1",
+      actor_id: "manager",
+      recovery_status: "RECOVERY_REQUIRED",
+      capability_ids: ["external.communicate"],
+      object_ids: ["campaign-1"],
+      reasons: ["External effect was allowed."],
+      policy_version: "1.1.0",
+      reserved_at: "2026-09-02T04:00:00.000Z"
+    } as const;
+
+    expect(Value.Check(PolicyRecoveryRequiredOperationSchema, operation)).toBe(true);
+    expect(
+      Value.Check(PolicyRecoveryRequiredOperationSchema, {
+        ...operation,
+        idempotency_key: "private-replay-key",
+        result: { sent: true },
+        purpose: "Private operation content"
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(PolicyRecoveryRequiredListResponseSchema, { items: [operation], limit: 50 })
     ).toBe(true);
   });
 

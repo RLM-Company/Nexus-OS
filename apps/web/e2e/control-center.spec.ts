@@ -150,6 +150,79 @@ test("explains policy verdicts without rendering hidden operation content", asyn
   expect(traceRequests).toBeGreaterThan(0);
 });
 
+test("shows recovery-required operations without offering a blind replay", async ({
+  page,
+  request
+}) => {
+  const nonce = `${Date.now()}`;
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a project for the recovery-required browser check.",
+      client_message_id: `recovery-required-e2e-${nonce}`
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+  let recoveryRequests = 0;
+
+  await page.route(
+    (url) =>
+      url.pathname === `/api/v1/projects/${projectId}/recovery-required` &&
+      url.searchParams.get("limit") === "50",
+    async (route) => {
+      recoveryRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [
+            {
+              operation_id: "recovery-browser-1",
+              project_id: projectId,
+              actor_id: "manager",
+              recovery_status: "RECOVERY_REQUIRED",
+              capability_ids: ["external.communicate"],
+              object_ids: ["campaign-recovery-browser-1"],
+              reasons: ["Reserved operation has no durable completion record."],
+              policy_version: "1.1.0",
+              reserved_at: "2026-09-02T04:01:00.000Z",
+              purpose: "PRIVATE RECOVERY PURPOSE MUST NOT RENDER",
+              idempotency_key: "private-recovery-idempotency",
+              result: { message: "PRIVATE RECOVERY RESULT MUST NOT RENDER" },
+              provider_id: "PRIVATE RECOVERY PROVIDER MUST NOT RENDER"
+            }
+          ],
+          limit: 50
+        })
+      });
+    }
+  );
+
+  await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
+
+  const recovery = page.getByRole("region", { name: "Операции, требующие сверки" });
+  await expect(recovery).toBeVisible();
+  await expect(recovery).toContainText("RECOVERY_REQUIRED");
+  await expect(recovery).toContainText("Внешний результат неизвестен");
+  await expect(recovery).toContainText("Reserved operation has no durable completion record.");
+  await expect(recovery).toContainText("external.communicate");
+  await expect(recovery).toContainText("campaign-recovery-browser-1");
+  await expect(recovery).toContainText("manager");
+  await expect(recovery).toContainText("recovery-browser-1");
+  await expect(recovery).toContainText("policy 1.1.0");
+  await expect(recovery).toContainText("не повторяет, не возобновляет и не завершает");
+  await expect(recovery).not.toContainText("PRIVATE RECOVERY PURPOSE MUST NOT RENDER");
+  await expect(recovery).not.toContainText("private-recovery-idempotency");
+  await expect(recovery).not.toContainText("PRIVATE RECOVERY RESULT MUST NOT RENDER");
+  await expect(recovery).not.toContainText("PRIVATE RECOVERY PROVIDER MUST NOT RENDER");
+  await expect(
+    recovery.getByRole("button", {
+      name: /retry|повтор|resume|replay|возобновить|завершить|успеш/i
+    })
+  ).toHaveCount(0);
+  expect(recoveryRequests).toBeGreaterThan(0);
+});
+
 test("shows exact project usage without exposing provider routes or invented prices", async ({
   page,
   request
