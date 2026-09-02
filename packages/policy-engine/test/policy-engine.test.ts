@@ -8,7 +8,7 @@ import {
   type PolicyIntent
 } from "@cosmora/contracts";
 import { describe, expect, it } from "vitest";
-import { evaluatePolicy } from "../src/index.js";
+import { evaluatePolicy, getAppliedOverrideIds } from "../src/index.js";
 
 const NOW = "2026-08-24T12:00:00Z";
 
@@ -56,7 +56,12 @@ const permission = (
   object_ids: [],
   valid_from: "2026-08-24T00:00:00Z",
   valid_until: null,
-  limits: { money_minor: null, tokens: null, operations: null, delegation_depth: 0 },
+  limits: {
+    money_minor: null,
+    tokens: null,
+    operations: null,
+    delegation_depth: 0
+  },
   parent_permission_id: null,
   approval: {
     approver_id: "owner-1",
@@ -71,7 +76,11 @@ const permission = (
 describe("evaluatePolicy", () => {
   it("denies an A0 web action", () => {
     const verdict = evaluatePolicy(
-      { intent: intent(["context.web.read"]), profile: profile("A0"), permissionContracts: [] },
+      {
+        intent: intent(["context.web.read"]),
+        profile: profile("A0"),
+        permissionContracts: []
+      },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("DENY");
@@ -79,7 +88,11 @@ describe("evaluatePolicy", () => {
 
   it("allows an A2 persistent workspace action", () => {
     const verdict = evaluatePolicy(
-      { intent: intent(["workspace.write"]), profile: profile("A2"), permissionContracts: [] },
+      {
+        intent: intent(["workspace.write"]),
+        profile: profile("A2"),
+        permissionContracts: []
+      },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("ALLOW");
@@ -147,7 +160,9 @@ describe("evaluatePolicy", () => {
         intent: intent(["contract.finalize"]),
         profile: profile("A3"),
         permissionContracts: [
-          permission("contract.finalize", "AUTONOMOUS", { object_ids: ["contract-2"] })
+          permission("contract.finalize", "AUTONOMOUS", {
+            object_ids: ["contract-2"]
+          })
         ]
       },
       { evaluatedAt: NOW }
@@ -156,30 +171,96 @@ describe("evaluatePolicy", () => {
   });
 
   it("lets a profile override reduce autonomy", () => {
+    const restricted = profile("A5", [
+      {
+        override_id: "owner-stop",
+        capability_id: "external.communicate",
+        mode: "DENY",
+        object_ids: ["project-1"],
+        purpose: "Pause outbound communication",
+        valid_until: null,
+        remaining_uses: 2
+      }
+    ]);
     const verdict = evaluatePolicy(
       {
         intent: intent(["external.communicate"]),
-        profile: profile("A5", [
-          {
-            override_id: "owner-stop",
-            capability_id: "external.communicate",
-            mode: "DENY",
-            object_ids: ["project-1"],
-            purpose: "Pause outbound communication",
-            valid_until: null,
-            remaining_uses: null
-          }
-        ]),
+        profile: restricted,
         permissionContracts: []
       },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("DENY");
+    expect(getAppliedOverrideIds(restricted, intent(["external.communicate"]), NOW)).toEqual([
+      "owner-stop"
+    ]);
+  });
+
+  it("reports no applied override for expired, out-of-scope, or conflicting candidates", () => {
+    const overrideBase = {
+      capability_id: "external.communicate" as const,
+      object_ids: ["project-1"],
+      purpose: "Bounded outbound communication",
+      remaining_uses: 1
+    };
+    expect(
+      getAppliedOverrideIds(
+        profile("A3", [
+          {
+            ...overrideBase,
+            override_id: "expired",
+            mode: "DENY",
+            valid_until: "2026-08-24T11:59:59.000Z"
+          }
+        ]),
+        intent(["external.communicate"]),
+        NOW
+      )
+    ).toEqual([]);
+    expect(
+      getAppliedOverrideIds(
+        profile("A3", [
+          {
+            ...overrideBase,
+            override_id: "other-object",
+            mode: "DENY",
+            object_ids: ["project-2"],
+            valid_until: null
+          }
+        ]),
+        intent(["external.communicate"]),
+        NOW
+      )
+    ).toEqual([]);
+    expect(
+      getAppliedOverrideIds(
+        profile("A3", [
+          {
+            ...overrideBase,
+            override_id: "allow",
+            mode: "AUTONOMOUS",
+            valid_until: null
+          },
+          {
+            ...overrideBase,
+            override_id: "deny",
+            mode: "DENY",
+            valid_until: null
+          }
+        ]),
+        intent(["external.communicate"]),
+        NOW
+      )
+    ).toEqual([]);
   });
 
   it("applies a named A5 conditional expansion", () => {
     const verdict = evaluatePolicy(
-      { intent: intent(["production.deploy"]), profile: profile("A5"), permissionContracts: [] },
+      {
+        intent: intent(["production.deploy"]),
+        profile: profile("A5"),
+        permissionContracts: []
+      },
       {
         evaluatedAt: NOW,
         activeConditionIds: ["subsequent_release_after_approved_first_release"]
@@ -189,9 +270,16 @@ describe("evaluatePolicy", () => {
   });
 
   it("denies cross-project evaluation", () => {
-    const crossProjectIntent = { ...intent(["workspace.write"]), project_id: "project-2" };
+    const crossProjectIntent = {
+      ...intent(["workspace.write"]),
+      project_id: "project-2"
+    };
     const verdict = evaluatePolicy(
-      { intent: crossProjectIntent, profile: profile("A6"), permissionContracts: [] },
+      {
+        intent: crossProjectIntent,
+        profile: profile("A6"),
+        permissionContracts: []
+      },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("DENY");
@@ -203,7 +291,11 @@ describe("evaluatePolicy", () => {
     if (first === undefined) throw new Error("Fixture has no grants");
     ambiguous.grants.push(first);
     const verdict = evaluatePolicy(
-      { intent: intent([first.capability_id]), profile: ambiguous, permissionContracts: [] },
+      {
+        intent: intent([first.capability_id]),
+        profile: ambiguous,
+        permissionContracts: []
+      },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("PAUSE");
@@ -233,7 +325,11 @@ describe("evaluatePolicy", () => {
 
   it("keeps every A6 capability fully autonomous", () => {
     const verdict = evaluatePolicy(
-      { intent: intent([...CAPABILITY_IDS]), profile: profile("A6"), permissionContracts: [] },
+      {
+        intent: intent([...CAPABILITY_IDS]),
+        profile: profile("A6"),
+        permissionContracts: []
+      },
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("ALLOW");

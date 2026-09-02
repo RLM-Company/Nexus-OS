@@ -43,7 +43,11 @@ export interface StoredPolicyOperation {
 }
 
 export type ConfirmationDecisionResult =
-  | { status: "APPROVED"; confirmation: ConfirmationRequest; permission: PermissionContract }
+  | {
+      status: "APPROVED";
+      confirmation: ConfirmationRequest;
+      permission: PermissionContract;
+    }
   | { status: "REJECTED"; confirmation: ConfirmationRequest }
   | {
       status: "NOT_FOUND" | "NONCE_MISMATCH" | "ALREADY_DECIDED" | "EXPIRED" | "STEP_UP_REQUIRED";
@@ -52,8 +56,16 @@ export type ConfirmationDecisionResult =
 export type ReservationResult =
   | { status: "RESERVED"; operation: StoredPolicyOperation }
   | { status: "REPLAY"; operation: StoredPolicyOperation }
-  | { status: "BLOCKED" | "RECOVERY_REQUIRED"; operation: StoredPolicyOperation }
-  | { status: "PERMISSION_EXHAUSTED" };
+  | {
+      status: "BLOCKED" | "RECOVERY_REQUIRED";
+      operation: StoredPolicyOperation;
+    }
+  | { status: "PERMISSION_EXHAUSTED" | "AUTHORITY_CHANGED" };
+
+export interface ReservationAuthoritySnapshot {
+  profileVersion: number;
+  appliedOverrideIds: readonly string[];
+}
 
 export class PolicyStoreConflictError extends Error {
   constructor(message: string) {
@@ -64,6 +76,34 @@ export class PolicyStoreConflictError extends Error {
 
 const nowIso = (): string => new Date().toISOString();
 const json = (value: unknown): string => JSON.stringify(value);
+
+const coversObjects = (
+  allowedObjectIds: readonly string[],
+  requestedObjectIds: readonly string[]
+): boolean =>
+  allowedObjectIds.length === 0 ||
+  requestedObjectIds.every((objectId) => allowedObjectIds.includes(objectId));
+
+const appliedOverrideIdsForReservation = (
+  profile: CapabilityProfile,
+  intent: PolicyIntent,
+  evaluatedAt: string
+): string[] => {
+  const now = Date.parse(evaluatedAt);
+  if (!Number.isFinite(now)) return [];
+  return intent.capability_ids.flatMap((capabilityId) => {
+    const matches = profile.overrides.filter(
+      (override) =>
+        override.capability_id === capabilityId &&
+        (override.remaining_uses === null || override.remaining_uses > 0) &&
+        (override.valid_until === null || Date.parse(override.valid_until) >= now) &&
+        coversObjects(override.object_ids, intent.object_ids)
+    );
+    const modes = new Set(matches.map((override) => override.mode));
+    const applied = modes.size === 1 ? matches[0] : undefined;
+    return applied ? [applied.override_id] : [];
+  });
+};
 
 const parseChecked = <T>(schema: TSchema, source: unknown): T => {
   if (typeof source !== "string") throw new Error("Stored policy JSON is not text");
@@ -599,7 +639,12 @@ export class PolicyStore {
         object_ids: confirmation.intent.object_ids,
         valid_from: decidedAt,
         valid_until: confirmation.expires_at,
-        limits: { money_minor: null, tokens: null, operations: 1, delegation_depth: 0 },
+        limits: {
+          money_minor: null,
+          tokens: null,
+          operations: 1,
+          delegation_depth: 0
+        },
         parent_permission_id: null,
         approval: {
           approver_id: input.decidedBy,
@@ -687,6 +732,7 @@ export class PolicyStore {
   reserveAllowed(
     intent: PolicyIntent,
     verdict: PolicyVerdict,
+    authority: ReservationAuthoritySnapshot,
     timestamp = nowIso()
   ): ReservationResult {
     return this.#transaction(() => {
@@ -700,6 +746,77 @@ export class PolicyStore {
         if (existing.status !== "READY") return { status: "BLOCKED", operation: existing };
       }
 
+      if (verdict.verdict !== "ALLOW" && verdict.verdict !== "ALLOW_WITH_LIMITS") {
+        return { status: "AUTHORITY_CHANGED" };
+      }
+      const profile = this.getProfile(intent.project_id);
+      if (
+        !profile ||
+        !Number.isInteger(authority.profileVersion) ||
+        authority.profileVersion < 1 ||
+        profile.version !== authority.profileVersion
+      ) {
+        return { status: "AUTHORITY_CHANGED" };
+      }
+      const suppliedOverrideIds = [...new Set(authority.appliedOverrideIds)].sort();
+      const expectedOverrideIds = appliedOverrideIdsForReservation(
+        profile,
+        intent,
+        verdict.evaluated_at
+      ).sort();
+      if (
+        suppliedOverrideIds.length !== authority.appliedOverrideIds.length ||
+        json(suppliedOverrideIds) !== json(expectedOverrideIds)
+      ) {
+        return { status: "AUTHORITY_CHANGED" };
+      }
+      const appliedOverrides = suppliedOverrideIds.map((overrideId) =>
+        profile.overrides.find((override) => override.override_id === overrideId)
+      );
+      if (
+        appliedOverrides.some(
+          (override) =>
+            !override ||
+            verdict.evaluated_capabilities.find(
+              (grant) => grant.capability_id === override.capability_id
+            )?.mode !== override.mode
+        )
+      ) {
+        return { status: "AUTHORITY_CHANGED" };
+      }
+      const finiteOverrideIds = new Set(
+        appliedOverrides.flatMap((override) =>
+          override?.remaining_uses === null || override === undefined ? [] : [override.override_id]
+        )
+      );
+      const nextProfile: CapabilityProfile | null =
+        finiteOverrideIds.size === 0
+          ? null
+          : {
+              ...profile,
+              overrides: profile.overrides.flatMap((override): CapabilityOverride[] => {
+                if (
+                  !finiteOverrideIds.has(override.override_id) ||
+                  override.remaining_uses === null
+                ) {
+                  return [override];
+                }
+                return override.remaining_uses === 1
+                  ? []
+                  : [
+                      {
+                        ...override,
+                        remaining_uses: override.remaining_uses - 1
+                      }
+                    ];
+              }),
+              version: profile.version + 1,
+              issued_at: timestamp
+            };
+      if (nextProfile && !Value.Check(CapabilityProfileSchema, nextProfile)) {
+        throw new Error("Consumed capability profile failed validation");
+      }
+
       for (const permissionId of verdict.permission_ids) {
         const available = this.#get(
           this.#sqlite.prepare(
@@ -710,6 +827,26 @@ export class PolicyStore {
           permissionId
         );
         if (!available) return { status: "PERMISSION_EXHAUSTED" };
+      }
+
+      if (nextProfile) {
+        const result = this.#sqlite
+          .prepare(
+            `UPDATE autonomy_profiles
+             SET version = ?, profile_json = ?, issued_at = ?, updated_at = ?
+             WHERE project_id = ? AND version = ?`
+          )
+          .run(
+            nextProfile.version,
+            json(nextProfile),
+            nextProfile.issued_at,
+            timestamp,
+            intent.project_id,
+            profile.version
+          );
+        if (result.changes !== 1) {
+          throw new Error("Capability profile changed during an atomic reservation");
+        }
       }
 
       for (const permissionId of verdict.permission_ids) {

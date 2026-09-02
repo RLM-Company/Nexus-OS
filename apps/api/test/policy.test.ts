@@ -7,7 +7,10 @@ import type { StepUpProofConsumption } from "../src/identity.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
 
 describe("autonomy and confirmation API", () => {
-  const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
+  const config = loadServerConfig({
+    NODE_ENV: "test",
+    MOCK_PROVIDER_MODE: "success"
+  });
   let database: ReturnType<typeof openDatabase>;
   let projectStore: ProjectStore;
   let policyStore: PolicyStore;
@@ -39,7 +42,10 @@ describe("autonomy and confirmation API", () => {
     const created = await app.inject({
       method: "POST",
       url: "/api/v1/projects",
-      payload: { initial_message: "Policy API", client_message_id: "policy-api-project" }
+      payload: {
+        initial_message: "Policy API",
+        client_message_id: "policy-api-project"
+      }
     });
     projectId = created.json<{ project: { id: string } }>().project.id;
   });
@@ -318,7 +324,13 @@ describe("autonomy and confirmation API", () => {
       evaluated_at: "2026-09-02T04:00:00.000Z",
       policy_version: "1.1.0"
     };
-    policyStore.reserveAllowed(intent, verdict, "2026-09-02T04:01:00.000Z");
+    const profile = policyStore.ensureProfile(projectId)!;
+    policyStore.reserveAllowed(
+      intent,
+      verdict,
+      { profileVersion: profile.version, appliedOverrideIds: [] },
+      "2026-09-02T04:01:00.000Z"
+    );
 
     const response = await app.inject({
       method: "GET",
@@ -378,7 +390,12 @@ describe("autonomy and confirmation API", () => {
       operation_id: intent.operation_id,
       verdict: "NEEDS_CONFIRMATION",
       evaluated_capabilities: [
-        { capability_id: "finance.spend", mode: "CONFIRM", scope: [], conditions: [] }
+        {
+          capability_id: "finance.spend",
+          mode: "CONFIRM",
+          scope: [],
+          conditions: []
+        }
       ],
       permission_ids: [],
       reasons: ["Owner confirmation required"],
@@ -435,7 +452,12 @@ describe("autonomy and confirmation API", () => {
       operation_id: intent.operation_id,
       verdict: "NEEDS_CONFIRMATION",
       evaluated_capabilities: [
-        { capability_id: "finance.spend", mode: "CONFIRM", scope: [], conditions: [] }
+        {
+          capability_id: "finance.spend",
+          mode: "CONFIRM",
+          scope: [],
+          conditions: []
+        }
       ],
       permission_ids: [],
       reasons: ["Owner confirmation required"],

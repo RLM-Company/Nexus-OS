@@ -33,7 +33,11 @@ describe("PolicyStore", () => {
 
   it("creates an A0 profile and updates it with compare-and-swap versioning", () => {
     const initial = store.ensureProfile(projectId, NOW);
-    expect(initial).toMatchObject({ project_id: projectId, base_level: "A0", version: 1 });
+    expect(initial).toMatchObject({
+      project_id: projectId,
+      base_level: "A0",
+      version: 1
+    });
     expect(initial?.grants).toHaveLength(19);
 
     const updated = store.updateProfile({
@@ -97,9 +101,17 @@ describe("PolicyStore", () => {
       ],
       permission_ids: [permissions[0]!.permission_id]
     };
-    expect(store.reserveAllowed(intent, allowedVerdict, "2026-08-24T12:02:00.000Z").status).toBe(
-      "RESERVED"
-    );
+    expect(
+      store.reserveAllowed(
+        intent,
+        allowedVerdict,
+        {
+          profileVersion: store.getProfile(projectId)!.version,
+          appliedOverrideIds: []
+        },
+        "2026-08-24T12:02:00.000Z"
+      ).status
+    ).toBe("RESERVED");
     expect(
       store.listActivePermissions(projectId, "manager", "2026-08-24T12:03:00.000Z")
     ).toHaveLength(0);
@@ -174,6 +186,7 @@ describe("PolicyStore", () => {
   });
 
   it("lists reserved operations as content-minimized recovery-required records", () => {
+    const profile = store.ensureProfile(projectId, NOW)!;
     const intent: PolicyIntent = {
       operation_id: "operation-recovery",
       project_id: projectId,
@@ -200,10 +213,14 @@ describe("PolicyStore", () => {
       policy_version: "1.1.0"
     };
 
-    expect(store.reserveAllowed(intent, verdict, "2026-09-02T04:00:00.000Z").status).toBe(
-      "RESERVED"
-    );
-    expect(store.reserveAllowed(intent, verdict).status).toBe("RECOVERY_REQUIRED");
+    const authority = {
+      profileVersion: profile.version,
+      appliedOverrideIds: []
+    };
+    expect(
+      store.reserveAllowed(intent, verdict, authority, "2026-09-02T04:00:00.000Z").status
+    ).toBe("RESERVED");
+    expect(store.reserveAllowed(intent, verdict, authority).status).toBe("RECOVERY_REQUIRED");
     expect(store.listRecoveryRequired(projectId)).toEqual([
       {
         operation_id: intent.operation_id,
@@ -226,6 +243,106 @@ describe("PolicyStore", () => {
 
     store.completeOperation(intent.operation_id, { private: "result" });
     expect(store.listRecoveryRequired(projectId)).toEqual([]);
+  });
+
+  it("atomically consumes finite overrides once and rejects stale authority", () => {
+    const initial = store.ensureProfile(projectId, NOW)!;
+    const finite = store.updateProfile({
+      projectId,
+      baseLevel: "A0",
+      overrides: [
+        {
+          override_id: "finite-workspace-write",
+          capability_id: "workspace.write",
+          mode: "AUTONOMOUS",
+          object_ids: [projectId],
+          purpose: "Allow exactly two project writes",
+          valid_until: null,
+          remaining_uses: 2
+        }
+      ],
+      expectedVersion: initial.version,
+      issuedAt: NOW
+    })!;
+    const intent: PolicyIntent = {
+      operation_id: "finite-operation-1",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["workspace.write"],
+      object_ids: [projectId],
+      purpose: "Write one project artifact",
+      idempotency_key: "finite-write-1"
+    };
+    const verdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "ALLOW",
+      evaluated_capabilities: [
+        {
+          capability_id: "workspace.write",
+          mode: "AUTONOMOUS",
+          scope: [],
+          conditions: []
+        }
+      ],
+      permission_ids: [],
+      reasons: ["Finite override allowed the exact project object."],
+      evaluated_at: NOW,
+      policy_version: "1.1.0"
+    };
+    const authority = {
+      profileVersion: finite.version,
+      appliedOverrideIds: ["finite-workspace-write"]
+    };
+
+    expect(
+      store.reserveAllowed(
+        intent,
+        { ...verdict, permission_ids: ["missing-permission"] },
+        authority,
+        NOW
+      ).status
+    ).toBe("PERMISSION_EXHAUSTED");
+    expect(store.getProfile(projectId)).toMatchObject({
+      version: 2,
+      overrides: [{ override_id: "finite-workspace-write", remaining_uses: 2 }]
+    });
+    expect(store.getOperation(projectId, intent.idempotency_key)).toBeNull();
+
+    expect(store.reserveAllowed(intent, verdict, authority, NOW).status).toBe("RESERVED");
+    expect(store.getProfile(projectId)).toMatchObject({
+      version: 3,
+      overrides: [{ override_id: "finite-workspace-write", remaining_uses: 1 }]
+    });
+    store.completeOperation(intent.operation_id, { ok: true }, "2026-08-24T12:00:01.000Z");
+    expect(store.reserveAllowed(intent, verdict, authority, NOW).status).toBe("REPLAY");
+    expect(store.getProfile(projectId)).toMatchObject({
+      version: 3,
+      overrides: [{ override_id: "finite-workspace-write", remaining_uses: 1 }]
+    });
+
+    const secondIntent: PolicyIntent = {
+      ...intent,
+      operation_id: "finite-operation-2",
+      idempotency_key: "finite-write-2"
+    };
+    const secondVerdict: PolicyVerdict = {
+      ...verdict,
+      operation_id: secondIntent.operation_id
+    };
+    expect(store.reserveAllowed(secondIntent, secondVerdict, authority, NOW).status).toBe(
+      "AUTHORITY_CHANGED"
+    );
+    const refreshedAuthority = {
+      profileVersion: store.getProfile(projectId)!.version,
+      appliedOverrideIds: ["finite-workspace-write"]
+    };
+    expect(store.reserveAllowed(secondIntent, secondVerdict, refreshedAuthority, NOW).status).toBe(
+      "RESERVED"
+    );
+    expect(store.getProfile(projectId)).toMatchObject({
+      version: 4,
+      overrides: []
+    });
   });
 
   it("refuses a session-only approval for a critical capability", () => {

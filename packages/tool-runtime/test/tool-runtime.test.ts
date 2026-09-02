@@ -55,8 +55,124 @@ describe("GuardedToolRuntime", () => {
     };
     const first = await runtime.invoke<typeof invocation.input, { doubled: number }>(invocation);
     const replay = await runtime.invoke<typeof invocation.input, { doubled: number }>(invocation);
-    expect(first).toMatchObject({ status: "EXECUTED", result: { doubled: 8 }, replayed: false });
-    expect(replay).toMatchObject({ status: "EXECUTED", result: { doubled: 8 }, replayed: true });
+    expect(first).toMatchObject({
+      status: "EXECUTED",
+      result: { doubled: 8 },
+      replayed: false
+    });
+    expect(replay).toMatchObject({
+      status: "EXECUTED",
+      result: { doubled: 8 },
+      replayed: true
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("consumes a finite point override at reservation and not on replay", async () => {
+    const current = policyStore.getProfile(projectId)!;
+    policyStore.updateProfile({
+      projectId,
+      baseLevel: "A0",
+      overrides: [
+        {
+          override_id: "one-project-write",
+          capability_id: "workspace.write",
+          mode: "AUTONOMOUS",
+          object_ids: [projectId],
+          purpose: "Allow one exact project write",
+          valid_until: null,
+          remaining_uses: 1
+        }
+      ],
+      expectedVersion: current.version,
+      issuedAt: NOW
+    });
+    const execute = vi.fn(() => Promise.resolve({ written: true }));
+    runtime.register({
+      id: "finite-workspace-write",
+      resolveCapabilities: () => ["workspace.write"],
+      execute
+    });
+    const invocation = {
+      toolId: "finite-workspace-write",
+      operationId: "finite-runtime-operation-1",
+      projectId,
+      actorId: "manager",
+      objectIds: [projectId],
+      purpose: "Write one exact project artifact",
+      idempotencyKey: "finite-runtime-write-1",
+      input: {},
+      evaluatedAt: NOW
+    };
+
+    const first = await runtime.invoke(invocation);
+    expect(first).toMatchObject({ status: "EXECUTED", replayed: false });
+    expect(policyStore.getProfile(projectId)).toMatchObject({
+      version: 3,
+      overrides: []
+    });
+    const replay = await runtime.invoke(invocation);
+    expect(replay).toMatchObject({ status: "EXECUTED", replayed: true });
+    expect(policyStore.getProfile(projectId)).toMatchObject({
+      version: 3,
+      overrides: []
+    });
+
+    const exhausted = await runtime.invoke({
+      ...invocation,
+      operationId: "finite-runtime-operation-2",
+      idempotencyKey: "finite-runtime-write-2"
+    });
+    expect(exhausted.status).toBe("DENIED");
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not restore or retry a finite use after an uncertain tool failure", async () => {
+    const current = policyStore.getProfile(projectId)!;
+    policyStore.updateProfile({
+      projectId,
+      baseLevel: "A0",
+      overrides: [
+        {
+          override_id: "one-failing-write",
+          capability_id: "workspace.write",
+          mode: "AUTONOMOUS",
+          object_ids: [projectId],
+          purpose: "Bound a potentially uncertain project write",
+          valid_until: null,
+          remaining_uses: 1
+        }
+      ],
+      expectedVersion: current.version,
+      issuedAt: NOW
+    });
+    const execute = vi.fn(() => Promise.reject(new Error("External outcome is unknown")));
+    runtime.register({
+      id: "finite-failing-write",
+      resolveCapabilities: () => ["workspace.write"],
+      execute
+    });
+    const invocation = {
+      toolId: "finite-failing-write",
+      operationId: "finite-failing-operation",
+      projectId,
+      actorId: "manager",
+      objectIds: [projectId],
+      purpose: "Attempt one bounded project write",
+      idempotencyKey: "finite-failing-write-once",
+      input: {},
+      evaluatedAt: NOW
+    };
+
+    expect(await runtime.invoke(invocation)).toMatchObject({
+      status: "FAILED",
+      errorCode: "Error"
+    });
+    expect(policyStore.getProfile(projectId)).toMatchObject({
+      version: 3,
+      overrides: []
+    });
+    expect((await runtime.invoke(invocation)).status).toBe("PAUSED");
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
