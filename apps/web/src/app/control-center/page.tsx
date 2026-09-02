@@ -110,10 +110,36 @@ type OperationsStatus = {
   }>;
 };
 
+type UsageSummary = {
+  project_id: string;
+  generated_at: string;
+  attempts: {
+    total: number;
+    reserved: number;
+    committed: number;
+    failed: number;
+    cancelled: number;
+  };
+  tokens: {
+    committed_input: number;
+    committed_output: number;
+    reserved_upper_bound: number;
+    unknown_committed_attempts: number;
+  };
+  costs: Array<{
+    currency: "USD" | "RUB";
+    committed_amount: number;
+    reserved_amount: number;
+  }>;
+  unknown_committed_cost_attempts: number;
+  unknown_reserved_cost_attempts: number;
+};
+
 type CenterData = {
   profile: CapabilityProfile;
   confirmations: Confirmation[];
   decisionTrace: PolicyDecisionTrace;
+  usage: UsageSummary;
   operations: OperationsStatus;
   projectStop: EmergencyStop | null;
 };
@@ -172,6 +198,14 @@ const dateTime = (value: string | null): string => {
   });
 };
 
+const integer = (value: number): string => new Intl.NumberFormat("ru-RU").format(value);
+
+const money = (amount: number, currency: "USD" | "RUB"): string =>
+  `${new Intl.NumberFormat("ru-RU", {
+    minimumFractionDigits: amount === 0 ? 0 : 2,
+    maximumFractionDigits: 6
+  }).format(amount)} ${currency}`;
+
 export default function ControlCenterPage() {
   const [projectId, setProjectId] = useState("");
   const [draftProjectId, setDraftProjectId] = useState("");
@@ -210,26 +244,32 @@ export default function ControlCenterPage() {
     setStopReason("");
     setStopAcknowledged(false);
     try {
-      const [profileResponse, confirmationsResponse, decisionTrace, operations, projectStop] =
-        await Promise.all([
-          api<{ profile: CapabilityProfile }>(
-            `/api/v1/projects/${encodeURIComponent(id)}/autonomy-profile`
-          ),
-          api<{ items: Confirmation[] }>(
-            `/api/v1/projects/${encodeURIComponent(id)}/confirmations`
-          ),
-          api<PolicyDecisionTrace>(
-            `/api/v1/projects/${encodeURIComponent(id)}/decision-trace?limit=50`
-          ),
-          api<OperationsStatus>("/api/v1/operations/status"),
-          api<EmergencyStop | null>(
-            `/api/v1/operations/emergency-stop?project_id=${encodeURIComponent(id)}`
-          )
-        ]);
+      const [
+        profileResponse,
+        confirmationsResponse,
+        decisionTrace,
+        usage,
+        operations,
+        projectStop
+      ] = await Promise.all([
+        api<{ profile: CapabilityProfile }>(
+          `/api/v1/projects/${encodeURIComponent(id)}/autonomy-profile`
+        ),
+        api<{ items: Confirmation[] }>(`/api/v1/projects/${encodeURIComponent(id)}/confirmations`),
+        api<PolicyDecisionTrace>(
+          `/api/v1/projects/${encodeURIComponent(id)}/decision-trace?limit=50`
+        ),
+        api<UsageSummary>(`/api/v1/projects/${encodeURIComponent(id)}/usage-summary`),
+        api<OperationsStatus>("/api/v1/operations/status"),
+        api<EmergencyStop | null>(
+          `/api/v1/operations/emergency-stop?project_id=${encodeURIComponent(id)}`
+        )
+      ]);
       setData({
         profile: profileResponse.profile,
         confirmations: confirmationsResponse.items,
         decisionTrace,
+        usage,
         operations,
         projectStop
       });
@@ -980,6 +1020,75 @@ export default function ControlCenterPage() {
                 </p>
               )}
             </div>
+          </section>
+
+          <section className={styles.usagePanel} aria-labelledby="project-usage-title">
+            <header>
+              <div>
+                <span className={styles.eyebrow}>Usage Ledger</span>
+                <h2 id="project-usage-title">Расходы и лимиты проекта</h2>
+              </div>
+              <span className={styles.generated}>снимок {dateTime(data.usage.generated_at)}</span>
+            </header>
+
+            <div className={styles.usageGrid}>
+              <article>
+                <span>Использовано токенов</span>
+                <strong>
+                  {integer(data.usage.tokens.committed_input + data.usage.tokens.committed_output)}
+                </strong>
+                <small>
+                  вход {integer(data.usage.tokens.committed_input)} · выход{" "}
+                  {integer(data.usage.tokens.committed_output)}
+                </small>
+              </article>
+              <article>
+                <span>Активный резерв</span>
+                <strong>{integer(data.usage.tokens.reserved_upper_bound)}</strong>
+                <small>верхняя граница токенов · {data.usage.attempts.reserved} попыток</small>
+              </article>
+              <article>
+                <span>Попытки маршрута</span>
+                <strong>
+                  {data.usage.attempts.committed}/{data.usage.attempts.total}
+                </strong>
+                <small>
+                  failed {data.usage.attempts.failed} · cancelled {data.usage.attempts.cancelled}
+                </small>
+              </article>
+              <article data-limit="unset">
+                <span>Hard limit проекта</span>
+                <strong>НЕ НАСТРОЕН</strong>
+                <small>панель пока наблюдает журнал и не обещает блокировку</small>
+              </article>
+            </div>
+
+            <div className={styles.usageCosts}>
+              {data.usage.costs.map((cost) => (
+                <article key={cost.currency}>
+                  <span>{cost.currency}</span>
+                  <strong>{money(cost.committed_amount, cost.currency)}</strong>
+                  <small>активный резерв {money(cost.reserved_amount, cost.currency)}</small>
+                </article>
+              ))}
+              {data.usage.costs.length === 0 && (
+                <p className={styles.muted}>Подтверждённой стоимости пока нет.</p>
+              )}
+            </div>
+
+            <p className={styles.usageBoundary}>
+              Показаны только суммарные токены, статусы и стоимость в исходной валюте журнала.
+              Провайдер, модель, Registry route, запросы и содержимое сообщений не выдаются.
+              {data.usage.unknown_committed_cost_attempts > 0
+                ? ` Стоимость не подтверждена для ${data.usage.unknown_committed_cost_attempts} завершённых попыток.`
+                : ""}
+              {data.usage.unknown_reserved_cost_attempts > 0
+                ? ` Ещё ${data.usage.unknown_reserved_cost_attempts} активных резервов не имеют подтверждённой цены.`
+                : ""}
+              {data.usage.tokens.unknown_committed_attempts > 0
+                ? ` Токены не подтверждены для ${data.usage.tokens.unknown_committed_attempts} завершённых попыток.`
+                : ""}
+            </p>
           </section>
 
           <section className={styles.operations}>

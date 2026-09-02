@@ -10,7 +10,8 @@ import {
   PatternLibraryStore,
   ProjectStore,
   runMigrations,
-  StepUpProofStore
+  StepUpProofStore,
+  UsageStore
 } from "@cosmora/db";
 import { validateAgentDelegation } from "@cosmora/policy-engine";
 import { buildApp } from "./app.js";
@@ -65,6 +66,7 @@ try {
     database,
     identityStore,
     projectStore,
+    usageStore: new UsageStore(database.sqlite),
     emergencyStopStore,
     policyStore: new PolicyStore(database.sqlite),
     patternLibraryStore: new PatternLibraryStore(database.sqlite),
