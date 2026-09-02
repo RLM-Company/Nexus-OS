@@ -235,7 +235,7 @@ test("previews and applies a versioned project hard limit before requiring step-
   const preview = page.getByRole("region", { name: "Preview hard limit проекта" });
   await expect(preview).toContainText("будущая v2");
   await expect(preview).toContainText("10 000");
-  await expect(preview).toContainText("2 USD");
+  await expect(preview).toContainText("2,00 USD");
   await expect(preview).toContainText("step-up не требуется");
   await page
     .getByLabel(
