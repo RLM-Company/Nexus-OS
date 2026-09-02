@@ -44,7 +44,9 @@ cross-owner nondisclosure and a run that fails before any message delta. The bro
 that empty values are not replaced with invented defaults, a restrictive ceiling can be previewed
 and applied, and expansion exposes the step-up boundary.
 
-## Remaining Step 5 work
+## Step 5 status
 
 Explicit `RECOVERY_REQUIRED` visibility is now implemented and reviewed separately in
-`2026-09-02-control-center-recovery-required.md`. Point-override editing remains open.
+`2026-09-02-control-center-recovery-required.md`. Point-override editing is implemented and
+reviewed in `2026-09-02-control-center-point-overrides.md`; all Step 5 owner-facing slices are now
+present.

@@ -125,6 +125,71 @@ describe("autonomy and confirmation API", () => {
     expect(stale.statusCode).toBe(409);
   });
 
+  it("previews point overrides, requires step-up for FULL, and allows restrictive removal", async () => {
+    const override = {
+      override_id: "override-external-full",
+      capability_id: "external.communicate",
+      mode: "FULL",
+      object_ids: ["campaign-override-api"],
+      purpose: "Allow one exact owner-selected campaign scope",
+      valid_until: "2026-09-03T12:00:00.000Z",
+      remaining_uses: null
+    } as const;
+
+    const preview = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${projectId}/autonomy-profile/preview`,
+      payload: { base_level: "A0", overrides: [override], expected_version: 1 }
+    });
+    expect(preview.statusCode).toBe(200);
+    expect(
+      preview.json<{
+        current_version: number;
+        proposed_profile: { overrides: unknown[]; version: number };
+        requires_step_up: boolean;
+      }>()
+    ).toMatchObject({
+      current_version: 1,
+      proposed_profile: { overrides: [override], version: 2 },
+      requires_step_up: true
+    });
+    const beforeApply = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/autonomy-profile`
+    });
+    expect(beforeApply.json<{ profile: { overrides: unknown[] } }>().profile.overrides).toEqual([]);
+
+    const denied = await app.inject({
+      method: "PUT",
+      url: `/api/v1/projects/${projectId}/autonomy-profile`,
+      payload: { base_level: "A0", overrides: [override], expected_version: 1 }
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const applied = await app.inject({
+      method: "PUT",
+      url: `/api/v1/projects/${projectId}/autonomy-profile`,
+      headers: { "x-step-up-token": "valid-step-up" },
+      payload: { base_level: "A0", overrides: [override], expected_version: 1 }
+    });
+    expect(applied.statusCode).toBe(200);
+    expect(
+      applied.json<{ profile: { overrides: unknown[]; version: number } }>().profile
+    ).toMatchObject({ overrides: [override], version: 2 });
+    expect(consumedStepUps).toHaveLength(1);
+
+    const removed = await app.inject({
+      method: "PUT",
+      url: `/api/v1/projects/${projectId}/autonomy-profile`,
+      payload: { base_level: "A0", overrides: [], expected_version: 2 }
+    });
+    expect(removed.statusCode).toBe(200);
+    expect(
+      removed.json<{ profile: { overrides: unknown[]; version: number } }>().profile
+    ).toMatchObject({ overrides: [], version: 3 });
+    expect(consumedStepUps).toHaveLength(1);
+  });
+
   it("requires verified step-up before enabling A6", async () => {
     const denied = await app.inject({
       method: "PUT",

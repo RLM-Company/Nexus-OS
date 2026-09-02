@@ -31,9 +31,10 @@ Coverage verifies strict contracts, exact database aggregation, owner isolation,
 details, mixed attempt states and the rendered Control Center boundary. The browser scenario injects
 extra private provider/model/prompt fields and proves that the UI does not render them.
 
-## Remaining Step 5 work
+## Step 5 status
 
 The versioned hard-limit increment is now implemented and reviewed separately in
 `2026-09-02-control-center-project-hard-limits.md`. Explicit `RECOVERY_REQUIRED` visibility is now
 implemented and reviewed separately in `2026-09-02-control-center-recovery-required.md`.
-Point-override editing remains open.
+Point-override editing is implemented and reviewed in
+`2026-09-02-control-center-point-overrides.md`; all Step 5 owner-facing slices are now present.
