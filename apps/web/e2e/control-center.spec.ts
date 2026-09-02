@@ -150,6 +150,62 @@ test("explains policy verdicts without rendering hidden operation content", asyn
   expect(traceRequests).toBeGreaterThan(0);
 });
 
+test("shows exact project usage without exposing provider routes or invented prices", async ({
+  page,
+  request
+}) => {
+  const nonce = `${Date.now()}`;
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a project for the Usage Ledger browser check.",
+      client_message_id: `usage-ledger-e2e-${nonce}`
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+
+  await page.route(`**/api/v1/projects/${projectId}/usage-summary`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        project_id: projectId,
+        generated_at: "2026-09-01T20:30:00.000Z",
+        attempts: { total: 4, reserved: 1, committed: 2, failed: 1, cancelled: 0 },
+        tokens: {
+          committed_input: 1200,
+          committed_output: 340,
+          reserved_upper_bound: 500,
+          unknown_committed_attempts: 0
+        },
+        costs: [{ currency: "USD", committed_amount: 0.125, reserved_amount: 0.04 }],
+        unknown_committed_cost_attempts: 1,
+        unknown_reserved_cost_attempts: 0,
+        provider_id: "PRIVATE PROVIDER MUST NOT RENDER",
+        model_id: "PRIVATE MODEL MUST NOT RENDER",
+        prompt: "PRIVATE PROMPT MUST NOT RENDER"
+      })
+    });
+  });
+
+  await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
+
+  const usage = page.getByRole("region", { name: "Расходы и лимиты проекта" });
+  await expect(usage).toBeVisible();
+  await expect(usage).toContainText("1 540");
+  await expect(usage).toContainText("1 200");
+  await expect(usage).toContainText("340");
+  await expect(usage).toContainText("500");
+  await expect(usage).toContainText("0,125 USD");
+  await expect(usage).toContainText("0,04 USD");
+  await expect(usage).toContainText("НЕ НАСТРОЕН");
+  await expect(usage).toContainText("Стоимость не подтверждена для 1 завершённых попыток.");
+  await expect(usage).toContainText("Провайдер, модель, Registry route");
+  await expect(usage).not.toContainText("PRIVATE PROVIDER MUST NOT RENDER");
+  await expect(usage).not.toContainText("PRIVATE MODEL MUST NOT RENDER");
+  await expect(usage).not.toContainText("PRIVATE PROMPT MUST NOT RENDER");
+});
+
 test("activates and reloads a durable project emergency stop without exposing resume", async ({
   page,
   request

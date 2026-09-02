@@ -480,7 +480,8 @@
 
 .panel,
 .operations,
-.decisionTrace {
+.decisionTrace,
+.usagePanel {
   min-width: 0;
   padding: 1rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -490,7 +491,8 @@
 
 .panel > header,
 .operations > header,
-.decisionTrace > header {
+.decisionTrace > header,
+.usagePanel > header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -500,7 +502,8 @@
 
 .panel h2,
 .operations h2,
-.decisionTrace h2 {
+.decisionTrace h2,
+.usagePanel h2 {
   margin: 0.25rem 0 0;
   font-size: 1rem;
 }
@@ -752,6 +755,7 @@
 }
 
 .decisionTrace,
+.usagePanel,
 .operations {
   max-width: 82rem;
   margin-right: auto;
@@ -894,6 +898,81 @@
 
 .traceList > .muted {
   grid-column: 1 / -1;
+}
+
+.usagePanel {
+  margin-bottom: 0.8rem;
+  background:
+    radial-gradient(circle at 88% 10%, rgba(89, 186, 255, 0.08), transparent 28%),
+    rgba(13, 18, 28, 0.72);
+}
+
+.usageGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.usageGrid article,
+.usageCosts article {
+  display: flex;
+  min-width: 0;
+  padding: 0.72rem;
+  flex-direction: column;
+  gap: 0.3rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.usageGrid article[data-limit="unset"] {
+  border-color: rgba(230, 196, 123, 0.18);
+  background: rgba(230, 196, 123, 0.035);
+}
+
+.usageGrid span,
+.usageCosts span {
+  color: #687286;
+  font-size: 0.55rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.usageGrid strong,
+.usageCosts strong {
+  overflow-wrap: anywhere;
+  color: #c5cad4;
+  font-size: 0.95rem;
+}
+
+.usageGrid article[data-limit="unset"] strong {
+  color: #e6c47b;
+  font-size: 0.72rem;
+}
+
+.usageGrid small,
+.usageCosts small {
+  color: #626b7d;
+  font-size: 0.55rem;
+  line-height: 1.45;
+}
+
+.usageCosts {
+  display: grid;
+  margin-top: 0.55rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.usageBoundary {
+  margin: 0.7rem 0 0;
+  padding: 0.7rem;
+  border: 1px solid rgba(89, 186, 255, 0.11);
+  border-radius: 0.62rem;
+  color: #7d879a;
+  background: rgba(89, 186, 255, 0.025);
+  font-size: 0.6rem;
+  line-height: 1.55;
 }
 
 .stopControl {
@@ -1155,6 +1234,10 @@
     grid-template-columns: 1fr;
   }
 
+  .usageGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .stopIntro {
     grid-template-columns: 1fr;
   }
@@ -1193,6 +1276,11 @@
 
   .operationGrid,
   .traceDetails {
+    grid-template-columns: 1fr;
+  }
+
+  .usageGrid,
+  .usageCosts {
     grid-template-columns: 1fr;
   }
 

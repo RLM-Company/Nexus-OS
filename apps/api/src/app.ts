@@ -36,6 +36,7 @@ import {
   OwnerSessionViewSchema,
   ProjectDetailResponseSchema,
   ProjectListResponseSchema,
+  ProjectUsageSummarySchema,
   PolicyDecisionTraceListResponseSchema,
   ProposeDelegatedAgentRequestSchema,
   ProposeRootAgentRequestSchema,
@@ -67,6 +68,7 @@ import {
   type OwnerSessionView,
   type ProjectDetailResponse,
   type ProjectListResponse,
+  type ProjectUsageSummary,
   type PolicyDecisionTraceListResponse,
   type RunCancelResponse,
   type RuntimeOperationsStatus,
@@ -94,7 +96,8 @@ import {
   type PolicyStore,
   type PatternLibraryStore,
   type ProjectStore,
-  type StoredMessage
+  type StoredMessage,
+  type UsageStore
 } from "@cosmora/db";
 import {
   GatewayRunError,
@@ -117,6 +120,7 @@ export interface AppDependencies {
   database: DatabaseHealth;
   identityStore?: IdentityStore;
   projectStore?: ProjectStore;
+  usageStore?: UsageStore;
   emergencyStopStore?: EmergencyStopStore;
   policyStore?: PolicyStore;
   patternLibraryStore?: PatternLibraryStore;
@@ -1259,6 +1263,41 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         return reply.status(accepted.duplicate ? 200 : 201).send(acceptedResponse(accepted));
       }
     );
+
+    if (dependencies.usageStore) {
+      const usageStore = dependencies.usageStore;
+
+      app.get(
+        "/api/v1/projects/:projectId/usage-summary",
+        {
+          schema: {
+            params: {
+              type: "object",
+              properties: { projectId: { type: "string", minLength: 1 } },
+              required: ["projectId"],
+              additionalProperties: false
+            },
+            response: { 200: ProjectUsageSummarySchema, 404: ApiErrorSchema }
+          }
+        },
+        async (request, reply) => {
+          const ownerId = identityFor(request).owner_id;
+          if (!store.getProject(request.params.projectId, ownerId)) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          const summary = usageStore.getProjectSummary(request.params.projectId, ownerId);
+          if (!summary) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          const response: ProjectUsageSummary = summary;
+          return response;
+        }
+      );
+    }
 
     if (dependencies.policyStore) {
       const policyStore = dependencies.policyStore;
