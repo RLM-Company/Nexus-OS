@@ -125,16 +125,26 @@ describe("autonomy and confirmation API", () => {
     expect(stale.statusCode).toBe(409);
   });
 
-  it("previews point overrides, requires step-up for FULL, and allows restrictive removal", async () => {
+  it("previews finite point overrides, rejects invalid counters, and requires step-up for FULL", async () => {
     const override = {
       override_id: "override-external-full",
       capability_id: "external.communicate",
       mode: "FULL",
       object_ids: ["campaign-override-api"],
       purpose: "Allow one exact owner-selected campaign scope",
-      valid_until: "2026-09-03T12:00:00.000Z",
-      remaining_uses: null
+      valid_until: "2099-09-03T12:00:00.000Z",
+      remaining_uses: 2
     } as const;
+    const invalidCounter = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${projectId}/autonomy-profile/preview`,
+      payload: {
+        base_level: "A0",
+        overrides: [{ ...override, remaining_uses: 0 }],
+        expected_version: 1
+      }
+    });
+    expect(invalidCounter.statusCode).toBe(400);
 
     const preview = await app.inject({
       method: "POST",

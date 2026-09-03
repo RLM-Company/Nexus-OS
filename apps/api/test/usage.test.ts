@@ -181,6 +181,32 @@ describe("project usage API", () => {
     expect(stale.json<{ error: { code: string } }>().error.code).toBe("USAGE_LIMIT_CONFLICT");
   });
 
+  it("rejects values that could otherwise be coerced into an unlimited project ceiling", async () => {
+    const accepted = projectStore.createProject("Reject unsafe limits", "usage-limit-invalid-1");
+
+    const zeroTokens = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${accepted.project.id}/usage-limit/preview`,
+      payload: { expected_version: 1, max_total_tokens: 0, max_cost: null }
+    });
+    const numericCost = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${accepted.project.id}/usage-limit/preview`,
+      payload: { expected_version: 1, max_total_tokens: null, max_cost: 0 }
+    });
+
+    expect(zeroTokens.statusCode).toBe(400);
+    expect(numericCost.statusCode).toBe(400);
+
+    const stored = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${accepted.project.id}/usage-limit`
+    });
+    expect(stored.json()).toMatchObject({
+      limit: { version: 1, max_total_tokens: null, max_cost: null }
+    });
+  });
+
   it("fails a run before provider output when the project token ceiling is exhausted", async () => {
     const accepted = projectStore.createProject(
       "Block before provider output",

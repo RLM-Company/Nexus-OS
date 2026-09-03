@@ -58,6 +58,7 @@ inside the existing versioned profile JSON and policy-operation transaction.
 
 ## UI boundary
 
-The Control Center continues to display and preserve an existing finite counter but does not create
-or edit one in this increment. That owner-facing mutation requires its own preview, validation and
-browser evidence before the previous read-only boundary can be removed.
+The separate Control Center slice reviewed in
+`2026-09-03-control-center-finite-overrides.md` now exposes explicit finite-counter creation and
+editing. It validates a positive safe integer, includes the exact before/after value in server
+preview and keeps blank as `null`; this runtime review remains the enforcement evidence.

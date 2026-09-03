@@ -61,7 +61,7 @@ test("previews an authority diff before applying an autonomy profile change", as
 
   await page
     .getByLabel(
-      "Я проверил базовые полномочия, точные объекты, режим, назначение и срок и хочу применить профиль."
+      "Я проверил базовые полномочия, точные объекты, режим, назначение, срок и число использований и хочу применить профиль."
     )
     .check();
   await page.getByRole("button", { name: "Применить A4" }).click();
@@ -84,10 +84,7 @@ test("previews an authority diff before applying an autonomy profile change", as
   ).toMatchObject({ base_level: "A4", version: 3 });
 });
 
-test("previews, applies, and removes a point override without hidden defaults", async ({
-  page,
-  request
-}) => {
+test("previews, edits, applies, and removes a finite point override", async ({ page, request }) => {
   const nonce = `${Date.now()}`;
   const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
     data: {
@@ -110,10 +107,12 @@ test("previews, applies, and removes a point override without hidden defaults", 
   await page.getByRole("button", { name: "Добавить точечный override" }).click();
   await expect(page.getByLabel("Capability override")).toHaveValue("");
   await expect(page.getByLabel("Режим override")).toHaveValue("");
+  await expect(page.getByLabel("Число использований override")).toHaveValue("");
   await expect(page.getByRole("button", { name: "Проверить override" })).toBeDisabled();
 
   await page.getByLabel("Capability override").selectOption("external.communicate");
   await page.getByLabel("Режим override").selectOption("DENY");
+  await page.getByLabel("Число использований override").fill("2");
   await page.getByLabel("Object IDs override").fill("campaign-point-override-1");
   await page
     .getByLabel("Назначение override")
@@ -127,10 +126,13 @@ test("previews, applies, and removes a point override without hidden defaults", 
   await expect(preview).toContainText("— → DENY");
   await expect(preview).toContainText("campaign-point-override-1");
   await expect(preview).toContainText("Restrict outbound communication for this exact campaign");
+  await expect(preview.getByText("Использования", { exact: true }).locator("..")).toContainText(
+    "— → 2"
+  );
   await expect(preview).not.toContainText("Одноразовый step-up токен");
   await page
     .getByLabel(
-      "Я проверил базовые полномочия, точные объекты, режим, назначение и срок и хочу применить профиль."
+      "Я проверил базовые полномочия, точные объекты, режим, назначение, срок и число использований и хочу применить профиль."
     )
     .check();
   await page.getByRole("button", { name: "Применить override" }).click();
@@ -154,11 +156,30 @@ test("previews, applies, and removes a point override without hidden defaults", 
           object_ids: ["campaign-point-override-1"],
           purpose: "Restrict outbound communication for this exact campaign",
           valid_until: null,
-          remaining_uses: null
+          remaining_uses: 2
         }
       ]
     }
   });
+
+  await overrides.getByRole("button", { name: "Изменить" }).click();
+  await expect(page.getByLabel("Число использований override")).toHaveValue("2");
+  await page.getByLabel("Число использований override").fill("1");
+  await page.getByRole("button", { name: "Проверить override" }).click();
+  await expect(preview).toContainText("Изменение");
+  await expect(preview.getByText("Использования", { exact: true }).locator("..")).toContainText(
+    "2 → 1"
+  );
+  await page
+    .getByLabel(
+      "Я проверил базовые полномочия, точные объекты, режим, назначение, срок и число использований и хочу применить профиль."
+    )
+    .check();
+  await page.getByRole("button", { name: "Применить override" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "Точечные overrides обновлены; активна версия профиля 4"
+  );
+  await expect(overrides).toContainText("использований 1");
 
   await overrides.getByRole("button", { name: "Удалить через preview" }).click();
   await expect(preview).toContainText("overrides 1 → 0");
@@ -166,7 +187,7 @@ test("previews, applies, and removes a point override without hidden defaults", 
   await expect(preview).toContainText("DENY → —");
   await page
     .getByLabel(
-      "Я проверил базовые полномочия, точные объекты, режим, назначение и срок и хочу применить профиль."
+      "Я проверил базовые полномочия, точные объекты, режим, назначение, срок и число использований и хочу применить профиль."
     )
     .check();
   await page.getByRole("button", { name: "Применить override" }).click();
@@ -175,7 +196,7 @@ test("previews, applies, and removes a point override without hidden defaults", 
   const removed = await request.get(profileUrl);
   expect(removed.ok()).toBeTruthy();
   expect((await removed.json()) as Record<string, unknown>).toMatchObject({
-    profile: { base_level: "A3", version: 4, overrides: [] }
+    profile: { base_level: "A3", version: 5, overrides: [] }
   });
 });
 
