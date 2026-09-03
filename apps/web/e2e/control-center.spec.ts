@@ -84,10 +84,7 @@ test("previews an authority diff before applying an autonomy profile change", as
   ).toMatchObject({ base_level: "A4", version: 3 });
 });
 
-test("previews, edits, applies, and removes a finite point override", async ({
-  page,
-  request
-}) => {
+test("previews, edits, applies, and removes a finite point override", async ({ page, request }) => {
   const nonce = `${Date.now()}`;
   const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
     data: {

@@ -1109,9 +1109,7 @@ export default function ControlCenterPage() {
                             <div>
                               <dt>Использования</dt>
                               <dd>
-                                {before
-                                  ? (before.remaining_uses ?? "без счётчика")
-                                  : "—"} →{" "}
+                                {before ? (before.remaining_uses ?? "без счётчика") : "—"} →{" "}
                                 {after ? (after.remaining_uses ?? "без счётчика") : "—"}
                               </dd>
                             </div>
