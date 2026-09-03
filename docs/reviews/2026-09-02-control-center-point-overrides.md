@@ -33,10 +33,11 @@ operation reservation, as reviewed separately in
 `2026-09-02-finite-override-consumption.md`. Idempotent replay does not consume another use, and the
 last use removes the override from the next versioned profile.
 
-This editor still does not create or alter a finite-use value. New overrides use `null`; an existing
-finite value is preserved during edits and shown as declared state only. The owner-facing counter
-mutation is intentionally held for a separate UI/API evidence slice even though runtime enforcement
-is now present.
+The editor now creates and alters a finite-use value as a separate tested slice. Blank remains an
+explicit `null` with no hidden default; a supplied value must be a safe positive integer. The
+server preview shows the exact before/after counter and apply remains version-checked and
+owner-acknowledged. Browser and API evidence are recorded in
+`2026-09-03-control-center-finite-overrides.md`.
 
 Expiration remains enforceable: Policy Engine ignores an override after its valid timestamp. The
 editor rejects invalid or already elapsed new timestamps before preview.

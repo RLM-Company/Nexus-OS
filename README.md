@@ -42,8 +42,8 @@ agent runtime.
 - External tool effects and the local daemon are not connected to an autonomous agent loop.
 - Manager Runtime Step 6 is accepted as `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`.
 - Roadmap Step 5 owner-facing control slices are implemented. Finite-use override counters are
-  consumed atomically by Tool Runtime but remain read-only in the owner UI pending a separately
-  tested mutation slice.
+  explicit owner inputs, included in the server authority diff and consumed atomically by Tool
+  Runtime.
 - The final Manager system prompt belongs to roadmap Step 7 and must be written with the owner.
 - No production provider or production Secret Manager backend has been selected.
 - The first closed paid beta remains limited to A0–A2; A3–A6 require later security and economic

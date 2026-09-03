@@ -271,6 +271,7 @@ export default function ControlCenterPage() {
   const [overrideObjects, setOverrideObjects] = useState("");
   const [overridePurpose, setOverridePurpose] = useState("");
   const [overrideValidUntil, setOverrideValidUntil] = useState("");
+  const [overrideRemainingUses, setOverrideRemainingUses] = useState("");
   const [limitTokens, setLimitTokens] = useState("");
   const [limitCost, setLimitCost] = useState("");
   const [limitCurrency, setLimitCurrency] = useState<"USD" | "RUB">("USD");
@@ -307,6 +308,7 @@ export default function ControlCenterPage() {
     setOverrideObjects("");
     setOverridePurpose("");
     setOverrideValidUntil("");
+    setOverrideRemainingUses("");
     setLimitPreview(null);
     setLimitAcknowledged(false);
     setLimitStepUpToken("");
@@ -451,6 +453,7 @@ export default function ControlCenterPage() {
     setOverrideObjects("");
     setOverridePurpose("");
     setOverrideValidUntil("");
+    setOverrideRemainingUses("");
   };
 
   const startNewOverride = (): void => {
@@ -461,6 +464,7 @@ export default function ControlCenterPage() {
     setOverrideObjects("");
     setOverridePurpose("");
     setOverrideValidUntil("");
+    setOverrideRemainingUses("");
     setOverrideEditorOpen(true);
     setError(null);
   };
@@ -473,6 +477,7 @@ export default function ControlCenterPage() {
     setOverrideObjects(override.object_ids.join("\n"));
     setOverridePurpose(override.purpose);
     setOverrideValidUntil(dateTimeInput(override.valid_until));
+    setOverrideRemainingUses(override.remaining_uses?.toString() ?? "");
     setOverrideEditorOpen(true);
     setError(null);
   };
@@ -541,6 +546,19 @@ export default function ControlCenterPage() {
       }
       validUntil = new Date(timestamp).toISOString();
     }
+    let remainingUses: number | null = null;
+    if (overrideRemainingUses) {
+      if (!/^\d+$/u.test(overrideRemainingUses)) {
+        setError("Число использований override должно быть целым числом от 1");
+        return;
+      }
+      const parsed = Number(overrideRemainingUses);
+      if (!Number.isSafeInteger(parsed) || parsed < 1) {
+        setError("Число использований override должно быть безопасным целым числом от 1");
+        return;
+      }
+      remainingUses = parsed;
+    }
     const existing = editingOverrideId
       ? data.profile.overrides.find((override) => override.override_id === editingOverrideId)
       : undefined;
@@ -555,7 +573,7 @@ export default function ControlCenterPage() {
       object_ids: objectIds,
       purpose,
       valid_until: validUntil,
-      remaining_uses: existing?.remaining_uses ?? null
+      remaining_uses: remainingUses
     };
     const overrides = existing
       ? data.profile.overrides.map((override) =>
@@ -1088,6 +1106,15 @@ export default function ControlCenterPage() {
                                 {dateTime(after?.valid_until ?? null)}
                               </dd>
                             </div>
+                            <div>
+                              <dt>Использования</dt>
+                              <dd>
+                                {before
+                                  ? (before.remaining_uses ?? "без счётчика")
+                                  : "—"} →{" "}
+                                {after ? (after.remaining_uses ?? "без счётчика") : "—"}
+                              </dd>
+                            </div>
                           </dl>
                         </article>
                       );
@@ -1103,8 +1130,8 @@ export default function ControlCenterPage() {
                   onChange={(event) => setAcknowledged(event.target.checked)}
                 />
                 <span>
-                  Я проверил базовые полномочия, точные объекты, режим, назначение и срок и хочу
-                  применить профиль.
+                  Я проверил базовые полномочия, точные объекты, режим, назначение, срок и число
+                  использований и хочу применить профиль.
                 </span>
               </label>
 
@@ -1201,7 +1228,7 @@ export default function ControlCenterPage() {
                     </div>
                     <p>{override.purpose}</p>
                     <small>
-                      objects {override.object_ids.join(" · ")} · declared uses{" "}
+                      objects {override.object_ids.join(" · ")} · использований{" "}
                       {override.remaining_uses ?? "без счётчика"} · до{" "}
                       {dateTime(override.valid_until)}
                     </small>
@@ -1294,6 +1321,20 @@ export default function ControlCenterPage() {
                         onChange={(event) => setOverrideValidUntil(event.target.value)}
                       />
                     </label>
+                    <label>
+                      <span>Число использований · необязательно</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        inputMode="numeric"
+                        aria-label="Число использований override"
+                        value={overrideRemainingUses}
+                        disabled={actionPending}
+                        onChange={(event) => setOverrideRemainingUses(event.target.value)}
+                        placeholder="Без счётчика"
+                      />
+                    </label>
                     <label className={styles.overrideWide}>
                       <span>Точные object IDs · по одному на строку</span>
                       <textarea
@@ -1317,9 +1358,9 @@ export default function ControlCenterPage() {
                     </label>
                   </div>
                   <p className={styles.overrideCounterBoundary}>
-                    Новые overrides создаются без счётчика использований. Существующее конечное
-                    значение сохраняется при редактировании, но UI не создаёт и не меняет его до
-                    появления атомарного runtime-consumption.
+                    Пустое значение означает отсутствие счётчика. Конечное значение уменьшается
+                    атомарно при reservation разрешённой операции; последнее использование удаляет
+                    override, а replay не списывает использование повторно.
                   </p>
                   <div className={styles.overrideEditorActions}>
                     <button
