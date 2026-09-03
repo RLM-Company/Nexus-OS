@@ -37,8 +37,10 @@ for purpose `emergency_stop_clearance`.
 - durable restart test updated to use the audited store contract;
 - direct SQLite verification that audit updates and deletes fail.
 
-## Deferred surface
+## Owner-facing surface
 
-The Control Center still exposes activation only. The next independent increment can add a guarded
-clearance form and recent-event view on top of this contract; it must not weaken step-up,
-compare-and-swap or environment-lock behavior.
+The Control Center follow-up now exposes guarded project/process recovery and recent clearance
+events without weakening step-up, compare-and-swap or environment-lock behavior. The UI binds its
+request to the exact active timestamp returned by the API and discards the proof after every
+attempt. Environment-triggered process stops show offline-recovery guidance instead of a clearance
+form.
