@@ -27,7 +27,8 @@ agent runtime.
 - provider-neutral Model Gateway with a versioned Model Registry, deterministic Router, bounded
   retry, timeout, exact-route circuit breaker and safe fallback;
 - atomic Usage Ledger with fail-closed project ceilings, content-free runtime metrics, structured
-  route logs, Secret Resolver and durable process/project emergency stops;
+  route logs, Secret Resolver, durable process/project emergency stops and append-only clearance
+  audit;
 - canonical Policy Runtime contracts for 19 capabilities and monotonic autonomy levels A0–A6,
   deterministic evaluation, optimistic profile versions, atomic finite-use override consumption
   and fail-closed tool guards;
@@ -151,13 +152,31 @@ runs before provider selection, and persists `EMERGENCY_STOP` in run/message/acc
 }
 ```
 
-`RUNTIME_EMERGENCY_STOP=true` activates the same process-wide fail-closed state during startup. A
-stop survives restart. The HTTP API intentionally has no unaudited resume endpoint; recovery must
-use an explicit operator flow.
+`POST /api/v1/operations/emergency-stop/clearance` is the only HTTP recovery path. It requires an
+owner-bound one-time step-up proof, the exact current `activated_at`, an explicit literal
+acknowledgement and a reason. The compare-and-swap update and its clearance event commit in one
+SQLite transaction; the audit table rejects updates and deletes.
+
+```json
+{
+  "scope": "project",
+  "project_id": "project-id",
+  "expected_activated_at": "2026-09-03T12:00:00.000Z",
+  "reason": "Recovery checklist completed",
+  "acknowledgement": "CLEAR EMERGENCY STOP"
+}
+```
+
+Recent owner-bound clearance events are available from
+`GET /api/v1/operations/emergency-stop/clearance-events?limit=50`. A stale activation returns a
+conflict before consuming step-up proof. `RUNTIME_EMERGENCY_STOP=true` activates the same
+process-wide fail-closed state during startup, and a process stop attributed to
+`system:environment` cannot be cleared through the API or store.
 
 The Control Center can activate either a selected-project stop or a process-wide stop after the
 owner supplies a reason and acknowledges the exact scope. The UI updates only from the
-server-confirmed state and intentionally exposes no resume action.
+server-confirmed state. The guarded clearance API is available for operator integration; its
+Control Center surface is tracked as the next owner-facing increment.
 
 ## Verification
 

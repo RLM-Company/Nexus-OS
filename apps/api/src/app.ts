@@ -14,6 +14,7 @@ import {
   AUTONOMY_MATRIX,
   BehaviorPatternListResponseSchema,
   BehaviorPatternSchema,
+  ClearEmergencyStopRequestSchema,
   CapabilityProfilePreviewResponseSchema,
   CapabilityProfileResponseSchema,
   ConfirmationDecisionRequestSchema,
@@ -27,6 +28,8 @@ import {
   CreateBehaviorPatternRequestSchema,
   CreateBehaviorPatternVersionRequestSchema,
   CreateProjectRequestSchema,
+  EmergencyStopClearanceEventSchema,
+  EmergencyStopClearanceListResponseSchema,
   EmergencyStopStateSchema,
   HealthResponseSchema,
   IdentityAuditListResponseSchema,
@@ -61,6 +64,8 @@ import {
   type CapabilityProfilePreviewResponse,
   type CapabilityProfileResponse,
   type ConfirmationListResponse,
+  type EmergencyStopClearanceEvent,
+  type EmergencyStopClearanceListResponse,
   type EmergencyStopState,
   type HealthResponse,
   type IdentityAuditListResponse,
@@ -148,6 +153,17 @@ export interface AppDependencies {
 
 const stepUpToken = (value: string | string[] | undefined): string | null =>
   typeof value === "string" && value.length > 0 ? value : null;
+
+const emergencyStopClearanceChallenge = (
+  scope: "process" | "project",
+  projectId: string | null,
+  activatedAt: string
+): string =>
+  `emergency-stop-clearance:${JSON.stringify({
+    scope,
+    project_id: projectId,
+    activated_at: activatedAt
+  })}`;
 
 const profileUpdateRequiresStepUp = (
   baseLevel: keyof (typeof AUTONOMY_MATRIX)[CapabilityId],
@@ -608,6 +624,158 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           "Emergency stop activated"
         );
         const response: EmergencyStopState = state;
+        return response;
+      }
+    );
+
+    app.get(
+      "/api/v1/operations/emergency-stop/clearance-events",
+      {
+        schema: {
+          querystring: Type.Object(
+            {
+              limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 50 }))
+            },
+            { additionalProperties: false }
+          ),
+          response: { 200: EmergencyStopClearanceListResponseSchema }
+        }
+      },
+      (request) => {
+        const identity = identityFor(request);
+        const limit = request.query.limit ?? 50;
+        const response: EmergencyStopClearanceListResponse = {
+          items: stopStore.listRecentClearances(identity.owner_id, limit),
+          limit
+        };
+        return response;
+      }
+    );
+
+    app.post(
+      "/api/v1/operations/emergency-stop/clearance",
+      {
+        validatorCompiler: TypeBoxValidatorCompiler,
+        schema: {
+          body: ClearEmergencyStopRequestSchema,
+          response: {
+            200: EmergencyStopClearanceEventSchema,
+            400: ApiErrorSchema,
+            403: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        if (
+          (request.body.scope === "project" && !request.body.project_id) ||
+          (request.body.scope === "process" && request.body.project_id !== undefined) ||
+          request.body.reason.trim().length === 0
+        ) {
+          return reply
+            .status(400)
+            .send(errorBody(request.id, "VALIDATION_ERROR", "Request validation failed"));
+        }
+
+        const identity = identityFor(request);
+        const projectId: string | null =
+          request.body.scope === "project" ? (request.body.project_id as string) : null;
+        if (
+          projectId !== null &&
+          !dependencies.projectStore?.getProject(projectId, identity.owner_id)
+        ) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+
+        const active =
+          request.body.scope === "process"
+            ? stopStore.getProcessStop()
+            : stopStore.getProjectStop(projectId as string, identity.owner_id);
+        if (!active || active.activated_at !== request.body.expected_activated_at) {
+          return reply
+            .status(409)
+            .send(
+              errorBody(
+                request.id,
+                "EMERGENCY_STOP_CONFLICT",
+                "Emergency-stop activation changed or is no longer active"
+              )
+            );
+        }
+        if (
+          active.scope === "process" &&
+          (dependencies.config.runtimeEmergencyStop || active.activated_by === "system:environment")
+        ) {
+          return reply
+            .status(409)
+            .send(
+              errorBody(
+                request.id,
+                "ENVIRONMENT_EMERGENCY_STOP_LOCKED",
+                "Environment-triggered process stop requires offline operator recovery"
+              )
+            );
+        }
+
+        const token = stepUpToken(request.headers["x-step-up-token"]);
+        const verified =
+          token !== null &&
+          dependencies.stepUpProofConsumer !== undefined &&
+          (await dependencies.stepUpProofConsumer.consume({
+            token,
+            identity,
+            purpose: "emergency_stop_clearance",
+            challenge: emergencyStopClearanceChallenge(
+              active.scope,
+              active.project_id,
+              active.activated_at
+            )
+          }));
+        if (!verified) {
+          return reply
+            .status(403)
+            .send(errorBody(request.id, "STEP_UP_REQUIRED", "Step-up verification required"));
+        }
+
+        const clearance =
+          active.scope === "process"
+            ? stopStore.clearProcess({
+                expectedActivatedAt: active.activated_at,
+                actorId: identity.actor_id,
+                ownerId: identity.owner_id,
+                reason: request.body.reason
+              })
+            : stopStore.clearProject(active.project_id as string, {
+                expectedActivatedAt: active.activated_at,
+                actorId: identity.actor_id,
+                ownerId: identity.owner_id,
+                reason: request.body.reason
+              });
+        if (!clearance) {
+          return reply
+            .status(409)
+            .send(
+              errorBody(
+                request.id,
+                "EMERGENCY_STOP_CONFLICT",
+                "Emergency-stop activation changed or is no longer active"
+              )
+            );
+        }
+        app.log.warn(
+          {
+            eventId: clearance.event_id,
+            scope: clearance.scope,
+            projectId: clearance.project_id,
+            activatedAt: clearance.activated_at,
+            clearedBy: clearance.cleared_by
+          },
+          "Emergency stop cleared"
+        );
+        const response: EmergencyStopClearanceEvent = clearance;
         return response;
       }
     );
