@@ -35,6 +35,20 @@ export const ActivateEmergencyStopRequestSchema = Type.Object(
 );
 export type ActivateEmergencyStopRequest = Static<typeof ActivateEmergencyStopRequestSchema>;
 
+export const CLEAR_EMERGENCY_STOP_ACKNOWLEDGEMENT = "CLEAR EMERGENCY STOP" as const;
+
+export const ClearEmergencyStopRequestSchema = Type.Object(
+  {
+    scope: EmergencyStopScopeSchema,
+    project_id: Type.Optional(EntityIdSchema),
+    expected_activated_at: IsoDateTimeSchema,
+    reason: Type.String({ minLength: 1, maxLength: 500 }),
+    acknowledgement: Type.Literal(CLEAR_EMERGENCY_STOP_ACKNOWLEDGEMENT)
+  },
+  { additionalProperties: false }
+);
+export type ClearEmergencyStopRequest = Static<typeof ClearEmergencyStopRequestSchema>;
+
 export const EmergencyStopStateSchema = Type.Object(
   {
     scope: EmergencyStopScopeSchema,
@@ -47,6 +61,33 @@ export const EmergencyStopStateSchema = Type.Object(
   { additionalProperties: false }
 );
 export type EmergencyStopState = Static<typeof EmergencyStopStateSchema>;
+
+export const EmergencyStopClearanceEventSchema = Type.Object(
+  {
+    event_id: EntityIdSchema,
+    scope: EmergencyStopScopeSchema,
+    project_id: Type.Union([EntityIdSchema, Type.Null()]),
+    activation_reason: Type.String({ minLength: 1, maxLength: 500 }),
+    activated_at: IsoDateTimeSchema,
+    activated_by: Type.String({ minLength: 1 }),
+    clearance_reason: Type.String({ minLength: 1, maxLength: 500 }),
+    cleared_at: IsoDateTimeSchema,
+    cleared_by: Type.String({ minLength: 1 })
+  },
+  { additionalProperties: false }
+);
+export type EmergencyStopClearanceEvent = Static<typeof EmergencyStopClearanceEventSchema>;
+
+export const EmergencyStopClearanceListResponseSchema = Type.Object(
+  {
+    items: Type.Array(EmergencyStopClearanceEventSchema),
+    limit: Type.Integer({ minimum: 1, maximum: 100 })
+  },
+  { additionalProperties: false }
+);
+export type EmergencyStopClearanceListResponse = Static<
+  typeof EmergencyStopClearanceListResponseSchema
+>;
 
 const GatewayFailureCountersSchema = Type.Object(
   {

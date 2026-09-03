@@ -170,12 +170,54 @@ describe("SQLite foundation", () => {
     try {
       await runMigrations(reopened);
       const stops = new EmergencyStopStore(reopened.sqlite);
-      expect(stops.getProcessStop()).toMatchObject({ reason: "Incident containment" });
-      expect(stops.getProjectStop(projectId)).toMatchObject({ reason: "Owner requested stop" });
-      expect(stops.clearProcess("system:recovery")).toBe(true);
+      const processStop = stops.getProcessStop();
+      const projectStop = stops.getProjectStop(projectId);
+      expect(processStop).toMatchObject({ reason: "Incident containment" });
+      expect(projectStop).toMatchObject({ reason: "Owner requested stop" });
+      expect(
+        stops.clearProcess({
+          expectedActivatedAt: processStop?.activated_at ?? "missing",
+          actorId: "system:recovery",
+          ownerId: "local-owner",
+          reason: "Provider incident resolved"
+        })
+      ).toMatchObject({ scope: "process", clearance_reason: "Provider incident resolved" });
       expect(stops.getBlockingStop(projectId)?.scope).toBe("project");
-      expect(stops.clearProject(projectId, "system:recovery")).toBe(true);
+      expect(
+        stops.clearProject(projectId, {
+          expectedActivatedAt: projectStop?.activated_at ?? "missing",
+          actorId: "system:recovery",
+          ownerId: "local-owner",
+          reason: "Project behavior verified"
+        })
+      ).toMatchObject({ scope: "project", project_id: projectId });
       expect(stops.getBlockingStop(projectId)).toBeNull();
+      expect(stops.listRecentClearances()).toHaveLength(2);
+      expect(() =>
+        reopened.sqlite
+          .prepare(
+            "UPDATE emergency_stop_clearance_events SET clearance_reason = ? WHERE event_id = ?"
+          )
+          .run("Rewritten", stops.listRecentClearances()[0]?.event_id ?? "missing")
+      ).toThrow(/append-only/i);
+      expect(() =>
+        reopened.sqlite.prepare("DELETE FROM emergency_stop_clearance_events").run()
+      ).toThrow(/append-only/i);
+
+      const environmentStop = stops.activateProcess(
+        "RUNTIME_EMERGENCY_STOP environment switch",
+        "system:environment"
+      );
+      expect(environmentStop.activated_at).not.toBe(processStop?.activated_at);
+      expect(
+        stops.clearProcess({
+          expectedActivatedAt: environmentStop.activated_at,
+          actorId: "system:recovery",
+          ownerId: "local-owner",
+          reason: "Attempted API recovery"
+        })
+      ).toBeNull();
+      expect(stops.getProcessStop()).toMatchObject({ activated_by: "system:environment" });
     } finally {
       reopened.close();
       rmSync(directory, { recursive: true, force: true });

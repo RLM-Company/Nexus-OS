@@ -492,6 +492,37 @@ export const emergencyStops = sqliteTable(
   ]
 );
 
+export const emergencyStopClearanceEvents = sqliteTable(
+  "emergency_stop_clearance_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    scopeKey: text("scope_key").notNull(),
+    scope: text("scope").notNull(),
+    projectId: text("project_id"),
+    activationReason: text("activation_reason").notNull(),
+    activatedAt: text("activated_at").notNull(),
+    activatedBy: text("activated_by").notNull(),
+    clearanceReason: text("clearance_reason").notNull(),
+    clearedAt: text("cleared_at").notNull(),
+    clearedBy: text("cleared_by").notNull()
+  },
+  (table) => [
+    uniqueIndex("emergency_stop_clearance_scope_activation_unique").on(
+      table.scopeKey,
+      table.activatedAt
+    ),
+    index("emergency_stop_clearance_owner_cleared_idx").on(table.ownerId, table.clearedAt),
+    check("emergency_stop_clearance_scope_check", sql`${table.scope} IN ('process', 'project')`),
+    check(
+      "emergency_stop_clearance_project_check",
+      sql`(${table.scope} = 'process' AND ${table.scopeKey} = 'process' AND ${table.projectId} IS NULL)
+          OR (${table.scope} = 'project' AND ${table.scopeKey} = 'project:' || ${table.projectId}
+              AND ${table.projectId} IS NOT NULL)`
+    )
+  ]
+);
+
 export const autonomyProfiles = sqliteTable("autonomy_profiles", {
   projectId: text("project_id")
     .primaryKey()

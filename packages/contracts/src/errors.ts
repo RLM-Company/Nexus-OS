@@ -24,6 +24,8 @@ export const ErrorCodeSchema = Type.Union([
   Type.Literal("PROVIDER_TIMEOUT"),
   Type.Literal("PROVIDER_ERROR"),
   Type.Literal("EMERGENCY_STOP"),
+  Type.Literal("EMERGENCY_STOP_CONFLICT"),
+  Type.Literal("ENVIRONMENT_EMERGENCY_STOP_LOCKED"),
   Type.Literal("INTERRUPTED"),
   Type.Literal("INTERNAL_ERROR")
 ]);
