@@ -1,4 +1,4 @@
-import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
+import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { ServerConfig } from "@cosmora/config";
 import type { ManagerService } from "@cosmora/core";
 import {
@@ -368,6 +368,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             ]
           }
   }).withTypeProvider<TypeBoxTypeProvider>();
+  app.setValidatorCompiler(TypeBoxValidatorCompiler);
 
   const activeRuns = new Map<
     string,
