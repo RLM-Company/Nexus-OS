@@ -368,7 +368,6 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             ]
           }
   }).withTypeProvider<TypeBoxTypeProvider>();
-  app.setValidatorCompiler(TypeBoxValidatorCompiler);
 
   const activeRuns = new Map<
     string,
@@ -1357,6 +1356,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       app.post(
         "/api/v1/projects/:projectId/usage-limit/preview",
         {
+          validatorCompiler: TypeBoxValidatorCompiler,
           schema: {
             params: AgentStudioProjectParamsSchema,
             body: UpdateProjectUsageLimitRequestSchema,
@@ -1402,6 +1402,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       app.put(
         "/api/v1/projects/:projectId/usage-limit",
         {
+          validatorCompiler: TypeBoxValidatorCompiler,
           schema: {
             params: AgentStudioProjectParamsSchema,
             body: UpdateProjectUsageLimitRequestSchema,
@@ -1556,6 +1557,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       app.post(
         "/api/v1/projects/:projectId/autonomy-profile/preview",
         {
+          validatorCompiler: TypeBoxValidatorCompiler,
           schema: {
             params: {
               type: "object",
@@ -1617,6 +1619,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       app.put(
         "/api/v1/projects/:projectId/autonomy-profile",
         {
+          validatorCompiler: TypeBoxValidatorCompiler,
           schema: {
             params: {
               type: "object",
