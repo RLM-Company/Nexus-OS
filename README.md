@@ -173,10 +173,12 @@ conflict before consuming step-up proof. `RUNTIME_EMERGENCY_STOP=true` activates
 process-wide fail-closed state during startup, and a process stop attributed to
 `system:environment` cannot be cleared through the API or store.
 
-The Control Center can activate either a selected-project stop or a process-wide stop after the
-owner supplies a reason and acknowledges the exact scope. The UI updates only from the
-server-confirmed state. The guarded clearance API is available for operator integration; its
-Control Center surface is tracked as the next owner-facing increment.
+The Control Center can activate or clear either a selected-project stop or a process-wide stop.
+Activation requires a reason and an exact-scope acknowledgement. Guarded recovery binds the
+currently displayed `activated_at`, requires a separate recovery reason, literal acknowledgement
+and one-time step-up proof, then reloads the server-confirmed stop state and append-only clearance
+history. Environment-triggered process stops expose offline-recovery guidance instead of clearance
+controls.
 
 ## Verification
 

@@ -456,7 +456,7 @@ test("previews and applies a versioned project hard limit before requiring step-
   await expect(page.getByRole("button", { name: "Применить hard limit" })).toBeDisabled();
 });
 
-test("activates and reloads a durable project emergency stop without exposing resume", async ({
+test("activates, reloads, and clears a durable project emergency stop through guarded recovery", async ({
   page,
   request
 }) => {
@@ -489,7 +489,15 @@ test("activates and reloads a durable project emergency stop without exposing re
 
   const stored = await request.get(stopStatusUrl);
   expect(stored.ok()).toBeTruthy();
-  expect((await stored.json()) as Record<string, unknown>).toMatchObject({
+  const storedStop = (await stored.json()) as {
+    scope: "project";
+    project_id: string;
+    active: true;
+    reason: string;
+    activated_at: string;
+    activated_by: string;
+  };
+  expect(storedStop).toMatchObject({
     scope: "project",
     project_id: projectId,
     active: true,
@@ -500,9 +508,120 @@ test("activates and reloads a durable project emergency stop without exposing re
   await expect(projectStopCard).toContainText("ACTIVE");
   await expect(projectStopCard).toContainText("Unexpected project behavior");
   await expect(page.getByText("Project emergency stop уже активен")).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /resume|возобновить|снять остановку/i })
-  ).toHaveCount(0);
+
+  const clearedAt = "2026-09-03T18:30:00.000Z";
+  const clearanceEvent = {
+    event_id: "project-clearance-browser-1",
+    scope: "project",
+    project_id: projectId,
+    activation_reason: storedStop.reason,
+    activated_at: storedStop.activated_at,
+    activated_by: storedStop.activated_by,
+    clearance_reason: "Recovery checklist completed",
+    cleared_at: clearedAt,
+    cleared_by: "local-owner"
+  } as const;
+  let clearanceRequests = 0;
+  let cleared = false;
+
+  await page.route(
+    (url) => url.pathname === "/api/v1/operations/emergency-stop/clearance",
+    async (route) => {
+      clearanceRequests += 1;
+      expect(route.request().headers()["x-step-up-token"]).toBe("browser-clearance-proof");
+      expect(route.request().postDataJSON()).toEqual({
+        scope: "project",
+        project_id: projectId,
+        expected_activated_at: storedStop.activated_at,
+        reason: "Recovery checklist completed",
+        acknowledgement: "CLEAR EMERGENCY STOP"
+      });
+      cleared = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(clearanceEvent)
+      });
+    }
+  );
+  await page.route(
+    (url) => url.pathname === "/api/v1/operations/emergency-stop/clearance-events",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ items: cleared ? [clearanceEvent] : [], limit: 50 })
+      });
+    }
+  );
+  await page.route(
+    (url) =>
+      url.pathname === "/api/v1/operations/emergency-stop" &&
+      url.searchParams.get("project_id") === projectId,
+    async (route) => {
+      if (!cleared) {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: "null" });
+    }
+  );
+  await page.route("**/api/v1/operations/status", async (route) => {
+    if (!cleared) {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        generated_at: clearedAt,
+        active_runs: 0,
+        process_stop: null,
+        active_project_stops: 0,
+        metrics: {
+          runs_started: 0,
+          runs_completed: 0,
+          runs_failed: 0,
+          runs_cancelled: 0,
+          route_attempts: 0,
+          route_failures: {
+            ROUTE_UNAVAILABLE: 0,
+            PROVIDER_TIMEOUT: 0,
+            PROVIDER_ERROR: 0,
+            CIRCUIT_OPEN: 0,
+            INTERRUPTED: 0,
+            EMERGENCY_STOP: 0,
+            USAGE_LIMIT_EXCEEDED: 0
+          },
+          last_failure_at: null
+        },
+        alerts: []
+      })
+    });
+  });
+
+  const clear = page.getByRole("button", { name: "Снять stop проекта" });
+  await expect(clear).toBeDisabled();
+  await page.getByLabel("Причина снятия аварийной остановки").fill("Recovery checklist completed");
+  await expect(clear).toBeDisabled();
+  await page
+    .getByLabel("Я проверил состояние и хочу снять только эту точную активацию emergency stop.")
+    .check();
+  await expect(clear).toBeDisabled();
+  await page
+    .getByLabel("Одноразовый step-up токен для снятия остановки")
+    .fill("browser-clearance-proof");
+  await clear.click();
+
+  await expect(page.getByRole("status")).toContainText("Project emergency stop снят");
+  expect(clearanceRequests).toBe(1);
+  await expect(projectStopCard).toContainText("CLEAR");
+  await expect(page.getByRole("button", { name: "Активировать stop проекта" })).toBeVisible();
+  const history = page.getByRole("region", { name: "Журнал снятий emergency stop" });
+  await expect(history).toContainText("Recovery checklist completed");
+  await expect(history).toContainText("Активация: Unexpected project behavior");
+  await expect(history).toContainText("local-owner");
 });
 
 test("requires explicit process-stop intent and omits a project id", async ({ page, request }) => {
@@ -567,7 +686,8 @@ test("requires explicit process-stop intent and omits a project id", async ({ pa
             PROVIDER_ERROR: 0,
             CIRCUIT_OPEN: 0,
             INTERRUPTED: 0,
-            EMERGENCY_STOP: 0
+            EMERGENCY_STOP: 0,
+            USAGE_LIMIT_EXCEEDED: 0
           },
           last_failure_at: null
         },
@@ -600,9 +720,76 @@ test("requires explicit process-stop intent and omits a project id", async ({ pa
     .first();
   await expect(processStopCard).toContainText("ACTIVE");
   await expect(processStopCard).toContainText("Contain the full runtime");
-  await expect(
-    page.getByRole("button", { name: /resume|возобновить|снять остановку/i })
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Снять stop процесса" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Снять stop процесса" })).toBeDisabled();
+});
+
+test("keeps an environment-triggered process stop locked to offline recovery", async ({
+  page,
+  request
+}) => {
+  const nonce = `${Date.now()}`;
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a project for the environment-stop browser boundary.",
+      client_message_id: `environment-stop-e2e-${nonce}`
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+  const environmentStop = {
+    scope: "process",
+    project_id: null,
+    active: true,
+    reason: "Environment incident containment",
+    activated_at: "2026-09-03T19:00:00.000Z",
+    activated_by: "system:environment"
+  } as const;
+
+  await page.route("**/api/v1/operations/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        generated_at: environmentStop.activated_at,
+        active_runs: 0,
+        process_stop: environmentStop,
+        active_project_stops: 0,
+        metrics: {
+          runs_started: 0,
+          runs_completed: 0,
+          runs_failed: 0,
+          runs_cancelled: 0,
+          route_attempts: 0,
+          route_failures: {
+            ROUTE_UNAVAILABLE: 0,
+            PROVIDER_TIMEOUT: 0,
+            PROVIDER_ERROR: 0,
+            CIRCUIT_OPEN: 0,
+            INTERRUPTED: 0,
+            EMERGENCY_STOP: 0,
+            USAGE_LIMIT_EXCEEDED: 0
+          },
+          last_failure_at: null
+        },
+        alerts: [
+          {
+            code: "PROCESS_EMERGENCY_STOP",
+            severity: "critical",
+            message: "Process emergency stop is active."
+          }
+        ]
+      })
+    });
+  });
+
+  await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
+  await page.getByRole("button", { name: "Весь процесс" }).click();
+
+  await expect(page.getByText("Offline recovery required")).toBeVisible();
+  await expect(page.getByText(/снимается только offline/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Снять stop процесса" })).toHaveCount(0);
+  await expect(page.getByLabel("Одноразовый step-up токен для снятия остановки")).toHaveCount(0);
 });
 
 test("requires explicit review before approving or rejecting confirmation cards", async ({

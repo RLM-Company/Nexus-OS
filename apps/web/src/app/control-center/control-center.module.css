@@ -1581,6 +1581,71 @@
   line-height: 1.5;
 }
 
+.clearanceFields {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(139, 220, 184, 0.13);
+}
+
+.clearanceIntro {
+  display: flex;
+  margin-bottom: 0.65rem;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.clearanceIntro strong {
+  color: #b7e5d0;
+  font-size: 0.67rem;
+}
+
+.clearanceIntro span {
+  color: #758779;
+  font-size: 0.58rem;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.clearanceLocked {
+  display: flex;
+  margin-top: 0.75rem;
+  padding: 0.72rem;
+  flex-direction: column;
+  gap: 0.3rem;
+  border: 1px solid rgba(255, 177, 89, 0.24);
+  border-radius: 0.65rem;
+  background: rgba(255, 177, 89, 0.055);
+}
+
+.clearanceLocked strong {
+  color: #ffd19b;
+  font-size: 0.65rem;
+}
+
+.clearanceLocked span {
+  color: #9a8c78;
+  font-size: 0.6rem;
+  line-height: 1.5;
+}
+
+.clearanceButton {
+  margin-top: 0.7rem;
+  padding: 0.68rem 0.9rem;
+  border: 1px solid rgba(139, 220, 184, 0.25);
+  border-radius: 0.62rem;
+  color: #d2f5e4;
+  background: linear-gradient(135deg, rgba(139, 220, 184, 0.16), rgba(56, 135, 103, 0.12));
+  font-size: 0.63rem;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.clearanceButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .operationGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1649,6 +1714,98 @@
   font-size: 0.6rem;
 }
 
+.clearanceHistory {
+  margin-top: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(139, 220, 184, 0.1);
+  border-radius: 0.72rem;
+  background: rgba(139, 220, 184, 0.018);
+}
+
+.clearanceHistory > header {
+  display: flex;
+  margin-bottom: 0.65rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.clearanceHistory h3 {
+  margin: 0.22rem 0 0;
+  color: #d7dce4;
+  font-size: 0.78rem;
+}
+
+.clearanceCount {
+  color: #718378;
+  font-size: 0.56rem;
+}
+
+.clearanceList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  list-style: none;
+}
+
+.clearanceList li {
+  min-width: 0;
+  padding: 0.72rem;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 0.65rem;
+  background: rgba(8, 12, 20, 0.48);
+}
+
+.clearanceEventTop {
+  display: flex;
+  margin-bottom: 0.45rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.clearanceEventTop span {
+  overflow-wrap: anywhere;
+  color: #91cdb1;
+  font-size: 0.51rem;
+  font-weight: 760;
+  letter-spacing: 0.04em;
+}
+
+.clearanceEventTop span[data-scope="process"] {
+  color: #ffd19b;
+}
+
+.clearanceEventTop time {
+  flex: none;
+  color: #5f697a;
+  font-size: 0.51rem;
+}
+
+.clearanceList strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #cbd2dc;
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.clearanceList p {
+  margin: 0.35rem 0;
+  overflow-wrap: anywhere;
+  color: #7d8798;
+  font-size: 0.57rem;
+  line-height: 1.45;
+}
+
+.clearanceList small {
+  color: #5f6979;
+  font-size: 0.52rem;
+  line-height: 1.45;
+}
+
 @media (max-width: 900px) {
   .grid {
     grid-template-columns: 1fr;
@@ -1683,6 +1840,10 @@
 
   .operationGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .clearanceList {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1747,6 +1908,16 @@
   }
 
   .stopImpact span {
+    text-align: left;
+  }
+
+  .clearanceIntro,
+  .clearanceEventTop {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .clearanceIntro span {
     text-align: left;
   }
 

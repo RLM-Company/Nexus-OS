@@ -106,6 +106,23 @@ type EmergencyStop = {
   activated_by: string;
 };
 
+type EmergencyStopClearanceEvent = {
+  event_id: string;
+  scope: "process" | "project";
+  project_id: string | null;
+  activation_reason: string;
+  activated_at: string;
+  activated_by: string;
+  clearance_reason: string;
+  cleared_at: string;
+  cleared_by: string;
+};
+
+type EmergencyStopClearanceList = {
+  items: EmergencyStopClearanceEvent[];
+  limit: number;
+};
+
 type OperationsStatus = {
   generated_at: string;
   active_runs: number;
@@ -176,6 +193,7 @@ type CenterData = {
   usageLimit: UsageLimit;
   operations: OperationsStatus;
   projectStop: EmergencyStop | null;
+  clearanceEvents: EmergencyStopClearanceEvent[];
 };
 
 type ProfilePreview = {
@@ -289,10 +307,15 @@ export default function ControlCenterPage() {
   const [stopReason, setStopReason] = useState("");
   const [stopAcknowledged, setStopAcknowledged] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [clearanceReason, setClearanceReason] = useState("");
+  const [clearanceAcknowledged, setClearanceAcknowledged] = useState(false);
+  const [clearanceStepUpToken, setClearanceStepUpToken] = useState("");
+  const [clearing, setClearing] = useState(false);
+  const [runtimeRefreshRequired, setRuntimeRefreshRequired] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const actionPending =
-    previewing || applying || limitPreviewing || limitApplying || deciding || stopping;
+    previewing || applying || limitPreviewing || limitApplying || deciding || stopping || clearing;
 
   const load = useCallback(async (id: string): Promise<void> => {
     setLoading(true);
@@ -319,6 +342,10 @@ export default function ControlCenterPage() {
     setStopScope("project");
     setStopReason("");
     setStopAcknowledged(false);
+    setClearanceReason("");
+    setClearanceAcknowledged(false);
+    setClearanceStepUpToken("");
+    setRuntimeRefreshRequired(false);
     try {
       const [
         profileResponse,
@@ -328,7 +355,8 @@ export default function ControlCenterPage() {
         usage,
         usageLimitResponse,
         operations,
-        projectStop
+        projectStop,
+        clearanceHistory
       ] = await Promise.all([
         api<{ profile: CapabilityProfile }>(
           `/api/v1/projects/${encodeURIComponent(id)}/autonomy-profile`
@@ -345,6 +373,9 @@ export default function ControlCenterPage() {
         api<OperationsStatus>("/api/v1/operations/status"),
         api<EmergencyStop | null>(
           `/api/v1/operations/emergency-stop?project_id=${encodeURIComponent(id)}`
+        ),
+        api<EmergencyStopClearanceList>(
+          "/api/v1/operations/emergency-stop/clearance-events?limit=50"
         )
       ]);
       setData({
@@ -355,7 +386,8 @@ export default function ControlCenterPage() {
         usage,
         usageLimit: usageLimitResponse.limit,
         operations,
-        projectStop
+        projectStop,
+        clearanceEvents: clearanceHistory.items
       });
       setLimitTokens(
         usageLimitResponse.limit.max_total_tokens === null
@@ -407,7 +439,9 @@ export default function ControlCenterPage() {
     [pendingConfirmations, selectedConfirmationId]
   );
   const selectedStop =
-    data?.operations.process_stop ?? (stopScope === "project" ? data?.projectStop : null);
+    stopScope === "process" ? (data?.operations.process_stop ?? null) : (data?.projectStop ?? null);
+  const environmentStopLocked =
+    selectedStop?.scope === "process" && selectedStop.activated_by === "system:environment";
 
   const profileChanges = useMemo(() => {
     if (!data || !preview) return [];
@@ -833,17 +867,20 @@ export default function ControlCenterPage() {
   };
 
   const selectStopScope = (scope: "project" | "process"): void => {
-    if (actionPending || scope === stopScope) return;
+    if (actionPending || runtimeRefreshRequired || scope === stopScope) return;
     setStopScope(scope);
     setStopReason("");
     setStopAcknowledged(false);
+    setClearanceReason("");
+    setClearanceAcknowledged(false);
+    setClearanceStepUpToken("");
     setNotice(null);
     setError(null);
   };
 
   const activateEmergencyStop = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
-    if (!data || actionPending || selectedStop) return;
+    if (!data || actionPending || runtimeRefreshRequired || selectedStop) return;
     const reason = stopReason.trim();
     if (!reason) {
       setError("Укажите причину аварийной остановки");
@@ -880,13 +917,118 @@ export default function ControlCenterPage() {
       setStopAcknowledged(false);
       setNotice(
         activated.scope === "process"
-          ? "Process emergency stop активирован. Все runs остановлены; возобновление через UI недоступно."
-          : "Project emergency stop активирован. Runs проекта остановлены; возобновление через UI недоступно."
+          ? "Process emergency stop активирован. Все runs остановлены; восстановление защищено отдельным step-up."
+          : "Project emergency stop активирован. Runs проекта остановлены; восстановление защищено отдельным step-up."
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось активировать emergency stop");
     } finally {
       setStopping(false);
+    }
+  };
+
+  const clearEmergencyStop = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (!data || !selectedStop || actionPending || runtimeRefreshRequired) return;
+    if (environmentStopLocked) {
+      setError(
+        "Environment-triggered process stop снимается только offline после отключения RUNTIME_EMERGENCY_STOP"
+      );
+      return;
+    }
+    if (selectedStop.scope === "project" && !selectedStop.project_id) {
+      setError("Project emergency stop не содержит project_id; обновите состояние перед снятием");
+      return;
+    }
+    const reason = clearanceReason.trim();
+    const token = clearanceStepUpToken.trim();
+    if (!reason) {
+      setError("Укажите причину снятия аварийной остановки");
+      return;
+    }
+    if (!clearanceAcknowledged) {
+      setError("Подтвердите точную активацию, которую нужно снять");
+      return;
+    }
+    if (!token) {
+      setError("Для снятия emergency stop нужен одноразовый step-up токен");
+      return;
+    }
+
+    const active = selectedStop;
+    setClearing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const clearance = await api<EmergencyStopClearanceEvent>(
+        "/api/v1/operations/emergency-stop/clearance",
+        {
+          method: "POST",
+          headers: { "x-step-up-token": token },
+          body: {
+            scope: active.scope,
+            ...(active.scope === "project" ? { project_id: active.project_id as string } : {}),
+            expected_activated_at: active.activated_at,
+            reason,
+            acknowledgement: "CLEAR EMERGENCY STOP"
+          }
+        }
+      );
+      const [operationsResult, clearanceHistoryResult, projectStopResult] =
+        await Promise.allSettled([
+          api<OperationsStatus>("/api/v1/operations/status"),
+          api<EmergencyStopClearanceList>(
+            "/api/v1/operations/emergency-stop/clearance-events?limit=50"
+          ),
+          active.scope === "project"
+            ? api<EmergencyStop | null>(
+                `/api/v1/operations/emergency-stop?project_id=${encodeURIComponent(data.profile.project_id)}`
+              )
+            : Promise.resolve(data.projectStop)
+        ]);
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              operations:
+                operationsResult.status === "fulfilled"
+                  ? operationsResult.value
+                  : current.operations,
+              projectStop:
+                projectStopResult.status === "fulfilled"
+                  ? projectStopResult.value
+                  : current.projectStop,
+              clearanceEvents:
+                clearanceHistoryResult.status === "fulfilled"
+                  ? clearanceHistoryResult.value.items
+                  : [
+                      clearance,
+                      ...current.clearanceEvents.filter(
+                        (event) => event.event_id !== clearance.event_id
+                      )
+                    ].slice(0, 50)
+            }
+          : current
+      );
+      setClearanceReason("");
+      setClearanceAcknowledged(false);
+      const refreshIncomplete =
+        operationsResult.status === "rejected" ||
+        clearanceHistoryResult.status === "rejected" ||
+        projectStopResult.status === "rejected";
+      setRuntimeRefreshRequired(refreshIncomplete);
+      setNotice(
+        refreshIncomplete
+          ? "Снятие подтверждено и audit event записан, но актуальное runtime state загружено не полностью. Обновите Control Center перед новым действием."
+          : active.scope === "process"
+            ? "Process emergency stop снят; событие восстановления добавлено в неизменяемый журнал."
+            : "Project emergency stop снят; событие восстановления добавлено в неизменяемый журнал."
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось снять emergency stop");
+    } finally {
+      setClearanceStepUpToken("");
+      setClearing(false);
     }
   };
 
@@ -1927,15 +2069,17 @@ export default function ControlCenterPage() {
             <form
               className={styles.stopControl}
               aria-labelledby="emergency-stop-title"
-              onSubmit={(event) => void activateEmergencyStop(event)}
+              onSubmit={(event) =>
+                void (selectedStop ? clearEmergencyStop(event) : activateEmergencyStop(event))
+              }
             >
               <div className={styles.stopIntro}>
                 <div>
                   <span className={styles.eyebrow}>Owner safety action</span>
-                  <h3 id="emergency-stop-title">Активировать emergency stop</h3>
+                  <h3 id="emergency-stop-title">Emergency stop и guarded recovery</h3>
                   <p>
-                    Остановка применяется сервером и сохраняется после рестарта. Она не выдаёт новых
-                    полномочий, поэтому step-up не требуется.
+                    Активация сохраняется после рестарта и не требует step-up. Снятие требует точную
+                    активацию, причину, явное подтверждение и одноразовый step-up.
                   </p>
                 </div>
                 <div
@@ -1946,7 +2090,7 @@ export default function ControlCenterPage() {
                   <button
                     type="button"
                     aria-pressed={stopScope === "project"}
-                    disabled={loading || actionPending}
+                    disabled={loading || actionPending || runtimeRefreshRequired}
                     onClick={() => selectStopScope("project")}
                   >
                     Только выбранный проект
@@ -1954,7 +2098,7 @@ export default function ControlCenterPage() {
                   <button
                     type="button"
                     aria-pressed={stopScope === "process"}
-                    disabled={loading || actionPending}
+                    disabled={loading || actionPending || runtimeRefreshRequired}
                     onClick={() => selectStopScope("process")}
                   >
                     Весь процесс
@@ -1969,24 +2113,104 @@ export default function ControlCenterPage() {
                     : "Все проекты и активные runs"}
                 </strong>
                 <span>
-                  {stopScope === "project"
-                    ? "Будут прерваны активные и заблокированы новые runs только этого проекта."
-                    : "Будут прерваны активные и заблокированы новые runs всего API-процесса."}
+                  {selectedStop
+                    ? `Guarded recovery привязан к активации ${dateTime(selectedStop.activated_at)} и не затронет более новый stop.`
+                    : stopScope === "project"
+                      ? "Будут прерваны активные и заблокированы новые runs только этого проекта."
+                      : "Будут прерваны активные и заблокированы новые runs всего API-процесса."}
                 </span>
               </div>
 
               {selectedStop ? (
-                <div className={styles.activeStop}>
-                  <strong>
-                    {selectedStop.scope === "process"
-                      ? "Process emergency stop уже активен"
-                      : "Project emergency stop уже активен"}
-                  </strong>
-                  <span>{selectedStop.reason}</span>
-                  <small>
-                    {dateTime(selectedStop.activated_at)} · {selectedStop.activated_by}
-                  </small>
-                </div>
+                <>
+                  <div className={styles.activeStop}>
+                    <strong>
+                      {selectedStop.scope === "process"
+                        ? "Process emergency stop уже активен"
+                        : "Project emergency stop уже активен"}
+                    </strong>
+                    <span>{selectedStop.reason}</span>
+                    <small>
+                      {dateTime(selectedStop.activated_at)} · {selectedStop.activated_by}
+                    </small>
+                  </div>
+
+                  {environmentStopLocked ? (
+                    <div className={styles.clearanceLocked} role="note">
+                      <strong>Offline recovery required</strong>
+                      <span>
+                        Этот process stop установлен environment switch и снимается только offline
+                        после отключения RUNTIME_EMERGENCY_STOP.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className={styles.clearanceFields}>
+                      <div className={styles.clearanceIntro}>
+                        <strong>Guarded recovery</strong>
+                        <span>
+                          API сравнит exact activated_at и добавит неизменяемое событие в журнал.
+                        </span>
+                      </div>
+                      <label className={styles.stopReason}>
+                        <span>Причина снятия аварийной остановки</span>
+                        <textarea
+                          value={clearanceReason}
+                          onChange={(event) => setClearanceReason(event.target.value)}
+                          minLength={1}
+                          maxLength={500}
+                          required
+                          placeholder="Какие проверки завершены и почему выполнение снова безопасно"
+                        />
+                        <small>
+                          {clearanceReason.length}/500 · причина сохранится в append-only аудите
+                        </small>
+                      </label>
+
+                      <label className={styles.stopAcknowledgement}>
+                        <input
+                          type="checkbox"
+                          checked={clearanceAcknowledged}
+                          onChange={(event) => setClearanceAcknowledged(event.target.checked)}
+                        />
+                        <span>
+                          Я проверил состояние и хочу снять только эту точную активацию emergency
+                          stop.
+                        </span>
+                      </label>
+
+                      <label className={styles.stepUp}>
+                        <span>Одноразовый step-up токен для снятия остановки</span>
+                        <input
+                          type="password"
+                          autoComplete="off"
+                          value={clearanceStepUpToken}
+                          onChange={(event) => setClearanceStepUpToken(event.target.value)}
+                          required
+                        />
+                        <small>Proof будет израсходован только для этой точной активации.</small>
+                      </label>
+
+                      <button
+                        type="submit"
+                        className={styles.clearanceButton}
+                        disabled={
+                          !clearanceReason.trim() ||
+                          !clearanceAcknowledged ||
+                          !clearanceStepUpToken.trim() ||
+                          loading ||
+                          actionPending ||
+                          runtimeRefreshRequired
+                        }
+                      >
+                        {clearing
+                          ? "Снимаю…"
+                          : selectedStop.scope === "project"
+                            ? "Снять stop проекта"
+                            : "Снять stop процесса"}
+                      </button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <>
                   <label className={styles.stopReason}>
@@ -2018,7 +2242,13 @@ export default function ControlCenterPage() {
                   <button
                     type="submit"
                     className={styles.stopButton}
-                    disabled={!stopReason.trim() || !stopAcknowledged || loading || actionPending}
+                    disabled={
+                      !stopReason.trim() ||
+                      !stopAcknowledged ||
+                      loading ||
+                      actionPending ||
+                      runtimeRefreshRequired
+                    }
                   >
                     {stopping
                       ? "Активирую…"
@@ -2030,8 +2260,8 @@ export default function ControlCenterPage() {
               )}
 
               <p className={styles.noResume}>
-                В Control Center нет кнопки resume. Снятие остановки остаётся отдельным аудируемым
-                операторским действием.
+                Снятие не является обычным resume: сервер сравнивает точный activation timestamp,
+                однократно расходует bound proof и атомарно пишет append-only audit event.
               </p>
             </form>
 
@@ -2079,6 +2309,45 @@ export default function ControlCenterPage() {
                 <p className={styles.muted}>Активных runtime-alerts нет.</p>
               )}
             </div>
+
+            <section
+              className={styles.clearanceHistory}
+              aria-labelledby="emergency-stop-clearance-history-title"
+            >
+              <header>
+                <div>
+                  <span className={styles.eyebrow}>Append-only recovery audit</span>
+                  <h3 id="emergency-stop-clearance-history-title">Журнал снятий emergency stop</h3>
+                </div>
+                <span className={styles.clearanceCount}>
+                  {integer(data.clearanceEvents.length)} последних
+                </span>
+              </header>
+              {data.clearanceEvents.length > 0 ? (
+                <ol className={styles.clearanceList}>
+                  {data.clearanceEvents.map((event) => (
+                    <li key={event.event_id}>
+                      <div className={styles.clearanceEventTop}>
+                        <span data-scope={event.scope}>
+                          {event.scope === "process"
+                            ? "PROCESS"
+                            : `PROJECT · ${shortId(event.project_id ?? "unknown")}`}
+                        </span>
+                        <time dateTime={event.cleared_at}>{dateTime(event.cleared_at)}</time>
+                      </div>
+                      <strong>{event.clearance_reason}</strong>
+                      <p>Активация: {event.activation_reason}</p>
+                      <small>
+                        activated {dateTime(event.activated_at)} by {event.activated_by} · cleared
+                        by {event.cleared_by}
+                      </small>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className={styles.muted}>Событий снятия emergency stop пока нет.</p>
+              )}
+            </section>
           </section>
         </>
       ) : (
