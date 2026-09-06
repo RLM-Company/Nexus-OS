@@ -13,6 +13,7 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
     (response) => response.url().includes("/api/v1/runs/") && response.url().endsWith("/events")
   );
   await page.getByRole("button", { name: "Запустить" }).click();
+  await expect(page.getByRole("status")).toContainText(/В очереди|Менеджер отвечает/);
   const created = await createProject;
   const createdText = await created.text();
   expect(created.status(), createdText).toBe(201);
@@ -22,6 +23,11 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
 
   await expect(page.getByRole("heading", { name: initialTask })).toBeVisible();
   await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  await expect(page.getByRole("region", { name: "Информация о проекте" })).toContainText("Активен");
+  await expect(page.getByRole("region", { name: "Информация о проекте" })).toContainText(
+    "Сообщений"
+  );
   await expect(page.getByRole("button", { name: "Остановить" })).toHaveCount(0);
 
   const restoredProjects = page.waitForResponse(
@@ -64,6 +70,7 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   ).toBe(true);
 
   await expect(page.getByText("Запуск остановлен владельцем.")).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText(/Остановлен/);
   await expect(page.getByRole("button", { name: "Остановить" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Отправить" })).toBeVisible();
 });

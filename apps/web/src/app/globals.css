@@ -482,6 +482,34 @@ svg {
   flex-direction: column;
   overflow: hidden;
 }
+.project-facts {
+  display: flex;
+  gap: 0.65rem;
+  padding: 0.75rem 0 0;
+  overflow-x: auto;
+}
+.project-facts > span {
+  min-width: 8rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+.project-facts small,
+.project-facts strong {
+  display: block;
+}
+.project-facts small {
+  color: #697184;
+  font-size: 0.59rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.project-facts strong {
+  margin-top: 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 650;
+}
 .chat-heading {
   display: flex;
   align-items: center;
@@ -533,6 +561,24 @@ svg {
   height: 0.38rem;
   border-radius: 50%;
   background: var(--green);
+}
+.live-badge.queued,
+.live-badge.running {
+  color: #c7beff;
+}
+.live-badge.queued i,
+.live-badge.running i {
+  background: var(--accent-strong);
+  animation: pulse 1s ease-in-out infinite;
+}
+.live-badge.failed,
+.live-badge.cancelled {
+  color: #ffabb3;
+}
+.live-badge.failed i,
+.live-badge.cancelled i {
+  background: #ff7582;
+  box-shadow: 0 0 0.6rem rgba(255, 117, 130, 0.45);
 }
 .messages {
   flex: 1;
