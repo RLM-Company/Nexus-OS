@@ -24,9 +24,13 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await expect(page.getByRole("heading", { name: initialTask })).toBeVisible();
   await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
-  await expect(page.getByRole("region", { name: "Информация о проекте" })).toContainText("Активен");
-  await expect(page.getByRole("region", { name: "Информация о проекте" })).toContainText(
-    "Сообщений"
+  const projectFacts = page.getByRole("region", { name: "Информация о проекте" });
+  await expect(projectFacts).toContainText("Активен");
+  await expect(projectFacts).toContainText("A0");
+  await expect(projectFacts).toContainText("Сообщений");
+  await expect(page.getByRole("link", { name: "Control Center" })).toHaveAttribute(
+    "href",
+    `/control-center?project=${createdBody.project.id}`
   );
   await expect(page.getByRole("button", { name: "Остановить" })).toHaveCount(0);
 
@@ -41,6 +45,7 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await expect(page.locator(".chat-panel .message.user p")).toHaveText(initialTask);
   await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  await expect(page.getByRole("region", { name: "Информация о проекте" })).toContainText("A0");
 
   await page.getByLabel("Сообщение менеджеру").fill("Останови этот тестовый запуск");
   await page.getByRole("button", { name: "Отправить" }).click();

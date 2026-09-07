@@ -40,6 +40,11 @@ type CancelledRun = { run_id: string; status: "cancelled" };
 
 type ProjectDetail = { project: Project; chat_id: string; messages: Message[] };
 
+type AutonomyProfile = {
+  base_level: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+  version: number;
+};
+
 type ModelRuntimeStatus = {
   mode: "mock" | "openai-compatible";
   provider: "mock" | "primary";
@@ -174,6 +179,7 @@ export default function Home() {
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [chatId, setChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [autonomyProfile, setAutonomyProfile] = useState<AutonomyProfile | null>(null);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -203,15 +209,25 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
+  const loadProjectView = useCallback(async (projectId: string) => {
+    const [detail, profileResponse] = await Promise.all([
+      api<ProjectDetail>(`/api/v1/projects/${projectId}`),
+      api<{ profile: AutonomyProfile }>(
+        `/api/v1/projects/${encodeURIComponent(projectId)}/autonomy-profile`
+      ).catch(() => null)
+    ]);
+    setActiveProject(detail.project);
+    setChatId(detail.chat_id);
+    setMessages(detail.messages);
+    setRunPhase(restoredRunPhase(detail.messages));
+    setAutonomyProfile(profileResponse?.profile ?? null);
+  }, []);
+
   const openProject = async (projectId: string): Promise<void> => {
     setError(null);
     setLoading(true);
     try {
-      const detail = await api<ProjectDetail>(`/api/v1/projects/${projectId}`);
-      setActiveProject(detail.project);
-      setChatId(detail.chat_id);
-      setMessages(detail.messages);
-      setRunPhase(restoredRunPhase(detail.messages));
+      await loadProjectView(projectId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось открыть проект");
     } finally {
@@ -221,14 +237,10 @@ export default function Home() {
 
   const refreshProject = useCallback(
     async (projectId: string) => {
-      const detail = await api<ProjectDetail>(`/api/v1/projects/${projectId}`);
-      setActiveProject(detail.project);
-      setChatId(detail.chat_id);
-      setMessages(detail.messages);
-      setRunPhase(restoredRunPhase(detail.messages));
+      await loadProjectView(projectId);
       await loadProjects();
     },
-    [loadProjects]
+    [loadProjectView, loadProjects]
   );
 
   const followStream = (accepted: AcceptedResponse): void => {
@@ -364,6 +376,11 @@ export default function Home() {
       setMessages((current) =>
         activeProject ? [...current, accepted.user_message] : [accepted.user_message]
       );
+      void api<{ profile: AutonomyProfile }>(
+        `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
+      )
+        .then((response) => setAutonomyProfile(response.profile))
+        .catch(() => setAutonomyProfile(null));
       await loadProjects();
       followStream(accepted);
     } catch (cause) {
@@ -379,12 +396,17 @@ export default function Home() {
     setActiveProject(null);
     setChatId(null);
     setMessages([]);
+    setAutonomyProfile(null);
     setDraft("");
     setSending(false);
     setActiveRunId(null);
     setRunPhase("idle");
     setError(null);
   };
+
+  const controlCenterHref = activeProject
+    ? `/control-center?project=${encodeURIComponent(activeProject.id)}`
+    : "/control-center";
 
   return (
     <div className="app-shell">
@@ -414,6 +436,9 @@ export default function Home() {
             }
           >
             <ShieldIcon /> Agent Studio
+          </Link>
+          <Link className="nav-item" href={controlCenterHref}>
+            <ShieldIcon /> Control Center
           </Link>
           <span className="nav-label">Проекты</span>
           <div className="project-list">
@@ -471,6 +496,14 @@ export default function Home() {
             <span>
               <small>Статус проекта</small>
               <strong>{PROJECT_STATUS_LABEL[activeProject.status]}</strong>
+            </span>
+            <span>
+              <small>Автономность</small>
+              <strong>
+                {autonomyProfile
+                  ? `${autonomyProfile.base_level} · v${autonomyProfile.version}`
+                  : "Недоступно"}
+              </strong>
             </span>
             <span>
               <small>Обновлён</small>
@@ -670,10 +703,10 @@ export default function Home() {
           <SparkIcon />
           <span>Проекты</span>
         </button>
-        <span aria-disabled="true">
+        <Link href={controlCenterHref}>
           <ShieldIcon />
           <span>Контроль</span>
-        </span>
+        </Link>
       </nav>
     </div>
   );
