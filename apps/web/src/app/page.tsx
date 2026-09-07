@@ -127,6 +127,20 @@ const displayedContent = (message: Message): string | null => {
   return null;
 };
 
+const restoredRunPhase = (messages: Message[]): RunPhase => {
+  const latestRunId = [...messages].reverse().find((message) => message.run_id !== null)?.run_id;
+  if (!latestRunId) return "idle";
+
+  const latestRunMessages = messages.filter((message) => message.run_id === latestRunId);
+  const assistant = [...latestRunMessages].reverse().find((message) => message.role === "assistant");
+  if (!assistant) return latestRunMessages.some((message) => message.role === "user") ? "queued" : "idle";
+
+  if (assistant.status === "pending" || assistant.status === "streaming") return "running";
+  if (assistant.status === "completed") return "completed";
+  if (assistant.status === "failed") return "failed";
+  return "cancelled";
+};
+
 const messagePlaceholder = (
   id: string,
   projectId: string,
@@ -192,7 +206,7 @@ export default function Home() {
       setActiveProject(detail.project);
       setChatId(detail.chat_id);
       setMessages(detail.messages);
-      setRunPhase("idle");
+      setRunPhase(restoredRunPhase(detail.messages));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось открыть проект");
     } finally {
@@ -206,6 +220,7 @@ export default function Home() {
       setActiveProject(detail.project);
       setChatId(detail.chat_id);
       setMessages(detail.messages);
+      setRunPhase(restoredRunPhase(detail.messages));
       await loadProjects();
     },
     [loadProjects]
