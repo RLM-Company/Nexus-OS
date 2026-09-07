@@ -40,6 +40,7 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await page.locator(".project-list .project-item").first().click();
   await expect(page.locator(".chat-panel .message.user p")).toHaveText(initialTask);
   await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
 
   await page.getByLabel("Сообщение менеджеру").fill("Останови этот тестовый запуск");
   await page.getByRole("button", { name: "Отправить" }).click();
