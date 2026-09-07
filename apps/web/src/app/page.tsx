@@ -48,6 +48,24 @@ type ModelRuntimeStatus = {
   fallback_to_mock: boolean;
 };
 
+type RunPhase = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
+
+const RUN_PHASE_LABEL: Record<RunPhase, string> = {
+  idle: "Готов",
+  queued: "В очереди",
+  running: "Менеджер отвечает",
+  completed: "Ответ получен",
+  failed: "Ошибка запуска",
+  cancelled: "Остановлен"
+};
+
+const PROJECT_STATUS_LABEL: Record<Project["status"], string> = {
+  DRAFT: "Черновик",
+  ACTIVE: "Активен",
+  FAILED: "Требует внимания",
+  ARCHIVED: "В архиве"
+};
+
 const SparkIcon = () => (
   <svg aria-hidden="true" viewBox="0 0 24 24">
     <path d="M12 2l1.55 5.3L19 9l-5.45 1.7L12 16l-1.55-5.3L5 9l5.45-1.7L12 2Z" />
@@ -143,6 +161,7 @@ export default function Home() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<ModelRuntimeStatus | null>(null);
+  const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -173,6 +192,7 @@ export default function Home() {
       setActiveProject(detail.project);
       setChatId(detail.chat_id);
       setMessages(detail.messages);
+      setRunPhase("idle");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось открыть проект");
     } finally {
@@ -198,6 +218,10 @@ export default function Home() {
     streamRef.current = source;
     let assistantId: string | null = null;
     let finished = false;
+
+    source.addEventListener("run.started", () => {
+      setRunPhase("running");
+    });
 
     source.addEventListener("message.started", (raw) => {
       const event = JSON.parse(String(raw.data)) as {
@@ -237,6 +261,7 @@ export default function Home() {
       source.close();
       setSending(false);
       setActiveRunId(null);
+      setRunPhase("completed");
       void refreshProject(accepted.project.id).catch(() => {
         if (assistantId) {
           setMessages((current) =>
@@ -254,6 +279,7 @@ export default function Home() {
       const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
       setSending(false);
       setActiveRunId(null);
+      setRunPhase("failed");
       setError(`Запуск остановлен: ${event.data.error_code}`);
     });
 
@@ -262,6 +288,7 @@ export default function Home() {
       source.close();
       setSending(false);
       setActiveRunId(null);
+      setRunPhase("cancelled");
       void refreshProject(accepted.project.id);
     });
 
@@ -270,6 +297,7 @@ export default function Home() {
       if (!finished) {
         setSending(false);
         setActiveRunId(null);
+        setRunPhase("failed");
         setError("Поток ответа прерван. Сообщения уже сохранены — открой проект повторно.");
       }
     };
@@ -287,6 +315,7 @@ export default function Home() {
     streamRef.current?.close();
     setSending(false);
     setActiveRunId(null);
+    setRunPhase("cancelled");
     await refreshProject(activeProject.id);
   };
 
@@ -296,6 +325,7 @@ export default function Home() {
     if (!content || sending) return;
 
     setSending(true);
+    setRunPhase("queued");
     setError(null);
     setDraft("");
     try {
@@ -319,6 +349,7 @@ export default function Home() {
     } catch (cause) {
       setDraft(content);
       setSending(false);
+      setRunPhase("failed");
       setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
     }
   };
@@ -331,6 +362,7 @@ export default function Home() {
     setDraft("");
     setSending(false);
     setActiveRunId(null);
+    setRunPhase("idle");
     setError(null);
   };
 
@@ -342,7 +374,7 @@ export default function Home() {
             <SparkIcon />
           </span>
           <span>Cosmora</span>
-          <span className="version">B0.1</span>
+          <span className="version">Console</span>
         </div>
 
         <button className="new-project" onClick={newProject}>
@@ -414,6 +446,30 @@ export default function Home() {
           </div>
         </header>
 
+        {activeProject && (
+          <section className="project-facts" aria-label="Информация о проекте">
+            <span>
+              <small>Статус проекта</small>
+              <strong>{PROJECT_STATUS_LABEL[activeProject.status]}</strong>
+            </span>
+            <span>
+              <small>Обновлён</small>
+              <strong>
+                {new Date(activeProject.updated_at).toLocaleString("ru", {
+                  day: "2-digit",
+                  month: "short",
+                  hour: "2-digit",
+                  minute: "2-digit"
+                })}
+              </strong>
+            </span>
+            <span>
+              <small>Сообщений</small>
+              <strong>{messages.length}</strong>
+            </span>
+          </section>
+        )}
+
         <div className="mobile-project-strip" aria-label="Быстрый выбор проекта">
           <button className={!activeProject ? "active" : ""} onClick={newProject}>
             ＋ Новый
@@ -443,8 +499,8 @@ export default function Home() {
                     : "MockProvider · история сохраняется"}
                 </small>
               </div>
-              <span className="live-badge">
-                <i /> Готов
+              <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">
+                <i /> {RUN_PHASE_LABEL[runPhase]}
               </span>
             </div>
             <div className="messages" aria-live="polite">
