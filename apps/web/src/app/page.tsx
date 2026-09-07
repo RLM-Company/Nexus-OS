@@ -128,12 +128,17 @@ const displayedContent = (message: Message): string | null => {
 };
 
 const restoredRunPhase = (messages: Message[]): RunPhase => {
-  const latestRunId = [...messages].reverse().find((message) => message.run_id !== null)?.run_id;
-  if (!latestRunId) return "idle";
+  const latestRunMessage = [...messages].reverse().find((message) => message.run_id !== null);
+  if (!latestRunMessage?.run_id) return "idle";
+  const runId = latestRunMessage.run_id;
 
-  const latestRunMessages = messages.filter((message) => message.run_id === latestRunId);
-  const assistant = [...latestRunMessages].reverse().find((message) => message.role === "assistant");
-  if (!assistant) return latestRunMessages.some((message) => message.role === "user") ? "queued" : "idle";
+  const latestRunMessages = messages.filter((message) => message.run_id === runId);
+  const assistant = [...latestRunMessages]
+    .reverse()
+    .find((message) => message.role === "assistant");
+  if (!assistant) {
+    return latestRunMessages.some((message) => message.role === "user") ? "queued" : "idle";
+  }
 
   if (assistant.status === "pending" || assistant.status === "streaming") return "running";
   if (assistant.status === "completed") return "completed";
