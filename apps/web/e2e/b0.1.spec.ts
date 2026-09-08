@@ -27,6 +27,10 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   const projectFacts = page.getByRole("region", { name: "Информация о проекте" });
   await expect(projectFacts).toContainText("Активен");
   await expect(projectFacts).toContainText("A0");
+  await expect(projectFacts).toContainText("Решения владельца");
+  await expect(projectFacts).toContainText("Нет");
+  await expect(projectFacts).toContainText("Recovery");
+  await expect(projectFacts).toContainText("Не требуется");
   await expect(projectFacts).toContainText("Сообщений");
   await expect(page.getByRole("link", { name: "Control Center" })).toHaveAttribute(
     "href",
