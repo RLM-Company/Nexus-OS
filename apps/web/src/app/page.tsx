@@ -55,6 +55,13 @@ type ModelRuntimeStatus = {
 
 type RunPhase = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
+type PolicySignals = {
+  pendingConfirmations: number;
+  recoveryRequired: number;
+};
+
+const EMPTY_POLICY_SIGNALS: PolicySignals = { pendingConfirmations: 0, recoveryRequired: 0 };
+
 const RUN_PHASE_LABEL: Record<RunPhase, string> = {
   idle: "Готов",
   queued: "В очереди",
@@ -180,6 +187,7 @@ export default function Home() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [autonomyProfile, setAutonomyProfile] = useState<AutonomyProfile | null>(null);
+  const [policySignals, setPolicySignals] = useState<PolicySignals>(EMPTY_POLICY_SIGNALS);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -210,10 +218,17 @@ export default function Home() {
   }, [messages]);
 
   const loadProjectView = useCallback(async (projectId: string) => {
-    const [detail, profileResponse] = await Promise.all([
-      api<ProjectDetail>(`/api/v1/projects/${projectId}`),
+    const encodedProjectId = encodeURIComponent(projectId);
+    const [detail, profileResponse, confirmationsResponse, recoveryResponse] = await Promise.all([
+      api<ProjectDetail>(`/api/v1/projects/${encodedProjectId}`),
       api<{ profile: AutonomyProfile }>(
-        `/api/v1/projects/${encodeURIComponent(projectId)}/autonomy-profile`
+        `/api/v1/projects/${encodedProjectId}/autonomy-profile`
+      ).catch(() => null),
+      api<{ items: unknown[] }>(
+        `/api/v1/projects/${encodedProjectId}/confirmations?status=PENDING`
+      ).catch(() => null),
+      api<{ items: unknown[] }>(
+        `/api/v1/projects/${encodedProjectId}/recovery-required?limit=50`
       ).catch(() => null)
     ]);
     setActiveProject(detail.project);
@@ -221,7 +236,26 @@ export default function Home() {
     setMessages(detail.messages);
     setRunPhase(restoredRunPhase(detail.messages));
     setAutonomyProfile(profileResponse?.profile ?? null);
+    setPolicySignals({
+      pendingConfirmations: confirmationsResponse?.items.length ?? 0,
+      recoveryRequired: recoveryResponse?.items.length ?? 0
+    });
   }, []);
+
+  useEffect(() => {
+    if (
+      !activeProject ||
+      activeRunId !== null ||
+      (runPhase !== "queued" && runPhase !== "running")
+    ) {
+      return;
+    }
+    const projectId = activeProject.id;
+    const timer = window.setInterval(() => {
+      void loadProjectView(projectId).catch(() => undefined);
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [activeProject, activeRunId, loadProjectView, runPhase]);
 
   const openProject = async (projectId: string): Promise<void> => {
     setError(null);
@@ -313,6 +347,7 @@ export default function Home() {
       setActiveRunId(null);
       setRunPhase("failed");
       setError(`Запуск остановлен: ${event.data.error_code}`);
+      void refreshProject(accepted.project.id);
     });
 
     source.addEventListener("run.cancelled", () => {
@@ -329,8 +364,8 @@ export default function Home() {
       if (!finished) {
         setSending(false);
         setActiveRunId(null);
-        setRunPhase("failed");
-        setError("Поток ответа прерван. Сообщения уже сохранены — открой проект повторно.");
+        setError("Поток ответа прерван. Проверяю сохранённое состояние запуска на сервере.");
+        void loadProjectView(accepted.project.id).catch(() => setRunPhase("failed"));
       }
     };
   };
@@ -376,6 +411,7 @@ export default function Home() {
       setMessages((current) =>
         activeProject ? [...current, accepted.user_message] : [accepted.user_message]
       );
+      setPolicySignals(EMPTY_POLICY_SIGNALS);
       void api<{ profile: AutonomyProfile }>(
         `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
       )
@@ -397,6 +433,7 @@ export default function Home() {
     setChatId(null);
     setMessages([]);
     setAutonomyProfile(null);
+    setPolicySignals(EMPTY_POLICY_SIGNALS);
     setDraft("");
     setSending(false);
     setActiveRunId(null);
@@ -503,6 +540,22 @@ export default function Home() {
                 {autonomyProfile
                   ? `${autonomyProfile.base_level} · v${autonomyProfile.version}`
                   : "Недоступно"}
+              </strong>
+            </span>
+            <span>
+              <small>Решения владельца</small>
+              <strong>
+                {policySignals.pendingConfirmations === 0
+                  ? "Нет"
+                  : `${policySignals.pendingConfirmations} ожидает`}
+              </strong>
+            </span>
+            <span>
+              <small>Recovery</small>
+              <strong>
+                {policySignals.recoveryRequired === 0
+                  ? "Не требуется"
+                  : `${policySignals.recoveryRequired} требует внимания`}
               </strong>
             </span>
             <span>
