@@ -12,8 +12,8 @@ export interface QueuedManagerRun {
  *
  * The base store intentionally remains transport-agnostic for contract/unit tests.
  * This runtime specialization adds an atomic queued-run claim and prevents a second
- * transport/worker from becoming another executor once a streaming assistant
- * message already exists for the run.
+ * transport/worker from becoming another executor once an assistant message already
+ * exists for a running run.
  */
 export class ManagerRuntimeProjectStore extends ProjectStore {
   readonly #runtimeSqlite: DatabaseSync;
@@ -50,7 +50,7 @@ export class ManagerRuntimeProjectStore extends ProjectStore {
   override startAssistantMessage(runId: string, ownerId?: string): StoredMessage | null {
     const run = this.getRun(runId, ownerId);
     const existing = this.getAssistantMessage(runId, ownerId);
-    if (run?.status === "running" && existing?.status === "streaming") return null;
+    if (run?.status === "running" && existing) return null;
     return super.startAssistantMessage(runId, ownerId);
   }
 }
