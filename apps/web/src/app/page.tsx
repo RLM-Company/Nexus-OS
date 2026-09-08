@@ -184,6 +184,23 @@ const restoredRunState = (messages: Message[]): RestoredRunState => {
   return { phase: "cancelled", activeRunId: null };
 };
 
+const recoverableUserMessage = (messages: Message[]): Message | null => {
+  const latestRunMessage = [...messages].reverse().find((message) => message.run_id !== null);
+  if (!latestRunMessage?.run_id) return null;
+  const runId = latestRunMessage.run_id;
+  const terminalAssistant = [...messages]
+    .reverse()
+    .find((message) => message.run_id === runId && message.role === "assistant");
+  if (terminalAssistant?.status !== "failed" && terminalAssistant?.status !== "cancelled") {
+    return null;
+  }
+  return (
+    [...messages]
+      .reverse()
+      .find((message) => message.run_id === runId && message.role === "user") ?? null
+  );
+};
+
 const messagePlaceholder = (
   id: string,
   projectId: string,
@@ -223,6 +240,7 @@ export default function Home() {
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const loadProjects = useCallback(async () => {
     const data = await api<{ items: ProjectSummary[] }>("/api/v1/projects");
@@ -435,6 +453,14 @@ export default function Home() {
     setActiveRunId(null);
     setRunPhase("cancelled");
     await refreshProject(activeProject.id);
+  };
+
+  const recoverableMessage = recoverableUserMessage(messages);
+  const restoreRunDraft = (): void => {
+    if (!recoverableMessage) return;
+    setDraft(recoverableMessage.content);
+    setError(null);
+    window.requestAnimationFrame(() => composerRef.current?.focus());
   };
 
   const submit = async (event: FormEvent): Promise<void> => {
@@ -804,6 +830,7 @@ export default function Home() {
           </label>
           <textarea
             id="task"
+            ref={composerRef}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -838,13 +865,20 @@ export default function Home() {
                 <span className="stop-icon" /> Остановить
               </button>
             ) : (
-              <button
-                disabled={!draft.trim()}
-                aria-label={activeProject ? "Отправить" : "Запустить"}
-              >
-                <SendIcon />
-                {activeProject ? "Отправить" : "Запустить"}
-              </button>
+              <div className="composer-actions">
+                {recoverableMessage && !draft.trim() && (
+                  <button type="button" className="restore-run" onClick={restoreRunDraft}>
+                    ↻ Вернуть запрос в редактор
+                  </button>
+                )}
+                <button
+                  disabled={!draft.trim()}
+                  aria-label={activeProject ? "Отправить" : "Запустить"}
+                >
+                  <SendIcon />
+                  {activeProject ? "Отправить" : "Запустить"}
+                </button>
+              </div>
             )}
           </div>
         </form>
