@@ -772,6 +772,20 @@ svg {
   color: #8d7479;
   background: #30262b;
 }
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.composer-footer .restore-run {
+  border: 1px solid rgba(179, 168, 255, 0.2);
+  color: #c7beff;
+  background: rgba(138, 119, 255, 0.08);
+}
+.composer-footer .restore-run:hover {
+  border-color: rgba(179, 168, 255, 0.38);
+  background: rgba(138, 119, 255, 0.14);
+}
 .stop-icon {
   width: 0.65rem;
   height: 0.65rem;
@@ -939,6 +953,10 @@ svg {
   .composer-footer > span {
     max-width: 10rem;
     line-height: 1.35;
+  }
+  .composer-actions {
+    align-items: flex-end;
+    flex-direction: column-reverse;
   }
   .chat-workspace .topbar {
     padding-bottom: 0.8rem;
