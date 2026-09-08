@@ -160,10 +160,7 @@ export class ManagerBackgroundRunCoordinator {
         controller.abort(new Error("Run was cancelled by the owner"));
         return;
       }
-      const stop = this.#emergencyStopStore?.getBlockingStop(
-        queued.project_id,
-        queued.owner_id
-      );
+      const stop = this.#emergencyStopStore?.getBlockingStop(queued.project_id, queued.owner_id);
       if (stop) controller.abort(new EmergencyStopActivatedError());
     }, this.#controlPollIntervalMs);
     controlTimer.unref?.();
