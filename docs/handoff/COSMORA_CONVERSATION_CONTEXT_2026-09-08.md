@@ -106,15 +106,19 @@ Cosmora — AI-платформа / AI OS с мультиагентной арх
 В проекте есть уровни автономности **A0–A6**. Важно: уровни регулируют **полномочия и реальные эффекты**, а не интеллект модели. A0 всё ещё может хорошо анализировать, писать, планировать и объяснять; ограничения касаются доступа и действий.
 
 ### A0
+
 Базовый уровень. Минимум внешних возможностей. Без свободного доступа к вебу/интеграциям/записи и внешним эффектам, если capability не разрешена отдельно.
 
 ### A1
+
 Локальный/project context + web read в разрешённых рамках. История чата/файлы проекта. Не считать автоматически, что A1 даёт persistent `workspace.write` — это отдельная capability.
 
 ### A2
+
 Интеграции. Ключевая идея: **одно подтверждение/подключение интеграции** может разрешить дальнейшую scoped-работу в границах grant. Нельзя превращать A2 в «каждый безопасный commit требует подтверждения».
 
 ### A3
+
 Внешние кампании / коммуникации.
 
 Утверждённая логика:
@@ -132,6 +136,7 @@ Cosmora — AI-платформа / AI OS с мультиагентной арх
 - отчёт после действий.
 
 ### A4
+
 Финансы.
 
 Утверждённые идеи:
@@ -151,6 +156,7 @@ Cosmora — AI-платформа / AI OS с мультиагентной арх
 - выручку система фиксирует, но не «присваивает» себе право распоряжаться ей.
 
 ### A5
+
 Project mandate.
 
 Это уровень высокой автономности в рамках утверждённого паспорта проекта и бюджета.
@@ -173,6 +179,7 @@ Project mandate.
 **Ключевой invariant:** `more autonomy != larger financial ceiling`. Project mandate не отменяет финансовый ceiling.
 
 ### A6
+
 Максимальная автономность.
 
 - A6 не означает «нет безопасности»;
@@ -295,6 +302,7 @@ Blueprint/proposal остаётся inert до отдельной активац
 Исходный roadmap: `docs/roadmap/2026-08-24-from-policy-runtime-to-monetizable-release.md`.
 
 ### Step 6
+
 Формальные runtime contracts + scenario gates до полного реального Manager.
 
 Минимальные роли:
@@ -325,6 +333,7 @@ Blueprint/proposal остаётся inert до отдельной активац
 - timeouts.
 
 ### Step 7
+
 Финальный system prompt Manager.
 
 **Важно:** финальный Manager prompt намеренно отложен до совместного решения с владельцем. В `packages/core/src/manager.ts` допустим временный/default prompt, но его нельзя объявлять финальным без владельца.
@@ -419,15 +428,19 @@ Blueprint/proposal остаётся inert до отдельной активац
 Рекомендуемая последовательность была пересобрана так:
 
 ### P0.0
+
 Project → Manager Chat → real model response → streaming/status → project context → server Policy Engine fail-closed.
 
 ### P0.1
+
 Stop / Retry / Error / model fallback / checkpoints / resume.
 
 ### P0.2
+
 Approvals / Policy Block / Control Center integration.
 
 ### P1
+
 Real multi-agent delegation / Critic UI / Conflict UI / Agent Studio runtime controls.
 
 К 2026-09-08 уже есть:
