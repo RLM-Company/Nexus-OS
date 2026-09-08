@@ -112,6 +112,7 @@ import {
   type PatternLibraryStore,
   type ProjectStore,
   type StoredMessage,
+  type StoredRun,
   type UsageStore
 } from "@cosmora/db";
 import {
@@ -149,6 +150,7 @@ export interface AppDependencies {
   stepUpProofConsumer?: StepUpProofConsumer;
   closeDatabase?: () => void;
   runtimeMetrics?: RuntimeMetrics;
+  managerRunExecutionMode?: "stream" | "background";
 }
 
 const stepUpToken = (value: string | string[] | undefined): string | null =>
@@ -366,6 +368,116 @@ const completedReplay = (
   });
 };
 
+const waitForObserverPoll = async (signal: AbortSignal): Promise<void> => {
+  if (signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, 50);
+    timer.unref?.();
+    signal.addEventListener("abort", done, { once: true });
+  });
+};
+
+const observePersistedRun = async (
+  reply: FastifyReply,
+  store: ProjectStore,
+  initialRun: StoredRun,
+  ownerId: string,
+  signal: AbortSignal
+): Promise<void> => {
+  let observedMessageId: string | null = null;
+  let sentLength = 0;
+  let sequence = 0;
+
+  const observeMessage = (run: StoredRun, message: StoredMessage): void => {
+    if (observedMessageId !== message.id) {
+      observedMessageId = message.id;
+      sentLength = 0;
+      sequence = 0;
+      sendEvent(reply, {
+        type: "run.started",
+        data: { run_id: run.id, timestamp: run.updated_at }
+      });
+      sendEvent(reply, {
+        type: "message.started",
+        data: { run_id: run.id, message_id: message.id }
+      });
+    }
+    if (message.content.length > sentLength) {
+      sendEvent(reply, {
+        type: "message.delta",
+        data: {
+          run_id: run.id,
+          message_id: message.id,
+          seq: sequence++,
+          delta: message.content.slice(sentLength)
+        }
+      });
+      sentLength = message.content.length;
+    }
+  };
+
+  while (!signal.aborted && !reply.raw.destroyed && !reply.raw.writableEnded) {
+    const run = store.getRun(initialRun.id, ownerId);
+    if (!run) break;
+    const message = store.getAssistantMessage(run.id, ownerId);
+
+    if (run.status === "cancelled") {
+      sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
+      break;
+    }
+    if (run.status === "failed") {
+      sendEvent(reply, {
+        type: "run.failed",
+        data: {
+          run_id: run.id,
+          error_code: message?.error_code ?? "INTERRUPTED",
+          retryable: false
+        }
+      });
+      break;
+    }
+    if (run.status === "succeeded" && message) {
+      if (observedMessageId === null) {
+        completedReplay(
+          reply,
+          run.id,
+          message,
+          run.provider ?? "unknown",
+          run.model_resolved ?? "unknown"
+        );
+      } else {
+        observeMessage(run, message);
+        sendEvent(reply, {
+          type: "message.completed",
+          data: {
+            run_id: run.id,
+            message_id: message.id,
+            size: message.content.length,
+            finish_reason: "observed"
+          }
+        });
+        sendEvent(reply, {
+          type: "run.completed",
+          data: {
+            run_id: run.id,
+            provider: run.provider ?? "unknown",
+            model_resolved: run.model_resolved ?? "unknown"
+          }
+        });
+      }
+      break;
+    }
+    if (run.status === "running" && message) observeMessage(run, message);
+
+    await waitForObserverPoll(signal);
+  }
+};
+
 export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   const identityResolver =
     dependencies.identityResolver ??
@@ -394,6 +506,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     string,
     { projectId: string; ownerId: string; controller: AbortController }
   >();
+  const runObservers = new Set<AbortController>();
+  const managerRunsExecuteInBackground = dependencies.managerRunExecutionMode === "background";
   const runtimeMetrics = dependencies.runtimeMetrics ?? new RuntimeMetrics();
   const requestIdentities = new WeakMap<FastifyRequest, IdentityContext>();
   const identityFor = (request: FastifyRequest): IdentityContext => {
@@ -2146,7 +2260,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         if (!run || conversation.length === 0) {
           return reply.status(404).send(errorBody(request.id, "RUN_NOT_FOUND", "Run not found"));
         }
-        if (activeRuns.has(run.id)) {
+        if (!managerRunsExecuteInBackground && activeRuns.has(run.id)) {
           return reply
             .status(409)
             .send(errorBody(request.id, "CONFLICT", "Run is already streaming"));
@@ -2159,6 +2273,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           "content-type": "text/event-stream; charset=utf-8",
           "x-accel-buffering": "no"
         });
+        reply.raw.write(": connected\n\n");
 
         const existing = store.getAssistantMessage(run.id, ownerId);
         if (run.status === "cancelled") {
@@ -2186,6 +2301,21 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             run.provider ?? "unknown",
             run.model_resolved ?? "unknown"
           );
+          endEventStream(reply);
+          return reply;
+        }
+
+        if (managerRunsExecuteInBackground) {
+          const observer = new AbortController();
+          const stopObserving = (): void => observer.abort();
+          runObservers.add(observer);
+          reply.raw.once("close", stopObserving);
+          try {
+            await observePersistedRun(reply, store, run, ownerId, observer.signal);
+          } finally {
+            reply.raw.off("close", stopObserving);
+            runObservers.delete(observer);
+          }
           endEventStream(reply);
           return reply;
         }
@@ -2443,6 +2573,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   );
 
   app.addHook("preClose", () => {
+    for (const observer of runObservers) observer.abort();
     for (const active of activeRuns.values()) {
       active.controller.abort(new Error("API process is shutting down"));
     }
