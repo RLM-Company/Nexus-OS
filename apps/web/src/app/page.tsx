@@ -1,3 +1,4 @@
+verify/apps/web/src/app/page.tsx 369ms (unchanged)
 "use client";
 
 import Link from "next/link";
@@ -307,6 +308,7 @@ export default function Home() {
       };
 
       source.addEventListener("run.started", () => {
+        setError(null);
         setRunPhase("running");
       });
 
