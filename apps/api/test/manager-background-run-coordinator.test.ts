@@ -168,7 +168,10 @@ describe("ManagerRuntimeProjectStore", () => {
     await runMigrations(database);
     try {
       const store = new ManagerRuntimeProjectStore(database.sqlite);
-      const accepted = store.createProject("Проверь единственного исполнителя", "single-executor-1");
+      const accepted = store.createProject(
+        "Проверь единственного исполнителя",
+        "single-executor-1"
+      );
 
       expect(store.claimQueuedManagerRun(accepted.run.id)).toBe(true);
       expect(store.claimQueuedManagerRun(accepted.run.id)).toBe(false);
