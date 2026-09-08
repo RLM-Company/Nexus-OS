@@ -36,6 +36,8 @@ type AcceptedResponse = {
   stream_url: string;
 };
 
+type RunStreamTarget = Pick<AcceptedResponse, "project" | "chat_id" | "run_id" | "stream_url">;
+
 type CancelledRun = { run_id: string; status: "cancelled" };
 
 type ProjectDetail = { project: Project; chat_id: string; messages: Message[] };
@@ -266,6 +268,11 @@ export default function Home() {
   }, [activeProject, loadProjectView, runPhase]);
 
   const openProject = async (projectId: string): Promise<void> => {
+    streamRef.current?.close();
+    streamRef.current = null;
+    setActiveRunId(null);
+    setSending(false);
+    setRunPhase("idle");
     setError(null);
     setLoading(true);
     try {
@@ -285,98 +292,117 @@ export default function Home() {
     [loadProjectView, loadProjects]
   );
 
-  const followStream = (accepted: AcceptedResponse): void => {
-    streamRef.current?.close();
-    setActiveRunId(accepted.run_id);
-    const source = new EventSource(accepted.stream_url);
-    streamRef.current = source;
-    let assistantId: string | null = null;
-    let finished = false;
+  const followStream = useCallback(
+    (accepted: RunStreamTarget): void => {
+      streamRef.current?.close();
+      setActiveRunId(accepted.run_id);
+      const source = new EventSource(accepted.stream_url);
+      streamRef.current = source;
+      let assistantId: string | null = null;
+      let finished = false;
 
-    source.addEventListener("run.started", () => {
-      setRunPhase("running");
-    });
-
-    source.addEventListener("message.started", (raw) => {
-      const event = JSON.parse(String(raw.data)) as {
-        data: { message_id: string; run_id: string };
+      const closeSource = (): void => {
+        source.close();
+        if (streamRef.current === source) streamRef.current = null;
       };
-      assistantId = event.data.message_id;
-      setMessages((current) => {
-        if (current.some((message) => message.id === assistantId)) return current;
-        return [
-          ...current,
-          messagePlaceholder(
-            event.data.message_id,
-            accepted.project.id,
-            accepted.chat_id,
-            event.data.run_id
-          )
-        ];
+
+      source.addEventListener("run.started", () => {
+        setRunPhase("running");
       });
-    });
 
-    source.addEventListener("message.delta", (raw) => {
-      const event = JSON.parse(String(raw.data)) as {
-        data: { message_id: string; delta: string };
-      };
-      assistantId = event.data.message_id;
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === event.data.message_id
-            ? { ...message, content: message.content + event.data.delta }
-            : message
-        )
-      );
-    });
-
-    source.addEventListener("run.completed", () => {
-      finished = true;
-      source.close();
-      setSending(false);
-      setActiveRunId(null);
-      setRunPhase("completed");
-      void refreshProject(accepted.project.id).catch(() => {
-        if (assistantId) {
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === assistantId ? { ...message, status: "completed" } : message
+      source.addEventListener("message.started", (raw) => {
+        const event = JSON.parse(String(raw.data)) as {
+          data: { message_id: string; run_id: string };
+        };
+        assistantId = event.data.message_id;
+        setMessages((current) => {
+          if (current.some((message) => message.id === assistantId)) return current;
+          return [
+            ...current,
+            messagePlaceholder(
+              event.data.message_id,
+              accepted.project.id,
+              accepted.chat_id,
+              event.data.run_id
             )
-          );
-        }
+          ];
+        });
       });
-    });
 
-    source.addEventListener("run.failed", (raw) => {
-      finished = true;
-      source.close();
-      const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
-      setSending(false);
-      setActiveRunId(null);
-      setRunPhase("failed");
-      setError(`Запуск остановлен: ${event.data.error_code}`);
-      void refreshProject(accepted.project.id);
-    });
+      source.addEventListener("message.delta", (raw) => {
+        const event = JSON.parse(String(raw.data)) as {
+          data: { message_id: string; seq: number; delta: string };
+        };
+        assistantId = event.data.message_id;
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === event.data.message_id
+              ? {
+                  ...message,
+                  content:
+                    event.data.seq === 0 ? event.data.delta : message.content + event.data.delta
+                }
+              : message
+          )
+        );
+      });
 
-    source.addEventListener("run.cancelled", () => {
-      finished = true;
-      source.close();
-      setSending(false);
-      setActiveRunId(null);
-      setRunPhase("cancelled");
-      void refreshProject(accepted.project.id);
-    });
-
-    source.onerror = () => {
-      source.close();
-      if (!finished) {
+      source.addEventListener("run.completed", () => {
+        finished = true;
+        closeSource();
         setSending(false);
         setActiveRunId(null);
-        setError("Поток ответа прерван. Проверяю сохранённое состояние запуска на сервере.");
-        void loadProjectView(accepted.project.id).catch(() => setRunPhase("failed"));
-      }
-    };
-  };
+        setRunPhase("completed");
+        void refreshProject(accepted.project.id).catch(() => {
+          if (assistantId) {
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === assistantId ? { ...message, status: "completed" } : message
+              )
+            );
+          }
+        });
+      });
+
+      source.addEventListener("run.failed", (raw) => {
+        finished = true;
+        closeSource();
+        const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
+        setSending(false);
+        setActiveRunId(null);
+        setRunPhase("failed");
+        setError(`Запуск остановлен: ${event.data.error_code}`);
+        void refreshProject(accepted.project.id);
+      });
+
+      source.addEventListener("run.cancelled", () => {
+        finished = true;
+        closeSource();
+        setSending(false);
+        setActiveRunId(null);
+        setRunPhase("cancelled");
+        void refreshProject(accepted.project.id);
+      });
+
+      source.onerror = () => {
+        closeSource();
+        if (!finished) {
+          setError("Поток ответа прерван. Проверяю сохранённое состояние запуска на сервере.");
+        }
+      };
+    },
+    [refreshProject]
+  );
+
+  useEffect(() => {
+    if (!activeProject || !chatId || !activeRunId || streamRef.current) return;
+    followStream({
+      project: activeProject,
+      chat_id: chatId,
+      run_id: activeRunId,
+      stream_url: `/api/v1/runs/${encodeURIComponent(activeRunId)}/events`
+    });
+  }, [activeProject, activeRunId, chatId, followStream]);
 
   const cancelRun = async (): Promise<void> => {
     if (!activeRunId || !activeProject) return;
@@ -388,6 +414,7 @@ export default function Home() {
       return;
     }
     streamRef.current?.close();
+    streamRef.current = null;
     setSending(false);
     setActiveRunId(null);
     setRunPhase("cancelled");
@@ -437,6 +464,7 @@ export default function Home() {
 
   const newProject = (): void => {
     streamRef.current?.close();
+    streamRef.current = null;
     setActiveProject(null);
     setChatId(null);
     setMessages([]);
