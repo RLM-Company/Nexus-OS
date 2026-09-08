@@ -135,9 +135,9 @@ export class ManagerBackgroundRunCoordinator {
     }
 
     const controller = new AbortController();
-    this.#runtimeMetrics.detachedRunStarted();
+    this.#runtimeMetrics.detachedRunStarted(queued.owner_id);
     const task = this.#execute(queued, assistant, controller).finally(() => {
-      this.#runtimeMetrics.detachedRunFinished();
+      this.#runtimeMetrics.detachedRunFinished(queued.owner_id);
       this.#activeRuns.delete(queued.run_id);
     });
     this.#activeRuns.set(queued.run_id, {
