@@ -238,7 +238,9 @@ describe("project chat API", () => {
   it("keeps an active run alive after its SSE observer disconnects", async () => {
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
-    if (!address || typeof address === "string") throw new Error("Test API did not bind a TCP port");
+    if (!address || typeof address === "string") {
+      throw new Error("Test API did not bind a TCP port");
+    }
     const baseUrl = `http://127.0.0.1:${address.port}`;
 
     const created = await fetch(`${baseUrl}/api/v1/projects`, {
