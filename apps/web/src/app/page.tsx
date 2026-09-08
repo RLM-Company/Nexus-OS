@@ -57,12 +57,27 @@ type ModelRuntimeStatus = {
 
 type RunPhase = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
-type PolicySignals = {
-  pendingConfirmations: number;
-  recoveryRequired: number;
+type PendingConfirmation = {
+  confirmation_id: string;
+  operation_id: string;
+  intent: { capability_ids: string[]; purpose: string };
+  requires_step_up: boolean;
+  expires_at: string;
 };
 
-const EMPTY_POLICY_SIGNALS: PolicySignals = { pendingConfirmations: 0, recoveryRequired: 0 };
+type RecoveryRequiredOperation = {
+  operation_id: string;
+  capability_ids: string[];
+  reasons: string[];
+  reserved_at: string;
+};
+
+type PolicySignals = {
+  pendingConfirmations: PendingConfirmation[];
+  recoveryRequired: RecoveryRequiredOperation[];
+};
+
+const EMPTY_POLICY_SIGNALS: PolicySignals = { pendingConfirmations: [], recoveryRequired: [] };
 
 const RUN_PHASE_LABEL: Record<RunPhase, string> = {
   idle: "Готов",
@@ -235,10 +250,10 @@ export default function Home() {
       api<{ profile: AutonomyProfile }>(
         `/api/v1/projects/${encodedProjectId}/autonomy-profile`
       ).catch(() => null),
-      api<{ items: unknown[] }>(
+      api<{ items: PendingConfirmation[] }>(
         `/api/v1/projects/${encodedProjectId}/confirmations?status=PENDING`
       ).catch(() => null),
-      api<{ items: unknown[] }>(
+      api<{ items: RecoveryRequiredOperation[] }>(
         `/api/v1/projects/${encodedProjectId}/recovery-required?limit=50`
       ).catch(() => null)
     ]);
@@ -251,8 +266,8 @@ export default function Home() {
     setSending(restoredRun.activeRunId !== null);
     setAutonomyProfile(profileResponse?.profile ?? null);
     setPolicySignals({
-      pendingConfirmations: confirmationsResponse?.items.length ?? 0,
-      recoveryRequired: recoveryResponse?.items.length ?? 0
+      pendingConfirmations: confirmationsResponse?.items ?? [],
+      recoveryRequired: recoveryResponse?.items ?? []
     });
   }, []);
 
@@ -566,51 +581,105 @@ export default function Home() {
         </header>
 
         {activeProject && (
-          <section className="project-facts" aria-label="Информация о проекте">
-            <span>
-              <small>Статус проекта</small>
-              <strong>{PROJECT_STATUS_LABEL[activeProject.status]}</strong>
-            </span>
-            <span>
-              <small>Автономность</small>
-              <strong>
-                {autonomyProfile
-                  ? `${autonomyProfile.base_level} · v${autonomyProfile.version}`
-                  : "Недоступно"}
-              </strong>
-            </span>
-            <span>
-              <small>Решения владельца</small>
-              <strong>
-                {policySignals.pendingConfirmations === 0
-                  ? "Нет"
-                  : `${policySignals.pendingConfirmations} ожидает`}
-              </strong>
-            </span>
-            <span>
-              <small>Recovery</small>
-              <strong>
-                {policySignals.recoveryRequired === 0
-                  ? "Не требуется"
-                  : `${policySignals.recoveryRequired} требует внимания`}
-              </strong>
-            </span>
-            <span>
-              <small>Обновлён</small>
-              <strong>
-                {new Date(activeProject.updated_at).toLocaleString("ru", {
-                  day: "2-digit",
-                  month: "short",
-                  hour: "2-digit",
-                  minute: "2-digit"
-                })}
-              </strong>
-            </span>
-            <span>
-              <small>Сообщений</small>
-              <strong>{messages.length}</strong>
-            </span>
-          </section>
+          <div className="project-context">
+            <section className="project-facts" aria-label="Информация о проекте">
+              <span>
+                <small>Статус проекта</small>
+                <strong>{PROJECT_STATUS_LABEL[activeProject.status]}</strong>
+              </span>
+              <span>
+                <small>Автономность</small>
+                <strong>
+                  {autonomyProfile
+                    ? `${autonomyProfile.base_level} · v${autonomyProfile.version}`
+                    : "Недоступно"}
+                </strong>
+              </span>
+              <span>
+                <small>Решения владельца</small>
+                <strong>
+                  {policySignals.pendingConfirmations.length === 0
+                    ? "Нет"
+                    : `${policySignals.pendingConfirmations.length} ожидает`}
+                </strong>
+              </span>
+              <span>
+                <small>Recovery</small>
+                <strong>
+                  {policySignals.recoveryRequired.length === 0
+                    ? "Не требуется"
+                    : `${policySignals.recoveryRequired.length} требует внимания`}
+                </strong>
+              </span>
+              <span>
+                <small>Обновлён</small>
+                <strong>
+                  {new Date(activeProject.updated_at).toLocaleString("ru", {
+                    day: "2-digit",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit"
+                  })}
+                </strong>
+              </span>
+              <span>
+                <small>Сообщений</small>
+                <strong>{messages.length}</strong>
+              </span>
+            </section>
+
+            {(policySignals.pendingConfirmations.length > 0 ||
+              policySignals.recoveryRequired.length > 0) && (
+              <section className="manager-attention" aria-label="Требуется внимание владельца">
+                <header>
+                  <span className="attention-icon">
+                    <ShieldIcon />
+                  </span>
+                  <span>
+                    <small>Server-confirmed state</small>
+                    <strong>Требуется внимание владельца</strong>
+                  </span>
+                </header>
+                <div className="attention-list">
+                  {policySignals.pendingConfirmations.slice(0, 1).map((confirmation) => (
+                    <article
+                      className="attention-card confirmation"
+                      key={confirmation.confirmation_id}
+                    >
+                      <div>
+                        <small>
+                          Решение владельца · {policySignals.pendingConfirmations.length}
+                        </small>
+                        <strong>{confirmation.intent.purpose}</strong>
+                        <p>{confirmation.intent.capability_ids.join(" · ")}</p>
+                        <span>
+                          {confirmation.requires_step_up
+                            ? "Потребуется step-up"
+                            : "Текущая сессия владельца"}
+                        </span>
+                      </div>
+                      <Link href={`${controlCenterHref}#pending-confirmations`}>
+                        Проверить решение
+                      </Link>
+                    </article>
+                  ))}
+                  {policySignals.recoveryRequired.slice(0, 1).map((operation) => (
+                    <article className="attention-card recovery" key={operation.operation_id}>
+                      <div>
+                        <small>Recovery · {policySignals.recoveryRequired.length}</small>
+                        <strong>Внешний результат неизвестен</strong>
+                        <p>{operation.reasons.join(" · ")}</p>
+                        <span>{operation.capability_ids.join(" · ")}</span>
+                      </div>
+                      <Link href={`${controlCenterHref}#policy-recovery-required-title`}>
+                        Сверить recovery
+                      </Link>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
         )}
 
         <div className="mobile-project-strip" aria-label="Быстрый выбор проекта">
