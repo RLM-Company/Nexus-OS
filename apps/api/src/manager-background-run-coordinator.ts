@@ -241,16 +241,10 @@ export class ManagerBackgroundRunCoordinator {
         );
       }
 
-      this.#store.completeRun(
-        queued.run_id,
-        completed.provider,
-        completed.model,
-        completed.usage,
-        {
-          attempt: completed.route.attempt,
-          calculatedCost: completed.calculatedCost
-        }
-      );
+      this.#store.completeRun(queued.run_id, completed.provider, completed.model, completed.usage, {
+        attempt: completed.route.attempt,
+        calculatedCost: completed.calculatedCost
+      });
       this.#runtimeMetrics.runCompleted();
       this.#logger?.info(
         {
