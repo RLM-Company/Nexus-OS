@@ -52,7 +52,26 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await expect(page.getByRole("region", { name: "Информация о проекте" })).toContainText("A0");
 
   await page.getByLabel("Сообщение менеджеру").fill("Останови этот тестовый запуск");
+  const acceptedRun = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/v1/projects/${createdBody.project.id}/messages`) &&
+      response.request().method() === "POST"
+  );
   await page.getByRole("button", { name: "Отправить" }).click();
+  const accepted = await acceptedRun;
+  expect(accepted.status(), await accepted.text()).toBe(202);
+  await expect(page.getByRole("status")).toContainText(/В очереди|Менеджер отвечает/);
+
+  const projectsAfterReload = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/projects") && response.request().method() === "GET"
+  );
+  await page.reload();
+  const reloadedProjects = await projectsAfterReload;
+  expect(reloadedProjects.status(), await reloadedProjects.text()).toBe(200);
+  await page.locator(".project-list .project-item").first().click();
+
+  await expect(page.getByRole("status")).toContainText(/В очереди|Менеджер отвечает/);
   const cancel = page.getByRole("button", { name: "Остановить" });
   await expect(cancel).toBeEnabled();
   const cancelResponse = page.waitForResponse(
