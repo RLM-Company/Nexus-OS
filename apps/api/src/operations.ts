@@ -22,6 +22,7 @@ export class EmergencyStopActivatedError extends Error {
 }
 
 export class RuntimeMetrics {
+  readonly #detachedActiveRunsByOwner = new Map<string, number>();
   #runsStarted = 0;
   #runsCompleted = 0;
   #runsFailed = 0;
@@ -48,6 +49,22 @@ export class RuntimeMetrics {
     this.#runsCancelled += 1;
   }
 
+  detachedRunStarted(ownerId: string): void {
+    this.#detachedActiveRunsByOwner.set(
+      ownerId,
+      (this.#detachedActiveRunsByOwner.get(ownerId) ?? 0) + 1
+    );
+  }
+
+  detachedRunFinished(ownerId: string): void {
+    const next = Math.max(0, (this.#detachedActiveRunsByOwner.get(ownerId) ?? 0) - 1);
+    if (next === 0) {
+      this.#detachedActiveRunsByOwner.delete(ownerId);
+    } else {
+      this.#detachedActiveRunsByOwner.set(ownerId, next);
+    }
+  }
+
   routeSelected(): void {
     this.#routeAttempts += 1;
   }
@@ -64,6 +81,10 @@ export class RuntimeMetrics {
   ): RuntimeOperationsStatus {
     const processStop = stopStore.getProcessStop();
     const projectStops = stopStore.countActiveProjectStops(ownerId);
+    const detachedActiveRuns =
+      ownerId === undefined
+        ? [...this.#detachedActiveRunsByOwner.values()].reduce((total, count) => total + count, 0)
+        : (this.#detachedActiveRunsByOwner.get(ownerId) ?? 0);
     const alerts: RuntimeOperationsStatus["alerts"] = [];
     if (processStop) {
       alerts.push({
@@ -88,7 +109,7 @@ export class RuntimeMetrics {
     }
     return {
       generated_at: new Date().toISOString(),
-      active_runs: activeRuns,
+      active_runs: activeRuns + detachedActiveRuns,
       process_stop: processStop,
       active_project_stops: projectStops,
       metrics: {

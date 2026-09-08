@@ -417,8 +417,8 @@ export default function Home() {
       )
         .then((response) => setAutonomyProfile(response.profile))
         .catch(() => setAutonomyProfile(null));
-      await loadProjects();
       followStream(accepted);
+      await loadProjects();
     } catch (cause) {
       setDraft(content);
       setSending(false);
