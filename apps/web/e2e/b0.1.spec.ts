@@ -112,3 +112,77 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await expect(page.getByRole("button", { name: "Остановить" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Отправить" })).toBeVisible();
 });
+
+test("surfaces server-confirmed owner decisions and recovery in the Manager Console", async ({
+  page
+}) => {
+  await page.route(
+    (url) =>
+      url.pathname.endsWith("/confirmations") && url.searchParams.get("status") === "PENDING",
+    async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [
+            {
+              confirmation_id: "confirmation-alpha",
+              operation_id: "operation-alpha",
+              intent: {
+                capability_ids: ["external.communicate"],
+                purpose: "Отправить отчёт demo@example.com"
+              },
+              requires_step_up: false,
+              expires_at: "2030-01-01T12:00:00.000Z"
+            }
+          ]
+        })
+      });
+    }
+  );
+  await page.route(
+    (url) => url.pathname.endsWith("/recovery-required") && url.searchParams.get("limit") === "50",
+    async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [
+            {
+              operation_id: "operation-recovery-alpha",
+              capability_ids: ["production.deploy"],
+              reasons: ["Result evidence is missing"],
+              reserved_at: "2030-01-01T11:00:00.000Z"
+            }
+          ],
+          limit: 50
+        })
+      });
+    }
+  );
+
+  await page.goto("/");
+  await page
+    .getByLabel("Опишите результат, который хотите получить")
+    .fill("Project Alpha: проверь карточки решений");
+  const createdProject = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/projects") && response.request().method() === "POST"
+  );
+  await page.getByRole("button", { name: "Запустить" }).click();
+  const created = await createdProject;
+  const createdText = await created.text();
+  expect(created.status(), createdText).toBe(201);
+  const createdBody = JSON.parse(createdText) as { project: { id: string } };
+
+  const attention = page.getByRole("region", { name: "Требуется внимание владельца" });
+  await expect(attention).toBeVisible({ timeout: 10_000 });
+  await expect(attention).toContainText("Отправить отчёт demo@example.com");
+  await expect(attention).toContainText("Внешний результат неизвестен");
+  await expect(attention.getByRole("link", { name: "Проверить решение" })).toHaveAttribute(
+    "href",
+    `/control-center?project=${createdBody.project.id}#pending-confirmations`
+  );
+  await expect(attention.getByRole("link", { name: "Сверить recovery" })).toHaveAttribute(
+    "href",
+    `/control-center?project=${createdBody.project.id}#policy-recovery-required-title`
+  );
+});
