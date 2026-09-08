@@ -317,7 +317,8 @@ describe("project chat API", () => {
 
     expect(events).toContain("event: run.started");
     expect(events).toContain("event: message.delta");
-    expect(events).toContain("Ответ после переподключения.");
+    expect(events).toContain('"delta":"Ответ после "');
+    expect(events).toContain('"delta":"переподключения."');
     expect(events).toContain("event: run.completed");
   });
 
