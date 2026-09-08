@@ -10,11 +10,12 @@ import {
   type ModelGatewayStreamEvent
 } from "@cosmora/model-gateway";
 import type { FastifyBaseLogger } from "fastify";
-import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
-import {
+import type {
   ManagerRuntimeProjectStore,
-  type QueuedManagerRun
+  QueuedManagerRun
 } from "./manager-runtime-project-store.js";
+import { EmergencyStopActivatedError } from "./operations.js";
+import type { RuntimeMetrics } from "./operations.js";
 
 export interface ManagerBackgroundRunCoordinatorOptions {
   store: ManagerRuntimeProjectStore;
@@ -90,7 +91,7 @@ export class ManagerBackgroundRunCoordinator {
     await Promise.allSettled(tasks);
   }
 
-  async #pollQueuedRuns(): Promise<void> {
+  #pollQueuedRuns(): void {
     if (this.#stopping || this.#polling) return;
     const capacity = this.#maxConcurrentRuns - this.#activeRuns.size;
     if (capacity <= 0) return;
