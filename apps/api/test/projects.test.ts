@@ -235,6 +235,68 @@ describe("project chat API", () => {
     });
   });
 
+  it("keeps an active run alive after its SSE observer disconnects", async () => {
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address();
+    if (!address || typeof address === "string") throw new Error("Test API did not bind a TCP port");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const created = await fetch(`${baseUrl}/api/v1/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        initial_message: "Продолжай после закрытия вкладки",
+        client_message_id: "disconnect-survival-1"
+      })
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as { run_id: string; stream_url: string };
+
+    const stream = await fetch(`${baseUrl}${body.stream_url}`);
+    expect(stream.status).toBe(200);
+    await vi.waitFor(() => expect(projectStore.getRun(body.run_id)?.status).toBe("running"), {
+      timeout: 2_000
+    });
+
+    await stream.body?.cancel();
+
+    await vi.waitFor(() => expect(projectStore.getRun(body.run_id)?.status).toBe("succeeded"), {
+      timeout: 3_000
+    });
+    expect(projectStore.getAssistantMessage(body.run_id)).toMatchObject({ status: "completed" });
+    expect(projectStore.getModelUsageForRun(body.run_id)).toEqual([
+      expect.objectContaining({ status: "committed", error_code: null })
+    ]);
+  });
+
+  it("marks API shutdown interruption as failed instead of owner-cancelled", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: { initial_message: "Переживи выключение API", client_message_id: "shutdown-1" }
+    });
+    const body = created.json<{ run_id: string; stream_url: string }>();
+    const pendingStream = app.inject({ method: "GET", url: body.stream_url });
+
+    await vi.waitFor(() => expect(projectStore.getRun(body.run_id)?.status).toBe("running"), {
+      timeout: 2_000
+    });
+    const closing = app.close();
+    const stream = await pendingStream;
+    await closing;
+
+    expect(stream.body).toContain("event: run.failed");
+    expect(stream.body).toContain('"error_code":"INTERRUPTED"');
+    expect(projectStore.getRun(body.run_id)).toMatchObject({ status: "failed" });
+    expect(projectStore.getAssistantMessage(body.run_id)).toMatchObject({
+      status: "failed",
+      error_code: "INTERRUPTED"
+    });
+    expect(projectStore.getModelUsageForRun(body.run_id)).toEqual([
+      expect.objectContaining({ status: "failed", error_code: "INTERRUPTED" })
+    ]);
+  });
+
   it("does not expose another owner's project or run", async () => {
     const hidden = projectStore.createProject(
       "Проект другого владельца",
