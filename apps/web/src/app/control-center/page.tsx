@@ -1525,7 +1525,7 @@ export default function ControlCenterPage() {
           </div>
 
           <div className={styles.grid}>
-            <section className={styles.panel}>
+            <section className={styles.panel} id="pending-confirmations">
               <header>
                 <div>
                   <span className={styles.eyebrow}>Confirmations</span>
