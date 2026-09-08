@@ -90,6 +90,7 @@ try {
     identityResolver,
     stepUpProofConsumer: new StoredStepUpProofConsumer(stepUpProofStore),
     runtimeMetrics,
+    managerRunExecutionMode: "background",
     closeDatabase: () => database.close()
   });
   backgroundCoordinator = new ManagerBackgroundRunCoordinator({
