@@ -327,7 +327,12 @@ const acceptedResponse = (
 });
 
 const sendEvent = (reply: FastifyReply, event: StreamEvent): void => {
+  if (reply.raw.destroyed || reply.raw.writableEnded) return;
   reply.raw.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+};
+
+const endEventStream = (reply: FastifyReply): void => {
+  if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.end();
 };
 
 const completedReplay = (
@@ -2158,7 +2163,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         const existing = store.getAssistantMessage(run.id, ownerId);
         if (run.status === "cancelled") {
           sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
-          reply.raw.end();
+          endEventStream(reply);
           return reply;
         }
         if (run.status === "failed") {
@@ -2170,7 +2175,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               retryable: false
             }
           });
-          reply.raw.end();
+          endEventStream(reply);
           return reply;
         }
         if (run.status === "succeeded" && existing) {
@@ -2181,7 +2186,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             run.provider ?? "unknown",
             run.model_resolved ?? "unknown"
           );
-          reply.raw.end();
+          endEventStream(reply);
           return reply;
         }
 
@@ -2201,13 +2206,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             { runId: run.id, projectId: run.project_id, stopScope: blockingStop.scope },
             "Model run blocked by emergency stop"
           );
-          reply.raw.end();
+          endEventStream(reply);
           return reply;
         }
 
         const assistant = store.startAssistantMessage(run.id, ownerId);
         if (!assistant) {
-          reply.raw.end();
+          endEventStream(reply);
           return reply;
         }
 
@@ -2226,12 +2231,6 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         const controller = new AbortController();
         activeRuns.set(run.id, { projectId: run.project_id, ownerId, controller });
         runtimeMetrics.runStarted();
-        const onAborted = (): void => controller.abort(new Error("Client disconnected"));
-        const onClosed = (): void => {
-          if (!reply.raw.writableEnded) onAborted();
-        };
-        request.raw.once("aborted", onAborted);
-        reply.raw.once("close", onClosed);
         try {
           const modelRequest = manager.buildRequest({
             projectId: run.project_id,
@@ -2339,26 +2338,37 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           if (controller.signal.reason instanceof EmergencyStopActivatedError) {
             store.failRun(run.id, "EMERGENCY_STOP");
             runtimeMetrics.runFailed("EMERGENCY_STOP");
-            if (!reply.raw.destroyed && !reply.raw.writableEnded) {
-              sendEvent(reply, {
-                type: "run.failed",
-                data: { run_id: run.id, error_code: "EMERGENCY_STOP", retryable: false }
-              });
-              reply.raw.end();
-            }
+            sendEvent(reply, {
+              type: "run.failed",
+              data: { run_id: run.id, error_code: "EMERGENCY_STOP", retryable: false }
+            });
+            endEventStream(reply);
             app.log.error(
               { runId: run.id, projectId: run.project_id },
               "Active model run interrupted by emergency stop"
             );
             return reply;
           }
-          if (controller.signal.aborted || store.getRun(run.id, ownerId)?.status === "cancelled") {
-            store.cancelRun(run.id, ownerId);
+
+          const currentRun = store.getRun(run.id, ownerId);
+          if (currentRun?.status === "cancelled") {
             runtimeMetrics.runCancelled();
-            if (!reply.raw.destroyed && !reply.raw.writableEnded) {
-              sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
-              reply.raw.end();
-            }
+            sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
+            endEventStream(reply);
+            return reply;
+          }
+          if (controller.signal.aborted) {
+            store.failRun(run.id, "INTERRUPTED");
+            runtimeMetrics.runFailed("INTERRUPTED");
+            sendEvent(reply, {
+              type: "run.failed",
+              data: { run_id: run.id, error_code: "INTERRUPTED", retryable: true }
+            });
+            endEventStream(reply);
+            app.log.warn(
+              { runId: run.id, projectId: run.project_id },
+              "Active model run interrupted by API lifecycle"
+            );
             return reply;
           }
           if (error instanceof ProjectUsageLimitExceededError) {
@@ -2372,7 +2382,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               { runId: run.id, projectId: run.project_id, limitCode: error.code },
               "Model route blocked by project usage limit"
             );
-            reply.raw.end();
+            endEventStream(reply);
             return reply;
           }
           const gatewayError =
@@ -2394,10 +2404,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           );
         } finally {
           activeRuns.delete(run.id);
-          request.raw.off("aborted", onAborted);
-          reply.raw.off("close", onClosed);
         }
-        reply.raw.end();
+        endEventStream(reply);
         return reply;
       }
     );
@@ -2434,7 +2442,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     reply.status(404).send(errorBody(request.id, "ROUTE_NOT_FOUND", "Route not found"))
   );
 
-  app.addHook("onClose", () => {
+  app.addHook("preClose", () => {
     for (const active of activeRuns.values()) {
       active.controller.abort(new Error("API process is shutting down"));
     }
