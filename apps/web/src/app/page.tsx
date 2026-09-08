@@ -139,9 +139,14 @@ const displayedContent = (message: Message): string | null => {
   return null;
 };
 
-const restoredRunPhase = (messages: Message[]): RunPhase => {
+type RestoredRunState = {
+  phase: RunPhase;
+  activeRunId: string | null;
+};
+
+const restoredRunState = (messages: Message[]): RestoredRunState => {
   const latestRunMessage = [...messages].reverse().find((message) => message.run_id !== null);
-  if (!latestRunMessage?.run_id) return "idle";
+  if (!latestRunMessage?.run_id) return { phase: "idle", activeRunId: null };
   const runId = latestRunMessage.run_id;
 
   const latestRunMessages = messages.filter((message) => message.run_id === runId);
@@ -149,13 +154,17 @@ const restoredRunPhase = (messages: Message[]): RunPhase => {
     .reverse()
     .find((message) => message.role === "assistant");
   if (!assistant) {
-    return latestRunMessages.some((message) => message.role === "user") ? "queued" : "idle";
+    return latestRunMessages.some((message) => message.role === "user")
+      ? { phase: "queued", activeRunId: runId }
+      : { phase: "idle", activeRunId: null };
   }
 
-  if (assistant.status === "pending" || assistant.status === "streaming") return "running";
-  if (assistant.status === "completed") return "completed";
-  if (assistant.status === "failed") return "failed";
-  return "cancelled";
+  if (assistant.status === "pending" || assistant.status === "streaming") {
+    return { phase: "running", activeRunId: runId };
+  }
+  if (assistant.status === "completed") return { phase: "completed", activeRunId: null };
+  if (assistant.status === "failed") return { phase: "failed", activeRunId: null };
+  return { phase: "cancelled", activeRunId: null };
 };
 
 const messagePlaceholder = (
@@ -231,10 +240,13 @@ export default function Home() {
         `/api/v1/projects/${encodedProjectId}/recovery-required?limit=50`
       ).catch(() => null)
     ]);
+    const restoredRun = restoredRunState(detail.messages);
     setActiveProject(detail.project);
     setChatId(detail.chat_id);
     setMessages(detail.messages);
-    setRunPhase(restoredRunPhase(detail.messages));
+    setRunPhase(restoredRun.phase);
+    setActiveRunId(restoredRun.activeRunId);
+    setSending(restoredRun.activeRunId !== null);
     setAutonomyProfile(profileResponse?.profile ?? null);
     setPolicySignals({
       pendingConfirmations: confirmationsResponse?.items.length ?? 0,
@@ -243,11 +255,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (
-      !activeProject ||
-      activeRunId !== null ||
-      (runPhase !== "queued" && runPhase !== "running")
-    ) {
+    if (!activeProject || (runPhase !== "queued" && runPhase !== "running")) {
       return;
     }
     const projectId = activeProject.id;
@@ -255,7 +263,7 @@ export default function Home() {
       void loadProjectView(projectId).catch(() => undefined);
     }, 2_000);
     return () => window.clearInterval(timer);
-  }, [activeProject, activeRunId, loadProjectView, runPhase]);
+  }, [activeProject, loadProjectView, runPhase]);
 
   const openProject = async (projectId: string): Promise<void> => {
     setError(null);
