@@ -132,7 +132,10 @@ describe("ManagerBackgroundRunCoordinator", () => {
   });
 
   it("records coordinator shutdown as INTERRUPTED rather than owner cancellation", async () => {
-    const accepted = store.createProject("Останови runtime во время ответа", "background-shutdown-1");
+    const accepted = store.createProject(
+      "Останови runtime во время ответа",
+      "background-shutdown-1"
+    );
 
     await vi.waitFor(
       () => {
