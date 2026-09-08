@@ -271,6 +271,56 @@ describe("project chat API", () => {
     ]);
   });
 
+  it("observes and reconnects to a server-owned run without becoming its executor", async () => {
+    await app.close();
+    const runtime = await buildModelRuntime(config);
+    app = buildApp({
+      config,
+      database,
+      projectStore,
+      emergencyStopStore,
+      modelGateway: runtime.gateway,
+      manager: runtime.manager,
+      managerRunExecutionMode: "background"
+    });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Test API did not bind a TCP port");
+    }
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const created = await fetch(`${baseUrl}/api/v1/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        initial_message: "Наблюдай, но не исполняй",
+        client_message_id: "background-observer-1"
+      })
+    });
+    const body = (await created.json()) as { run_id: string; stream_url: string };
+
+    const firstObserver = await fetch(`${baseUrl}${body.stream_url}`);
+    expect(firstObserver.status).toBe(200);
+    expect(projectStore.getRun(body.run_id)).toMatchObject({ status: "queued" });
+    expect(projectStore.getAssistantMessage(body.run_id)).toBeNull();
+    await firstObserver.body?.cancel();
+
+    const assistant = projectStore.startAssistantMessage(body.run_id);
+    expect(assistant).not.toBeNull();
+    projectStore.appendAssistantDelta(assistant!.id, "Ответ после ");
+
+    const secondObserver = await fetch(`${baseUrl}${body.stream_url}`);
+    projectStore.appendAssistantDelta(assistant!.id, "переподключения.");
+    projectStore.completeRun(body.run_id, "mock", "manager-b0.1");
+    const events = await secondObserver.text();
+
+    expect(events).toContain("event: run.started");
+    expect(events).toContain("event: message.delta");
+    expect(events).toContain("Ответ после переподключения.");
+    expect(events).toContain("event: run.completed");
+  });
+
   it("marks API shutdown interruption as failed instead of owner-cancelled", async () => {
     const created = await app.inject({
       method: "POST",
