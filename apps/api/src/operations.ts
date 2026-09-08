@@ -22,7 +22,7 @@ export class EmergencyStopActivatedError extends Error {
 }
 
 export class RuntimeMetrics {
-  #activeRuns = 0;
+  #detachedActiveRuns = 0;
   #runsStarted = 0;
   #runsCompleted = 0;
   #runsFailed = 0;
@@ -32,25 +32,29 @@ export class RuntimeMetrics {
   #lastFailureAt: string | null = null;
 
   runStarted(): void {
-    this.#activeRuns += 1;
     this.#runsStarted += 1;
   }
 
   runCompleted(): void {
-    this.#activeRuns = Math.max(0, this.#activeRuns - 1);
     this.#runsCompleted += 1;
   }
 
   runFailed(code: RuntimeFailureCode): void {
-    this.#activeRuns = Math.max(0, this.#activeRuns - 1);
     this.#runsFailed += 1;
     this.#lastFailureAt = new Date().toISOString();
     if (code === "EMERGENCY_STOP") this.#routeFailures.EMERGENCY_STOP += 1;
   }
 
   runCancelled(): void {
-    this.#activeRuns = Math.max(0, this.#activeRuns - 1);
     this.#runsCancelled += 1;
+  }
+
+  detachedRunStarted(): void {
+    this.#detachedActiveRuns += 1;
+  }
+
+  detachedRunFinished(): void {
+    this.#detachedActiveRuns = Math.max(0, this.#detachedActiveRuns - 1);
   }
 
   routeSelected(): void {
@@ -93,7 +97,7 @@ export class RuntimeMetrics {
     }
     return {
       generated_at: new Date().toISOString(),
-      active_runs: Math.max(activeRuns, this.#activeRuns),
+      active_runs: activeRuns + this.#detachedActiveRuns,
       process_stop: processStop,
       active_project_stops: projectStops,
       metrics: {
