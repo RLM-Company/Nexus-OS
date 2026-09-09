@@ -194,17 +194,27 @@ export class GuardedToolRuntime {
       intent.actor_id,
       evaluatedAt
     );
-    const activeConditionIds = [
-      ...new Set(
-        await this.#resolveActiveConditionIds({
-          projectId: intent.project_id,
-          actorId: intent.actor_id,
-          objectIds: intent.object_ids,
-          capabilityIds: intent.capability_ids,
-          evaluatedAt
-        })
-      )
-    ].sort();
+    let activeConditionIds: string[];
+    try {
+      activeConditionIds = [
+        ...new Set(
+          await this.#resolveActiveConditionIds({
+            projectId: intent.project_id,
+            actorId: intent.actor_id,
+            objectIds: intent.object_ids,
+            capabilityIds: intent.capability_ids,
+            evaluatedAt
+          })
+        )
+      ].sort();
+    } catch {
+      const verdict = pausedVerdict(
+        intent,
+        evaluatedAt,
+        "Authoritative policy condition resolution failed."
+      );
+      return { status: "PAUSED", verdict };
+    }
     let verdict = evaluatePolicy(
       { intent, profile, permissionContracts },
       {
