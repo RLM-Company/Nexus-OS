@@ -110,7 +110,17 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await expect(page.getByText("Запуск остановлен владельцем.")).toBeVisible();
   await expect(page.getByRole("status")).toHaveText(/Остановлен/);
   await expect(page.getByRole("button", { name: "Остановить" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Отправить" })).toBeVisible();
+  const restoreDraft = page.getByRole("button", { name: "Вернуть запрос в редактор" });
+  await expect(restoreDraft).toBeVisible();
+  const replayRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST") replayRequests.push(request.url());
+  });
+  await restoreDraft.click();
+  await expect(page.getByLabel("Сообщение менеджеру")).toHaveValue("Останови этот тестовый запуск");
+  await expect(page.getByLabel("Сообщение менеджеру")).toBeFocused();
+  await expect(page.getByRole("button", { name: "Отправить" })).toBeEnabled();
+  expect(replayRequests).toEqual([]);
 });
 
 test("surfaces server-confirmed owner decisions and recovery in the Manager Console", async ({

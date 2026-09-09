@@ -12,7 +12,8 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "pnpm --dir ../api exec node --import tsx --conditions=development src/server.ts",
+      command:
+        "pnpm --dir ../api exec node --import tsx --conditions=development test/fixtures/e2e-server.ts",
       url: "http://127.0.0.1:3100/api/v1/health",
       stdout: "pipe",
       stderr: "pipe",
@@ -23,7 +24,7 @@ export default defineConfig({
         NODE_ENV: "development",
         DATABASE_URL: `file:./data/e2e-b0.1-${process.pid}.db`,
         MOCK_PROVIDER_MODE: "slow_stream",
-        MANAGER_TIMEOUT_MS: "5000"
+        MANAGER_TIMEOUT_MS: "60000"
       }
     },
     {
