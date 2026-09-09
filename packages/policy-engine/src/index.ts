@@ -3,6 +3,7 @@ export * from "./agent-instruction-plan.js";
 
 import {
   AUTONOMY_MATRIX,
+  CAPABILITY_IDS,
   CONDITIONAL_EXPANSIONS,
   PERMISSION_MODE_RANK,
   verdictForModes,
@@ -120,6 +121,26 @@ const activePermissionGrants = (
   return matches;
 };
 
+const validateBaseProfileIntegrity = (profile: CapabilityProfile): string[] => {
+  const issues: string[] = [];
+  for (const capabilityId of CAPABILITY_IDS) {
+    const grants = profile.grants.filter((grant) => grant.capability_id === capabilityId);
+    if (grants.length !== 1) {
+      issues.push(`Expected exactly one profile grant for ${capabilityId}; found ${grants.length}.`);
+      continue;
+    }
+    const grant = grants[0];
+    if (grant === undefined) continue;
+    const canonicalMode = AUTONOMY_MATRIX[capabilityId][profile.base_level];
+    if (grant.mode !== canonicalMode) {
+      issues.push(
+        `Profile ${profile.profile_id} base grant for ${capabilityId} does not match ${profile.base_level}.`
+      );
+    }
+  }
+  return issues;
+};
+
 const resolveCapability = (
   input: PolicyEvaluationInput,
   capabilityId: CapabilityId,
@@ -141,17 +162,6 @@ const resolveCapability = (
   const baseGrant = baseGrants[0];
   if (baseGrant === undefined) {
     throw new Error("Unreachable profile grant state");
-  }
-  const canonicalMode = AUTONOMY_MATRIX[capabilityId][input.profile.base_level];
-  if (baseGrant.mode !== canonicalMode) {
-    return {
-      grant: { ...baseGrant, mode: "DENY" },
-      permissionIds: [],
-      reasons: [
-        `Profile ${input.profile.profile_id} base grant for ${capabilityId} does not match ${input.profile.base_level}.`
-      ],
-      pause: true
-    };
   }
 
   let mode = coversObjects(baseGrant.scope, input.intent.object_ids) ? baseGrant.mode : "DENY";
@@ -252,6 +262,10 @@ export function evaluatePolicy(
       "Intent and capability profile belong to different projects.",
       options
     );
+  }
+  const profileIssues = validateBaseProfileIntegrity(input.profile);
+  if (profileIssues.length > 0) {
+    return immediateVerdict(input.intent, "PAUSE", profileIssues.join(" "), options);
   }
 
   const resolutions = input.intent.capability_ids.map((capabilityId) =>
