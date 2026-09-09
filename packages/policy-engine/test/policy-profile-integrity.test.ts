@@ -98,6 +98,47 @@ describe("policy profile base grant integrity", () => {
     );
   });
 
+  it("pauses the whole evaluation when an unrelated base grant is corrupted", () => {
+    const tampered = replaceBaseMode(profile("A2"), "finance.credit", "FULL");
+    const verdict = evaluatePolicy(
+      {
+        intent: intent("workspace.write"),
+        profile: tampered,
+        permissionContracts: []
+      },
+      { evaluatedAt: NOW }
+    );
+
+    expect(verdict.verdict).toBe("PAUSE");
+    expect(verdict.evaluated_capabilities).toEqual([
+      expect.objectContaining({ capability_id: "workspace.write", mode: "DENY" })
+    ]);
+    expect(verdict.reasons.join(" ")).toContain("finance.credit");
+  });
+
+  it("pauses the whole evaluation when an unrelated capability grant is duplicated", () => {
+    const tampered = profile("A2");
+    const duplicate = tampered.grants.find(
+      (grant) => grant.capability_id === "external.communicate"
+    );
+    if (duplicate === undefined) throw new Error("Fixture grant is missing");
+    tampered.grants.push({ ...duplicate });
+
+    const verdict = evaluatePolicy(
+      {
+        intent: intent("workspace.write"),
+        profile: tampered,
+        permissionContracts: []
+      },
+      { evaluatedAt: NOW }
+    );
+
+    expect(verdict.verdict).toBe("PAUSE");
+    expect(verdict.reasons.join(" ")).toContain(
+      "Expected exactly one profile grant for external.communicate; found 2."
+    );
+  });
+
   it("pauses when a base grant is made more restrictive outside the override mechanism", () => {
     const tampered = replaceBaseMode(profile("A5"), "external.communicate", "DENY");
     const verdict = evaluatePolicy(
