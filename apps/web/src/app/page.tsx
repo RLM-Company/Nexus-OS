@@ -73,11 +73,11 @@ type RecoveryRequiredOperation = {
 };
 
 type PolicySignals = {
-  pendingConfirmations: PendingConfirmation[];
-  recoveryRequired: RecoveryRequiredOperation[];
+  pendingConfirmations: PendingConfirmation[] | null;
+  recoveryRequired: RecoveryRequiredOperation[] | null;
 };
 
-const EMPTY_POLICY_SIGNALS: PolicySignals = { pendingConfirmations: [], recoveryRequired: [] };
+const EMPTY_POLICY_SIGNALS: PolicySignals = { pendingConfirmations: null, recoveryRequired: null };
 
 const RUN_PHASE_LABEL: Record<RunPhase, string> = {
   idle: "Готов",
@@ -241,6 +241,9 @@ export default function Home() {
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const viewEpochRef = useRef(0);
+  const selectedProjectRef = useRef<string | null>(null);
+  const viewRequestRef = useRef(0);
 
   const loadProjects = useCallback(async () => {
     const data = await api<{ items: ProjectSummary[] }>("/api/v1/projects");
@@ -254,7 +257,11 @@ export default function Home() {
     ])
       .catch(() => setError("API Cosmora пока недоступен. Запусти web и api вместе."))
       .finally(() => setLoading(false));
-    return () => streamRef.current?.close();
+    return () => {
+      viewEpochRef.current += 1;
+      streamRef.current?.close();
+      streamRef.current = null;
+    };
   }, [loadProjects]);
 
   useEffect(() => {
@@ -262,6 +269,8 @@ export default function Home() {
   }, [messages]);
 
   const loadProjectView = useCallback(async (projectId: string) => {
+    const epoch = viewEpochRef.current;
+    const requestId = ++viewRequestRef.current;
     const encodedProjectId = encodeURIComponent(projectId);
     const [detail, profileResponse, confirmationsResponse, recoveryResponse] = await Promise.all([
       api<ProjectDetail>(`/api/v1/projects/${encodedProjectId}`),
@@ -275,17 +284,37 @@ export default function Home() {
         `/api/v1/projects/${encodedProjectId}/recovery-required?limit=50`
       ).catch(() => null)
     ]);
+    if (
+      epoch !== viewEpochRef.current ||
+      projectId !== selectedProjectRef.current ||
+      requestId !== viewRequestRef.current
+    )
+      return;
     const restoredRun = restoredRunState(detail.messages);
+    if (restoredRun.activeRunId === null) {
+      streamRef.current?.close();
+      streamRef.current = null;
+    }
     setActiveProject(detail.project);
     setChatId(detail.chat_id);
-    setMessages(detail.messages);
+    setMessages((current) =>
+      detail.messages.map((message) => {
+        const live = current.find((candidate) => candidate.id === message.id);
+        // A persisted snapshot can predate an already received SSE delta.
+        return message.status === "streaming" &&
+          live &&
+          live.content.length > message.content.length
+          ? { ...message, content: live.content }
+          : message;
+      })
+    );
     setRunPhase(restoredRun.phase);
     setActiveRunId(restoredRun.activeRunId);
     setSending(restoredRun.activeRunId !== null);
     setAutonomyProfile(profileResponse?.profile ?? null);
     setPolicySignals({
-      pendingConfirmations: confirmationsResponse?.items ?? [],
-      recoveryRequired: recoveryResponse?.items ?? []
+      pendingConfirmations: confirmationsResponse?.items ?? null,
+      recoveryRequired: recoveryResponse?.items ?? null
     });
   }, []);
 
@@ -294,26 +323,42 @@ export default function Home() {
       return;
     }
     const projectId = activeProject.id;
+    let polling = false;
     const timer = window.setInterval(() => {
-      void loadProjectView(projectId).catch(() => undefined);
+      if (polling) return;
+      polling = true;
+      void loadProjectView(projectId)
+        .catch(() => undefined)
+        .finally(() => {
+          polling = false;
+        });
     }, 2_000);
     return () => window.clearInterval(timer);
   }, [activeProject, loadProjectView, runPhase]);
 
   const openProject = async (projectId: string): Promise<void> => {
+    const epoch = ++viewEpochRef.current;
+    selectedProjectRef.current = projectId;
     streamRef.current?.close();
     streamRef.current = null;
     setActiveRunId(null);
     setSending(false);
     setRunPhase("idle");
+    setActiveProject(null);
+    setMessages([]);
+    setChatId(null);
+    setDraft("");
+    setAutonomyProfile(null);
+    setPolicySignals(EMPTY_POLICY_SIGNALS);
     setError(null);
     setLoading(true);
     try {
       await loadProjectView(projectId);
     } catch (cause) {
+      if (epoch !== viewEpochRef.current) return;
       setError(cause instanceof Error ? cause.message : "Не удалось открыть проект");
     } finally {
-      setLoading(false);
+      if (epoch === viewEpochRef.current) setLoading(false);
     }
   };
 
@@ -327,12 +372,16 @@ export default function Home() {
 
   const followStream = useCallback(
     (accepted: RunStreamTarget): void => {
+      const epoch = viewEpochRef.current;
       streamRef.current?.close();
       setActiveRunId(accepted.run_id);
       const source = new EventSource(accepted.stream_url);
       streamRef.current = source;
       let assistantId: string | null = null;
       let finished = false;
+      let streamContent = "";
+      const isCurrent = (): boolean =>
+        epoch === viewEpochRef.current && streamRef.current === source;
 
       const closeSource = (): void => {
         source.close();
@@ -340,11 +389,13 @@ export default function Home() {
       };
 
       source.addEventListener("run.started", () => {
+        if (!isCurrent()) return;
         setError(null);
         setRunPhase("running");
       });
 
       source.addEventListener("message.started", (raw) => {
+        if (!isCurrent()) return;
         const event = JSON.parse(String(raw.data)) as {
           data: { message_id: string; run_id: string };
         };
@@ -364,17 +415,19 @@ export default function Home() {
       });
 
       source.addEventListener("message.delta", (raw) => {
+        if (!isCurrent()) return;
         const event = JSON.parse(String(raw.data)) as {
           data: { message_id: string; seq: number; delta: string };
         };
         assistantId = event.data.message_id;
+        streamContent = event.data.seq === 0 ? event.data.delta : streamContent + event.data.delta;
+        const content = streamContent;
         setMessages((current) =>
           current.map((message) =>
             message.id === event.data.message_id
               ? {
                   ...message,
-                  content:
-                    event.data.seq === 0 ? event.data.delta : message.content + event.data.delta
+                  content: content.length >= message.content.length ? content : message.content
                 }
               : message
           )
@@ -382,13 +435,15 @@ export default function Home() {
       });
 
       source.addEventListener("run.completed", () => {
+        if (!isCurrent()) return;
+        viewRequestRef.current += 1;
         finished = true;
         closeSource();
         setSending(false);
         setActiveRunId(null);
         setRunPhase("completed");
         void refreshProject(accepted.project.id).catch(() => {
-          if (assistantId) {
+          if (assistantId && epoch === viewEpochRef.current) {
             setMessages((current) =>
               current.map((message) =>
                 message.id === assistantId ? { ...message, status: "completed" } : message
@@ -399,6 +454,8 @@ export default function Home() {
       });
 
       source.addEventListener("run.failed", (raw) => {
+        if (!isCurrent()) return;
+        viewRequestRef.current += 1;
         finished = true;
         closeSource();
         const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
@@ -406,19 +463,22 @@ export default function Home() {
         setActiveRunId(null);
         setRunPhase("failed");
         setError(`Запуск остановлен: ${event.data.error_code}`);
-        void refreshProject(accepted.project.id);
+        void refreshProject(accepted.project.id).catch(() => undefined);
       });
 
       source.addEventListener("run.cancelled", () => {
+        if (!isCurrent()) return;
+        viewRequestRef.current += 1;
         finished = true;
         closeSource();
         setSending(false);
         setActiveRunId(null);
         setRunPhase("cancelled");
-        void refreshProject(accepted.project.id);
+        void refreshProject(accepted.project.id).catch(() => undefined);
       });
 
       source.onerror = () => {
+        if (!isCurrent()) return;
         closeSource();
         if (!finished) {
           setError("Поток ответа прерван. Проверяю сохранённое состояние запуска на сервере.");
@@ -440,19 +500,25 @@ export default function Home() {
 
   const cancelRun = async (): Promise<void> => {
     if (!activeRunId || !activeProject) return;
+    const epoch = viewEpochRef.current;
     setError(null);
     try {
       await api<CancelledRun>(`/api/v1/runs/${activeRunId}/cancel`, { method: "POST" });
     } catch (cause) {
+      if (epoch !== viewEpochRef.current) return;
       setError(cause instanceof Error ? cause.message : "Не удалось остановить запуск");
       return;
     }
+    if (epoch !== viewEpochRef.current) return;
     streamRef.current?.close();
     streamRef.current = null;
     setSending(false);
     setActiveRunId(null);
     setRunPhase("cancelled");
-    await refreshProject(activeProject.id);
+    await refreshProject(activeProject.id).catch(() => {
+      if (epoch === viewEpochRef.current)
+        setError("Запуск остановлен. Не удалось обновить историю.");
+    });
   };
 
   const recoverableMessage = recoverableUserMessage(messages);
@@ -466,7 +532,8 @@ export default function Home() {
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     const content = draft.trim();
-    if (!content || sending) return;
+    if (!content || sending || loading) return;
+    const epoch = viewEpochRef.current;
 
     setSending(true);
     setRunPhase("queued");
@@ -483,6 +550,13 @@ export default function Home() {
             body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
           });
 
+      if (epoch !== viewEpochRef.current) {
+        void loadProjects().catch(() => undefined);
+        return;
+      }
+      selectedProjectRef.current = accepted.project.id;
+      // Invalidate snapshots fetched before server acceptance of this run.
+      viewRequestRef.current += 1;
       setActiveProject(accepted.project);
       setChatId(accepted.chat_id);
       setMessages((current) =>
@@ -492,11 +566,19 @@ export default function Home() {
       void api<{ profile: AutonomyProfile }>(
         `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
       )
-        .then((response) => setAutonomyProfile(response.profile))
-        .catch(() => setAutonomyProfile(null));
+        .then((response) => {
+          if (epoch === viewEpochRef.current) setAutonomyProfile(response.profile);
+        })
+        .catch(() => {
+          if (epoch === viewEpochRef.current) setAutonomyProfile(null);
+        });
       followStream(accepted);
-      await loadProjects();
+      void loadProjects().catch(() => {
+        if (epoch === viewEpochRef.current)
+          setError("Запуск принят. Не удалось обновить список проектов.");
+      });
     } catch (cause) {
+      if (epoch !== viewEpochRef.current) return;
       setDraft(content);
       setSending(false);
       setRunPhase("failed");
@@ -505,6 +587,8 @@ export default function Home() {
   };
 
   const newProject = (): void => {
+    viewEpochRef.current += 1;
+    selectedProjectRef.current = null;
     streamRef.current?.close();
     streamRef.current = null;
     setActiveProject(null);
@@ -517,6 +601,7 @@ export default function Home() {
     setActiveRunId(null);
     setRunPhase("idle");
     setError(null);
+    setLoading(false);
   };
 
   const controlCenterHref = activeProject
@@ -624,17 +709,21 @@ export default function Home() {
               <span>
                 <small>Решения владельца</small>
                 <strong>
-                  {policySignals.pendingConfirmations.length === 0
-                    ? "Нет"
-                    : `${policySignals.pendingConfirmations.length} ожидает`}
+                  {policySignals.pendingConfirmations === null
+                    ? "Нет данных"
+                    : policySignals.pendingConfirmations.length === 0
+                      ? "Нет"
+                      : `${policySignals.pendingConfirmations?.length} ожидает`}
                 </strong>
               </span>
               <span>
                 <small>Recovery</small>
                 <strong>
-                  {policySignals.recoveryRequired.length === 0
-                    ? "Не требуется"
-                    : `${policySignals.recoveryRequired.length} требует внимания`}
+                  {policySignals.recoveryRequired === null
+                    ? "Нет данных"
+                    : policySignals.recoveryRequired.length === 0
+                      ? "Не требуется"
+                      : `${policySignals.recoveryRequired?.length} требует внимания`}
                 </strong>
               </span>
               <span>
@@ -654,8 +743,8 @@ export default function Home() {
               </span>
             </section>
 
-            {(policySignals.pendingConfirmations.length > 0 ||
-              policySignals.recoveryRequired.length > 0) && (
+            {((policySignals.pendingConfirmations?.length ?? 0) > 0 ||
+              (policySignals.recoveryRequired?.length ?? 0) > 0) && (
               <section className="manager-attention" aria-label="Требуется внимание владельца">
                 <header>
                   <span className="attention-icon">
@@ -667,14 +756,14 @@ export default function Home() {
                   </span>
                 </header>
                 <div className="attention-list">
-                  {policySignals.pendingConfirmations.slice(0, 1).map((confirmation) => (
+                  {policySignals.pendingConfirmations?.slice(0, 1).map((confirmation) => (
                     <article
                       className="attention-card confirmation"
                       key={confirmation.confirmation_id}
                     >
                       <div>
                         <small>
-                          Решение владельца · {policySignals.pendingConfirmations.length}
+                          Решение владельца · {policySignals.pendingConfirmations?.length}
                         </small>
                         <strong>{confirmation.intent.purpose}</strong>
                         <p>{confirmation.intent.capability_ids.join(" · ")}</p>
@@ -689,10 +778,10 @@ export default function Home() {
                       </Link>
                     </article>
                   ))}
-                  {policySignals.recoveryRequired.slice(0, 1).map((operation) => (
+                  {policySignals.recoveryRequired?.slice(0, 1).map((operation) => (
                     <article className="attention-card recovery" key={operation.operation_id}>
                       <div>
-                        <small>Recovery · {policySignals.recoveryRequired.length}</small>
+                        <small>Recovery · {policySignals.recoveryRequired?.length}</small>
                         <strong>Внешний результат неизвестен</strong>
                         <p>{operation.reasons.join(" · ")}</p>
                         <span>{operation.capability_ids.join(" · ")}</span>
@@ -839,7 +928,7 @@ export default function Home() {
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            disabled={sending}
+            disabled={sending || loading}
             placeholder={
               activeProject
                 ? "Уточните задачу или добавьте требование…"
@@ -872,7 +961,7 @@ export default function Home() {
                   </button>
                 )}
                 <button
-                  disabled={!draft.trim()}
+                  disabled={!draft.trim() || loading}
                   aria-label={activeProject ? "Отправить" : "Запустить"}
                 >
                   <SendIcon />
