@@ -126,7 +126,9 @@ const validateBaseProfileIntegrity = (profile: CapabilityProfile): string[] => {
   for (const capabilityId of CAPABILITY_IDS) {
     const grants = profile.grants.filter((grant) => grant.capability_id === capabilityId);
     if (grants.length !== 1) {
-      issues.push(`Expected exactly one profile grant for ${capabilityId}; found ${grants.length}.`);
+      issues.push(
+        `Expected exactly one profile grant for ${capabilityId}; found ${grants.length}.`
+      );
       continue;
     }
     const grant = grants[0];
