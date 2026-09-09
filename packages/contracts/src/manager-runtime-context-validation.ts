@@ -1,4 +1,8 @@
-import type { RuntimeArtifact, RuntimeTaskNode } from "./manager-runtime.js";
+import {
+  validateRuntimeArtifactExchange,
+  type RuntimeArtifact,
+  type RuntimeTaskNode
+} from "./manager-runtime.js";
 import {
   validateRuntimeContextEnvelope,
   type RuntimeContextEnvelope
@@ -34,6 +38,13 @@ export const validateRuntimeContextMaterialization = (input: {
     }
   }
 
+  const taskInputArtifactIds = new Set(input.task.input_artifact_ids);
+  for (const artifactId of input.context.artifact_ids) {
+    if (!taskInputArtifactIds.has(artifactId)) {
+      issues.push(`Context artifact is not declared as a task input: ${artifactId}`);
+    }
+  }
+
   const declaredArtifactIds = new Set(input.context.artifact_ids);
   const allowedDataClasses = new Set(input.context.allowed_data_classes);
   const allowedSourceIds = new Set(input.context.source_ids);
@@ -49,6 +60,13 @@ export const validateRuntimeContextMaterialization = (input: {
     if (!declaredArtifactIds.has(artifact.artifact_id)) {
       issues.push(`Materialized artifact is not declared by the context: ${artifact.artifact_id}`);
     }
+    issues.push(
+      ...validateRuntimeArtifactExchange({
+        artifact,
+        targetRole: input.context.role,
+        targetProjectId: input.context.project_id
+      })
+    );
     if (artifact.project_id !== input.context.project_id) {
       issues.push(`Artifact ${artifact.artifact_id} crosses the context project boundary`);
     }
