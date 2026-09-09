@@ -2,6 +2,7 @@ export * from "./agent-delegation.js";
 export * from "./agent-instruction-plan.js";
 
 import {
+  AUTONOMY_MATRIX,
   CONDITIONAL_EXPANSIONS,
   PERMISSION_MODE_RANK,
   verdictForModes,
@@ -140,6 +141,17 @@ const resolveCapability = (
   const baseGrant = baseGrants[0];
   if (baseGrant === undefined) {
     throw new Error("Unreachable profile grant state");
+  }
+  const canonicalMode = AUTONOMY_MATRIX[capabilityId][input.profile.base_level];
+  if (baseGrant.mode !== canonicalMode) {
+    return {
+      grant: { ...baseGrant, mode: "DENY" },
+      permissionIds: [],
+      reasons: [
+        `Profile ${input.profile.profile_id} base grant for ${capabilityId} does not match ${input.profile.base_level}.`
+      ],
+      pause: true
+    };
   }
 
   let mode = coversObjects(baseGrant.scope, input.intent.object_ids) ? baseGrant.mode : "DENY";
