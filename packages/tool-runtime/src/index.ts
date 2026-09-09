@@ -34,8 +34,23 @@ export interface ToolInvocation<Input> {
   purpose: string;
   idempotencyKey: string;
   input: Input;
-  activeConditionIds?: string[];
   evaluatedAt?: string;
+}
+
+export interface PolicyConditionResolutionInput {
+  projectId: string;
+  actorId: string;
+  objectIds: readonly string[];
+  capabilityIds: readonly CapabilityId[];
+  evaluatedAt: string;
+}
+
+export type PolicyConditionResolver = (
+  input: PolicyConditionResolutionInput
+) => readonly string[] | Promise<readonly string[]>;
+
+export interface GuardedToolRuntimeOptions {
+  resolveActiveConditionIds?: PolicyConditionResolver;
 }
 
 export type ToolInvocationResult<Output> =
@@ -69,9 +84,11 @@ const pausedVerdict = (
 export class GuardedToolRuntime {
   readonly #policyStore: PolicyStore;
   readonly #tools = new Map<string, GuardedTool<unknown, unknown>>();
+  readonly #resolveActiveConditionIds: PolicyConditionResolver;
 
-  constructor(policyStore: PolicyStore) {
+  constructor(policyStore: PolicyStore, options: GuardedToolRuntimeOptions = {}) {
     this.#policyStore = policyStore;
+    this.#resolveActiveConditionIds = options.resolveActiveConditionIds ?? (() => []);
   }
 
   register<Input, Output>(tool: GuardedTool<Input, Output>): void {
@@ -177,11 +194,22 @@ export class GuardedToolRuntime {
       intent.actor_id,
       evaluatedAt
     );
+    const activeConditionIds = [
+      ...new Set(
+        await this.#resolveActiveConditionIds({
+          projectId: intent.project_id,
+          actorId: intent.actor_id,
+          objectIds: intent.object_ids,
+          capabilityIds: intent.capability_ids,
+          evaluatedAt
+        })
+      )
+    ].sort();
     let verdict = evaluatePolicy(
       { intent, profile, permissionContracts },
       {
         evaluatedAt,
-        activeConditionIds: invocation.activeConditionIds ?? []
+        activeConditionIds
       }
     );
 
