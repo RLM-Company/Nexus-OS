@@ -117,12 +117,41 @@ describe("runtime context materialization validation", () => {
 
     expect(issues).toEqual(
       expect.arrayContaining([
+        "Artifact exchange crosses the target project boundary",
         "Artifact artifact-1 crosses the context project boundary",
         "Artifact artifact-1 uses a data class not allowed by the context",
         "Artifact artifact-1 references itself as provenance",
         "Artifact artifact-1 uses an undeclared context source: source-2"
       ])
     );
+  });
+
+  it("rejects context artifacts that were never declared as task inputs", () => {
+    const injected = context();
+    injected.artifact_ids = ["artifact-2"];
+
+    const issues = validateRuntimeContextMaterialization({
+      context: injected,
+      task: task(),
+      artifacts: [artifact("artifact-2")]
+    });
+
+    expect(issues).toContain("Context artifact is not declared as a task input: artifact-2");
+  });
+
+  it("rejects artifact kinds the assigned role contract does not accept", () => {
+    const incompatible = artifact();
+    incompatible.producer_role = "critic";
+    incompatible.producer_instance_id = "critic-1";
+    incompatible.kind = "critic_verdict";
+
+    const issues = validateRuntimeContextMaterialization({
+      context: context(),
+      task: task(),
+      artifacts: [incompatible]
+    });
+
+    expect(issues).toContain("Role analyst does not accept artifact kind critic_verdict");
   });
 
   it("requires an exact set of declared materialized artifact identities", () => {
@@ -137,6 +166,7 @@ describe("runtime context materialization validation", () => {
 
     expect(issues).toEqual(
       expect.arrayContaining([
+        "Context artifact is not declared as a task input: artifact-2",
         "Duplicate materialized artifact: artifact-1",
         "Materialized artifact is not declared by the context: artifact-3",
         "Declared context artifact was not materialized: artifact-2"
