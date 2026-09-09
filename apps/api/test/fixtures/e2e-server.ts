@@ -3,7 +3,8 @@ import { MockProviderAdapter } from "@cosmora/model-gateway";
 // Only the Playwright server imports this fixture. Keep the real HTTP server,
 // coordinator and SQLite lifecycle; hold this synthetic provider response until
 // Stop reaches the executor so reload acceptance never races a one-second answer.
-const stream = MockProviderAdapter.prototype.stream;
+const provider = new MockProviderAdapter("slow_stream");
+const stream = provider.stream.bind(provider);
 MockProviderAdapter.prototype.stream = async function* (request, signal) {
   const prompt = [...request.messages].reverse().find((message) => message.role === "user");
   if (prompt?.content === "Останови этот тестовый запуск") {
@@ -15,7 +16,7 @@ MockProviderAdapter.prototype.stream = async function* (request, signal) {
     });
     return;
   }
-  yield* stream.call(this, request, signal);
+  yield* stream(request, signal);
 };
 
 await import("../../src/server.js");
