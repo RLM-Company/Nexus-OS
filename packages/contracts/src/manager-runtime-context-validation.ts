@@ -1,9 +1,6 @@
+import type { RuntimeArtifact, RuntimeTaskNode } from "./manager-runtime.js";
 import {
   validateRuntimeArtifactExchange,
-  type RuntimeArtifact,
-  type RuntimeTaskNode
-} from "./manager-runtime.js";
-import {
   validateRuntimeContextEnvelope,
   type RuntimeContextEnvelope
 } from "./manager-runtime-state.js";
