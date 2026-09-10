@@ -6,6 +6,7 @@ import {
   CAPABILITY_IDS,
   CapabilityProfilePreviewResponseSchema,
   CapabilityProfileSchema,
+  ConfirmationRequestSchema,
   PermissionContractSchema,
   PolicyDecisionTraceEventSchema,
   PolicyDecisionTraceListResponseSchema,
@@ -154,6 +155,123 @@ describe("autonomy policy contracts", () => {
         issued_at: "2026-08-24T12:00:00Z"
       })
     ).toBe(true);
+  });
+
+  it("rejects malformed timestamps across policy authority contracts", () => {
+    const profile = createCapabilityProfile({
+      profileId: "profile-time",
+      projectId: "project-1",
+      baseLevel: "A2",
+      version: 1,
+      issuedAt: "2026-09-10T12:00:00.000Z"
+    });
+    expect(Value.Check(CapabilityProfileSchema, { ...profile, issued_at: "yesterday" })).toBe(
+      false
+    );
+    expect(
+      Value.Check(CapabilityProfileSchema, {
+        ...profile,
+        overrides: [
+          {
+            override_id: "bad-time-override",
+            capability_id: "workspace.write",
+            mode: "AUTONOMOUS",
+            object_ids: ["project-1"],
+            purpose: "Reject a malformed expiry",
+            valid_until: "later",
+            remaining_uses: 1
+          }
+        ]
+      })
+    ).toBe(false);
+
+    const intent = {
+      operation_id: "operation-time",
+      project_id: "project-1",
+      actor_id: "manager",
+      capability_ids: ["external.communicate"],
+      object_ids: ["recipient-1"],
+      purpose: "Validate policy timestamps",
+      idempotency_key: "policy-time"
+    } as const;
+    const verdict = {
+      operation_id: intent.operation_id,
+      verdict: "NEEDS_CONFIRMATION",
+      evaluated_capabilities: [
+        {
+          capability_id: "external.communicate",
+          mode: "CONFIRM",
+          scope: [],
+          conditions: []
+        }
+      ],
+      permission_ids: [],
+      reasons: ["Owner confirmation is required."],
+      evaluated_at: "2026-09-10T12:00:00.000Z",
+      policy_version: "1.1.0"
+    } as const;
+    expect(Value.Check(PolicyVerdictSchema, { ...verdict, evaluated_at: "not-a-time" })).toBe(
+      false
+    );
+
+    const permission = {
+      permission_id: "permission-time",
+      version: 1,
+      project_id: "project-1",
+      subject_id: "manager",
+      organizational_role: "account_owner",
+      state: "ACTIVE",
+      capabilities: [
+        {
+          capability_id: "external.communicate",
+          mode: "AUTONOMOUS",
+          scope: ["recipient-1"],
+          conditions: ["owner_confirmed_operation"]
+        }
+      ],
+      purpose: intent.purpose,
+      object_ids: ["recipient-1"],
+      valid_from: "2026-09-10T12:00:01.000Z",
+      valid_until: "2026-09-10T12:15:00.000Z",
+      limits: { money_minor: null, tokens: null, operations: 1, delegation_depth: 0 },
+      parent_permission_id: null,
+      approval: {
+        approver_id: "owner-1",
+        method: "session",
+        terms_version: "policy-1.1.0",
+        nonce: "nonce-time",
+        approved_at: "2026-09-10T12:00:01.000Z"
+      }
+    } as const;
+    expect(Value.Check(PermissionContractSchema, permission)).toBe(true);
+    expect(Value.Check(PermissionContractSchema, { ...permission, valid_from: "now" })).toBe(false);
+    expect(
+      Value.Check(PermissionContractSchema, {
+        ...permission,
+        approval: { ...permission.approval, approved_at: "recently" }
+      })
+    ).toBe(false);
+
+    const confirmation = {
+      confirmation_id: "confirmation-time",
+      project_id: "project-1",
+      operation_id: intent.operation_id,
+      actor_id: "manager",
+      intent,
+      verdict,
+      status: "PENDING",
+      challenge_nonce: "confirmation-nonce-time",
+      requires_step_up: false,
+      requested_at: "2026-09-10T12:00:00.000Z",
+      expires_at: "2026-09-10T12:15:00.000Z",
+      decided_at: null,
+      decided_by: null,
+      decision_reason: null
+    } as const;
+    expect(Value.Check(ConfirmationRequestSchema, confirmation)).toBe(true);
+    expect(
+      Value.Check(ConfirmationRequestSchema, { ...confirmation, expires_at: "in-15-minutes" })
+    ).toBe(false);
   });
 
   it("accepts a non-mutating capability profile preview", () => {
