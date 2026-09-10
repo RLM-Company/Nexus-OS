@@ -3,6 +3,7 @@ import {
   AgentBlueprintStore,
   AgentInstanceStore,
   AgentStudioMutationStore,
+  DemoManagerStore,
   EmergencyStopStore,
   IdentityStore,
   openDatabase,
@@ -21,6 +22,7 @@ import {
   StoredStepUpProofConsumer
 } from "./identity.js";
 import { ManagerBackgroundRunCoordinator } from "./manager-background-run-coordinator.js";
+import { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
 import { ManagerRuntimeProjectStore } from "./manager-runtime-project-store.js";
 import { buildModelRuntime } from "./model-runtime.js";
 import { RuntimeMetrics } from "./operations.js";
@@ -55,6 +57,7 @@ try {
     secretResolver: new EnvironmentSecretResolver()
   });
   const projectStore = new ManagerRuntimeProjectStore(database.sqlite);
+  const demoManagerStore = new DemoManagerStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
   const stepUpProofStore = new StepUpProofStore(database.sqlite);
@@ -75,6 +78,8 @@ try {
     database,
     identityStore,
     projectStore,
+    demoManagerStore,
+    demoManagerCoordinator: new DemoManagerCoordinator(demoManagerStore),
     usageStore: new UsageStore(database.sqlite),
     emergencyStopStore,
     policyStore: new PolicyStore(database.sqlite),
