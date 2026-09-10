@@ -120,6 +120,13 @@
       "when": 1788409086093,
       "tag": "0016_yellow_katie_power",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1789020000000,
+      "tag": "0017_manager_demo_runs",
+      "breakpoints": true
     }
   ]
 }
