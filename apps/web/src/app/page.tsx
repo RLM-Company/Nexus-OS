@@ -77,7 +77,41 @@ type PolicySignals = {
   recoveryRequired: RecoveryRequiredOperation[] | null;
 };
 
+type DemoManagerArtifact = {
+  artifact_id: string;
+  task_id: string;
+  kind: "plan" | "analysis" | "handoff" | "checkpoint";
+  content: string;
+  created_at: string;
+};
+
+type DemoManagerRun = {
+  demo_run_id: string;
+  project_id: string;
+  source_run_id: string;
+  owner_goal: string;
+  graph: {
+    nodes: Array<{
+      task_id: string;
+      assigned_role: "manager" | "analyst" | "architect" | "researcher" | "critic";
+      expected_output_kinds: string[];
+    }>;
+  };
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  checkpoint: { checkpoint_id: string; created_at: string } | null;
+  artifacts: DemoManagerArtifact[];
+  updated_at: string;
+};
+
 const EMPTY_POLICY_SIGNALS: PolicySignals = { pendingConfirmations: null, recoveryRequired: null };
+
+const DEMO_RUN_STATUS_LABEL: Record<DemoManagerRun["status"], string> = {
+  queued: "План готов к запуску",
+  running: "Выполняется",
+  succeeded: "Завершён с checkpoint",
+  failed: "Требует внимания",
+  cancelled: "Остановлен владельцем"
+};
 
 const RUN_PHASE_LABEL: Record<RunPhase, string> = {
   idle: "Готов",
@@ -201,6 +235,10 @@ const recoverableUserMessage = (messages: Message[]): Message | null => {
   );
 };
 
+const latestDemoSource = (messages: Message[]): Message | null =>
+  [...messages].reverse().find((message) => message.role === "user" && message.run_id !== null) ??
+  null;
+
 const messagePlaceholder = (
   id: string,
   projectId: string,
@@ -231,6 +269,8 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [autonomyProfile, setAutonomyProfile] = useState<AutonomyProfile | null>(null);
   const [policySignals, setPolicySignals] = useState<PolicySignals>(EMPTY_POLICY_SIGNALS);
+  const [demoRuns, setDemoRuns] = useState<DemoManagerRun[]>([]);
+  const [demoActionPending, setDemoActionPending] = useState(false);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -272,18 +312,22 @@ export default function Home() {
     const epoch = viewEpochRef.current;
     const requestId = ++viewRequestRef.current;
     const encodedProjectId = encodeURIComponent(projectId);
-    const [detail, profileResponse, confirmationsResponse, recoveryResponse] = await Promise.all([
-      api<ProjectDetail>(`/api/v1/projects/${encodedProjectId}`),
-      api<{ profile: AutonomyProfile }>(
-        `/api/v1/projects/${encodedProjectId}/autonomy-profile`
-      ).catch(() => null),
-      api<{ items: PendingConfirmation[] }>(
-        `/api/v1/projects/${encodedProjectId}/confirmations?status=PENDING`
-      ).catch(() => null),
-      api<{ items: RecoveryRequiredOperation[] }>(
-        `/api/v1/projects/${encodedProjectId}/recovery-required?limit=50`
-      ).catch(() => null)
-    ]);
+    const [detail, profileResponse, confirmationsResponse, recoveryResponse, demosResponse] =
+      await Promise.all([
+        api<ProjectDetail>(`/api/v1/projects/${encodedProjectId}`),
+        api<{ profile: AutonomyProfile }>(
+          `/api/v1/projects/${encodedProjectId}/autonomy-profile`
+        ).catch(() => null),
+        api<{ items: PendingConfirmation[] }>(
+          `/api/v1/projects/${encodedProjectId}/confirmations?status=PENDING`
+        ).catch(() => null),
+        api<{ items: RecoveryRequiredOperation[] }>(
+          `/api/v1/projects/${encodedProjectId}/recovery-required?limit=50`
+        ).catch(() => null),
+        api<{ items: DemoManagerRun[] }>(
+          `/api/v1/projects/${encodedProjectId}/manager-demo-runs`
+        ).catch(() => null)
+      ]);
     if (
       epoch !== viewEpochRef.current ||
       projectId !== selectedProjectRef.current ||
@@ -316,6 +360,7 @@ export default function Home() {
       pendingConfirmations: confirmationsResponse?.items ?? null,
       recoveryRequired: recoveryResponse?.items ?? null
     });
+    setDemoRuns(demosResponse?.items ?? []);
   }, []);
 
   useEffect(() => {
@@ -350,6 +395,8 @@ export default function Home() {
     setDraft("");
     setAutonomyProfile(null);
     setPolicySignals(EMPTY_POLICY_SIGNALS);
+    setDemoRuns([]);
+    setDemoActionPending(false);
     setError(null);
     setLoading(true);
     try {
@@ -522,6 +569,86 @@ export default function Home() {
   };
 
   const recoverableMessage = recoverableUserMessage(messages);
+  const demoSource = latestDemoSource(messages);
+  const latestDemoRun = demoRuns[0] ?? null;
+
+  const prepareManagerDemo = async (): Promise<void> => {
+    if (!activeProject || !demoSource?.run_id) return;
+    const epoch = viewEpochRef.current;
+    setDemoActionPending(true);
+    setError(null);
+    try {
+      const created = await api<DemoManagerRun>(
+        `/api/v1/projects/${encodeURIComponent(activeProject.id)}/manager-demo-runs`,
+        {
+          method: "POST",
+          body: JSON.stringify({ source_run_id: demoSource.run_id, owner_goal: demoSource.content })
+        }
+      );
+      if (epoch !== viewEpochRef.current) return;
+      setDemoRuns((current) => [
+        created,
+        ...current.filter((run) => run.demo_run_id !== created.demo_run_id)
+      ]);
+    } catch (cause) {
+      if (epoch === viewEpochRef.current) {
+        setError(cause instanceof Error ? cause.message : "Не удалось подготовить Manager plan");
+      }
+    } finally {
+      if (epoch === viewEpochRef.current) setDemoActionPending(false);
+    }
+  };
+
+  const executeManagerDemo = async (): Promise<void> => {
+    if (!activeProject || !latestDemoRun) return;
+    const epoch = viewEpochRef.current;
+    setDemoActionPending(true);
+    setError(null);
+    try {
+      const completed = await api<DemoManagerRun>(
+        `/api/v1/projects/${encodeURIComponent(activeProject.id)}/manager-demo-runs/${encodeURIComponent(
+          latestDemoRun.demo_run_id
+        )}/execute`,
+        { method: "POST" }
+      );
+      if (epoch !== viewEpochRef.current) return;
+      setDemoRuns((current) =>
+        current.map((run) => (run.demo_run_id === completed.demo_run_id ? completed : run))
+      );
+    } catch (cause) {
+      if (epoch === viewEpochRef.current) {
+        setError(cause instanceof Error ? cause.message : "Не удалось запустить demo workflow");
+      }
+    } finally {
+      if (epoch === viewEpochRef.current) setDemoActionPending(false);
+    }
+  };
+
+  const cancelManagerDemo = async (): Promise<void> => {
+    if (!activeProject || !latestDemoRun) return;
+    const epoch = viewEpochRef.current;
+    setDemoActionPending(true);
+    setError(null);
+    try {
+      const cancelled = await api<DemoManagerRun>(
+        `/api/v1/projects/${encodeURIComponent(activeProject.id)}/manager-demo-runs/${encodeURIComponent(
+          latestDemoRun.demo_run_id
+        )}/cancel`,
+        { method: "POST" }
+      );
+      if (epoch !== viewEpochRef.current) return;
+      setDemoRuns((current) =>
+        current.map((run) => (run.demo_run_id === cancelled.demo_run_id ? cancelled : run))
+      );
+    } catch (cause) {
+      if (epoch === viewEpochRef.current) {
+        setError(cause instanceof Error ? cause.message : "Не удалось остановить demo workflow");
+      }
+    } finally {
+      if (epoch === viewEpochRef.current) setDemoActionPending(false);
+    }
+  };
+
   const restoreRunDraft = (): void => {
     if (!recoverableMessage) return;
     setDraft(recoverableMessage.content);
@@ -596,6 +723,8 @@ export default function Home() {
     setMessages([]);
     setAutonomyProfile(null);
     setPolicySignals(EMPTY_POLICY_SIGNALS);
+    setDemoRuns([]);
+    setDemoActionPending(false);
     setDraft("");
     setSending(false);
     setActiveRunId(null);
@@ -794,6 +923,97 @@ export default function Home() {
                 </div>
               </section>
             )}
+
+            <section className="manager-demo" aria-label="Manager demo workflow">
+              <header>
+                <div>
+                  <small>Manager demo · server-persisted</small>
+                  <strong>План и безопасное выполнение</strong>
+                </div>
+                {latestDemoRun && (
+                  <span className={`demo-status ${latestDemoRun.status}`}>
+                    {DEMO_RUN_STATUS_LABEL[latestDemoRun.status]}
+                  </span>
+                )}
+              </header>
+              {!latestDemoRun ? (
+                <div className="demo-empty">
+                  <p>
+                    Manager соберёт видимый трёхшаговый plan из последней задачи. Запуск остаётся
+                    отдельным явным действием владельца.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void prepareManagerDemo()}
+                    disabled={!demoSource || demoActionPending || sending}
+                  >
+                    Подготовить Manager plan
+                  </button>
+                </div>
+              ) : (
+                <div className="demo-content">
+                  <p className="demo-goal">
+                    <small>Задача владельца</small>
+                    {latestDemoRun.owner_goal}
+                  </p>
+                  <ol className="demo-steps">
+                    {latestDemoRun.graph.nodes.map((step, index) => (
+                      <li key={step.task_id}>
+                        <span>{index + 1}</span>
+                        <div>
+                          <strong>
+                            {step.assigned_role === "manager" ? "Manager" : "Analyst"}
+                          </strong>
+                          <small>{step.expected_output_kinds.join(" · ")}</small>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                  {latestDemoRun.artifacts.length > 0 && (
+                    <div className="demo-artifacts">
+                      {latestDemoRun.artifacts.map((artifact) => (
+                        <article key={artifact.artifact_id}>
+                          <small>{artifact.kind}</small>
+                          <p>{artifact.content}</p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                  {latestDemoRun.checkpoint && (
+                    <p className="demo-checkpoint">
+                      Checkpoint сохранён ·{" "}
+                      {new Date(latestDemoRun.checkpoint.created_at).toLocaleTimeString("ru", {
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      })}
+                    </p>
+                  )}
+                  <p className="demo-boundary">
+                    Synthetic/read-only demo: без модели, сети, файлов, Tool Runtime и внешних
+                    действий.
+                  </p>
+                  {latestDemoRun.status === "queued" && (
+                    <div className="demo-actions">
+                      <button
+                        type="button"
+                        onClick={() => void executeManagerDemo()}
+                        disabled={demoActionPending || sending}
+                      >
+                        Запустить безопасный шаг
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void cancelManagerDemo()}
+                        disabled={demoActionPending || sending}
+                      >
+                        Остановить
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
           </div>
         )}
 
