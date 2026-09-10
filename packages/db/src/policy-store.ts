@@ -738,8 +738,17 @@ export class PolicyStore {
         return { status: "AUTHORITY_CHANGED" };
       }
       const profile = this.getProfile(intent.project_id);
+      const reservationTime = Date.parse(timestamp);
+      const evaluatedTime = Date.parse(verdict.evaluated_at);
+      const profileIssuedTime = profile ? Date.parse(profile.issued_at) : Number.NaN;
       if (
         !profile ||
+        verdict.operation_id !== intent.operation_id ||
+        !Number.isFinite(reservationTime) ||
+        !Number.isFinite(evaluatedTime) ||
+        !Number.isFinite(profileIssuedTime) ||
+        reservationTime < evaluatedTime ||
+        reservationTime < profileIssuedTime ||
         !Number.isInteger(authority.profileVersion) ||
         authority.profileVersion < 1 ||
         profile.version !== authority.profileVersion
@@ -750,7 +759,7 @@ export class PolicyStore {
       const expectedOverrideIds = appliedOverrideIdsForReservation(
         profile,
         intent,
-        verdict.evaluated_at
+        timestamp
       ).sort();
       if (
         suppliedOverrideIds.length !== authority.appliedOverrideIds.length ||
@@ -803,13 +812,33 @@ export class PolicyStore {
       for (const permissionId of verdict.permission_ids) {
         const available = this.#get(
           this.#sqlite.prepare(
-            `SELECT permission_id FROM permission_contracts
+            `SELECT contract_json FROM permission_contracts
              WHERE permission_id = ? AND state = 'ACTIVE'
+               AND valid_from <= ? AND (valid_until IS NULL OR valid_until >= ?)
                AND (operations_limit IS NULL OR operations_used < operations_limit)`
           ),
-          permissionId
+          permissionId,
+          timestamp,
+          timestamp
         );
         if (!available) return { status: "PERMISSION_EXHAUSTED" };
+        const contract = parseChecked<PermissionContract>(
+          PermissionContractSchema,
+          available.contract_json
+        );
+        if (
+          contract.project_id !== intent.project_id ||
+          contract.subject_id !== intent.actor_id ||
+          contract.purpose !== intent.purpose ||
+          !coversObjects(contract.object_ids, intent.object_ids) ||
+          !contract.capabilities.some(
+            (grant) =>
+              intent.capability_ids.includes(grant.capability_id) &&
+              coversObjects(grant.scope, intent.object_ids)
+          )
+        ) {
+          return { status: "AUTHORITY_CHANGED" };
+        }
       }
 
       if (nextProfile) {
@@ -844,9 +873,11 @@ export class PolicyStore {
                  END,
                  updated_at = ?
              WHERE permission_id = ? AND state = 'ACTIVE'
+               AND project_id = ? AND subject_id = ?
+               AND valid_from <= ? AND (valid_until IS NULL OR valid_until >= ?)
                AND (operations_limit IS NULL OR operations_used < operations_limit)`
           )
-          .run(timestamp, permissionId);
+          .run(timestamp, permissionId, intent.project_id, intent.actor_id, timestamp, timestamp);
         if (result.changes !== 1)
           throw new Error("Permission changed during an atomic reservation");
         this.#sqlite
