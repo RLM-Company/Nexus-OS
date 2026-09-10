@@ -149,12 +149,43 @@ describe("GuardedToolRuntime", () => {
       input: {}
     };
 
-    expect(await runtime.invoke(invocation)).toMatchObject({
-      status: "FAILED",
-      errorCode: "Error"
-    });
+    expect(await runtime.invoke(invocation)).toMatchObject({ status: "RECOVERY_REQUIRED" });
     expect(policyStore.getProfile(projectId)).toMatchObject({ version: 3, overrides: [] });
-    expect((await runtime.invoke(invocation)).status).toBe("PAUSED");
+    expect(policyStore.getOperation(projectId, invocation.idempotencyKey)).toMatchObject({
+      status: "RESERVED"
+    });
+    expect(policyStore.listRecoveryRequired(projectId)).toHaveLength(1);
+    expect((await runtime.invoke(invocation)).status).toBe("RECOVERY_REQUIRED");
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a successful external call recoverable when its result cannot be persisted", async () => {
+    setLevel("A2");
+    const cyclicResult: { self?: unknown } = {};
+    cyclicResult.self = cyclicResult;
+    const execute = vi.fn(() => Promise.resolve(cyclicResult));
+    runtime.register({
+      id: "cyclic-result-write",
+      resolveCapabilities: () => ["workspace.write"],
+      execute
+    });
+    const invocation = {
+      toolId: "cyclic-result-write",
+      operationId: "cyclic-result-operation",
+      projectId,
+      actorId: "manager",
+      objectIds: [projectId],
+      purpose: "Persist a tool result after the external action",
+      idempotencyKey: "cyclic-result-operation",
+      input: {}
+    };
+
+    expect(await runtime.invoke(invocation)).toMatchObject({ status: "RECOVERY_REQUIRED" });
+    expect(policyStore.getOperation(projectId, invocation.idempotencyKey)).toMatchObject({
+      status: "RESERVED"
+    });
+    expect(policyStore.listRecoveryRequired(projectId)).toHaveLength(1);
+    expect((await runtime.invoke(invocation)).status).toBe("RECOVERY_REQUIRED");
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
