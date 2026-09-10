@@ -51,7 +51,7 @@ const permission = (
   organizational_role: "account_owner",
   state: "ACTIVE",
   capabilities: [{ capability_id: capabilityId, mode, scope: [], conditions: [] }],
-  purpose: "Owner-approved capability expansion",
+  purpose: "Validate canonical policy profile integrity",
   object_ids: [],
   valid_from: "2026-09-09T17:00:00.000Z",
   valid_until: "2026-09-09T19:00:00.000Z",
