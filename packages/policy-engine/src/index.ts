@@ -105,6 +105,7 @@ const activePermissionGrants = (
       contract.state !== "ACTIVE" ||
       contract.project_id !== intent.project_id ||
       contract.subject_id !== intent.actor_id ||
+      contract.purpose !== intent.purpose ||
       !isWithinTimeWindow(now, contract.valid_from, contract.valid_until) ||
       !coversObjects(contract.object_ids, intent.object_ids)
     ) {
