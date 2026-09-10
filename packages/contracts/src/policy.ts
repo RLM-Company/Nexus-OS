@@ -1,4 +1,5 @@
 import { Type, type Static } from "typebox";
+import { IsoDateTimeSchema } from "./primitives.js";
 
 export const POLICY_CONTRACT_VERSION = "1.1.0" as const;
 
@@ -85,7 +86,7 @@ export const CapabilityOverrideSchema = Type.Object(
     mode: PermissionModeSchema,
     object_ids: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
     purpose: Type.String({ minLength: 1, maxLength: 2_000 }),
-    valid_until: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+    valid_until: Type.Union([IsoDateTimeSchema, Type.Null()]),
     remaining_uses: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()])
   },
   { additionalProperties: false }
@@ -100,7 +101,7 @@ export const CapabilityProfileSchema = Type.Object(
     grants: Type.Array(CapabilityGrantSchema, { minItems: 19, maxItems: 19 }),
     overrides: Type.Array(CapabilityOverrideSchema),
     version: Type.Integer({ minimum: 1 }),
-    issued_at: Type.String({ minLength: 1 })
+    issued_at: IsoDateTimeSchema
   },
   { additionalProperties: false }
 );
@@ -125,8 +126,8 @@ export const PermissionContractSchema = Type.Object(
     capabilities: Type.Array(CapabilityGrantSchema, { minItems: 1 }),
     purpose: Type.String({ minLength: 1, maxLength: 2_000 }),
     object_ids: Type.Array(Type.String({ minLength: 1 })),
-    valid_from: Type.String({ minLength: 1 }),
-    valid_until: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+    valid_from: IsoDateTimeSchema,
+    valid_until: Type.Union([IsoDateTimeSchema, Type.Null()]),
     limits: Type.Object(
       {
         money_minor: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
@@ -143,7 +144,7 @@ export const PermissionContractSchema = Type.Object(
         method: Type.Union([Type.Literal("session"), Type.Literal("step_up")]),
         terms_version: Type.String({ minLength: 1 }),
         nonce: Type.String({ minLength: 1 }),
-        approved_at: Type.String({ minLength: 1 })
+        approved_at: IsoDateTimeSchema
       },
       { additionalProperties: false }
     )
@@ -173,7 +174,7 @@ export const PolicyVerdictSchema = Type.Object(
     evaluated_capabilities: Type.Array(CapabilityGrantSchema, { minItems: 1 }),
     permission_ids: Type.Array(Type.String({ minLength: 1 })),
     reasons: Type.Array(Type.String({ minLength: 1 })),
-    evaluated_at: Type.String({ minLength: 1 }),
+    evaluated_at: IsoDateTimeSchema,
     policy_version: Type.String({ minLength: 1 })
   },
   { additionalProperties: false }
@@ -191,8 +192,8 @@ export const PolicyDecisionTraceEventSchema = Type.Object(
     object_ids: Type.Array(Type.String({ minLength: 1 })),
     reasons: Type.Array(Type.String({ minLength: 1 })),
     policy_version: Type.String({ minLength: 1 }),
-    evaluated_at: Type.String({ minLength: 1 }),
-    created_at: Type.String({ minLength: 1 })
+    evaluated_at: IsoDateTimeSchema,
+    created_at: IsoDateTimeSchema
   },
   { additionalProperties: false }
 );
@@ -217,7 +218,7 @@ export const PolicyRecoveryRequiredOperationSchema = Type.Object(
     object_ids: Type.Array(Type.String({ minLength: 1 })),
     reasons: Type.Array(Type.String({ minLength: 1 })),
     policy_version: Type.String({ minLength: 1 }),
-    reserved_at: Type.String({ minLength: 1 })
+    reserved_at: IsoDateTimeSchema
   },
   { additionalProperties: false }
 );
@@ -277,9 +278,9 @@ export const ConfirmationRequestSchema = Type.Object(
     status: ConfirmationStatusSchema,
     challenge_nonce: Type.String({ minLength: 16, maxLength: 256 }),
     requires_step_up: Type.Boolean(),
-    requested_at: Type.String({ minLength: 1 }),
-    expires_at: Type.String({ minLength: 1 }),
-    decided_at: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+    requested_at: IsoDateTimeSchema,
+    expires_at: IsoDateTimeSchema,
+    decided_at: Type.Union([IsoDateTimeSchema, Type.Null()]),
     decided_by: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
     decision_reason: Type.Union([Type.String({ minLength: 1, maxLength: 2_000 }), Type.Null()])
   },
