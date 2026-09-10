@@ -1,6 +1,6 @@
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { ServerConfig } from "@cosmora/config";
-import type { ManagerService } from "@cosmora/core";
+import { composeDemoManagerPlan, type ManagerService } from "@cosmora/core";
 import {
   AgentBlueprintListResponseSchema,
   AgentBlueprintSchema,
@@ -21,6 +21,7 @@ import {
   ConfirmationListResponseSchema,
   ConfirmationRequestSchema,
   CreateMessageRequestSchema,
+  CreateDemoManagerRunRequestSchema,
   CreateAgentBlueprintRequestSchema,
   CreateAgentBlueprintVersionRequestSchema,
   CreateAgentFunctionRequestSchema,
@@ -38,6 +39,8 @@ import {
   OwnerSessionListResponseSchema,
   OwnerSessionViewSchema,
   ProjectDetailResponseSchema,
+  DemoManagerRunListResponseSchema,
+  DemoManagerRunSchema,
   ProjectListResponseSchema,
   ProjectUsageLimitPreviewResponseSchema,
   ProjectUsageLimitResponseSchema,
@@ -72,6 +75,9 @@ import {
   type IdentityContext,
   type IdentitySession,
   type MessageAcceptedResponse,
+  type DemoManagerArtifact,
+  type DemoManagerRun,
+  type DemoManagerRunListResponse,
   type ModelRuntimeStatus,
   type OwnerSessionListResponse,
   type OwnerSessionView,
@@ -99,6 +105,7 @@ import {
   AgentStudioIdempotencyConflictError,
   type AgentStudioMutationStore,
   AgentStudioMutationValidationError,
+  DemoManagerStoreValidationError,
   IdempotencyConflictError,
   PatternLibraryConflictError,
   PatternLibraryNotFoundError,
@@ -106,12 +113,14 @@ import {
   ProjectUsageLimitExceededError,
   UsageLimitConflictError,
   type DatabaseHealth,
+  type DemoManagerStore,
   type EmergencyStopStore,
   type IdentityStore,
   type PolicyStore,
   type PatternLibraryStore,
   type ProjectStore,
   type StoredMessage,
+  type StoredDemoManagerRun,
   type StoredRun,
   type UsageStore
 } from "@cosmora/db";
@@ -120,6 +129,7 @@ import {
   type ModelGateway,
   type ModelGatewayStreamEvent
 } from "@cosmora/model-gateway";
+import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import {
@@ -130,12 +140,15 @@ import {
   type StepUpProofConsumer
 } from "./identity.js";
 import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
+import type { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
 
 export interface AppDependencies {
   config: ServerConfig;
   database: DatabaseHealth;
   identityStore?: IdentityStore;
   projectStore?: ProjectStore;
+  demoManagerStore?: DemoManagerStore;
+  demoManagerCoordinator?: DemoManagerCoordinator;
   usageStore?: UsageStore;
   emergencyStopStore?: EmergencyStopStore;
   policyStore?: PolicyStore;
@@ -326,6 +339,33 @@ const acceptedResponse = (
   user_message: accepted.userMessage,
   run_id: accepted.run.id,
   stream_url: `/api/v1/runs/${accepted.run.id}/events`
+});
+
+const demoManagerResponse = (
+  run: StoredDemoManagerRun,
+  store: DemoManagerStore
+): DemoManagerRun => ({
+  demo_run_id: run.demo_run_id,
+  project_id: run.project_id,
+  source_run_id: run.source_run_id,
+  owner_goal: run.owner_goal,
+  graph: run.graph,
+  status: run.status,
+  checkpoint: run.checkpoint,
+  error_code: run.error_code,
+  created_at: run.created_at,
+  updated_at: run.updated_at,
+  artifacts: store
+    .listArtifacts(run.demo_run_id, run.owner_id)
+    .map((artifact): DemoManagerArtifact => ({
+      artifact_id: artifact.artifact_id,
+      demo_run_id: artifact.demo_run_id,
+      project_id: artifact.project_id,
+      task_id: artifact.task_id,
+      kind: artifact.kind,
+      content: artifact.content,
+      created_at: artifact.created_at
+    }))
 });
 
 const sendEvent = (reply: FastifyReply, event: StreamEvent): void => {
@@ -1549,6 +1589,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     const store = dependencies.projectStore;
     const modelGateway = dependencies.modelGateway;
     const manager = dependencies.manager;
+    const demoManagerStore = dependencies.demoManagerStore;
+    const demoManagerCoordinator = dependencies.demoManagerCoordinator;
 
     app.get(
       "/api/v1/projects",
@@ -2206,6 +2248,201 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         return reply.status(accepted.duplicate ? 200 : 202).send(acceptedResponse(accepted));
       }
     );
+
+    if (demoManagerStore && demoManagerCoordinator) {
+      const projectParamsSchema = Type.Object(
+        { projectId: Type.String({ minLength: 1 }) },
+        { additionalProperties: false }
+      );
+      const demoRunParamsSchema = Type.Object(
+        {
+          projectId: Type.String({ minLength: 1 }),
+          demoRunId: Type.String({ minLength: 1 })
+        },
+        { additionalProperties: false }
+      );
+      const demoRunForProject = (
+        projectId: string,
+        demoRunId: string,
+        ownerId: string
+      ): StoredDemoManagerRun | null => {
+        const run = demoManagerStore.get(demoRunId, ownerId);
+        return run?.project_id === projectId ? run : null;
+      };
+
+      app.get(
+        "/api/v1/projects/:projectId/manager-demo-runs",
+        {
+          schema: {
+            params: projectParamsSchema,
+            response: { 200: DemoManagerRunListResponseSchema, 404: ApiErrorSchema }
+          }
+        },
+        async (request, reply) => {
+          const ownerId = identityFor(request).owner_id;
+          if (!store.getProject(request.params.projectId, ownerId)) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          const response: DemoManagerRunListResponse = {
+            items: demoManagerStore
+              .listForProject(request.params.projectId, ownerId)
+              .map((run) => demoManagerResponse(run, demoManagerStore))
+          };
+          return response;
+        }
+      );
+
+      app.post(
+        "/api/v1/projects/:projectId/manager-demo-runs",
+        {
+          schema: {
+            params: projectParamsSchema,
+            body: CreateDemoManagerRunRequestSchema,
+            response: {
+              200: DemoManagerRunSchema,
+              201: DemoManagerRunSchema,
+              400: ApiErrorSchema,
+              404: ApiErrorSchema,
+              409: ApiErrorSchema
+            }
+          }
+        },
+        async (request, reply) => {
+          const ownerId = identityFor(request).owner_id;
+          if (!store.getProject(request.params.projectId, ownerId)) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          const source = store.getRun(request.body.source_run_id, ownerId);
+          if (!source || source.project_id !== request.params.projectId) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "RUN_NOT_FOUND", "Source run not found"));
+          }
+          const existing = demoManagerStore.getBySourceRun(request.body.source_run_id, ownerId);
+          try {
+            const plan = composeDemoManagerPlan({
+              projectId: request.params.projectId,
+              ownerGoal: request.body.owner_goal,
+              createdAt: new Date().toISOString(),
+              createId: randomUUID
+            });
+            const run = demoManagerStore.create({
+              projectId: request.params.projectId,
+              sourceRunId: request.body.source_run_id,
+              ownerGoal: request.body.owner_goal,
+              graph: plan.graph,
+              ownerId
+            });
+            if (!run) {
+              return reply
+                .status(404)
+                .send(errorBody(request.id, "RUN_NOT_FOUND", "Source run not found"));
+            }
+            return reply
+              .status(existing ? 200 : 201)
+              .send(demoManagerResponse(run, demoManagerStore));
+          } catch (error) {
+            if (error instanceof DemoManagerStoreValidationError) {
+              return reply.status(409).send(errorBody(request.id, "CONFLICT", error.message));
+            }
+            throw error;
+          }
+        }
+      );
+
+      app.get(
+        "/api/v1/projects/:projectId/manager-demo-runs/:demoRunId",
+        {
+          schema: {
+            params: demoRunParamsSchema,
+            response: { 200: DemoManagerRunSchema, 404: ApiErrorSchema }
+          }
+        },
+        async (request, reply) => {
+          const run = demoRunForProject(
+            request.params.projectId,
+            request.params.demoRunId,
+            identityFor(request).owner_id
+          );
+          if (!run) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "RUN_NOT_FOUND", "Manager demo run not found"));
+          }
+          return demoManagerResponse(run, demoManagerStore);
+        }
+      );
+
+      app.post(
+        "/api/v1/projects/:projectId/manager-demo-runs/:demoRunId/execute",
+        {
+          schema: {
+            params: demoRunParamsSchema,
+            response: { 200: DemoManagerRunSchema, 404: ApiErrorSchema, 409: ApiErrorSchema }
+          }
+        },
+        async (request, reply) => {
+          const ownerId = identityFor(request).owner_id;
+          const before = demoRunForProject(
+            request.params.projectId,
+            request.params.demoRunId,
+            ownerId
+          );
+          if (!before) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "RUN_NOT_FOUND", "Manager demo run not found"));
+          }
+          if (before.status !== "queued") {
+            return reply
+              .status(409)
+              .send(errorBody(request.id, "CONFLICT", "Manager demo run cannot start"));
+          }
+          const executed = demoManagerCoordinator.execute(before.demo_run_id, ownerId);
+          if (!executed) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "RUN_NOT_FOUND", "Manager demo run not found"));
+          }
+          return demoManagerResponse(executed, demoManagerStore);
+        }
+      );
+
+      app.post(
+        "/api/v1/projects/:projectId/manager-demo-runs/:demoRunId/cancel",
+        {
+          schema: {
+            params: demoRunParamsSchema,
+            response: { 200: DemoManagerRunSchema, 404: ApiErrorSchema, 409: ApiErrorSchema }
+          }
+        },
+        async (request, reply) => {
+          const ownerId = identityFor(request).owner_id;
+          const before = demoRunForProject(
+            request.params.projectId,
+            request.params.demoRunId,
+            ownerId
+          );
+          if (!before) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "RUN_NOT_FOUND", "Manager demo run not found"));
+          }
+          if (before.status !== "queued" && before.status !== "running") {
+            return reply
+              .status(409)
+              .send(errorBody(request.id, "RUN_ALREADY_FINISHED", "Manager demo run is finished"));
+          }
+          const cancelled = demoManagerStore.cancel(before.demo_run_id, ownerId);
+          if (!cancelled) throw new Error("Demo Manager run disappeared during cancellation");
+          return demoManagerResponse(cancelled, demoManagerStore);
+        }
+      );
+    }
 
     app.post(
       "/api/v1/runs/:runId/cancel",
