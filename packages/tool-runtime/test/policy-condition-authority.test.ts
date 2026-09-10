@@ -56,7 +56,7 @@ describe("GuardedToolRuntime policy condition authority", () => {
       const result = await runtime.invoke(untrustedInvocation);
       expect(result.status).toBe("WAITING_CONFIRMATION");
       expect(execute).not.toHaveBeenCalled();
-    }
+    },
   );
 
   it("accepts a conditional expansion only from the runtime's trusted resolver", async () => {
