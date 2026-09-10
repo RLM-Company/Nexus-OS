@@ -9,6 +9,7 @@ describe("GuardedToolRuntime", () => {
   let policyStore: PolicyStore;
   let runtime: GuardedToolRuntime;
   let projectId: string;
+  let currentTime: string;
 
   beforeEach(async () => {
     database = openDatabase(":memory:");
@@ -17,7 +18,8 @@ describe("GuardedToolRuntime", () => {
       .project.id;
     policyStore = new PolicyStore(database.sqlite);
     policyStore.ensureProfile(projectId, NOW);
-    runtime = new GuardedToolRuntime(policyStore);
+    currentTime = NOW;
+    runtime = new GuardedToolRuntime(policyStore, { now: () => currentTime });
   });
 
   afterEach(() => database.close());
@@ -50,8 +52,7 @@ describe("GuardedToolRuntime", () => {
       objectIds: [projectId],
       purpose: "Write a project artifact",
       idempotencyKey: "write-once",
-      input: { value: 4 },
-      evaluatedAt: NOW
+      input: { value: 4 }
     };
     const first = await runtime.invoke<typeof invocation.input, { doubled: number }>(invocation);
     const replay = await runtime.invoke<typeof invocation.input, { doubled: number }>(invocation);
@@ -93,8 +94,7 @@ describe("GuardedToolRuntime", () => {
       objectIds: [projectId],
       purpose: "Write one exact project artifact",
       idempotencyKey: "finite-runtime-write-1",
-      input: {},
-      evaluatedAt: NOW
+      input: {}
     };
 
     const first = await runtime.invoke(invocation);
@@ -146,8 +146,7 @@ describe("GuardedToolRuntime", () => {
       objectIds: [projectId],
       purpose: "Attempt one bounded project write",
       idempotencyKey: "finite-failing-write-once",
-      input: {},
-      evaluatedAt: NOW
+      input: {}
     };
 
     expect(await runtime.invoke(invocation)).toMatchObject({
@@ -175,8 +174,7 @@ describe("GuardedToolRuntime", () => {
       objectIds: ["recipient-1"],
       purpose: "Send a message",
       idempotencyKey: "send-once",
-      input: { text: "Hello" },
-      evaluatedAt: NOW
+      input: { text: "Hello" }
     };
     const pending = await runtime.invoke(invocation);
     expect(pending.status).toBe("WAITING_CONFIRMATION");
@@ -194,14 +192,10 @@ describe("GuardedToolRuntime", () => {
       }).status
     ).toBe("APPROVED");
 
-    const executed = await runtime.invoke({
-      ...invocation,
-      evaluatedAt: "2026-08-24T12:00:02.000Z"
-    });
-    const replay = await runtime.invoke({
-      ...invocation,
-      evaluatedAt: "2026-08-24T12:00:03.000Z"
-    });
+    currentTime = "2026-08-24T12:00:02.000Z";
+    const executed = await runtime.invoke(invocation);
+    currentTime = "2026-08-24T12:00:03.000Z";
+    const replay = await runtime.invoke(invocation);
     expect(executed.status).toBe("EXECUTED");
     expect(replay).toMatchObject({ status: "EXECUTED", replayed: true });
     expect(execute).toHaveBeenCalledTimes(1);
@@ -230,8 +224,7 @@ describe("GuardedToolRuntime", () => {
       objectIds: [projectId],
       purpose: "Slow write",
       idempotencyKey: "slow-once",
-      input: {},
-      evaluatedAt: NOW
+      input: {}
     };
     const first = runtime.invoke(invocation);
     await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
@@ -258,8 +251,7 @@ describe("GuardedToolRuntime", () => {
       objectIds: ["https://example.com"],
       purpose: "Read a website",
       idempotencyKey: "web-read",
-      input: {},
-      evaluatedAt: NOW
+      input: {}
     });
     expect(result.status).toBe("PAUSED");
     expect(execute).not.toHaveBeenCalled();
