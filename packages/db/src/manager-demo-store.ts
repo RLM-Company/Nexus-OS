@@ -139,6 +139,18 @@ export class DemoManagerStore {
     return row ? this.#asRun(row) : null;
   }
 
+  listForProject(projectId: string, ownerId = LOCAL_OWNER_ID): StoredDemoManagerRun[] {
+    const rows = this.#sqlite
+      .prepare(
+        `SELECT demo_run_id, owner_id, project_id, source_run_id, owner_goal, graph_json, status,
+                checkpoint_json, error_code, created_at, updated_at
+         FROM manager_demo_runs WHERE project_id = ? AND owner_id = ?
+         ORDER BY created_at DESC, rowid DESC`
+      )
+      .all(projectId, ownerId) as SqlRow[];
+    return rows.map((row) => this.#asRun(row));
+  }
+
   claim(demoRunId: string, ownerId = LOCAL_OWNER_ID): boolean {
     const result = this.#sqlite
       .prepare(
