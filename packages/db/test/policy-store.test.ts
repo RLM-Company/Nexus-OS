@@ -330,6 +330,151 @@ describe("PolicyStore", () => {
     expect(store.getProfile(projectId)).toMatchObject({ version: 4, overrides: [] });
   });
 
+  it("revalidates override expiry and timestamp chronology at atomic reservation", () => {
+    const initial = store.ensureProfile(projectId, NOW)!;
+    const finite = store.updateProfile({
+      projectId,
+      baseLevel: "A0",
+      overrides: [
+        {
+          override_id: "expiring-workspace-write",
+          capability_id: "workspace.write",
+          mode: "AUTONOMOUS",
+          object_ids: [projectId],
+          purpose: "Allow one bounded write before expiry",
+          valid_until: "2026-08-24T12:00:01.000Z",
+          remaining_uses: 1
+        }
+      ],
+      expectedVersion: initial.version,
+      issuedAt: NOW
+    })!;
+    const intent: PolicyIntent = {
+      operation_id: "expiring-override-operation",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["workspace.write"],
+      object_ids: [projectId],
+      purpose: "Allow one bounded write before expiry",
+      idempotency_key: "expiring-override-operation"
+    };
+    const verdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "ALLOW",
+      evaluated_capabilities: [
+        { capability_id: "workspace.write", mode: "AUTONOMOUS", scope: [], conditions: [] }
+      ],
+      permission_ids: [],
+      reasons: ["The point override was active during evaluation."],
+      evaluated_at: NOW,
+      policy_version: "1.1.0"
+    };
+    const authority = {
+      profileVersion: finite.version,
+      appliedOverrideIds: ["expiring-workspace-write"]
+    };
+
+    expect(
+      store.reserveAllowed(intent, verdict, authority, "2026-08-24T12:00:02.000Z").status
+    ).toBe("AUTHORITY_CHANGED");
+    expect(store.getOperation(projectId, intent.idempotency_key)).toBeNull();
+    expect(store.getProfile(projectId)).toMatchObject({
+      version: finite.version,
+      overrides: [{ override_id: "expiring-workspace-write", remaining_uses: 1 }]
+    });
+
+    const backwardsIntent: PolicyIntent = {
+      ...intent,
+      operation_id: "backwards-time-operation",
+      idempotency_key: "backwards-time-operation"
+    };
+    expect(
+      store.reserveAllowed(
+        backwardsIntent,
+        { ...verdict, operation_id: backwardsIntent.operation_id },
+        authority,
+        "2026-08-24T11:59:59.000Z"
+      ).status
+    ).toBe("AUTHORITY_CHANGED");
+    expect(store.getOperation(projectId, backwardsIntent.idempotency_key)).toBeNull();
+  });
+
+  it("revalidates permission expiry at atomic reservation", () => {
+    const profile = store.ensureProfile(projectId, NOW)!;
+    const intent: PolicyIntent = {
+      operation_id: "expiring-permission-operation",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["external.communicate"],
+      object_ids: ["campaign-expiring-permission"],
+      purpose: "Send one message while the permission is valid",
+      idempotency_key: "expiring-permission-operation"
+    };
+    const confirmation = store.createConfirmation(
+      intent,
+      confirmationVerdict(intent, "external.communicate"),
+      NOW,
+      1_000
+    );
+    const approval = store.decideConfirmation({
+      confirmationId: confirmation.confirmation_id,
+      challengeNonce: confirmation.challenge_nonce,
+      decision: "approve",
+      decidedBy: "local-owner",
+      approvalMethod: "session",
+      decidedAt: "2026-08-24T12:00:00.500Z"
+    });
+    expect(approval.status).toBe("APPROVED");
+    if (approval.status !== "APPROVED") throw new Error("Expected permission approval");
+    const verdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "ALLOW",
+      evaluated_capabilities: [
+        {
+          capability_id: "external.communicate",
+          mode: "AUTONOMOUS",
+          scope: [...intent.object_ids],
+          conditions: ["owner_confirmed_operation"]
+        }
+      ],
+      permission_ids: [approval.permission.permission_id],
+      reasons: ["The owner permission was active during evaluation."],
+      evaluated_at: "2026-08-24T12:00:00.500Z",
+      policy_version: "1.1.0"
+    };
+
+    const otherPurposeIntent: PolicyIntent = {
+      ...intent,
+      operation_id: "different-purpose-operation",
+      purpose: "Reuse the approval for a different message",
+      idempotency_key: "different-purpose-operation"
+    };
+    expect(
+      store.reserveAllowed(
+        otherPurposeIntent,
+        { ...verdict, operation_id: otherPurposeIntent.operation_id },
+        { profileVersion: profile.version, appliedOverrideIds: [] },
+        "2026-08-24T12:00:00.750Z"
+      ).status
+    ).toBe("AUTHORITY_CHANGED");
+    expect(store.getOperation(projectId, otherPurposeIntent.idempotency_key)).toBeNull();
+
+    expect(
+      store.reserveAllowed(
+        intent,
+        verdict,
+        { profileVersion: profile.version, appliedOverrideIds: [] },
+        "2026-08-24T12:00:02.000Z"
+      ).status
+    ).toBe("PERMISSION_EXHAUSTED");
+    expect(store.getOperation(projectId, intent.idempotency_key)).toMatchObject({
+      status: "READY"
+    });
+    expect(
+      store.listActivePermissions(projectId, "manager", "2026-08-24T12:00:02.000Z")
+    ).toHaveLength(0);
+  });
+
   it("refuses a session-only approval for a critical capability", () => {
     const intent: PolicyIntent = {
       operation_id: "operation-finance",

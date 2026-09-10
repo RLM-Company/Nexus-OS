@@ -34,7 +34,6 @@ export interface ToolInvocation<Input> {
   purpose: string;
   idempotencyKey: string;
   input: Input;
-  evaluatedAt?: string;
 }
 
 export interface PolicyConditionResolutionInput {
@@ -51,6 +50,7 @@ export type PolicyConditionResolver = (
 
 export interface GuardedToolRuntimeOptions {
   resolveActiveConditionIds?: PolicyConditionResolver;
+  now?: () => string;
 }
 
 export type ToolInvocationResult<Output> =
@@ -85,10 +85,12 @@ export class GuardedToolRuntime {
   readonly #policyStore: PolicyStore;
   readonly #tools = new Map<string, GuardedTool<unknown, unknown>>();
   readonly #resolveActiveConditionIds: PolicyConditionResolver;
+  readonly #now: () => string;
 
   constructor(policyStore: PolicyStore, options: GuardedToolRuntimeOptions = {}) {
     this.#policyStore = policyStore;
     this.#resolveActiveConditionIds = options.resolveActiveConditionIds ?? (() => []);
+    this.#now = options.now ?? (() => new Date().toISOString());
   }
 
   register<Input, Output>(tool: GuardedTool<Input, Output>): void {
@@ -99,7 +101,7 @@ export class GuardedToolRuntime {
   async invoke<Input, Output>(
     invocation: ToolInvocation<Input>
   ): Promise<ToolInvocationResult<Output>> {
-    const evaluatedAt = invocation.evaluatedAt ?? new Date().toISOString();
+    const evaluatedAt = this.#now();
     const registered = this.#tools.get(invocation.toolId);
     const existingOperation = this.#policyStore.getOperation(
       invocation.projectId,

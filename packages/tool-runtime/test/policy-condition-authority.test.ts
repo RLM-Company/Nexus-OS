@@ -31,7 +31,7 @@ describe("GuardedToolRuntime policy condition authority", () => {
 
   it("ignores a caller-supplied conditional expansion and keeps the action confirmation-gated", async () => {
     const execute = vi.fn(() => Promise.resolve({ deployed: true }));
-    const runtime = new GuardedToolRuntime(policyStore);
+    const runtime = new GuardedToolRuntime(policyStore, { now: () => NOW });
     runtime.register({
       id: "fake-production-release",
       resolveCapabilities: () => ["production.deploy"],
@@ -47,12 +47,13 @@ describe("GuardedToolRuntime policy condition authority", () => {
       purpose: "Attempt a subsequent release",
       idempotencyKey: "untrusted-condition",
       input: {},
-      evaluatedAt: NOW,
+      evaluatedAt: "2000-01-01T00:00:00.000Z",
       activeConditionIds: ["subsequent_release_after_approved_first_release"]
     };
 
     const result = await runtime.invoke(untrustedInvocation);
     expect(result.status).toBe("WAITING_CONFIRMATION");
+    expect(result.verdict.evaluated_at).toBe(NOW);
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -61,7 +62,10 @@ describe("GuardedToolRuntime policy condition authority", () => {
       "subsequent_release_after_approved_first_release"
     ]);
     const execute = vi.fn(() => Promise.resolve({ deployed: true }));
-    const runtime = new GuardedToolRuntime(policyStore, { resolveActiveConditionIds });
+    const runtime = new GuardedToolRuntime(policyStore, {
+      resolveActiveConditionIds,
+      now: () => NOW
+    });
     runtime.register({
       id: "fake-production-release",
       resolveCapabilities: () => ["production.deploy"],
@@ -76,8 +80,7 @@ describe("GuardedToolRuntime policy condition authority", () => {
       objectIds: ["release-2"],
       purpose: "Execute a policy-authorized subsequent release",
       idempotencyKey: "trusted-condition",
-      input: {},
-      evaluatedAt: NOW
+      input: {}
     });
 
     expect(result.status).toBe("EXECUTED");
@@ -94,7 +97,8 @@ describe("GuardedToolRuntime policy condition authority", () => {
   it("pauses without executing when authoritative condition resolution fails", async () => {
     const execute = vi.fn(() => Promise.resolve({ deployed: true }));
     const runtime = new GuardedToolRuntime(policyStore, {
-      resolveActiveConditionIds: () => Promise.reject(new Error("Condition store unavailable"))
+      resolveActiveConditionIds: () => Promise.reject(new Error("Condition store unavailable")),
+      now: () => NOW
     });
     runtime.register({
       id: "fake-production-release",
@@ -110,8 +114,7 @@ describe("GuardedToolRuntime policy condition authority", () => {
       objectIds: ["release-2"],
       purpose: "Attempt a release while condition authority is unavailable",
       idempotencyKey: "condition-resolution-failure",
-      input: {},
-      evaluatedAt: NOW
+      input: {}
     });
 
     expect(result.status).toBe("PAUSED");

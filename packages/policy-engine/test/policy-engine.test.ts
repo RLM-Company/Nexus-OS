@@ -52,7 +52,7 @@ const permission = (
   organizational_role: "account_owner",
   state: "ACTIVE",
   capabilities: [{ capability_id: capabilityId, mode, scope: [], conditions: [] }],
-  purpose: "Owner-approved task permission",
+  purpose: "Run a policy-engine test",
   object_ids: [],
   valid_from: "2026-08-24T00:00:00Z",
   valid_until: null,
@@ -153,6 +153,23 @@ describe("evaluatePolicy", () => {
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("NEEDS_CONFIRMATION");
+  });
+
+  it("does not reuse an owner permission for another purpose", () => {
+    const verdict = evaluatePolicy(
+      {
+        intent: intent(["contract.finalize"]),
+        profile: profile("A3"),
+        permissionContracts: [
+          permission("contract.finalize", "AUTONOMOUS", {
+            purpose: "Finalize an unrelated contract"
+          })
+        ]
+      },
+      { evaluatedAt: NOW }
+    );
+    expect(verdict.verdict).toBe("NEEDS_CONFIRMATION");
+    expect(verdict.permission_ids).toEqual([]);
   });
 
   it("lets a profile override reduce autonomy", () => {

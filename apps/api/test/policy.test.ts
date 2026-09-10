@@ -312,6 +312,8 @@ describe("autonomy and confirmation API", () => {
       purpose: "Private campaign content must not appear in recovery API",
       idempotency_key: "private-recovery-api-key"
     };
+    const profile = policyStore.ensureProfile(projectId)!;
+    const reservedAt = new Date(Date.parse(profile.issued_at) + 1_000).toISOString();
     const verdict: PolicyVerdict = {
       operation_id: intent.operation_id,
       verdict: "ALLOW",
@@ -325,15 +327,14 @@ describe("autonomy and confirmation API", () => {
       ],
       permission_ids: [],
       reasons: ["Operation was allowed by the active profile."],
-      evaluated_at: "2026-09-02T04:00:00.000Z",
+      evaluated_at: profile.issued_at,
       policy_version: "1.1.0"
     };
-    const profile = policyStore.ensureProfile(projectId)!;
     policyStore.reserveAllowed(
       intent,
       verdict,
       { profileVersion: profile.version, appliedOverrideIds: [] },
-      "2026-09-02T04:01:00.000Z"
+      reservedAt
     );
 
     const response = await app.inject({
@@ -352,7 +353,7 @@ describe("autonomy and confirmation API", () => {
           object_ids: ["campaign-recovery-api"],
           reasons: ["Operation was allowed by the active profile."],
           policy_version: "1.1.0",
-          reserved_at: "2026-09-02T04:01:00.000Z"
+          reserved_at: reservedAt
         }
       ],
       limit: 1
