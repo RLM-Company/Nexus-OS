@@ -29,32 +29,35 @@ describe("GuardedToolRuntime policy condition authority", () => {
 
   afterEach(() => database.close());
 
-  it("ignores a caller-supplied conditional expansion and keeps the action confirmation-gated", async () => {
-    const execute = vi.fn(() => Promise.resolve({ deployed: true }));
-    const runtime = new GuardedToolRuntime(policyStore);
-    runtime.register({
-      id: "fake-production-release",
-      resolveCapabilities: () => ["production.deploy"],
-      execute
-    });
+  it(
+    "ignores a caller-supplied conditional expansion and keeps the action confirmation-gated",
+    async () => {
+      const execute = vi.fn(() => Promise.resolve({ deployed: true }));
+      const runtime = new GuardedToolRuntime(policyStore);
+      runtime.register({
+        id: "fake-production-release",
+        resolveCapabilities: () => ["production.deploy"],
+        execute
+      });
 
-    const untrustedInvocation = {
-      toolId: "fake-production-release",
-      operationId: "untrusted-condition-operation",
-      projectId,
-      actorId: "manager",
-      objectIds: ["release-2"],
-      purpose: "Attempt a subsequent release",
-      idempotencyKey: "untrusted-condition",
-      input: {},
-      evaluatedAt: NOW,
-      activeConditionIds: ["subsequent_release_after_approved_first_release"]
-    };
+      const untrustedInvocation = {
+        toolId: "fake-production-release",
+        operationId: "untrusted-condition-operation",
+        projectId,
+        actorId: "manager",
+        objectIds: ["release-2"],
+        purpose: "Attempt a subsequent release",
+        idempotencyKey: "untrusted-condition",
+        input: {},
+        evaluatedAt: NOW,
+        activeConditionIds: ["subsequent_release_after_approved_first_release"]
+      };
 
-    const result = await runtime.invoke(untrustedInvocation);
-    expect(result.status).toBe("WAITING_CONFIRMATION");
-    expect(execute).not.toHaveBeenCalled();
-  });
+      const result = await runtime.invoke(untrustedInvocation);
+      expect(result.status).toBe("WAITING_CONFIRMATION");
+      expect(execute).not.toHaveBeenCalled();
+    }
+  );
 
   it("accepts a conditional expansion only from the runtime's trusted resolver", async () => {
     const resolveActiveConditionIds = vi.fn(() => [
