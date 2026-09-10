@@ -299,10 +299,8 @@ export class GuardedToolRuntime {
         });
         this.#policyStore.completeOperation(intent.operation_id, result);
         return { status: "EXECUTED", verdict, result: result as Output, replayed: false };
-      } catch (error) {
-        const errorCode = error instanceof Error ? error.name : "TOOL_EXECUTION_ERROR";
-        this.#policyStore.failOperation(intent.operation_id, errorCode);
-        return { status: "FAILED", verdict, errorCode };
+      } catch {
+        return { status: "RECOVERY_REQUIRED", verdict };
       }
     } catch (error) {
       if (error instanceof PolicyStoreConflictError) {
