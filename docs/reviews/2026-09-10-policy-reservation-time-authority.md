@@ -12,6 +12,8 @@ timestamp. Atomic reservation did not repeat the same time-window checks consist
 - point overrides were re-derived from the older `verdict.evaluated_at` value;
 - permission contracts were checked only for active state and remaining operations;
 - a reservation timestamp could precede the verdict or the active profile timestamp;
+- `GuardedToolRuntime` accepted an invocation-supplied evaluation timestamp, so an untrusted caller
+  could ask the policy layer to evaluate an old authority window;
 - a permission ID was not defensively rebound to the approved project, actor, purpose, object scope
   and requested capability at reservation.
 
@@ -25,16 +27,18 @@ time-of-check/time-of-use boundary.
 `PolicyStore.reserveAllowed` now performs all authority checks inside its existing
 `BEGIN IMMEDIATE` transaction:
 
-1. the verdict operation ID must match the intent;
-2. the reservation, verdict and profile timestamps must parse, and reservation time cannot precede
+1. Tool Runtime obtains evaluation time only from its server-owned clock; deterministic tests inject
+   that clock at runtime construction rather than through an invocation field;
+2. the verdict operation ID must match the intent;
+3. the reservation, verdict and profile timestamps must parse, and reservation time cannot precede
    either source of authority;
-3. point overrides are re-derived at reservation time, so expiry between evaluation and
+4. point overrides are re-derived at reservation time, so expiry between evaluation and
    reservation returns `AUTHORITY_CHANGED` without consuming an override;
-4. permission contracts must still be inside their validity window and retain an available
+5. permission contracts must still be inside their validity window and retain an available
    operation;
-5. each permission is rebound to the same project, actor, purpose, object scope and at least one
+6. each permission is rebound to the same project, actor, purpose, object scope and at least one
    requested capability before it can be consumed;
-6. the final atomic permission update repeats the project, actor, validity and usage predicates.
+7. the final atomic permission update repeats the project, actor, validity and usage predicates.
 
 The Policy Engine now also excludes a permission whose approved purpose differs from the current
 intent, preventing it from producing an elevated verdict for that mismatch.
@@ -47,6 +51,7 @@ Tests cover:
 - backwards reservation chronology;
 - permission expiry between evaluation and reservation;
 - attempted permission reuse for another purpose;
+- ignored invocation-supplied timestamps and trusted clock injection;
 - unchanged profile counters and absent operation rows after rejected reservations;
 - the existing one-use, idempotent replay and recovery-required behavior.
 
