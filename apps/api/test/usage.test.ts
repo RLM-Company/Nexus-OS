@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import type { StepUpProofConsumption } from "../src/identity.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
+import { projectUsageLimitStepUpChallenge } from "../src/step-up-challenge.js";
 
 describe("project usage API", () => {
   const config = loadServerConfig({ NODE_ENV: "test" });
@@ -230,7 +231,7 @@ describe("project usage API", () => {
     expect(projectStore.getRun(accepted.run.id)?.status).toBe("failed");
   });
 
-  it("binds a successful expansion step-up to the project and current limit version", async () => {
+  it("binds a successful expansion step-up to the exact proposed project limit", async () => {
     const accepted = projectStore.createProject("Expand usage limits", "usage-limit-step-up-1");
     const usageStore = new UsageStore(database.sqlite);
     usageStore.ensureLimit(accepted.project.id);
@@ -254,7 +255,11 @@ describe("project usage API", () => {
     expect(consumedStepUps[0]).toMatchObject({
       token: "valid-step-up",
       purpose: "project_usage_limit_expansion",
-      challenge: `project:${accepted.project.id}:usage-limit:2`
+      challenge: projectUsageLimitStepUpChallenge(accepted.project.id, {
+        expected_version: 2,
+        max_total_tokens: 200,
+        max_cost: null
+      })
     });
   });
 });
