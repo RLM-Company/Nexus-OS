@@ -194,7 +194,8 @@ export class GuardedToolRuntime {
     const permissionContracts = this.#policyStore.listActivePermissions(
       intent.project_id,
       intent.actor_id,
-      evaluatedAt
+      evaluatedAt,
+      intent.operation_id
     );
     let activeConditionIds: string[];
     try {
