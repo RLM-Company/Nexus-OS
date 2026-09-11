@@ -224,6 +224,14 @@ describe("GuardedToolRuntime", () => {
     ).toBe("APPROVED");
 
     currentTime = "2026-08-24T12:00:02.000Z";
+    const differentOperation = await runtime.invoke({
+      ...invocation,
+      operationId: "operation-send-unapproved",
+      idempotencyKey: "send-unapproved"
+    });
+    expect(differentOperation.status).toBe("WAITING_CONFIRMATION");
+    expect(execute).not.toHaveBeenCalled();
+
     const executed = await runtime.invoke(invocation);
     currentTime = "2026-08-24T12:00:03.000Z";
     const replay = await runtime.invoke(invocation);

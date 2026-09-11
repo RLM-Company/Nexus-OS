@@ -89,6 +89,22 @@ describe("PolicyStore", () => {
       "2026-08-24T12:02:00.000Z"
     );
     expect(permissions).toHaveLength(1);
+    expect(
+      store.listActivePermissions(
+        projectId,
+        "manager",
+        "2026-08-24T12:02:00.000Z",
+        "another-operation"
+      )
+    ).toEqual([]);
+    expect(
+      store.listActivePermissions(
+        projectId,
+        "manager",
+        "2026-08-24T12:02:00.000Z",
+        intent.operation_id
+      )
+    ).toEqual(permissions);
 
     const allowedVerdict: PolicyVerdict = {
       ...verdict,
@@ -767,7 +783,7 @@ describe("PolicyStore", () => {
         { profileVersion: profile.version, appliedOverrideIds: [] },
         "2026-08-24T12:00:00.750Z"
       ).status
-    ).toBe("AUTHORITY_CHANGED");
+    ).toBe("PERMISSION_EXHAUSTED");
     expect(store.getOperation(projectId, otherPurposeIntent.idempotency_key)).toBeNull();
 
     expect(

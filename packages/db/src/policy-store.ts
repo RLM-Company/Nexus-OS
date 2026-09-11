@@ -353,7 +353,8 @@ export class PolicyStore {
   listActivePermissions(
     projectId: string,
     subjectId: string,
-    evaluatedAt: string
+    evaluatedAt: string,
+    operationId?: string
   ): PermissionContract[] {
     this.#sqlite
       .prepare(
@@ -365,12 +366,21 @@ export class PolicyStore {
     return (
       this.#sqlite
         .prepare(
-          `SELECT contract_json FROM permission_contracts
-           WHERE project_id = ? AND subject_id = ? AND state = 'ACTIVE'
-             AND valid_from <= ? AND (valid_until IS NULL OR valid_until >= ?)
-             AND (operations_limit IS NULL OR operations_used < operations_limit)`
+          `SELECT pc.contract_json FROM permission_contracts pc
+           LEFT JOIN confirmation_requests cr ON cr.confirmation_id = pc.confirmation_id
+           WHERE pc.project_id = ? AND pc.subject_id = ? AND pc.state = 'ACTIVE'
+             AND pc.valid_from <= ? AND (pc.valid_until IS NULL OR pc.valid_until >= ?)
+             AND (pc.operations_limit IS NULL OR pc.operations_used < pc.operations_limit)
+             AND (? IS NULL OR pc.confirmation_id IS NULL OR cr.operation_id = ?)`
         )
-        .all(projectId, subjectId, evaluatedAt, evaluatedAt) as unknown as SqlRow[]
+        .all(
+          projectId,
+          subjectId,
+          evaluatedAt,
+          evaluatedAt,
+          operationId ?? null,
+          operationId ?? null
+        ) as unknown as SqlRow[]
     ).map((row) => parseChecked<PermissionContract>(PermissionContractSchema, row.contract_json));
   }
 
@@ -898,7 +908,8 @@ export class PolicyStore {
       const activePermissionContracts = this.listActivePermissions(
         intent.project_id,
         intent.actor_id,
-        timestamp
+        timestamp,
+        intent.operation_id
       );
       for (const permissionId of verdict.permission_ids) {
         const contract = activePermissionContracts.find(
