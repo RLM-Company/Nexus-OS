@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import type { StepUpProofConsumption } from "../src/identity.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
+import { autonomyProfileStepUpChallenge } from "../src/step-up-challenge.js";
 
 describe("autonomy and confirmation API", () => {
   const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
@@ -247,7 +248,11 @@ describe("autonomy and confirmation API", () => {
     expect(consumedStepUps).toHaveLength(1);
     expect(consumedStepUps[0]).toMatchObject({
       purpose: "autonomy_profile_escalation",
-      challenge: `project:${projectId}:autonomy-profile:1`,
+      challenge: autonomyProfileStepUpChallenge(projectId, {
+        base_level: "A6",
+        overrides: [],
+        expected_version: 1
+      }),
       identity: {
         owner_id: "local-owner",
         actor_id: "local-owner",
