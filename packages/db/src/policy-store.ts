@@ -9,6 +9,7 @@ import {
   PolicyRecoveryRequiredOperationSchema,
   PolicyVerdictSchema,
   createCapabilityProfile,
+  hasUniqueCapabilityOverrideIds,
   requiresStepUp,
   verdictForModes,
   type AutonomyLevel,
@@ -316,7 +317,13 @@ export class PolicyStore {
     issuedAt?: string;
   }): CapabilityProfile | null {
     const current = this.getProfile(input.projectId);
-    if (!current || current.version !== input.expectedVersion) return null;
+    if (
+      !current ||
+      current.version !== input.expectedVersion ||
+      !hasUniqueCapabilityOverrideIds(input.overrides)
+    ) {
+      return null;
+    }
     const issuedAt = input.issuedAt ?? nowIso();
     const next = createCapabilityProfile({
       profileId: current.profile_id,

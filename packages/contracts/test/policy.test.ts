@@ -6,6 +6,7 @@ import {
   CAPABILITY_IDS,
   CapabilityProfilePreviewResponseSchema,
   CapabilityProfileSchema,
+  type CapabilityOverride,
   ConfirmationRequestSchema,
   PermissionContractSchema,
   PolicyDecisionTraceEventSchema,
@@ -16,6 +17,7 @@ import {
   PolicyVerdictSchema,
   createCapabilityProfile,
   getCapabilityMode,
+  hasUniqueCapabilityOverrideIds,
   isAtLeastAsAutonomous,
   verdictForModes
 } from "../src/policy.js";
@@ -61,6 +63,21 @@ describe("autonomy policy contracts", () => {
     for (const capabilityId of CAPABILITY_IDS) {
       expect(getCapabilityMode("A6", capabilityId)).toBe("FULL");
     }
+  });
+
+  it("requires stable point override identities to be unique", () => {
+    const override: CapabilityOverride = {
+      override_id: "one-project-write",
+      capability_id: "workspace.write",
+      mode: "AUTONOMOUS",
+      object_ids: ["project-1"],
+      purpose: "Write one project artifact",
+      valid_until: null,
+      remaining_uses: 1
+    };
+
+    expect(hasUniqueCapabilityOverrideIds([override])).toBe(true);
+    expect(hasUniqueCapabilityOverrideIds([override, { ...override, mode: "DENY" }])).toBe(false);
   });
 
   it("separates A1 read access from A2 persistent writes", () => {

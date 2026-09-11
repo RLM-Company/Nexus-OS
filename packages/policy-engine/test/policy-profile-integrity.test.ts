@@ -139,6 +139,31 @@ describe("policy profile base grant integrity", () => {
     );
   });
 
+  it("pauses the whole evaluation when point override identities are duplicated", () => {
+    const duplicate = {
+      override_id: "duplicate-override",
+      capability_id: "workspace.write" as const,
+      mode: "AUTONOMOUS" as const,
+      object_ids: ["project-1"],
+      purpose: "Validate canonical policy profile integrity",
+      valid_until: null,
+      remaining_uses: 1
+    };
+    const tampered = profile("A0", [duplicate, { ...duplicate }]);
+
+    const verdict = evaluatePolicy(
+      {
+        intent: intent("agent.manage"),
+        profile: tampered,
+        permissionContracts: []
+      },
+      { evaluatedAt: NOW }
+    );
+
+    expect(verdict.verdict).toBe("PAUSE");
+    expect(verdict.reasons).toContain("Capability profile contains duplicate point override IDs.");
+  });
+
   it("pauses when a base grant is made more restrictive outside the override mechanism", () => {
     const tampered = replaceBaseMode(profile("A5"), "external.communicate", "DENY");
     const verdict = evaluatePolicy(

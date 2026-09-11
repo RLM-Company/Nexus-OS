@@ -56,6 +56,7 @@ import {
   UpdateCapabilityProfileRequestSchema,
   UpdateProjectUsageLimitRequestSchema,
   createCapabilityProfile,
+  hasUniqueCapabilityOverrideIds,
   requiresStepUp,
   type ApiError,
   type AgentBlueprintListResponse,
@@ -1897,6 +1898,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             body: UpdateCapabilityProfileRequestSchema,
             response: {
               200: CapabilityProfilePreviewResponseSchema,
+              400: ApiErrorSchema,
               404: ApiErrorSchema,
               409: ApiErrorSchema
             }
@@ -1925,6 +1927,11 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                   "Autonomy profile version changed"
                 )
               );
+          }
+          if (!hasUniqueCapabilityOverrideIds(request.body.overrides)) {
+            return reply
+              .status(400)
+              .send(errorBody(request.id, "VALIDATION_ERROR", "Point override IDs must be unique"));
           }
           const response: CapabilityProfilePreviewResponse = {
             current_version: current.version,
@@ -1959,6 +1966,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             body: UpdateCapabilityProfileRequestSchema,
             response: {
               200: CapabilityProfileResponseSchema,
+              400: ApiErrorSchema,
               404: ApiErrorSchema,
               409: ApiErrorSchema,
               403: ApiErrorSchema
@@ -1973,6 +1981,11 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
           }
           policyStore.ensureProfile(request.params.projectId);
+          if (!hasUniqueCapabilityOverrideIds(request.body.overrides)) {
+            return reply
+              .status(400)
+              .send(errorBody(request.id, "VALIDATION_ERROR", "Point override IDs must be unique"));
+          }
           if (profileUpdateRequiresStepUp(request.body.base_level, request.body.overrides)) {
             const token = stepUpToken(request.headers["x-step-up-token"]);
             const verified =
