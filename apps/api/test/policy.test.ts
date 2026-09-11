@@ -307,7 +307,7 @@ describe("autonomy and confirmation API", () => {
       operation_id: "recovery-operation-api",
       project_id: projectId,
       actor_id: "manager",
-      capability_ids: ["external.communicate"],
+      capability_ids: ["agent.manage"],
       object_ids: ["campaign-recovery-api"],
       purpose: "Private campaign content must not appear in recovery API",
       idempotency_key: "private-recovery-api-key"
@@ -319,9 +319,9 @@ describe("autonomy and confirmation API", () => {
       verdict: "ALLOW",
       evaluated_capabilities: [
         {
-          capability_id: "external.communicate",
+          capability_id: "agent.manage",
           mode: "AUTONOMOUS",
-          scope: ["private-audience-segment"],
+          scope: [],
           conditions: []
         }
       ],
@@ -349,7 +349,7 @@ describe("autonomy and confirmation API", () => {
           project_id: projectId,
           actor_id: "manager",
           recovery_status: "RECOVERY_REQUIRED",
-          capability_ids: ["external.communicate"],
+          capability_ids: ["agent.manage"],
           object_ids: ["campaign-recovery-api"],
           reasons: ["Operation was allowed by the active profile."],
           policy_version: "1.1.0",

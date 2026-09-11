@@ -256,7 +256,8 @@ export class GuardedToolRuntime {
         verdict,
         {
           profileVersion: profile.version,
-          appliedOverrideIds: getAppliedOverrideIds(profile, intent, evaluatedAt)
+          appliedOverrideIds: getAppliedOverrideIds(profile, intent, evaluatedAt),
+          activeConditionIds
         },
         evaluatedAt
       );
