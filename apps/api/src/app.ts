@@ -142,6 +142,10 @@ import {
 } from "./identity.js";
 import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 import type { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
+import {
+  autonomyProfileStepUpChallenge,
+  projectUsageLimitStepUpChallenge
+} from "./step-up-challenge.js";
 
 export interface AppDependencies {
   config: ServerConfig;
@@ -1768,7 +1772,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                 token,
                 identity,
                 purpose: "project_usage_limit_expansion",
-                challenge: `project:${request.params.projectId}:usage-limit:${request.body.expected_version}`
+                challenge: projectUsageLimitStepUpChallenge(request.params.projectId, request.body)
               }));
             if (!verified) {
               return reply
@@ -2011,7 +2015,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                 token,
                 identity,
                 purpose: "autonomy_profile_escalation",
-                challenge: `project:${request.params.projectId}:autonomy-profile:${request.body.expected_version}`
+                challenge: autonomyProfileStepUpChallenge(request.params.projectId, request.body)
               }));
             if (!verified) {
               return reply
