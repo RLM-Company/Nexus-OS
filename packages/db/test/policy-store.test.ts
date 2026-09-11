@@ -1,6 +1,12 @@
 import type { CapabilityId, PolicyIntent, PolicyVerdict } from "@cosmora/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openDatabase, PolicyStore, ProjectStore, runMigrations } from "../src/index.js";
+import {
+  openDatabase,
+  PolicyStore,
+  PolicyStoreConflictError,
+  ProjectStore,
+  runMigrations
+} from "../src/index.js";
 
 const NOW = "2026-08-24T12:00:00.000Z";
 
@@ -112,6 +118,126 @@ describe("PolicyStore", () => {
       store.listActivePermissions(projectId, "manager", "2026-08-24T12:03:00.000Z")
     ).toHaveLength(0);
     expect(store.getConfirmation(confirmation.confirmation_id)?.status).toBe("CONSUMED");
+  });
+
+  it("rejects policy decisions that are not exactly bound to their intent", () => {
+    const profile = store.ensureProfile(projectId, NOW)!;
+    const intent: PolicyIntent = {
+      operation_id: "operation-boundary",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["external.communicate"],
+      object_ids: ["campaign-boundary"],
+      purpose: "Send one bounded campaign message",
+      idempotency_key: "operation-boundary"
+    };
+    const confirmation = confirmationVerdict(intent, "external.communicate");
+
+    expect(() =>
+      store.createConfirmation(intent, { ...confirmation, operation_id: "another-operation" }, NOW)
+    ).toThrow(PolicyStoreConflictError);
+    expect(() =>
+      store.createConfirmation(
+        intent,
+        {
+          ...confirmation,
+          evaluated_capabilities: [
+            { capability_id: "workspace.write", mode: "CONFIRM", scope: [], conditions: [] }
+          ]
+        },
+        NOW
+      )
+    ).toThrow(PolicyStoreConflictError);
+    expect(() =>
+      store.createConfirmation(
+        intent,
+        {
+          ...confirmation,
+          evaluated_capabilities: [
+            {
+              capability_id: "external.communicate",
+              mode: "AUTONOMOUS",
+              scope: [],
+              conditions: []
+            }
+          ]
+        },
+        NOW
+      )
+    ).toThrow(PolicyStoreConflictError);
+    expect(() =>
+      store.createConfirmation(intent, confirmation, "2026-08-24T11:59:59.000Z")
+    ).toThrow(PolicyStoreConflictError);
+    expect(() => store.createConfirmation(intent, confirmation, NOW, 0)).toThrow(RangeError);
+
+    const denied: PolicyVerdict = {
+      ...confirmation,
+      verdict: "DENY",
+      evaluated_capabilities: [
+        {
+          capability_id: "external.communicate",
+          mode: "DENY",
+          scope: [],
+          conditions: []
+        }
+      ]
+    };
+    expect(() => store.recordBlocked(intent, denied, "PAUSED", NOW)).toThrow(
+      PolicyStoreConflictError
+    );
+
+    const allowed: PolicyVerdict = {
+      ...confirmation,
+      verdict: "ALLOW",
+      evaluated_capabilities: [
+        {
+          capability_id: "external.communicate",
+          mode: "AUTONOMOUS",
+          scope: [],
+          conditions: []
+        }
+      ]
+    };
+    expect(
+      store.reserveAllowed(
+        intent,
+        {
+          ...allowed,
+          evaluated_capabilities: [
+            {
+              capability_id: "workspace.write",
+              mode: "AUTONOMOUS",
+              scope: [],
+              conditions: []
+            }
+          ]
+        },
+        { profileVersion: profile.version, appliedOverrideIds: [] },
+        NOW
+      ).status
+    ).toBe("AUTHORITY_CHANGED");
+    expect(
+      store.reserveAllowed(
+        intent,
+        {
+          ...allowed,
+          evaluated_capabilities: [
+            {
+              capability_id: "external.communicate",
+              mode: "DENY",
+              scope: [],
+              conditions: []
+            }
+          ]
+        },
+        { profileVersion: profile.version, appliedOverrideIds: [] },
+        NOW
+      ).status
+    ).toBe("AUTHORITY_CHANGED");
+
+    expect(store.getOperation(projectId, intent.idempotency_key)).toBeNull();
+    expect(store.listConfirmations(projectId)).toEqual([]);
+    expect(store.listDecisionTrace(projectId)).toEqual([]);
   });
 
   it("returns bounded content-minimized decisions without duplicate replay events", () => {

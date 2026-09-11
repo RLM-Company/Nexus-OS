@@ -10,6 +10,7 @@ import {
   PolicyVerdictSchema,
   createCapabilityProfile,
   requiresStepUp,
+  verdictForModes,
   type AutonomyLevel,
   type CapabilityOverride,
   type CapabilityProfile,
@@ -69,6 +70,25 @@ export class PolicyStoreConflictError extends Error {
 
 const nowIso = (): string => new Date().toISOString();
 const json = (value: unknown): string => JSON.stringify(value);
+
+const hasExactCapabilityBindings = (intent: PolicyIntent, verdict: PolicyVerdict): boolean => {
+  const expected = [...intent.capability_ids].sort();
+  const evaluated = verdict.evaluated_capabilities.map((grant) => grant.capability_id).sort();
+  return (
+    evaluated.length === expected.length &&
+    evaluated.every((capabilityId, index) => capabilityId === expected[index])
+  );
+};
+
+const isVerdictKindConsistent = (verdict: PolicyVerdict): boolean =>
+  verdict.verdict === "PAUSE" ||
+  verdictForModes(verdict.evaluated_capabilities.map((grant) => grant.mode)) === verdict.verdict;
+
+const isDecisionTimestampValid = (verdict: PolicyVerdict, timestamp: string): boolean => {
+  const evaluatedAt = Date.parse(verdict.evaluated_at);
+  const recordedAt = Date.parse(timestamp);
+  return Number.isFinite(evaluatedAt) && Number.isFinite(recordedAt) && recordedAt >= evaluatedAt;
+};
 
 const coversObjects = (
   allowedObjectIds: readonly string[],
@@ -389,6 +409,25 @@ export class PolicyStore {
     }
   }
 
+  #assertDecisionBindings(
+    intent: PolicyIntent,
+    verdict: PolicyVerdict,
+    expectedVerdict: PolicyVerdict["verdict"],
+    timestamp: string
+  ): void {
+    if (
+      !Value.Check(PolicyIntentSchema, intent) ||
+      !Value.Check(PolicyVerdictSchema, verdict) ||
+      verdict.operation_id !== intent.operation_id ||
+      verdict.verdict !== expectedVerdict ||
+      !hasExactCapabilityBindings(intent, verdict) ||
+      !isVerdictKindConsistent(verdict) ||
+      !isDecisionTimestampValid(verdict, timestamp)
+    ) {
+      throw new PolicyStoreConflictError("Policy verdict is not bound to the exact intent");
+    }
+  }
+
   #recordDecision(intent: PolicyIntent, verdict: PolicyVerdict, timestamp: string): void {
     this.#sqlite
       .prepare(
@@ -413,6 +452,10 @@ export class PolicyStore {
     requestedAt: string,
     ttlMs = 15 * 60 * 1_000
   ): ConfirmationRequest {
+    this.#assertDecisionBindings(intent, verdict, "NEEDS_CONFIRMATION", requestedAt);
+    if (!Number.isSafeInteger(ttlMs) || ttlMs < 1) {
+      throw new RangeError("Confirmation TTL must be a positive safe integer");
+    }
     return this.#transaction(() => {
       const existing = this.getOperation(intent.project_id, intent.idempotency_key);
       if (existing) {
@@ -686,6 +729,12 @@ export class PolicyStore {
     status: "DENIED" | "PAUSED",
     timestamp = nowIso()
   ): StoredPolicyOperation {
+    this.#assertDecisionBindings(
+      intent,
+      verdict,
+      status === "DENIED" ? "DENY" : "PAUSE",
+      timestamp
+    );
     return this.#transaction(() => {
       const existing = this.getOperation(intent.project_id, intent.idempotency_key);
       if (existing) {
@@ -724,6 +773,15 @@ export class PolicyStore {
     timestamp = nowIso()
   ): ReservationResult {
     return this.#transaction(() => {
+      if (
+        !Value.Check(PolicyIntentSchema, intent) ||
+        !Value.Check(PolicyVerdictSchema, verdict) ||
+        verdict.operation_id !== intent.operation_id ||
+        !hasExactCapabilityBindings(intent, verdict) ||
+        !isVerdictKindConsistent(verdict)
+      ) {
+        return { status: "AUTHORITY_CHANGED" };
+      }
       const existing = this.getOperation(intent.project_id, intent.idempotency_key);
       if (existing) {
         this.#assertSameIntent(existing, intent);
