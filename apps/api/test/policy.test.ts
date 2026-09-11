@@ -15,6 +15,8 @@ describe("autonomy and confirmation API", () => {
   let app: ReturnType<typeof buildApp>;
   let projectId: string;
   let consumedStepUps: StepUpProofConsumption[];
+  let consumeStepUp: (input: StepUpProofConsumption) => Promise<boolean>;
+  let currentTime: string | null;
 
   beforeEach(async () => {
     database = openDatabase(":memory:");
@@ -23,6 +25,11 @@ describe("autonomy and confirmation API", () => {
     policyStore = new PolicyStore(database.sqlite);
     const runtime = await buildModelRuntime(config);
     consumedStepUps = [];
+    currentTime = null;
+    consumeStepUp = (input) => {
+      consumedStepUps.push(input);
+      return Promise.resolve(input.token === "valid-step-up");
+    };
     app = buildApp({
       config,
       database,
@@ -31,11 +38,9 @@ describe("autonomy and confirmation API", () => {
       modelGateway: runtime.gateway,
       manager: runtime.manager,
       stepUpProofConsumer: {
-        consume: (input) => {
-          consumedStepUps.push(input);
-          return Promise.resolve(input.token === "valid-step-up");
-        }
-      }
+        consume: (input) => consumeStepUp(input)
+      },
+      now: () => currentTime ?? new Date().toISOString()
     });
     const created = await app.inject({
       method: "POST",
@@ -514,6 +519,50 @@ describe("autonomy and confirmation API", () => {
       payload: { challenge_nonce: confirmation.challenge_nonce }
     });
     expect(replay.statusCode).toBe(409);
+    expect(consumedStepUps).toHaveLength(1);
+  });
+
+  it("rechecks confirmation expiry after asynchronous step-up verification", async () => {
+    const intent: PolicyIntent = {
+      operation_id: "expiring-critical-operation",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["finance.spend"],
+      object_ids: ["invoice-expiring"],
+      purpose: "Approve an expiring invoice",
+      idempotency_key: "expiring-critical-operation-once"
+    };
+    const requestedAt = "2026-09-11T12:00:00.000Z";
+    const verdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "NEEDS_CONFIRMATION",
+      evaluated_capabilities: [
+        { capability_id: "finance.spend", mode: "CONFIRM", scope: [], conditions: [] }
+      ],
+      permission_ids: [],
+      reasons: ["Owner confirmation required"],
+      evaluated_at: requestedAt,
+      policy_version: "1.1.0"
+    };
+    const confirmation = policyStore.createConfirmation(intent, verdict, requestedAt, 1_000);
+
+    currentTime = "2026-09-11T12:00:00.500Z";
+    consumeStepUp = (input) => {
+      consumedStepUps.push(input);
+      currentTime = "2026-09-11T12:00:01.001Z";
+      return Promise.resolve(true);
+    };
+
+    const expired = await app.inject({
+      method: "POST",
+      url: `/api/v1/confirmations/${confirmation.confirmation_id}/approve`,
+      headers: { "x-step-up-token": "valid-step-up" },
+      payload: { challenge_nonce: confirmation.challenge_nonce }
+    });
+
+    expect(expired.statusCode).toBe(409);
+    expect(expired.json<{ error: { code: string } }>().error.code).toBe("CONFIRMATION_EXPIRED");
+    expect(policyStore.getConfirmation(confirmation.confirmation_id)?.status).toBe("EXPIRED");
     expect(consumedStepUps).toHaveLength(1);
   });
 
