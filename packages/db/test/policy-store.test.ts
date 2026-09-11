@@ -367,6 +367,52 @@ describe("PolicyStore", () => {
     expect(store.listRecoveryRequired(projectId)).toEqual([]);
   });
 
+  it("refuses silent terminal transitions for a missing or already-terminal operation", () => {
+    expect(() => store.completeOperation("missing-operation", { ok: true }, NOW)).toThrow(
+      PolicyStoreConflictError
+    );
+    expect(() => store.failOperation("missing-operation", "HANDLER_FAILED", NOW)).toThrow(
+      PolicyStoreConflictError
+    );
+
+    const profile = store.ensureProfile(projectId, NOW)!;
+    const intent: PolicyIntent = {
+      operation_id: "terminal-operation",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["agent.manage"],
+      object_ids: [projectId],
+      purpose: "Run one synthetic manager step",
+      idempotency_key: "terminal-operation"
+    };
+    const verdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "ALLOW",
+      evaluated_capabilities: [
+        { capability_id: "agent.manage", mode: "AUTONOMOUS", scope: [], conditions: [] }
+      ],
+      permission_ids: [],
+      reasons: ["Synthetic manager step is allowed."],
+      evaluated_at: NOW,
+      policy_version: "1.1.0"
+    };
+    expect(
+      store.reserveAllowed(
+        intent,
+        verdict,
+        { profileVersion: profile.version, appliedOverrideIds: [] },
+        NOW
+      ).status
+    ).toBe("RESERVED");
+    store.completeOperation(intent.operation_id, { ok: true }, "2026-08-24T12:00:01.000Z");
+    expect(() => store.completeOperation(intent.operation_id, { ok: true }, NOW)).toThrow(
+      PolicyStoreConflictError
+    );
+    expect(() => store.failOperation(intent.operation_id, "HANDLER_FAILED", NOW)).toThrow(
+      PolicyStoreConflictError
+    );
+  });
+
   it("atomically consumes finite overrides once and rejects stale authority", () => {
     const initial = store.ensureProfile(projectId, NOW)!;
     const finite = store.updateProfile({

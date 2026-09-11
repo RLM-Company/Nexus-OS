@@ -981,20 +981,28 @@ export class PolicyStore {
   }
 
   completeOperation(operationId: string, result: unknown, timestamp = nowIso()): void {
-    this.#sqlite
+    const update = this.#sqlite
       .prepare(
         `UPDATE policy_operations SET status = 'SUCCEEDED', result_json = ?, updated_at = ?
          WHERE operation_id = ? AND status = 'RESERVED'`
       )
       .run(json(result), timestamp, operationId);
+    if (update.changes !== 1) {
+      throw new PolicyStoreConflictError(
+        "Reserved operation is no longer available for completion"
+      );
+    }
   }
 
   failOperation(operationId: string, errorCode: string, timestamp = nowIso()): void {
-    this.#sqlite
+    const update = this.#sqlite
       .prepare(
         `UPDATE policy_operations SET status = 'FAILED', error_code = ?, updated_at = ?
          WHERE operation_id = ? AND status = 'RESERVED'`
       )
       .run(errorCode, timestamp, operationId);
+    if (update.changes !== 1) {
+      throw new PolicyStoreConflictError("Reserved operation is no longer available for failure");
+    }
   }
 }
