@@ -588,6 +588,59 @@ describe("PolicyStore", () => {
     expect(store.getOperation(projectId, intent.idempotency_key)).toBeNull();
   });
 
+  it("rejects multiple applicable override identities without consuming either", () => {
+    const initial = store.ensureProfile(projectId, NOW)!;
+    const overlap = {
+      capability_id: "workspace.write" as const,
+      mode: "AUTONOMOUS" as const,
+      object_ids: [projectId],
+      purpose: "Write one exact project artifact",
+      valid_until: null,
+      remaining_uses: 1
+    };
+    const scoped = store.updateProfile({
+      projectId,
+      baseLevel: "A0",
+      overrides: [
+        { ...overlap, override_id: "first-write" },
+        { ...overlap, override_id: "second-write" }
+      ],
+      expectedVersion: initial.version,
+      issuedAt: NOW
+    })!;
+    const intent: PolicyIntent = {
+      operation_id: "overlapping-override-operation",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["workspace.write"],
+      object_ids: [projectId],
+      purpose: overlap.purpose,
+      idempotency_key: "overlapping-override-operation"
+    };
+    const forgedVerdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "ALLOW",
+      evaluated_capabilities: [
+        { capability_id: "workspace.write", mode: "AUTONOMOUS", scope: [], conditions: [] }
+      ],
+      permission_ids: [],
+      reasons: ["One of two overlapping overrides was selected by order."],
+      evaluated_at: NOW,
+      policy_version: "1.1.0"
+    };
+
+    expect(
+      store.reserveAllowed(
+        intent,
+        forgedVerdict,
+        { profileVersion: scoped.version, appliedOverrideIds: ["first-write"] },
+        NOW
+      ).status
+    ).toBe("AUTHORITY_CHANGED");
+    expect(store.getProfile(projectId)).toEqual(scoped);
+    expect(store.getOperation(projectId, intent.idempotency_key)).toBeNull();
+  });
+
   it("revalidates override expiry and timestamp chronology at atomic reservation", () => {
     const initial = store.ensureProfile(projectId, NOW)!;
     const finite = store.updateProfile({

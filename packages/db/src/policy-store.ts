@@ -122,8 +122,7 @@ const appliedOverrideIdsForReservation = (
         (override.valid_until === null || Date.parse(override.valid_until) >= now) &&
         coversObjects(override.object_ids, intent.object_ids)
     );
-    const modes = new Set(matches.map((override) => override.mode));
-    const applied = modes.size === 1 ? matches[0] : undefined;
+    const applied = matches.length === 1 ? matches[0] : undefined;
     return applied ? [applied.override_id] : [];
   });
 };
