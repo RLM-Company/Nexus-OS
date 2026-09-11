@@ -563,6 +563,9 @@ describe("autonomy and confirmation API", () => {
     expect(expired.statusCode).toBe(409);
     expect(expired.json<{ error: { code: string } }>().error.code).toBe("CONFIRMATION_EXPIRED");
     expect(policyStore.getConfirmation(confirmation.confirmation_id)?.status).toBe("EXPIRED");
+    expect(
+      policyStore.listActivePermissions(projectId, intent.actor_id, currentTime ?? requestedAt)
+    ).toEqual([]);
     expect(consumedStepUps).toHaveLength(1);
   });
 
