@@ -7,6 +7,10 @@ service implementation, canonical contracts or merge decisions. Codex validates 
 against current `main`, converts accepted findings into tests/code, executes the full quality gate
 and integrates only green PRs.
 
+Gemini has no GitHub connection. It works only from explicitly supplied text, screenshots and file
+snapshots, then returns proposal artifacts for manual review; it must never infer current branch,
+PR or CI state.
+
 ## Allowed high-value work
 
 1. **Finish the Manager benchmark catalog**

@@ -2,10 +2,11 @@
 
 ## Role
 
-GPT is a **review, specification and QA assistant**. It does not own repository integration,
-security architecture or executable service changes. Codex remains responsible for comparing work
-against current `main`, implementing runtime changes, running `pnpm check`, opening PRs and merging
-only green results.
+GPT is a **GitHub-connected review, specification and QA assistant** for bounded side work. It may
+read current `main`, open PRs and CI, and create a separate support branch/PR when the assignment
+explicitly allows it. It does not own security architecture, the core service or merge decisions.
+Codex remains responsible for integrating runtime changes, validating cross-system contracts,
+running the authoritative `pnpm check` and merging only green results.
 
 ## Allowed high-value work
 
@@ -30,6 +31,12 @@ only green results.
    - review supplied JSON/TypeScript contracts for ambiguous optional fields, missing bindings and
      unsafe default behavior;
    - return findings with severity, exploit/precondition, expected invariant and proposed test.
+6. **Repository-side support**
+   - begin from the current remote `main` and record its SHA plus all open PRs that overlap the task;
+   - fix stale documentation, broken internal links and deterministic test fixtures only when the
+     assigned scope names those files;
+   - use a fresh branch and one narrowly scoped PR; never push to another worker's branch;
+   - report the exact workflow run and leave the PR open for Codex/owner integration.
 
 ## Required output format
 
@@ -44,8 +51,12 @@ For each assignment return:
 
 ## Prohibited work
 
-- Do not claim access to current repository state unless exact files/PR data were supplied.
+- Do not rely on handoff implementation facts until current `main`, overlapping PRs and CI have
+  been checked through the available GitHub access.
 - Do not produce merge-ready patches for security/runtime code as if verified.
+- Do not edit Manager Console/runtime, Policy Engine, Tool Runtime, identity, secrets, provider or
+  production code unless Codex/owner supplies a new exact file-level assignment.
+- Do not merge PRs, rewrite shared history or update another worker's branch.
 - Do not finalize the Manager system prompt or activate A6.
 - Do not choose a production provider/model, request credentials or suggest paid probes.
 - Do not approve real finance, deployment, publication, email or other external effects.
@@ -53,9 +64,12 @@ For each assignment return:
 
 ## First assignment
 
-Review `docs/handoff/COSMORA_READINESS_2026-09-10.md` and return:
+From a fresh branch at current `main`, perform a documentation-only consistency audit outside the
+active Manager/runtime and policy-security workstreams:
 
-- a five-minute Russian demo script;
-- ten observer questions with honest answers;
-- a pre-demo checklist that uses no provider/network/external effect;
-- every sentence that could be misread as production or autonomous readiness.
+- verify root setup/demo commands against `package.json` without starting external services;
+- find broken internal Markdown paths, stale readiness links and contradictory synthetic/production
+  wording;
+- create one narrow docs-only PR for objective corrections;
+- include the base SHA, changed files, local formatting result and GitHub CI URL in the handoff;
+- leave subjective product wording and every owner-only decision as findings, not edits.
