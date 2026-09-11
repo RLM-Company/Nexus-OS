@@ -98,8 +98,7 @@ export function getAppliedOverrideIds(
       intent.purpose,
       now
     );
-    const modes = new Set(overrides.map((override) => override.mode));
-    const applied = modes.size === 1 ? overrides[0] : undefined;
+    const applied = overrides.length === 1 ? overrides[0] : undefined;
     return applied ? [applied.override_id] : [];
   });
 }
@@ -218,12 +217,11 @@ const resolveCapability = (
     input.intent.purpose,
     now
   );
-  const overrideModes = new Set(overrides.map((override) => override.mode));
-  if (overrideModes.size > 1) {
+  if (overrides.length > 1) {
     return {
       grant: { ...baseGrant, mode: "DENY" },
       permissionIds,
-      reasons: [...reasons, `Conflicting active overrides exist for ${capabilityId}.`],
+      reasons: [...reasons, `Multiple active overrides exist for ${capabilityId}.`],
       pause: true
     };
   }

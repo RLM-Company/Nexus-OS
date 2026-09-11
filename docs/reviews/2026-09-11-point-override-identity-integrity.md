@@ -22,8 +22,9 @@ profile and consumption behaviour ambiguous.
 - Atomic reservation inherits that fail-closed verdict through its complete in-transaction policy
   re-evaluation.
 
-Semantic overlap between different, uniquely identified overrides remains visible to the existing
-conflict rules. This change does not invent precedence or silently merge owner inputs.
+Semantic overlap between different, uniquely identified overrides is handled by the separate
+single-applicable-override invariant. This change does not invent precedence or silently merge
+owner inputs.
 
 ## Regression evidence
 

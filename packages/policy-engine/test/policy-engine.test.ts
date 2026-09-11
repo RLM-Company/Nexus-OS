@@ -223,7 +223,7 @@ describe("evaluatePolicy", () => {
     );
   });
 
-  it("reports no applied override for expired, out-of-scope, or conflicting candidates", () => {
+  it("reports no applied override for expired, out-of-scope, or multiple candidates", () => {
     const overrideBase = {
       capability_id: "external.communicate" as const,
       object_ids: ["project-1"],
@@ -238,6 +238,26 @@ describe("evaluatePolicy", () => {
             override_id: "expired",
             mode: "DENY",
             valid_until: "2026-08-24T11:59:59.000Z"
+          }
+        ]),
+        intent(["external.communicate"]),
+        NOW
+      )
+    ).toEqual([]);
+    expect(
+      getAppliedOverrideIds(
+        profile("A3", [
+          {
+            ...overrideBase,
+            override_id: "first-deny",
+            mode: "DENY",
+            valid_until: null
+          },
+          {
+            ...overrideBase,
+            override_id: "second-deny",
+            mode: "DENY",
+            valid_until: null
           }
         ]),
         intent(["external.communicate"]),
@@ -333,6 +353,31 @@ describe("evaluatePolicy", () => {
       { evaluatedAt: NOW }
     );
     expect(verdict.verdict).toBe("PAUSE");
+  });
+
+  it("pauses multiple matching overrides even when their modes agree", () => {
+    const overrideBase = {
+      capability_id: "workspace.write" as const,
+      mode: "AUTONOMOUS" as const,
+      object_ids: ["project-1"],
+      purpose: "Run a policy-engine test",
+      valid_until: null,
+      remaining_uses: 1
+    };
+    const verdict = evaluatePolicy(
+      {
+        intent: intent(["workspace.write"]),
+        profile: profile("A0", [
+          { ...overrideBase, override_id: "first-write" },
+          { ...overrideBase, override_id: "second-write" }
+        ]),
+        permissionContracts: []
+      },
+      { evaluatedAt: NOW }
+    );
+
+    expect(verdict.verdict).toBe("PAUSE");
+    expect(verdict.reasons).toContain("Multiple active overrides exist for workspace.write.");
   });
 
   it("keeps every A6 capability fully autonomous", () => {
