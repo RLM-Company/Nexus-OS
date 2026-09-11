@@ -7,7 +7,7 @@
 dry run remains.**  
 **Autonomous or production Manager: NOT READY and not claimed.**
 
-Verification target: `main@54eaf4cade82c1c8d01d681b653713ed64ed38be`. At this checkpoint
+Verification target: `main@40e6447a42e7cb54c29a8385966a0ffcf39ec8af`. At this checkpoint
 GitHub reports no unfinished implementation PR from this workstream.
 
 The demonstrable Manager remains a bounded persisted vertical slice with a deterministic
@@ -16,18 +16,23 @@ preflight have now been exercised against fresh temporary databases as well as t
 
 ## Evidence added after the 2026-09-10 checkpoint
 
-| Area                              | PR / main commit | Full CI   | Verified result                                                                             |
-| --------------------------------- | ---------------- | --------- | ------------------------------------------------------------------------------------------- |
-| Canonical policy timestamps       | #120 / `d6b305e` | #486 PASS | invalid or non-canonical authority time fails schema validation                             |
-| Exact intent binding              | #121 / `3a2b7b3` | #488 PASS | verdict capability/order and operation bindings cannot drift before persistence             |
-| Phone layout                      | #122 / `70df7aa` | #490 PASS | 390×844 Manager demo has no horizontal overflow and preserves controls                      |
-| Terminal policy transitions       | #123 / `5f74fca` | #492 PASS | lost or duplicate completion/failure transitions are rejected, not silently accepted        |
-| Atomic authority re-evaluation    | #124 / `fa38694` | #494 PASS | reservation recalculates the current profile, permissions, overrides and trusted conditions |
-| Point-override purpose binding    | #125 / `3cd246d` | #496 PASS | an exception approved for one purpose cannot authorize another intent                       |
-| Desktop/LAN startup and preflight | #126 / `54eaf4c` | #499 PASS | repeatable PC/phone startup, aligned migration, mock-only live preflight and runbook        |
+| Area                               | PR / main commit | Full CI   | Verified result                                                                             |
+| ---------------------------------- | ---------------- | --------- | ------------------------------------------------------------------------------------------- |
+| Canonical policy timestamps        | #120 / `d6b305e` | #486 PASS | invalid or non-canonical authority time fails schema validation                             |
+| Exact intent binding               | #121 / `3a2b7b3` | #488 PASS | verdict capability/order and operation bindings cannot drift before persistence             |
+| Phone layout                       | #122 / `70df7aa` | #490 PASS | 390×844 Manager demo has no horizontal overflow and preserves controls                      |
+| Terminal policy transitions        | #123 / `5f74fca` | #492 PASS | lost or duplicate completion/failure transitions are rejected, not silently accepted        |
+| Atomic authority re-evaluation     | #124 / `fa38694` | #494 PASS | reservation recalculates the current profile, permissions, overrides and trusted conditions |
+| Point-override purpose binding     | #125 / `3cd246d` | #496 PASS | an exception approved for one purpose cannot authorize another intent                       |
+| Desktop/LAN startup and preflight  | #126 / `54eaf4c` | #499 PASS | repeatable PC/phone startup, aligned migration, mock-only live preflight and runbook        |
+| Unique point-override identity     | #128 / `1579cc3` | #503 PASS | duplicate override IDs are rejected by API, persistence and policy evaluation               |
+| Unambiguous point overrides        | #129 / `939316a` | #505 PASS | an intent must match exactly one scoped override; overlapping grants pause fail-closed      |
+| Step-up and decision preconditions | #130 / `2c1b09b` | #507 PASS | stale, terminal or expired mutations fail before proof use; decision time is transactional  |
+| Confirmation operation binding     | #131 / `8a34ee9` | #509 PASS | confirmation-derived one-use authority belongs only to the exact approved operation         |
+| Step-up mutation binding           | #132 / `e088f36` | #511 PASS | critical proofs bind to the exact canonical authority or hard-limit mutation                |
 
-CI #499 passed the complete `pnpm check`: frozen install, formatting, secret scan, 9/9 lint,
-9/9 strict TypeScript, 320 unit/API tests, 9/9 production builds and 22 Playwright Chromium
+CI #511 passed the complete `pnpm check`: frozen install, formatting, secret scan, 9/9 lint,
+9/9 strict TypeScript, 329 unit/API tests, 9/9 production builds and 22 Playwright Chromium
 scenarios.
 
 ## Demo entry points
@@ -48,19 +53,19 @@ The exact five-minute walkthrough and fail-safe responses are recorded in
 
 ## Readiness matrix
 
-| Gate                               | Status                       | Meaning                                                                                   |
-| ---------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------- |
-| PC startup                         | PASS                         | the documented command and live preflight work on a fresh database                        |
-| Persisted Manager demo             | PASS                         | plan, reload, explicit safe execution, artifacts and checkpoint are browser-tested        |
-| Reload and Stop                    | PASS                         | server-owned chat run can be observed again and cancelled after reload/reopen             |
-| Responsive phone UI                | PASS (automated)             | 390×844 viewport is covered by CI                                                         |
-| LAN phone path                     | PASS (software)              | frontend binds to LAN while API stays on loopback; physical phone dry run remains         |
-| Policy fail-closed                 | PASS for current scope       | current intent, purpose, time, profile, permissions and conditions are rebound atomically |
-| Unknown external outcome           | PASS for visibility/no retry | state remains `RECOVERY_REQUIRED`; resolution is intentionally read-only                  |
-| Real model Manager                 | BLOCKED                      | production provider, evidence, credentials and retention policy are not selected          |
-| Real tools/sandbox                 | BLOCKED                      | no approved production sandbox/daemon or real policy-governed tool suite                  |
-| Final Manager prompt               | OWNER-ONLY                   | must be authored, versioned and approved with the owner                                   |
-| A6, finance and production effects | OUT OF SCOPE                 | remain disabled behind separate owner/security/economic gates                             |
+| Gate                               | Status                       | Meaning                                                                                         |
+| ---------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------- |
+| PC startup                         | PASS                         | the documented command and live preflight work on a fresh database                              |
+| Persisted Manager demo             | PASS                         | plan, reload, explicit safe execution, artifacts and checkpoint are browser-tested              |
+| Reload and Stop                    | PASS                         | server-owned chat run can be observed again and cancelled after reload/reopen                   |
+| Responsive phone UI                | PASS (automated)             | 390×844 viewport is covered by CI                                                               |
+| LAN phone path                     | PASS (software)              | frontend binds to LAN while API stays on loopback; physical phone dry run remains               |
+| Policy fail-closed                 | PASS for current scope       | atomic checks bind current authority, exact override, confirmation operation and proof mutation |
+| Unknown external outcome           | PASS for visibility/no retry | state remains `RECOVERY_REQUIRED`; resolution is intentionally read-only                        |
+| Real model Manager                 | BLOCKED                      | production provider, evidence, credentials and retention policy are not selected                |
+| Real tools/sandbox                 | BLOCKED                      | no approved production sandbox/daemon or real policy-governed tool suite                        |
+| Final Manager prompt               | OWNER-ONLY                   | must be authored, versioned and approved with the owner                                         |
+| A6, finance and production effects | OUT OF SCOPE                 | remain disabled behind separate owner/security/economic gates                                   |
 
 ## What may be claimed in the demo
 
@@ -89,6 +94,8 @@ multi-agent runtime.
   evidence of a durable long-running task worker.
 - `RECOVERY_REQUIRED` is intentionally visibility-only. No success/failure/retry button should be
   added without provider reconciliation evidence and a separately approved contract.
+- Critical step-up challenges are mutation-bound on the server, but no production step-up/MFA
+  provider has been selected or connected; this is a security contract, not production MFA proof.
 - The mock route does not establish real-model quality, privacy, cost, tool quality, sandbox
   isolation or production observability.
 
