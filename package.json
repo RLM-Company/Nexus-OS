@@ -5,6 +5,11 @@
   "packageManager": "pnpm@11.19.0",
   "scripts": {
     "build": "turbo run build",
+    "db:migrate": "turbo run build --filter=@cosmora/db && pnpm --filter @cosmora/db db:migrate",
+    "demo": "turbo run demo",
+    "demo:lan": "turbo run demo:lan",
+    "demo:preflight": "node scripts/demo-preflight.mjs",
+    "dev": "turbo run dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:secrets": "node scripts/check-secrets.mjs",

@@ -58,12 +58,14 @@ agent runtime.
 ## Commands
 
 ```bash
-pnpm install
-pnpm db:migrate
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Web runs at `http://localhost:3000`, API at `http://127.0.0.1:3100`, and health is available at
+The API applies SQLite migrations during startup. `pnpm db:migrate` remains available when an
+explicit migration-only step is needed.
+
+Web runs at `http://127.0.0.1:3000`, API at `http://127.0.0.1:3100`, and health is available at
 `GET /api/v1/health`. A secret-free provider summary is available at
 `GET /api/v1/model-runtime`. The web app proxies `/api/*` to `COSMORA_API_ORIGIN`.
 Operational counters and active safety alerts are available at `GET /api/v1/operations/status`.
@@ -87,6 +89,32 @@ Autonomy profile and point-override changes are previewed at
 `POST /api/v1/projects/:projectId/autonomy-profile/preview` and version-checked at
 `PUT /api/v1/projects/:projectId/autonomy-profile`. The UI requires explicit capability, mode,
 object IDs and purpose; `FULL`, A6 and critical capability expansions remain behind step-up.
+
+## Internal Manager demo
+
+The controlled desktop demo uses the stable local-only command:
+
+```bash
+pnpm demo
+```
+
+To expose only the web frontend to a phone on the same trusted private network, use:
+
+```bash
+pnpm demo:lan
+```
+
+The API remains bound to loopback and the web server proxies `/api/*` to it. While both processes
+are running, verify the mock-only route, database, emergency-stop state and web proxy in a second
+terminal:
+
+```bash
+pnpm demo:preflight
+```
+
+LAN mode is for a temporary internal walkthrough only. Do not use it on a public or untrusted
+network, and stop both processes after the demo. The exact owner walkthrough and recovery notes are
+in `docs/handoff/SUNDAY_MANAGER_DEMO_RUNBOOK_2026-09-11.md`.
 
 ## Connect a model provider
 

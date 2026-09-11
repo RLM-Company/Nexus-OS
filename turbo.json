@@ -5,7 +5,15 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
+    "demo": {
+      "cache": false,
+      "persistent": true
+    },
     "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "demo:lan": {
       "cache": false,
       "persistent": true
     },

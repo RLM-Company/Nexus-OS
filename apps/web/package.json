@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "build": "next build",
+    "demo": "next dev -H 127.0.0.1",
     "dev": "next dev -H 127.0.0.1",
+    "demo:lan": "next dev -H 0.0.0.0",
     "lint": "eslint src",
     "start": "next start -H 127.0.0.1",
     "test:e2e": "playwright test",
