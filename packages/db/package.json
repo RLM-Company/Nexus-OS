@@ -25,6 +25,7 @@
   "dependencies": {
     "@cosmora/config": "workspace:*",
     "@cosmora/contracts": "workspace:*",
+    "@cosmora/policy-engine": "workspace:*",
     "drizzle-orm": "0.45.2",
     "typebox": "1.3.16"
   },

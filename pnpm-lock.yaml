@@ -114,6 +114,9 @@ importers:
       "@cosmora/contracts":
         specifier: workspace:*
         version: link:../contracts
+      "@cosmora/policy-engine":
+        specifier: workspace:*
+        version: link:../policy-engine
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2

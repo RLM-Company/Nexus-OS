@@ -23,6 +23,7 @@ import {
   type PolicyVerdict,
   type ToolOperationStatus
 } from "@cosmora/contracts";
+import { evaluatePolicy } from "@cosmora/policy-engine";
 import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
 
@@ -59,6 +60,7 @@ export type ReservationResult =
 export interface ReservationAuthoritySnapshot {
   profileVersion: number;
   appliedOverrideIds: readonly string[];
+  activeConditionIds?: readonly string[];
 }
 
 export class PolicyStoreConflictError extends Error {
@@ -83,6 +85,12 @@ const hasExactCapabilityBindings = (intent: PolicyIntent, verdict: PolicyVerdict
 const isVerdictKindConsistent = (verdict: PolicyVerdict): boolean =>
   verdict.verdict === "PAUSE" ||
   verdictForModes(verdict.evaluated_capabilities.map((grant) => grant.mode)) === verdict.verdict;
+
+const hasSameAuthorityDecision = (left: PolicyVerdict, right: PolicyVerdict): boolean =>
+  left.verdict === right.verdict &&
+  json(left.evaluated_capabilities) === json(right.evaluated_capabilities) &&
+  json(left.permission_ids) === json(right.permission_ids) &&
+  left.policy_version === right.policy_version;
 
 const isDecisionTimestampValid = (verdict: PolicyVerdict, timestamp: string): boolean => {
   const evaluatedAt = Date.parse(verdict.evaluated_at);
@@ -867,23 +875,16 @@ export class PolicyStore {
         throw new Error("Consumed capability profile failed validation");
       }
 
+      const activePermissionContracts = this.listActivePermissions(
+        intent.project_id,
+        intent.actor_id,
+        timestamp
+      );
       for (const permissionId of verdict.permission_ids) {
-        const available = this.#get(
-          this.#sqlite.prepare(
-            `SELECT contract_json FROM permission_contracts
-             WHERE permission_id = ? AND state = 'ACTIVE'
-               AND valid_from <= ? AND (valid_until IS NULL OR valid_until >= ?)
-               AND (operations_limit IS NULL OR operations_used < operations_limit)`
-          ),
-          permissionId,
-          timestamp,
-          timestamp
+        const contract = activePermissionContracts.find(
+          (candidate) => candidate.permission_id === permissionId
         );
-        if (!available) return { status: "PERMISSION_EXHAUSTED" };
-        const contract = parseChecked<PermissionContract>(
-          PermissionContractSchema,
-          available.contract_json
-        );
+        if (!contract) return { status: "PERMISSION_EXHAUSTED" };
         if (
           contract.project_id !== intent.project_id ||
           contract.subject_id !== intent.actor_id ||
@@ -897,6 +898,18 @@ export class PolicyStore {
         ) {
           return { status: "AUTHORITY_CHANGED" };
         }
+      }
+
+      const activeConditionIds = [...new Set(authority.activeConditionIds ?? [])].sort();
+      if (activeConditionIds.length !== (authority.activeConditionIds ?? []).length) {
+        return { status: "AUTHORITY_CHANGED" };
+      }
+      const authoritativeVerdict = evaluatePolicy(
+        { intent, profile, permissionContracts: activePermissionContracts },
+        { evaluatedAt: timestamp, activeConditionIds }
+      );
+      if (!hasSameAuthorityDecision(verdict, authoritativeVerdict)) {
+        return { status: "AUTHORITY_CHANGED" };
       }
 
       if (nextProfile) {

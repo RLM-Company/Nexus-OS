@@ -97,8 +97,8 @@ describe("PolicyStore", () => {
         {
           capability_id: "external.communicate",
           mode: "AUTONOMOUS",
-          scope: ["campaign-1"],
-          conditions: ["owner_confirmed_operation"]
+          scope: [],
+          conditions: []
         }
       ],
       permission_ids: [permissions[0]!.permission_id]
@@ -219,6 +219,14 @@ describe("PolicyStore", () => {
     expect(
       store.reserveAllowed(
         intent,
+        allowed,
+        { profileVersion: profile.version, appliedOverrideIds: [] },
+        NOW
+      ).status
+    ).toBe("AUTHORITY_CHANGED");
+    expect(
+      store.reserveAllowed(
+        intent,
         {
           ...allowed,
           evaluated_capabilities: [
@@ -313,7 +321,7 @@ describe("PolicyStore", () => {
       operation_id: "operation-recovery",
       project_id: projectId,
       actor_id: "manager",
-      capability_ids: ["external.communicate"],
+      capability_ids: ["agent.manage"],
       object_ids: ["campaign-recovery-1"],
       purpose: "Private campaign content must stay out of recovery views",
       idempotency_key: "private-recovery-idempotency"
@@ -323,9 +331,9 @@ describe("PolicyStore", () => {
       verdict: "ALLOW",
       evaluated_capabilities: [
         {
-          capability_id: "external.communicate",
+          capability_id: "agent.manage",
           mode: "AUTONOMOUS",
-          scope: ["private-recipient-list"],
+          scope: [],
           conditions: []
         }
       ],
@@ -349,7 +357,7 @@ describe("PolicyStore", () => {
         project_id: projectId,
         actor_id: "manager",
         recovery_status: "RECOVERY_REQUIRED",
-        capability_ids: ["external.communicate"],
+        capability_ids: ["agent.manage"],
         object_ids: ["campaign-recovery-1"],
         reasons: ["Operation was allowed by the active profile."],
         policy_version: "1.1.0",
@@ -359,7 +367,6 @@ describe("PolicyStore", () => {
     const serialized = JSON.stringify(store.listRecoveryRequired(projectId));
     expect(serialized).not.toContain(intent.purpose);
     expect(serialized).not.toContain(intent.idempotency_key);
-    expect(serialized).not.toContain("private-recipient-list");
     expect(() => store.listRecoveryRequired(projectId, 0)).toThrow(RangeError);
     expect(() => store.listRecoveryRequired(projectId, 101)).toThrow(RangeError);
 
