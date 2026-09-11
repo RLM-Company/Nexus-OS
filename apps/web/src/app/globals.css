@@ -1119,6 +1119,20 @@ svg {
     align-items: flex-start;
     flex-direction: column;
   }
+  .manager-demo > header,
+  .demo-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .demo-status {
+    align-self: flex-start;
+  }
+  .demo-steps {
+    grid-template-columns: 1fr;
+  }
+  .demo-actions > button {
+    width: 100%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
