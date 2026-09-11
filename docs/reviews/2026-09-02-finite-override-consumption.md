@@ -22,8 +22,8 @@ Before any state mutation, Policy Store:
 1. resolves an existing idempotent operation;
 2. verifies that the verdict is `ALLOW` or `ALLOW_WITH_LIMITS`;
 3. requires the stored profile version to equal the evaluated authority snapshot;
-4. independently recomputes the applicable override IDs from capability, exact objects, expiry and
-   remaining-use state;
+4. independently recomputes the applicable override IDs from capability, exact purpose, objects,
+   expiry and remaining-use state;
 5. verifies the supplied IDs are unique and exact and that each selected override produced the
    verdict's final capability mode;
 6. validates every one-use permission referenced by the verdict.

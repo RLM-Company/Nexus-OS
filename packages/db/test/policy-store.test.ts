@@ -431,7 +431,7 @@ describe("PolicyStore", () => {
           capability_id: "workspace.write",
           mode: "AUTONOMOUS",
           object_ids: [projectId],
-          purpose: "Allow exactly two project writes",
+          purpose: "Write one project artifact",
           valid_until: null,
           remaining_uses: 2
         }
@@ -507,6 +507,61 @@ describe("PolicyStore", () => {
       "RESERVED"
     );
     expect(store.getProfile(projectId)).toMatchObject({ version: 4, overrides: [] });
+  });
+
+  it("rejects a point override reserved for another purpose without consuming it", () => {
+    const initial = store.ensureProfile(projectId, NOW)!;
+    const scoped = store.updateProfile({
+      projectId,
+      baseLevel: "A0",
+      overrides: [
+        {
+          override_id: "purpose-bound-write",
+          capability_id: "workspace.write",
+          mode: "AUTONOMOUS",
+          object_ids: [projectId],
+          purpose: "Write the approved release note",
+          valid_until: null,
+          remaining_uses: 1
+        }
+      ],
+      expectedVersion: initial.version,
+      issuedAt: NOW
+    })!;
+    const intent: PolicyIntent = {
+      operation_id: "other-purpose-operation",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["workspace.write"],
+      object_ids: [projectId],
+      purpose: "Write an unrelated project artifact",
+      idempotency_key: "other-purpose-write"
+    };
+    const forgedVerdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "ALLOW",
+      evaluated_capabilities: [
+        { capability_id: "workspace.write", mode: "AUTONOMOUS", scope: [], conditions: [] }
+      ],
+      permission_ids: [],
+      reasons: ["The unrelated point override was incorrectly reused."],
+      evaluated_at: NOW,
+      policy_version: "1.1.0"
+    };
+
+    expect(
+      store.reserveAllowed(
+        intent,
+        forgedVerdict,
+        { profileVersion: scoped.version, appliedOverrideIds: [] },
+        NOW
+      ).status
+    ).toBe("AUTHORITY_CHANGED");
+    expect(store.getProfile(projectId)).toMatchObject({
+      version: scoped.version,
+      overrides: [{ override_id: "purpose-bound-write", remaining_uses: 1 }]
+    });
+    expect(store.getOperation(projectId, intent.idempotency_key)).toBeNull();
   });
 
   it("revalidates override expiry and timestamp chronology at atomic reservation", () => {

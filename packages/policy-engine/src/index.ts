@@ -62,9 +62,11 @@ const isUsableOverride = (
   override: CapabilityOverride,
   capabilityId: CapabilityId,
   objectIds: readonly string[],
+  purpose: string,
   now: number
 ): boolean =>
   override.capability_id === capabilityId &&
+  override.purpose === purpose &&
   (override.remaining_uses === null || override.remaining_uses > 0) &&
   (override.valid_until === null || Date.parse(override.valid_until) >= now) &&
   coversObjects(override.object_ids, objectIds);
@@ -73,9 +75,12 @@ const usableOverridesForCapability = (
   profile: CapabilityProfile,
   capabilityId: CapabilityId,
   objectIds: readonly string[],
+  purpose: string,
   now: number
 ): CapabilityOverride[] =>
-  profile.overrides.filter((override) => isUsableOverride(override, capabilityId, objectIds, now));
+  profile.overrides.filter((override) =>
+    isUsableOverride(override, capabilityId, objectIds, purpose, now)
+  );
 
 export function getAppliedOverrideIds(
   profile: CapabilityProfile,
@@ -85,7 +90,13 @@ export function getAppliedOverrideIds(
   const now = Date.parse(evaluatedAt);
   if (!Number.isFinite(now)) return [];
   return intent.capability_ids.flatMap((capabilityId) => {
-    const overrides = usableOverridesForCapability(profile, capabilityId, intent.object_ids, now);
+    const overrides = usableOverridesForCapability(
+      profile,
+      capabilityId,
+      intent.object_ids,
+      intent.purpose,
+      now
+    );
     const modes = new Set(overrides.map((override) => override.mode));
     const applied = modes.size === 1 ? overrides[0] : undefined;
     return applied ? [applied.override_id] : [];
@@ -200,6 +211,7 @@ const resolveCapability = (
     input.profile,
     capabilityId,
     input.intent.object_ids,
+    input.intent.purpose,
     now
   );
   const overrideModes = new Set(overrides.map((override) => override.mode));
