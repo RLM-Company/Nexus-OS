@@ -1980,7 +1980,23 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               .status(404)
               .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
           }
-          policyStore.ensureProfile(request.params.projectId);
+          const current = policyStore.ensureProfile(request.params.projectId);
+          if (!current) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+          }
+          if (current.version !== request.body.expected_version) {
+            return reply
+              .status(409)
+              .send(
+                errorBody(
+                  request.id,
+                  "AUTONOMY_PROFILE_CONFLICT",
+                  "Autonomy profile version changed"
+                )
+              );
+          }
           if (!hasUniqueCapabilityOverrideIds(request.body.overrides)) {
             return reply
               .status(400)
@@ -2088,6 +2104,34 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               .status(404)
               .send(errorBody(request.id, "CONFIRMATION_NOT_FOUND", "Confirmation not found"));
           }
+          if (
+            pending.status !== "PENDING" ||
+            pending.challenge_nonce !== request.body.challenge_nonce
+          ) {
+            return reply
+              .status(409)
+              .send(
+                errorBody(
+                  request.id,
+                  "CONFIRMATION_ALREADY_DECIDED",
+                  "Confirmation cannot be approved"
+                )
+              );
+          }
+          const decidedAt = new Date().toISOString();
+          if (Date.parse(pending.expires_at) < Date.parse(decidedAt)) {
+            policyStore.decideConfirmation({
+              confirmationId: request.params.confirmationId,
+              challengeNonce: request.body.challenge_nonce,
+              decision: "approve",
+              decidedBy: identity.actor_id,
+              approvalMethod: "session",
+              decidedAt
+            });
+            return reply
+              .status(409)
+              .send(errorBody(request.id, "CONFIRMATION_EXPIRED", "Confirmation expired"));
+          }
           let approvalMethod: "session" | "step_up" = "session";
           if (pending.requires_step_up) {
             const token = stepUpToken(request.headers["x-step-up-token"]);
@@ -2113,6 +2157,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             decision: "approve",
             decidedBy: identity.actor_id,
             approvalMethod,
+            decidedAt,
             ...(request.body.reason === undefined ? {} : { reason: request.body.reason })
           });
           if (decision.status === "APPROVED") return decision.confirmation;

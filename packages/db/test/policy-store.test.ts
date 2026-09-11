@@ -814,6 +814,43 @@ describe("PolicyStore", () => {
     ).toBe("STEP_UP_REQUIRED");
   });
 
+  it("rejects invalid or backdated confirmation decisions without changing state", () => {
+    const intent: PolicyIntent = {
+      operation_id: "operation-invalid-decision-time",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["external.communicate"],
+      object_ids: ["campaign-decision-time"],
+      purpose: "Send only after owner approval",
+      idempotency_key: "invalid-decision-time"
+    };
+    const confirmation = store.createConfirmation(
+      intent,
+      confirmationVerdict(intent, "external.communicate"),
+      NOW
+    );
+
+    for (const decidedAt of ["not-a-timestamp", "2026-08-24T11:59:59.999Z"]) {
+      expect(() =>
+        store.decideConfirmation({
+          confirmationId: confirmation.confirmation_id,
+          challengeNonce: confirmation.challenge_nonce,
+          decision: "approve",
+          decidedBy: "local-owner",
+          approvalMethod: "session",
+          decidedAt
+        })
+      ).toThrow(PolicyStoreConflictError);
+    }
+
+    expect(store.getConfirmation(confirmation.confirmation_id)?.status).toBe("PENDING");
+    expect(store.listActivePermissions(projectId, "manager", NOW)).toEqual([]);
+    expect(store.getOperation(projectId, intent.idempotency_key)).toMatchObject({
+      status: "WAITING_CONFIRMATION"
+    });
+    expect(store.listDecisionTrace(projectId)).toHaveLength(1);
+  });
+
   it("expires stale confirmations and records a terminal deny verdict", () => {
     const intent: PolicyIntent = {
       operation_id: "operation-expired",

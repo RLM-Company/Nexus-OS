@@ -79,6 +79,15 @@ describe("autonomy and confirmation API", () => {
       payload: { base_level: "A4", overrides: [], expected_version: 1 }
     });
     expect(stale.statusCode).toBe(409);
+
+    const staleCritical = await app.inject({
+      method: "PUT",
+      url: `/api/v1/projects/${projectId}/autonomy-profile`,
+      headers: { "x-step-up-token": "valid-step-up" },
+      payload: { base_level: "A6", overrides: [], expected_version: 1 }
+    });
+    expect(staleCritical.statusCode).toBe(409);
+    expect(consumedStepUps).toHaveLength(0);
   });
 
   it("previews authority changes without mutating the stored profile", async () => {
@@ -245,6 +254,43 @@ describe("autonomy and confirmation API", () => {
         session_id: "local-development-session"
       }
     });
+  });
+
+  it("expires a stale critical confirmation before consuming step-up proof", async () => {
+    const requestedAt = new Date(Date.now() - 60_000).toISOString();
+    const intent: PolicyIntent = {
+      operation_id: "expired-critical-operation",
+      project_id: projectId,
+      actor_id: "manager",
+      capability_ids: ["finance.spend"],
+      object_ids: ["invoice-expired"],
+      purpose: "Pay an invoice before confirmation expiry",
+      idempotency_key: "expired-critical-operation-once"
+    };
+    const verdict: PolicyVerdict = {
+      operation_id: intent.operation_id,
+      verdict: "NEEDS_CONFIRMATION",
+      evaluated_capabilities: [
+        { capability_id: "finance.spend", mode: "CONFIRM", scope: [], conditions: [] }
+      ],
+      permission_ids: [],
+      reasons: ["Owner confirmation required"],
+      evaluated_at: requestedAt,
+      policy_version: "1.1.0"
+    };
+    const confirmation = policyStore.createConfirmation(intent, verdict, requestedAt, 1_000);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/confirmations/${confirmation.confirmation_id}/approve`,
+      headers: { "x-step-up-token": "valid-step-up" },
+      payload: { challenge_nonce: confirmation.challenge_nonce }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe("CONFIRMATION_EXPIRED");
+    expect(consumedStepUps).toHaveLength(0);
+    expect(policyStore.getConfirmation(confirmation.confirmation_id)?.status).toBe("EXPIRED");
   });
 
   it("returns a bounded content-minimized Policy Decision Trace", async () => {
@@ -455,6 +501,15 @@ describe("autonomy and confirmation API", () => {
         session_id: "local-development-session"
       }
     });
+
+    const replay = await app.inject({
+      method: "POST",
+      url: `/api/v1/confirmations/${confirmation.confirmation_id}/approve`,
+      headers: { "x-step-up-token": "valid-step-up" },
+      payload: { challenge_nonce: confirmation.challenge_nonce }
+    });
+    expect(replay.statusCode).toBe(409);
+    expect(consumedStepUps).toHaveLength(1);
   });
 
   it("records a reasoned rejection without consuming step-up proof", async () => {

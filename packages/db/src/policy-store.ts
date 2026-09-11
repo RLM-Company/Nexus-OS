@@ -615,7 +615,20 @@ export class PolicyStore {
         return { status: "NONCE_MISMATCH" };
       if (confirmation.status !== "PENDING") return { status: "ALREADY_DECIDED" };
       const decidedAt = input.decidedAt ?? nowIso();
-      if (Date.parse(confirmation.expires_at) < Date.parse(decidedAt)) {
+      const decidedTime = Date.parse(decidedAt);
+      const requestedTime = Date.parse(confirmation.requested_at);
+      const expiresTime = Date.parse(confirmation.expires_at);
+      if (
+        !Number.isFinite(decidedTime) ||
+        !Number.isFinite(requestedTime) ||
+        !Number.isFinite(expiresTime) ||
+        decidedTime < requestedTime
+      ) {
+        throw new PolicyStoreConflictError(
+          "Confirmation decision timestamp is invalid or predates the request"
+        );
+      }
+      if (expiresTime < decidedTime) {
         const denied = deniedConfirmationVerdict(
           confirmation,
           decidedAt,
