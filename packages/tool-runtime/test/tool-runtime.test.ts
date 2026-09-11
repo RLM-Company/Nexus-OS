@@ -72,7 +72,7 @@ describe("GuardedToolRuntime", () => {
           capability_id: "workspace.write",
           mode: "AUTONOMOUS",
           object_ids: [projectId],
-          purpose: "Allow one exact project write",
+          purpose: "Write one exact project artifact",
           valid_until: null,
           remaining_uses: 1
         }
@@ -124,7 +124,7 @@ describe("GuardedToolRuntime", () => {
           capability_id: "workspace.write",
           mode: "AUTONOMOUS",
           object_ids: [projectId],
-          purpose: "Bound a potentially uncertain project write",
+          purpose: "Attempt one bounded project write",
           valid_until: null,
           remaining_uses: 1
         }

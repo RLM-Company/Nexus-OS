@@ -116,6 +116,7 @@ const appliedOverrideIdsForReservation = (
     const matches = profile.overrides.filter(
       (override) =>
         override.capability_id === capabilityId &&
+        override.purpose === intent.purpose &&
         (override.remaining_uses === null || override.remaining_uses > 0) &&
         (override.valid_until === null || Date.parse(override.valid_until) >= now) &&
         coversObjects(override.object_ids, intent.object_ids)

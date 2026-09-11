@@ -163,7 +163,7 @@ describe("policy profile base grant integrity", () => {
         capability_id: "external.communicate",
         mode: "DENY",
         object_ids: ["project-1"],
-        purpose: "Pause outbound communication for this project",
+        purpose: "Validate canonical policy profile integrity",
         valid_until: null,
         remaining_uses: null
       }

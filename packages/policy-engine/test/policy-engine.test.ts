@@ -179,7 +179,7 @@ describe("evaluatePolicy", () => {
         capability_id: "external.communicate",
         mode: "DENY",
         object_ids: ["project-1"],
-        purpose: "Pause outbound communication",
+        purpose: "Run a policy-engine test",
         valid_until: null,
         remaining_uses: 2
       }
@@ -198,11 +198,36 @@ describe("evaluatePolicy", () => {
     ]);
   });
 
+  it("does not reuse a point override for another purpose", () => {
+    const scoped = profile("A0", [
+      {
+        override_id: "other-purpose-write",
+        capability_id: "workspace.write",
+        mode: "AUTONOMOUS",
+        object_ids: ["project-1"],
+        purpose: "Write a different approved artifact",
+        valid_until: null,
+        remaining_uses: 1
+      }
+    ]);
+    const currentIntent = intent(["workspace.write"]);
+    const verdict = evaluatePolicy(
+      { intent: currentIntent, profile: scoped, permissionContracts: [] },
+      { evaluatedAt: NOW }
+    );
+
+    expect(verdict.verdict).toBe("DENY");
+    expect(getAppliedOverrideIds(scoped, currentIntent, NOW)).toEqual([]);
+    expect(verdict.reasons).not.toContain(
+      "Override other-purpose-write set the final mode to AUTONOMOUS."
+    );
+  });
+
   it("reports no applied override for expired, out-of-scope, or conflicting candidates", () => {
     const overrideBase = {
       capability_id: "external.communicate" as const,
       object_ids: ["project-1"],
-      purpose: "Bounded outbound communication",
+      purpose: "Run a policy-engine test",
       remaining_uses: 1
     };
     expect(
@@ -292,7 +317,7 @@ describe("evaluatePolicy", () => {
     const overrideBase = {
       capability_id: "finance.spend" as const,
       object_ids: ["project-1"],
-      purpose: "Temporary budget decision",
+      purpose: "Run a policy-engine test",
       valid_until: null,
       remaining_uses: null
     };
