@@ -146,6 +146,25 @@ describe("autonomy and confirmation API", () => {
     });
     expect(invalidCounter.statusCode).toBe(400);
 
+    const duplicatePreview = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${projectId}/autonomy-profile/preview`,
+      payload: { base_level: "A0", overrides: [override, { ...override }], expected_version: 1 }
+    });
+    expect(duplicatePreview.statusCode).toBe(400);
+    expect(duplicatePreview.json<{ error: { code: string } }>().error.code).toBe(
+      "VALIDATION_ERROR"
+    );
+
+    const duplicateApply = await app.inject({
+      method: "PUT",
+      url: `/api/v1/projects/${projectId}/autonomy-profile`,
+      headers: { "x-step-up-token": "valid-step-up" },
+      payload: { base_level: "A0", overrides: [override, { ...override }], expected_version: 1 }
+    });
+    expect(duplicateApply.statusCode).toBe(400);
+    expect(consumedStepUps).toHaveLength(0);
+
     const preview = await app.inject({
       method: "POST",
       url: `/api/v1/projects/${projectId}/autonomy-profile/preview`,

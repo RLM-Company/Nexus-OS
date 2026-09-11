@@ -24,8 +24,8 @@ Before any state mutation, Policy Store:
 3. requires the stored profile version to equal the evaluated authority snapshot;
 4. independently recomputes the applicable override IDs from capability, exact purpose, objects,
    expiry and remaining-use state;
-5. verifies the supplied IDs are unique and exact and that each selected override produced the
-   verdict's final capability mode;
+5. requires every stored override identity and every supplied ID to be unique and exact, then
+   verifies that each selected override produced the verdict's final capability mode;
 6. validates every one-use permission referenced by the verdict.
 
 Only after all checks pass does one transaction update the versioned profile, consume permissions

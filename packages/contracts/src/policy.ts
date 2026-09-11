@@ -510,6 +510,10 @@ export function verdictForModes(permissionModes: readonly PermissionMode[]): Pol
   return "ALLOW";
 }
 
+export function hasUniqueCapabilityOverrideIds(overrides: readonly CapabilityOverride[]): boolean {
+  return new Set(overrides.map((override) => override.override_id)).size === overrides.length;
+}
+
 export function createCapabilityProfile(input: {
   profileId: string;
   projectId: string;

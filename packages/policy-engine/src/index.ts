@@ -6,6 +6,7 @@ import {
   CAPABILITY_IDS,
   CONDITIONAL_EXPANSIONS,
   PERMISSION_MODE_RANK,
+  hasUniqueCapabilityOverrideIds,
   verdictForModes,
   type CapabilityGrant,
   type CapabilityId,
@@ -135,6 +136,9 @@ const activePermissionGrants = (
 
 const validateBaseProfileIntegrity = (profile: CapabilityProfile): string[] => {
   const issues: string[] = [];
+  if (!hasUniqueCapabilityOverrideIds(profile.overrides)) {
+    issues.push("Capability profile contains duplicate point override IDs.");
+  }
   for (const capabilityId of CAPABILITY_IDS) {
     const grants = profile.grants.filter((grant) => grant.capability_id === capabilityId);
     if (grants.length !== 1) {

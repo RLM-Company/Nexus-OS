@@ -509,6 +509,30 @@ describe("PolicyStore", () => {
     expect(store.getProfile(projectId)).toMatchObject({ version: 4, overrides: [] });
   });
 
+  it("rejects duplicate point override identities before persistence", () => {
+    const initial = store.ensureProfile(projectId, NOW)!;
+    const duplicate = {
+      override_id: "duplicate-write",
+      capability_id: "workspace.write" as const,
+      mode: "AUTONOMOUS" as const,
+      object_ids: [projectId],
+      purpose: "Write one exact project artifact",
+      valid_until: null,
+      remaining_uses: 1
+    };
+
+    expect(
+      store.updateProfile({
+        projectId,
+        baseLevel: "A0",
+        overrides: [duplicate, { ...duplicate }],
+        expectedVersion: initial.version,
+        issuedAt: NOW
+      })
+    ).toBeNull();
+    expect(store.getProfile(projectId)).toEqual(initial);
+  });
+
   it("rejects a point override reserved for another purpose without consuming it", () => {
     const initial = store.ensureProfile(projectId, NOW)!;
     const scoped = store.updateProfile({
