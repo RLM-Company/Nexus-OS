@@ -169,6 +169,7 @@ export interface AppDependencies {
   closeDatabase?: () => void;
   runtimeMetrics?: RuntimeMetrics;
   managerRunExecutionMode?: "stream" | "background";
+  now?: () => string;
 }
 
 const stepUpToken = (value: string | string[] | undefined): string | null =>
@@ -524,6 +525,7 @@ const observePersistedRun = async (
 };
 
 export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
+  const now = dependencies.now ?? (() => new Date().toISOString());
   const identityResolver =
     dependencies.identityResolver ??
     (dependencies.config.nodeEnv === "production"
@@ -2122,15 +2124,15 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                 )
               );
           }
-          const decidedAt = new Date().toISOString();
-          if (Date.parse(pending.expires_at) < Date.parse(decidedAt)) {
+          const preconditionAt = now();
+          if (Date.parse(pending.expires_at) < Date.parse(preconditionAt)) {
             policyStore.decideConfirmation({
               confirmationId: request.params.confirmationId,
               challengeNonce: request.body.challenge_nonce,
               decision: "approve",
               decidedBy: identity.actor_id,
               approvalMethod: "session",
-              decidedAt
+              decidedAt: preconditionAt
             });
             return reply
               .status(409)
@@ -2155,6 +2157,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             }
             approvalMethod = "step_up";
           }
+          const decidedAt = now();
           const decision = policyStore.decideConfirmation({
             confirmationId: request.params.confirmationId,
             challengeNonce: request.body.challenge_nonce,
