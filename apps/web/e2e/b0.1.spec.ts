@@ -27,6 +27,11 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
       .getByRole("region", { name: "Главный чат проекта" })
       .getByText("Следующий этап подключит настоящего менеджера")
   ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Главный чат проекта" })
+      .getByText("Последний ответ: mock · manager-b0.1")
+  ).toBeVisible();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
   await expect(page).toHaveURL(new RegExp(`project=${createdBody.project.id}&view=chat`));
   await page.getByRole("tab", { name: "Проект" }).click();

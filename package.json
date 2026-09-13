@@ -5,10 +5,11 @@
   "packageManager": "pnpm@11.19.0",
   "scripts": {
     "build": "turbo run build",
-    "db:migrate": "pnpm --filter @cosmora/api exec node --import tsx --conditions=development ../../packages/db/src/migrate.ts",
+    "db:migrate": "pnpm --filter @cosmora/api exec node --env-file-if-exists=../../.env --import tsx --conditions=development ../../packages/db/src/migrate.ts",
     "demo": "turbo run demo",
     "demo:lan": "turbo run demo:lan",
     "demo:preflight": "node scripts/demo-preflight.mjs",
+    "manager:preflight": "node --env-file-if-exists=.env scripts/manager-live-preflight.mjs",
     "dev": "turbo run dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
