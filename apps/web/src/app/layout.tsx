@@ -4,14 +4,26 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Cosmora OS",
-  description: "Адаптивная рабочая среда автономных ИИ-агентов"
+  description: "Проектная консоль Cosmora Manager",
+  applicationName: "Cosmora",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Cosmora"
+  },
+  formatDetection: {
+    telephone: false
+  }
 };
 
 export const viewport: Viewport = {
   colorScheme: "dark",
   themeColor: "#080b12",
   width: "device-width",
-  initialScale: 1
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

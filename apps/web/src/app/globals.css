@@ -12,6 +12,7 @@
   box-sizing: border-box;
 }
 html {
+  min-height: 100%;
   background: var(--bg);
   scroll-behavior: smooth;
 }
@@ -19,6 +20,8 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
   background: var(--bg);
   color: var(--text);
   font-family:
@@ -37,6 +40,7 @@ textarea {
 }
 button {
   cursor: pointer;
+  touch-action: manipulation;
 }
 a {
   color: inherit;
@@ -53,6 +57,7 @@ svg {
 }
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .sidebar {
@@ -62,7 +67,8 @@ svg {
   display: flex;
   width: 17.5rem;
   flex-direction: column;
-  padding: 1.35rem 1rem;
+  padding: max(1.35rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    max(1.35rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
   border-right: 1px solid var(--line);
   background: rgba(17, 19, 24, 0.96);
   backdrop-filter: blur(24px);
@@ -208,6 +214,7 @@ svg {
 .workspace {
   width: min(79rem, calc(100% - 17.5rem));
   min-height: 100vh;
+  min-height: 100dvh;
   margin-left: 17.5rem;
   padding: 1.15rem clamp(1.4rem, 4vw, 4.5rem) 4rem;
 }
@@ -218,6 +225,10 @@ svg {
   gap: 1.5rem;
   padding-bottom: 1.4rem;
   border-bottom: 1px solid var(--line);
+}
+.topbar > div:first-child {
+  min-width: 0;
+  flex: 1;
 }
 .eyebrow {
   color: var(--accent-strong);
@@ -317,6 +328,82 @@ svg {
   width: 0.9rem;
   height: 0.9rem;
   color: var(--green);
+}
+.app-install-control {
+  position: relative;
+  flex: 0 0 auto;
+}
+.app-install-button {
+  display: flex;
+  min-height: 2.35rem;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.5rem 0.68rem;
+  border: 1px solid rgba(179, 168, 255, 0.28);
+  border-radius: 999px;
+  color: #ddd8ff;
+  background: rgba(138, 119, 255, 0.11);
+  font-size: 0.68rem;
+  font-weight: 680;
+}
+.app-install-button:hover,
+.app-install-button:focus-visible {
+  border-color: rgba(192, 182, 255, 0.5);
+  background: rgba(138, 119, 255, 0.18);
+}
+.app-install-button svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.install-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 1rem;
+}
+.install-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: rgba(2, 4, 9, 0.72);
+  backdrop-filter: blur(8px);
+}
+.install-dialog {
+  position: relative;
+  display: grid;
+  width: min(30rem, 100%);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid rgba(179, 168, 255, 0.24);
+  border-radius: 1.1rem;
+  background: #141722;
+  box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.55);
+}
+.install-dialog h2 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+.install-dialog p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.install-dialog > button {
+  grid-column: 1 / -1;
+  min-height: 2.65rem;
+  border: 0;
+  border-radius: 0.72rem;
+  color: #171321;
+  background: linear-gradient(135deg, #d2cbff, #9686ff);
+  font-size: 0.76rem;
+  font-weight: 720;
 }
 
 .hero {
@@ -553,6 +640,7 @@ svg {
 .chat-workspace {
   display: grid;
   height: 100vh;
+  height: 100dvh;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   padding-bottom: 1.3rem;
   overflow: hidden;
@@ -1050,7 +1138,8 @@ svg {
   .workspace {
     width: 100%;
     margin-left: 0;
-    padding: 1rem 1rem 6.5rem;
+    padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+      calc(6.5rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
   }
   .topbar {
     align-items: flex-start;
@@ -1103,7 +1192,9 @@ svg {
   }
   .mobile-nav {
     position: fixed;
-    inset: auto 0.75rem 0.75rem;
+    right: max(0.75rem, env(safe-area-inset-right));
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    left: max(0.75rem, env(safe-area-inset-left));
     z-index: 20;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1125,6 +1216,7 @@ svg {
     font-size: 0.62rem;
     border: 0;
     background: transparent;
+    min-height: 2.75rem;
   }
   .mobile-nav .active {
     color: var(--text);
@@ -1133,12 +1225,13 @@ svg {
   .chat-workspace {
     height: 100dvh;
     grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-    padding-bottom: 5.7rem;
+    padding-bottom: calc(5.7rem + env(safe-area-inset-bottom));
   }
   .project-tabs {
     padding-top: 0.55rem;
   }
   .project-tabs button {
+    min-height: 2.75rem;
     flex: 1;
     justify-content: center;
     padding-inline: 0.45rem;
@@ -1162,6 +1255,12 @@ svg {
   .chat-composer {
     border-radius: 1rem;
   }
+  .composer textarea {
+    font-size: 1rem;
+  }
+  .composer-footer button {
+    min-height: 2.75rem;
+  }
   .mobile-nav svg {
     width: 0.95rem;
     height: 0.95rem;
@@ -1170,7 +1269,8 @@ svg {
 
 @media (max-width: 520px) {
   .workspace {
-    padding-inline: 0.8rem;
+    padding-right: max(0.8rem, env(safe-area-inset-right));
+    padding-left: max(0.8rem, env(safe-area-inset-left));
   }
   .topbar h1 {
     font-size: 0.86rem;
@@ -1178,6 +1278,15 @@ svg {
   .system-status > span {
     padding: 0.42rem 0.55rem;
     font-size: 0.62rem;
+  }
+  .app-install-button {
+    width: 2.5rem;
+    min-height: 2.5rem;
+    justify-content: center;
+    padding: 0;
+  }
+  .app-install-button span {
+    display: none;
   }
   .hero {
     margin-top: 3.5rem;
@@ -1231,6 +1340,12 @@ svg {
   }
   .demo-actions > button {
     width: 100%;
+  }
+}
+
+@media (display-mode: standalone) {
+  .app-shell {
+    min-height: 100dvh;
   }
 }
 
