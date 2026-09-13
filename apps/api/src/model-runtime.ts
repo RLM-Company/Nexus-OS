@@ -11,13 +11,14 @@ import {
   type ModelProviderAdapter
 } from "@cosmora/model-gateway";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Value } from "typebox/value";
 
 const DEFAULT_REGISTRY_PATH = fileURLToPath(
   new URL("../../../config/model-registry.v1.json", import.meta.url)
 );
+const REPOSITORY_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 export interface ModelRuntime {
   gateway: ModelGateway;
@@ -31,11 +32,14 @@ export interface ModelRuntimeOptions {
 }
 
 export const loadModelRegistryDocument = (path: string): ModelRegistryDocument => {
+  const resolvedPath = isAbsolute(path) ? path : resolve(REPOSITORY_ROOT, path);
   let candidate: unknown;
   try {
-    candidate = JSON.parse(readFileSync(resolve(path), "utf8")) as unknown;
+    candidate = JSON.parse(readFileSync(resolvedPath, "utf8")) as unknown;
   } catch (error) {
-    throw new Error(`Failed to read Model Registry from ${path}`, { cause: error });
+    throw new Error(`Failed to read Model Registry from ${path} (resolved to ${resolvedPath})`, {
+      cause: error
+    });
   }
   if (!Value.Check(ModelRegistryDocumentSchema, candidate)) {
     throw new Error(`Invalid Model Registry document at ${path}`);

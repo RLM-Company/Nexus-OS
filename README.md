@@ -123,10 +123,10 @@ Keep the API key only in a local `.env` file (never paste it into chat or commit
 ```dotenv
 MODEL_PROVIDER=openai-compatible
 MODEL_PROVIDER_ID=vibecode
-MODEL_BASE_URL=https://your-provider.example/v1
+MODEL_REGISTRY_PATH=config/model-registry.vibecode.v1.json
+MODEL_BASE_URL=https://vibecode.moe/v1
 MODEL_API_KEY=your-local-secret
-MODEL_NAME=provider-model-id
-# MODEL_REGISTRY_PATH=/absolute/path/to/model-registry.v1.json
+MODEL_NAME=gpt-5.5
 MODEL_FALLBACK_TO_MOCK=true
 MODEL_MAX_ATTEMPTS_PER_ROUTE=2
 MODEL_RETRY_BASE_DELAY_MS=250
@@ -136,10 +136,25 @@ MODEL_CIRCUIT_OPEN_MS=30000
 RUNTIME_EMERGENCY_STOP=false
 ```
 
-The provider must expose an OpenAI-compatible streaming `POST /chat/completions` endpoint. Cosmora
-does not expose the key through its health or runtime-status APIs. If the provider fails before the
-first response token, optional mock fallback keeps the local workflow usable; after output begins,
-the gateway fails the run instead of mixing responses from two models.
+The API `demo`, `dev` and `start` commands load this repository-root `.env` directly; the browser
+process does not receive the credential. Repository-relative registry paths resolve from the
+repository root, so the profile above works regardless of the shell working directory. Start the
+console with `pnpm demo`, then verify the live route without sending a paid model request:
+
+```bash
+pnpm manager:preflight
+```
+
+The checked-in owner-preview registry also permits `claude-sonnet-5` through the
+`anthropic-compatible` protocol. Its dated provider evidence expires on 2026-10-13 and must be
+reverified rather than silently reused. The default registry remains mock-only, so removing the
+local `.env` returns the repository to its safe local mode.
+
+An OpenAI-compatible provider must expose streaming `POST /chat/completions`; an
+Anthropic-compatible provider must expose streaming `POST /messages`. Cosmora does not expose the
+key through its health or runtime-status APIs. If the provider fails before the first response
+token, optional mock fallback keeps the local workflow usable; after output begins, the gateway
+fails the run instead of mixing responses from two models.
 
 Retryable failures are retried only before the first response token and within the configured
 attempt limit. Backoff is bounded, cancellation also interrupts backoff, and repeated failures open

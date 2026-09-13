@@ -1,7 +1,7 @@
 import { loadServerConfig } from "@cosmora/config";
 import type { ModelRegistryDocument, ModelRegistryEntry } from "@cosmora/contracts";
 import { describe, expect, it } from "vitest";
-import { buildModelRuntime } from "../src/model-runtime.js";
+import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runtime.js";
 
 const externalEntry = (overrides: Partial<ModelRegistryEntry> = {}): ModelRegistryEntry => ({
   provider_id: "vibecode",
@@ -61,6 +61,29 @@ const externalConfig = () =>
   });
 
 describe("buildModelRuntime", () => {
+  it("loads a repository-relative registry path independently of process cwd", () => {
+    const document = loadModelRegistryDocument("config/model-registry.v1.json");
+
+    expect(document.registry_version).toBe("b0.2-bootstrap-1");
+  });
+
+  it("builds the checked-in owner-preview route without making a provider request", async () => {
+    const config = loadServerConfig({
+      NODE_ENV: "test",
+      MODEL_PROVIDER: "openai-compatible",
+      MODEL_PROVIDER_ID: "vibecode",
+      MODEL_REGISTRY_PATH: "config/model-registry.vibecode.v1.json",
+      MODEL_BASE_URL: "https://vibecode.moe/v1",
+      MODEL_API_KEY: "test-secret",
+      MODEL_NAME: "gpt-5.5"
+    });
+
+    const runtime = await buildModelRuntime(config, { secretResolver });
+
+    expect(runtime.registryVersion).toBe("vibecode-owner-preview-2026-09-13");
+    expect(runtime.gateway.hasProvider("vibecode")).toBe(true);
+  });
+
   it("binds an external adapter only to an active registry route", async () => {
     const runtime = await buildModelRuntime(externalConfig(), {
       registryDocument: registry([externalEntry()]),

@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "registry_version": "vibecode-owner-preview-2026-09-13",
+  "generated_at": "2026-09-13T00:00:00.000Z",
+  "entries": [
+    {
+      "provider_id": "mock",
+      "model_id": "manager-b0.1",
+      "aliases": ["manager", "test"],
+      "protocol": "mock",
+      "status": "active",
+      "roles": [],
+      "task_types": [],
+      "capabilities": {
+        "streaming": true,
+        "structured_output": false,
+        "tool_calling": false,
+        "vision": false
+      },
+      "context_window_tokens": 100000,
+      "max_output_tokens": 100000,
+      "quality_tier": 1,
+      "latency_tier": 1,
+      "pricing": {
+        "currency": "USD",
+        "input_per_million_tokens": 0,
+        "output_per_million_tokens": 0
+      },
+      "privacy": {
+        "confidential_compatible": true,
+        "training_usage": "none",
+        "retention": "zero"
+      },
+      "source": {
+        "kind": "static",
+        "verified_at": "2026-08-24T00:00:00.000Z",
+        "valid_until": null,
+        "reference": "packages/model-gateway/src/mock-adapter.ts"
+      }
+    },
+    {
+      "provider_id": "vibecode",
+      "model_id": "gpt-5.5",
+      "aliases": ["manager", "gpt-5.5"],
+      "protocol": "openai-compatible",
+      "status": "active",
+      "roles": ["manager"],
+      "task_types": ["project_chat"],
+      "capabilities": {
+        "streaming": true,
+        "structured_output": false,
+        "tool_calling": false,
+        "vision": false
+      },
+      "context_window_tokens": 32000,
+      "max_output_tokens": 1200,
+      "quality_tier": 4,
+      "latency_tier": 3,
+      "pricing": null,
+      "privacy": {
+        "confidential_compatible": false,
+        "training_usage": "unknown",
+        "retention": "unknown"
+      },
+      "source": {
+        "kind": "authorized_discovery",
+        "verified_at": "2026-09-13T00:00:00.000Z",
+        "valid_until": "2026-10-13T00:00:00.000Z",
+        "reference": "https://vibecode.moe/setup/vscode"
+      }
+    },
+    {
+      "provider_id": "vibecode",
+      "model_id": "claude-sonnet-5",
+      "aliases": ["claude-sonnet-5"],
+      "protocol": "anthropic-compatible",
+      "status": "active",
+      "roles": ["manager"],
+      "task_types": ["project_chat"],
+      "capabilities": {
+        "streaming": true,
+        "structured_output": false,
+        "tool_calling": false,
+        "vision": false
+      },
+      "context_window_tokens": 32000,
+      "max_output_tokens": 1200,
+      "quality_tier": 4,
+      "latency_tier": 3,
+      "pricing": null,
+      "privacy": {
+        "confidential_compatible": false,
+        "training_usage": "unknown",
+        "retention": "unknown"
+      },
+      "source": {
+        "kind": "authorized_discovery",
+        "verified_at": "2026-09-13T00:00:00.000Z",
+        "valid_until": "2026-10-13T00:00:00.000Z",
+        "reference": "https://vibecode.moe/setup/cc"
+      }
+    }
+  ]
+}

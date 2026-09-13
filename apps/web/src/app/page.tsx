@@ -48,12 +48,14 @@ type AutonomyProfile = {
 };
 
 type ModelRuntimeStatus = {
-  mode: "mock" | "openai-compatible";
-  provider: "mock" | "primary";
+  mode: "mock" | "openai-compatible" | "anthropic-compatible";
+  provider: string;
   model: string;
   credential_configured: boolean;
   fallback_to_mock: boolean;
 };
+
+type CompletedRoute = { provider: string; model: string };
 
 type RunPhase = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 type ProjectView = "chat" | "plan" | "project";
@@ -288,6 +290,7 @@ export default function Home() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<ModelRuntimeStatus | null>(null);
+  const [lastCompletedRoute, setLastCompletedRoute] = useState<CompletedRoute | null>(null);
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const [projectView, setProjectView] = useState<ProjectView>("chat");
   const streamRef = useRef<EventSource | null>(null);
@@ -409,6 +412,7 @@ export default function Home() {
       setMessages([]);
       setChatId(null);
       setDraft("");
+      setLastCompletedRoute(null);
       setAutonomyProfile(null);
       setPolicySignals(EMPTY_POLICY_SIGNALS);
       setDemoRuns([]);
@@ -514,11 +518,18 @@ export default function Home() {
         );
       });
 
-      source.addEventListener("run.completed", () => {
+      source.addEventListener("run.completed", (raw) => {
         if (!isCurrent()) return;
+        const event = JSON.parse(String(raw.data)) as {
+          data: { provider: string; model_resolved: string };
+        };
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
+        setLastCompletedRoute({
+          provider: event.data.provider,
+          model: event.data.model_resolved
+        });
         setSending(false);
         setActiveRunId(null);
         setRunPhase("completed");
@@ -699,6 +710,7 @@ export default function Home() {
     selectProjectView("chat");
     setRunPhase("queued");
     setError(null);
+    setLastCompletedRoute(null);
     setDraft("");
     try {
       const accepted = activeProject
@@ -763,6 +775,7 @@ export default function Home() {
     setDraft("");
     setSending(false);
     setActiveRunId(null);
+    setLastCompletedRoute(null);
     setRunPhase("idle");
     setProjectView("chat");
     setError(null);
@@ -860,11 +873,11 @@ export default function Home() {
           <div className="system-status" aria-label="Статус системы">
             <span>
               <i className="status-dot" />
-              {runtime?.mode === "openai-compatible" ? "Провайдер готов" : "Mock-режим"}
+              {runtime && runtime.mode !== "mock" ? "Провайдер настроен" : "Mock-режим"}
             </span>
             <span className="privacy-badge">
               <ShieldIcon />
-              Данные под контролем
+              {runtime && runtime.mode !== "mock" ? "Внешний провайдер" : "Локальные данные"}
             </span>
           </div>
         </header>
@@ -1137,9 +1150,11 @@ export default function Home() {
               <div>
                 <strong>Cosmora Manager</strong>
                 <small>
-                  {runtime?.mode === "openai-compatible"
-                    ? `${runtime.model} · fallback ${runtime.fallback_to_mock ? "включён" : "выключен"}`
-                    : "MockProvider · история сохраняется"}
+                  {lastCompletedRoute
+                    ? `Последний ответ: ${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
+                    : runtime && runtime.mode !== "mock"
+                      ? `${runtime.model} · fallback ${runtime.fallback_to_mock ? "включён" : "выключен"}`
+                      : "MockProvider · история сохраняется"}
                 </small>
               </div>
               <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">

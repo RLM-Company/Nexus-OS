@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "demo": "node --import tsx --conditions=development src/server.ts",
-    "dev": "tsx --conditions=development watch src/server.ts",
-    "demo:lan": "node --import tsx --conditions=development src/server.ts",
+    "demo": "node --env-file-if-exists=../../.env --import tsx --conditions=development src/server.ts",
+    "dev": "node --env-file-if-exists=../../.env --import tsx --conditions=development --watch src/server.ts",
+    "demo:lan": "node --env-file-if-exists=../../.env --import tsx --conditions=development src/server.ts",
     "lint": "eslint src test",
-    "start": "node dist/server.js",
+    "start": "node --env-file-if-exists=../../.env dist/server.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
