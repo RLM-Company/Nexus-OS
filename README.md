@@ -116,6 +116,19 @@ LAN mode is for a temporary internal walkthrough only. Do not use it on a public
 network, and stop both processes after the demo. The exact owner walkthrough and recovery notes are
 in `docs/handoff/SUNDAY_MANAGER_DEMO_RUNBOOK_2026-09-11.md`.
 
+## Install the Manager Console as an app
+
+Cosmora ships an installable PWA manifest, desktop/mobile app icons, standalone display metadata
+and safe-area-aware layouts. On the local laptop, start `pnpm demo`, open
+`http://127.0.0.1:3000`, then use the visible **Install** action or the browser's install control.
+The installed app opens in its own window while continuing to use the same local API and SQLite
+project history.
+
+The responsive console also works through `pnpm demo:lan` on a phone in the same trusted private
+network. Installing to a phone home screen requires a valid HTTPS origin; plain LAN HTTP is for
+responsive preview only. No service worker caches project or API responses: when the API is
+unavailable, the app reports that state instead of displaying potentially stale operational data.
+
 ## Connect a model provider
 
 Keep the API key only in a local `.env` file (never paste it into chat or commit it):

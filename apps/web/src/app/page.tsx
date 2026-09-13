@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { InstallApp } from "./install-app";
 
 type Project = {
   id: string;
@@ -880,6 +881,7 @@ export default function Home() {
               {runtime && runtime.mode !== "mock" ? "Внешний провайдер" : "Локальные данные"}
             </span>
           </div>
+          <InstallApp />
         </header>
 
         {activeProject && (
