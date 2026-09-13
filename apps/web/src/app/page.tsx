@@ -301,6 +301,7 @@ export default function Home() {
   const selectedProjectRef = useRef<string | null>(null);
   const viewRequestRef = useRef(0);
   const initialRouteHandledRef = useRef(false);
+  const focusComposerWhenReadyRef = useRef(false);
 
   const loadProjects = useCallback(async () => {
     const data = await api<{ items: ProjectSummary[] }>("/api/v1/projects");
@@ -320,6 +321,12 @@ export default function Home() {
       streamRef.current = null;
     };
   }, [loadProjects]);
+
+  useEffect(() => {
+    if (loading || !focusComposerWhenReadyRef.current) return;
+    focusComposerWhenReadyRef.current = false;
+    window.requestAnimationFrame(() => composerRef.current?.focus());
+  }, [loading]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -701,6 +708,12 @@ export default function Home() {
     window.requestAnimationFrame(() => composerRef.current?.focus());
   };
 
+  const selectSuggestion = (content: string): void => {
+    setDraft(content);
+    focusComposerWhenReadyRef.current = loading;
+    if (!loading) window.requestAnimationFrame(() => composerRef.current?.focus());
+  };
+
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     const content = draft.trim();
@@ -869,7 +882,7 @@ export default function Home() {
         <header className="topbar">
           <div>
             <span className="eyebrow">{activeProject ? "Активный проект" : "Рабочая область"}</span>
-            <h1>{activeProject?.title ?? "Cosmora Control Center"}</h1>
+            <h1>{activeProject?.title ?? "Cosmora Manager"}</h1>
           </div>
           <div className="system-status" aria-label="Статус системы">
             <span>
@@ -1198,7 +1211,7 @@ export default function Home() {
               <div className="hero-symbol">
                 <SparkIcon />
               </div>
-              <h2>Чем займёмся?</h2>
+              <h2>Чем я могу помочь?</h2>
               <p>
                 Опишите результат — Менеджер создаст проект, сохранит контекст и поможет пройти к
                 следующему шагу.
@@ -1208,10 +1221,7 @@ export default function Home() {
               <button
                 type="button"
                 className="foundation-card"
-                onClick={() => {
-                  setDraft("Помоги сформулировать цель нового проекта");
-                  composerRef.current?.focus();
-                }}
+                onClick={() => selectSuggestion("Помоги сформулировать цель нового проекта")}
               >
                 <span className="card-icon">
                   <GridIcon />
@@ -1224,10 +1234,7 @@ export default function Home() {
               <button
                 type="button"
                 className="foundation-card"
-                onClick={() => {
-                  setDraft("Составь понятный пошаговый план по моей задаче");
-                  composerRef.current?.focus();
-                }}
+                onClick={() => selectSuggestion("Составь понятный пошаговый план по моей задаче")}
               >
                 <span className="card-icon">
                   <SparkIcon />
@@ -1240,10 +1247,7 @@ export default function Home() {
               <button
                 type="button"
                 className="foundation-card"
-                onClick={() => {
-                  setDraft("Проверь статус проекта и предложи следующий шаг");
-                  composerRef.current?.focus();
-                }}
+                onClick={() => selectSuggestion("Проверь статус проекта и предложи следующий шаг")}
               >
                 <span className="card-icon">
                   <ShieldIcon />
@@ -1279,7 +1283,7 @@ export default function Home() {
             placeholder={
               activeProject
                 ? "Уточните задачу или добавьте требование…"
-                : "Например: создай и запусти цифровой бизнес…"
+                : "Сообщение для Менеджера…"
             }
           />
           <div className="composer-footer">

@@ -126,7 +126,7 @@ for (const destination of ["beta", "new"] as const) {
     } else {
       await page.getByRole("button", { name: "＋ Новый проект", exact: true }).click();
     }
-    const heading = destination === "beta" ? "Project Beta" : "Cosmora Control Center";
+    const heading = destination === "beta" ? "Project Beta" : "Cosmora Manager";
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     const oldResponse = page.waitForResponse("**/api/v1/projects/alpha");
     release();
