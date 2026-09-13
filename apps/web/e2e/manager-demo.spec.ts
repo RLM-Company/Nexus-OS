@@ -12,9 +12,12 @@ test("persists the visible Manager demo plan through reload and executes it expl
   );
   await page.getByRole("button", { name: "Запустить" }).click();
   const created = await createdProject;
-  expect(created.status(), await created.text()).toBe(201);
+  const createdText = await created.text();
+  expect(created.status(), createdText).toBe(201);
+  const createdBody = JSON.parse(createdText) as { project: { id: string } };
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
   await page.getByRole("tab", { name: "План" }).click();
+  await expect(page).toHaveURL(new RegExp(`project=${createdBody.project.id}&view=plan`));
 
   const planRequest = page.waitForResponse(
     (response) =>
@@ -27,8 +30,8 @@ test("persists the visible Manager demo plan through reload and executes it expl
   await expect(page.getByText("Synthetic/read-only demo:")).toBeVisible();
 
   await page.reload();
-  await page.locator(".project-list .project-item").filter({ hasText: goal }).click();
-  await page.getByRole("tab", { name: "План" }).click();
+  await expect(page.getByRole("heading", { name: goal })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "План" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("План готов к запуску")).toBeVisible();
   await expect(page.getByRole("button", { name: "Запустить безопасный шаг" })).toBeVisible();
 
