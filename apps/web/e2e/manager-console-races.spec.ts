@@ -196,6 +196,7 @@ test("shows unavailable policy reads as unknown instead of empty queues", async 
     .locator(".project-list")
     .getByRole("button", { name: /Project Alpha/ })
     .click();
+  await page.getByRole("tab", { name: "Проект" }).click();
   const facts = page.getByRole("region", { name: "Информация о проекте" });
   await expect(facts.getByText("Нет данных", { exact: true })).toHaveCount(2);
   await expect(facts.getByText("Не требуется", { exact: true })).toHaveCount(0);

@@ -56,6 +56,7 @@ type ModelRuntimeStatus = {
 };
 
 type RunPhase = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
+type ProjectView = "chat" | "plan" | "project";
 
 type PendingConfirmation = {
   confirmation_id: string;
@@ -278,6 +279,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<ModelRuntimeStatus | null>(null);
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
+  const [projectView, setProjectView] = useState<ProjectView>("chat");
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -389,6 +391,7 @@ export default function Home() {
     setActiveRunId(null);
     setSending(false);
     setRunPhase("idle");
+    setProjectView("chat");
     setActiveProject(null);
     setMessages([]);
     setChatId(null);
@@ -663,6 +666,7 @@ export default function Home() {
     const epoch = viewEpochRef.current;
 
     setSending(true);
+    setProjectView("chat");
     setRunPhase("queued");
     setError(null);
     setDraft("");
@@ -729,6 +733,7 @@ export default function Home() {
     setSending(false);
     setActiveRunId(null);
     setRunPhase("idle");
+    setProjectView("chat");
     setError(null);
     setLoading(false);
   };
@@ -754,7 +759,11 @@ export default function Home() {
 
         <nav className="navigation" aria-label="Основная навигация">
           <button className={!activeProject ? "nav-item active" : "nav-item"} onClick={newProject}>
-            <GridIcon /> Рабочая область
+            <SparkIcon />
+            <span className="nav-copy">
+              <strong>Менеджер</strong>
+              <small>Главный чат</small>
+            </span>
           </button>
           <Link
             className="nav-item"
@@ -764,10 +773,18 @@ export default function Home() {
                 : "/agent-studio"
             }
           >
-            <ShieldIcon /> Agent Studio
+            <GridIcon />
+            <span className="nav-copy">
+              <strong>Агенты</strong>
+              <small>Agent Studio</small>
+            </span>
           </Link>
           <Link className="nav-item" href={controlCenterHref}>
-            <ShieldIcon /> Control Center
+            <ShieldIcon />
+            <span className="nav-copy">
+              <strong>Безопасность</strong>
+              <small>Control Center</small>
+            </span>
           </Link>
           <span className="nav-label">Проекты</span>
           <div className="project-list">
@@ -821,7 +838,65 @@ export default function Home() {
         </header>
 
         {activeProject && (
-          <div className="project-context">
+          <nav className="project-tabs" role="tablist" aria-label="Разделы проекта">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={projectView === "chat"}
+              className={projectView === "chat" ? "active" : ""}
+              onClick={() => setProjectView("chat")}
+            >
+              <SparkIcon />
+              Чат
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={projectView === "plan"}
+              className={projectView === "plan" ? "active" : ""}
+              onClick={() => setProjectView("plan")}
+            >
+              <GridIcon />
+              План
+              {latestDemoRun && <span className="tab-indicator" aria-hidden="true" />}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={projectView === "project"}
+              className={projectView === "project" ? "active" : ""}
+              onClick={() => setProjectView("project")}
+            >
+              <ShieldIcon />
+              Проект
+              {((policySignals.pendingConfirmations?.length ?? 0) > 0 ||
+                (policySignals.recoveryRequired?.length ?? 0) > 0) && (
+                <span className="tab-count">
+                  {(policySignals.pendingConfirmations?.length ?? 0) +
+                    (policySignals.recoveryRequired?.length ?? 0)}
+                </span>
+              )}
+            </button>
+          </nav>
+        )}
+
+        <div className="mobile-project-strip" aria-label="Быстрый выбор проекта">
+          <button className={!activeProject ? "active" : ""} onClick={newProject}>
+            ＋ Новый
+          </button>
+          {projects.map((project) => (
+            <button
+              key={project.id}
+              className={activeProject?.id === project.id ? "active" : ""}
+              onClick={() => void openProject(project.id)}
+            >
+              {project.title}
+            </button>
+          ))}
+        </div>
+
+        {activeProject && projectView === "project" && (
+          <div className="project-context view-panel" role="tabpanel" aria-label="Проект">
             <section className="project-facts" aria-label="Информация о проекте">
               <span>
                 <small>Статус проекта</small>
@@ -923,7 +998,11 @@ export default function Home() {
                 </div>
               </section>
             )}
+          </div>
+        )}
 
+        {activeProject && projectView === "plan" && (
+          <div className="project-context view-panel" role="tabpanel" aria-label="План">
             <section className="manager-demo" aria-label="Manager demo workflow">
               <header>
                 <div>
@@ -1017,22 +1096,7 @@ export default function Home() {
           </div>
         )}
 
-        <div className="mobile-project-strip" aria-label="Быстрый выбор проекта">
-          <button className={!activeProject ? "active" : ""} onClick={newProject}>
-            ＋ Новый
-          </button>
-          {projects.map((project) => (
-            <button
-              key={project.id}
-              className={activeProject?.id === project.id ? "active" : ""}
-              onClick={() => void openProject(project.id)}
-            >
-              {project.title}
-            </button>
-          ))}
-        </div>
-
-        {activeProject ? (
+        {activeProject && projectView === "chat" ? (
           <section className="chat-panel" aria-label="Главный чат проекта">
             <div className="chat-heading">
               <span className="manager-avatar">
@@ -1079,7 +1143,7 @@ export default function Home() {
               <div ref={messagesEndRef} />
             </div>
           </section>
-        ) : (
+        ) : !activeProject ? (
           <>
             <section className="hero">
               <div className="hero-symbol">
@@ -1128,7 +1192,7 @@ export default function Home() {
               </article>
             </section>
           </>
-        )}
+        ) : null}
 
         <form
           className={activeProject ? "composer chat-composer" : "composer"}

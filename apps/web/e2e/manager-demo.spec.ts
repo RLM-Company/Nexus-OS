@@ -6,8 +6,15 @@ test("persists the visible Manager demo plan through reload and executes it expl
   const goal = "Подготовь план улучшения документации проекта";
   await page.goto("/");
   await page.getByLabel("Опишите результат, который хотите получить").fill(goal);
+  const createdProject = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/projects") && response.request().method() === "POST"
+  );
   await page.getByRole("button", { name: "Запустить" }).click();
+  const created = await createdProject;
+  expect(created.status(), await created.text()).toBe(201);
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  await page.getByRole("tab", { name: "План" }).click();
 
   const planRequest = page.waitForResponse(
     (response) =>
@@ -20,7 +27,8 @@ test("persists the visible Manager demo plan through reload and executes it expl
   await expect(page.getByText("Synthetic/read-only demo:")).toBeVisible();
 
   await page.reload();
-  await page.locator(".project-list .project-item").first().click();
+  await page.locator(".project-list .project-item").filter({ hasText: goal }).click();
+  await page.getByRole("tab", { name: "План" }).click();
   await expect(page.getByText("План готов к запуску")).toBeVisible();
   await expect(page.getByRole("button", { name: "Запустить безопасный шаг" })).toBeVisible();
 

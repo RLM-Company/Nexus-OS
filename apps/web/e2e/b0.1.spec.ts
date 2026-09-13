@@ -22,8 +22,13 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   expect(stream.status()).toBe(200);
 
   await expect(page.getByRole("heading", { name: initialTask })).toBeVisible();
-  await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Главный чат проекта" })
+      .getByText("Следующий этап подключит настоящего менеджера")
+  ).toBeVisible();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  await page.getByRole("tab", { name: "Проект" }).click();
   const projectFacts = page.getByRole("region", { name: "Информация о проекте" });
   await expect(projectFacts).toContainText("Активен");
   await expect(projectFacts).toContainText("A0");
@@ -44,12 +49,19 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   );
   await page.reload();
   const restored = await restoredProjects;
-  expect(restored.status(), await restored.text()).toBe(200);
-  await page.locator(".project-list .project-item").first().click();
+  expect(restored.status()).toBe(200);
+  await page.locator(".project-list .project-item").filter({ hasText: initialTask }).click();
+  await page.getByRole("tab", { name: "Чат" }).click();
   await expect(page.locator(".chat-panel .message.user p")).toHaveText(initialTask);
-  await expect(page.getByText("Следующий этап подключит настоящего менеджера")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Главный чат проекта" })
+      .getByText("Следующий этап подключит настоящего менеджера")
+  ).toBeVisible();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  await page.getByRole("tab", { name: "Проект" }).click();
   await expect(page.getByRole("region", { name: "Информация о проекте" })).toContainText("A0");
+  await page.getByRole("tab", { name: "Чат" }).click();
 
   await page.getByLabel("Сообщение менеджеру").fill("Останови этот тестовый запуск");
   const acceptedRun = page.waitForResponse(
@@ -70,13 +82,13 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   );
   await page.reload();
   const reloadedProjects = await projectsAfterReload;
-  expect(reloadedProjects.status(), await reloadedProjects.text()).toBe(200);
+  expect(reloadedProjects.status()).toBe(200);
   const reconnectedStream = page.waitForResponse(
     (response) =>
       response.url().endsWith(`/api/v1/runs/${acceptedBody.run_id}/events`) &&
       response.request().method() === "GET"
   );
-  await page.locator(".project-list .project-item").first().click();
+  await page.locator(".project-list .project-item").filter({ hasText: initialTask }).click();
   const reconnected = await reconnectedStream;
   expect(reconnected.status()).toBe(200);
 
@@ -183,6 +195,7 @@ test("surfaces server-confirmed owner decisions and recovery in the Manager Cons
   expect(created.status(), createdText).toBe(201);
   const createdBody = JSON.parse(createdText) as { project: { id: string } };
 
+  await page.getByRole("tab", { name: /Проект/ }).click();
   const attention = page.getByRole("region", { name: "Требуется внимание владельца" });
   await expect(attention).toBeVisible({ timeout: 10_000 });
   await expect(attention).toContainText("Отправить отчёт demo@example.com");
