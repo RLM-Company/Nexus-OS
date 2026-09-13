@@ -1,13 +1,13 @@
 :root {
-  --bg: #212121;
-  --panel: #171717;
-  --surface: #2f2f2f;
-  --surface-hover: #383838;
-  --line: rgba(255, 255, 255, 0.1);
-  --text: #ececec;
-  --muted: #b4b4b4;
-  --accent-strong: #b7a8ff;
-  --green: #4ec9a6;
+  --bg: #ffffff;
+  --panel: #f7f7f8;
+  --surface: #f4f4f4;
+  --surface-hover: #ececec;
+  --line: rgba(0, 0, 0, 0.1);
+  --text: #202123;
+  --muted: #6e6e80;
+  --accent-strong: #6d5bd0;
+  --green: #16866f;
 }
 
 * {
@@ -1954,6 +1954,512 @@ svg {
   .message p,
   .message.user p {
     font-size: 0.84rem;
+  }
+}
+
+/* Manager Console: light, quiet, conversation-first workspace. */
+.app-shell {
+  color: var(--text);
+  background: #fff;
+}
+.sidebar {
+  width: 15rem;
+  padding: max(0.65rem, env(safe-area-inset-top)) max(0.55rem, env(safe-area-inset-right))
+    max(0.65rem, env(safe-area-inset-bottom)) max(0.55rem, env(safe-area-inset-left));
+  border-right: 1px solid #ececf1;
+  background: #f7f7f8;
+}
+.brand {
+  min-height: 2.7rem;
+  padding: 0.15rem 0.55rem 0.45rem;
+  color: #202123;
+  font-size: 0.88rem;
+  font-weight: 620;
+}
+.brand-mark {
+  width: 1.55rem;
+  height: 1.55rem;
+  color: #fff;
+  background: #202123;
+}
+.brand-mark svg {
+  width: 0.82rem;
+  height: 0.82rem;
+}
+.version {
+  color: #8e8e9f;
+  font-size: 0.6rem;
+}
+.new-project {
+  min-height: 2.45rem;
+  padding: 0.55rem 0.62rem;
+  border: 1px solid transparent;
+  color: #343541;
+  font-size: 0.78rem;
+}
+.new-project:hover,
+.new-project:focus-visible {
+  border-color: #e5e5e9;
+  background: #ececf1;
+}
+.navigation {
+  gap: 0.12rem;
+  padding-top: 0.45rem;
+}
+.nav-item {
+  min-height: 2.35rem;
+  padding: 0.5rem 0.62rem;
+  color: #565869;
+  font-size: 0.76rem;
+}
+.nav-item:hover,
+.nav-item.active {
+  color: #202123;
+  background: #ececf1;
+}
+.nav-copy strong {
+  font-size: 0.75rem;
+}
+.nav-label {
+  margin: 1.15rem 0.62rem 0.4rem;
+  color: #8e8e9f;
+  font-size: 0.62rem;
+}
+.empty-projects {
+  margin-inline: 0.62rem;
+  color: #8e8e9f;
+}
+.project-list {
+  gap: 0.08rem;
+  scrollbar-color: #c9c9d0 transparent;
+}
+.project-item {
+  min-height: 2.25rem;
+  padding: 0.48rem 0.62rem;
+  color: #565869;
+}
+.project-item:hover,
+.project-item.active {
+  color: #202123;
+  background: #ececf1;
+}
+.project-item strong {
+  font-size: 0.72rem;
+}
+.project-item small {
+  color: #9a9aa5;
+  font-size: 0.59rem;
+}
+.profile {
+  min-height: 3rem;
+  padding: 0.5rem 0.6rem;
+  color: #343541;
+}
+.profile:hover {
+  background: #ececf1;
+}
+.avatar {
+  width: 1.7rem;
+  height: 1.7rem;
+  color: #fff;
+  background: #6d5bd0;
+}
+.profile strong {
+  font-size: 0.71rem;
+}
+.profile small {
+  color: #8e8e9f;
+  font-size: 0.59rem;
+}
+.workspace {
+  width: calc(100% - 15rem);
+  margin-left: 15rem;
+  padding: 0 clamp(1rem, 3vw, 2.5rem) 2rem;
+  background: #fff;
+}
+.topbar {
+  min-height: 3.5rem;
+  padding: 0.65rem 0;
+  border-bottom: 0;
+  background: rgba(255, 255, 255, 0.94);
+}
+.topbar h1 {
+  color: #202123;
+  font-size: 0.86rem;
+  font-weight: 560;
+}
+.system-status {
+  color: #6e6e80;
+  font-size: 0.62rem;
+}
+.system-status > span {
+  padding: 0.36rem 0.55rem;
+  border-color: #e5e5e9;
+  color: #565869;
+  background: #fff;
+}
+.status-dot {
+  background: #19a37c;
+}
+.app-install-button {
+  min-height: 1.9rem;
+  padding: 0.34rem 0.55rem;
+  border-color: #e5e5e9;
+  color: #565869;
+  background: #fff;
+}
+.app-install-button:hover,
+.app-install-button:focus-visible {
+  border-color: #d5d5dc;
+  color: #202123;
+  background: #f7f7f8;
+}
+.install-dialog {
+  border-color: #e5e5e9;
+  color: #202123;
+  background: #fff;
+  box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.18);
+}
+.install-dialog p {
+  color: #6e6e80;
+}
+.install-dialog > button {
+  color: #fff;
+  background: #202123;
+}
+.project-tabs {
+  margin: 0.05rem auto 0.35rem;
+  border: 1px solid #ececf1;
+  background: #f7f7f8;
+}
+.project-tabs button {
+  color: #8e8e9f;
+}
+.project-tabs button:hover {
+  color: #343541;
+  background: #ececf1;
+}
+.project-tabs button.active {
+  color: #202123;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.hero {
+  max-width: 42rem;
+  margin: max(7.5rem, 23vh) auto 0;
+}
+.hero-symbol {
+  display: none;
+}
+.hero h2 {
+  color: #202123;
+  font-size: clamp(1.35rem, 2.5vw, 1.65rem);
+  font-weight: 560;
+  letter-spacing: -0.025em;
+}
+.hero p {
+  max-width: 30rem;
+  margin-top: 0.55rem;
+  color: #8e8e9f;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.composer {
+  max-width: 42rem;
+  margin: 1.65rem auto 0;
+  padding: 0.6rem 0.65rem 0.45rem;
+  border: 1px solid #d9d9e3;
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 2px 9px rgba(0, 0, 0, 0.08);
+}
+.composer:focus-within {
+  border-color: #c6c6d0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+.composer textarea {
+  min-height: 2.85rem;
+  padding: 0.3rem 0.35rem 0;
+  color: #202123;
+  font-size: 0.84rem;
+}
+.composer textarea::placeholder {
+  color: #8e8e9f;
+}
+.composer-footer {
+  min-height: 2.05rem;
+  padding: 0.2rem 0 0 0.35rem;
+  color: #8e8e9f;
+  font-size: 0.59rem;
+}
+.composer-footer button {
+  min-height: 2rem;
+  color: #fff;
+  background: #202123;
+}
+.composer-footer button:hover:not(:disabled) {
+  color: #fff;
+  background: #343541;
+}
+.composer-footer button:disabled {
+  color: #aaaab3;
+  background: #ececf1;
+}
+.composer-footer .cancel-run {
+  color: #fff;
+  background: #343541;
+}
+.composer-footer .restore-run {
+  border-color: #d9d9e3;
+  color: #565869;
+  background: #fff;
+}
+.composer-footer .restore-run:hover {
+  border-color: #c6c6d0;
+  color: #202123;
+  background: #f7f7f8;
+}
+.spinner {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+}
+.foundation-grid {
+  max-width: 42rem;
+  margin: 0.55rem auto auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+.foundation-card,
+.foundation-card.accent-card {
+  min-height: 2.3rem;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.5rem;
+  border-color: transparent;
+  border-radius: 0.55rem;
+  color: #6e6e80;
+  background: transparent;
+  text-align: center;
+}
+.foundation-card:hover,
+.foundation-card:focus-visible {
+  border-color: transparent;
+  color: #343541;
+  background: #f7f7f8;
+}
+.card-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  color: #6d5bd0;
+  background: transparent;
+}
+.card-icon svg {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+.foundation-card h3 {
+  color: inherit;
+  font-size: 0.62rem;
+  font-weight: 520;
+}
+.foundation-card p {
+  display: none;
+}
+.chat-workspace {
+  padding-bottom: 0.7rem;
+}
+.chat-heading {
+  max-width: 42rem;
+  padding: 0.55rem 0 0.7rem;
+  border-bottom-color: #ececf1;
+}
+.manager-avatar,
+.message-avatar {
+  color: #fff;
+  background: #202123;
+}
+.manager-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.chat-heading strong {
+  color: #202123;
+  font-size: 0.74rem;
+}
+.chat-heading small {
+  color: #8e8e9f;
+  font-size: 0.59rem;
+}
+.live-badge {
+  color: #16866f;
+  font-size: 0.59rem;
+}
+.messages {
+  padding: 0.75rem 0 1.75rem;
+  scrollbar-color: #c9c9d0 transparent;
+}
+.message {
+  max-width: 42rem;
+  padding: 0.85rem 0;
+}
+.message p {
+  color: #343541;
+  font-size: 0.84rem;
+}
+.message.user > div {
+  background: #f4f4f4;
+}
+.message.user p {
+  color: #202123;
+  font-size: 0.82rem;
+}
+.chat-composer {
+  max-width: 42rem;
+}
+.view-panel {
+  color: #343541;
+  scrollbar-color: #c9c9d0 transparent;
+}
+.project-facts > span,
+.attention-card,
+.demo-steps li,
+.demo-artifacts article {
+  border-color: #e5e5e9;
+  color: #343541;
+  background: #fff;
+}
+.project-facts small,
+.manager-attention small,
+.manager-demo small,
+.demo-goal small,
+.attention-card p,
+.demo-boundary,
+.demo-checkpoint {
+  color: #8e8e9f;
+}
+.manager-attention,
+.manager-demo {
+  border-color: #e5e5e9;
+  color: #343541;
+  background: #fafafa;
+}
+.manager-attention strong,
+.manager-demo strong,
+.demo-goal {
+  color: #202123;
+}
+.manager-demo button,
+.attention-card a {
+  color: #fff;
+  background: #202123;
+}
+.manager-demo button.secondary {
+  border-color: #d9d9e3;
+  color: #565869;
+  background: #fff;
+}
+.mobile-project-strip button {
+  border-color: #e5e5e9;
+  color: #6e6e80;
+  background: #f7f7f8;
+}
+.mobile-project-strip button.active {
+  border-color: #d5d5dc;
+  color: #202123;
+  background: #ececf1;
+}
+.mobile-nav {
+  border-color: #e5e5e9;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.12);
+}
+.mobile-nav > * {
+  color: #8e8e9f;
+}
+.mobile-nav .active {
+  color: #202123;
+  background: #f4f4f4;
+}
+
+button:focus-visible,
+a:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(109, 91, 208, 0.55);
+  outline-offset: 2px;
+}
+
+@media (max-width: 860px) {
+  .workspace {
+    padding-top: 0;
+    background: #fff;
+  }
+  .topbar {
+    background: rgba(255, 255, 255, 0.95);
+  }
+  .mobile-project-strip button {
+    border-color: #e5e5e9;
+    color: #6e6e80;
+    background: #f7f7f8;
+  }
+  .mobile-project-strip button.active {
+    border-color: #d5d5dc;
+    color: #202123;
+    background: #ececf1;
+  }
+  .hero {
+    margin-top: max(4.5rem, 17vh);
+  }
+  .foundation-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 0.45rem;
+  }
+  .foundation-card {
+    min-height: 2.3rem;
+  }
+  .mobile-nav {
+    border-color: #e5e5e9;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.12);
+  }
+  .mobile-nav > * {
+    color: #8e8e9f;
+  }
+  .mobile-nav .active {
+    color: #202123;
+    background: #f4f4f4;
+  }
+  .project-tabs {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .hero h2 {
+    font-size: 1.35rem;
+  }
+  .hero p {
+    max-width: 18rem;
+    font-size: 0.72rem;
+  }
+  .composer {
+    margin-top: 1.2rem;
+  }
+  .foundation-grid {
+    display: flex;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .foundation-grid::-webkit-scrollbar {
+    display: none;
+  }
+  .foundation-card {
+    flex: 0 0 auto;
+    padding-inline: 0.7rem;
+  }
+  .app-install-button {
+    background: #fff;
   }
 }
 
