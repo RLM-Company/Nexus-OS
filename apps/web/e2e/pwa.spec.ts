@@ -47,6 +47,17 @@ test("keeps the Manager Console usable at a smartphone viewport", async ({ page 
   );
 });
 
+test("turns a home suggestion into an editable Manager request", async ({ page }) => {
+  await page.goto("/");
+
+  const composer = page.getByLabel("Опишите результат, который хотите получить");
+  await page.getByRole("button", { name: /Создать проект/ }).click();
+
+  await expect(composer).toHaveValue("Помоги сформулировать цель нового проекта");
+  await expect(composer).toBeFocused();
+  await expect(page.getByRole("button", { name: "Запустить" })).toBeEnabled();
+});
+
 test("offers the browser install action when the platform exposes it", async ({ page }) => {
   await page.goto("/");
   await expect
