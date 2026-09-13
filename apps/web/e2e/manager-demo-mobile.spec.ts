@@ -8,6 +8,7 @@ test("keeps the Manager demo usable without horizontal overflow on a phone viewp
   await page.getByLabel("Опишите результат, который хотите получить").fill("Подготовь план демо");
   await page.getByRole("button", { name: "Запустить" }).click();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  await page.getByRole("tab", { name: "План" }).click();
 
   await page.getByRole("button", { name: "Подготовить Manager plan" }).click();
   const demo = page.locator(".manager-demo");
