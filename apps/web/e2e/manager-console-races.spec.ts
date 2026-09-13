@@ -146,6 +146,15 @@ for (const destination of ["beta", "new"] as const) {
   });
 }
 
+test("opens a project tab directly from a durable console URL", async ({ page }) => {
+  await fixture(page);
+  await page.goto("/?project=beta&view=project");
+
+  await expect(page.getByRole("heading", { name: "Project Beta", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Проект" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("region", { name: "Информация о проекте" })).toContainText("A0");
+});
+
 test("does not append a streamed delta twice when polling already contains it", async ({
   page
 }) => {

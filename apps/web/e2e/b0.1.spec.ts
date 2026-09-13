@@ -28,7 +28,9 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
       .getByText("Следующий этап подключит настоящего менеджера")
   ).toBeVisible();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  await expect(page).toHaveURL(new RegExp(`project=${createdBody.project.id}&view=chat`));
   await page.getByRole("tab", { name: "Проект" }).click();
+  await expect(page).toHaveURL(new RegExp(`project=${createdBody.project.id}&view=project`));
   const projectFacts = page.getByRole("region", { name: "Информация о проекте" });
   await expect(projectFacts).toContainText("Активен");
   await expect(projectFacts).toContainText("A0");
@@ -50,7 +52,9 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await page.reload();
   const restored = await restoredProjects;
   expect(restored.status()).toBe(200);
-  await page.locator(".project-list .project-item").filter({ hasText: initialTask }).click();
+  await expect(page.getByRole("heading", { name: initialTask })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Проект" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("region", { name: "Информация о проекте" })).toContainText("A0");
   await page.getByRole("tab", { name: "Чат" }).click();
   await expect(page.locator(".chat-panel .message.user p")).toHaveText(initialTask);
   await expect(
@@ -59,10 +63,6 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
       .getByText("Следующий этап подключит настоящего менеджера")
   ).toBeVisible();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
-  await page.getByRole("tab", { name: "Проект" }).click();
-  await expect(page.getByRole("region", { name: "Информация о проекте" })).toContainText("A0");
-  await page.getByRole("tab", { name: "Чат" }).click();
-
   await page.getByLabel("Сообщение менеджеру").fill("Останови этот тестовый запуск");
   const acceptedRun = page.waitForResponse(
     (response) =>
@@ -80,16 +80,17 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
     (response) =>
       response.url().endsWith("/api/v1/projects") && response.request().method() === "GET"
   );
-  await page.reload();
-  const reloadedProjects = await projectsAfterReload;
-  expect(reloadedProjects.status()).toBe(200);
   const reconnectedStream = page.waitForResponse(
     (response) =>
       response.url().endsWith(`/api/v1/runs/${acceptedBody.run_id}/events`) &&
       response.request().method() === "GET"
   );
-  await page.locator(".project-list .project-item").filter({ hasText: initialTask }).click();
-  const reconnected = await reconnectedStream;
+  await page.reload();
+  const [reloadedProjects, reconnected] = await Promise.all([
+    projectsAfterReload,
+    reconnectedStream
+  ]);
+  expect(reloadedProjects.status()).toBe(200);
   expect(reconnected.status()).toBe(200);
 
   await expect(page.getByRole("status")).toContainText(/В очереди|Менеджер отвечает/);

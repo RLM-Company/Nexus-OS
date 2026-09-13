@@ -58,6 +58,16 @@ type ModelRuntimeStatus = {
 type RunPhase = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 type ProjectView = "chat" | "plan" | "project";
 
+const isProjectView = (value: string | null): value is ProjectView =>
+  value === "chat" || value === "plan" || value === "project";
+
+const replaceConsoleRoute = (projectId: string | null, view: ProjectView = "chat"): void => {
+  const route = projectId
+    ? `/?project=${encodeURIComponent(projectId)}&view=${encodeURIComponent(view)}`
+    : "/";
+  window.history.replaceState(window.history.state, "", route);
+};
+
 type PendingConfirmation = {
   confirmation_id: string;
   operation_id: string;
@@ -286,6 +296,7 @@ export default function Home() {
   const viewEpochRef = useRef(0);
   const selectedProjectRef = useRef<string | null>(null);
   const viewRequestRef = useRef(0);
+  const initialRouteHandledRef = useRef(false);
 
   const loadProjects = useCallback(async () => {
     const data = await api<{ items: ProjectSummary[] }>("/api/v1/projects");
@@ -383,33 +394,52 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [activeProject, loadProjectView, runPhase]);
 
-  const openProject = async (projectId: string): Promise<void> => {
-    const epoch = ++viewEpochRef.current;
-    selectedProjectRef.current = projectId;
-    streamRef.current?.close();
-    streamRef.current = null;
-    setActiveRunId(null);
-    setSending(false);
-    setRunPhase("idle");
-    setProjectView("chat");
-    setActiveProject(null);
-    setMessages([]);
-    setChatId(null);
-    setDraft("");
-    setAutonomyProfile(null);
-    setPolicySignals(EMPTY_POLICY_SIGNALS);
-    setDemoRuns([]);
-    setDemoActionPending(false);
-    setError(null);
-    setLoading(true);
-    try {
-      await loadProjectView(projectId);
-    } catch (cause) {
-      if (epoch !== viewEpochRef.current) return;
-      setError(cause instanceof Error ? cause.message : "Не удалось открыть проект");
-    } finally {
-      if (epoch === viewEpochRef.current) setLoading(false);
-    }
+  const openProject = useCallback(
+    async (projectId: string, view: ProjectView = "chat"): Promise<void> => {
+      const epoch = ++viewEpochRef.current;
+      selectedProjectRef.current = projectId;
+      replaceConsoleRoute(projectId, view);
+      streamRef.current?.close();
+      streamRef.current = null;
+      setActiveRunId(null);
+      setSending(false);
+      setRunPhase("idle");
+      setProjectView(view);
+      setActiveProject(null);
+      setMessages([]);
+      setChatId(null);
+      setDraft("");
+      setAutonomyProfile(null);
+      setPolicySignals(EMPTY_POLICY_SIGNALS);
+      setDemoRuns([]);
+      setDemoActionPending(false);
+      setError(null);
+      setLoading(true);
+      try {
+        await loadProjectView(projectId);
+      } catch (cause) {
+        if (epoch !== viewEpochRef.current) return;
+        setError(cause instanceof Error ? cause.message : "Не удалось открыть проект");
+      } finally {
+        if (epoch === viewEpochRef.current) setLoading(false);
+      }
+    },
+    [loadProjectView]
+  );
+
+  useEffect(() => {
+    if (loading || initialRouteHandledRef.current) return;
+    initialRouteHandledRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get("project");
+    if (!projectId) return;
+    const requestedView = params.get("view");
+    void openProject(projectId, isProjectView(requestedView) ? requestedView : "chat");
+  }, [loading, openProject]);
+
+  const selectProjectView = (view: ProjectView): void => {
+    setProjectView(view);
+    if (activeProject) replaceConsoleRoute(activeProject.id, view);
   };
 
   const refreshProject = useCallback(
@@ -666,7 +696,7 @@ export default function Home() {
     const epoch = viewEpochRef.current;
 
     setSending(true);
-    setProjectView("chat");
+    selectProjectView("chat");
     setRunPhase("queued");
     setError(null);
     setDraft("");
@@ -686,6 +716,7 @@ export default function Home() {
         return;
       }
       selectedProjectRef.current = accepted.project.id;
+      replaceConsoleRoute(accepted.project.id, "chat");
       // Invalidate snapshots fetched before server acceptance of this run.
       viewRequestRef.current += 1;
       setActiveProject(accepted.project);
@@ -736,6 +767,7 @@ export default function Home() {
     setProjectView("chat");
     setError(null);
     setLoading(false);
+    replaceConsoleRoute(null);
   };
 
   const controlCenterHref = activeProject
@@ -844,7 +876,7 @@ export default function Home() {
               role="tab"
               aria-selected={projectView === "chat"}
               className={projectView === "chat" ? "active" : ""}
-              onClick={() => setProjectView("chat")}
+              onClick={() => selectProjectView("chat")}
             >
               <SparkIcon />
               Чат
@@ -854,7 +886,7 @@ export default function Home() {
               role="tab"
               aria-selected={projectView === "plan"}
               className={projectView === "plan" ? "active" : ""}
-              onClick={() => setProjectView("plan")}
+              onClick={() => selectProjectView("plan")}
             >
               <GridIcon />
               План
@@ -865,7 +897,7 @@ export default function Home() {
               role="tab"
               aria-selected={projectView === "project"}
               className={projectView === "project" ? "active" : ""}
-              onClick={() => setProjectView("project")}
+              onClick={() => selectProjectView("project")}
             >
               <ShieldIcon />
               Проект
