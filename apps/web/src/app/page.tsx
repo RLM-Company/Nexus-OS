@@ -796,7 +796,7 @@ export default function Home() {
             <SparkIcon />
           </span>
           <span>Cosmora</span>
-          <span className="version">Console</span>
+          <span className="version">Manager</span>
         </div>
 
         <button className="new-project" onClick={newProject}>
@@ -1198,47 +1198,61 @@ export default function Home() {
               <div className="hero-symbol">
                 <SparkIcon />
               </div>
-              <span className="eyebrow">Первый рабочий сценарий</span>
-              <h2>
-                От задачи —<br />к управляемому проекту
-              </h2>
+              <h2>Чем займёмся?</h2>
               <p>
-                Опишите результат. Cosmora создаст проект, сохранит контекст и откроет главный чат с
-                менеджером.
+                Опишите результат — Менеджер создаст проект, сохранит контекст и поможет пройти к
+                следующему шагу.
               </p>
             </section>
             <section className="foundation-grid" aria-label="Возможности текущего этапа">
-              <article className="foundation-card accent-card">
+              <button
+                type="button"
+                className="foundation-card"
+                onClick={() => {
+                  setDraft("Помоги сформулировать цель нового проекта");
+                  composerRef.current?.focus();
+                }}
+              >
                 <span className="card-icon">
                   <GridIcon />
                 </span>
                 <div>
-                  <small>Работает</small>
-                  <h3>Проекты и история</h3>
-                  <p>Данные переживают перезапуск.</p>
+                  <h3>Создать проект</h3>
+                  <p>Сформулировать цель и первый результат</p>
                 </div>
-                <span className="progress">04 / 08</span>
-              </article>
-              <article className="foundation-card">
+              </button>
+              <button
+                type="button"
+                className="foundation-card"
+                onClick={() => {
+                  setDraft("Составь понятный пошаговый план по моей задаче");
+                  composerRef.current?.focus();
+                }}
+              >
                 <span className="card-icon">
                   <SparkIcon />
                 </span>
                 <div>
-                  <small>В реальном времени</small>
-                  <h3>Потоковый ответ</h3>
-                  <p>Первый mock-менеджер подключён.</p>
+                  <h3>Составить план</h3>
+                  <p>Разложить задачу на ясные шаги</p>
                 </div>
-              </article>
-              <article className="foundation-card">
+              </button>
+              <button
+                type="button"
+                className="foundation-card"
+                onClick={() => {
+                  setDraft("Проверь статус проекта и предложи следующий шаг");
+                  composerRef.current?.focus();
+                }}
+              >
                 <span className="card-icon">
                   <ShieldIcon />
                 </span>
                 <div>
-                  <small>Контроль</small>
-                  <h3>Локальная SQLite</h3>
-                  <p>Без внешнего облака и секретов.</p>
+                  <h3>Проверить статус</h3>
+                  <p>Увидеть состояние и точки внимания</p>
                 </div>
-              </article>
+              </button>
             </section>
           </>
         ) : null}
