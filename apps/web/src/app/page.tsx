@@ -60,6 +60,35 @@ type CompletedRoute = { provider: string; model: string };
 
 type RunPhase = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 type ProjectView = "chat" | "plan" | "project";
+type WorkspaceSurface =
+  "manager" | "skills" | "code" | "work" | "images" | "video" | "sound" | "multi-agent";
+
+type ToolSurface = Exclude<WorkspaceSurface, "manager">;
+
+const TOOL_ITEMS: Array<{
+  id: ToolSurface;
+  label: string;
+  description: string;
+}> = [
+  { id: "skills", label: "Skills", description: "Инструменты и специализации" },
+  { id: "code", label: "Code", description: "Работа с кодом" },
+  { id: "work", label: "Work", description: "Рабочие материалы" },
+  { id: "images", label: "Изображения", description: "Создание и редактирование" },
+  { id: "video", label: "Видео", description: "Сценарии и генерация" },
+  { id: "sound", label: "Sound", description: "Голос, музыка и аудио" },
+  { id: "multi-agent", label: "Мультиагент", description: "Команда ИИ-агентов" }
+];
+
+const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
+  manager: "Cosmora Manager",
+  skills: "Skills",
+  code: "Code",
+  work: "Work",
+  images: "Изображения",
+  video: "Видео",
+  sound: "Sound",
+  "multi-agent": "Мультиагент"
+};
 
 const isProjectView = (value: string | null): value is ProjectView =>
   value === "chat" || value === "plan" || value === "project";
@@ -172,6 +201,347 @@ const SendIcon = () => (
     <path d="M7 12h14" />
   </svg>
 );
+
+const ToolIcon = ({ kind }: { kind: ToolSurface | "projects" | "new-chat" }) => {
+  if (kind === "new-chat") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M12 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9" />
+        <path d="m17 3 4 4-9 9-4 1 1-4 8-10Z" />
+      </svg>
+    );
+  }
+  if (kind === "projects") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v8A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-10Z" />
+      </svg>
+    );
+  }
+  if (kind === "code") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16" />
+      </svg>
+    );
+  }
+  if (kind === "work") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <rect x="3" y="7" width="18" height="13" rx="2" />
+        <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 12h18" />
+      </svg>
+    );
+  }
+  if (kind === "images") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="18" height="18" rx="3" />
+        <circle cx="8.5" cy="8.5" r="1.5" />
+        <path d="m4 17 5-5 4 4 2-2 5 5" />
+      </svg>
+    );
+  }
+  if (kind === "video") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <rect x="3" y="5" width="18" height="14" rx="3" />
+        <path d="m10 9 5 3-5 3V9Z" />
+      </svg>
+    );
+  }
+  if (kind === "sound") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M4 14v-4M8 18V6M12 21V3M16 17V7M20 14v-4" />
+      </svg>
+    );
+  }
+  if (kind === "multi-agent") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <circle cx="8" cy="8" r="3" />
+        <circle cx="17" cy="7" r="2" />
+        <path d="M3 20a5 5 0 0 1 10 0M14 20a4 4 0 0 1 8 0" />
+      </svg>
+    );
+  }
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+      <circle cx="12" cy="12" r="4" />
+    </svg>
+  );
+};
+
+const CapabilityWorkspace = ({
+  surface,
+  projects,
+  agentStudioHref,
+  controlCenterHref
+}: {
+  surface: ToolSurface;
+  projects: ProjectSummary[];
+  agentStudioHref: string;
+  controlCenterHref: string;
+}) => {
+  const [prompt, setPrompt] = useState("");
+  const [format, setFormat] = useState("1:1");
+  const [style, setStyle] = useState("Авто");
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const mediaPromptLabel =
+    surface === "images" ? "изображения" : surface === "video" ? "видео" : "аудио";
+
+  if (surface === "skills") {
+    return (
+      <section className="capability-workspace" aria-labelledby="skills-title">
+        <header className="capability-hero">
+          <span className="capability-icon">
+            <ToolIcon kind="skills" />
+          </span>
+          <div>
+            <small>Библиотека возможностей</small>
+            <h2 id="skills-title">Skills</h2>
+          </div>
+        </header>
+        <p className="capability-lead">
+          Подключайте специализации Менеджера и управляйте их доступом в одном месте.
+        </p>
+        <div className="capability-grid">
+          <Link className="capability-card" href={agentStudioHref}>
+            <span>
+              <ToolIcon kind="multi-agent" />
+            </span>
+            <div>
+              <strong>Agent Studio</strong>
+              <p>Роли, навыки и безопасная конфигурация агентов.</p>
+            </div>
+            <i>Открыть</i>
+          </Link>
+          <Link className="capability-card" href={controlCenterHref}>
+            <span>
+              <ShieldIcon />
+            </span>
+            <div>
+              <strong>Контроль доступа</strong>
+              <p>Подтверждения, recovery и текущие границы автономности.</p>
+            </div>
+            <i>Открыть</i>
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  if (surface === "work") {
+    return (
+      <section className="capability-workspace" aria-labelledby="work-title">
+        <header className="capability-hero">
+          <span className="capability-icon">
+            <ToolIcon kind="work" />
+          </span>
+          <div>
+            <small>Рабочее пространство</small>
+            <h2 id="work-title">Work</h2>
+          </div>
+        </header>
+        <p className="capability-lead">
+          Проекты, материалы и результаты Менеджера — без смешивания с личным чатом.
+        </p>
+        <div className="work-overview">
+          <article>
+            <small>Проекты</small>
+            <strong>{projects.length}</strong>
+            <p>Сохранено в локальном контуре</p>
+          </article>
+          <article>
+            <small>Внешние действия</small>
+            <strong>Отключены</strong>
+            <p>Требования step-up сохранены</p>
+          </article>
+        </div>
+      </section>
+    );
+  }
+
+  if (surface === "multi-agent") {
+    return (
+      <section className="capability-workspace" aria-labelledby="multi-agent-title">
+        <header className="capability-hero">
+          <span className="capability-icon">
+            <ToolIcon kind="multi-agent" />
+          </span>
+          <div>
+            <small>Оркестрация команды</small>
+            <h2 id="multi-agent-title">Мультиагент</h2>
+          </div>
+        </header>
+        <p className="capability-lead">
+          Собирайте роли вокруг одной цели. Активация реальных агентов остаётся выключенной.
+        </p>
+        <div className="agent-preview" aria-label="Предпросмотр команды агентов">
+          <div>
+            <span>M</span>
+            <strong>Менеджер</strong>
+            <small>Координация</small>
+          </div>
+          <div>
+            <span>A</span>
+            <strong>Аналитик</strong>
+            <small>Исследование</small>
+          </div>
+          <div>
+            <span>C</span>
+            <strong>Критик</strong>
+            <small>Проверка</small>
+          </div>
+        </div>
+        <Link className="primary-capability-action" href={agentStudioHref}>
+          Настроить в Agent Studio
+        </Link>
+      </section>
+    );
+  }
+
+  if (surface === "code") {
+    return (
+      <section className="capability-workspace" aria-labelledby="code-title">
+        <header className="capability-hero">
+          <span className="capability-icon">
+            <ToolIcon kind="code" />
+          </span>
+          <div>
+            <small>Разработка с Менеджером</small>
+            <h2 id="code-title">Code</h2>
+          </div>
+        </header>
+        <p className="capability-lead">
+          Опишите изменение в репозитории. Выполнение появится после безопасного подключения модели
+          и инструментов.
+        </p>
+        <div className="code-placeholder" aria-label="Рабочая область кода">
+          <div className="code-placeholder-bar">
+            <i />
+            <i />
+            <i />
+            <span>Новая задача</span>
+          </div>
+          <pre>
+            <code>
+              {
+                "// Здесь появятся план, изменения и проверки\n// Все действия останутся видимыми и подтверждаемыми"
+              }
+            </code>
+          </pre>
+        </div>
+        <p className="connection-note">
+          <ShieldIcon /> Инструменты кода пока не подключены
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="capability-workspace media-workspace" aria-labelledby={`${surface}-title`}>
+      <header className="capability-hero">
+        <span className="capability-icon">
+          <ToolIcon kind={surface} />
+        </span>
+        <div>
+          <small>
+            {surface === "images"
+              ? "Визуальная студия"
+              : surface === "video"
+                ? "Видео-студия"
+                : "Аудио-студия"}
+          </small>
+          <h2 id={`${surface}-title`}>
+            {surface === "images" ? "Создание изображений" : SURFACE_TITLE[surface]}
+          </h2>
+        </div>
+      </header>
+      <p className="capability-lead">
+        {surface === "images"
+          ? "Опишите кадр, выберите формат и подготовьте запрос для генерации изображения."
+          : surface === "video"
+            ? "Сформулируйте сцену и подготовьте запрос для будущей видеомодели."
+            : "Опишите голос, музыку или звуковую сцену для будущей аудиомодели."}
+      </p>
+      <form
+        className="media-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setNotice(
+            `Промпт для ${mediaPromptLabel} сохранён локально. Подключение модели будет следующим этапом.`
+          );
+        }}
+      >
+        <label htmlFor={`${surface}-prompt`}>Что вы хотите создать?</label>
+        <textarea
+          id={`${surface}-prompt`}
+          aria-label={`Промпт для ${mediaPromptLabel}`}
+          value={prompt}
+          onChange={(event) => {
+            setPrompt(event.target.value);
+            setNotice(null);
+          }}
+          placeholder={
+            surface === "images"
+              ? "Например: минималистичный космический город на рассвете…"
+              : surface === "video"
+                ? "Опишите сцену, движение камеры и настроение…"
+                : "Опишите голос, темп и атмосферу…"
+          }
+        />
+        <div className="media-settings">
+          <fieldset>
+            <legend>Формат</legend>
+            <div className="format-options">
+              {(surface === "sound"
+                ? ["Короткий", "Средний", "Длинный"]
+                : ["1:1", "16:9", "9:16"]
+              ).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={format === value ? "active" : ""}
+                  onClick={() => setFormat(value)}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <label className="style-control">
+            Стиль
+            <select value={style} onChange={(event) => setStyle(event.target.value)}>
+              {(surface === "sound"
+                ? ["Авто", "Голос", "Музыка", "Атмосфера"]
+                : ["Авто", "Фотореализм", "Иллюстрация", "Кино"]
+              ).map((value) => (
+                <option key={value}>{value}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="media-submit-row">
+          <span className="connection-note">
+            <ShieldIcon /> Внешняя модель не подключена
+          </span>
+          <button type="submit" disabled={!prompt.trim()}>
+            Подготовить промпт
+          </button>
+        </div>
+        {notice && (
+          <p className="media-notice" role="status">
+            {notice}
+          </p>
+        )}
+      </form>
+    </section>
+  );
+};
 
 const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   const headers = new Headers(init?.headers);
@@ -294,6 +664,7 @@ export default function Home() {
   const [lastCompletedRoute, setLastCompletedRoute] = useState<CompletedRoute | null>(null);
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const [projectView, setProjectView] = useState<ProjectView>("chat");
+  const [surface, setSurface] = useState<WorkspaceSurface>("manager");
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -408,6 +779,7 @@ export default function Home() {
   const openProject = useCallback(
     async (projectId: string, view: ProjectView = "chat"): Promise<void> => {
       const epoch = ++viewEpochRef.current;
+      setSurface("manager");
       selectedProjectRef.current = projectId;
       replaceConsoleRoute(projectId, view);
       streamRef.current?.close();
@@ -792,6 +1164,7 @@ export default function Home() {
     setLastCompletedRoute(null);
     setRunPhase("idle");
     setProjectView("chat");
+    setSurface("manager");
     setError(null);
     setLoading(false);
     replaceConsoleRoute(null);
@@ -800,6 +1173,14 @@ export default function Home() {
   const controlCenterHref = activeProject
     ? `/control-center?project=${encodeURIComponent(activeProject.id)}`
     : "/control-center";
+  const agentStudioHref = activeProject
+    ? `/agent-studio?project=${encodeURIComponent(activeProject.id)}`
+    : "/agent-studio";
+
+  const selectSurface = (nextSurface: ToolSurface): void => {
+    setSurface(nextSurface);
+    setError(null);
+  };
 
   return (
     <div className="app-shell">
@@ -813,45 +1194,26 @@ export default function Home() {
         </div>
 
         <button className="new-project" onClick={newProject}>
-          <span>＋</span> Новый проект
+          <span>
+            <ToolIcon kind="new-chat" />
+          </span>{" "}
+          Новый чат
         </button>
 
         <nav className="navigation" aria-label="Основная навигация">
-          <button className={!activeProject ? "nav-item active" : "nav-item"} onClick={newProject}>
-            <SparkIcon />
-            <span className="nav-copy">
-              <strong>Менеджер</strong>
-              <small>Главный чат</small>
-            </span>
-          </button>
-          <Link
-            className="nav-item"
-            href={
-              activeProject
-                ? `/agent-studio?project=${encodeURIComponent(activeProject.id)}`
-                : "/agent-studio"
-            }
-          >
-            <GridIcon />
-            <span className="nav-copy">
-              <strong>Агенты</strong>
-              <small>Agent Studio</small>
-            </span>
-          </Link>
-          <Link className="nav-item" href={controlCenterHref}>
-            <ShieldIcon />
-            <span className="nav-copy">
-              <strong>Безопасность</strong>
-              <small>Control Center</small>
-            </span>
-          </Link>
-          <span className="nav-label">Проекты</span>
+          <div className="projects-heading">
+            <ToolIcon kind="projects" />
+            <span>Проекты</span>
+            <small>{projects.length}</small>
+          </div>
           <div className="project-list">
             {projects.map((project) => (
               <button
                 key={project.id}
                 className={
-                  activeProject?.id === project.id ? "project-item active" : "project-item"
+                  surface === "manager" && activeProject?.id === project.id
+                    ? "project-item active"
+                    : "project-item"
                 }
                 onClick={() => void openProject(project.id)}
               >
@@ -866,6 +1228,20 @@ export default function Home() {
               <p className="empty-projects">Первый проект появится после отправки задачи.</p>
             )}
           </div>
+          <div className="sidebar-tools" aria-label="Рабочие области">
+            {TOOL_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={surface === item.id ? "sidebar-tool active" : "sidebar-tool"}
+                aria-current={surface === item.id ? "page" : undefined}
+                onClick={() => selectSurface(item.id)}
+              >
+                <ToolIcon kind={item.id} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
         </nav>
 
         <div className="profile">
@@ -876,13 +1252,40 @@ export default function Home() {
           </span>
           <span className="profile-dot" />
         </div>
+        <div className="profile-actions" aria-label="Служебные разделы">
+          <Link href={agentStudioHref} aria-label="Agent Studio" title="Agent Studio">
+            <ToolIcon kind="multi-agent" />
+          </Link>
+          <Link href={controlCenterHref} aria-label="Control Center" title="Control Center">
+            <ShieldIcon />
+          </Link>
+        </div>
       </aside>
 
-      <main className={activeProject ? "workspace chat-workspace" : "workspace"} id="workspace">
+      <main
+        className={
+          surface === "manager" && activeProject
+            ? "workspace chat-workspace"
+            : surface !== "manager"
+              ? "workspace tool-workspace"
+              : "workspace"
+        }
+        id="workspace"
+      >
         <header className="topbar">
           <div>
-            <span className="eyebrow">{activeProject ? "Активный проект" : "Рабочая область"}</span>
-            <h1>{activeProject?.title ?? "Cosmora Manager"}</h1>
+            <span className="eyebrow">
+              {surface === "manager"
+                ? activeProject
+                  ? "Активный проект"
+                  : "Рабочая область"
+                : "Cosmora workspace"}
+            </span>
+            <h1>
+              {surface === "manager"
+                ? (activeProject?.title ?? SURFACE_TITLE.manager)
+                : SURFACE_TITLE[surface]}
+            </h1>
           </div>
           <div className="system-status" aria-label="Статус системы">
             <span>
@@ -1322,24 +1725,48 @@ export default function Home() {
             )}
           </div>
         </form>
+
+        {surface !== "manager" && (
+          <CapabilityWorkspace
+            key={surface}
+            surface={surface}
+            projects={projects}
+            agentStudioHref={agentStudioHref}
+            controlCenterHref={controlCenterHref}
+          />
+        )}
       </main>
 
       <nav className="mobile-nav" aria-label="Мобильная навигация">
-        <button className={!activeProject ? "active" : ""} onClick={newProject}>
-          <GridIcon />
-          <span>Главная</span>
+        <button
+          className={surface === "manager" && !activeProject ? "active" : ""}
+          onClick={newProject}
+        >
+          <ToolIcon kind="new-chat" />
+          <span>Новый чат</span>
         </button>
         <button
-          className={activeProject ? "active" : ""}
-          onClick={() => projects[0] && void openProject(projects[0].id)}
+          className={surface === "manager" && activeProject ? "active" : ""}
+          onClick={() => {
+            if (activeProject) setSurface("manager");
+            else if (projects[0]) void openProject(projects[0].id);
+            else newProject();
+          }}
         >
-          <SparkIcon />
+          <ToolIcon kind="projects" />
           <span>Проекты</span>
         </button>
-        <Link href={controlCenterHref}>
-          <ShieldIcon />
-          <span>Контроль</span>
-        </Link>
+        {TOOL_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={surface === item.id ? "active" : ""}
+            onClick={() => selectSurface(item.id)}
+          >
+            <ToolIcon kind={item.id} />
+            <span>{item.label}</span>
+          </button>
+        ))}
       </nav>
     </div>
   );

@@ -45,6 +45,12 @@ test("keeps the Manager Console usable at a smartphone viewport", async ({ page 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true
   );
+  expect(
+    await page.locator("#workspace").evaluate((workspace) => ({
+      left: Math.round(workspace.getBoundingClientRect().left),
+      width: Math.round(workspace.getBoundingClientRect().width)
+    }))
+  ).toEqual({ left: 0, width: 390 });
 });
 
 test("turns a home suggestion into an editable Manager request", async ({ page }) => {
@@ -56,6 +62,39 @@ test("turns a home suggestion into an editable Manager request", async ({ page }
   await expect(composer).toHaveValue("Помоги сформулировать цель нового проекта");
   await expect(composer).toBeFocused();
   await expect(page.getByRole("button", { name: "Запустить" })).toBeEnabled();
+});
+
+test("opens the image workspace and keeps generation local until a model is connected", async ({
+  page
+}) => {
+  await page.goto("/");
+
+  await expect(page.locator(".sidebar-tools").getByRole("button")).toHaveText([
+    "Skills",
+    "Code",
+    "Work",
+    "Изображения",
+    "Видео",
+    "Sound",
+    "Мультиагент"
+  ]);
+  await page.getByRole("button", { name: "Изображения", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Создание изображений" })).toBeVisible();
+  expect(
+    await page.evaluate(() => {
+      const topbar = document.querySelector(".topbar")?.getBoundingClientRect();
+      const panel = document.querySelector(".capability-workspace")?.getBoundingClientRect();
+      return Boolean(topbar && panel && topbar.top < panel.top);
+    })
+  ).toBe(true);
+
+  const prompt = page.getByLabel("Промпт для изображения");
+  await prompt.fill("Минималистичный космический город на рассвете");
+  await page.getByRole("button", { name: "16:9" }).click();
+  await page.getByRole("button", { name: "Подготовить промпт" }).click();
+
+  await expect(page.getByRole("status")).toContainText("сохранён локально");
+  await expect(page.getByText("Внешняя модель не подключена")).toBeVisible();
 });
 
 test("offers the browser install action when the platform exposes it", async ({ page }) => {
