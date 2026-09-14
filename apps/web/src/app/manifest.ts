@@ -3,9 +3,9 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Cosmora Manager Console",
+    name: "Cosmora AI",
     short_name: "Cosmora",
-    description: "Проекты, диалоги с Менеджером и безопасный контроль Cosmora.",
+    description: "Обычные чаты, проекты и безопасные рабочие области Cosmora.",
     start_url: "/",
     scope: "/",
     display: "standalone",
@@ -35,9 +35,9 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       {
-        name: "Новый проект",
-        short_name: "Новый проект",
-        description: "Открыть новую задачу для Cosmora Manager",
+        name: "Новый чат",
+        short_name: "Новый чат",
+        description: "Открыть обычный чат Cosmora",
         url: "/"
       },
       {

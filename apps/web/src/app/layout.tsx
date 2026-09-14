@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Cosmora OS",
-  description: "Проектная консоль Cosmora Manager",
+  description: "Чаты, проекты и рабочие области Cosmora",
   applicationName: "Cosmora",
   manifest: "/manifest.webmanifest",
   appleWebApp: {

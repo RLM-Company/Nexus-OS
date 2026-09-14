@@ -126,7 +126,7 @@ for (const destination of ["beta", "new"] as const) {
     } else {
       await page.getByRole("button", { name: "Новый чат", exact: true }).click();
     }
-    const heading = destination === "beta" ? "Project Beta" : "Cosmora Manager";
+    const heading = destination === "beta" ? "Project Beta" : "Новый чат";
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     const oldResponse = page.waitForResponse("**/api/v1/projects/alpha");
     release();
@@ -189,9 +189,10 @@ test("preserves an accepted run when only the sidebar refresh fails", async ({ p
   const state = await fixture(page);
   state.alpha = detail("alpha", "", "streaming");
   await page.goto("/");
-  await page.getByLabel("Опишите результат, который хотите получить").fill("Новая задача");
-  await page.getByRole("button", { name: "Запустить", exact: true }).click();
-  await expect(page.getByText("Запуск принят. Не удалось обновить список проектов.")).toBeVisible();
+  await page.getByLabel("Сообщение Cosmora").fill("Оформи новую задачу как проект");
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  await page.getByRole("button", { name: "Оформить как проект" }).click();
+  await expect(page.getByText("Проект создан. Не удалось обновить список проектов.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Остановить" })).toBeEnabled();
   await expect(page.getByLabel("Сообщение менеджеру")).toHaveValue("");
   expect(state.posts).toBe(1);

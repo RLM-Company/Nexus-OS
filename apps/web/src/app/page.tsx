@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
 import { InstallApp } from "./install-app";
 
 type Project = {
@@ -40,6 +41,18 @@ type AcceptedResponse = {
 type RunStreamTarget = Pick<AcceptedResponse, "project" | "chat_id" | "run_id" | "stream_url">;
 
 type CancelledRun = { run_id: string; status: "cancelled" };
+
+type LocalChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+};
+
+type ProjectProposal = {
+  content: string;
+  assessment: TaskComplexity;
+};
 
 type ProjectDetail = { project: Project; chat_id: string; messages: Message[] };
 
@@ -566,6 +579,21 @@ const clientId = (): string =>
     ? crypto.randomUUID()
     : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const greetingSeed = (): number => {
+  if (typeof crypto.getRandomValues === "function") {
+    return crypto.getRandomValues(new Uint32Array(1))[0] ?? Date.now();
+  }
+  return (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+};
+
+const localChatReply = (assessment: TaskComplexity): string => {
+  if (assessment.requiresProject) {
+    const explanation = assessment.reasons.slice(0, 3).join(", ");
+    return `Это похоже на задачу для проекта: ${explanation}. Я могу передать её Менеджеру и подготовить мультиагентный режим. Проект появится только после вашего подтверждения.`;
+  }
+  return "Сообщение осталось в обычном чате — проект не создан. Сейчас модель ещё не подключена, поэтому это локальная проверка режима диалога. После подключения ключа здесь будет обычный ответ Cosmora.";
+};
+
 const displayedContent = (message: Message): string | null => {
   if (message.status === "cancelled") return "Запуск остановлен владельцем.";
   if (message.status === "failed")
@@ -665,6 +693,9 @@ export default function Home() {
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const [projectView, setProjectView] = useState<ProjectView>("chat");
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
+  const [greeting, setGreeting] = useState("Чем могу помочь?");
+  const [localChatMessages, setLocalChatMessages] = useState<LocalChatMessage[]>([]);
+  const [projectProposal, setProjectProposal] = useState<ProjectProposal | null>(null);
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -672,12 +703,31 @@ export default function Home() {
   const selectedProjectRef = useRef<string | null>(null);
   const viewRequestRef = useRef(0);
   const initialRouteHandledRef = useRef(false);
-  const focusComposerWhenReadyRef = useRef(false);
+  const previousGreetingRef = useRef<string | null>(null);
+  const greetingInitializedRef = useRef(false);
+
+  const rotateGreeting = useCallback((): void => {
+    const next = chooseGreeting({
+      seed: greetingSeed(),
+      hour: new Date().getHours(),
+      previous: previousGreetingRef.current
+    });
+    previousGreetingRef.current = next;
+    setGreeting(next);
+    window.sessionStorage.setItem("cosmora:last-greeting", next);
+  }, []);
 
   const loadProjects = useCallback(async () => {
     const data = await api<{ items: ProjectSummary[] }>("/api/v1/projects");
     setProjects(data.items);
   }, []);
+
+  useEffect(() => {
+    if (greetingInitializedRef.current) return;
+    greetingInitializedRef.current = true;
+    previousGreetingRef.current = window.sessionStorage.getItem("cosmora:last-greeting");
+    rotateGreeting();
+  }, [rotateGreeting]);
 
   useEffect(() => {
     void Promise.all([
@@ -694,14 +744,8 @@ export default function Home() {
   }, [loadProjects]);
 
   useEffect(() => {
-    if (loading || !focusComposerWhenReadyRef.current) return;
-    focusComposerWhenReadyRef.current = false;
-    window.requestAnimationFrame(() => composerRef.current?.focus());
-  }, [loading]);
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages]);
+  }, [localChatMessages, messages]);
 
   const loadProjectView = useCallback(async (projectId: string) => {
     const epoch = viewEpochRef.current;
@@ -790,6 +834,8 @@ export default function Home() {
       setProjectView(view);
       setActiveProject(null);
       setMessages([]);
+      setLocalChatMessages([]);
+      setProjectProposal(null);
       setChatId(null);
       setDraft("");
       setLastCompletedRoute(null);
@@ -1080,16 +1126,30 @@ export default function Home() {
     window.requestAnimationFrame(() => composerRef.current?.focus());
   };
 
-  const selectSuggestion = (content: string): void => {
-    setDraft(content);
-    focusComposerWhenReadyRef.current = loading;
-    if (!loading) window.requestAnimationFrame(() => composerRef.current?.focus());
-  };
-
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     const content = draft.trim();
     if (!content || sending || loading) return;
+
+    if (!activeProject) {
+      const assessment = assessTaskComplexity(content);
+      const timestamp = new Date().toISOString();
+      setLocalChatMessages((current) => [
+        ...current,
+        { id: clientId(), role: "user", content, created_at: timestamp },
+        {
+          id: clientId(),
+          role: "assistant",
+          content: localChatReply(assessment),
+          created_at: timestamp
+        }
+      ]);
+      setProjectProposal(assessment.requiresProject ? { content, assessment } : null);
+      setDraft("");
+      setError(null);
+      return;
+    }
+
     const epoch = viewEpochRef.current;
 
     setSending(true);
@@ -1099,15 +1159,13 @@ export default function Home() {
     setLastCompletedRoute(null);
     setDraft("");
     try {
-      const accepted = activeProject
-        ? await api<AcceptedResponse>(`/api/v1/projects/${activeProject.id}/messages`, {
-            method: "POST",
-            body: JSON.stringify({ content, client_message_id: clientId() })
-          })
-        : await api<AcceptedResponse>("/api/v1/projects", {
-            method: "POST",
-            body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
-          });
+      const accepted = await api<AcceptedResponse>(
+        `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({ content, client_message_id: clientId() })
+        }
+      );
 
       if (epoch !== viewEpochRef.current) {
         void loadProjects().catch(() => undefined);
@@ -1119,9 +1177,7 @@ export default function Home() {
       viewRequestRef.current += 1;
       setActiveProject(accepted.project);
       setChatId(accepted.chat_id);
-      setMessages((current) =>
-        activeProject ? [...current, accepted.user_message] : [accepted.user_message]
-      );
+      setMessages((current) => [...current, accepted.user_message]);
       setPolicySignals(EMPTY_POLICY_SIGNALS);
       void api<{ profile: AutonomyProfile }>(
         `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
@@ -1146,6 +1202,57 @@ export default function Home() {
     }
   };
 
+  const promoteToProject = async (): Promise<void> => {
+    if (!projectProposal || sending || loading) return;
+    const content = projectProposal.content;
+    const epoch = viewEpochRef.current;
+    setSending(true);
+    setRunPhase("queued");
+    setError(null);
+    setLastCompletedRoute(null);
+    try {
+      const accepted = await api<AcceptedResponse>("/api/v1/projects", {
+        method: "POST",
+        body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+      });
+      if (epoch !== viewEpochRef.current) {
+        void loadProjects().catch(() => undefined);
+        return;
+      }
+      selectedProjectRef.current = accepted.project.id;
+      replaceConsoleRoute(accepted.project.id, "chat");
+      viewRequestRef.current += 1;
+      setSurface("manager");
+      setProjectView("chat");
+      setActiveProject(accepted.project);
+      setChatId(accepted.chat_id);
+      setMessages([accepted.user_message]);
+      setLocalChatMessages([]);
+      setProjectProposal(null);
+      setPolicySignals(EMPTY_POLICY_SIGNALS);
+      void api<{ profile: AutonomyProfile }>(
+        `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
+      )
+        .then((response) => {
+          if (epoch === viewEpochRef.current) setAutonomyProfile(response.profile);
+        })
+        .catch(() => {
+          if (epoch === viewEpochRef.current) setAutonomyProfile(null);
+        });
+      followStream(accepted);
+      void loadProjects().catch(() => {
+        if (epoch === viewEpochRef.current) {
+          setError("Проект создан. Не удалось обновить список проектов.");
+        }
+      });
+    } catch (cause) {
+      if (epoch !== viewEpochRef.current) return;
+      setSending(false);
+      setRunPhase("failed");
+      setError(cause instanceof Error ? cause.message : "Не удалось создать проект");
+    }
+  };
+
   const newProject = (): void => {
     viewEpochRef.current += 1;
     selectedProjectRef.current = null;
@@ -1154,6 +1261,8 @@ export default function Home() {
     setActiveProject(null);
     setChatId(null);
     setMessages([]);
+    setLocalChatMessages([]);
+    setProjectProposal(null);
     setAutonomyProfile(null);
     setPolicySignals(EMPTY_POLICY_SIGNALS);
     setDemoRuns([]);
@@ -1167,6 +1276,7 @@ export default function Home() {
     setSurface("manager");
     setError(null);
     setLoading(false);
+    rotateGreeting();
     replaceConsoleRoute(null);
   };
 
@@ -1190,7 +1300,7 @@ export default function Home() {
             <SparkIcon />
           </span>
           <span>Cosmora</span>
-          <span className="version">Manager</span>
+          <span className="version">AI</span>
         </div>
 
         <button className="new-project" onClick={newProject}>
@@ -1225,7 +1335,7 @@ export default function Home() {
               </button>
             ))}
             {!loading && projects.length === 0 && (
-              <p className="empty-projects">Первый проект появится после отправки задачи.</p>
+              <p className="empty-projects">Проект появится только после вашего подтверждения.</p>
             )}
           </div>
           <div className="sidebar-tools" aria-label="Рабочие области">
@@ -1264,8 +1374,8 @@ export default function Home() {
 
       <main
         className={
-          surface === "manager" && activeProject
-            ? "workspace chat-workspace"
+          surface === "manager" && (activeProject || localChatMessages.length > 0)
+            ? `workspace chat-workspace${activeProject ? "" : " general-chat-workspace"}`
             : surface !== "manager"
               ? "workspace tool-workspace"
               : "workspace"
@@ -1278,19 +1388,19 @@ export default function Home() {
               {surface === "manager"
                 ? activeProject
                   ? "Активный проект"
-                  : "Рабочая область"
+                  : "Обычный чат"
                 : "Cosmora workspace"}
             </span>
             <h1>
               {surface === "manager"
-                ? (activeProject?.title ?? SURFACE_TITLE.manager)
+                ? (activeProject?.title ?? "Новый чат")
                 : SURFACE_TITLE[surface]}
             </h1>
           </div>
           <div className="system-status" aria-label="Статус системы">
             <span>
               <i className="status-dot" />
-              {runtime && runtime.mode !== "mock" ? "Провайдер настроен" : "Mock-режим"}
+              {runtime && runtime.mode !== "mock" ? "Провайдер настроен" : "Модель не подключена"}
             </span>
             <span className="privacy-badge">
               <ShieldIcon />
@@ -1567,6 +1677,7 @@ export default function Home() {
               </span>
               <div>
                 <strong>Cosmora Manager</strong>
+                <span className="project-mode-label">Менеджер · мультиагентный проект</span>
                 <small>
                   {lastCompletedRoute
                     ? `Последний ответ: ${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
@@ -1608,68 +1719,81 @@ export default function Home() {
               <div ref={messagesEndRef} />
             </div>
           </section>
+        ) : localChatMessages.length > 0 ? (
+          <section className="chat-panel general-chat-panel" aria-label="Обычный чат Cosmora">
+            <div className="chat-heading general-chat-heading">
+              <div>
+                <strong>Cosmora</strong>
+                <small>Обычный чат · проект не создан</small>
+              </div>
+              <span className="chat-mode-badge">Чат</span>
+            </div>
+            <div className="messages" aria-live="polite">
+              {localChatMessages.map((message) => (
+                <article key={message.id} className={`message ${message.role}`}>
+                  <span className="message-avatar">
+                    {message.role === "user" ? "В" : <SparkIcon />}
+                  </span>
+                  <div>
+                    <header>
+                      <strong>{message.role === "user" ? "Вы" : "Cosmora"}</strong>
+                      <time>
+                        {new Date(message.created_at).toLocaleTimeString("ru", {
+                          hour: "2-digit",
+                          minute: "2-digit"
+                        })}
+                      </time>
+                    </header>
+                    <p>{message.content}</p>
+                  </div>
+                </article>
+              ))}
+              {projectProposal && (
+                <aside className="project-proposal" aria-label="Предложение создать проект">
+                  <span className="proposal-icon">
+                    <ToolIcon kind="multi-agent" />
+                  </span>
+                  <div>
+                    <small>Оценка сложности · {projectProposal.assessment.score}</small>
+                    <strong>Оформить задачу как проект?</strong>
+                    <p>
+                      Откроется Менеджер и подготовка мультиагентной команды. Никакие агенты или
+                      внешние действия автоматически не запускаются.
+                    </p>
+                    <div className="proposal-actions">
+                      <button type="button" onClick={() => void promoteToProject()}>
+                        Оформить как проект
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => setProjectProposal(null)}
+                      >
+                        Остаться в чате
+                      </button>
+                    </div>
+                  </div>
+                </aside>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          </section>
         ) : !activeProject ? (
           <>
             <section className="hero">
-              <div className="hero-symbol">
-                <SparkIcon />
-              </div>
-              <h2>Чем я могу помочь?</h2>
-              <p>
-                Опишите результат — Менеджер создаст проект, сохранит контекст и поможет пройти к
-                следующему шагу.
-              </p>
-            </section>
-            <section className="foundation-grid" aria-label="Возможности текущего этапа">
-              <button
-                type="button"
-                className="foundation-card"
-                onClick={() => selectSuggestion("Помоги сформулировать цель нового проекта")}
-              >
-                <span className="card-icon">
-                  <GridIcon />
-                </span>
-                <div>
-                  <h3>Создать проект</h3>
-                  <p>Сформулировать цель и первый результат</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="foundation-card"
-                onClick={() => selectSuggestion("Составь понятный пошаговый план по моей задаче")}
-              >
-                <span className="card-icon">
-                  <SparkIcon />
-                </span>
-                <div>
-                  <h3>Составить план</h3>
-                  <p>Разложить задачу на ясные шаги</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="foundation-card"
-                onClick={() => selectSuggestion("Проверь статус проекта и предложи следующий шаг")}
-              >
-                <span className="card-icon">
-                  <ShieldIcon />
-                </span>
-                <div>
-                  <h3>Проверить статус</h3>
-                  <p>Увидеть состояние и точки внимания</p>
-                </div>
-              </button>
+              <h2>{greeting}</h2>
             </section>
           </>
         ) : null}
 
         <form
-          className={activeProject ? "composer chat-composer" : "composer"}
+          className={
+            activeProject || localChatMessages.length > 0 ? "composer chat-composer" : "composer"
+          }
           onSubmit={(event) => void submit(event)}
         >
           <label htmlFor="task">
-            {activeProject ? "Сообщение менеджеру" : "Опишите результат, который хотите получить"}
+            {activeProject ? "Сообщение менеджеру" : "Сообщение Cosmora"}
           </label>
           <textarea
             id="task"
@@ -1684,9 +1808,7 @@ export default function Home() {
             }}
             disabled={sending || loading}
             placeholder={
-              activeProject
-                ? "Уточните задачу или добавьте требование…"
-                : "Сообщение для Менеджера…"
+              activeProject ? "Уточните задачу или добавьте требование…" : "Спросите что-нибудь…"
             }
           />
           <div className="composer-footer">
@@ -1696,9 +1818,9 @@ export default function Home() {
                   ? "Cosmora выполняет запуск…"
                   : chatId
                     ? "Enter — отправить · Shift+Enter — новая строка"
-                    : "Проект создастся автоматически")}
+                    : "Обычный чат · проект создаётся только с вашего согласия")}
             </span>
-            {sending ? (
+            {sending && activeProject ? (
               <button
                 type="button"
                 className="cancel-run"
@@ -1707,6 +1829,10 @@ export default function Home() {
               >
                 <span className="stop-icon" /> Остановить
               </button>
+            ) : sending ? (
+              <button type="button" disabled>
+                Создаю проект…
+              </button>
             ) : (
               <div className="composer-actions">
                 {recoverableMessage && !draft.trim() && (
@@ -1714,12 +1840,9 @@ export default function Home() {
                     ↻ Вернуть запрос в редактор
                   </button>
                 )}
-                <button
-                  disabled={!draft.trim() || loading}
-                  aria-label={activeProject ? "Отправить" : "Запустить"}
-                >
+                <button disabled={!draft.trim() || loading} aria-label="Отправить">
                   <SendIcon />
-                  {activeProject ? "Отправить" : "Запустить"}
+                  Отправить
                 </button>
               </div>
             )}
