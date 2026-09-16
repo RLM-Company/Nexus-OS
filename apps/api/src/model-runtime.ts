@@ -1,6 +1,6 @@
 import { EnvironmentSecretResolver, type SecretResolver, type ServerConfig } from "@cosmora/config";
 import { ModelRegistryDocumentSchema, type ModelRegistryDocument } from "@cosmora/contracts";
-import { ManagerService } from "@cosmora/core";
+import { ChatService, ManagerService } from "@cosmora/core";
 import {
   AnthropicCompatibleAdapter,
   MockProviderAdapter,
@@ -22,6 +22,7 @@ const REPOSITORY_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 export interface ModelRuntime {
   gateway: ModelGateway;
+  chat: ChatService;
   manager: ManagerService;
   registryVersion: string;
 }
@@ -111,6 +112,13 @@ export const buildModelRuntime = async (
         circuitOpenMs: config.modelCircuitOpenMs
       }
     ),
+    chat: new ChatService({
+      preferredProvider,
+      preferredModelAlias: config.modelName,
+      fallbackAllowed: config.modelFallbackToMock,
+      timeoutMs: config.managerTimeoutMs,
+      maxOutputTokens: config.managerMaxOutputTokens
+    }),
     manager: new ManagerService({
       preferredProvider,
       preferredModelAlias: config.modelName,

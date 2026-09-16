@@ -99,6 +99,7 @@ export * from "./agent-blueprint-store.js";
 export * from "./agent-instance-store.js";
 export * from "./agent-studio-mutation-store.js";
 export * from "./emergency-stop-store.js";
+export * from "./general-chat-store.js";
 export * from "./identity-store.js";
 export * from "./manager-demo-store.js";
 export * from "./pattern-library-store.js";

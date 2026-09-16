@@ -5,6 +5,7 @@ import {
   AgentStudioMutationStore,
   DemoManagerStore,
   EmergencyStopStore,
+  GeneralChatStore,
   IdentityStore,
   openDatabase,
   PolicyStore,
@@ -57,6 +58,7 @@ try {
     secretResolver: new EnvironmentSecretResolver()
   });
   const projectStore = new ManagerRuntimeProjectStore(database.sqlite);
+  const generalChatStore = new GeneralChatStore(database.sqlite);
   const demoManagerStore = new DemoManagerStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
@@ -73,10 +75,12 @@ try {
     );
   }
   const recoveredRuns = projectStore.recoverInterruptedRuns();
+  const recoveredChatRuns = generalChatStore.recoverInterruptedRuns();
   app = buildApp({
     config,
     database,
     identityStore,
+    generalChatStore,
     projectStore,
     demoManagerStore,
     demoManagerCoordinator: new DemoManagerCoordinator(demoManagerStore),
@@ -90,6 +94,7 @@ try {
     }),
     agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite),
     modelGateway: modelRuntime.gateway,
+    chat: modelRuntime.chat,
     manager: modelRuntime.manager,
     modelRegistryVersion: modelRuntime.registryVersion,
     identityResolver,
@@ -108,6 +113,9 @@ try {
   });
   if (recoveredRuns > 0) {
     app.log.warn({ recoveredRuns }, "Recovered interrupted runs after restart");
+  }
+  if (recoveredChatRuns > 0) {
+    app.log.warn({ recoveredChatRuns }, "Recovered interrupted ordinary-chat runs after restart");
   }
   await app.listen({ host: config.apiHost, port: config.apiPort });
   backgroundCoordinator.start();

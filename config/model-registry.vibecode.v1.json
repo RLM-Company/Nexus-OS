@@ -44,8 +44,8 @@
       "aliases": ["manager", "gpt-5.5"],
       "protocol": "openai-compatible",
       "status": "active",
-      "roles": ["manager"],
-      "task_types": ["project_chat"],
+      "roles": ["manager", "assistant"],
+      "task_types": ["project_chat", "chat_response"],
       "capabilities": {
         "streaming": true,
         "structured_output": false,
@@ -75,8 +75,8 @@
       "aliases": ["claude-sonnet-5"],
       "protocol": "anthropic-compatible",
       "status": "active",
-      "roles": ["manager"],
-      "task_types": ["project_chat"],
+      "roles": ["manager", "assistant"],
+      "task_types": ["project_chat", "chat_response"],
       "capabilities": {
         "streaming": true,
         "structured_output": false,

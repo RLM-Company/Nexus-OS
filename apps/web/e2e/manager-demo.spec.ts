@@ -3,14 +3,15 @@ import { expect, test } from "@playwright/test";
 test("persists the visible Manager demo plan through reload and executes it explicitly", async ({
   page
 }) => {
-  const goal = "Подготовь план улучшения документации проекта";
+  const goal = "Оформи как проект: подготовь план улучшения документации";
   await page.goto("/");
-  await page.getByLabel("Опишите результат, который хотите получить").fill(goal);
+  await page.getByLabel("Сообщение Cosmora").fill(goal);
   const createdProject = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/v1/projects") && response.request().method() === "POST"
   );
-  await page.getByRole("button", { name: "Запустить" }).click();
+  await page.getByRole("button", { name: "Отправить" }).click();
+  await page.getByRole("button", { name: "Оформить как проект" }).click();
   const created = await createdProject;
   const createdText = await created.text();
   expect(created.status(), createdText).toBe(201);

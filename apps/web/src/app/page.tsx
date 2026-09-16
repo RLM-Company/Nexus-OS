@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
 import { InstallApp } from "./install-app";
 
 type Project = {
@@ -40,6 +41,46 @@ type AcceptedResponse = {
 type RunStreamTarget = Pick<AcceptedResponse, "project" | "chat_id" | "run_id" | "stream_url">;
 
 type CancelledRun = { run_id: string; status: "cancelled" };
+
+type LocalChatMessage = {
+  id: string;
+  chat_id: string;
+  role: "user" | "assistant";
+  content_type: "text";
+  content: string;
+  status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
+  run_id: string | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ProjectProposal = {
+  content: string;
+  assessment: TaskComplexity;
+};
+
+type LocalChatSession = {
+  id: string;
+  title: string;
+  messages: LocalChatMessage[];
+  projectProposal: ProjectProposal | null;
+  created_at: string;
+  updated_at: string;
+  last_message_preview?: string | null;
+};
+
+type GeneralChatAcceptedResponse = {
+  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at">;
+  user_message: LocalChatMessage;
+  run_id: string;
+  stream_url: string;
+};
+
+type GeneralChatDetail = {
+  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at">;
+  messages: LocalChatMessage[];
+};
 
 type ProjectDetail = { project: Project; chat_id: string; messages: Message[] };
 
@@ -566,6 +607,16 @@ const clientId = (): string =>
     ? crypto.randomUUID()
     : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const SIDEBAR_SECTIONS_STORAGE_KEY = "cosmora:sidebar-sections";
+const EMPTY_LOCAL_CHAT_MESSAGES: LocalChatMessage[] = [];
+
+const greetingSeed = (): number => {
+  if (typeof crypto.getRandomValues === "function") {
+    return crypto.getRandomValues(new Uint32Array(1))[0] ?? Date.now();
+  }
+  return (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+};
+
 const displayedContent = (message: Message): string | null => {
   if (message.status === "cancelled") return "Запуск остановлен владельцем.";
   if (message.status === "failed")
@@ -574,12 +625,21 @@ const displayedContent = (message: Message): string | null => {
   return null;
 };
 
+const displayedGeneralContent = (message: LocalChatMessage): string | null => {
+  if (message.status === "cancelled") return "Ответ остановлен владельцем.";
+  if (message.status === "failed")
+    return `Ответ завершился с ошибкой: ${message.error_code ?? "UNKNOWN"}.`;
+  return message.content || null;
+};
+
 type RestoredRunState = {
   phase: RunPhase;
   activeRunId: string | null;
 };
 
-const restoredRunState = (messages: Message[]): RestoredRunState => {
+const restoredRunState = (
+  messages: Array<Pick<Message, "run_id" | "role" | "status">>
+): RestoredRunState => {
   const latestRunMessage = [...messages].reverse().find((message) => message.run_id !== null);
   if (!latestRunMessage?.run_id) return { phase: "idle", activeRunId: null };
   const runId = latestRunMessage.run_id;
@@ -646,6 +706,22 @@ const messagePlaceholder = (
   };
 };
 
+const generalMessagePlaceholder = (id: string, chatId: string, runId: string): LocalChatMessage => {
+  const timestamp = new Date().toISOString();
+  return {
+    id,
+    chat_id: chatId,
+    role: "assistant",
+    content_type: "text",
+    content: "",
+    status: "streaming",
+    run_id: runId,
+    error_code: null,
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+};
+
 export default function Home() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
@@ -665,6 +741,13 @@ export default function Home() {
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const [projectView, setProjectView] = useState<ProjectView>("chat");
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
+  const [greeting, setGreeting] = useState("Чем могу помочь?");
+  const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
+  const [activeLocalChatId, setActiveLocalChatId] = useState<string | null>(null);
+  const [localChatsHydrated, setLocalChatsHydrated] = useState(false);
+  const [chatsExpanded, setChatsExpanded] = useState(true);
+  const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [sidebarSectionsHydrated, setSidebarSectionsHydrated] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -672,16 +755,85 @@ export default function Home() {
   const selectedProjectRef = useRef<string | null>(null);
   const viewRequestRef = useRef(0);
   const initialRouteHandledRef = useRef(false);
-  const focusComposerWhenReadyRef = useRef(false);
+  const previousGreetingRef = useRef<string | null>(null);
+  const greetingInitializedRef = useRef(false);
+  const activeLocalChat = localChats.find((chat) => chat.id === activeLocalChatId) ?? null;
+  const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
+  const projectProposal = activeLocalChat?.projectProposal ?? null;
+
+  const rotateGreeting = useCallback((): void => {
+    const next = chooseGreeting({
+      seed: greetingSeed(),
+      hour: new Date().getHours(),
+      previous: previousGreetingRef.current
+    });
+    previousGreetingRef.current = next;
+    setGreeting(next);
+    window.sessionStorage.setItem("cosmora:last-greeting", next);
+  }, []);
 
   const loadProjects = useCallback(async () => {
     const data = await api<{ items: ProjectSummary[] }>("/api/v1/projects");
     setProjects(data.items);
   }, []);
 
+  const loadGeneralChats = useCallback(async () => {
+    const data = await api<{
+      items: Array<
+        Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at"> & {
+          last_message_preview: string | null;
+        }
+      >;
+    }>("/api/v1/chats");
+    setLocalChats((current) =>
+      data.items.map((chat) => {
+        const existing = current.find((candidate) => candidate.id === chat.id);
+        return {
+          ...chat,
+          messages: existing?.messages ?? [],
+          projectProposal: existing?.projectProposal ?? null
+        };
+      })
+    );
+    setLocalChatsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (greetingInitializedRef.current) return;
+    greetingInitializedRef.current = true;
+    previousGreetingRef.current = window.sessionStorage.getItem("cosmora:last-greeting");
+    rotateGreeting();
+  }, [rotateGreeting]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(
+        window.localStorage.getItem(SIDEBAR_SECTIONS_STORAGE_KEY) ?? "{}"
+      ) as { chats?: boolean; projects?: boolean };
+      if (typeof saved.chats === "boolean") setChatsExpanded(saved.chats);
+      if (typeof saved.projects === "boolean") setProjectsExpanded(saved.projects);
+    } catch {
+      // Ignore malformed local UI preferences and keep both sections open.
+    }
+    setSidebarSectionsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!sidebarSectionsHydrated) return;
+    try {
+      window.localStorage.setItem(
+        SIDEBAR_SECTIONS_STORAGE_KEY,
+        JSON.stringify({ chats: chatsExpanded, projects: projectsExpanded })
+      );
+    } catch {
+      // Section toggles still work for the current page when storage is unavailable.
+    }
+  }, [chatsExpanded, projectsExpanded, sidebarSectionsHydrated]);
+
   useEffect(() => {
     void Promise.all([
       loadProjects(),
+      loadGeneralChats(),
       api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
     ])
       .catch(() => setError("API Cosmora пока недоступен. Запусти web и api вместе."))
@@ -691,17 +843,11 @@ export default function Home() {
       streamRef.current?.close();
       streamRef.current = null;
     };
-  }, [loadProjects]);
-
-  useEffect(() => {
-    if (loading || !focusComposerWhenReadyRef.current) return;
-    focusComposerWhenReadyRef.current = false;
-    window.requestAnimationFrame(() => composerRef.current?.focus());
-  }, [loading]);
+  }, [loadGeneralChats, loadProjects]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages]);
+  }, [localChatMessages, messages]);
 
   const loadProjectView = useCallback(async (projectId: string) => {
     const epoch = viewEpochRef.current;
@@ -758,6 +904,35 @@ export default function Home() {
     setDemoRuns(demosResponse?.items ?? []);
   }, []);
 
+  const loadGeneralChatView = useCallback(async (generalChatId: string) => {
+    const epoch = viewEpochRef.current;
+    const detail = await api<GeneralChatDetail>(
+      `/api/v1/chats/${encodeURIComponent(generalChatId)}`
+    );
+    if (epoch !== viewEpochRef.current) return;
+    const restoredRun = restoredRunState(detail.messages);
+    if (restoredRun.activeRunId === null) {
+      streamRef.current?.close();
+      streamRef.current = null;
+    }
+    setLocalChats((current) => {
+      const existing = current.find((chat) => chat.id === generalChatId);
+      const updated: LocalChatSession = {
+        ...detail.chat,
+        last_message_preview:
+          detail.messages[detail.messages.length - 1]?.content ??
+          existing?.last_message_preview ??
+          null,
+        messages: detail.messages,
+        projectProposal: existing?.projectProposal ?? null
+      };
+      return [updated, ...current.filter((chat) => chat.id !== generalChatId)];
+    });
+    setRunPhase(restoredRun.phase);
+    setActiveRunId(restoredRun.activeRunId);
+    setSending(restoredRun.activeRunId !== null);
+  }, []);
+
   useEffect(() => {
     if (!activeProject || (runPhase !== "queued" && runPhase !== "running")) {
       return;
@@ -776,6 +951,24 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [activeProject, loadProjectView, runPhase]);
 
+  useEffect(() => {
+    if (activeProject || !activeLocalChatId || (runPhase !== "queued" && runPhase !== "running")) {
+      return;
+    }
+    const generalChatId = activeLocalChatId;
+    let polling = false;
+    const timer = window.setInterval(() => {
+      if (polling) return;
+      polling = true;
+      void loadGeneralChatView(generalChatId)
+        .catch(() => undefined)
+        .finally(() => {
+          polling = false;
+        });
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [activeLocalChatId, activeProject, loadGeneralChatView, runPhase]);
+
   const openProject = useCallback(
     async (projectId: string, view: ProjectView = "chat"): Promise<void> => {
       const epoch = ++viewEpochRef.current;
@@ -790,6 +983,7 @@ export default function Home() {
       setProjectView(view);
       setActiveProject(null);
       setMessages([]);
+      setActiveLocalChatId(null);
       setChatId(null);
       setDraft("");
       setLastCompletedRoute(null);
@@ -832,6 +1026,14 @@ export default function Home() {
       await loadProjects();
     },
     [loadProjectView, loadProjects]
+  );
+
+  const refreshGeneralChat = useCallback(
+    async (generalChatId: string) => {
+      await loadGeneralChatView(generalChatId);
+      await loadGeneralChats();
+    },
+    [loadGeneralChatView, loadGeneralChats]
   );
 
   const followStream = useCallback(
@@ -959,6 +1161,126 @@ export default function Home() {
     [refreshProject]
   );
 
+  const followGeneralChatStream = useCallback(
+    (accepted: GeneralChatAcceptedResponse): void => {
+      const epoch = viewEpochRef.current;
+      const chatIdForRun = accepted.chat.id;
+      streamRef.current?.close();
+      setActiveRunId(accepted.run_id);
+      const source = new EventSource(accepted.stream_url);
+      streamRef.current = source;
+      let assistantId: string | null = null;
+      let streamContent = "";
+      let finished = false;
+      const isCurrent = (): boolean =>
+        epoch === viewEpochRef.current && streamRef.current === source;
+      const closeSource = (): void => {
+        source.close();
+        if (streamRef.current === source) streamRef.current = null;
+      };
+      const updateMessages = (
+        updater: (messages: LocalChatMessage[]) => LocalChatMessage[]
+      ): void => {
+        setLocalChats((current) =>
+          current.map((chat) =>
+            chat.id === chatIdForRun ? { ...chat, messages: updater(chat.messages) } : chat
+          )
+        );
+      };
+
+      source.addEventListener("run.started", () => {
+        if (!isCurrent()) return;
+        setError(null);
+        setRunPhase("running");
+      });
+      source.addEventListener("message.started", (raw) => {
+        if (!isCurrent()) return;
+        const event = JSON.parse(String(raw.data)) as {
+          data: { message_id: string; run_id: string };
+        };
+        assistantId = event.data.message_id;
+        updateMessages((current) =>
+          current.some((message) => message.id === event.data.message_id)
+            ? current
+            : [
+                ...current,
+                generalMessagePlaceholder(event.data.message_id, chatIdForRun, event.data.run_id)
+              ]
+        );
+      });
+      source.addEventListener("message.delta", (raw) => {
+        if (!isCurrent()) return;
+        const event = JSON.parse(String(raw.data)) as {
+          data: { message_id: string; seq: number; delta: string };
+        };
+        assistantId = event.data.message_id;
+        streamContent = event.data.seq === 0 ? event.data.delta : streamContent + event.data.delta;
+        updateMessages((current) =>
+          current.map((message) =>
+            message.id === event.data.message_id
+              ? {
+                  ...message,
+                  content:
+                    streamContent.length >= message.content.length ? streamContent : message.content
+                }
+              : message
+          )
+        );
+      });
+      source.addEventListener("run.completed", (raw) => {
+        if (!isCurrent()) return;
+        const event = JSON.parse(String(raw.data)) as {
+          data: { provider: string; model_resolved: string };
+        };
+        finished = true;
+        closeSource();
+        setLastCompletedRoute({
+          provider: event.data.provider,
+          model: event.data.model_resolved
+        });
+        setSending(false);
+        setActiveRunId(null);
+        setRunPhase("completed");
+        void refreshGeneralChat(chatIdForRun).catch(() => {
+          if (!assistantId || epoch !== viewEpochRef.current) return;
+          updateMessages((current) =>
+            current.map((message) =>
+              message.id === assistantId ? { ...message, status: "completed" } : message
+            )
+          );
+        });
+      });
+      source.addEventListener("run.failed", (raw) => {
+        if (!isCurrent()) return;
+        finished = true;
+        closeSource();
+        const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
+        setSending(false);
+        setActiveRunId(null);
+        setRunPhase("failed");
+        setError(`Ответ остановлен: ${event.data.error_code}`);
+        void refreshGeneralChat(chatIdForRun).catch(() => undefined);
+      });
+      source.addEventListener("run.cancelled", () => {
+        if (!isCurrent()) return;
+        finished = true;
+        closeSource();
+        setSending(false);
+        setActiveRunId(null);
+        setRunPhase("cancelled");
+        void refreshGeneralChat(chatIdForRun).catch(() => undefined);
+      });
+      source.onerror = () => {
+        if (!isCurrent()) return;
+        closeSource();
+        if (!finished) {
+          setError("Поток ответа прерван. Проверяю сохранённое состояние на сервере.");
+        }
+      };
+    },
+    [refreshGeneralChat]
+  );
+
   useEffect(() => {
     if (!activeProject || !chatId || !activeRunId || streamRef.current) return;
     followStream({
@@ -969,12 +1291,29 @@ export default function Home() {
     });
   }, [activeProject, activeRunId, chatId, followStream]);
 
+  useEffect(() => {
+    if (activeProject || !activeLocalChat || !activeRunId || streamRef.current) return;
+    followGeneralChatStream({
+      chat: activeLocalChat,
+      user_message:
+        [...activeLocalChat.messages]
+          .reverse()
+          .find((message) => message.run_id === activeRunId && message.role === "user") ??
+        activeLocalChat.messages[activeLocalChat.messages.length - 1]!,
+      run_id: activeRunId,
+      stream_url: `/api/v1/chat-runs/${encodeURIComponent(activeRunId)}/events`
+    });
+  }, [activeLocalChat, activeProject, activeRunId, followGeneralChatStream]);
+
   const cancelRun = async (): Promise<void> => {
-    if (!activeRunId || !activeProject) return;
+    if (!activeRunId || (!activeProject && !activeLocalChatId)) return;
     const epoch = viewEpochRef.current;
     setError(null);
     try {
-      await api<CancelledRun>(`/api/v1/runs/${activeRunId}/cancel`, { method: "POST" });
+      const url = activeProject
+        ? `/api/v1/runs/${activeRunId}/cancel`
+        : `/api/v1/chat-runs/${activeRunId}/cancel`;
+      await api<CancelledRun>(url, { method: "POST" });
     } catch (cause) {
       if (epoch !== viewEpochRef.current) return;
       setError(cause instanceof Error ? cause.message : "Не удалось остановить запуск");
@@ -986,9 +1325,13 @@ export default function Home() {
     setSending(false);
     setActiveRunId(null);
     setRunPhase("cancelled");
-    await refreshProject(activeProject.id).catch(() => {
-      if (epoch === viewEpochRef.current)
+    const refresh = activeProject
+      ? refreshProject(activeProject.id)
+      : refreshGeneralChat(activeLocalChatId as string);
+    await refresh.catch(() => {
+      if (epoch === viewEpochRef.current) {
         setError("Запуск остановлен. Не удалось обновить историю.");
+      }
     });
   };
 
@@ -1080,16 +1423,64 @@ export default function Home() {
     window.requestAnimationFrame(() => composerRef.current?.focus());
   };
 
-  const selectSuggestion = (content: string): void => {
-    setDraft(content);
-    focusComposerWhenReadyRef.current = loading;
-    if (!loading) window.requestAnimationFrame(() => composerRef.current?.focus());
-  };
-
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     const content = draft.trim();
     if (!content || sending || loading) return;
+
+    if (!activeProject) {
+      const assessment = assessTaskComplexity(content);
+      const epoch = viewEpochRef.current;
+      setSending(true);
+      setRunPhase("queued");
+      setError(null);
+      setLastCompletedRoute(null);
+      setDraft("");
+      try {
+        const accepted = activeLocalChatId
+          ? await api<GeneralChatAcceptedResponse>(
+              `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`,
+              {
+                method: "POST",
+                body: JSON.stringify({ content, client_message_id: clientId() })
+              }
+            )
+          : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
+              method: "POST",
+              body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+            });
+        if (epoch !== viewEpochRef.current) {
+          void loadGeneralChats().catch(() => undefined);
+          return;
+        }
+        const proposal = assessment.requiresProject ? { content, assessment } : null;
+        setLocalChats((current) => {
+          const existing = current.find((chat) => chat.id === accepted.chat.id);
+          const updated: LocalChatSession = {
+            ...accepted.chat,
+            last_message_preview: content.slice(0, 240),
+            messages: [...(existing?.messages ?? []), accepted.user_message],
+            projectProposal: proposal
+          };
+          return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
+        });
+        setActiveLocalChatId(accepted.chat.id);
+        followGeneralChatStream(accepted);
+        void loadGeneralChats().catch(() => {
+          if (epoch === viewEpochRef.current) {
+            setError("Сообщение принято. Не удалось обновить список чатов.");
+          }
+        });
+      } catch (cause) {
+        if (epoch !== viewEpochRef.current) return;
+        setDraft(content);
+        setSending(false);
+        setRunPhase("failed");
+        setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
+      }
+      return;
+    }
+
     const epoch = viewEpochRef.current;
 
     setSending(true);
@@ -1099,15 +1490,13 @@ export default function Home() {
     setLastCompletedRoute(null);
     setDraft("");
     try {
-      const accepted = activeProject
-        ? await api<AcceptedResponse>(`/api/v1/projects/${activeProject.id}/messages`, {
-            method: "POST",
-            body: JSON.stringify({ content, client_message_id: clientId() })
-          })
-        : await api<AcceptedResponse>("/api/v1/projects", {
-            method: "POST",
-            body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
-          });
+      const accepted = await api<AcceptedResponse>(
+        `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({ content, client_message_id: clientId() })
+        }
+      );
 
       if (epoch !== viewEpochRef.current) {
         void loadProjects().catch(() => undefined);
@@ -1119,9 +1508,7 @@ export default function Home() {
       viewRequestRef.current += 1;
       setActiveProject(accepted.project);
       setChatId(accepted.chat_id);
-      setMessages((current) =>
-        activeProject ? [...current, accepted.user_message] : [accepted.user_message]
-      );
+      setMessages((current) => [...current, accepted.user_message]);
       setPolicySignals(EMPTY_POLICY_SIGNALS);
       void api<{ profile: AutonomyProfile }>(
         `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
@@ -1146,7 +1533,63 @@ export default function Home() {
     }
   };
 
-  const newProject = (): void => {
+  const promoteToProject = async (): Promise<void> => {
+    if (!projectProposal || !activeLocalChatId || loading) return;
+    const content = projectProposal.content;
+    const sourceChatId = activeLocalChatId;
+    const epoch = viewEpochRef.current;
+    setSending(true);
+    setRunPhase("queued");
+    setError(null);
+    setLastCompletedRoute(null);
+    try {
+      const accepted = await api<AcceptedResponse>("/api/v1/projects", {
+        method: "POST",
+        body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+      });
+      if (epoch !== viewEpochRef.current) {
+        void loadProjects().catch(() => undefined);
+        return;
+      }
+      selectedProjectRef.current = accepted.project.id;
+      replaceConsoleRoute(accepted.project.id, "chat");
+      viewRequestRef.current += 1;
+      setSurface("manager");
+      setProjectView("chat");
+      setActiveProject(accepted.project);
+      setChatId(accepted.chat_id);
+      setMessages([accepted.user_message]);
+      setLocalChats((current) =>
+        current.map((chat) =>
+          chat.id === sourceChatId ? { ...chat, projectProposal: null } : chat
+        )
+      );
+      setActiveLocalChatId(null);
+      setPolicySignals(EMPTY_POLICY_SIGNALS);
+      void api<{ profile: AutonomyProfile }>(
+        `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
+      )
+        .then((response) => {
+          if (epoch === viewEpochRef.current) setAutonomyProfile(response.profile);
+        })
+        .catch(() => {
+          if (epoch === viewEpochRef.current) setAutonomyProfile(null);
+        });
+      followStream(accepted);
+      void loadProjects().catch(() => {
+        if (epoch === viewEpochRef.current) {
+          setError("Проект создан. Не удалось обновить список проектов.");
+        }
+      });
+    } catch (cause) {
+      if (epoch !== viewEpochRef.current) return;
+      setSending(false);
+      setRunPhase("failed");
+      setError(cause instanceof Error ? cause.message : "Не удалось создать проект");
+    }
+  };
+
+  const resetToLocalChat = (chatId: string | null, rotate = false): void => {
     viewEpochRef.current += 1;
     selectedProjectRef.current = null;
     streamRef.current?.close();
@@ -1154,6 +1597,7 @@ export default function Home() {
     setActiveProject(null);
     setChatId(null);
     setMessages([]);
+    setActiveLocalChatId(chatId);
     setAutonomyProfile(null);
     setPolicySignals(EMPTY_POLICY_SIGNALS);
     setDemoRuns([]);
@@ -1167,7 +1611,35 @@ export default function Home() {
     setSurface("manager");
     setError(null);
     setLoading(false);
+    if (rotate) rotateGreeting();
     replaceConsoleRoute(null);
+  };
+
+  const newChat = (): void => resetToLocalChat(null, true);
+
+  const openLocalChat = async (chatId: string): Promise<void> => {
+    if (!localChats.some((chat) => chat.id === chatId)) return;
+    resetToLocalChat(chatId);
+    const epoch = viewEpochRef.current;
+    setLoading(true);
+    try {
+      await loadGeneralChatView(chatId);
+    } catch (cause) {
+      if (epoch === viewEpochRef.current) {
+        setError(cause instanceof Error ? cause.message : "Не удалось открыть чат");
+      }
+    } finally {
+      if (epoch === viewEpochRef.current) setLoading(false);
+    }
+  };
+
+  const dismissProjectProposal = (): void => {
+    if (!activeLocalChatId) return;
+    setLocalChats((current) =>
+      current.map((chat) =>
+        chat.id === activeLocalChatId ? { ...chat, projectProposal: null } : chat
+      )
+    );
   };
 
   const controlCenterHref = activeProject
@@ -1190,10 +1662,10 @@ export default function Home() {
             <SparkIcon />
           </span>
           <span>Cosmora</span>
-          <span className="version">Manager</span>
+          <span className="version">AI</span>
         </div>
 
-        <button className="new-project" onClick={newProject}>
+        <button className="new-project" onClick={newChat}>
           <span>
             <ToolIcon kind="new-chat" />
           </span>{" "}
@@ -1201,33 +1673,91 @@ export default function Home() {
         </button>
 
         <nav className="navigation" aria-label="Основная навигация">
-          <div className="projects-heading">
-            <ToolIcon kind="projects" />
-            <span>Проекты</span>
-            <small>{projects.length}</small>
-          </div>
-          <div className="project-list">
-            {projects.map((project) => (
-              <button
-                key={project.id}
-                className={
-                  surface === "manager" && activeProject?.id === project.id
-                    ? "project-item active"
-                    : "project-item"
-                }
-                onClick={() => void openProject(project.id)}
+          <section className="sidebar-section">
+            <button
+              type="button"
+              className="projects-heading sidebar-section-toggle"
+              aria-expanded={chatsExpanded}
+              aria-controls="sidebar-chat-list"
+              onClick={() => setChatsExpanded((current) => !current)}
+            >
+              <ToolIcon kind="new-chat" />
+              <span>Чаты</span>
+              <small>{localChats.length}</small>
+              <span className="section-chevron" aria-hidden="true">
+                ›
+              </span>
+            </button>
+            {chatsExpanded && (
+              <div
+                className={`project-list chat-list${localChats.length === 0 ? " empty-list" : ""}`}
+                id="sidebar-chat-list"
               >
-                <span className="project-glyph">{project.title.slice(0, 1).toUpperCase()}</span>
-                <span>
-                  <strong>{project.title}</strong>
-                  <small>{project.last_message_preview ?? "Новый проект"}</small>
-                </span>
-              </button>
-            ))}
-            {!loading && projects.length === 0 && (
-              <p className="empty-projects">Первый проект появится после отправки задачи.</p>
+                {localChats.map((chat) => (
+                  <button
+                    key={chat.id}
+                    type="button"
+                    className={
+                      surface === "manager" && activeLocalChatId === chat.id
+                        ? "project-item chat-item active"
+                        : "project-item chat-item"
+                    }
+                    onClick={() => void openLocalChat(chat.id)}
+                  >
+                    <span>
+                      <strong>{chat.title}</strong>
+                      <small>{chat.last_message_preview ?? "Обычный чат"}</small>
+                    </span>
+                  </button>
+                ))}
+                {localChatsHydrated && localChats.length === 0 && (
+                  <p className="empty-projects">Чаты появятся после первого сообщения.</p>
+                )}
+              </div>
             )}
-          </div>
+          </section>
+          <section className="sidebar-section">
+            <button
+              type="button"
+              className="projects-heading sidebar-section-toggle"
+              aria-expanded={projectsExpanded}
+              aria-controls="sidebar-project-list"
+              onClick={() => setProjectsExpanded((current) => !current)}
+            >
+              <ToolIcon kind="projects" />
+              <span>Проекты</span>
+              <small>{projects.length}</small>
+              <span className="section-chevron" aria-hidden="true">
+                ›
+              </span>
+            </button>
+            {projectsExpanded && (
+              <div className="project-list" id="sidebar-project-list">
+                {projects.map((project) => (
+                  <button
+                    key={project.id}
+                    className={
+                      surface === "manager" && activeProject?.id === project.id
+                        ? "project-item active"
+                        : "project-item"
+                    }
+                    onClick={() => void openProject(project.id)}
+                  >
+                    <span className="project-glyph">{project.title.slice(0, 1).toUpperCase()}</span>
+                    <span>
+                      <strong>{project.title}</strong>
+                      <small>{project.last_message_preview ?? "Новый проект"}</small>
+                    </span>
+                  </button>
+                ))}
+                {!loading && projects.length === 0 && (
+                  <p className="empty-projects">
+                    Проект появится только после вашего подтверждения.
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
           <div className="sidebar-tools" aria-label="Рабочие области">
             {TOOL_ITEMS.map((item) => (
               <button
@@ -1264,8 +1794,8 @@ export default function Home() {
 
       <main
         className={
-          surface === "manager" && activeProject
-            ? "workspace chat-workspace"
+          surface === "manager" && (activeProject || localChatMessages.length > 0)
+            ? `workspace chat-workspace${activeProject ? "" : " general-chat-workspace"}`
             : surface !== "manager"
               ? "workspace tool-workspace"
               : "workspace"
@@ -1278,19 +1808,19 @@ export default function Home() {
               {surface === "manager"
                 ? activeProject
                   ? "Активный проект"
-                  : "Рабочая область"
+                  : "Обычный чат"
                 : "Cosmora workspace"}
             </span>
             <h1>
               {surface === "manager"
-                ? (activeProject?.title ?? SURFACE_TITLE.manager)
+                ? (activeProject?.title ?? "Новый чат")
                 : SURFACE_TITLE[surface]}
             </h1>
           </div>
           <div className="system-status" aria-label="Статус системы">
             <span>
               <i className="status-dot" />
-              {runtime && runtime.mode !== "mock" ? "Провайдер настроен" : "Mock-режим"}
+              {runtime && runtime.mode !== "mock" ? "Провайдер настроен" : "Модель не подключена"}
             </span>
             <span className="privacy-badge">
               <ShieldIcon />
@@ -1343,10 +1873,22 @@ export default function Home() {
           </nav>
         )}
 
-        <div className="mobile-project-strip" aria-label="Быстрый выбор проекта">
-          <button className={!activeProject ? "active" : ""} onClick={newProject}>
+        <div className="mobile-project-strip" aria-label="Быстрый выбор чата или проекта">
+          <button
+            className={!activeProject && !activeLocalChatId ? "active" : ""}
+            onClick={newChat}
+          >
             ＋ Новый
           </button>
+          {localChats.slice(0, 5).map((chat) => (
+            <button
+              key={chat.id}
+              className={!activeProject && activeLocalChatId === chat.id ? "active" : ""}
+              onClick={() => void openLocalChat(chat.id)}
+            >
+              Чат · {chat.title}
+            </button>
+          ))}
           {projects.map((project) => (
             <button
               key={project.id}
@@ -1567,6 +2109,7 @@ export default function Home() {
               </span>
               <div>
                 <strong>Cosmora Manager</strong>
+                <span className="project-mode-label">Менеджер · мультиагентный проект</span>
                 <small>
                   {lastCompletedRoute
                     ? `Последний ответ: ${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
@@ -1608,68 +2151,91 @@ export default function Home() {
               <div ref={messagesEndRef} />
             </div>
           </section>
+        ) : localChatMessages.length > 0 ? (
+          <section className="chat-panel general-chat-panel" aria-label="Обычный чат Cosmora">
+            <div className="chat-heading general-chat-heading">
+              <div>
+                <strong>Cosmora</strong>
+                <small>
+                  {lastCompletedRoute
+                    ? `${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
+                    : runtime && runtime.mode !== "mock"
+                      ? `${runtime.model} · обычный чат`
+                      : "Обычный чат · история на сервере · проект не создан"}
+                </small>
+              </div>
+              <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">
+                <i /> {RUN_PHASE_LABEL[runPhase]}
+              </span>
+            </div>
+            <div className="messages" aria-live="polite">
+              {localChatMessages.map((message) => (
+                <article key={message.id} className={`message ${message.role}`}>
+                  <span className="message-avatar">
+                    {message.role === "user" ? "В" : <SparkIcon />}
+                  </span>
+                  <div>
+                    <header>
+                      <strong>{message.role === "user" ? "Вы" : "Cosmora"}</strong>
+                      <time>
+                        {new Date(message.created_at).toLocaleTimeString("ru", {
+                          hour: "2-digit",
+                          minute: "2-digit"
+                        })}
+                      </time>
+                    </header>
+                    <p>
+                      {displayedGeneralContent(message) || (
+                        <span className="typing">
+                          Формирую ответ<span>…</span>
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </article>
+              ))}
+              {projectProposal && (
+                <aside className="project-proposal" aria-label="Предложение создать проект">
+                  <span className="proposal-icon">
+                    <ToolIcon kind="multi-agent" />
+                  </span>
+                  <div>
+                    <small>Оценка сложности · {projectProposal.assessment.score}</small>
+                    <strong>Оформить задачу как проект?</strong>
+                    <p>
+                      Откроется Менеджер и подготовка мультиагентной команды. Никакие агенты или
+                      внешние действия автоматически не запускаются.
+                    </p>
+                    <div className="proposal-actions">
+                      <button type="button" onClick={() => void promoteToProject()}>
+                        Оформить как проект
+                      </button>
+                      <button type="button" className="secondary" onClick={dismissProjectProposal}>
+                        Остаться в чате
+                      </button>
+                    </div>
+                  </div>
+                </aside>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          </section>
         ) : !activeProject ? (
           <>
             <section className="hero">
-              <div className="hero-symbol">
-                <SparkIcon />
-              </div>
-              <h2>Чем я могу помочь?</h2>
-              <p>
-                Опишите результат — Менеджер создаст проект, сохранит контекст и поможет пройти к
-                следующему шагу.
-              </p>
-            </section>
-            <section className="foundation-grid" aria-label="Возможности текущего этапа">
-              <button
-                type="button"
-                className="foundation-card"
-                onClick={() => selectSuggestion("Помоги сформулировать цель нового проекта")}
-              >
-                <span className="card-icon">
-                  <GridIcon />
-                </span>
-                <div>
-                  <h3>Создать проект</h3>
-                  <p>Сформулировать цель и первый результат</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="foundation-card"
-                onClick={() => selectSuggestion("Составь понятный пошаговый план по моей задаче")}
-              >
-                <span className="card-icon">
-                  <SparkIcon />
-                </span>
-                <div>
-                  <h3>Составить план</h3>
-                  <p>Разложить задачу на ясные шаги</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="foundation-card"
-                onClick={() => selectSuggestion("Проверь статус проекта и предложи следующий шаг")}
-              >
-                <span className="card-icon">
-                  <ShieldIcon />
-                </span>
-                <div>
-                  <h3>Проверить статус</h3>
-                  <p>Увидеть состояние и точки внимания</p>
-                </div>
-              </button>
+              <h2>{greeting}</h2>
             </section>
           </>
         ) : null}
 
         <form
-          className={activeProject ? "composer chat-composer" : "composer"}
+          className={
+            activeProject || localChatMessages.length > 0 ? "composer chat-composer" : "composer"
+          }
           onSubmit={(event) => void submit(event)}
         >
           <label htmlFor="task">
-            {activeProject ? "Сообщение менеджеру" : "Опишите результат, который хотите получить"}
+            {activeProject ? "Сообщение менеджеру" : "Сообщение Cosmora"}
           </label>
           <textarea
             id="task"
@@ -1684,9 +2250,7 @@ export default function Home() {
             }}
             disabled={sending || loading}
             placeholder={
-              activeProject
-                ? "Уточните задачу или добавьте требование…"
-                : "Сообщение для Менеджера…"
+              activeProject ? "Уточните задачу или добавьте требование…" : "Спросите что-нибудь…"
             }
           />
           <div className="composer-footer">
@@ -1696,7 +2260,7 @@ export default function Home() {
                   ? "Cosmora выполняет запуск…"
                   : chatId
                     ? "Enter — отправить · Shift+Enter — новая строка"
-                    : "Проект создастся автоматически")}
+                    : "Обычный чат · проект создаётся только с вашего согласия")}
             </span>
             {sending ? (
               <button
@@ -1714,12 +2278,9 @@ export default function Home() {
                     ↻ Вернуть запрос в редактор
                   </button>
                 )}
-                <button
-                  disabled={!draft.trim() || loading}
-                  aria-label={activeProject ? "Отправить" : "Запустить"}
-                >
+                <button disabled={!draft.trim() || loading} aria-label="Отправить">
                   <SendIcon />
-                  {activeProject ? "Отправить" : "Запустить"}
+                  Отправить
                 </button>
               </div>
             )}
@@ -1739,8 +2300,8 @@ export default function Home() {
 
       <nav className="mobile-nav" aria-label="Мобильная навигация">
         <button
-          className={surface === "manager" && !activeProject ? "active" : ""}
-          onClick={newProject}
+          className={surface === "manager" && !activeProject && !activeLocalChatId ? "active" : ""}
+          onClick={newChat}
         >
           <ToolIcon kind="new-chat" />
           <span>Новый чат</span>
@@ -1750,7 +2311,7 @@ export default function Home() {
           onClick={() => {
             if (activeProject) setSurface("manager");
             else if (projects[0]) void openProject(projects[0].id);
-            else newProject();
+            else newChat();
           }}
         >
           <ToolIcon kind="projects" />

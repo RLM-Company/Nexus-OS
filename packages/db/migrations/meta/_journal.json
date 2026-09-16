@@ -127,6 +127,13 @@
       "when": 1789020000000,
       "tag": "0017_manager_demo_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1789545600000,
+      "tag": "0018_general_chats",
+      "breakpoints": true
     }
   ]
 }

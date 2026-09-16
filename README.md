@@ -8,8 +8,8 @@ agent runtime.
 
 ### Product surfaces
 
-- responsive Next.js project shell with persisted projects, chat, streaming, cancellation and
-  restart recovery;
+- responsive Next.js project shell with separately persisted ordinary chats and projects,
+  server-side streaming, cancellation and restart recovery;
 - Agent Studio catalogs, blueprints and owner/delegated proposal flows with idempotent writes and
   Decision Trace records;
 - Autonomy Control Center with the canonical A0–A6 profile, point-override editor, server authority
@@ -68,6 +68,9 @@ explicit migration-only step is needed.
 Web runs at `http://127.0.0.1:3000`, API at `http://127.0.0.1:3100`, and health is available at
 `GET /api/v1/health`. A secret-free provider summary is available at
 `GET /api/v1/model-runtime`. The web app proxies `/api/*` to `COSMORA_API_ORIGIN`.
+Ordinary chat uses `GET/POST /api/v1/chats`, persists outside the project tables, and streams from
+`GET /api/v1/chat-runs/:runId/events`. A project is created only by the explicit
+`POST /api/v1/projects` confirmation path.
 Operational counters and active safety alerts are available at `GET /api/v1/operations/status`.
 The bounded owner-only Policy Decision Trace is available at
 `GET /api/v1/projects/:projectId/decision-trace?limit=50`; its response excludes purpose,
@@ -140,7 +143,7 @@ MODEL_REGISTRY_PATH=config/model-registry.vibecode.v1.json
 MODEL_BASE_URL=https://vibecode.moe/v1
 MODEL_API_KEY=your-local-secret
 MODEL_NAME=gpt-5.5
-MODEL_FALLBACK_TO_MOCK=true
+MODEL_FALLBACK_TO_MOCK=false
 MODEL_MAX_ATTEMPTS_PER_ROUTE=2
 MODEL_RETRY_BASE_DELAY_MS=250
 MODEL_RETRY_MAX_DELAY_MS=2000
@@ -157,6 +160,11 @@ console with `pnpm demo`, then verify the live route without sending a paid mode
 ```bash
 pnpm manager:preflight
 ```
+
+At handoff, the only secret-dependent steps are: copy `.env.example` to a local `.env`, fill the
+external-provider block and `MODEL_API_KEY`, start `pnpm demo`, then run the preflight above. Do not
+commit `.env`. With `MODEL_FALLBACK_TO_MOCK=false`, an unavailable live provider fails visibly
+instead of returning a synthetic answer.
 
 The checked-in owner-preview registry also permits `claude-sonnet-5` through the
 `anthropic-compatible` protocol. Its dated provider evidence expires on 2026-10-13 and must be

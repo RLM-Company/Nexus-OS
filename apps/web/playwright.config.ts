@@ -13,7 +13,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "pnpm --dir ../api exec node --import tsx --conditions=development test/fixtures/e2e-server.ts",
+        "pnpm --dir ../api exec node --require ../../scripts/windows-node-user.cjs --import tsx --conditions=development test/fixtures/e2e-server.ts",
       url: "http://127.0.0.1:3100/api/v1/health",
       stdout: "pipe",
       stderr: "pipe",

@@ -14,7 +14,7 @@ test("publishes an installable standalone app manifest and icons", async ({ requ
     icons: Array<{ src: string; sizes: string; type: string; purpose?: string }>;
   };
   expect(manifest).toMatchObject({
-    name: "Cosmora Manager Console",
+    name: "Cosmora AI",
     short_name: "Cosmora",
     start_url: "/",
     scope: "/",
@@ -35,13 +35,13 @@ test("publishes an installable standalone app manifest and icons", async ({ requ
   }
 });
 
-test("keeps the Manager Console usable at a smartphone viewport", async ({ page }) => {
+test("keeps the Cosmora chat usable at a smartphone viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
   await expect(page.getByRole("navigation", { name: "Мобильная навигация" })).toBeVisible();
-  await expect(page.getByLabel("Опишите результат, который хотите получить")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Запустить" })).toBeVisible();
+  await expect(page.getByLabel("Сообщение Cosmora")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Отправить" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true
   );
@@ -53,15 +53,96 @@ test("keeps the Manager Console usable at a smartphone viewport", async ({ page 
   ).toEqual({ left: 0, width: 390 });
 });
 
-test("turns a home suggestion into an editable Manager request", async ({ page }) => {
+test("keeps an ordinary chat separate from projects", async ({ page }) => {
+  let projectPosts = 0;
+  let chatPosts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/api/v1/projects")) {
+      projectPosts += 1;
+    }
+    if (request.method() === "POST" && request.url().endsWith("/api/v1/chats")) {
+      chatPosts += 1;
+    }
+  });
   await page.goto("/");
 
-  const composer = page.getByLabel("Опишите результат, который хотите получить");
-  await page.getByRole("button", { name: /Создать проект/ }).click();
+  await page.getByRole("button", { name: "Новый чат", exact: true }).click();
+  await expect(page.locator(".hero h2")).not.toBeEmpty();
+  await expect(page.locator(".hero p")).toHaveCount(0);
+  await expect(page.locator(".foundation-grid")).toHaveCount(0);
+  await expect(page.locator("#next-logo")).toHaveCount(0);
+  const composer = page.getByLabel("Сообщение Cosmora");
+  const ordinaryMessage = `Привет! Как ты? ${Date.now()}`;
+  await composer.fill(ordinaryMessage);
+  await page.getByRole("button", { name: "Отправить" }).click();
 
-  await expect(composer).toHaveValue("Помоги сформулировать цель нового проекта");
-  await expect(composer).toBeFocused();
-  await expect(page.getByRole("button", { name: "Запустить" })).toBeEnabled();
+  await expect(page.getByRole("region", { name: "Обычный чат Cosmora" })).toContainText(
+    "проект не создан"
+  );
+  await expect(page.getByRole("region", { name: "Обычный чат Cosmora" })).toContainText(
+    "Запрос обычного чата"
+  );
+  await expect(page.getByRole("status")).toContainText("Ответ получен");
+  await expect(page.getByRole("complementary", { name: "Предложение создать проект" })).toHaveCount(
+    0
+  );
+  expect(projectPosts).toBe(0);
+  expect(chatPosts).toBe(1);
+
+  const chatsToggle = page.getByRole("button", { name: /Чаты/ });
+  const projectsToggle = page.getByRole("button", { name: /Проекты/ });
+  await expect(chatsToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.locator("#sidebar-chat-list").getByRole("button", { name: ordinaryMessage })
+  ).toBeVisible();
+  await chatsToggle.click();
+  await expect(chatsToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#sidebar-chat-list")).toHaveCount(0);
+  await projectsToggle.click();
+  await expect(projectsToggle).toHaveAttribute("aria-expanded", "false");
+
+  await page.reload();
+  await expect(chatsToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(projectsToggle).toHaveAttribute("aria-expanded", "false");
+  await chatsToggle.click();
+  await page.locator("#sidebar-chat-list").getByRole("button", { name: ordinaryMessage }).click();
+  await expect(page.getByRole("region", { name: "Обычный чат Cosmora" })).toContainText(
+    ordinaryMessage
+  );
+});
+
+test("suggests a project for a complex task and creates it only after confirmation", async ({
+  page
+}) => {
+  let projectPosts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/api/v1/projects")) {
+      projectPosts += 1;
+    }
+  });
+  await page.goto("/");
+  const task =
+    "Создай проект: сначала разработай приложение с API и базой данных, затем добавь интерфейс и e2e-тесты";
+  await page.getByLabel("Сообщение Cosmora").fill(task);
+  await page.getByRole("button", { name: "Отправить" }).click();
+
+  const proposal = page.getByRole("complementary", { name: "Предложение создать проект" });
+  await expect(proposal).toBeVisible();
+  await expect(proposal).toContainText("мультиагентной команды");
+  expect(projectPosts).toBe(0);
+  await expect(page.getByRole("status")).toContainText("Ответ получен");
+
+  const createdProject = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/projects") && response.request().method() === "POST"
+  );
+  await proposal.getByRole("button", { name: "Оформить как проект" }).click();
+  const created = await createdProject;
+  expect(created.status(), await created.text()).toBe(201);
+  expect(projectPosts).toBe(1);
+  await expect(page.getByRole("region", { name: "Главный чат проекта" })).toContainText(
+    "мультиагентный проект"
+  );
 });
 
 test("opens the image workspace and keeps generation local until a model is connected", async ({
