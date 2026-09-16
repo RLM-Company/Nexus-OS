@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "demo": "node --env-file-if-exists=../../.env --import tsx --conditions=development src/server.ts",
-    "dev": "node --env-file-if-exists=../../.env --import tsx --conditions=development --watch src/server.ts",
-    "demo:lan": "node --env-file-if-exists=../../.env --import tsx --conditions=development src/server.ts",
+    "demo": "node --env-file-if-exists=../../.env --require ../../scripts/windows-node-user.cjs --import tsx --conditions=development src/server.ts",
+    "dev": "node --env-file-if-exists=../../.env --require ../../scripts/windows-node-user.cjs --import tsx --conditions=development --watch src/server.ts",
+    "demo:lan": "node --env-file-if-exists=../../.env --require ../../scripts/windows-node-user.cjs --import tsx --conditions=development src/server.ts",
     "lint": "eslint src test",
     "start": "node --env-file-if-exists=../../.env dist/server.js",
     "test": "vitest run",

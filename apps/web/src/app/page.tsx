@@ -44,9 +44,15 @@ type CancelledRun = { run_id: string; status: "cancelled" };
 
 type LocalChatMessage = {
   id: string;
+  chat_id: string;
   role: "user" | "assistant";
+  content_type: "text";
   content: string;
+  status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
+  run_id: string | null;
+  error_code: string | null;
   created_at: string;
+  updated_at: string;
 };
 
 type ProjectProposal = {
@@ -61,6 +67,19 @@ type LocalChatSession = {
   projectProposal: ProjectProposal | null;
   created_at: string;
   updated_at: string;
+  last_message_preview?: string | null;
+};
+
+type GeneralChatAcceptedResponse = {
+  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at">;
+  user_message: LocalChatMessage;
+  run_id: string;
+  stream_url: string;
+};
+
+type GeneralChatDetail = {
+  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at">;
+  messages: LocalChatMessage[];
 };
 
 type ProjectDetail = { project: Project; chat_id: string; messages: Message[] };
@@ -588,51 +607,14 @@ const clientId = (): string =>
     ? crypto.randomUUID()
     : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const LOCAL_CHATS_STORAGE_KEY = "cosmora:local-chats";
 const SIDEBAR_SECTIONS_STORAGE_KEY = "cosmora:sidebar-sections";
 const EMPTY_LOCAL_CHAT_MESSAGES: LocalChatMessage[] = [];
-
-const chatTitle = (content: string): string => {
-  const compact = content.replace(/\s+/g, " ").trim();
-  return compact.length > 42 ? `${compact.slice(0, 41).trimEnd()}…` : compact;
-};
-
-const restoredLocalChats = (raw: string | null): LocalChatSession[] => {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (chat): chat is LocalChatSession =>
-          typeof chat === "object" &&
-          chat !== null &&
-          typeof (chat as LocalChatSession).id === "string" &&
-          typeof (chat as LocalChatSession).title === "string" &&
-          Array.isArray((chat as LocalChatSession).messages) &&
-          typeof (chat as LocalChatSession).created_at === "string" &&
-          typeof (chat as LocalChatSession).updated_at === "string"
-      )
-      .slice(0, 50)
-      .map((chat) => ({ ...chat, projectProposal: null }));
-  } catch {
-    return [];
-  }
-};
 
 const greetingSeed = (): number => {
   if (typeof crypto.getRandomValues === "function") {
     return crypto.getRandomValues(new Uint32Array(1))[0] ?? Date.now();
   }
   return (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
-};
-
-const localChatReply = (assessment: TaskComplexity): string => {
-  if (assessment.requiresProject) {
-    const explanation = assessment.reasons.slice(0, 3).join(", ");
-    return `Это похоже на задачу для проекта: ${explanation}. Я могу передать её Менеджеру и подготовить мультиагентный режим. Проект появится только после вашего подтверждения.`;
-  }
-  return "Сообщение осталось в обычном чате — проект не создан. Сейчас модель ещё не подключена, поэтому это локальная проверка режима диалога. После подключения ключа здесь будет обычный ответ Cosmora.";
 };
 
 const displayedContent = (message: Message): string | null => {
@@ -643,12 +625,21 @@ const displayedContent = (message: Message): string | null => {
   return null;
 };
 
+const displayedGeneralContent = (message: LocalChatMessage): string | null => {
+  if (message.status === "cancelled") return "Ответ остановлен владельцем.";
+  if (message.status === "failed")
+    return `Ответ завершился с ошибкой: ${message.error_code ?? "UNKNOWN"}.`;
+  return message.content || null;
+};
+
 type RestoredRunState = {
   phase: RunPhase;
   activeRunId: string | null;
 };
 
-const restoredRunState = (messages: Message[]): RestoredRunState => {
+const restoredRunState = (
+  messages: Array<Pick<Message, "run_id" | "role" | "status">>
+): RestoredRunState => {
   const latestRunMessage = [...messages].reverse().find((message) => message.run_id !== null);
   if (!latestRunMessage?.run_id) return { phase: "idle", activeRunId: null };
   const runId = latestRunMessage.run_id;
@@ -715,6 +706,22 @@ const messagePlaceholder = (
   };
 };
 
+const generalMessagePlaceholder = (id: string, chatId: string, runId: string): LocalChatMessage => {
+  const timestamp = new Date().toISOString();
+  return {
+    id,
+    chat_id: chatId,
+    role: "assistant",
+    content_type: "text",
+    content: "",
+    status: "streaming",
+    run_id: runId,
+    error_code: null,
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+};
+
 export default function Home() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
@@ -770,6 +777,27 @@ export default function Home() {
     setProjects(data.items);
   }, []);
 
+  const loadGeneralChats = useCallback(async () => {
+    const data = await api<{
+      items: Array<
+        Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at"> & {
+          last_message_preview: string | null;
+        }
+      >;
+    }>("/api/v1/chats");
+    setLocalChats((current) =>
+      data.items.map((chat) => {
+        const existing = current.find((candidate) => candidate.id === chat.id);
+        return {
+          ...chat,
+          messages: existing?.messages ?? [],
+          projectProposal: existing?.projectProposal ?? null
+        };
+      })
+    );
+    setLocalChatsHydrated(true);
+  }, []);
+
   useEffect(() => {
     if (greetingInitializedRef.current) return;
     greetingInitializedRef.current = true;
@@ -779,7 +807,6 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      setLocalChats(restoredLocalChats(window.localStorage.getItem(LOCAL_CHATS_STORAGE_KEY)));
       const saved = JSON.parse(
         window.localStorage.getItem(SIDEBAR_SECTIONS_STORAGE_KEY) ?? "{}"
       ) as { chats?: boolean; projects?: boolean };
@@ -788,18 +815,8 @@ export default function Home() {
     } catch {
       // Ignore malformed local UI preferences and keep both sections open.
     }
-    setLocalChatsHydrated(true);
     setSidebarSectionsHydrated(true);
   }, []);
-
-  useEffect(() => {
-    if (!localChatsHydrated) return;
-    try {
-      window.localStorage.setItem(LOCAL_CHATS_STORAGE_KEY, JSON.stringify(localChats));
-    } catch {
-      // The current chat remains usable even if browser storage is unavailable or full.
-    }
-  }, [localChats, localChatsHydrated]);
 
   useEffect(() => {
     if (!sidebarSectionsHydrated) return;
@@ -816,6 +833,7 @@ export default function Home() {
   useEffect(() => {
     void Promise.all([
       loadProjects(),
+      loadGeneralChats(),
       api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
     ])
       .catch(() => setError("API Cosmora пока недоступен. Запусти web и api вместе."))
@@ -825,7 +843,7 @@ export default function Home() {
       streamRef.current?.close();
       streamRef.current = null;
     };
-  }, [loadProjects]);
+  }, [loadGeneralChats, loadProjects]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -886,6 +904,35 @@ export default function Home() {
     setDemoRuns(demosResponse?.items ?? []);
   }, []);
 
+  const loadGeneralChatView = useCallback(async (generalChatId: string) => {
+    const epoch = viewEpochRef.current;
+    const detail = await api<GeneralChatDetail>(
+      `/api/v1/chats/${encodeURIComponent(generalChatId)}`
+    );
+    if (epoch !== viewEpochRef.current) return;
+    const restoredRun = restoredRunState(detail.messages);
+    if (restoredRun.activeRunId === null) {
+      streamRef.current?.close();
+      streamRef.current = null;
+    }
+    setLocalChats((current) => {
+      const existing = current.find((chat) => chat.id === generalChatId);
+      const updated: LocalChatSession = {
+        ...detail.chat,
+        last_message_preview:
+          detail.messages[detail.messages.length - 1]?.content ??
+          existing?.last_message_preview ??
+          null,
+        messages: detail.messages,
+        projectProposal: existing?.projectProposal ?? null
+      };
+      return [updated, ...current.filter((chat) => chat.id !== generalChatId)];
+    });
+    setRunPhase(restoredRun.phase);
+    setActiveRunId(restoredRun.activeRunId);
+    setSending(restoredRun.activeRunId !== null);
+  }, []);
+
   useEffect(() => {
     if (!activeProject || (runPhase !== "queued" && runPhase !== "running")) {
       return;
@@ -903,6 +950,24 @@ export default function Home() {
     }, 2_000);
     return () => window.clearInterval(timer);
   }, [activeProject, loadProjectView, runPhase]);
+
+  useEffect(() => {
+    if (activeProject || !activeLocalChatId || (runPhase !== "queued" && runPhase !== "running")) {
+      return;
+    }
+    const generalChatId = activeLocalChatId;
+    let polling = false;
+    const timer = window.setInterval(() => {
+      if (polling) return;
+      polling = true;
+      void loadGeneralChatView(generalChatId)
+        .catch(() => undefined)
+        .finally(() => {
+          polling = false;
+        });
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [activeLocalChatId, activeProject, loadGeneralChatView, runPhase]);
 
   const openProject = useCallback(
     async (projectId: string, view: ProjectView = "chat"): Promise<void> => {
@@ -961,6 +1026,14 @@ export default function Home() {
       await loadProjects();
     },
     [loadProjectView, loadProjects]
+  );
+
+  const refreshGeneralChat = useCallback(
+    async (generalChatId: string) => {
+      await loadGeneralChatView(generalChatId);
+      await loadGeneralChats();
+    },
+    [loadGeneralChatView, loadGeneralChats]
   );
 
   const followStream = useCallback(
@@ -1088,6 +1161,126 @@ export default function Home() {
     [refreshProject]
   );
 
+  const followGeneralChatStream = useCallback(
+    (accepted: GeneralChatAcceptedResponse): void => {
+      const epoch = viewEpochRef.current;
+      const chatIdForRun = accepted.chat.id;
+      streamRef.current?.close();
+      setActiveRunId(accepted.run_id);
+      const source = new EventSource(accepted.stream_url);
+      streamRef.current = source;
+      let assistantId: string | null = null;
+      let streamContent = "";
+      let finished = false;
+      const isCurrent = (): boolean =>
+        epoch === viewEpochRef.current && streamRef.current === source;
+      const closeSource = (): void => {
+        source.close();
+        if (streamRef.current === source) streamRef.current = null;
+      };
+      const updateMessages = (
+        updater: (messages: LocalChatMessage[]) => LocalChatMessage[]
+      ): void => {
+        setLocalChats((current) =>
+          current.map((chat) =>
+            chat.id === chatIdForRun ? { ...chat, messages: updater(chat.messages) } : chat
+          )
+        );
+      };
+
+      source.addEventListener("run.started", () => {
+        if (!isCurrent()) return;
+        setError(null);
+        setRunPhase("running");
+      });
+      source.addEventListener("message.started", (raw) => {
+        if (!isCurrent()) return;
+        const event = JSON.parse(String(raw.data)) as {
+          data: { message_id: string; run_id: string };
+        };
+        assistantId = event.data.message_id;
+        updateMessages((current) =>
+          current.some((message) => message.id === event.data.message_id)
+            ? current
+            : [
+                ...current,
+                generalMessagePlaceholder(event.data.message_id, chatIdForRun, event.data.run_id)
+              ]
+        );
+      });
+      source.addEventListener("message.delta", (raw) => {
+        if (!isCurrent()) return;
+        const event = JSON.parse(String(raw.data)) as {
+          data: { message_id: string; seq: number; delta: string };
+        };
+        assistantId = event.data.message_id;
+        streamContent = event.data.seq === 0 ? event.data.delta : streamContent + event.data.delta;
+        updateMessages((current) =>
+          current.map((message) =>
+            message.id === event.data.message_id
+              ? {
+                  ...message,
+                  content:
+                    streamContent.length >= message.content.length ? streamContent : message.content
+                }
+              : message
+          )
+        );
+      });
+      source.addEventListener("run.completed", (raw) => {
+        if (!isCurrent()) return;
+        const event = JSON.parse(String(raw.data)) as {
+          data: { provider: string; model_resolved: string };
+        };
+        finished = true;
+        closeSource();
+        setLastCompletedRoute({
+          provider: event.data.provider,
+          model: event.data.model_resolved
+        });
+        setSending(false);
+        setActiveRunId(null);
+        setRunPhase("completed");
+        void refreshGeneralChat(chatIdForRun).catch(() => {
+          if (!assistantId || epoch !== viewEpochRef.current) return;
+          updateMessages((current) =>
+            current.map((message) =>
+              message.id === assistantId ? { ...message, status: "completed" } : message
+            )
+          );
+        });
+      });
+      source.addEventListener("run.failed", (raw) => {
+        if (!isCurrent()) return;
+        finished = true;
+        closeSource();
+        const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
+        setSending(false);
+        setActiveRunId(null);
+        setRunPhase("failed");
+        setError(`Ответ остановлен: ${event.data.error_code}`);
+        void refreshGeneralChat(chatIdForRun).catch(() => undefined);
+      });
+      source.addEventListener("run.cancelled", () => {
+        if (!isCurrent()) return;
+        finished = true;
+        closeSource();
+        setSending(false);
+        setActiveRunId(null);
+        setRunPhase("cancelled");
+        void refreshGeneralChat(chatIdForRun).catch(() => undefined);
+      });
+      source.onerror = () => {
+        if (!isCurrent()) return;
+        closeSource();
+        if (!finished) {
+          setError("Поток ответа прерван. Проверяю сохранённое состояние на сервере.");
+        }
+      };
+    },
+    [refreshGeneralChat]
+  );
+
   useEffect(() => {
     if (!activeProject || !chatId || !activeRunId || streamRef.current) return;
     followStream({
@@ -1098,12 +1291,29 @@ export default function Home() {
     });
   }, [activeProject, activeRunId, chatId, followStream]);
 
+  useEffect(() => {
+    if (activeProject || !activeLocalChat || !activeRunId || streamRef.current) return;
+    followGeneralChatStream({
+      chat: activeLocalChat,
+      user_message:
+        [...activeLocalChat.messages]
+          .reverse()
+          .find((message) => message.run_id === activeRunId && message.role === "user") ??
+        activeLocalChat.messages[activeLocalChat.messages.length - 1]!,
+      run_id: activeRunId,
+      stream_url: `/api/v1/chat-runs/${encodeURIComponent(activeRunId)}/events`
+    });
+  }, [activeLocalChat, activeProject, activeRunId, followGeneralChatStream]);
+
   const cancelRun = async (): Promise<void> => {
-    if (!activeRunId || !activeProject) return;
+    if (!activeRunId || (!activeProject && !activeLocalChatId)) return;
     const epoch = viewEpochRef.current;
     setError(null);
     try {
-      await api<CancelledRun>(`/api/v1/runs/${activeRunId}/cancel`, { method: "POST" });
+      const url = activeProject
+        ? `/api/v1/runs/${activeRunId}/cancel`
+        : `/api/v1/chat-runs/${activeRunId}/cancel`;
+      await api<CancelledRun>(url, { method: "POST" });
     } catch (cause) {
       if (epoch !== viewEpochRef.current) return;
       setError(cause instanceof Error ? cause.message : "Не удалось остановить запуск");
@@ -1115,9 +1325,13 @@ export default function Home() {
     setSending(false);
     setActiveRunId(null);
     setRunPhase("cancelled");
-    await refreshProject(activeProject.id).catch(() => {
-      if (epoch === viewEpochRef.current)
+    const refresh = activeProject
+      ? refreshProject(activeProject.id)
+      : refreshGeneralChat(activeLocalChatId as string);
+    await refresh.catch(() => {
+      if (epoch === viewEpochRef.current) {
         setError("Запуск остановлен. Не удалось обновить историю.");
+      }
     });
   };
 
@@ -1216,39 +1430,54 @@ export default function Home() {
 
     if (!activeProject) {
       const assessment = assessTaskComplexity(content);
-      const timestamp = new Date().toISOString();
-      const chatId = activeLocalChatId ?? clientId();
-      const newMessages: LocalChatMessage[] = [
-        { id: clientId(), role: "user", content, created_at: timestamp },
-        {
-          id: clientId(),
-          role: "assistant",
-          content: localChatReply(assessment),
-          created_at: timestamp
-        }
-      ];
-      setLocalChats((current) => {
-        const existing = current.find((chat) => chat.id === chatId);
-        const updated: LocalChatSession = existing
-          ? {
-              ...existing,
-              messages: [...existing.messages, ...newMessages],
-              projectProposal: assessment.requiresProject ? { content, assessment } : null,
-              updated_at: timestamp
-            }
-          : {
-              id: chatId,
-              title: chatTitle(content),
-              messages: newMessages,
-              projectProposal: assessment.requiresProject ? { content, assessment } : null,
-              created_at: timestamp,
-              updated_at: timestamp
-            };
-        return [updated, ...current.filter((chat) => chat.id !== chatId)];
-      });
-      setActiveLocalChatId(chatId);
-      setDraft("");
+      const epoch = viewEpochRef.current;
+      setSending(true);
+      setRunPhase("queued");
       setError(null);
+      setLastCompletedRoute(null);
+      setDraft("");
+      try {
+        const accepted = activeLocalChatId
+          ? await api<GeneralChatAcceptedResponse>(
+              `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`,
+              {
+                method: "POST",
+                body: JSON.stringify({ content, client_message_id: clientId() })
+              }
+            )
+          : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
+              method: "POST",
+              body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+            });
+        if (epoch !== viewEpochRef.current) {
+          void loadGeneralChats().catch(() => undefined);
+          return;
+        }
+        const proposal = assessment.requiresProject ? { content, assessment } : null;
+        setLocalChats((current) => {
+          const existing = current.find((chat) => chat.id === accepted.chat.id);
+          const updated: LocalChatSession = {
+            ...accepted.chat,
+            last_message_preview: content.slice(0, 240),
+            messages: [...(existing?.messages ?? []), accepted.user_message],
+            projectProposal: proposal
+          };
+          return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
+        });
+        setActiveLocalChatId(accepted.chat.id);
+        followGeneralChatStream(accepted);
+        void loadGeneralChats().catch(() => {
+          if (epoch === viewEpochRef.current) {
+            setError("Сообщение принято. Не удалось обновить список чатов.");
+          }
+        });
+      } catch (cause) {
+        if (epoch !== viewEpochRef.current) return;
+        setDraft(content);
+        setSending(false);
+        setRunPhase("failed");
+        setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
+      }
       return;
     }
 
@@ -1305,7 +1534,7 @@ export default function Home() {
   };
 
   const promoteToProject = async (): Promise<void> => {
-    if (!projectProposal || !activeLocalChatId || sending || loading) return;
+    if (!projectProposal || !activeLocalChatId || loading) return;
     const content = projectProposal.content;
     const sourceChatId = activeLocalChatId;
     const epoch = viewEpochRef.current;
@@ -1388,9 +1617,20 @@ export default function Home() {
 
   const newChat = (): void => resetToLocalChat(null, true);
 
-  const openLocalChat = (chatId: string): void => {
+  const openLocalChat = async (chatId: string): Promise<void> => {
     if (!localChats.some((chat) => chat.id === chatId)) return;
     resetToLocalChat(chatId);
+    const epoch = viewEpochRef.current;
+    setLoading(true);
+    try {
+      await loadGeneralChatView(chatId);
+    } catch (cause) {
+      if (epoch === viewEpochRef.current) {
+        setError(cause instanceof Error ? cause.message : "Не удалось открыть чат");
+      }
+    } finally {
+      if (epoch === viewEpochRef.current) setLoading(false);
+    }
   };
 
   const dismissProjectProposal = (): void => {
@@ -1462,11 +1702,11 @@ export default function Home() {
                         ? "project-item chat-item active"
                         : "project-item chat-item"
                     }
-                    onClick={() => openLocalChat(chat.id)}
+                    onClick={() => void openLocalChat(chat.id)}
                   >
                     <span>
                       <strong>{chat.title}</strong>
-                      <small>Обычный чат · локально</small>
+                      <small>{chat.last_message_preview ?? "Обычный чат"}</small>
                     </span>
                   </button>
                 ))}
@@ -1644,7 +1884,7 @@ export default function Home() {
             <button
               key={chat.id}
               className={!activeProject && activeLocalChatId === chat.id ? "active" : ""}
-              onClick={() => openLocalChat(chat.id)}
+              onClick={() => void openLocalChat(chat.id)}
             >
               Чат · {chat.title}
             </button>
@@ -1916,9 +2156,17 @@ export default function Home() {
             <div className="chat-heading general-chat-heading">
               <div>
                 <strong>Cosmora</strong>
-                <small>Обычный чат · проект не создан</small>
+                <small>
+                  {lastCompletedRoute
+                    ? `${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
+                    : runtime && runtime.mode !== "mock"
+                      ? `${runtime.model} · обычный чат`
+                      : "Обычный чат · история на сервере · проект не создан"}
+                </small>
               </div>
-              <span className="chat-mode-badge">Чат</span>
+              <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">
+                <i /> {RUN_PHASE_LABEL[runPhase]}
+              </span>
             </div>
             <div className="messages" aria-live="polite">
               {localChatMessages.map((message) => (
@@ -1936,7 +2184,13 @@ export default function Home() {
                         })}
                       </time>
                     </header>
-                    <p>{message.content}</p>
+                    <p>
+                      {displayedGeneralContent(message) || (
+                        <span className="typing">
+                          Формирую ответ<span>…</span>
+                        </span>
+                      )}
+                    </p>
                   </div>
                 </article>
               ))}
@@ -2008,7 +2262,7 @@ export default function Home() {
                     ? "Enter — отправить · Shift+Enter — новая строка"
                     : "Обычный чат · проект создаётся только с вашего согласия")}
             </span>
-            {sending && activeProject ? (
+            {sending ? (
               <button
                 type="button"
                 className="cancel-run"
@@ -2016,10 +2270,6 @@ export default function Home() {
                 onClick={() => void cancelRun()}
               >
                 <span className="stop-icon" /> Остановить
-              </button>
-            ) : sending ? (
-              <button type="button" disabled>
-                Создаю проект…
               </button>
             ) : (
               <div className="composer-actions">

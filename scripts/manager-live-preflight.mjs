@@ -87,6 +87,8 @@ const main = async () => {
       proxiedRuntime.model === runtime.model,
     "Manager Console is connected to a different model runtime"
   );
+  const ordinaryChats = await fetchJson(webOrigin, "/api/v1/chats", "Ordinary chat API");
+  assert(Array.isArray(ordinaryChats.items), "Ordinary chat API did not return a list");
 
   process.stdout.write(
     [
@@ -95,6 +97,7 @@ const main = async () => {
       `- Web: ${webOrigin.origin} (API proxy ok)`,
       `- Model route: ${runtime.provider}:${runtime.model} (${runtime.mode})`,
       `- Registry: ${runtime.registry_version}`,
+      "- Ordinary chat API: ready (no model request sent)",
       `- Mock fallback: ${runtime.fallback_to_mock ? "enabled" : "disabled"}`,
       "- Emergency stops: clear",
       "- No paid model request was sent by this check"

@@ -40,12 +40,51 @@ const fixture = async (page: Page) => {
     waitForAlpha: Promise.resolve(),
     unavailablePolicy: false,
     failProjectList: false,
+    generalChatCreated: false,
     posts: 0
   };
   await page.route("**/api/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body: unknown;
-    if (route.request().method() === "POST") {
+    if (route.request().method() === "POST" && path === "/api/v1/chats") {
+      state.generalChatCreated = true;
+      body = {
+        chat: {
+          id: "general-alpha",
+          title: "Оформи новую задачу как проект",
+          created_at: "2026-09-01T00:00:00.000Z",
+          updated_at: "2026-09-01T00:00:00.000Z"
+        },
+        user_message: {
+          id: "general-message-alpha",
+          chat_id: "general-alpha",
+          role: "user",
+          content_type: "text",
+          content: "Оформи новую задачу как проект",
+          status: "completed",
+          run_id: "general-run-alpha",
+          error_code: null,
+          created_at: "2026-09-01T00:00:00.000Z",
+          updated_at: "2026-09-01T00:00:00.000Z"
+        },
+        run_id: "general-run-alpha",
+        stream_url: "/api/v1/chat-runs/general-run-alpha/events"
+      };
+    } else if (path === "/api/v1/chats") {
+      body = {
+        items: state.generalChatCreated
+          ? [
+              {
+                id: "general-alpha",
+                title: "Оформи новую задачу как проект",
+                last_message_preview: "Оформи новую задачу как проект",
+                created_at: "2026-09-01T00:00:00.000Z",
+                updated_at: "2026-09-01T00:00:00.000Z"
+              }
+            ]
+          : []
+      };
+    } else if (route.request().method() === "POST") {
       state.posts += 1;
       state.failProjectList = true;
       body = {

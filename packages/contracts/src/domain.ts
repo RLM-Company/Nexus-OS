@@ -138,3 +138,77 @@ export const RunCancelResponseSchema = Type.Object(
   { additionalProperties: false }
 );
 export type RunCancelResponse = Static<typeof RunCancelResponseSchema>;
+
+export const GeneralChatSchema = Type.Object(
+  {
+    id: EntityIdSchema,
+    title: Type.String({ minLength: 1, maxLength: 160 }),
+    created_at: IsoDateTimeSchema,
+    updated_at: IsoDateTimeSchema
+  },
+  { additionalProperties: false }
+);
+export type GeneralChat = Static<typeof GeneralChatSchema>;
+
+export const GeneralChatSummarySchema = Type.Object(
+  {
+    ...GeneralChatSchema.properties,
+    last_message_preview: Type.Union([Type.String({ maxLength: 240 }), Type.Null()])
+  },
+  { additionalProperties: false }
+);
+export type GeneralChatSummary = Static<typeof GeneralChatSummarySchema>;
+
+export const GeneralChatMessageSchema = Type.Object(
+  {
+    id: EntityIdSchema,
+    chat_id: EntityIdSchema,
+    role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
+    content_type: Type.Literal("text"),
+    content: Type.String(),
+    status: MessageStatusSchema,
+    run_id: Type.Union([EntityIdSchema, Type.Null()]),
+    error_code: Type.Union([Type.String(), Type.Null()]),
+    created_at: IsoDateTimeSchema,
+    updated_at: IsoDateTimeSchema
+  },
+  { additionalProperties: false }
+);
+export type GeneralChatMessage = Static<typeof GeneralChatMessageSchema>;
+
+export const CreateGeneralChatRequestSchema = Type.Object(
+  {
+    initial_message: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
+    client_message_id: EntityIdSchema
+  },
+  { additionalProperties: false }
+);
+export type CreateGeneralChatRequest = Static<typeof CreateGeneralChatRequestSchema>;
+
+export const GeneralChatListResponseSchema = Type.Object(
+  { items: Type.Array(GeneralChatSummarySchema) },
+  { additionalProperties: false }
+);
+export type GeneralChatListResponse = Static<typeof GeneralChatListResponseSchema>;
+
+export const GeneralChatDetailResponseSchema = Type.Object(
+  {
+    chat: GeneralChatSchema,
+    messages: Type.Array(GeneralChatMessageSchema)
+  },
+  { additionalProperties: false }
+);
+export type GeneralChatDetailResponse = Static<typeof GeneralChatDetailResponseSchema>;
+
+export const GeneralChatMessageAcceptedResponseSchema = Type.Object(
+  {
+    chat: GeneralChatSchema,
+    user_message: GeneralChatMessageSchema,
+    run_id: EntityIdSchema,
+    stream_url: Type.String({ minLength: 1 })
+  },
+  { additionalProperties: false }
+);
+export type GeneralChatMessageAcceptedResponse = Static<
+  typeof GeneralChatMessageAcceptedResponseSchema
+>;

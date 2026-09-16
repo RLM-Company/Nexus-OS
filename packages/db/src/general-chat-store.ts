@@ -1,0 +1,570 @@
+import { randomUUID } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
+import type { Currency } from "@cosmora/contracts";
+import {
+  IdempotencyConflictError,
+  LOCAL_OWNER_ID,
+  ModelUsageConflictError,
+  type ModelUsageReservation
+} from "./project-store.js";
+
+export class GeneralChatBusyError extends Error {
+  constructor() {
+    super("Chat already has a queued or running response");
+    this.name = "GeneralChatBusyError";
+  }
+}
+
+export interface StoredGeneralChat {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoredGeneralChatMessage {
+  id: string;
+  chat_id: string;
+  role: "user" | "assistant";
+  content_type: "text";
+  content: string;
+  status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
+  run_id: string | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoredGeneralChatRun {
+  id: string;
+  chat_id: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  provider: string | null;
+  model_resolved: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoredGeneralChatUsage {
+  usage_id: string;
+  run_id: string;
+  chat_id: string;
+  attempt: number;
+  status: "reserved" | "committed" | "failed" | "cancelled";
+  registry_version: string;
+  provider_id: string;
+  model_requested: string;
+  model_resolved: string | null;
+  estimated_input_tokens: number;
+  max_output_tokens: number;
+  estimated_cost_amount: number | null;
+  actual_input_tokens: number | null;
+  actual_output_tokens: number | null;
+  calculated_cost_amount: number | null;
+  currency: Currency | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AcceptedGeneralChatMessage {
+  chat: StoredGeneralChat;
+  userMessage: StoredGeneralChatMessage;
+  run: StoredGeneralChatRun;
+  duplicate: boolean;
+}
+
+type SqlRow = Record<string, unknown>;
+const timestamp = (): string => new Date().toISOString();
+const asChat = (row: SqlRow): StoredGeneralChat => row as unknown as StoredGeneralChat;
+const asMessage = (row: SqlRow): StoredGeneralChatMessage =>
+  row as unknown as StoredGeneralChatMessage;
+const asRun = (row: SqlRow): StoredGeneralChatRun => row as unknown as StoredGeneralChatRun;
+const asUsage = (row: SqlRow): StoredGeneralChatUsage => row as unknown as StoredGeneralChatUsage;
+const titleFor = (content: string): string => {
+  const compact = content.replace(/\s+/g, " ").trim();
+  return compact.length > 58 ? `${compact.slice(0, 57)}…` : compact;
+};
+
+const MESSAGE_COLUMNS = `id, chat_id, role, content_type, content, status,
+  run_id, error_code, created_at, updated_at`;
+const RUN_COLUMNS = `id, chat_id, status, provider, model_resolved,
+  input_tokens, output_tokens, created_at, updated_at`;
+const USAGE_COLUMNS = `usage_id, run_id, chat_id, attempt, status, registry_version, provider_id,
+  model_requested, model_resolved, estimated_input_tokens, max_output_tokens,
+  estimated_cost_amount, actual_input_tokens, actual_output_tokens,
+  calculated_cost_amount, currency, error_code, created_at, updated_at`;
+
+export class GeneralChatStore {
+  readonly #sqlite: DatabaseSync;
+
+  constructor(sqlite: DatabaseSync) {
+    this.#sqlite = sqlite;
+  }
+
+  listChats(
+    ownerId = LOCAL_OWNER_ID
+  ): Array<StoredGeneralChat & { last_message_preview: string | null }> {
+    return this.#sqlite
+      .prepare(
+        `SELECT c.id, c.title, c.created_at, c.updated_at,
+          (SELECT substr(content, 1, 240) FROM general_chat_messages m
+           WHERE m.chat_id = c.id ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1)
+           AS last_message_preview
+         FROM general_chats c WHERE c.owner_id = ?
+         ORDER BY c.updated_at DESC`
+      )
+      .all(ownerId) as unknown as Array<
+      StoredGeneralChat & { last_message_preview: string | null }
+    >;
+  }
+
+  getChat(chatId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChat | null {
+    const row = this.#sqlite
+      .prepare(
+        "SELECT id, title, created_at, updated_at FROM general_chats WHERE id = ? AND owner_id = ?"
+      )
+      .get(chatId, ownerId) as SqlRow | undefined;
+    return row ? asChat(row) : null;
+  }
+
+  listMessages(chatId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage[] {
+    if (!this.getChat(chatId, ownerId)) return [];
+    return this.#sqlite
+      .prepare(
+        `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages
+         WHERE chat_id = ? ORDER BY created_at ASC, rowid ASC`
+      )
+      .all(chatId) as unknown as StoredGeneralChatMessage[];
+  }
+
+  createChat(
+    initialMessage: string,
+    clientMessageId: string,
+    ownerId = LOCAL_OWNER_ID
+  ): AcceptedGeneralChatMessage {
+    const existing = this.findByClientMessageId(clientMessageId, ownerId);
+    if (existing) {
+      if (existing.userMessage.content !== initialMessage) throw new IdempotencyConflictError();
+      return { ...existing, duplicate: true };
+    }
+
+    const chatId = randomUUID();
+    const createdAt = timestamp();
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      this.#sqlite
+        .prepare(
+          "INSERT INTO general_chats (id, owner_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+        )
+        .run(chatId, ownerId, titleFor(initialMessage), createdAt, createdAt);
+      const accepted = this.#insertMessage(
+        chatId,
+        initialMessage,
+        clientMessageId,
+        createdAt,
+        ownerId
+      );
+      this.#sqlite.exec("COMMIT;");
+      return { ...accepted, duplicate: false };
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  createMessage(
+    chatId: string,
+    content: string,
+    clientMessageId: string,
+    ownerId = LOCAL_OWNER_ID
+  ): AcceptedGeneralChatMessage | null {
+    const chat = this.getChat(chatId, ownerId);
+    if (!chat) return null;
+    const existing = this.findByClientMessageId(clientMessageId, ownerId);
+    if (existing) {
+      if (existing.chat.id !== chatId || existing.userMessage.content !== content) {
+        throw new IdempotencyConflictError();
+      }
+      return { ...existing, duplicate: true };
+    }
+    const active = this.#sqlite
+      .prepare(
+        "SELECT 1 AS present FROM general_chat_runs WHERE chat_id = ? AND status IN ('queued', 'running') LIMIT 1"
+      )
+      .get(chatId) as { present?: number } | undefined;
+    if (active) throw new GeneralChatBusyError();
+
+    const createdAt = timestamp();
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const accepted = this.#insertMessage(chatId, content, clientMessageId, createdAt, ownerId);
+      this.#sqlite
+        .prepare("UPDATE general_chats SET updated_at = ? WHERE id = ?")
+        .run(createdAt, chatId);
+      this.#sqlite.exec("COMMIT;");
+      return { ...accepted, chat: { ...chat, updated_at: createdAt }, duplicate: false };
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  #insertMessage(
+    chatId: string,
+    content: string,
+    clientMessageId: string,
+    createdAt: string,
+    ownerId: string
+  ): Omit<AcceptedGeneralChatMessage, "duplicate"> {
+    const runId = randomUUID();
+    const messageId = randomUUID();
+    this.#sqlite
+      .prepare(
+        "INSERT INTO general_chat_runs (id, chat_id, status, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?)"
+      )
+      .run(runId, chatId, createdAt, createdAt);
+    this.#sqlite
+      .prepare(
+        `INSERT INTO general_chat_messages
+          (id, chat_id, owner_id, role, content_type, content, status, client_message_id, run_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'user', 'text', ?, 'completed', ?, ?, ?, ?)`
+      )
+      .run(messageId, chatId, ownerId, content, clientMessageId, runId, createdAt, createdAt);
+    const chat = this.getChat(chatId, ownerId);
+    const userMessage = this.#sqlite
+      .prepare(`SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE id = ?`)
+      .get(messageId) as SqlRow | undefined;
+    const run = this.#sqlite
+      .prepare(`SELECT ${RUN_COLUMNS} FROM general_chat_runs WHERE id = ?`)
+      .get(runId) as SqlRow | undefined;
+    if (!chat || !userMessage || !run) throw new Error("General chat message was not persisted");
+    return { chat, userMessage: asMessage(userMessage), run: asRun(run) };
+  }
+
+  findByClientMessageId(
+    clientMessageId: string,
+    ownerId = LOCAL_OWNER_ID
+  ): Omit<AcceptedGeneralChatMessage, "duplicate"> | null {
+    const row = this.#sqlite
+      .prepare(
+        `SELECT m.id, m.chat_id, m.role, m.content_type, m.content, m.status,
+          m.run_id, m.error_code, m.created_at, m.updated_at
+         FROM general_chat_messages m
+         JOIN general_chats c ON c.id = m.chat_id
+         WHERE m.client_message_id = ? AND m.owner_id = ? AND c.owner_id = ?`
+      )
+      .get(clientMessageId, ownerId, ownerId) as SqlRow | undefined;
+    if (!row) return null;
+    const userMessage = asMessage(row);
+    const chat = this.getChat(userMessage.chat_id, ownerId);
+    const run = userMessage.run_id ? this.getRun(userMessage.run_id, ownerId) : null;
+    if (!chat || !run) throw new Error("General chat idempotency record is incomplete");
+    return { chat, userMessage, run };
+  }
+
+  getRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatRun | null {
+    const row = this.#sqlite
+      .prepare(
+        `SELECT r.id, r.chat_id, r.status, r.provider, r.model_resolved,
+          r.input_tokens, r.output_tokens, r.created_at, r.updated_at
+         FROM general_chat_runs r JOIN general_chats c ON c.id = r.chat_id
+         WHERE r.id = ? AND c.owner_id = ?`
+      )
+      .get(runId, ownerId) as SqlRow | undefined;
+    return row ? asRun(row) : null;
+  }
+
+  getConversationForRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage[] {
+    const run = this.getRun(runId, ownerId);
+    if (!run) return [];
+    return this.#sqlite
+      .prepare(
+        `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages
+         WHERE chat_id = ? AND rowid <= (
+           SELECT rowid FROM general_chat_messages WHERE run_id = ? AND role = 'user' LIMIT 1
+         ) ORDER BY rowid ASC`
+      )
+      .all(run.chat_id, runId) as unknown as StoredGeneralChatMessage[];
+  }
+
+  getAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage | null {
+    if (!this.getRun(runId, ownerId)) return null;
+    const row = this.#sqlite
+      .prepare(
+        `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE run_id = ? AND role = 'assistant'`
+      )
+      .get(runId) as SqlRow | undefined;
+    return row ? asMessage(row) : null;
+  }
+
+  startAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage | null {
+    const run = this.getRun(runId, ownerId);
+    if (!run) return null;
+    const existing = this.getAssistantMessage(runId, ownerId);
+    if (existing) return existing;
+    const createdAt = timestamp();
+    const messageId = randomUUID();
+    this.#sqlite
+      .prepare(
+        `INSERT INTO general_chat_messages
+          (id, chat_id, owner_id, role, content_type, content, status, run_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'assistant', 'text', '', 'streaming', ?, ?, ?)`
+      )
+      .run(messageId, run.chat_id, ownerId, runId, createdAt, createdAt);
+    this.#sqlite
+      .prepare("UPDATE general_chat_runs SET status = 'running', updated_at = ? WHERE id = ?")
+      .run(createdAt, runId);
+    const row = this.#sqlite
+      .prepare(`SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE id = ?`)
+      .get(messageId) as SqlRow | undefined;
+    return row ? asMessage(row) : null;
+  }
+
+  appendAssistantDelta(messageId: string, delta: string): void {
+    this.#sqlite
+      .prepare(
+        "UPDATE general_chat_messages SET content = content || ?, updated_at = ? WHERE id = ?"
+      )
+      .run(delta, timestamp(), messageId);
+  }
+
+  reserveModelUsage(
+    runId: string,
+    reservation: ModelUsageReservation,
+    ownerId = LOCAL_OWNER_ID
+  ): StoredGeneralChatUsage | null {
+    const run = this.getRun(runId, ownerId);
+    if (!run || ["succeeded", "failed", "cancelled"].includes(run.status)) return null;
+    const existing = this.#sqlite
+      .prepare(
+        `SELECT ${USAGE_COLUMNS} FROM general_chat_model_usage WHERE run_id = ? AND attempt = ?`
+      )
+      .get(runId, reservation.attempt) as SqlRow | undefined;
+    if (existing) {
+      const usage = asUsage(existing);
+      if (
+        usage.registry_version !== reservation.registry_version ||
+        usage.provider_id !== reservation.provider_id ||
+        usage.model_requested !== reservation.model_id
+      ) {
+        throw new ModelUsageConflictError();
+      }
+      return usage;
+    }
+    const createdAt = timestamp();
+    const usageId = randomUUID();
+    this.#sqlite
+      .prepare(
+        `INSERT INTO general_chat_model_usage
+          (usage_id, run_id, chat_id, attempt, status, registry_version, provider_id,
+           model_requested, estimated_input_tokens, max_output_tokens, estimated_cost_amount,
+           currency, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        usageId,
+        runId,
+        run.chat_id,
+        reservation.attempt,
+        reservation.registry_version,
+        reservation.provider_id,
+        reservation.model_id,
+        reservation.estimated_input_tokens,
+        reservation.max_output_tokens,
+        reservation.estimated_cost?.amount ?? null,
+        reservation.estimated_cost?.currency ?? null,
+        createdAt,
+        createdAt
+      );
+    const inserted = this.#sqlite
+      .prepare(`SELECT ${USAGE_COLUMNS} FROM general_chat_model_usage WHERE usage_id = ?`)
+      .get(usageId) as SqlRow | undefined;
+    if (!inserted) throw new Error("General chat usage reservation was not persisted");
+    return asUsage(inserted);
+  }
+
+  getModelUsageForRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatUsage[] {
+    if (!this.getRun(runId, ownerId)) return [];
+    return this.#sqlite
+      .prepare(
+        `SELECT ${USAGE_COLUMNS} FROM general_chat_model_usage WHERE run_id = ? ORDER BY attempt ASC`
+      )
+      .all(runId) as unknown as StoredGeneralChatUsage[];
+  }
+
+  failModelUsage(runId: string, attempt: number, errorCode: string): void {
+    this.#sqlite
+      .prepare(
+        `UPDATE general_chat_model_usage SET status = 'failed', error_code = ?, updated_at = ?
+         WHERE run_id = ? AND attempt = ? AND status = 'reserved'`
+      )
+      .run(errorCode, timestamp(), runId, attempt);
+  }
+
+  completeRun(
+    runId: string,
+    provider: string,
+    model: string,
+    usage: { inputTokens: number | null; outputTokens: number | null },
+    accounting: { attempt: number; calculatedCost: { amount: number; currency: Currency } | null }
+  ): void {
+    const completedAt = timestamp();
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const runResult = this.#sqlite
+        .prepare(
+          `UPDATE general_chat_runs SET status = 'succeeded', provider = ?, model_resolved = ?,
+            input_tokens = ?, output_tokens = ?, updated_at = ?
+           WHERE id = ? AND status IN ('queued', 'running')`
+        )
+        .run(provider, model, usage.inputTokens, usage.outputTokens, completedAt, runId);
+      if (Number(runResult.changes) === 0) {
+        this.#sqlite.exec("COMMIT;");
+        return;
+      }
+      const usageResult = this.#sqlite
+        .prepare(
+          `UPDATE general_chat_model_usage SET status = 'committed', model_resolved = ?,
+            actual_input_tokens = ?, actual_output_tokens = ?, calculated_cost_amount = ?,
+            currency = COALESCE(?, currency), updated_at = ?
+           WHERE run_id = ? AND attempt = ? AND status = 'reserved'`
+        )
+        .run(
+          model,
+          usage.inputTokens,
+          usage.outputTokens,
+          accounting.calculatedCost?.amount ?? null,
+          accounting.calculatedCost?.currency ?? null,
+          completedAt,
+          runId,
+          accounting.attempt
+        );
+      if (Number(usageResult.changes) !== 1) {
+        throw new Error(`Missing general chat usage reservation ${runId}:${accounting.attempt}`);
+      }
+      this.#sqlite
+        .prepare(
+          `UPDATE general_chat_messages SET status = 'completed', updated_at = ?
+           WHERE run_id = ? AND role = 'assistant' AND status IN ('pending', 'streaming')`
+        )
+        .run(completedAt, runId);
+      this.#sqlite
+        .prepare(
+          "UPDATE general_chats SET updated_at = ? WHERE id = (SELECT chat_id FROM general_chat_runs WHERE id = ?)"
+        )
+        .run(completedAt, runId);
+      this.#sqlite.exec("COMMIT;");
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  failRun(runId: string, errorCode: string): void {
+    const failedAt = timestamp();
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      this.#sqlite
+        .prepare(
+          `UPDATE general_chat_runs SET status = 'failed', updated_at = ?
+           WHERE id = ? AND status IN ('queued', 'running')`
+        )
+        .run(failedAt, runId);
+      this.#sqlite
+        .prepare(
+          `UPDATE general_chat_messages SET status = 'failed', error_code = ?, updated_at = ?
+           WHERE run_id = ? AND role = 'assistant' AND status IN ('pending', 'streaming')`
+        )
+        .run(errorCode, failedAt, runId);
+      this.#sqlite
+        .prepare(
+          `UPDATE general_chat_model_usage SET status = 'failed', error_code = ?, updated_at = ?
+           WHERE run_id = ? AND status = 'reserved'`
+        )
+        .run(errorCode, failedAt, runId);
+      this.#sqlite.exec("COMMIT;");
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  cancelRun(runId: string, ownerId = LOCAL_OWNER_ID): "cancelled" | "finished" | null {
+    const run = this.getRun(runId, ownerId);
+    if (!run) return null;
+    if (run.status === "cancelled") return "cancelled";
+    if (run.status === "succeeded" || run.status === "failed") return "finished";
+    const cancelledAt = timestamp();
+    const assistant = this.getAssistantMessage(runId, ownerId);
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      if (assistant) {
+        this.#sqlite
+          .prepare(
+            `UPDATE general_chat_messages SET status = 'cancelled', error_code = 'CANCELLED_BY_OWNER', updated_at = ?
+             WHERE id = ? AND status IN ('pending', 'streaming')`
+          )
+          .run(cancelledAt, assistant.id);
+      } else {
+        this.#sqlite
+          .prepare(
+            `INSERT INTO general_chat_messages
+              (id, chat_id, owner_id, role, content_type, content, status, run_id, error_code, created_at, updated_at)
+             VALUES (?, ?, ?, 'assistant', 'text', '', 'cancelled', ?, 'CANCELLED_BY_OWNER', ?, ?)`
+          )
+          .run(randomUUID(), run.chat_id, ownerId, runId, cancelledAt, cancelledAt);
+      }
+      this.#sqlite
+        .prepare(
+          `UPDATE general_chat_runs SET status = 'cancelled', updated_at = ?
+           WHERE id = ? AND status IN ('queued', 'running')`
+        )
+        .run(cancelledAt, runId);
+      this.#sqlite
+        .prepare(
+          `UPDATE general_chat_model_usage SET status = 'cancelled', error_code = 'CANCELLED_BY_OWNER', updated_at = ?
+           WHERE run_id = ? AND status = 'reserved'`
+        )
+        .run(cancelledAt, runId);
+      this.#sqlite.exec("COMMIT;");
+      return "cancelled";
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  recoverInterruptedRuns(errorCode = "INTERRUPTED_BY_RESTART"): number {
+    const failedAt = timestamp();
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      this.#sqlite
+        .prepare(
+          `UPDATE general_chat_messages SET status = 'failed', error_code = ?, updated_at = ?
+           WHERE role = 'assistant' AND status = 'streaming'
+             AND run_id IN (SELECT id FROM general_chat_runs WHERE status = 'running')`
+        )
+        .run(errorCode, failedAt);
+      this.#sqlite
+        .prepare(
+          `UPDATE general_chat_model_usage SET status = 'failed', error_code = ?, updated_at = ?
+           WHERE status = 'reserved'
+             AND run_id IN (SELECT id FROM general_chat_runs WHERE status = 'running')`
+        )
+        .run(errorCode, failedAt);
+      const result = this.#sqlite
+        .prepare(
+          `UPDATE general_chat_runs SET status = 'failed', updated_at = ? WHERE status = 'running'`
+        )
+        .run(failedAt);
+      this.#sqlite.exec("COMMIT;");
+      return Number(result.changes);
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+}

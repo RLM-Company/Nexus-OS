@@ -410,6 +410,99 @@ export const messages = sqliteTable(
   ]
 );
 
+export const generalChats = sqliteTable(
+  "general_chats",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    title: text("title").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("general_chats_id_owner_unique").on(table.id, table.ownerId),
+    index("general_chats_owner_updated_idx").on(table.ownerId, table.updatedAt)
+  ]
+);
+
+export const generalChatRuns = sqliteTable(
+  "general_chat_runs",
+  {
+    id: text("id").primaryKey(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => generalChats.id, { onDelete: "cascade" }),
+    status: text("status").notNull(),
+    provider: text("provider"),
+    modelResolved: text("model_resolved"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [index("general_chat_runs_chat_created_idx").on(table.chatId, table.createdAt)]
+);
+
+export const generalChatMessages = sqliteTable(
+  "general_chat_messages",
+  {
+    id: text("id").primaryKey(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => generalChats.id, { onDelete: "cascade" }),
+    ownerId: text("owner_id").notNull(),
+    role: text("role").notNull(),
+    contentType: text("content_type").notNull(),
+    content: text("content").notNull(),
+    status: text("status").notNull(),
+    clientMessageId: text("client_message_id"),
+    runId: text("run_id").references(() => generalChatRuns.id, { onDelete: "set null" }),
+    errorCode: text("error_code"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    index("general_chat_messages_chat_created_idx").on(table.chatId, table.createdAt),
+    uniqueIndex("general_chat_messages_owner_client_unique").on(
+      table.ownerId,
+      table.clientMessageId
+    )
+  ]
+);
+
+export const generalChatModelUsage = sqliteTable(
+  "general_chat_model_usage",
+  {
+    usageId: text("usage_id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => generalChatRuns.id, { onDelete: "cascade" }),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => generalChats.id, { onDelete: "cascade" }),
+    attempt: integer("attempt").notNull(),
+    status: text("status").notNull(),
+    registryVersion: text("registry_version").notNull(),
+    providerId: text("provider_id").notNull(),
+    modelRequested: text("model_requested").notNull(),
+    modelResolved: text("model_resolved"),
+    estimatedInputTokens: integer("estimated_input_tokens").notNull(),
+    maxOutputTokens: integer("max_output_tokens").notNull(),
+    estimatedCostAmount: real("estimated_cost_amount"),
+    actualInputTokens: integer("actual_input_tokens"),
+    actualOutputTokens: integer("actual_output_tokens"),
+    calculatedCostAmount: real("calculated_cost_amount"),
+    currency: text("currency"),
+    errorCode: text("error_code"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("general_chat_model_usage_run_attempt_unique").on(table.runId, table.attempt),
+    index("general_chat_model_usage_chat_created_idx").on(table.chatId, table.createdAt)
+  ]
+);
+
 export const modelUsageLedger = sqliteTable(
   "model_usage_ledger",
   {

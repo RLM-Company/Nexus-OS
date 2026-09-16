@@ -55,12 +55,20 @@ export class MockProviderAdapter implements ModelProviderAdapter {
 
     const prompt = lastUserMessage(request);
     const pause = this.#mode === "slow_stream" ? 260 : 35;
-    const parts = [
-      "Принял задачу. ",
-      `В проекте зафиксирована цель: «${summarize(prompt)}». `,
-      "Сейчас Cosmora работает в безопасном mock-режиме: сообщение уже сохранено в локальной базе, а этот ответ передаётся потоком. ",
-      "Следующий этап подключит настоящего менеджера и исполнителей через Model Gateway."
-    ];
+    const parts =
+      request.task_type === "chat_response"
+        ? [
+            "Принял сообщение. ",
+            `Запрос обычного чата: «${summarize(prompt)}». `,
+            "Сейчас Cosmora работает в безопасном mock-режиме: история сохранена на сервере, а ответ передаётся потоком. ",
+            "После подключения ключа этот же чат будет отвечать через настроенный Model Gateway."
+          ]
+        : [
+            "Принял задачу. ",
+            `В проекте зафиксирована цель: «${summarize(prompt)}». `,
+            "Сейчас Cosmora работает в безопасном mock-режиме: сообщение уже сохранено в локальной базе, а этот ответ передаётся потоком. ",
+            "Следующий этап подключит настоящего менеджера и исполнителей через Model Gateway."
+          ];
 
     for (const [index, part] of parts.entries()) {
       await delay(pause, signal);

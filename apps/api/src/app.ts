@@ -1,6 +1,6 @@
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { ServerConfig } from "@cosmora/config";
-import { composeDemoManagerPlan, type ManagerService } from "@cosmora/core";
+import { composeDemoManagerPlan, type ChatService, type ManagerService } from "@cosmora/core";
 import {
   AgentBlueprintListResponseSchema,
   AgentBlueprintSchema,
@@ -116,6 +116,7 @@ import {
   type DatabaseHealth,
   type DemoManagerStore,
   type EmergencyStopStore,
+  type GeneralChatStore,
   type IdentityStore,
   type PolicyStore,
   type PatternLibraryStore,
@@ -146,11 +147,13 @@ import {
   autonomyProfileStepUpChallenge,
   projectUsageLimitStepUpChallenge
 } from "./step-up-challenge.js";
+import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-routes.js";
 
 export interface AppDependencies {
   config: ServerConfig;
   database: DatabaseHealth;
   identityStore?: IdentityStore;
+  generalChatStore?: GeneralChatStore;
   projectStore?: ProjectStore;
   demoManagerStore?: DemoManagerStore;
   demoManagerCoordinator?: DemoManagerCoordinator;
@@ -162,6 +165,7 @@ export interface AppDependencies {
   agentInstanceStore?: AgentInstanceStore;
   agentStudioMutationStore?: AgentStudioMutationStore;
   modelGateway?: ModelGateway;
+  chat?: ChatService;
   manager?: ManagerService;
   modelRegistryVersion?: string;
   identityResolver?: RequestIdentityResolver;
@@ -549,10 +553,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           }
   }).withTypeProvider<TypeBoxTypeProvider>();
 
-  const activeRuns = new Map<
-    string,
-    { projectId: string; ownerId: string; controller: AbortController }
-  >();
+  const activeRuns = new Map<string, ActiveModelRun>();
   const runObservers = new Set<AbortController>();
   const managerRunsExecuteInBackground = dependencies.managerRunExecutionMode === "background";
   const runtimeMetrics = dependencies.runtimeMetrics ?? new RuntimeMetrics();
@@ -963,6 +964,21 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       return response;
     }
   );
+
+  if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
+    registerGeneralChatRoutes({
+      app,
+      store: dependencies.generalChatStore,
+      modelGateway: dependencies.modelGateway,
+      chat: dependencies.chat,
+      runtimeMetrics,
+      activeRuns,
+      identityFor,
+      ...(dependencies.emergencyStopStore
+        ? { emergencyStopStore: dependencies.emergencyStopStore }
+        : {})
+    });
+  }
 
   if (
     dependencies.projectStore &&

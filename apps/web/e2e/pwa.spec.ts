@@ -55,36 +55,45 @@ test("keeps the Cosmora chat usable at a smartphone viewport", async ({ page }) 
 
 test("keeps an ordinary chat separate from projects", async ({ page }) => {
   let projectPosts = 0;
+  let chatPosts = 0;
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/api/v1/projects")) {
       projectPosts += 1;
     }
+    if (request.method() === "POST" && request.url().endsWith("/api/v1/chats")) {
+      chatPosts += 1;
+    }
   });
   await page.goto("/");
 
-  const firstGreeting = await page.locator(".hero h2").innerText();
   await page.getByRole("button", { name: "Новый чат", exact: true }).click();
-  await expect(page.locator(".hero h2")).not.toHaveText(firstGreeting);
+  await expect(page.locator(".hero h2")).not.toBeEmpty();
   await expect(page.locator(".hero p")).toHaveCount(0);
   await expect(page.locator(".foundation-grid")).toHaveCount(0);
   await expect(page.locator("#next-logo")).toHaveCount(0);
   const composer = page.getByLabel("Сообщение Cosmora");
-  await composer.fill("Привет! Как ты?");
+  const ordinaryMessage = `Привет! Как ты? ${Date.now()}`;
+  await composer.fill(ordinaryMessage);
   await page.getByRole("button", { name: "Отправить" }).click();
 
   await expect(page.getByRole("region", { name: "Обычный чат Cosmora" })).toContainText(
     "проект не создан"
   );
+  await expect(page.getByRole("region", { name: "Обычный чат Cosmora" })).toContainText(
+    "Запрос обычного чата"
+  );
+  await expect(page.getByRole("status")).toContainText("Ответ получен");
   await expect(page.getByRole("complementary", { name: "Предложение создать проект" })).toHaveCount(
     0
   );
   expect(projectPosts).toBe(0);
+  expect(chatPosts).toBe(1);
 
   const chatsToggle = page.getByRole("button", { name: /Чаты/ });
   const projectsToggle = page.getByRole("button", { name: /Проекты/ });
   await expect(chatsToggle).toHaveAttribute("aria-expanded", "true");
   await expect(
-    page.locator("#sidebar-chat-list").getByRole("button", { name: /Привет! Как ты/ })
+    page.locator("#sidebar-chat-list").getByRole("button", { name: ordinaryMessage })
   ).toBeVisible();
   await chatsToggle.click();
   await expect(chatsToggle).toHaveAttribute("aria-expanded", "false");
@@ -96,12 +105,9 @@ test("keeps an ordinary chat separate from projects", async ({ page }) => {
   await expect(chatsToggle).toHaveAttribute("aria-expanded", "false");
   await expect(projectsToggle).toHaveAttribute("aria-expanded", "false");
   await chatsToggle.click();
-  await page
-    .locator("#sidebar-chat-list")
-    .getByRole("button", { name: /Привет! Как ты/ })
-    .click();
+  await page.locator("#sidebar-chat-list").getByRole("button", { name: ordinaryMessage }).click();
   await expect(page.getByRole("region", { name: "Обычный чат Cosmora" })).toContainText(
-    "Привет! Как ты?"
+    ordinaryMessage
   );
 });
 
@@ -124,6 +130,7 @@ test("suggests a project for a complex task and creates it only after confirmati
   await expect(proposal).toBeVisible();
   await expect(proposal).toContainText("мультиагентной команды");
   expect(projectPosts).toBe(0);
+  await expect(page.getByRole("status")).toContainText("Ответ получен");
 
   const createdProject = page.waitForResponse(
     (response) =>
