@@ -79,6 +79,30 @@ test("keeps an ordinary chat separate from projects", async ({ page }) => {
     0
   );
   expect(projectPosts).toBe(0);
+
+  const chatsToggle = page.getByRole("button", { name: /Чаты/ });
+  const projectsToggle = page.getByRole("button", { name: /Проекты/ });
+  await expect(chatsToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.locator("#sidebar-chat-list").getByRole("button", { name: /Привет! Как ты/ })
+  ).toBeVisible();
+  await chatsToggle.click();
+  await expect(chatsToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#sidebar-chat-list")).toHaveCount(0);
+  await projectsToggle.click();
+  await expect(projectsToggle).toHaveAttribute("aria-expanded", "false");
+
+  await page.reload();
+  await expect(chatsToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(projectsToggle).toHaveAttribute("aria-expanded", "false");
+  await chatsToggle.click();
+  await page
+    .locator("#sidebar-chat-list")
+    .getByRole("button", { name: /Привет! Как ты/ })
+    .click();
+  await expect(page.getByRole("region", { name: "Обычный чат Cosmora" })).toContainText(
+    "Привет! Как ты?"
+  );
 });
 
 test("suggests a project for a complex task and creates it only after confirmation", async ({

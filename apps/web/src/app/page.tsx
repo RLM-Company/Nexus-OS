@@ -54,6 +54,15 @@ type ProjectProposal = {
   assessment: TaskComplexity;
 };
 
+type LocalChatSession = {
+  id: string;
+  title: string;
+  messages: LocalChatMessage[];
+  projectProposal: ProjectProposal | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type ProjectDetail = { project: Project; chat_id: string; messages: Message[] };
 
 type AutonomyProfile = {
@@ -579,6 +588,38 @@ const clientId = (): string =>
     ? crypto.randomUUID()
     : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const LOCAL_CHATS_STORAGE_KEY = "cosmora:local-chats";
+const SIDEBAR_SECTIONS_STORAGE_KEY = "cosmora:sidebar-sections";
+const EMPTY_LOCAL_CHAT_MESSAGES: LocalChatMessage[] = [];
+
+const chatTitle = (content: string): string => {
+  const compact = content.replace(/\s+/g, " ").trim();
+  return compact.length > 42 ? `${compact.slice(0, 41).trimEnd()}…` : compact;
+};
+
+const restoredLocalChats = (raw: string | null): LocalChatSession[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (chat): chat is LocalChatSession =>
+          typeof chat === "object" &&
+          chat !== null &&
+          typeof (chat as LocalChatSession).id === "string" &&
+          typeof (chat as LocalChatSession).title === "string" &&
+          Array.isArray((chat as LocalChatSession).messages) &&
+          typeof (chat as LocalChatSession).created_at === "string" &&
+          typeof (chat as LocalChatSession).updated_at === "string"
+      )
+      .slice(0, 50)
+      .map((chat) => ({ ...chat, projectProposal: null }));
+  } catch {
+    return [];
+  }
+};
+
 const greetingSeed = (): number => {
   if (typeof crypto.getRandomValues === "function") {
     return crypto.getRandomValues(new Uint32Array(1))[0] ?? Date.now();
@@ -694,8 +735,12 @@ export default function Home() {
   const [projectView, setProjectView] = useState<ProjectView>("chat");
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
   const [greeting, setGreeting] = useState("Чем могу помочь?");
-  const [localChatMessages, setLocalChatMessages] = useState<LocalChatMessage[]>([]);
-  const [projectProposal, setProjectProposal] = useState<ProjectProposal | null>(null);
+  const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
+  const [activeLocalChatId, setActiveLocalChatId] = useState<string | null>(null);
+  const [localChatsHydrated, setLocalChatsHydrated] = useState(false);
+  const [chatsExpanded, setChatsExpanded] = useState(true);
+  const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [sidebarSectionsHydrated, setSidebarSectionsHydrated] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -705,6 +750,9 @@ export default function Home() {
   const initialRouteHandledRef = useRef(false);
   const previousGreetingRef = useRef<string | null>(null);
   const greetingInitializedRef = useRef(false);
+  const activeLocalChat = localChats.find((chat) => chat.id === activeLocalChatId) ?? null;
+  const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
+  const projectProposal = activeLocalChat?.projectProposal ?? null;
 
   const rotateGreeting = useCallback((): void => {
     const next = chooseGreeting({
@@ -728,6 +776,42 @@ export default function Home() {
     previousGreetingRef.current = window.sessionStorage.getItem("cosmora:last-greeting");
     rotateGreeting();
   }, [rotateGreeting]);
+
+  useEffect(() => {
+    try {
+      setLocalChats(restoredLocalChats(window.localStorage.getItem(LOCAL_CHATS_STORAGE_KEY)));
+      const saved = JSON.parse(
+        window.localStorage.getItem(SIDEBAR_SECTIONS_STORAGE_KEY) ?? "{}"
+      ) as { chats?: boolean; projects?: boolean };
+      if (typeof saved.chats === "boolean") setChatsExpanded(saved.chats);
+      if (typeof saved.projects === "boolean") setProjectsExpanded(saved.projects);
+    } catch {
+      // Ignore malformed local UI preferences and keep both sections open.
+    }
+    setLocalChatsHydrated(true);
+    setSidebarSectionsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!localChatsHydrated) return;
+    try {
+      window.localStorage.setItem(LOCAL_CHATS_STORAGE_KEY, JSON.stringify(localChats));
+    } catch {
+      // The current chat remains usable even if browser storage is unavailable or full.
+    }
+  }, [localChats, localChatsHydrated]);
+
+  useEffect(() => {
+    if (!sidebarSectionsHydrated) return;
+    try {
+      window.localStorage.setItem(
+        SIDEBAR_SECTIONS_STORAGE_KEY,
+        JSON.stringify({ chats: chatsExpanded, projects: projectsExpanded })
+      );
+    } catch {
+      // Section toggles still work for the current page when storage is unavailable.
+    }
+  }, [chatsExpanded, projectsExpanded, sidebarSectionsHydrated]);
 
   useEffect(() => {
     void Promise.all([
@@ -834,8 +918,7 @@ export default function Home() {
       setProjectView(view);
       setActiveProject(null);
       setMessages([]);
-      setLocalChatMessages([]);
-      setProjectProposal(null);
+      setActiveLocalChatId(null);
       setChatId(null);
       setDraft("");
       setLastCompletedRoute(null);
@@ -1134,8 +1217,8 @@ export default function Home() {
     if (!activeProject) {
       const assessment = assessTaskComplexity(content);
       const timestamp = new Date().toISOString();
-      setLocalChatMessages((current) => [
-        ...current,
+      const chatId = activeLocalChatId ?? clientId();
+      const newMessages: LocalChatMessage[] = [
         { id: clientId(), role: "user", content, created_at: timestamp },
         {
           id: clientId(),
@@ -1143,8 +1226,27 @@ export default function Home() {
           content: localChatReply(assessment),
           created_at: timestamp
         }
-      ]);
-      setProjectProposal(assessment.requiresProject ? { content, assessment } : null);
+      ];
+      setLocalChats((current) => {
+        const existing = current.find((chat) => chat.id === chatId);
+        const updated: LocalChatSession = existing
+          ? {
+              ...existing,
+              messages: [...existing.messages, ...newMessages],
+              projectProposal: assessment.requiresProject ? { content, assessment } : null,
+              updated_at: timestamp
+            }
+          : {
+              id: chatId,
+              title: chatTitle(content),
+              messages: newMessages,
+              projectProposal: assessment.requiresProject ? { content, assessment } : null,
+              created_at: timestamp,
+              updated_at: timestamp
+            };
+        return [updated, ...current.filter((chat) => chat.id !== chatId)];
+      });
+      setActiveLocalChatId(chatId);
       setDraft("");
       setError(null);
       return;
@@ -1203,8 +1305,9 @@ export default function Home() {
   };
 
   const promoteToProject = async (): Promise<void> => {
-    if (!projectProposal || sending || loading) return;
+    if (!projectProposal || !activeLocalChatId || sending || loading) return;
     const content = projectProposal.content;
+    const sourceChatId = activeLocalChatId;
     const epoch = viewEpochRef.current;
     setSending(true);
     setRunPhase("queued");
@@ -1227,8 +1330,12 @@ export default function Home() {
       setActiveProject(accepted.project);
       setChatId(accepted.chat_id);
       setMessages([accepted.user_message]);
-      setLocalChatMessages([]);
-      setProjectProposal(null);
+      setLocalChats((current) =>
+        current.map((chat) =>
+          chat.id === sourceChatId ? { ...chat, projectProposal: null } : chat
+        )
+      );
+      setActiveLocalChatId(null);
       setPolicySignals(EMPTY_POLICY_SIGNALS);
       void api<{ profile: AutonomyProfile }>(
         `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
@@ -1253,7 +1360,7 @@ export default function Home() {
     }
   };
 
-  const newProject = (): void => {
+  const resetToLocalChat = (chatId: string | null, rotate = false): void => {
     viewEpochRef.current += 1;
     selectedProjectRef.current = null;
     streamRef.current?.close();
@@ -1261,8 +1368,7 @@ export default function Home() {
     setActiveProject(null);
     setChatId(null);
     setMessages([]);
-    setLocalChatMessages([]);
-    setProjectProposal(null);
+    setActiveLocalChatId(chatId);
     setAutonomyProfile(null);
     setPolicySignals(EMPTY_POLICY_SIGNALS);
     setDemoRuns([]);
@@ -1276,8 +1382,24 @@ export default function Home() {
     setSurface("manager");
     setError(null);
     setLoading(false);
-    rotateGreeting();
+    if (rotate) rotateGreeting();
     replaceConsoleRoute(null);
+  };
+
+  const newChat = (): void => resetToLocalChat(null, true);
+
+  const openLocalChat = (chatId: string): void => {
+    if (!localChats.some((chat) => chat.id === chatId)) return;
+    resetToLocalChat(chatId);
+  };
+
+  const dismissProjectProposal = (): void => {
+    if (!activeLocalChatId) return;
+    setLocalChats((current) =>
+      current.map((chat) =>
+        chat.id === activeLocalChatId ? { ...chat, projectProposal: null } : chat
+      )
+    );
   };
 
   const controlCenterHref = activeProject
@@ -1303,7 +1425,7 @@ export default function Home() {
           <span className="version">AI</span>
         </div>
 
-        <button className="new-project" onClick={newProject}>
+        <button className="new-project" onClick={newChat}>
           <span>
             <ToolIcon kind="new-chat" />
           </span>{" "}
@@ -1311,33 +1433,91 @@ export default function Home() {
         </button>
 
         <nav className="navigation" aria-label="Основная навигация">
-          <div className="projects-heading">
-            <ToolIcon kind="projects" />
-            <span>Проекты</span>
-            <small>{projects.length}</small>
-          </div>
-          <div className="project-list">
-            {projects.map((project) => (
-              <button
-                key={project.id}
-                className={
-                  surface === "manager" && activeProject?.id === project.id
-                    ? "project-item active"
-                    : "project-item"
-                }
-                onClick={() => void openProject(project.id)}
+          <section className="sidebar-section">
+            <button
+              type="button"
+              className="projects-heading sidebar-section-toggle"
+              aria-expanded={chatsExpanded}
+              aria-controls="sidebar-chat-list"
+              onClick={() => setChatsExpanded((current) => !current)}
+            >
+              <ToolIcon kind="new-chat" />
+              <span>Чаты</span>
+              <small>{localChats.length}</small>
+              <span className="section-chevron" aria-hidden="true">
+                ›
+              </span>
+            </button>
+            {chatsExpanded && (
+              <div
+                className={`project-list chat-list${localChats.length === 0 ? " empty-list" : ""}`}
+                id="sidebar-chat-list"
               >
-                <span className="project-glyph">{project.title.slice(0, 1).toUpperCase()}</span>
-                <span>
-                  <strong>{project.title}</strong>
-                  <small>{project.last_message_preview ?? "Новый проект"}</small>
-                </span>
-              </button>
-            ))}
-            {!loading && projects.length === 0 && (
-              <p className="empty-projects">Проект появится только после вашего подтверждения.</p>
+                {localChats.map((chat) => (
+                  <button
+                    key={chat.id}
+                    type="button"
+                    className={
+                      surface === "manager" && activeLocalChatId === chat.id
+                        ? "project-item chat-item active"
+                        : "project-item chat-item"
+                    }
+                    onClick={() => openLocalChat(chat.id)}
+                  >
+                    <span>
+                      <strong>{chat.title}</strong>
+                      <small>Обычный чат · локально</small>
+                    </span>
+                  </button>
+                ))}
+                {localChatsHydrated && localChats.length === 0 && (
+                  <p className="empty-projects">Чаты появятся после первого сообщения.</p>
+                )}
+              </div>
             )}
-          </div>
+          </section>
+          <section className="sidebar-section">
+            <button
+              type="button"
+              className="projects-heading sidebar-section-toggle"
+              aria-expanded={projectsExpanded}
+              aria-controls="sidebar-project-list"
+              onClick={() => setProjectsExpanded((current) => !current)}
+            >
+              <ToolIcon kind="projects" />
+              <span>Проекты</span>
+              <small>{projects.length}</small>
+              <span className="section-chevron" aria-hidden="true">
+                ›
+              </span>
+            </button>
+            {projectsExpanded && (
+              <div className="project-list" id="sidebar-project-list">
+                {projects.map((project) => (
+                  <button
+                    key={project.id}
+                    className={
+                      surface === "manager" && activeProject?.id === project.id
+                        ? "project-item active"
+                        : "project-item"
+                    }
+                    onClick={() => void openProject(project.id)}
+                  >
+                    <span className="project-glyph">{project.title.slice(0, 1).toUpperCase()}</span>
+                    <span>
+                      <strong>{project.title}</strong>
+                      <small>{project.last_message_preview ?? "Новый проект"}</small>
+                    </span>
+                  </button>
+                ))}
+                {!loading && projects.length === 0 && (
+                  <p className="empty-projects">
+                    Проект появится только после вашего подтверждения.
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
           <div className="sidebar-tools" aria-label="Рабочие области">
             {TOOL_ITEMS.map((item) => (
               <button
@@ -1453,10 +1633,22 @@ export default function Home() {
           </nav>
         )}
 
-        <div className="mobile-project-strip" aria-label="Быстрый выбор проекта">
-          <button className={!activeProject ? "active" : ""} onClick={newProject}>
+        <div className="mobile-project-strip" aria-label="Быстрый выбор чата или проекта">
+          <button
+            className={!activeProject && !activeLocalChatId ? "active" : ""}
+            onClick={newChat}
+          >
             ＋ Новый
           </button>
+          {localChats.slice(0, 5).map((chat) => (
+            <button
+              key={chat.id}
+              className={!activeProject && activeLocalChatId === chat.id ? "active" : ""}
+              onClick={() => openLocalChat(chat.id)}
+            >
+              Чат · {chat.title}
+            </button>
+          ))}
           {projects.map((project) => (
             <button
               key={project.id}
@@ -1764,11 +1956,7 @@ export default function Home() {
                       <button type="button" onClick={() => void promoteToProject()}>
                         Оформить как проект
                       </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => setProjectProposal(null)}
-                      >
+                      <button type="button" className="secondary" onClick={dismissProjectProposal}>
                         Остаться в чате
                       </button>
                     </div>
@@ -1862,8 +2050,8 @@ export default function Home() {
 
       <nav className="mobile-nav" aria-label="Мобильная навигация">
         <button
-          className={surface === "manager" && !activeProject ? "active" : ""}
-          onClick={newProject}
+          className={surface === "manager" && !activeProject && !activeLocalChatId ? "active" : ""}
+          onClick={newChat}
         >
           <ToolIcon kind="new-chat" />
           <span>Новый чат</span>
@@ -1873,7 +2061,7 @@ export default function Home() {
           onClick={() => {
             if (activeProject) setSurface("manager");
             else if (projects[0]) void openProject(projects[0].id);
-            else newProject();
+            else newChat();
           }}
         >
           <ToolIcon kind="projects" />

@@ -2494,6 +2494,11 @@ textarea:focus-visible {
   min-height: 0;
   padding-top: 0.7rem;
 }
+.sidebar-section {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
 .projects-heading {
   display: flex;
   align-items: center;
@@ -2503,6 +2508,17 @@ textarea:focus-visible {
   color: #343541;
   font-size: 0.76rem;
   font-weight: 550;
+}
+.sidebar-section-toggle {
+  width: 100%;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  text-align: left;
+}
+.sidebar-section-toggle:hover,
+.sidebar-section-toggle:focus-visible {
+  background: #ececf1;
 }
 .projects-heading small {
   display: grid;
@@ -2515,11 +2531,32 @@ textarea:focus-visible {
   background: #ececf1;
   font-size: 0.56rem;
 }
+.section-chevron {
+  display: grid;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #8e8e9f;
+  font-size: 1rem;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 140ms ease;
+}
+.sidebar-section-toggle[aria-expanded="true"] .section-chevron {
+  transform: rotate(90deg);
+}
 .project-list {
-  max-height: min(29vh, 14rem);
+  max-height: min(23vh, 11rem);
   flex: 0 1 auto;
   padding-bottom: 0.55rem;
   border-bottom: 1px solid #e5e5e9;
+}
+.chat-list {
+  max-height: min(20vh, 9rem);
+}
+.project-list.empty-list {
+  overflow-y: hidden;
 }
 .project-glyph {
   display: none;
