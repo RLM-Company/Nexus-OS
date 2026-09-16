@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const disconnectedRuntime = {
   mode: "mock",
@@ -19,7 +19,7 @@ const readyRuntime = {
 } as const;
 
 const mockRuntimeRequest = async (
-  page: Parameters<typeof test>[0]["page"],
+  page: Page,
   runtime: typeof disconnectedRuntime | typeof readyRuntime
 ): Promise<void> => {
   await page.route("**/api/v1/model-runtime", async (route) => {
