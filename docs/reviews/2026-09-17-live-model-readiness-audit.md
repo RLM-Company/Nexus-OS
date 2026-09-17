@@ -74,6 +74,18 @@ Scope: audit `web → API → ManagerService → Model Gateway → streaming →
 
 B4 is in the otherwise allowed web area, but it is intentionally left as an explicit blocker in this change set rather than applying a risky whole-file replacement to the large console component without executable repository verification. The status/readiness UI does not claim that streaming recovery is fully ready while B4 remains.
 
+### B5 — a repository workflow performs a real provider request
+
+- **File:** `.github/workflows/vibecode-connection-test.yml`
+- **Job / exact behavior:** `Verify VibeCode API` loads `MODEL_API_KEY` from GitHub Actions secrets and `Verify streaming model response` calls the configured external provider with `curl`.
+- **Trigger:** manual `workflow_dispatch` and a legacy branch-specific push trigger.
+- **Reproduction:** manually dispatch the workflow with repository variables/secret configured; the job sends a real streaming request to the live provider.
+- **Risk:** this is a paid/network model check rather than a mock/stub test, so it is incompatible with the requested rule that readiness verification must not perform real model calls. It also handles provider error text in CI logs, even though the workflow attempts redaction.
+- **Minimal safe fix:** keep real-provider verification outside ordinary automated test/readiness workflows and require an explicit guarded operator action equivalent to the current `manager:smoke` safety gates; use a local stub for CI verification.
+- **Required test:** CI-safe workflow/test proving provider routing and SSE parsing against a stub with no credential dependency and no external network request.
+
+This branch does not modify CI, so B5 is reported only. The workflow was not dispatched during this audit.
+
 ## Existing mock coverage relevant to this audit
 
 Current main already has deterministic model-gateway/mock coverage for successful streaming, retry/route selection, timeout normalization, no fallback after partial output, circuit behavior, invalid provider sequencing, cancellation, and durable run recovery/reconnect. `apps/web/e2e/b0.1.spec.ts` covers the real local API/SSE mock path and persisted reload behavior; `apps/web/e2e/manager-console-races.spec.ts` covers stream-delta deduplication and restoration of failed persisted requests.
@@ -82,4 +94,4 @@ The new `apps/web/e2e/model-status.spec.ts` adds the safe configuration/error su
 
 ## Live-request safety
 
-No command in this audit performs a provider request. The current guarded `pnpm manager:smoke` remains the only documented live smoke and requires explicit operator authorization before exactly two paid model requests. It already rejects mock mode, enabled mock fallback, missing credential, non-loopback targets, and active Emergency Stop. This audit did **not** run it.
+No command in this audit performs a provider request. The current guarded `pnpm manager:smoke` remains the only documented live smoke and requires explicit operator authorization before exactly two paid model requests. It already rejects mock mode, enabled mock fallback, missing credential, non-loopback targets, and active Emergency Stop. This audit did **not** run it, and `.github/workflows/vibecode-connection-test.yml` was not dispatched.
