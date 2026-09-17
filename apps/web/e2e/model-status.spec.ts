@@ -1,23 +1,21 @@
 import { expect, test, type Page } from "@playwright/test";
 
 type RuntimeOverrides = Partial<{
-  mode: string;
+  mode: "mock" | "openai-compatible" | "anthropic-compatible";
   provider: string;
   model: string;
   credential_configured: boolean;
   fallback_to_mock: boolean;
-  registry_version: string;
-  updated_at: string;
+  registry_version: string | null;
 }>;
 
 const runtime = (overrides: RuntimeOverrides = {}) => ({
-  mode: "mock",
+  mode: "mock" as const,
   provider: "mock",
   model: "manager-b0.1",
   credential_configured: false,
   fallback_to_mock: false,
-  registry_version: "test-registry",
-  updated_at: "2026-09-17T20:00:00.000Z",
+  registry_version: null,
   ...overrides
 });
 
@@ -43,6 +41,7 @@ test("shows mock mode without exposing a credential", async ({ page }) => {
   await expect(detail(page, "Provider")).toContainText("mock");
   await expect(detail(page, "Credential configured")).toContainText("Нет");
   await expect(detail(page, "Mock fallback разрешён")).toContainText("Нет");
+  await expect(detail(page, "Registry version")).toContainText("—");
   await expect(page.getByRole("link", { name: "Локальная инструкция настройки" })).toHaveAttribute(
     "href",
     "/live-model-setup.md"
@@ -51,11 +50,12 @@ test("shows mock mode without exposing a credential", async ({ page }) => {
 
 test("shows a fail-closed live route as configured", async ({ page }) => {
   await fulfillRuntime(page, {
-    mode: "external",
-    provider: "openai-compatible",
+    mode: "openai-compatible",
+    provider: "vibecode",
     model: "gpt-5.5",
     credential_configured: true,
-    fallback_to_mock: false
+    fallback_to_mock: false,
+    registry_version: "test-registry"
   });
   await page.goto("/model-status");
 
@@ -67,11 +67,12 @@ test("shows a fail-closed live route as configured", async ({ page }) => {
 
 test("does not call live configured while automatic mock fallback is enabled", async ({ page }) => {
   await fulfillRuntime(page, {
-    mode: "external",
-    provider: "openai-compatible",
+    mode: "openai-compatible",
+    provider: "vibecode",
     model: "gpt-5.5",
     credential_configured: true,
-    fallback_to_mock: true
+    fallback_to_mock: true,
+    registry_version: "test-registry"
   });
   await page.goto("/model-status");
 
@@ -83,11 +84,12 @@ test("does not call live configured while automatic mock fallback is enabled", a
 
 test("shows a live provider as not configured when the key is absent", async ({ page }) => {
   await fulfillRuntime(page, {
-    mode: "external",
-    provider: "openai-compatible",
+    mode: "openai-compatible",
+    provider: "vibecode",
     model: "gpt-5.5",
     credential_configured: false,
-    fallback_to_mock: false
+    fallback_to_mock: false,
+    registry_version: "test-registry"
   });
   await page.goto("/model-status");
 
@@ -165,10 +167,11 @@ test("retry recovers after a temporary server failure", async ({ page }) => {
       contentType: "application/json",
       body: JSON.stringify(
         runtime({
-          mode: "external",
-          provider: "openai-compatible",
+          mode: "openai-compatible",
+          provider: "vibecode",
           credential_configured: true,
-          fallback_to_mock: false
+          fallback_to_mock: false,
+          registry_version: "test-registry"
         })
       )
     });
@@ -184,10 +187,11 @@ test("retry recovers after a temporary server failure", async ({ page }) => {
 
 test("shows offline state and refreshes automatically after reconnect", async ({ page, context }) => {
   await fulfillRuntime(page, {
-    mode: "external",
-    provider: "openai-compatible",
+    mode: "openai-compatible",
+    provider: "vibecode",
     credential_configured: true,
-    fallback_to_mock: false
+    fallback_to_mock: false,
+    registry_version: "test-registry"
   });
   await page.goto("/model-status");
   await expect(page.getByText("Live-провайдер настроен")).toBeVisible();
