@@ -87,7 +87,9 @@ test("keeps the mobile navigation scrollable while the composer remains usable",
 
   const canScroll = await mobileNav.evaluate((node) => node.scrollWidth > node.clientWidth);
   expect(canScroll).toBe(true);
-  await mobileNav.evaluate((node) => node.scrollTo({ left: node.scrollWidth, behavior: "instant" }));
+  await mobileNav.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+  });
   await expect.poll(async () => mobileNav.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
 
   await composer.fill("Проверка мобильного composer");
