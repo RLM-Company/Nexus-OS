@@ -9,6 +9,11 @@ type RuntimeOverrides = Partial<{
   registry_version: string | null;
 }>;
 
+type OperationsOverrides = Partial<{
+  process_stop: Record<string, unknown> | null;
+  active_project_stops: number;
+}>;
+
 const runtime = (overrides: RuntimeOverrides = {}) => ({
   mode: "mock" as const,
   provider: "mock",
@@ -16,6 +21,12 @@ const runtime = (overrides: RuntimeOverrides = {}) => ({
   credential_configured: false,
   fallback_to_mock: false,
   registry_version: null,
+  ...overrides
+});
+
+const operations = (overrides: OperationsOverrides = {}) => ({
+  process_stop: null,
+  active_project_stops: 0,
   ...overrides
 });
 
@@ -29,11 +40,30 @@ const fulfillRuntime = async (page: Page, overrides: RuntimeOverrides = {}) => {
   });
 };
 
+const fulfillOperations = async (page: Page, overrides: OperationsOverrides = {}) => {
+  await page.route("**/api/v1/operations/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(operations(overrides))
+    });
+  });
+};
+
+const fulfillSafeStatus = async (
+  page: Page,
+  runtimeOverrides: RuntimeOverrides = {},
+  operationsOverrides: OperationsOverrides = {}
+) => {
+  await fulfillRuntime(page, runtimeOverrides);
+  await fulfillOperations(page, operationsOverrides);
+};
+
 const detail = (page: Page, label: string) =>
   page.locator("div").filter({ has: page.locator("dt", { hasText: label }) }).last();
 
 test("shows mock mode without exposing a credential", async ({ page }) => {
-  await fulfillRuntime(page);
+  await fulfillSafeStatus(page);
   await page.goto("/model-status");
 
   await expect(page.getByText("Mock-режим активен")).toBeVisible();
@@ -41,6 +71,8 @@ test("shows mock mode without exposing a credential", async ({ page }) => {
   await expect(detail(page, "Provider")).toContainText("mock");
   await expect(detail(page, "Credential configured")).toContainText("Нет");
   await expect(detail(page, "Mock fallback разрешён")).toContainText("Нет");
+  await expect(detail(page, "Process Emergency Stop активен")).toContainText("Нет");
+  await expect(detail(page, "Emergency Stop clear")).toContainText("Да");
   await expect(detail(page, "Registry version")).toContainText("—");
   await expect(page.getByRole("link", { name: "Локальная инструкция настройки" })).toHaveAttribute(
     "href",
@@ -49,7 +81,7 @@ test("shows mock mode without exposing a credential", async ({ page }) => {
 });
 
 test("shows a fail-closed live route as configured", async ({ page }) => {
-  await fulfillRuntime(page, {
+  await fulfillSafeStatus(page, {
     mode: "openai-compatible",
     provider: "vibecode",
     model: "gpt-5.5",
@@ -63,10 +95,11 @@ test("shows a fail-closed live route as configured", async ({ page }) => {
   await expect(detail(page, "Режим")).toContainText("Live");
   await expect(detail(page, "Credential configured")).toContainText("Да");
   await expect(detail(page, "Fail-closed route")).toContainText("Да");
+  await expect(detail(page, "Emergency Stop clear")).toContainText("Да");
 });
 
 test("does not call live configured while automatic mock fallback is enabled", async ({ page }) => {
-  await fulfillRuntime(page, {
+  await fulfillSafeStatus(page, {
     mode: "openai-compatible",
     provider: "vibecode",
     model: "gpt-5.5",
@@ -83,7 +116,7 @@ test("does not call live configured while automatic mock fallback is enabled", a
 });
 
 test("shows a live provider as not configured when the key is absent", async ({ page }) => {
-  await fulfillRuntime(page, {
+  await fulfillSafeStatus(page, {
     mode: "openai-compatible",
     provider: "vibecode",
     model: "gpt-5.5",
@@ -97,6 +130,31 @@ test("shows a live provider as not configured when the key is absent", async ({ 
   await expect(detail(page, "Credential configured")).toContainText("Нет");
 });
 
+test("blocks live readiness while an Emergency Stop is active", async ({ page }) => {
+  await fulfillSafeStatus(
+    page,
+    {
+      mode: "openai-compatible",
+      provider: "vibecode",
+      model: "gpt-5.5",
+      credential_configured: true,
+      fallback_to_mock: false,
+      registry_version: "test-registry"
+    },
+    {
+      process_stop: { scope: "process" },
+      active_project_stops: 1
+    }
+  );
+  await page.goto("/model-status");
+
+  await expect(page.getByText("Live остановлен Emergency Stop")).toBeVisible();
+  await expect(detail(page, "Process Emergency Stop активен")).toContainText("Да");
+  await expect(detail(page, "Активных project stops")).toContainText("1");
+  await expect(detail(page, "Emergency Stop clear")).toContainText("Нет");
+  await expect(page.getByText("Live-провайдер настроен")).toHaveCount(0);
+});
+
 for (const scenario of [
   { status: 401, title: "Требуется авторизация" },
   { status: 403, title: "Доступ запрещён" },
@@ -104,6 +162,7 @@ for (const scenario of [
   { status: 503, title: "Локальный API временно недоступен" }
 ]) {
   test(`shows a safe ${scenario.status} status without upstream details`, async ({ page }) => {
+    await fulfillOperations(page);
     await page.route("**/api/v1/model-runtime", async (route) => {
       await route.fulfill({
         status: scenario.status,
@@ -123,7 +182,24 @@ for (const scenario of [
   });
 }
 
+test("does not surface internal details from an operations status failure", async ({ page }) => {
+  await fulfillRuntime(page);
+  await page.route("**/api/v1/operations/status", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "INTERNAL_OPERATIONS_SENTINEL" })
+    });
+  });
+
+  await page.goto("/model-status");
+
+  await expect(page.getByText("Локальный API временно недоступен")).toBeVisible();
+  await expect(page.getByText("INTERNAL_OPERATIONS_SENTINEL")).toHaveCount(0);
+});
+
 test("shows a safe error for malformed status payloads", async ({ page }) => {
+  await fulfillOperations(page);
   await page.route("**/api/v1/model-runtime", async (route) => {
     await route.fulfill({
       status: 200,
@@ -138,14 +214,39 @@ test("shows a safe error for malformed status payloads", async ({ page }) => {
   await expect(page.getByText("INTERNAL_RESPONSE_SENTINEL")).toHaveCount(0);
 });
 
+test("rejects malformed Emergency Stop status instead of assuming live is safe", async ({ page }) => {
+  await fulfillRuntime(page, {
+    mode: "openai-compatible",
+    provider: "vibecode",
+    credential_configured: true,
+    fallback_to_mock: false,
+    registry_version: "test-registry"
+  });
+  await page.route("**/api/v1/operations/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ active_project_stops: "unknown" })
+    });
+  });
+
+  await page.goto("/model-status");
+
+  await expect(page.getByText("Получен неожиданный ответ")).toBeVisible();
+  await expect(page.getByText("Live-провайдер настроен")).toHaveCount(0);
+});
+
 test("times out locally without surfacing a delayed response body", async ({ page }) => {
+  await fulfillOperations(page);
   await page.route("**/api/v1/model-runtime", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 5_500));
-    await route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "INTERNAL_RESPONSE_SENTINEL"
-    });
+    await route
+      .fulfill({
+        status: 500,
+        contentType: "text/plain",
+        body: "INTERNAL_RESPONSE_SENTINEL"
+      })
+      .catch(() => undefined);
   });
 
   await page.goto("/model-status");
@@ -156,6 +257,7 @@ test("times out locally without surfacing a delayed response body", async ({ pag
 
 test("retry recovers after a temporary server failure", async ({ page }) => {
   let attempts = 0;
+  await fulfillOperations(page);
   await page.route("**/api/v1/model-runtime", async (route) => {
     attempts += 1;
     if (attempts === 1) {
@@ -186,7 +288,7 @@ test("retry recovers after a temporary server failure", async ({ page }) => {
 });
 
 test("shows offline state and refreshes automatically after reconnect", async ({ page, context }) => {
-  await fulfillRuntime(page, {
+  await fulfillSafeStatus(page, {
     mode: "openai-compatible",
     provider: "vibecode",
     credential_configured: true,
