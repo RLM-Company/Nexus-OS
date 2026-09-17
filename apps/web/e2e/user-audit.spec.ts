@@ -84,8 +84,8 @@ const longProjectHistory = Array.from({ length: 24 }, (_, index) => ({
 const waitForProjectList = async (page: Page): Promise<void> => {
   await expect(
     page
-      .getByRole("region", { name: "Быстрый выбор чата или проекта" })
-      .getByRole("button", { name: auditProject.title })
+      .locator(".mobile-project-strip")
+      .getByRole("button", { name: auditProject.title, exact: true })
   ).toBeVisible();
 };
 
