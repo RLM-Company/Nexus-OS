@@ -10,7 +10,7 @@ Scope: audit `web → API → ManagerService → Model Gateway → streaming →
 2. **API** composes `ManagerService`, `ModelGateway`, persistence, runtime stop state, and the SSE coordinator. The public model-runtime status exposes provider/model plus `credential_configured` and `fallback_to_mock`; it does not expose the key.
 3. **ManagerService** forwards model requests through the injected gateway and maps gateway events into durable assistant-message/run state.
 4. **Model Gateway** selects a registry-approved route, applies timeout/retry/circuit/emergency-stop logic, normalizes provider failures, and prevents fallback after partial output.
-5. **OpenAI-compatible adapter** parses provider SSE and does not surface raw non-2xx response bodies or headers through the gateway contract.
+5. **Compatible adapters** parse provider SSE. Non-2xx responses are reduced to normalized gateway failures rather than returning raw HTTP bodies/headers to the web client.
 6. **Web streaming** consumes normalized run events. Existing reload/reconnect tests cover durable recovery, but the explicit `EventSource.onerror` path still has a recovery gap documented below.
 
 ## Configuration findings
@@ -18,7 +18,8 @@ Scope: audit `web → API → ManagerService → Model Gateway → streaming →
 - `MODEL_PROVIDER`: defaults to `mock`. External modes are schema-limited to the supported compatible protocols.
 - `MODEL_PROVIDER_ID`: explicit provider identity used for registry routing; external runtime currently defaults to `vibecode` when omitted.
 - `MODEL_NAME`: required for external providers; the safe status endpoint exposes the configured model name but no secret.
-- `MODEL_API_KEY`: required by server config for external mode. `loadServerConfig()` reduces it to `modelApiKeyConfigured: Boolean(raw.MODEL_API_KEY)` for status use. This audit did not read or print its value.
+- `MODEL_API_KEY`: required by server config for external mode. `loadServerConfig()` reduces it to `modelApiKeyConfigured: Boolean(raw.MODEL_API_KEY)` for status use. This audit did not read or print its value. Existing config tests also verify that the concrete key value does not survive serialization of `ServerConfig`.
+- missing key: external server configuration fails closed before runtime composition (`Invalid server configuration: /MODEL_API_KEY`).
 - mock/live: runtime composition is explicit, but current fallback default is unsafe for the requested fail-closed contract; see blocker B1.
 - Emergency Stop: Model Gateway and guarded live smoke retain the existing stop checks. This branch does not weaken or bypass them.
 
@@ -37,7 +38,7 @@ Scope: audit `web → API → ManagerService → Model Gateway → streaming →
 
 - **File:** `packages/config/src/index.ts`
 - **Function / exact code:** `loadServerConfig()` → `modelFallbackToMock: raw.MODEL_FALLBACK_TO_MOCK !== "false"`.
-- **Runtime consumer:** `apps/api/src/model-runtime.ts`, `buildModelRuntime()` passes the mock adapter as `fallbackProvider` when `config.modelFallbackToMock` is true.
+- **Runtime consumer:** `apps/api/src/model-runtime.ts`, `buildModelRuntime()` passes `fallbackAllowed: config.modelFallbackToMock` into Chat/Manager services and adds `mock` as a gateway fallback route when the flag is true.
 - **Reproduction:** start an external provider configuration with all required external fields present but omit `MODEL_FALLBACK_TO_MOCK`; inspect `/api/v1/model-runtime`. The resulting config permits fallback even though the operator did not explicitly opt in.
 - **Risk:** a live failure can silently produce a mock answer before any partial provider output. That violates the requested “no automatic fallback to mock” and weakens fail-closed semantics.
 - **Minimal safe fix:** change the config default to false and enable mock fallback only on explicit opt-in (`raw.MODEL_FALLBACK_TO_MOCK === "true"`). Keep the runtime composition otherwise unchanged.
@@ -54,10 +55,9 @@ Scope: audit `web → API → ManagerService → Model Gateway → streaming →
 
 ### B3 — web cannot safely distinguish provider 401/403/429/5xx from the stream contract
 
-- **File:** `packages/model-gateway/src/openai-compatible-adapter.ts`
-- **Function / exact behavior:** `OpenAICompatibleAdapter.stream()` converts non-2xx responses to `GatewayRunError("PROVIDER_ERROR", ..., "Provider request failed with status ...", retryable)`.
-- **Contract:** `packages/model-gateway/src/types.ts` exposes the coarse `PROVIDER_ERROR` gateway code; the run SSE contract carries only normalized error code/state, not a safe provider-status category.
-- **Reproduction:** stub upstream responses 401, 403, 429, and 5xx. Downstream web receives the same coarse provider failure family (retryability differs, but that is insufficient to present the requested distinct safe messages without guessing).
+- **Files:** `packages/model-gateway/src/openai-compatible-adapter.ts`, `packages/model-gateway/src/anthropic-compatible-adapter.ts`, and `packages/model-gateway/src/types.ts`.
+- **Function / exact behavior:** compatible adapter `stream()` functions convert non-2xx responses to coarse `GatewayRunError("PROVIDER_ERROR", ...)`; retryability changes for timeout/rate-limit/5xx, but the safe downstream code remains coarse.
+- **Reproduction:** stub upstream responses 401, 403, 429, and 5xx. Downstream web receives the same provider failure family, which is insufficient for the requested distinct safe messages without guessing.
 - **Risk:** the web cannot honestly label provider authentication, forbidden, rate-limit, and upstream failures separately. Rendering raw upstream data instead would create a disclosure risk.
 - **Minimal safe fix:** add non-sensitive categorical error codes such as provider-auth, provider-forbidden, provider-rate-limit, provider-upstream (names to follow the existing contract conventions) while continuing to discard upstream bodies/headers.
 - **Required test:** one stub per upstream status proving the safe category is preserved through gateway → Manager/API → SSE and that response body/header sentinels never appear in the client payload.
@@ -86,11 +86,29 @@ B4 is in the otherwise allowed web area, but it is intentionally left as an expl
 
 This branch does not modify CI, so B5 is reported only. The workflow was not dispatched during this audit.
 
+### B6 — Anthropic streaming error text can enter internal logs
+
+- **Files:** `packages/model-gateway/src/anthropic-compatible-adapter.ts` and `apps/api/src/manager-background-run-coordinator.ts`.
+- **Functions / exact behavior:** `AnthropicCompatibleAdapter.stream()` uses `event.error?.message` as the `GatewayRunError` message for provider SSE `error` events. `ManagerBackgroundRunCoordinator.#execute()` logs the resulting `gatewayError` object on provider failure.
+- **Reproduction:** return an Anthropic-compatible SSE `error` event whose message contains a unique internal sentinel; observe the server failure log.
+- **Risk:** provider-controlled response text can be retained in internal logs. The current web path exposes only the normalized error code, but log-level leakage is unnecessary and makes secret/internal-error hygiene weaker.
+- **Minimal safe fix:** replace provider-supplied streaming error messages with a fixed normalized message/code before logging; retain only safe metadata such as provider id and retryability.
+- **Required test:** provider SSE error containing body/header/key-like sentinels must yield a safe gateway code and must not place the sentinel in persisted state, SSE payload, or captured logger output.
+
+### B7 — an empty provider stream can be marked completed
+
+- **Files:** `packages/model-gateway/src/openai-compatible-adapter.ts`, `packages/model-gateway/src/anthropic-compatible-adapter.ts`, and `apps/api/src/manager-background-run-coordinator.ts`.
+- **Functions / exact behavior:** both compatible adapter `stream()` implementations emit `response.completed` after consuming the body even when no `text.delta` was produced; the coordinator checks only that a completion event exists, not that the assistant response has content.
+- **Reproduction:** return HTTP 200 with a syntactically valid stream that contains no text delta and then ends normally.
+- **Risk:** a run can be persisted as successful with an empty assistant answer, leaving the user without a useful or explicit failure state.
+- **Minimal safe fix:** track whether user-visible content was produced and fail with a normalized non-sensitive empty-response code (or explicitly define/handle empty success in the contract) before marking the run complete.
+- **Required test:** OpenAI-compatible and Anthropic-compatible empty streams must produce the chosen safe terminal state; web E2E must show a fixed user-safe message and never raw provider data.
+
 ## Existing mock coverage relevant to this audit
 
 Current main already has deterministic model-gateway/mock coverage for successful streaming, retry/route selection, timeout normalization, no fallback after partial output, circuit behavior, invalid provider sequencing, cancellation, and durable run recovery/reconnect. `apps/web/e2e/b0.1.spec.ts` covers the real local API/SSE mock path and persisted reload behavior; `apps/web/e2e/manager-console-races.spec.ts` covers stream-delta deduplication and restoration of failed persisted requests.
 
-The new `apps/web/e2e/model-status.spec.ts` adds the safe configuration/error surface. B3/B4 prevent honest end-to-end coverage of every requested provider-status/stream-break case without changing the corresponding contract/recovery implementation, so those cases are explicitly blocker tests to add with the fixes rather than tests that would encode incorrect behavior.
+The new `apps/web/e2e/model-status.spec.ts` adds the safe configuration/error surface. B3/B4/B7 prevent honest end-to-end coverage of every requested provider-status/stream-break/empty-response case without changing the corresponding contract/recovery implementation, so those cases are explicitly blocker tests to add with the fixes rather than tests that would encode incorrect behavior.
 
 ## Live-request safety
 
