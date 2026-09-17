@@ -44,6 +44,16 @@ test("shows the disconnected model state from model runtime", async ({ page }) =
   await expect(page.getByTestId("runtime-fallback")).toHaveText("Нет");
 });
 
+test("opens model connection details from the console status", async ({ page }) => {
+  await mockRuntimeRequest(page, disconnectedRuntime);
+  await page.goto("/");
+
+  await page.getByRole("link", { name: "Модель не подключена" }).click();
+
+  await expect(page).toHaveURL(/\/model-status$/);
+  await expect(page.getByRole("heading", { name: "Подключение модели" })).toBeVisible();
+});
+
 test("shows the ready model state when an external credential is configured", async ({ page }) => {
   await mockRuntimeRequest(page, readyRuntime);
   await page.goto("/model-status");

@@ -12,7 +12,7 @@
     "manager:preflight": "node --env-file-if-exists=.env scripts/manager-live-preflight.mjs",
     "dev": "turbo run dev",
     "format": "prettier --write .",
-    "format:check": "prettier --write apps/web/src/app/model-status/page.tsx apps/web/src/app/model-status/model-status.module.css apps/web/e2e/model-status.spec.ts && git diff -- apps/web/src/app/model-status apps/web/e2e/model-status.spec.ts && false",
+    "format:check": "prettier --check .",
     "check:secrets": "node scripts/check-secrets.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",

@@ -1818,10 +1818,14 @@ export default function Home() {
             </h1>
           </div>
           <div className="system-status" aria-label="Статус системы">
-            <span>
+            <Link
+              className="runtime-status-link"
+              href="/model-status"
+              title="Открыть состояние подключения модели"
+            >
               <i className="status-dot" />
               {runtime && runtime.mode !== "mock" ? "Провайдер настроен" : "Модель не подключена"}
-            </span>
+            </Link>
             <span className="privacy-badge">
               <ShieldIcon />
               {runtime && runtime.mode !== "mock" ? "Внешний провайдер" : "Локальные данные"}

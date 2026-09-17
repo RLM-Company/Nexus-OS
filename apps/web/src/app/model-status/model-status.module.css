@@ -3,8 +3,7 @@
   min-height: 100dvh;
   padding: clamp(1.25rem, 3vw, 2.5rem);
   background:
-    radial-gradient(circle at top right, rgba(109, 91, 208, 0.08), transparent 34rem),
-    var(--bg);
+    radial-gradient(circle at top right, rgba(109, 91, 208, 0.08), transparent 34rem), var(--bg);
 }
 
 .shell {

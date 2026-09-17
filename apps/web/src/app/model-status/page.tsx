@@ -14,9 +14,7 @@ type ModelRuntimeStatus = {
 };
 
 type LoadState =
-  | { kind: "loading" }
-  | { kind: "loaded"; runtime: ModelRuntimeStatus }
-  | { kind: "error" };
+  { kind: "loading" } | { kind: "loaded"; runtime: ModelRuntimeStatus } | { kind: "error" };
 
 const MODE_LABELS: Record<ModelRuntimeStatus["mode"], string> = {
   mock: "Mock",
