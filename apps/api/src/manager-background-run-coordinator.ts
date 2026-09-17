@@ -185,6 +185,12 @@ export class ManagerBackgroundRunCoordinator {
       let completed: Extract<ModelGatewayStreamEvent, { type: "response.completed" }> | undefined;
 
       for await (const event of this.#modelGateway.stream(modelRequest, controller.signal)) {
+        if (controller.signal.reason instanceof EmergencyStopActivatedError) {
+          throw controller.signal.reason;
+        }
+        if (controller.signal.aborted) {
+          throw controller.signal.reason;
+        }
         if (event.type === "route.selected") {
           this.#runtimeMetrics.routeSelected();
           this.#logger?.info(

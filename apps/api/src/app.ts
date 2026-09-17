@@ -173,6 +173,7 @@ export interface AppDependencies {
   closeDatabase?: () => void;
   runtimeMetrics?: RuntimeMetrics;
   managerRunExecutionMode?: "stream" | "background";
+  generalChatRunExecutionMode?: "stream" | "background";
   now?: () => string;
 }
 
@@ -973,6 +974,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       chat: dependencies.chat,
       runtimeMetrics,
       activeRuns,
+      runObservers,
+      ...(dependencies.generalChatRunExecutionMode
+        ? { runExecutionMode: dependencies.generalChatRunExecutionMode }
+        : {}),
       identityFor,
       ...(dependencies.emergencyStopStore
         ? { emergencyStopStore: dependencies.emergencyStopStore }
