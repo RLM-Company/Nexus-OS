@@ -40,7 +40,11 @@ const installShellFixture = async (
         fallback_to_mock: false
       };
     } else if (path === `/api/v1/projects/${auditProject.id}`) {
-      body = { project: auditProject, chat_id: "audit-chat", messages: projectMessages };
+      body = {
+        project: auditProject,
+        chat_id: "audit-chat",
+        messages: projectMessages
+      };
     } else if (path.endsWith("/autonomy-profile")) {
       body = { profile: { base_level: "A0", version: 1 } };
     } else if (path.endsWith("/manager-demo-runs")) {
@@ -54,7 +58,11 @@ const installShellFixture = async (
       return;
     }
 
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body)
+    });
   });
 };
 
@@ -73,10 +81,19 @@ const longProjectHistory = Array.from({ length: 24 }, (_, index) => ({
   updated_at: "2026-09-18T00:00:00.000Z"
 }));
 
+const waitForProjectList = async (page: Page): Promise<void> => {
+  await expect(
+    page
+      .getByRole("region", { name: "Быстрый выбор чата или проекта" })
+      .getByRole("button", { name: auditProject.title })
+  ).toBeVisible();
+};
+
 test("reaches every primary workspace from the phone navigation", async ({ page }) => {
   await installShellFixture(page, { includeProject: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  await waitForProjectList(page);
 
   const mobileNav = page.getByRole("navigation", { name: "Мобильная навигация" });
   await expect(mobileNav).toBeVisible();
@@ -84,7 +101,15 @@ test("reaches every primary workspace from the phone navigation", async ({ page 
   await mobileNav.getByRole("button", { name: "Проекты", exact: true }).click();
   await expect(page.locator(".topbar h1")).toHaveText("Audit Project");
 
-  for (const label of ["Skills", "Code", "Work", "Изображения", "Видео", "Sound", "Мультиагент"]) {
+  for (const label of [
+    "Skills",
+    "Code",
+    "Work",
+    "Изображения",
+    "Видео",
+    "Sound",
+    "Мультиагент"
+  ]) {
     await mobileNav.getByRole("button", { name: label, exact: true }).click();
     await expect(page.locator(".topbar h1")).toHaveText(label);
   }
@@ -94,9 +119,13 @@ test("reaches every primary workspace from the phone navigation", async ({ page 
 });
 
 test("keeps mobile navigation, composer and long-chat scrolling usable", async ({ page }) => {
-  await installShellFixture(page, { includeProject: true, projectMessages: longProjectHistory });
+  await installShellFixture(page, {
+    includeProject: true,
+    projectMessages: longProjectHistory
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  await waitForProjectList(page);
 
   const mobileNav = page.getByRole("navigation", { name: "Мобильная навигация" });
   await mobileNav.getByRole("button", { name: "Проекты", exact: true }).click();
@@ -177,10 +206,15 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   await installShellFixture(page);
   await page.goto("/");
 
-  const newChat = page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true });
+  const newChat = page.locator(".sidebar").getByRole("button", {
+    name: "Новый чат",
+    exact: true
+  });
   const chats = page.locator(".sidebar").getByRole("button", { name: /Чаты/ });
   const projects = page.locator(".sidebar").getByRole("button", { name: /Проекты/ });
-  const skills = page.locator(".sidebar-tools").getByRole("button", { name: "Skills", exact: true });
+  const skills = page
+    .locator(".sidebar-tools")
+    .getByRole("button", { name: "Skills", exact: true });
 
   await newChat.focus();
   await page.keyboard.press("Tab");
