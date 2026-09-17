@@ -82,11 +82,8 @@ const longProjectHistory = Array.from({ length: 24 }, (_, index) => ({
 }));
 
 const waitForProjectList = async (page: Page): Promise<void> => {
-  await expect(
-    page
-      .locator(".mobile-project-strip")
-      .getByRole("button", { name: auditProject.title, exact: true })
-  ).toBeVisible();
+  const projectButton = page.locator(".mobile-project-strip button").first();
+  await expect(projectButton).toHaveText(auditProject.title);
 };
 
 test("reaches every primary workspace from the phone navigation", async ({ page }) => {
@@ -101,15 +98,7 @@ test("reaches every primary workspace from the phone navigation", async ({ page 
   await mobileNav.getByRole("button", { name: "Проекты", exact: true }).click();
   await expect(page.locator(".topbar h1")).toHaveText("Audit Project");
 
-  for (const label of [
-    "Skills",
-    "Code",
-    "Work",
-    "Изображения",
-    "Видео",
-    "Sound",
-    "Мультиагент"
-  ]) {
+  for (const label of ["Skills", "Code", "Work", "Изображения", "Видео", "Sound", "Мультиагент"]) {
     await mobileNav.getByRole("button", { name: label, exact: true }).click();
     await expect(page.locator(".topbar h1")).toHaveText(label);
   }
@@ -208,15 +197,14 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   await installShellFixture(page);
   await page.goto("/");
 
-  const newChat = page.locator(".sidebar").getByRole("button", {
-    name: "Новый чат",
+  const sidebar = page.locator(".sidebar");
+  const newChat = sidebar.getByRole("button", { name: "Новый чат" });
+  const chats = sidebar.getByRole("button", { name: /Чаты/ });
+  const projects = sidebar.getByRole("button", { name: /Проекты/ });
+  const skills = page.locator(".sidebar-tools").getByRole("button", {
+    name: "Skills",
     exact: true
   });
-  const chats = page.locator(".sidebar").getByRole("button", { name: /Чаты/ });
-  const projects = page.locator(".sidebar").getByRole("button", { name: /Проекты/ });
-  const skills = page
-    .locator(".sidebar-tools")
-    .getByRole("button", { name: "Skills", exact: true });
 
   await newChat.focus();
   await page.keyboard.press("Tab");
