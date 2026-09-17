@@ -130,6 +130,29 @@
   line-height: 1.5;
 }
 
+.retryButton {
+  min-height: 2.4rem;
+  margin-top: 0.8rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  color: var(--text);
+  background: var(--panel);
+  font-weight: 700;
+}
+
+.retryButton:hover,
+.retryButton:focus-visible {
+  border-color: var(--accent-strong);
+  background: var(--surface-hover);
+}
+
+.retryButton:focus-visible,
+.backLink:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
 .details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
