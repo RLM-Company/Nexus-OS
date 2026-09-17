@@ -13,6 +13,11 @@ type ModelRuntimeStatus = {
   registry_version: string | null;
 };
 
+type EmergencyStopStatus = {
+  processStopActive: boolean;
+  activeProjectStops: number;
+};
+
 type SafeStatusErrorKind =
   | "offline"
   | "timeout"
@@ -31,7 +36,7 @@ type SafeStatusError = {
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "loaded"; runtime: ModelRuntimeStatus }
+  | { kind: "loaded"; runtime: ModelRuntimeStatus; emergency: EmergencyStopStatus }
   | { kind: "error"; error: SafeStatusError };
 
 const REQUEST_TIMEOUT_MS = 5_000;
@@ -92,6 +97,24 @@ const isModelRuntimeStatus = (value: unknown): value is ModelRuntimeStatus => {
     typeof candidate.fallback_to_mock === "boolean" &&
     (typeof candidate.registry_version === "string" || candidate.registry_version === null)
   );
+};
+
+const parseEmergencyStopStatus = (value: unknown): EmergencyStopStatus | null => {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  const processStop = candidate.process_stop;
+  const activeProjectStops = candidate.active_project_stops;
+  if (
+    !(processStop === null || (typeof processStop === "object" && processStop !== null)) ||
+    !Number.isInteger(activeProjectStops) ||
+    (activeProjectStops as number) < 0
+  ) {
+    return null;
+  }
+  return {
+    processStopActive: processStop !== null,
+    activeProjectStops: activeProjectStops as number
+  };
 };
 
 const safeErrorForStatus = (status: number): SafeStatusError => {
@@ -158,29 +181,38 @@ export default function ModelStatusPage() {
     const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch("/api/v1/model-runtime", {
-        cache: "no-store",
-        signal: controller.signal
-      });
-      if (!response.ok) {
-        setState({ kind: "error", error: safeErrorForStatus(response.status) });
+      const [runtimeResponse, operationsResponse] = await Promise.all([
+        fetch("/api/v1/model-runtime", { cache: "no-store", signal: controller.signal }),
+        fetch("/api/v1/operations/status", { cache: "no-store", signal: controller.signal })
+      ]);
+      if (!runtimeResponse.ok) {
+        setState({ kind: "error", error: safeErrorForStatus(runtimeResponse.status) });
+        return;
+      }
+      if (!operationsResponse.ok) {
+        setState({ kind: "error", error: safeErrorForStatus(operationsResponse.status) });
         return;
       }
 
-      let payload: unknown;
+      let runtimePayload: unknown;
+      let operationsPayload: unknown;
       try {
-        payload = await response.json();
+        [runtimePayload, operationsPayload] = await Promise.all([
+          runtimeResponse.json(),
+          operationsResponse.json()
+        ]);
       } catch {
         setState({ kind: "error", error: SAFE_ERRORS.invalid });
         return;
       }
 
-      if (!isModelRuntimeStatus(payload)) {
+      const emergency = parseEmergencyStopStatus(operationsPayload);
+      if (!isModelRuntimeStatus(runtimePayload) || !emergency) {
         setState({ kind: "error", error: SAFE_ERRORS.invalid });
         return;
       }
 
-      setState({ kind: "loaded", runtime: payload });
+      setState({ kind: "loaded", runtime: runtimePayload, emergency });
     } catch {
       const error = controller.signal.aborted
         ? SAFE_ERRORS.timeout
@@ -207,11 +239,16 @@ export default function ModelStatusPage() {
   }, [loadRuntime]);
 
   const runtime = state.kind === "loaded" ? state.runtime : null;
+  const emergency = state.kind === "loaded" ? state.emergency : null;
   const mockMode = runtime?.mode === "mock";
   const externalMode = Boolean(runtime && !mockMode);
   const credentialConfigured = Boolean(runtime?.credential_configured);
   const fallbackBlocked = runtime ? !runtime.fallback_to_mock : false;
-  const liveConfigured = externalMode && credentialConfigured && fallbackBlocked;
+  const emergencyStopClear = Boolean(
+    emergency && !emergency.processStopActive && emergency.activeProjectStops === 0
+  );
+  const liveConfigured =
+    externalMode && credentialConfigured && fallbackBlocked && emergencyStopClear;
 
   return (
     <main className={styles.page}>
@@ -282,6 +319,19 @@ export default function ModelStatusPage() {
                 </p>
               </div>
             </div>
+          ) : !emergencyStopClear ? (
+            <div className={styles.unsafeState}>
+              <span className={styles.statusIcon} aria-hidden="true">
+                !
+              </span>
+              <div>
+                <strong>Live остановлен Emergency Stop</strong>
+                <p>
+                  Активен process/project stop. Не отключайте его ради проверки: сначала разберите
+                  причину и используйте существующий owner-controlled flow.
+                </p>
+              </div>
+            </div>
           ) : (
             <div className={styles.readyState}>
               <span className={styles.statusIcon} aria-hidden="true">
@@ -290,14 +340,14 @@ export default function ModelStatusPage() {
               <div>
                 <strong>Live-провайдер настроен</strong>
                 <p>
-                  Credential присутствует, выбран внешний runtime, автоматический fallback на mock
-                  запрещён. Перед первым live-вызовом выполните локальный preflight.
+                  Credential присутствует, выбран внешний runtime, mock fallback запрещён и
+                  Emergency Stop не активен. Перед первым live-вызовом выполните локальный preflight.
                 </p>
               </div>
             </div>
           )}
 
-          {runtime ? (
+          {runtime && emergency ? (
             <>
               <dl className={styles.details}>
                 <DetailItem label="Режим" value={mockMode ? "Mock" : "Live"} />
@@ -319,6 +369,23 @@ export default function ModelStatusPage() {
                   <dt>Fail-closed route</dt>
                   <dd>
                     <BooleanValue value={!runtime.fallback_to_mock} />
+                  </dd>
+                </div>
+                <div className={styles.detailItem}>
+                  <dt>Process Emergency Stop активен</dt>
+                  <dd>
+                    <BooleanValue value={emergency.processStopActive} positiveWhen={false} />
+                  </dd>
+                </div>
+                <DetailItem
+                  label="Активных project stops"
+                  value={String(emergency.activeProjectStops)}
+                  tone={emergency.activeProjectStops === 0 ? "positive" : "negative"}
+                />
+                <div className={styles.detailItem}>
+                  <dt>Emergency Stop clear</dt>
+                  <dd>
+                    <BooleanValue value={emergencyStopClear} />
                   </dd>
                 </div>
                 <DetailItem label="Registry version" value={runtime.registry_version ?? "—"} />
