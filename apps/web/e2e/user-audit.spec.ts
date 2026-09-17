@@ -150,7 +150,9 @@ test("keeps mobile navigation, composer and long-chat scrolling usable", async (
   );
 });
 
-test("does not render secret fields returned alongside model runtime metadata", async ({ page }) => {
+test("does not render secret fields returned alongside model runtime metadata", async ({
+  page
+}) => {
   const secretMarker = "sk-audit-secret-marker";
   await page.route("**/api/v1/model-runtime", async (route) => {
     await route.fulfill({
