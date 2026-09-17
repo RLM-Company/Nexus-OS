@@ -63,7 +63,8 @@
 .loading,
 .errorState,
 .readyState,
-.disconnectedState {
+.disconnectedState,
+.unsafeState {
   display: flex;
   align-items: flex-start;
   gap: 0.9rem;
@@ -84,7 +85,8 @@
 }
 
 .errorState,
-.disconnectedState {
+.disconnectedState,
+.unsafeState {
   border-bottom: 1px solid var(--line);
   background: rgba(237, 122, 95, 0.07);
 }
@@ -111,12 +113,14 @@
 }
 
 .disconnectedState .statusIcon,
+.unsafeState .statusIcon,
 .errorState .statusIcon {
   color: #a54f3a;
 }
 
 .readyState strong,
 .disconnectedState strong,
+.unsafeState strong,
 .errorState strong {
   display: block;
   font-size: 1.05rem;
@@ -124,6 +128,7 @@
 
 .readyState p,
 .disconnectedState p,
+.unsafeState p,
 .errorState p {
   margin: 0.35rem 0 0;
   color: var(--muted);
@@ -169,6 +174,10 @@
   color: var(--green);
 }
 
+.negativeValue {
+  color: #a54f3a;
+}
+
 .neutralValue {
   color: var(--text);
 }
@@ -179,6 +188,43 @@
   color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.55;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1.5rem 1.5rem;
+}
+
+.actionButton,
+.actionLink {
+  min-height: 2.65rem;
+  padding: 0.7rem 1rem;
+  border-radius: 0.8rem;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 720;
+}
+
+.actionButton {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.actionButton:hover {
+  border-color: var(--accent-strong);
+}
+
+.actionLink {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid transparent;
+  background: var(--accent-strong);
+  color: white;
 }
 
 @keyframes pulse {
@@ -216,13 +262,26 @@
 
   .readyState,
   .disconnectedState,
+  .unsafeState,
   .errorState {
     align-items: flex-start;
   }
 
-  .note {
+  .note,
+  .actions {
     padding-right: 1rem;
     padding-left: 1rem;
+  }
+
+  .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .actionButton,
+  .actionLink {
+    justify-content: center;
+    width: 100%;
   }
 }
 
