@@ -66,7 +66,7 @@ test("shows the ready model state when an external credential is configured", as
   await expect(page.getByTestId("runtime-fallback")).toHaveText("Нет");
 });
 
-test("retries a temporary runtime API failure without exposing internal details", async ({ page }) => {
+test("retries a temporary runtime failure without leaking details", async ({ page }) => {
   let attempts = 0;
   await page.route("**/api/v1/model-runtime", async (route) => {
     attempts += 1;
