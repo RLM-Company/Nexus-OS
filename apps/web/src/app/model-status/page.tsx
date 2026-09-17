@@ -106,14 +106,15 @@ const parseEmergencyStopStatus = (value: unknown): EmergencyStopStatus | null =>
   const activeProjectStops = candidate.active_project_stops;
   if (
     !(processStop === null || (typeof processStop === "object" && processStop !== null)) ||
+    typeof activeProjectStops !== "number" ||
     !Number.isInteger(activeProjectStops) ||
-    (activeProjectStops as number) < 0
+    activeProjectStops < 0
   ) {
     return null;
   }
   return {
     processStopActive: processStop !== null,
-    activeProjectStops: activeProjectStops as number
+    activeProjectStops
   };
 };
 
