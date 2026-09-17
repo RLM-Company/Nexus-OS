@@ -38,7 +38,7 @@ pnpm manager:preflight
 
 Preflight проверяет локальную конфигурацию и runtime status, но не отправляет запрос модели. До исправления известного blocker он сам по себе недостаточен: дополнительно убедитесь, что `/api/v1/model-runtime` сообщает внешний режим, ожидаемый provider, `credential_configured: true` и `fallback_to_mock: false`.
 
-## 4. Запустите web
+## 4. Запустите web и проверьте статус
 
 В отдельном терминале:
 
@@ -54,9 +54,12 @@ pnpm --filter @cosmora/web demo
 - ожидаемый provider/model;
 - `Credential configured: Да`;
 - `Mock fallback разрешён: Нет`;
-- `Fail-closed route: Да`.
+- `Fail-closed route: Да`;
+- `Process Emergency Stop активен: Нет`;
+- `Активных project stops: 0`;
+- `Emergency Stop clear: Да`.
 
-Страница статуса не проверяет валидность ключа и не делает model request.
+Страница статуса не проверяет валидность ключа и не делает model request. Если operations-status недоступен или имеет неожиданный формат, web не считает live готовым.
 
 ## 5. Минимальный live smoke — только вручную
 
@@ -78,6 +81,8 @@ COSMORA_ALLOW_PAID_SMOKE=SEND_TWO_PAID_REQUESTS pnpm manager:smoke
 
 Smoke обязан отказаться от запуска в mock-режиме, при включённом mock fallback, отсутствии credential или активном Emergency Stop. Не используйте эту команду в автоматических тестах.
 
+Не запускайте `.github/workflows/vibecode-connection-test.yml` как readiness-проверку: существующий workflow использует repository secret и выполняет настоящий запрос к внешнему провайдеру. Для этой ветки все автоматические проверки должны оставаться mock/stub-only.
+
 ## 6. Полностью остановите Cosmora
 
 Нажмите `Ctrl+C` во всех терминалах, где запущены API, web или root `pnpm demo`. Убедитесь, что локальные процессы Cosmora больше не слушают порты `3000` и `3100`.
@@ -91,3 +96,5 @@ Smoke обязан отказаться от запуска в mock-режиме
 ## Важное ограничение текущего main
 
 До отдельного backend/config исправления live нельзя считать полностью fail-closed только по результату `pnpm manager:preflight`: текущий preflight сообщает состояние mock fallback, но не завершает проверку ошибкой, когда fallback включён. Поэтому перед live smoke обязательно требуется `fallback_to_mock: false`; guarded `pnpm manager:smoke` это уже проверяет.
+
+Отдельный readiness-аудит также фиксирует незакрытые backend/streaming blockers: безопасную категоризацию provider 401/403/429/5xx, восстановление UI после прямого SSE-обрыва, исключение provider-controlled error text из внутренних логов и обработку пустого provider stream. До их исправления ветку нельзя считать полностью готовой к production-like live использованию.
