@@ -5,7 +5,6 @@ import {
   AgentStudioMutationStore,
   DemoManagerStore,
   EmergencyStopStore,
-  GeneralChatStore,
   IdentityStore,
   openDatabase,
   PolicyStore,
@@ -22,6 +21,8 @@ import {
   StaticIdentityResolver,
   StoredStepUpProofConsumer
 } from "./identity.js";
+import { GeneralChatBackgroundRunCoordinator } from "./general-chat-background-run-coordinator.js";
+import { GeneralChatRuntimeStore } from "./general-chat-runtime-store.js";
 import { ManagerBackgroundRunCoordinator } from "./manager-background-run-coordinator.js";
 import { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
 import { ManagerRuntimeProjectStore } from "./manager-runtime-project-store.js";
@@ -31,7 +32,8 @@ import { RuntimeMetrics } from "./operations.js";
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
 let app: ReturnType<typeof buildApp> | undefined;
-let backgroundCoordinator: ManagerBackgroundRunCoordinator | undefined;
+let managerBackgroundCoordinator: ManagerBackgroundRunCoordinator | undefined;
+let generalChatBackgroundCoordinator: GeneralChatBackgroundRunCoordinator | undefined;
 let shuttingDown = false;
 
 const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
@@ -44,7 +46,10 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     return;
   }
   app.log.info({ signal }, "Shutting down Cosmora API");
-  await backgroundCoordinator?.stop();
+  await Promise.all([
+    managerBackgroundCoordinator?.stop(),
+    generalChatBackgroundCoordinator?.stop()
+  ]);
   await app.close();
   process.exitCode = 0;
 };
@@ -58,7 +63,7 @@ try {
     secretResolver: new EnvironmentSecretResolver()
   });
   const projectStore = new ManagerRuntimeProjectStore(database.sqlite);
-  const generalChatStore = new GeneralChatStore(database.sqlite);
+  const generalChatStore = new GeneralChatRuntimeStore(database.sqlite);
   const demoManagerStore = new DemoManagerStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
@@ -101,12 +106,21 @@ try {
     stepUpProofConsumer: new StoredStepUpProofConsumer(stepUpProofStore),
     runtimeMetrics,
     managerRunExecutionMode: "background",
+    generalChatRunExecutionMode: "background",
     closeDatabase: () => database.close()
   });
-  backgroundCoordinator = new ManagerBackgroundRunCoordinator({
+  managerBackgroundCoordinator = new ManagerBackgroundRunCoordinator({
     store: projectStore,
     modelGateway: modelRuntime.gateway,
     manager: modelRuntime.manager,
+    runtimeMetrics,
+    emergencyStopStore,
+    logger: app.log
+  });
+  generalChatBackgroundCoordinator = new GeneralChatBackgroundRunCoordinator({
+    store: generalChatStore,
+    modelGateway: modelRuntime.gateway,
+    chat: modelRuntime.chat,
     runtimeMetrics,
     emergencyStopStore,
     logger: app.log
@@ -118,9 +132,13 @@ try {
     app.log.warn({ recoveredChatRuns }, "Recovered interrupted ordinary-chat runs after restart");
   }
   await app.listen({ host: config.apiHost, port: config.apiPort });
-  backgroundCoordinator.start();
+  managerBackgroundCoordinator.start();
+  generalChatBackgroundCoordinator.start();
 } catch (error) {
-  await backgroundCoordinator?.stop();
+  await Promise.all([
+    managerBackgroundCoordinator?.stop(),
+    generalChatBackgroundCoordinator?.stop()
+  ]);
   if (app) {
     app.log.error(error, "Failed to start Cosmora API");
     await app.close();

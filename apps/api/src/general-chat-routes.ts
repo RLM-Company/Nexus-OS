@@ -17,7 +17,8 @@ import {
   GeneralChatBusyError,
   type EmergencyStopStore,
   type GeneralChatStore,
-  type StoredGeneralChatMessage
+  type StoredGeneralChatMessage,
+  type StoredGeneralChatRun
 } from "@cosmora/db";
 import {
   GatewayRunError,
@@ -41,6 +42,8 @@ export interface GeneralChatRouteOptions {
   chat: ChatService;
   runtimeMetrics: RuntimeMetrics;
   activeRuns: Map<string, ActiveModelRun>;
+  runObservers: Set<AbortController>;
+  runExecutionMode?: "stream" | "background";
   identityFor(request: FastifyRequest): IdentityContext;
   emergencyStopStore?: EmergencyStopStore;
 }
@@ -108,8 +111,113 @@ const replay = (
   });
 };
 
+const waitForObserverPoll = async (signal: AbortSignal): Promise<void> => {
+  if (signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, 50);
+    timer.unref?.();
+    signal.addEventListener("abort", done, { once: true });
+  });
+};
+
+const observePersistedRun = async (
+  reply: FastifyReply,
+  store: GeneralChatStore,
+  initialRun: StoredGeneralChatRun,
+  ownerId: string,
+  signal: AbortSignal
+): Promise<void> => {
+  let observedMessageId: string | null = null;
+  let sentLength = 0;
+  let sequence = 0;
+
+  const observeMessage = (run: StoredGeneralChatRun, message: StoredGeneralChatMessage): void => {
+    if (observedMessageId !== message.id) {
+      observedMessageId = message.id;
+      sentLength = 0;
+      sequence = 0;
+      sendEvent(reply, {
+        type: "run.started",
+        data: { run_id: run.id, timestamp: run.updated_at }
+      });
+      sendEvent(reply, {
+        type: "message.started",
+        data: { run_id: run.id, message_id: message.id }
+      });
+    }
+    if (message.content.length > sentLength) {
+      sendEvent(reply, {
+        type: "message.delta",
+        data: {
+          run_id: run.id,
+          message_id: message.id,
+          seq: sequence++,
+          delta: message.content.slice(sentLength)
+        }
+      });
+      sentLength = message.content.length;
+    }
+  };
+
+  while (!signal.aborted && !reply.raw.destroyed && !reply.raw.writableEnded) {
+    const run = store.getRun(initialRun.id, ownerId);
+    if (!run) break;
+    const message = store.getAssistantMessage(run.id, ownerId);
+
+    if (run.status === "cancelled") {
+      sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
+      break;
+    }
+    if (run.status === "failed") {
+      sendEvent(reply, {
+        type: "run.failed",
+        data: {
+          run_id: run.id,
+          error_code: message?.error_code ?? "INTERRUPTED",
+          retryable: false
+        }
+      });
+      break;
+    }
+    if (run.status === "succeeded" && message) {
+      if (observedMessageId === null) {
+        replay(reply, run.id, message, run.provider ?? "unknown", run.model_resolved ?? "unknown");
+      } else {
+        observeMessage(run, message);
+        sendEvent(reply, {
+          type: "message.completed",
+          data: {
+            run_id: run.id,
+            message_id: message.id,
+            size: message.content.length,
+            finish_reason: "observed"
+          }
+        });
+        sendEvent(reply, {
+          type: "run.completed",
+          data: {
+            run_id: run.id,
+            provider: run.provider ?? "unknown",
+            model_resolved: run.model_resolved ?? "unknown"
+          }
+        });
+      }
+      break;
+    }
+    if (run.status === "running" && message) observeMessage(run, message);
+
+    await waitForObserverPoll(signal);
+  }
+};
+
 export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): void => {
   const app = options.app.withTypeProvider<TypeBoxTypeProvider>();
+  const runsExecuteInBackground = options.runExecutionMode === "background";
   const params = Type.Object(
     { chatId: Type.String({ minLength: 1 }) },
     { additionalProperties: false }
@@ -243,7 +351,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       if (!run || conversation.length === 0) {
         return reply.status(404).send(error(request.id, "RUN_NOT_FOUND", "Run not found"));
       }
-      if (options.activeRuns.has(run.id)) {
+      if (!runsExecuteInBackground && options.activeRuns.has(run.id)) {
         return reply.status(409).send(error(request.id, "CONFLICT", "Run is already streaming"));
       }
 
@@ -276,6 +384,21 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       }
       if (run.status === "succeeded" && existing) {
         replay(reply, run.id, existing, run.provider ?? "unknown", run.model_resolved ?? "unknown");
+        end(reply);
+        return reply;
+      }
+
+      if (runsExecuteInBackground) {
+        const observer = new AbortController();
+        const stopObserving = (): void => observer.abort();
+        options.runObservers.add(observer);
+        reply.raw.once("close", stopObserving);
+        try {
+          await observePersistedRun(reply, options.store, run, identity.owner_id, observer.signal);
+        } finally {
+          reply.raw.off("close", stopObserving);
+          options.runObservers.delete(observer);
+        }
         end(reply);
         return reply;
       }
