@@ -8,8 +8,12 @@ const auditProject = {
   updated_at: "2026-09-18T00:00:00.000Z"
 } as const;
 
-const installShellFixture = async (page: Page, options?: { includeProject?: boolean }) => {
+const installShellFixture = async (
+  page: Page,
+  options?: { includeProject?: boolean; projectMessages?: unknown[] }
+) => {
   const includeProject = options?.includeProject ?? false;
+  const projectMessages = options?.projectMessages ?? [];
 
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
@@ -36,7 +40,7 @@ const installShellFixture = async (page: Page, options?: { includeProject?: bool
         fallback_to_mock: false
       };
     } else if (path === `/api/v1/projects/${auditProject.id}`) {
-      body = { project: auditProject, chat_id: "audit-chat", messages: [] };
+      body = { project: auditProject, chat_id: "audit-chat", messages: projectMessages };
     } else if (path.endsWith("/autonomy-profile")) {
       body = { profile: { base_level: "A0", version: 1 } };
     } else if (path.endsWith("/manager-demo-runs")) {
@@ -53,6 +57,21 @@ const installShellFixture = async (page: Page, options?: { includeProject?: bool
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   });
 };
+
+const longProjectHistory = Array.from({ length: 24 }, (_, index) => ({
+  id: `audit-message-${index}`,
+  project_id: auditProject.id,
+  chat_id: "audit-chat",
+  role: index % 2 === 0 ? "user" : "assistant",
+  content_type: "text",
+  content: `Сообщение ${index + 1}: проверка прокрутки длинной истории на мобильном экране.`,
+  status: "completed",
+  reply_to_message_id: null,
+  run_id: `audit-run-${Math.floor(index / 2)}`,
+  error_code: null,
+  created_at: "2026-09-18T00:00:00.000Z",
+  updated_at: "2026-09-18T00:00:00.000Z"
+}));
 
 test("reaches every primary workspace from the phone navigation", async ({ page }) => {
   await installShellFixture(page, { includeProject: true });
@@ -74,23 +93,26 @@ test("reaches every primary workspace from the phone navigation", async ({ page 
   await expect(page.locator(".topbar h1")).toHaveText("Новый чат");
 });
 
-test("keeps the mobile navigation scrollable while the composer remains usable", async ({ page }) => {
-  await installShellFixture(page);
+test("keeps mobile navigation, composer and long-chat scrolling usable", async ({ page }) => {
+  await installShellFixture(page, { includeProject: true, projectMessages: longProjectHistory });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  const composer = page.getByLabel("Сообщение Cosmora");
   const mobileNav = page.getByRole("navigation", { name: "Мобильная навигация" });
+  await mobileNav.getByRole("button", { name: "Проекты", exact: true }).click();
+
+  const composer = page.getByLabel("Сообщение менеджеру");
+  const messages = page.locator(".messages");
   await expect(composer).toBeVisible();
   await expect(mobileNav).toBeVisible();
   await expect(page.locator(".sidebar")).toBeHidden();
+  await expect(messages).toBeVisible();
+  expect(await messages.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
 
-  const canScroll = await mobileNav.evaluate((node) => node.scrollWidth > node.clientWidth);
-  expect(canScroll).toBe(true);
-  await mobileNav.evaluate((node) => {
-    node.scrollLeft = node.scrollWidth;
+  await messages.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
   });
-  await expect.poll(async () => mobileNav.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+  await expect.poll(async () => messages.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
 
   await composer.fill("Проверка мобильного composer");
   await expect(page.getByRole("button", { name: "Отправить" })).toBeEnabled();
