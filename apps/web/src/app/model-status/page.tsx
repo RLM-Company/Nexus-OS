@@ -5,13 +5,12 @@ import { useCallback, useEffect, useState } from "react";
 import styles from "./model-status.module.css";
 
 type ModelRuntimeStatus = {
-  mode: string;
+  mode: "mock" | "openai-compatible" | "anthropic-compatible";
   provider: string;
   model: string;
   credential_configured: boolean;
   fallback_to_mock: boolean;
-  registry_version: string;
-  updated_at: string;
+  registry_version: string | null;
 };
 
 type SafeStatusErrorKind =
@@ -84,13 +83,14 @@ const isModelRuntimeStatus = (value: unknown): value is ModelRuntimeStatus => {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   return (
-    typeof candidate.mode === "string" &&
+    (candidate.mode === "mock" ||
+      candidate.mode === "openai-compatible" ||
+      candidate.mode === "anthropic-compatible") &&
     typeof candidate.provider === "string" &&
     typeof candidate.model === "string" &&
     typeof candidate.credential_configured === "boolean" &&
     typeof candidate.fallback_to_mock === "boolean" &&
-    typeof candidate.registry_version === "string" &&
-    typeof candidate.updated_at === "string"
+    (typeof candidate.registry_version === "string" || candidate.registry_version === null)
   );
 };
 
@@ -321,8 +321,7 @@ export default function ModelStatusPage() {
                     <BooleanValue value={!runtime.fallback_to_mock} />
                   </dd>
                 </div>
-                <DetailItem label="Registry version" value={runtime.registry_version} />
-                <DetailItem label="Статус обновлён" value={runtime.updated_at} />
+                <DetailItem label="Registry version" value={runtime.registry_version ?? "—"} />
               </dl>
               <p className={styles.note}>
                 {liveConfigured
