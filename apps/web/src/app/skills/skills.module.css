@@ -102,7 +102,7 @@
   flex: 0 0 auto;
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
-  background: var(--soft);
+  background: var(--surface-hover);
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 800;
@@ -157,7 +157,7 @@
   padding: 0.7rem;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  background: var(--soft);
+  background: var(--surface-hover);
   color: var(--muted);
   font: inherit;
   font-weight: 700;
