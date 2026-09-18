@@ -835,7 +835,10 @@ function ProjectContextPanel({
   const historySummary =
     messageCount === 0
       ? "В проекте пока нет сообщений. История появится после первой работы с Менеджером."
-      : `${projectTitle}: ${messageCount} сообщений. Контекст проекта хранит только выбранные источники и краткие резюме; секреты не отображаются.`;
+      : [
+          `${projectTitle}: ${messageCount} сообщений.`,
+          "Контекст проекта хранит только выбранные источники и краткие резюме; секреты не отображаются."
+        ].join(" ");
 
   const toggleSource = (source: ProjectContextSource) => {
     if (!source.connected) {
@@ -2223,6 +2226,7 @@ export default function Home() {
 
         {activeProject && projectView === "context" && (
           <ProjectContextPanel
+            key={activeProject.id}
             projectId={activeProject.id}
             projectTitle={activeProject.title}
             messageCount={messages.length}
