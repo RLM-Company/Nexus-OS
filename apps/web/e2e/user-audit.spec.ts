@@ -82,8 +82,10 @@ const longProjectHistory = Array.from({ length: 24 }, (_, index) => ({
 }));
 
 const waitForProjectList = async (page: Page): Promise<void> => {
-  const projectButton = page.locator(".mobile-project-strip button").first();
-  await expect(projectButton).toHaveText(auditProject.title);
+  const projectButton = page
+    .locator(".mobile-project-strip")
+    .getByRole("button", { name: auditProject.title, exact: true });
+  await expect(projectButton).toBeVisible();
 };
 
 test("reaches every primary workspace from the phone navigation", async ({ page }) => {
