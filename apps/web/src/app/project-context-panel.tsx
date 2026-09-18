@@ -66,6 +66,9 @@ const sanitizeSources = (value: unknown): ProjectContextSource[] | null => {
   if (!Array.isArray(value)) return null;
 
   const sources: ProjectContextSource[] = [];
+  const sourceIds = new Set<string>();
+  let connectedTokens = 0;
+
   for (const candidate of value.slice(0, MAX_LOCAL_SOURCES)) {
     if (!candidate || typeof candidate !== "object") return null;
     const item = candidate as Record<string, unknown>;
@@ -81,12 +84,20 @@ const sanitizeSources = (value: unknown): ProjectContextSource[] | null => {
       return null;
     }
 
+    const id = item.id.trim().slice(0, 120);
+    const size = Math.min(CONTEXT_LIMIT, Math.max(0, Math.round(item.size)));
+    if (!id || sourceIds.has(id)) return null;
+    if (item.connected && connectedTokens + size > CONTEXT_LIMIT) return null;
+
+    sourceIds.add(id);
+    if (item.connected) connectedTokens += size;
+
     sources.push({
-      id: item.id.slice(0, 120),
+      id,
       title: redactContextText(item.title).slice(0, 500),
       kind: item.kind,
       summary: redactContextText(item.summary).slice(0, 2_000),
-      size: Math.min(CONTEXT_LIMIT, Math.max(0, Math.round(item.size))),
+      size,
       connected: item.connected
     });
   }
@@ -203,7 +214,7 @@ export function ProjectContextPanel({
   };
 
   const connectPreview = (): void => {
-    if (!preview) return;
+    if (!preview || used + preview.size > CONTEXT_LIMIT) return;
     setState((current) => ({
       sources: current.sources.map((item) =>
         item.id === preview.id ? { ...item, connected: true } : item
@@ -356,11 +367,20 @@ export function ProjectContextPanel({
                 <dd>{formatTokens(preview.size)} токенов</dd>
               </div>
             </dl>
+            {used + preview.size > CONTEXT_LIMIT && (
+              <p className={styles.error} role="alert">
+                Источник не подключён: будет превышен лимит 64 000 токенов.
+              </p>
+            )}
             <div className={styles.modalActions}>
               <button type="button" className={styles.secondary} autoFocus onClick={closePreview}>
                 Отмена
               </button>
-              <button type="button" onClick={connectPreview}>
+              <button
+                type="button"
+                disabled={used + preview.size > CONTEXT_LIMIT}
+                onClick={connectPreview}
+              >
                 Подключить источник
               </button>
             </div>
