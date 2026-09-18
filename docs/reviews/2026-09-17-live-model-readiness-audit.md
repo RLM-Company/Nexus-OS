@@ -11,7 +11,7 @@ Scope: audit `web → API → ManagerService → Model Gateway → streaming →
 3. **ManagerService** forwards model requests through the injected gateway and maps gateway events into durable assistant-message/run state.
 4. **Model Gateway** selects a registry-approved route, applies timeout/retry/circuit/emergency-stop logic, normalizes provider failures, and prevents fallback after partial output.
 5. **Compatible adapters** parse provider SSE. Non-2xx responses are reduced to normalized gateway failures rather than returning raw HTTP bodies/headers to the web client.
-6. **Web streaming** consumes normalized run events. Existing reload/reconnect tests cover durable recovery, but the explicit `EventSource.onerror` path still has a recovery gap documented below.
+6. **Web streaming** consumes normalized run events. This branch now re-reads durable project/general-chat state after `EventSource.onerror` and after malformed JSON envelopes, without resubmitting the user request.
 
 ## Configuration findings
 
@@ -63,17 +63,13 @@ Scope: audit `web → API → ManagerService → Model Gateway → streaming →
 - **Minimal safe fix:** add non-sensitive categorical error codes such as provider-auth, provider-forbidden, provider-rate-limit, provider-upstream while continuing to discard upstream bodies/headers.
 - **Required test:** one stub per upstream status proving the safe category is preserved through gateway → Manager/API → SSE and that response body/header sentinels never appear in the client payload.
 
-### B4 — explicit SSE `onerror` says it is restoring state but does not trigger the restore
+### Resolved in this branch — SSE interruption/malformed-event recovery
 
-- **File:** `apps/web/src/app/page.tsx`
-- **Locations:** both project-run and general-chat EventSource observers; exact message begins `Поток ответа прерван. Проверяю сохранённое состояние...`.
-- **Current behavior:** each `source.onerror` closes the source and shows the recovery message, but does not call the corresponding persisted-state refresh in that handler. Normal completion/cancel paths do refresh, and reload-based recovery is already tested.
-- **Reproduction:** interrupt an active EventSource after the server has accepted the run without reloading the page.
-- **Risk:** the UI can remain stale after a transport break and its message overstates what it actually did.
-- **Minimal safe fix:** after closing the observer, re-read durable project/general-chat state for the same run with epoch/run guards; parse malformed SSE defensively and use the same recovery path rather than exposing parser errors.
-- **Required tests:** project + general chat connection break, malformed event JSON, empty terminal answer, and reload/reconnect. Assert no duplicate deltas, no resubmit, no mock fallback, and no raw internal error text.
-
-B4 is in the otherwise allowed web area. It is intentionally left as an explicit blocker rather than replacing the large console component through the GitHub contents API without executable repository verification. The status/readiness UI does not claim streaming recovery is fully ready while B4 remains.
+- **File:** `apps/web/src/app/page.tsx`.
+- Project and general-chat `EventSource.onerror` handlers now close the broken observer and immediately re-read the corresponding durable server state.
+- JSON SSE envelopes are parsed defensively. A malformed envelope closes the observer and uses the same persisted-state recovery path instead of surfacing a parser exception or raw event data.
+- No recovery path resubmits the original user request and no mock fallback is introduced.
+- **Tests:** `apps/web/e2e/manager-console-races.spec.ts` now covers project disconnect recovery, general-chat disconnect recovery, and malformed SSE JSON recovery, including assertions that no duplicate POST is made.
 
 ### B5 — a repository workflow performs a real provider request
 
@@ -107,7 +103,7 @@ This branch does not modify CI. The workflow was not dispatched during this audi
 
 ## Existing mock coverage relevant to this audit
 
-Current main already has deterministic model-gateway/mock coverage for successful streaming, retry/route selection, timeout normalization, no fallback after partial output, circuit behavior, invalid provider sequencing, cancellation, and durable run recovery/reconnect. `apps/web/e2e/b0.1.spec.ts` covers the real local API/SSE mock path and persisted reload behavior; `apps/web/e2e/manager-console-races.spec.ts` covers stream-delta deduplication and restoration of failed persisted requests.
+Current main already has deterministic model-gateway/mock coverage for successful streaming, retry/route selection, timeout normalization, no fallback after partial output, circuit behavior, invalid provider sequencing, cancellation, and durable run recovery/reconnect. `apps/web/e2e/b0.1.spec.ts` covers the real local API/SSE mock path and persisted reload behavior; `apps/web/e2e/manager-console-races.spec.ts` covers stream-delta deduplication, restoration of failed persisted requests, project/general-chat disconnect recovery, and malformed-event recovery.
 
 The new `apps/web/e2e/model-status.spec.ts` adds the safe configuration/error/Emergency Stop surface. B3/B4/B7 prevent honest end-to-end coverage of every requested provider-status/stream-break/empty-response case without changing the corresponding contract/recovery implementation, so those cases remain explicit required tests for the blocker fixes rather than tests that encode incorrect behavior.
 
