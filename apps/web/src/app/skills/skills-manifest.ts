@@ -88,10 +88,19 @@ const catalog: SkillManifest[] = [
 const isSafePermission = (permission: SkillPermission): boolean =>
   permission.mode === "read" || permission.mode === "preview";
 
-export const loadMockSkillCatalog = (): SkillManifest[] =>
-  catalog
-    .filter((skill) => skill.source === "mock" && skill.execution === "disabled")
-    .map((skill) => ({
-      ...skill,
-      permissions: skill.permissions.filter(isSafePermission)
-    }));
+export const loadMockSkillCatalog = (): SkillManifest[] => {
+  const safeCatalog: SkillManifest[] = [];
+
+  for (const skill of catalog) {
+    if (skill.source !== "mock" || skill.execution !== "disabled") continue;
+
+    const safePermissions: SkillPermission[] = [];
+    for (const permission of skill.permissions) {
+      if (isSafePermission(permission)) safePermissions.push(permission);
+    }
+
+    safeCatalog.push({ ...skill, permissions: safePermissions });
+  }
+
+  return safeCatalog;
+};
