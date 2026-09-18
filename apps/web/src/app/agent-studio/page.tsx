@@ -206,7 +206,11 @@ export default function AgentStudioPage() {
         </form>
       </section>
 
-      {error && <p className={styles.error}>{error}</p>}
+      {error && (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
 
       {!projectId ? (
         <section className={styles.emptyState}>
