@@ -28,6 +28,7 @@ export function InstallApp() {
   const [ios, setIos] = useState(false);
   const [standalone, setStandalone] = useState(false);
   const [showIosHelp, setShowIosHelp] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
   const installButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -36,9 +37,11 @@ export function InstallApp() {
 
     const handlePrompt = (event: Event) => {
       event.preventDefault();
+      setInstallError(null);
       setInstallPrompt(event as BeforeInstallPromptEvent);
     };
     const handleInstalled = () => {
+      setInstallError(null);
       setInstallPrompt(null);
       setStandalone(true);
     };
@@ -59,13 +62,21 @@ export function InstallApp() {
   if (standalone || (!installPrompt && !ios)) return null;
 
   const install = async (): Promise<void> => {
+    setInstallError(null);
     if (!installPrompt) {
       setShowIosHelp(true);
       return;
     }
-    await installPrompt.prompt();
-    const choice = await installPrompt.userChoice;
-    if (choice.outcome === "accepted") setInstallPrompt(null);
+
+    try {
+      await installPrompt.prompt();
+      await installPrompt.userChoice;
+      setInstallPrompt(null);
+    } catch {
+      setInstallError(
+        "Не удалось открыть установку Cosmora. Используйте меню браузера и повторите попытку."
+      );
+    }
   };
 
   return (
@@ -80,6 +91,12 @@ export function InstallApp() {
         <InstallIcon />
         <span>Установить</span>
       </button>
+
+      {installError && (
+        <p className="app-install-error" role="alert">
+          {installError}
+        </p>
+      )}
 
       {showIosHelp && (
         <div className="install-dialog-layer">
