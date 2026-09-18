@@ -11,7 +11,9 @@ test("Agent Studio load errors are announced as alerts", async ({ page }) => {
 
   await page.goto("/agent-studio?project=accessibility-fixture");
 
-  const alert = page.getByRole("alert");
-  await expect(alert).toContainText("Сервис временно недоступен. Повторите попытку.");
+  const alert = page
+    .getByRole("alert")
+    .filter({ hasText: "Сервис временно недоступен. Повторите попытку." });
+  await expect(alert).toHaveCount(1);
   await expect(alert).not.toContainText("internal marker must stay hidden");
 });
