@@ -271,10 +271,7 @@ export function ProjectContextPanel({
         ) : (
           <div className={styles.sourceList}>
             {state.sources.map((source) => (
-              <article
-                key={source.id}
-                className={source.connected ? styles.connected : undefined}
-              >
+              <article key={source.id} className={source.connected ? styles.connected : undefined}>
                 <div>
                   <span className={styles.kind}>
                     {source.kind === "document"
