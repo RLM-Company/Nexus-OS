@@ -134,6 +134,16 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
 const isProjectView = (value: string | null): value is ProjectView =>
   value === "chat" || value === "plan" || value === "project";
 
+const parseStreamEnvelope = <T,>(raw: MessageEvent): { data: T } | null => {
+  try {
+    const parsed = JSON.parse(String(raw.data)) as unknown;
+    if (!parsed || typeof parsed !== "object" || !("data" in parsed)) return null;
+    return parsed as { data: T };
+  } catch {
+    return null;
+  }
+};
+
 const replaceConsoleRoute = (projectId: string | null, view: ProjectView = "chat"): void => {
   const route = projectId
     ? `/?project=${encodeURIComponent(projectId)}&view=${encodeURIComponent(view)}`
@@ -1054,6 +1064,13 @@ export default function Home() {
         if (streamRef.current === source) streamRef.current = null;
       };
 
+      const recoverMalformedStream = (): void => {
+        if (!isCurrent()) return;
+        closeSource();
+        setError("Поток ответа повреждён. Восстанавливаю сохранённое состояние запуска на сервере.");
+        void refreshProject(accepted.project.id).catch(() => undefined);
+      };
+
       source.addEventListener("run.started", () => {
         if (!isCurrent()) return;
         setError(null);
@@ -1062,9 +1079,11 @@ export default function Home() {
 
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
-        const event = JSON.parse(String(raw.data)) as {
-          data: { message_id: string; run_id: string };
-        };
+        const event = parseStreamEnvelope<{ message_id: string; run_id: string }>(raw);
+        if (!event) {
+          recoverMalformedStream();
+          return;
+        }
         assistantId = event.data.message_id;
         setMessages((current) => {
           if (current.some((message) => message.id === assistantId)) return current;
@@ -1082,9 +1101,11 @@ export default function Home() {
 
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
-        const event = JSON.parse(String(raw.data)) as {
-          data: { message_id: string; seq: number; delta: string };
-        };
+        const event = parseStreamEnvelope<{ message_id: string; seq: number; delta: string }>(raw);
+        if (!event) {
+          recoverMalformedStream();
+          return;
+        }
         assistantId = event.data.message_id;
         streamContent = event.data.seq === 0 ? event.data.delta : streamContent + event.data.delta;
         const content = streamContent;
@@ -1102,9 +1123,11 @@ export default function Home() {
 
       source.addEventListener("run.completed", (raw) => {
         if (!isCurrent()) return;
-        const event = JSON.parse(String(raw.data)) as {
-          data: { provider: string; model_resolved: string };
-        };
+        const event = parseStreamEnvelope<{ provider: string; model_resolved: string }>(raw);
+        if (!event) {
+          recoverMalformedStream();
+          return;
+        }
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
@@ -1128,10 +1151,14 @@ export default function Home() {
 
       source.addEventListener("run.failed", (raw) => {
         if (!isCurrent()) return;
+        const event = parseStreamEnvelope<{ error_code: string }>(raw);
+        if (!event) {
+          recoverMalformedStream();
+          return;
+        }
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
-        const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
         setSending(false);
         setActiveRunId(null);
         setRunPhase("failed");
@@ -1179,6 +1206,13 @@ export default function Home() {
         source.close();
         if (streamRef.current === source) streamRef.current = null;
       };
+
+      const recoverMalformedStream = (): void => {
+        if (!isCurrent()) return;
+        closeSource();
+        setError("Поток ответа повреждён. Восстанавливаю сохранённое состояние на сервере.");
+        void refreshGeneralChat(chatIdForRun).catch(() => undefined);
+      };
       const updateMessages = (
         updater: (messages: LocalChatMessage[]) => LocalChatMessage[]
       ): void => {
@@ -1196,9 +1230,11 @@ export default function Home() {
       });
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
-        const event = JSON.parse(String(raw.data)) as {
-          data: { message_id: string; run_id: string };
-        };
+        const event = parseStreamEnvelope<{ message_id: string; run_id: string }>(raw);
+        if (!event) {
+          recoverMalformedStream();
+          return;
+        }
         assistantId = event.data.message_id;
         updateMessages((current) =>
           current.some((message) => message.id === event.data.message_id)
@@ -1211,9 +1247,11 @@ export default function Home() {
       });
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
-        const event = JSON.parse(String(raw.data)) as {
-          data: { message_id: string; seq: number; delta: string };
-        };
+        const event = parseStreamEnvelope<{ message_id: string; seq: number; delta: string }>(raw);
+        if (!event) {
+          recoverMalformedStream();
+          return;
+        }
         assistantId = event.data.message_id;
         streamContent = event.data.seq === 0 ? event.data.delta : streamContent + event.data.delta;
         updateMessages((current) =>
@@ -1230,9 +1268,11 @@ export default function Home() {
       });
       source.addEventListener("run.completed", (raw) => {
         if (!isCurrent()) return;
-        const event = JSON.parse(String(raw.data)) as {
-          data: { provider: string; model_resolved: string };
-        };
+        const event = parseStreamEnvelope<{ provider: string; model_resolved: string }>(raw);
+        if (!event) {
+          recoverMalformedStream();
+          return;
+        }
         finished = true;
         closeSource();
         setLastCompletedRoute({
@@ -1253,9 +1293,13 @@ export default function Home() {
       });
       source.addEventListener("run.failed", (raw) => {
         if (!isCurrent()) return;
+        const event = parseStreamEnvelope<{ error_code: string }>(raw);
+        if (!event) {
+          recoverMalformedStream();
+          return;
+        }
         finished = true;
         closeSource();
-        const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
         setSending(false);
         setActiveRunId(null);
         setRunPhase("failed");
