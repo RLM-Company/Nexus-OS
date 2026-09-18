@@ -200,8 +200,8 @@ const DEMO_RUN_STATUS_LABEL: Record<DemoManagerRun["status"], string> = {
 const RUN_PHASE_LABEL: Record<RunPhase, string> = {
   idle: "Готов",
   queued: "В очереди",
-  running: "Выполняется",
-  streaming: "Ответ поступает",
+  running: "Менеджер отвечает",
+  streaming: "Менеджер отвечает · поток",
   completed: "Ответ получен",
   failed: "Ошибка запуска",
   cancelled: "Остановлен"
