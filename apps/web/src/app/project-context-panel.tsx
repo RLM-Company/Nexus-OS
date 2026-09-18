@@ -66,6 +66,9 @@ const sanitizeSources = (value: unknown): ProjectContextSource[] | null => {
   if (!Array.isArray(value)) return null;
 
   const sources: ProjectContextSource[] = [];
+  const sourceIds = new Set<string>();
+  let connectedTokens = 0;
+
   for (const candidate of value.slice(0, MAX_LOCAL_SOURCES)) {
     if (!candidate || typeof candidate !== "object") return null;
     const item = candidate as Record<string, unknown>;
@@ -81,12 +84,20 @@ const sanitizeSources = (value: unknown): ProjectContextSource[] | null => {
       return null;
     }
 
+    const id = item.id.trim().slice(0, 120);
+    const size = Math.min(CONTEXT_LIMIT, Math.max(0, Math.round(item.size)));
+    if (!id || sourceIds.has(id)) return null;
+    if (item.connected && connectedTokens + size > CONTEXT_LIMIT) return null;
+
+    sourceIds.add(id);
+    if (item.connected) connectedTokens += size;
+
     sources.push({
-      id: item.id.slice(0, 120),
+      id,
       title: redactContextText(item.title).slice(0, 500),
       kind: item.kind,
       summary: redactContextText(item.summary).slice(0, 2_000),
-      size: Math.min(CONTEXT_LIMIT, Math.max(0, Math.round(item.size))),
+      size,
       connected: item.connected
     });
   }
