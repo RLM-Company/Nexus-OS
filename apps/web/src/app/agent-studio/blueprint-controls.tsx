@@ -92,7 +92,7 @@ const numberValue = (form: FormData, name: string): number => {
   return Number.isFinite(value) && value >= 0 ? value : 0;
 };
 
-const readError = async (response: Response): Promise<Error> => safeApiError(response);
+const readError = (response: Response): Error => safeApiError(response);
 
 export default function BlueprintControls({
   projectId,
@@ -212,7 +212,7 @@ export default function BlueprintControls({
           selectedBlueprint ? { ...payload, expected_version: selectedBlueprint.version } : payload
         )
       });
-      if (!response.ok) throw await readError(response);
+      if (!response.ok) throw readError(response);
       setNotice(
         selectedBlueprint
           ? `Новая версия чертежа сохранена: v${selectedBlueprint.version + 1}.`
