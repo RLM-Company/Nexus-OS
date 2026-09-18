@@ -3171,7 +3171,6 @@ textarea:focus-visible {
   }
 }
 
-
 /* Safe project-context web layer. */
 .project-context-panel {
   width: min(100%, 54rem);
