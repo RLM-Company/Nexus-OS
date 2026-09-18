@@ -1618,7 +1618,6 @@ export default function Home() {
       !projectProposal ||
       !activeLocalChatId ||
       loading ||
-      sending ||
       projectPromotionPendingRef.current
     )
       return;
@@ -2303,7 +2302,7 @@ export default function Home() {
                     <div className="proposal-actions">
                       <button
                         type="button"
-                        disabled={sending || loading}
+                        disabled={loading}
                         onClick={() => void promoteToProject()}
                       >
                         Оформить как проект
@@ -2311,7 +2310,7 @@ export default function Home() {
                       <button
                         type="button"
                         className="secondary"
-                        disabled={sending || loading}
+                        disabled={loading}
                         onClick={dismissProjectProposal}
                       >
                         Остаться в чате
