@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
+import { safeApiError } from "../safe-api-error";
 import styles from "./catalog-controls.module.css";
 
 type AgentFunction = {
@@ -29,12 +30,7 @@ const formString = (form: FormData, name: string): string => {
   return typeof value === "string" ? value.trim() : "";
 };
 
-const readError = async (response: Response): Promise<Error> => {
-  const body = (await response.json().catch(() => null)) as {
-    error?: { message?: string };
-  } | null;
-  return new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
-};
+const readError = async (response: Response): Promise<Error> => safeApiError(response);
 
 const postJson = async (url: string, payload: unknown): Promise<void> => {
   const response = await fetch(url, {
