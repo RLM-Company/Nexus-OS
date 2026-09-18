@@ -7,7 +7,8 @@ test("falls back safely from an invalid persisted workspace surface", async ({ p
 
   await page.goto("/");
 
-  await expect(page.locator(".topbar h1")).toHaveText("Cosmora Manager");
+  await expect(page.locator(".topbar .eyebrow")).toHaveText("Обычный чат");
+  await expect(page.locator(".topbar h1")).toHaveText("Новый чат");
   await expect
     .poll(async () => page.evaluate(() => window.localStorage.getItem("cosmora:workspace-surface")))
     .toBe("manager");
