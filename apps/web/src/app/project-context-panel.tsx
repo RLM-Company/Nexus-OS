@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./project-context.module.css";
 
 type ProjectContextSource = {
@@ -111,11 +111,14 @@ export function ProjectContextPanel({
   const [online, setOnline] = useState(true);
   const [preview, setPreview] = useState<ProjectContextSource | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const dialogReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const sourcesTitleRef = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
     setHydratedProjectId(null);
     setPreview(null);
     setConfirmClear(false);
+    dialogReturnFocusRef.current = null;
     setOnline(window.navigator.onLine);
     const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
@@ -170,8 +173,25 @@ export function ProjectContextPanel({
           "Контекст хранит только выбранные источники и краткие резюме; секреты не отображаются."
         ].join(" ");
 
-  const toggleSource = (source: ProjectContextSource): void => {
+  const restoreDialogTrigger = (): void => {
+    const trigger = dialogReturnFocusRef.current;
+    dialogReturnFocusRef.current = null;
+    window.requestAnimationFrame(() => trigger?.focus());
+  };
+
+  const closePreview = (): void => {
+    setPreview(null);
+    restoreDialogTrigger();
+  };
+
+  const closeClearConfirmation = (): void => {
+    setConfirmClear(false);
+    restoreDialogTrigger();
+  };
+
+  const toggleSource = (source: ProjectContextSource, trigger: HTMLButtonElement): void => {
     if (!source.connected) {
+      dialogReturnFocusRef.current = trigger;
       setPreview(source);
       return;
     }
@@ -190,6 +210,7 @@ export function ProjectContextPanel({
       )
     }));
     setPreview(null);
+    restoreDialogTrigger();
   };
 
   const clearContext = (): void => {
@@ -197,6 +218,8 @@ export function ProjectContextPanel({
       sources: current.sources.map((source) => ({ ...source, connected: false }))
     }));
     setConfirmClear(false);
+    dialogReturnFocusRef.current = null;
+    window.requestAnimationFrame(() => sourcesTitleRef.current?.focus());
   };
 
   if (hydratedProjectId !== projectId) {
@@ -252,7 +275,7 @@ export function ProjectContextPanel({
         <div className={styles.sectionTitle}>
           <div>
             <small>Источники</small>
-            <h3 id="context-sources-title">
+            <h3 id="context-sources-title" ref={sourcesTitleRef} tabIndex={-1}>
               Подключено {connected.length} из {state.sources.length}
             </h3>
           </div>
@@ -260,7 +283,10 @@ export function ProjectContextPanel({
             type="button"
             className={styles.danger}
             disabled={connected.length === 0}
-            onClick={() => setConfirmClear(true)}
+            onClick={(event) => {
+              dialogReturnFocusRef.current = event.currentTarget;
+              setConfirmClear(true);
+            }}
           >
             Очистить контекст
           </button>
@@ -287,7 +313,7 @@ export function ProjectContextPanel({
                   <p>{redactContextText(source.summary)}</p>
                   <small>{formatTokens(source.size)} токенов · mock estimate</small>
                 </div>
-                <button type="button" onClick={() => toggleSource(source)}>
+                <button type="button" onClick={(event) => toggleSource(source, event.currentTarget)}>
                   {source.connected ? "Отключить" : "Подключить"}
                 </button>
               </article>
@@ -308,6 +334,11 @@ export function ProjectContextPanel({
             role="dialog"
             aria-modal="true"
             aria-labelledby="context-preview-title"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              closePreview();
+            }}
           >
             <small>Предпросмотр перед добавлением</small>
             <h3 id="context-preview-title">{redactContextText(preview.title)}</h3>
@@ -323,7 +354,7 @@ export function ProjectContextPanel({
               </div>
             </dl>
             <div className={styles.modalActions}>
-              <button type="button" className={styles.secondary} onClick={() => setPreview(null)}>
+              <button type="button" className={styles.secondary} autoFocus onClick={closePreview}>
                 Отмена
               </button>
               <button type="button" onClick={connectPreview}>
@@ -341,6 +372,11 @@ export function ProjectContextPanel({
             role="dialog"
             aria-modal="true"
             aria-labelledby="context-clear-title"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              closeClearConfirmation();
+            }}
           >
             <small>Явное подтверждение</small>
             <h3 id="context-clear-title">Очистить контекст проекта?</h3>
@@ -352,7 +388,8 @@ export function ProjectContextPanel({
               <button
                 type="button"
                 className={styles.secondary}
-                onClick={() => setConfirmClear(false)}
+                autoFocus
+                onClick={closeClearConfirmation}
               >
                 Отмена
               </button>
