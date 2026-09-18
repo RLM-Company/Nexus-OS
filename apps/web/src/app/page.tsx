@@ -804,7 +804,11 @@ export default function Home() {
     });
     previousGreetingRef.current = next;
     setGreeting(next);
-    window.sessionStorage.setItem("cosmora:last-greeting", next);
+    try {
+      window.sessionStorage.setItem("cosmora:last-greeting", next);
+    } catch {
+      // Greeting rotation remains usable when session storage is unavailable.
+    }
   }, []);
 
   const loadProjects = useCallback(async () => {
@@ -852,7 +856,11 @@ export default function Home() {
   useEffect(() => {
     if (greetingInitializedRef.current) return;
     greetingInitializedRef.current = true;
-    previousGreetingRef.current = window.sessionStorage.getItem("cosmora:last-greeting");
+    try {
+      previousGreetingRef.current = window.sessionStorage.getItem("cosmora:last-greeting");
+    } catch {
+      previousGreetingRef.current = null;
+    }
     rotateGreeting();
   }, [rotateGreeting]);
 
