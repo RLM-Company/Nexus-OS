@@ -1614,12 +1614,7 @@ export default function Home() {
   };
 
   const promoteToProject = async (): Promise<void> => {
-    if (
-      !projectProposal ||
-      !activeLocalChatId ||
-      loading ||
-      projectPromotionPendingRef.current
-    )
+    if (!projectProposal || !activeLocalChatId || loading || projectPromotionPendingRef.current)
       return;
     projectPromotionPendingRef.current = true;
     const content = projectProposal.content;
