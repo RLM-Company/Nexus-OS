@@ -19,7 +19,7 @@ test("redacts internal API error details and offers retry", async ({ page }) => 
   await page.getByLabel("Сообщение Cosmora").fill("Проверка безопасной ошибки");
   await page.getByRole("button", { name: "Отправить" }).click();
 
-  const alert = page.getByRole("alert").filter({ hasText: "Сервис Cosmora временно недоступен" });
+  const alert = page.getByRole("alert").filter({ hasText: "Сервис временно недоступен" });
   await expect(alert).toBeVisible();
   await expect(page.getByRole("button", { name: "Повторить" })).toBeVisible();
   await expect(page.locator("body")).not.toContainText("INTERNAL_PROVIDER_TIMEOUT");
@@ -104,7 +104,7 @@ test("prevents rapid duplicate project confirmation", async ({ page }) => {
   });
 
   await expect(
-    page.getByRole("alert").filter({ hasText: "Сервис Cosmora временно недоступен" })
+    page.getByRole("alert").filter({ hasText: "Сервис временно недоступен" })
   ).toBeVisible();
   expect(projectPosts).toBe(1);
   await expect(page.locator("body")).not.toContainText("secret-project-error");
