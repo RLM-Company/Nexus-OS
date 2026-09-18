@@ -20,7 +20,7 @@ const catalog: SkillManifest[] = [
     id: "research-brief",
     name: "Research Brief",
     version: "0.1.0",
-    summary: "Собирает структуру исследования из уже доступного проектного контекста.",
+    summary: "Структура исследования из уже доступного проектного контекста.",
     source: "mock",
     execution: "disabled",
     permissions: [
@@ -42,7 +42,7 @@ const catalog: SkillManifest[] = [
     id: "document-review",
     name: "Document Review",
     version: "0.1.0",
-    summary: "Показывает будущий контракт анализа документов без выполнения внешнего кода.",
+    summary: "Preview контракта анализа документов без выполнения внешнего кода.",
     source: "mock",
     execution: "disabled",
     permissions: [
@@ -58,7 +58,7 @@ const catalog: SkillManifest[] = [
     id: "github-audit-preview",
     name: "GitHub Audit Preview",
     version: "0.1.0",
-    summary: "Демонстрирует read-only контракт репозитория и CI без OAuth или write-операций.",
+    summary: "Read-only preview репозитория и CI без OAuth или write-операций.",
     source: "mock",
     execution: "disabled",
     permissions: [
@@ -72,10 +72,35 @@ const catalog: SkillManifest[] = [
         id: "network.preview",
         label: "Сеть",
         mode: "preview",
-        description: "Показывает будущую сетевую границу; реальные запросы не выполняются."
+        description: "Показывает будущую сетевую границу без реальных запросов."
       }
     ]
   }
 ];
 
-export const loadMockSkillCatalog = (): SkillManifest[] => catalog;
+const isSafePermission = (permission: SkillPermission): boolean => {
+  return permission.mode === "read" || permission.mode === "preview";
+};
+
+export const loadMockSkillCatalog = (): SkillManifest[] => {
+  const safeCatalog: SkillManifest[] = [];
+
+  for (const skill of catalog) {
+    if (skill.source !== "mock") continue;
+    if (skill.execution !== "disabled") continue;
+
+    const permissions: SkillPermission[] = [];
+    for (const permission of skill.permissions) {
+      if (isSafePermission(permission)) {
+        permissions.push(permission);
+      }
+    }
+
+    safeCatalog.push({
+      ...skill,
+      permissions
+    });
+  }
+
+  return safeCatalog;
+};
