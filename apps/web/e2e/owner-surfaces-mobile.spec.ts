@@ -1,6 +1,14 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page
+} from "@playwright/test";
 
-const createProject = async (request: APIRequestContext, prefix: string): Promise<string> => {
+const createProject = async (
+  request: APIRequestContext,
+  prefix: string
+): Promise<string> => {
   const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
     data: {
       initial_message: "Create a project for a mobile owner-surface layout check.",
