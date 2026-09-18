@@ -106,7 +106,7 @@ export function ProjectContextPanel({
   const [state, setState] = useState<ProjectContextState>({
     sources: DEFAULT_CONTEXT_SOURCES
   });
-  const [hydrated, setHydrated] = useState(false);
+  const [hydratedProjectId, setHydratedProjectId] = useState<string | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
   const [preview, setPreview] = useState<ProjectContextSource | null>(null);
@@ -151,7 +151,7 @@ export function ProjectContextPanel({
     } catch {
       setStorageError("Не удалось сохранить состояние контекста в этом браузере.");
     }
-  }, [hydrated, projectId, state]);
+  }, [hydratedProjectId, projectId, state]);
 
   const connected = useMemo(
     () => state.sources.filter((source) => source.connected),
@@ -196,7 +196,7 @@ export function ProjectContextPanel({
     setConfirmClear(false);
   };
 
-  if (!hydrated) {
+  if (hydratedProjectId !== projectId) {
     return (
       <div className={styles.state} role="status">
         <strong>Загружаем контекст проекта…</strong>
