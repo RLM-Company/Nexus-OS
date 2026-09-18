@@ -143,9 +143,11 @@ test("recovers safely from corrupted browser-local context state", async ({ page
   await page.goto("/?project=context-alpha&view=context");
 
   const panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
-  await expect(page.getByRole("alert")).toContainText(
-    "Локальное состояние повреждено. Показаны безопасные mock-данные."
-  );
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Локальное состояние повреждено. Показаны безопасные mock-данные." })
+  ).toHaveCount(1);
   await expect(panel.getByText("Подключено 2 из 3")).toBeVisible();
 
   await expect
