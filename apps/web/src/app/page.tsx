@@ -2389,7 +2389,11 @@ export default function Home() {
             ) : (
               <div className="composer-actions">
                 {error && (
-                  <button type="button" className="restore-run" onClick={() => void reloadShellData()}>
+                  <button
+                    type="button"
+                    className="restore-run"
+                    onClick={() => void reloadShellData()}
+                  >
                     ↻ Повторить
                   </button>
                 )}
