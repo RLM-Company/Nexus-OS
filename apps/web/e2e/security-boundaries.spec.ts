@@ -66,7 +66,9 @@ test("fails closed when the API returns an external stream URL", async ({ page }
   await page.getByLabel("Сообщение Cosmora").fill("Проверка URL");
   await page.getByRole("button", { name: "Отправить" }).click();
 
-  await expect(page.getByRole("alert")).toContainText("Не удалось безопасно открыть поток ответа");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Не удалось безопасно открыть поток ответа" })
+  ).toBeVisible();
   expect(externalRequests).toEqual([]);
 });
 
@@ -95,12 +97,15 @@ test("prevents rapid duplicate project confirmation", async ({ page }) => {
   const proposal = page.getByRole("complementary", { name: "Предложение создать проект" });
   const confirm = proposal.getByRole("button", { name: "Оформить как проект" });
   await expect(confirm).toBeVisible();
+  await expect(confirm).toBeEnabled();
   await confirm.evaluate((button) => {
     (button as HTMLButtonElement).click();
     (button as HTMLButtonElement).click();
   });
 
-  await expect(page.getByRole("alert")).toContainText("Сервис Cosmora временно недоступен");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Сервис Cosmora временно недоступен" })
+  ).toBeVisible();
   expect(projectPosts).toBe(1);
   await expect(page.locator("body")).not.toContainText("secret-project-error");
 });
