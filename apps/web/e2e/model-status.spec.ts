@@ -217,25 +217,25 @@ test("shows a safe error for malformed status payloads", async ({ page }) => {
 test(
   "rejects malformed Emergency Stop status instead of assuming live is safe",
   async ({ page }) => {
-  await fulfillRuntime(page, {
-    mode: "openai-compatible",
-    provider: "vibecode",
-    credential_configured: true,
-    fallback_to_mock: false,
-    registry_version: "test-registry"
-  });
-  await page.route("**/api/v1/operations/status", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ active_project_stops: "unknown" })
+    await fulfillRuntime(page, {
+      mode: "openai-compatible",
+      provider: "vibecode",
+      credential_configured: true,
+      fallback_to_mock: false,
+      registry_version: "test-registry"
     });
-  });
+    await page.route("**/api/v1/operations/status", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ active_project_stops: "unknown" })
+      });
+    });
 
-  await page.goto("/model-status");
+    await page.goto("/model-status");
 
-  await expect(page.getByText("Получен неожиданный ответ")).toBeVisible();
-  await expect(page.getByText("Live-провайдер настроен")).toHaveCount(0);
+    await expect(page.getByText("Получен неожиданный ответ")).toBeVisible();
+    await expect(page.getByText("Live-провайдер настроен")).toHaveCount(0);
   }
 );
 
@@ -293,20 +293,20 @@ test("retry recovers after a temporary server failure", async ({ page }) => {
 test(
   "shows offline state and refreshes automatically after reconnect",
   async ({ page, context }) => {
-  await fulfillSafeStatus(page, {
-    mode: "openai-compatible",
-    provider: "vibecode",
-    credential_configured: true,
-    fallback_to_mock: false,
-    registry_version: "test-registry"
-  });
-  await page.goto("/model-status");
-  await expect(page.getByText("Live-провайдер настроен")).toBeVisible();
+    await fulfillSafeStatus(page, {
+      mode: "openai-compatible",
+      provider: "vibecode",
+      credential_configured: true,
+      fallback_to_mock: false,
+      registry_version: "test-registry"
+    });
+    await page.goto("/model-status");
+    await expect(page.getByText("Live-провайдер настроен")).toBeVisible();
 
-  await context.setOffline(true);
-  await expect(page.getByText("Нет соединения")).toBeVisible();
+    await context.setOffline(true);
+    await expect(page.getByText("Нет соединения")).toBeVisible();
 
-  await context.setOffline(false);
-  await expect(page.getByText("Live-провайдер настроен")).toBeVisible();
+    await context.setOffline(false);
+    await expect(page.getByText("Live-провайдер настроен")).toBeVisible();
   }
 );
