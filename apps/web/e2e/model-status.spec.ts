@@ -89,7 +89,9 @@ test("retries a temporary runtime failure without leaking details", async ({ pag
   });
 
   await page.goto("/model-status");
-  await expect(page.getByRole("alert")).toContainText("API временно недоступен");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "API временно недоступен" })
+  ).toContainText("API временно недоступен");
   await expect(page.locator("body")).not.toContainText("INTERNAL_PROVIDER_TIMEOUT");
   await expect(page.locator("body")).not.toContainText("secret-debug-marker");
 
