@@ -79,43 +79,42 @@ test("rejects duplicate persisted Project Context source ids", async ({ page }) 
   ).toBeVisible();
 });
 
-test(
-  "rejects persisted Project Context sources above the 64k connected budget",
-  async ({ page }) => {
-    await mockProjectApi(page);
-    await page.addInitScript(() => {
-      window.localStorage.setItem(
-        "cosmora:project-context:context-alpha",
-        JSON.stringify({
-          sources: [
-            {
-              id: "large-a",
-              title: "Large A",
-              kind: "document",
-              summary: "Large source A",
-              size: 40_000,
-              connected: true
-            },
-            {
-              id: "large-b",
-              title: "Large B",
-              kind: "document",
-              summary: "Large source B",
-              size: 40_000,
-              connected: true
-            }
-          ]
-        })
-      );
-    });
+test("rejects persisted Project Context sources above the 64k connected budget", async ({
+  page
+}) => {
+  await mockProjectApi(page);
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "cosmora:project-context:context-alpha",
+      JSON.stringify({
+        sources: [
+          {
+            id: "large-a",
+            title: "Large A",
+            kind: "document",
+            summary: "Large source A",
+            size: 40_000,
+            connected: true
+          },
+          {
+            id: "large-b",
+            title: "Large B",
+            kind: "document",
+            summary: "Large source B",
+            size: 40_000,
+            connected: true
+          }
+        ]
+      })
+    );
+  });
 
-    await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?project=context-alpha&view=context");
 
-    await expect(
-      page.getByRole("alert").filter({ hasText: "Локальное состояние повреждено" })
-    ).toHaveCount(1);
-    await expect(
-      page.getByRole("tabpanel", { name: "Контекст проекта" }).getByText("13 800 / 64 000 токенов")
-    ).toBeVisible();
-  }
-);
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Локальное состояние повреждено" })
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("tabpanel", { name: "Контекст проекта" }).getByText("13 800 / 64 000 токенов")
+  ).toBeVisible();
+});
