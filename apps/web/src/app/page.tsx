@@ -1624,13 +1624,7 @@ export default function Home() {
   };
 
   const promoteToProject = async (): Promise<void> => {
-    if (
-      !projectProposal ||
-      !activeLocalChatId ||
-      loading ||
-      sending ||
-      projectPromotionPendingRef.current
-    )
+    if (!projectProposal || !activeLocalChatId || loading || projectPromotionPendingRef.current)
       return;
     projectPromotionPendingRef.current = true;
     const content = projectProposal.content;
@@ -2313,7 +2307,7 @@ export default function Home() {
                     <div className="proposal-actions">
                       <button
                         type="button"
-                        disabled={sending || loading}
+                        disabled={loading}
                         onClick={() => void promoteToProject()}
                       >
                         Оформить как проект
@@ -2321,7 +2315,7 @@ export default function Home() {
                       <button
                         type="button"
                         className="secondary"
-                        disabled={sending || loading}
+                        disabled={loading}
                         onClick={dismissProjectProposal}
                       >
                         Остаться в чате
