@@ -1116,7 +1116,9 @@ export default function Home() {
       const recoverMalformedStream = (): void => {
         if (!isCurrent()) return;
         closeSource();
-        setError("Поток ответа повреждён. Восстанавливаю сохранённое состояние запуска на сервере.");
+        setError(
+          "Поток ответа повреждён. Восстанавливаю сохранённое состояние запуска на сервере."
+        );
         void refreshProject(accepted.project.id).catch(() => undefined);
       };
 
