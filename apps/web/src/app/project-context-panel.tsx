@@ -113,6 +113,9 @@ export function ProjectContextPanel({
   const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
+    setHydratedProjectId(null);
+    setPreview(null);
+    setConfirmClear(false);
     setOnline(window.navigator.onLine);
     const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
@@ -135,7 +138,7 @@ export function ProjectContextPanel({
       setState({ sources: DEFAULT_CONTEXT_SOURCES });
       setStorageError("Локальное состояние повреждено. Показаны безопасные mock-данные.");
     } finally {
-      setHydrated(true);
+      setHydratedProjectId(projectId);
     }
 
     return () => {
@@ -145,7 +148,7 @@ export function ProjectContextPanel({
   }, [projectId]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (hydratedProjectId !== projectId) return;
     try {
       window.localStorage.setItem(contextStorageKey(projectId), JSON.stringify(state));
     } catch {
