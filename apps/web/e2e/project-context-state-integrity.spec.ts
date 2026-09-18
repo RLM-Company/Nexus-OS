@@ -118,3 +118,45 @@ test("rejects persisted Project Context sources above the 64k connected budget",
     page.getByRole("tabpanel", { name: "Контекст проекта" }).getByText("13 800 / 64 000 токенов")
   ).toBeVisible();
 });
+
+test("prevents connecting a Project Context source above the 64k budget", async ({ page }) => {
+  await mockProjectApi(page);
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "cosmora:project-context:context-alpha",
+      JSON.stringify({
+        sources: [
+          {
+            id: "connected",
+            title: "Connected",
+            kind: "document",
+            summary: "Connected source",
+            size: 50_000,
+            connected: true
+          },
+          {
+            id: "too-large",
+            title: "Too large",
+            kind: "document",
+            summary: "Would exceed the context budget",
+            size: 20_000,
+            connected: false
+          }
+        ]
+      })
+    );
+  });
+
+  await page.goto("/?project=context-alpha&view=context");
+
+  const panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
+  await expect(panel.getByText("50 000 / 64 000 токенов")).toBeVisible();
+  await panel.getByRole("button", { name: "Подключить" }).click();
+
+  const preview = page.getByRole("dialog", { name: "Too large" });
+  await expect(preview.getByRole("alert")).toContainText(
+    "Источник не подключён: будет превышен лимит 64 000 токенов."
+  );
+  await expect(preview.getByRole("button", { name: "Подключить источник" })).toBeDisabled();
+  await expect(panel.getByText("Подключено 1 из 2")).toBeVisible();
+});
