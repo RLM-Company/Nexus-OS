@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test(
-  "deduplicates rapid Agent Studio catalog submits before React re-renders",
-  async ({ page }) => {
+test("deduplicates rapid Agent Studio catalog submits before React re-renders", async ({
+  page
+}) => {
     let functionPosts = 0;
 
     await page.route("**/api/v1/**", async (route) => {
@@ -55,5 +55,4 @@ test(
 
     await expect(page.getByText("Функция создана как immutable v1.")).toBeVisible();
     expect(functionPosts).toBe(1);
-  }
-);
+});
