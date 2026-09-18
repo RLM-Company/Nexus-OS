@@ -100,7 +100,7 @@ type ModelRuntimeStatus = {
 type CompletedRoute = { provider: string; model: string };
 
 type RunPhase = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
-type ProjectView = "chat" | "plan" | "project";
+type ProjectView = "chat" | "plan" | "project" | "context";
 type WorkspaceSurface =
   "manager" | "skills" | "code" | "work" | "images" | "video" | "sound" | "multi-agent";
 
@@ -132,7 +132,7 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
 };
 
 const isProjectView = (value: string | null): value is ProjectView =>
-  value === "chat" || value === "plan" || value === "project";
+  value === "chat" || value === "plan" || value === "project" || value === "context";
 
 const replaceConsoleRoute = (projectId: string | null, view: ProjectView = "chat"): void => {
   const route = projectId
@@ -721,6 +721,281 @@ const generalMessagePlaceholder = (id: string, chatId: string, runId: string): L
     updated_at: timestamp
   };
 };
+
+
+type ProjectContextSource = {
+  id: string;
+  title: string;
+  kind: "document" | "project-history" | "workspace";
+  summary: string;
+  size: number;
+  connected: boolean;
+};
+
+type ProjectContextState = {
+  sources: ProjectContextSource[];
+};
+
+const CONTEXT_LIMIT = 64_000;
+const DEFAULT_CONTEXT_SOURCES: ProjectContextSource[] = [
+  {
+    id: "project-history",
+    title: "История проекта",
+    kind: "project-history",
+    summary: "Краткое резюме решений, сообщений и checkpoint текущего проекта.",
+    size: 8_200,
+    connected: true
+  },
+  {
+    id: "readme",
+    title: "README.md",
+    kind: "document",
+    summary: "Границы продукта, безопасный runtime и команды локального запуска.",
+    size: 5_600,
+    connected: true
+  },
+  {
+    id: "handoff",
+    title: "Project handoff",
+    kind: "document",
+    summary: "Канонический handoff без ключей, токенов и значений секретов.",
+    size: 12_400,
+    connected: false
+  }
+];
+
+const redactContextText = (value: string): string =>
+  value
+    .replace(/\b(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|Bearer\s+[A-Za-z0-9._-]{8,})\b/gi, "[скрыто]")
+    .replace(
+      /\b(api[_-]?key|token|secret|password)\s*[:=]\s*["']?[^\s,"']+/gi,
+      "$1=[скрыто]"
+    );
+
+const contextStorageKey = (projectId: string): string => \`cosmora:project-context:\${projectId}\`;
+
+function ProjectContextPanel({
+  projectId,
+  projectTitle,
+  messageCount
+}: {
+  projectId: string;
+  projectTitle: string;
+  messageCount: number;
+}) {
+  const [state, setState] = useState<ProjectContextState>({ sources: DEFAULT_CONTEXT_SOURCES });
+  const [hydrated, setHydrated] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [online, setOnline] = useState(true);
+  const [preview, setPreview] = useState<ProjectContextSource | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  useEffect(() => {
+    setOnline(window.navigator.onLine);
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    try {
+      const raw = window.localStorage.getItem(contextStorageKey(projectId));
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<ProjectContextState>;
+        if (!Array.isArray(parsed.sources)) throw new Error("invalid context state");
+        setState({ sources: parsed.sources });
+      } else {
+        setState({ sources: DEFAULT_CONTEXT_SOURCES });
+      }
+      setStorageError(null);
+    } catch {
+      setState({ sources: DEFAULT_CONTEXT_SOURCES });
+      setStorageError("Локальное состояние контекста повреждено. Показаны безопасные mock-данные.");
+    } finally {
+      setHydrated(true);
+    }
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(contextStorageKey(projectId), JSON.stringify(state));
+    } catch {
+      setStorageError("Не удалось сохранить состояние контекста в этом браузере.");
+    }
+  }, [hydrated, projectId, state]);
+
+  const connected = state.sources.filter((source) => source.connected);
+  const used = connected.reduce((total, source) => total + source.size, 0);
+  const percent = Math.min(100, Math.round((used / CONTEXT_LIMIT) * 100));
+  const historySummary =
+    messageCount === 0
+      ? "В проекте пока нет сообщений. История появится после первой работы с Менеджером."
+      : \`\${projectTitle}: \${messageCount} сообщений. Контекст проекта хранит только выбранные источники и краткие резюме; секреты не отображаются.\`;
+
+  const toggleSource = (source: ProjectContextSource) => {
+    if (!source.connected) {
+      setPreview(source);
+      return;
+    }
+    setState((current) => ({
+      sources: current.sources.map((item) =>
+        item.id === source.id ? { ...item, connected: false } : item
+      )
+    }));
+  };
+
+  const connectPreview = () => {
+    if (!preview) return;
+    setState((current) => ({
+      sources: current.sources.map((item) =>
+        item.id === preview.id ? { ...item, connected: true } : item
+      )
+    }));
+    setPreview(null);
+  };
+
+  const clearContext = () => {
+    setState({
+      sources: state.sources.map((source) => ({ ...source, connected: false }))
+    });
+    setConfirmClear(false);
+  };
+
+  if (!hydrated) {
+    return (
+      <div className="project-context-panel context-state" role="status">
+        <strong>Загружаем контекст проекта…</strong>
+        <p>Читаем только локальные настройки интерфейса.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="project-context-panel view-panel" role="tabpanel" aria-label="Контекст проекта">
+      <header className="context-header">
+        <div>
+          <small>Project context · web preview</small>
+          <h2>Контекст проекта</h2>
+          <p>
+            Выбирайте, какие безопасные источники доступны Менеджеру. Значения ключей, токенов и
+            секретов не показываются.
+          </p>
+        </div>
+        <span className={online ? "context-health online" : "context-health offline"}>
+          {online ? "Локальное состояние доступно" : "Offline · изменения сохраняются локально"}
+        </span>
+      </header>
+
+      {storageError && (
+        <div className="context-alert error" role="alert">
+          {storageError}
+        </div>
+      )}
+
+      <section className="context-meter" aria-label="Размер контекста">
+        <div>
+          <span>Использовано</span>
+          <strong>{used.toLocaleString("ru")} / {CONTEXT_LIMIT.toLocaleString("ru")} токенов</strong>
+        </div>
+        <div className="context-meter-track" aria-hidden="true">
+          <i style={{ width: \`\${percent}%\` }} />
+        </div>
+        <small>{percent}% лимита · расчёт mock, backend-контракт пока не подключён</small>
+      </section>
+
+      <section className="context-history" aria-label="Резюме истории проекта">
+        <small>Краткая история</small>
+        <p>{redactContextText(historySummary)}</p>
+      </section>
+
+      <section className="context-sources" aria-labelledby="context-sources-title">
+        <div className="context-section-title">
+          <div>
+            <small>Источники</small>
+            <h3 id="context-sources-title">Подключено {connected.length} из {state.sources.length}</h3>
+          </div>
+          <button
+            type="button"
+            className="context-danger"
+            disabled={connected.length === 0}
+            onClick={() => setConfirmClear(true)}
+          >
+            Очистить контекст
+          </button>
+        </div>
+
+        {state.sources.length === 0 ? (
+          <div className="context-empty">
+            <strong>Источников пока нет</strong>
+            <p>Произвольная загрузка файлов отключена. Здесь появятся только разрешённые источники.</p>
+          </div>
+        ) : (
+          <div className="context-source-list">
+            {state.sources.map((source) => (
+              <article key={source.id} className={source.connected ? "connected" : ""}>
+                <div>
+                  <span className="context-source-kind">
+                    {source.kind === "document"
+                      ? "Документ"
+                      : source.kind === "project-history"
+                        ? "История"
+                        : "Workspace"}
+                  </span>
+                  <strong>{redactContextText(source.title)}</strong>
+                  <p>{redactContextText(source.summary)}</p>
+                  <small>{source.size.toLocaleString("ru")} токенов · mock estimate</small>
+                </div>
+                <button type="button" onClick={() => toggleSource(source)}>
+                  {source.connected ? "Отключить" : "Подключить"}
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <p className="context-boundary">
+        Только web-state и mock-источники. Новая БД, миграции, загрузка файлов и критический
+        backend-runtime не используются.
+      </p>
+
+      {preview && (
+        <div className="context-modal-backdrop" role="presentation">
+          <section className="context-modal" role="dialog" aria-modal="true" aria-labelledby="context-preview-title">
+            <small>Предпросмотр перед добавлением</small>
+            <h3 id="context-preview-title">{redactContextText(preview.title)}</h3>
+            <p>{redactContextText(preview.summary)}</p>
+            <dl>
+              <div><dt>Тип</dt><dd>{preview.kind}</dd></div>
+              <div><dt>Размер</dt><dd>{preview.size.toLocaleString("ru")} токенов</dd></div>
+            </dl>
+            <div className="context-modal-actions">
+              <button type="button" className="secondary" onClick={() => setPreview(null)}>Отмена</button>
+              <button type="button" onClick={connectPreview}>Подключить источник</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {confirmClear && (
+        <div className="context-modal-backdrop" role="presentation">
+          <section className="context-modal" role="dialog" aria-modal="true" aria-labelledby="context-clear-title">
+            <small>Явное подтверждение</small>
+            <h3 id="context-clear-title">Очистить контекст проекта?</h3>
+            <p>Все источники будут отключены. История чата, проект и документы не удаляются.</p>
+            <div className="context-modal-actions">
+              <button type="button" className="secondary" onClick={() => setConfirmClear(false)}>Отмена</button>
+              <button type="button" className="danger" onClick={clearContext}>Очистить контекст</button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Home() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -1860,6 +2135,16 @@ export default function Home() {
             <button
               type="button"
               role="tab"
+              aria-selected={projectView === "context"}
+              className={projectView === "context" ? "active" : ""}
+              onClick={() => selectProjectView("context")}
+            >
+              <GridIcon />
+              Контекст
+            </button>
+            <button
+              type="button"
+              role="tab"
               aria-selected={projectView === "project"}
               className={projectView === "project" ? "active" : ""}
               onClick={() => selectProjectView("project")}
@@ -1903,6 +2188,14 @@ export default function Home() {
             </button>
           ))}
         </div>
+
+        {activeProject && projectView === "context" && (
+          <ProjectContextPanel
+            projectId={activeProject.id}
+            projectTitle={activeProject.title}
+            messageCount={messages.length}
+          />
+        )}
 
         {activeProject && projectView === "project" && (
           <div className="project-context view-panel" role="tabpanel" aria-label="Проект">
