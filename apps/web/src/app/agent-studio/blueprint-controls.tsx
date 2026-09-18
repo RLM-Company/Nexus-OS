@@ -528,8 +528,16 @@ export default function BlueprintControls({
       {eligiblePatterns.length === 0 && functionId && (
         <p className={styles.warning}>Для выбранной функции нет активного разрешающего паттерна.</p>
       )}
-      {notice && <p className={styles.notice}>{notice}</p>}
-      {error && <p className={styles.error}>{error}</p>}
+      {notice && (
+        <p className={styles.notice} role="status" aria-live="polite">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
