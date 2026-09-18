@@ -93,7 +93,5 @@ export const loadMockSkillCatalog = (): SkillManifest[] =>
     .filter((skill) => skill.source === "mock" && skill.execution === "disabled")
     .map((skill) => ({
       ...skill,
-      permissions: skill.permissions
-        .filter(isSafePermission)
-        .map((permission) => ({ ...permission }))
+      permissions: skill.permissions.filter(isSafePermission)
     }));
