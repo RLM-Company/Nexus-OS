@@ -365,7 +365,8 @@ export default function ModelStatusPage() {
                 <strong>Live-провайдер настроен</strong>
                 <p>
                   Credential присутствует, выбран внешний runtime, mock fallback запрещён и
-                  Emergency Stop не активен. Перед первым live-вызовом выполните локальный preflight.
+                  Emergency Stop не активен. Перед первым live-вызовом выполните локальный
+                  preflight.
                 </p>
               </div>
             </div>
@@ -423,7 +424,11 @@ export default function ModelStatusPage() {
           ) : null}
 
           <div className={styles.actions}>
-            <button type="button" className={styles.actionButton} onClick={() => void loadRuntime()}>
+            <button
+              type="button"
+              className={styles.actionButton}
+              onClick={() => void loadRuntime()}
+            >
               Проверить снова
             </button>
             <a className={styles.actionLink} href="/live-model-setup.md">
