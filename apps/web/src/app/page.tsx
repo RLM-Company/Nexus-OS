@@ -134,17 +134,48 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
 const isProjectView = (value: string | null): value is ProjectView =>
   value === "chat" || value === "plan" || value === "project";
 
-const parseStreamEnvelope = <T,>(raw: MessageEvent): { data: T } | null => {
+const parseStreamEnvelope = <T,>(
+  raw: MessageEvent,
+  isData: (value: unknown) => value is T
+): { data: T } | null => {
   try {
     const parsed = JSON.parse(String(raw.data)) as unknown;
     if (!parsed || typeof parsed !== "object" || !("data" in parsed)) return null;
     const data = (parsed as { data?: unknown }).data;
-    if (!data || typeof data !== "object") return null;
-    return { data: data as T };
+    return isData(data) ? { data } : null;
   } catch {
     return null;
   }
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object";
+
+const isMessageStartedData = (
+  value: unknown
+): value is { message_id: string; run_id: string } =>
+  isRecord(value) &&
+  typeof value.message_id === "string" &&
+  typeof value.run_id === "string";
+
+const isMessageDeltaData = (
+  value: unknown
+): value is { message_id: string; seq: number; delta: string } =>
+  isRecord(value) &&
+  typeof value.message_id === "string" &&
+  Number.isInteger(value.seq) &&
+  (value.seq as number) >= 0 &&
+  typeof value.delta === "string";
+
+const isRunCompletedData = (
+  value: unknown
+): value is { provider: string; model_resolved: string } =>
+  isRecord(value) &&
+  typeof value.provider === "string" &&
+  typeof value.model_resolved === "string";
+
+const isRunFailedData = (value: unknown): value is { error_code: string } =>
+  isRecord(value) && typeof value.error_code === "string";
 
 const replaceConsoleRoute = (projectId: string | null, view: ProjectView = "chat"): void => {
   const route = projectId
@@ -1088,7 +1119,7 @@ export default function Home() {
 
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
-        const event = parseStreamEnvelope<{ message_id: string; run_id: string }>(raw);
+        const event = parseStreamEnvelope(raw, isMessageStartedData);
         if (!event) {
           recoverMalformedStream();
           return;
@@ -1110,7 +1141,7 @@ export default function Home() {
 
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
-        const event = parseStreamEnvelope<{ message_id: string; seq: number; delta: string }>(raw);
+        const event = parseStreamEnvelope(raw, isMessageDeltaData);
         if (!event) {
           recoverMalformedStream();
           return;
@@ -1132,7 +1163,7 @@ export default function Home() {
 
       source.addEventListener("run.completed", (raw) => {
         if (!isCurrent()) return;
-        const event = parseStreamEnvelope<{ provider: string; model_resolved: string }>(raw);
+        const event = parseStreamEnvelope(raw, isRunCompletedData);
         if (!event) {
           recoverMalformedStream();
           return;
@@ -1160,7 +1191,7 @@ export default function Home() {
 
       source.addEventListener("run.failed", (raw) => {
         if (!isCurrent()) return;
-        const event = parseStreamEnvelope<{ error_code: string }>(raw);
+        const event = parseStreamEnvelope(raw, isRunFailedData);
         if (!event) {
           recoverMalformedStream();
           return;
@@ -1239,7 +1270,7 @@ export default function Home() {
       });
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
-        const event = parseStreamEnvelope<{ message_id: string; run_id: string }>(raw);
+        const event = parseStreamEnvelope(raw, isMessageStartedData);
         if (!event) {
           recoverMalformedStream();
           return;
@@ -1256,7 +1287,7 @@ export default function Home() {
       });
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
-        const event = parseStreamEnvelope<{ message_id: string; seq: number; delta: string }>(raw);
+        const event = parseStreamEnvelope(raw, isMessageDeltaData);
         if (!event) {
           recoverMalformedStream();
           return;
@@ -1277,7 +1308,7 @@ export default function Home() {
       });
       source.addEventListener("run.completed", (raw) => {
         if (!isCurrent()) return;
-        const event = parseStreamEnvelope<{ provider: string; model_resolved: string }>(raw);
+        const event = parseStreamEnvelope(raw, isRunCompletedData);
         if (!event) {
           recoverMalformedStream();
           return;
@@ -1302,7 +1333,7 @@ export default function Home() {
       });
       source.addEventListener("run.failed", (raw) => {
         if (!isCurrent()) return;
-        const event = parseStreamEnvelope<{ error_code: string }>(raw);
+        const event = parseStreamEnvelope(raw, isRunFailedData);
         if (!event) {
           recoverMalformedStream();
           return;
