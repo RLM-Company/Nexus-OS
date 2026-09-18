@@ -132,6 +132,29 @@ test("redacts secret-like values from browser-local context", async ({ page }) =
   expect(stored).not.toContain("very-secret-token");
 });
 
+test("recovers safely from corrupted browser-local context state", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "cosmora:project-context:context-alpha",
+      JSON.stringify({ sources: "corrupted-state" })
+    );
+  });
+
+  await page.goto("/?project=context-alpha&view=context");
+
+  const panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
+  await expect(page.getByRole("alert")).toContainText(
+    "Локальное состояние повреждено. Показаны безопасные mock-данные."
+  );
+  await expect(panel.getByText("Подключено 2 из 3")).toBeVisible();
+
+  await expect
+    .poll(async () =>
+      page.evaluate(() => window.localStorage.getItem("cosmora:project-context:context-alpha"))
+    )
+    .toContain('"project-history"');
+});
+
 test("shows offline state without losing local context", async ({ page, context }) => {
   await page.goto("/?project=context-alpha&view=context");
   const panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
