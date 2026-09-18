@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./model-status.module.css";
 
 type ModelRuntimeStatus = {
@@ -170,16 +170,25 @@ function BooleanValue({
 
 export default function ModelStatusPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const requestEpochRef = useRef(0);
+  const activeControllerRef = useRef<AbortController | null>(null);
 
   const loadRuntime = useCallback(async () => {
+    const epoch = requestEpochRef.current + 1;
+    requestEpochRef.current = epoch;
+    activeControllerRef.current?.abort();
+
     if (!navigator.onLine) {
+      activeControllerRef.current = null;
       setState({ kind: "error", error: SAFE_ERRORS.offline });
       return;
     }
 
     setState({ kind: "loading" });
     const controller = new AbortController();
+    activeControllerRef.current = controller;
     const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const isCurrent = (): boolean => requestEpochRef.current === epoch;
 
     try {
       const [runtimeResponse, operationsResponse] = await Promise.all([
@@ -187,11 +196,11 @@ export default function ModelStatusPage() {
         fetch("/api/v1/operations/status", { cache: "no-store", signal: controller.signal })
       ]);
       if (!runtimeResponse.ok) {
-        setState({ kind: "error", error: safeErrorForStatus(runtimeResponse.status) });
+        if (isCurrent()) setState({ kind: "error", error: safeErrorForStatus(runtimeResponse.status) });
         return;
       }
       if (!operationsResponse.ok) {
-        setState({ kind: "error", error: safeErrorForStatus(operationsResponse.status) });
+        if (isCurrent()) setState({ kind: "error", error: safeErrorForStatus(operationsResponse.status) });
         return;
       }
 
@@ -203,18 +212,19 @@ export default function ModelStatusPage() {
           operationsResponse.json()
         ]);
       } catch {
-        setState({ kind: "error", error: SAFE_ERRORS.invalid });
+        if (isCurrent()) setState({ kind: "error", error: SAFE_ERRORS.invalid });
         return;
       }
 
       const emergency = parseEmergencyStopStatus(operationsPayload);
       if (!isModelRuntimeStatus(runtimePayload) || !emergency) {
-        setState({ kind: "error", error: SAFE_ERRORS.invalid });
+        if (isCurrent()) setState({ kind: "error", error: SAFE_ERRORS.invalid });
         return;
       }
 
-      setState({ kind: "loaded", runtime: runtimePayload, emergency });
+      if (isCurrent()) setState({ kind: "loaded", runtime: runtimePayload, emergency });
     } catch {
+      if (!isCurrent()) return;
       const error = controller.signal.aborted
         ? SAFE_ERRORS.timeout
         : navigator.onLine
@@ -223,17 +233,28 @@ export default function ModelStatusPage() {
       setState({ kind: "error", error });
     } finally {
       window.clearTimeout(timeout);
+      if (isCurrent() && activeControllerRef.current === controller) {
+        activeControllerRef.current = null;
+      }
     }
   }, []);
 
   useEffect(() => {
     void loadRuntime();
 
-    const handleOffline = () => setState({ kind: "error", error: SAFE_ERRORS.offline });
+    const handleOffline = () => {
+      requestEpochRef.current += 1;
+      activeControllerRef.current?.abort();
+      activeControllerRef.current = null;
+      setState({ kind: "error", error: SAFE_ERRORS.offline });
+    };
     const handleOnline = () => void loadRuntime();
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleOnline);
     return () => {
+      requestEpochRef.current += 1;
+      activeControllerRef.current?.abort();
+      activeControllerRef.current = null;
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleOnline);
     };
