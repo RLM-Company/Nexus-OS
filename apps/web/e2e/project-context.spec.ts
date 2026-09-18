@@ -61,7 +61,9 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("previews, connects, persists and explicitly clears project context", async ({ page }) => {
+test("previews, connects, persists and explicitly clears project context", async ({
+  page
+}) => {
   await page.goto("/?project=context-alpha&view=context");
 
   await expect(page.getByRole("tab", { name: "Контекст" })).toHaveAttribute(
@@ -83,7 +85,9 @@ test("previews, connects, persists and explicitly clears project context", async
   await expect(page.getByText("Подключено 3 из 3")).toBeVisible();
 
   await page.getByRole("button", { name: "Очистить контекст" }).click();
-  const clearDialog = page.getByRole("dialog", { name: "Очистить контекст проекта?" });
+  const clearDialog = page.getByRole("dialog", {
+    name: "Очистить контекст проекта?"
+  });
   await expect(clearDialog).toContainText("История чата, проект и документы не удаляются");
   await clearDialog.getByRole("button", { name: "Очистить контекст" }).click();
   await expect(page.getByText("Подключено 0 из 3")).toBeVisible();
@@ -92,7 +96,9 @@ test("previews, connects, persists and explicitly clears project context", async
   await expect(page.getByText("Подключено 0 из 3")).toBeVisible();
 });
 
-test("redacts secret-like values from corrupted or user-controlled local context", async ({ page }) => {
+test("redacts secret-like values from corrupted or user-controlled local context", async ({
+  page
+}) => {
   await page.goto("/?project=context-alpha&view=context");
   await page.evaluate(() => {
     window.localStorage.setItem(
