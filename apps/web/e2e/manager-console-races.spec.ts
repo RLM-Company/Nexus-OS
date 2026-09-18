@@ -281,7 +281,9 @@ test("recovers persisted project state after the stream connection breaks", asyn
   expect(state.posts).toBe(0);
 });
 
-test("recovers persisted general chat state after the stream connection breaks", async ({ page }) => {
+test(
+  "recovers persisted general chat state after the stream connection breaks",
+  async ({ page }) => {
   const state = await fixture(page);
   await page.goto("/");
   await page.getByLabel("Сообщение Cosmora").fill("Оформи новую задачу как проект");
@@ -324,7 +326,8 @@ test("recovers persisted general chat state after the stream connection breaks",
   await expect(page.locator(".message.assistant p")).toHaveText("Recovered general response");
   await expect(page.locator("html")).toHaveAttribute("data-observer", "closed");
   expect(state.posts).toBe(0);
-});
+  }
+);
 
 test("recovers persisted project state after malformed SSE JSON", async ({ page }) => {
   const state = await fixture(page);
@@ -349,7 +352,9 @@ test("recovers persisted project state after malformed SSE JSON", async ({ page 
   expect(state.posts).toBe(0);
 });
 
-test("recovers persisted project state after a structurally malformed SSE event", async ({ page }) => {
+test(
+  "recovers persisted project state after a structurally malformed SSE event",
+  async ({ page }) => {
   const state = await fixture(page);
   state.alpha = detail("alpha", "Partial response", "streaming");
 
@@ -374,7 +379,8 @@ test("recovers persisted project state after a structurally malformed SSE event"
   );
   await expect(page.locator("html")).toHaveAttribute("data-observer", "closed");
   expect(state.posts).toBe(0);
-});
+  }
+);
 
 test("shows a safe message for an empty completed assistant response", async ({ page }) => {
   const state = await fixture(page);
@@ -387,7 +393,9 @@ test("shows a safe message for an empty completed assistant response", async ({ 
     .click();
 
   await expect(
-    page.getByText("Модель завершила ответ без текста. Повторите запрос после проверки подключения.")
+    page.getByText(
+      "Модель завершила ответ без текста. Повторите запрос после проверки подключения."
+    )
   ).toBeVisible();
   expect(state.posts).toBe(0);
 });
