@@ -79,7 +79,20 @@ const fixture = async (page: Page) => {
         run_id: "general-run-alpha",
         stream_url: "/api/v1/chat-runs/general-run-alpha/events"
       };
-      state.general.messages = [body.user_message as Record<string, unknown>];
+      state.general.messages = [
+        {
+          id: "general-message-alpha",
+          chat_id: "general-alpha",
+          role: "user",
+          content_type: "text",
+          content: "Оформи новую задачу как проект",
+          status: "completed",
+          run_id: "general-run-alpha",
+          error_code: null,
+          created_at: "2026-09-01T00:00:00.000Z",
+          updated_at: "2026-09-01T00:00:00.000Z"
+        }
+      ];
     } else if (path === "/api/v1/chats/general-alpha") {
       body = state.general;
     } else if (path === "/api/v1/chats") {
