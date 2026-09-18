@@ -877,11 +877,7 @@ function ProjectContextPanel({
   }
 
   return (
-    <div
-      className="project-context-panel view-panel"
-      role="tabpanel"
-      aria-label="Контекст проекта"
-    >
+    <div className="project-context-panel view-panel" role="tabpanel" aria-label="Контекст проекта">
       <header className="context-header">
         <div>
           <small>Project context · web preview</small>
