@@ -41,15 +41,6 @@ const mockProjectApi = async (page: import("@playwright/test").Page): Promise<vo
   });
 };
 
-const source = (id: string, size: number) => ({
-  id,
-  title: id,
-  kind: "document",
-  summary: "Mock source",
-  size,
-  connected: true
-});
-
 test("rejects duplicate persisted Project Context source ids", async ({ page }) => {
   await mockProjectApi(page);
   await page.addInitScript(() => {
