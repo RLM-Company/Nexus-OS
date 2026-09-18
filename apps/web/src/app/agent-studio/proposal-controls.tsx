@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
+import { safeApiError } from "../safe-api-error";
 import styles from "./proposal-controls.module.css";
 
 type Reference = { id: string; version: number };
@@ -57,12 +58,7 @@ const postProposal = async <T,>(url: string, payload: unknown): Promise<T> => {
     body: JSON.stringify(payload)
   });
 
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: { message?: string };
-    } | null;
-    throw new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
-  }
+  if (!response.ok) throw safeApiError(response);
 
   return (await response.json()) as T;
 };
