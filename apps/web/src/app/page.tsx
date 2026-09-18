@@ -2367,7 +2367,7 @@ export default function Home() {
             }
           />
           <div className="composer-footer">
-            <span role={error ? "alert" : "status"} aria-live={error ? "assertive" : "polite"}>
+            <span role={error ? "alert" : undefined} aria-live={error ? "assertive" : "polite"}>
               {error ??
                 (sending
                   ? "Cosmora выполняет запуск…"
