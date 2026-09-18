@@ -633,7 +633,10 @@ const displayedContent = (message: Message): string | null => {
   if (message.status === "cancelled") return "Запуск остановлен владельцем.";
   if (message.status === "failed")
     return `Запуск завершился с ошибкой: ${message.error_code ?? "UNKNOWN"}.`;
-  if (message.content) return message.content;
+  if (message.content.trim()) return message.content;
+  if (message.role === "assistant" && message.status === "completed") {
+    return "Модель завершила ответ без текста. Повторите запрос после проверки подключения.";
+  }
   return null;
 };
 
@@ -641,7 +644,11 @@ const displayedGeneralContent = (message: LocalChatMessage): string | null => {
   if (message.status === "cancelled") return "Ответ остановлен владельцем.";
   if (message.status === "failed")
     return `Ответ завершился с ошибкой: ${message.error_code ?? "UNKNOWN"}.`;
-  return message.content || null;
+  if (message.content.trim()) return message.content;
+  if (message.role === "assistant" && message.status === "completed") {
+    return "Модель завершила ответ без текста. Повторите запрос после проверки подключения.";
+  }
+  return null;
 };
 
 type RestoredRunState = {
