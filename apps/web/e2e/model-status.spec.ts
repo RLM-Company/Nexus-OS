@@ -290,6 +290,58 @@ test("retry recovers after a temporary server failure", async ({ page }) => {
   expect(attempts).toBe(2);
 });
 
+test("ignores a stale status response after an explicit retry", async ({ page }) => {
+  let attempts = 0;
+  let releaseFirst!: () => void;
+  const firstGate = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+
+  await fulfillOperations(page);
+  await page.route("**/api/v1/model-runtime", async (route) => {
+    attempts += 1;
+    if (attempts === 1) {
+      await firstGate;
+      await route
+        .fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(runtime())
+        })
+        .catch(() => undefined);
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        runtime({
+          mode: "openai-compatible",
+          provider: "vibecode",
+          model: "gpt-5.5",
+          credential_configured: true,
+          fallback_to_mock: false,
+          registry_version: "test-registry"
+        })
+      )
+    });
+  });
+
+  const firstRequest = page.waitForRequest("**/api/v1/model-runtime");
+  await page.goto("/model-status");
+  await firstRequest;
+
+  await page.getByRole("button", { name: "Проверить снова" }).click();
+  await expect(page.getByText("Live-провайдер настроен")).toBeVisible();
+  expect(attempts).toBe(2);
+
+  releaseFirst();
+  await page.waitForTimeout(100);
+  await expect(page.getByText("Live-провайдер настроен")).toBeVisible();
+  await expect(page.getByText("Mock-режим активен")).toHaveCount(0);
+});
+
 test(
   "shows offline state and refreshes automatically after reconnect",
   async ({ page, context }) => {
