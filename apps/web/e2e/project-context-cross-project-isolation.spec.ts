@@ -12,9 +12,7 @@ const project = (id: string, title: string) => ({
 const alpha = project("context-alpha", "Context Alpha");
 const beta = project("context-beta", "Context Beta");
 
-test("keeps Project Context browser state isolated while switching projects in one SPA session", async ({
-  page
-}) => {
+test("keeps Project Context isolated while switching projects", async ({ page }) => {
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
