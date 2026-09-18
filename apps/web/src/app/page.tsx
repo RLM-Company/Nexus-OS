@@ -585,6 +585,15 @@ const CapabilityWorkspace = ({
   );
 };
 
+const safeApiErrorMessage = (status: number): string => {
+  if (status === 401 || status === 403) return "Недостаточно прав для этого действия.";
+  if (status === 404) return "Запрошенные данные не найдены.";
+  if (status === 409) return "Состояние изменилось. Обновите данные и повторите попытку.";
+  if (status === 429) return "Слишком много запросов. Повторите попытку позже.";
+  if (status >= 500) return "Сервис временно недоступен. Повторите попытку.";
+  return "Не удалось выполнить запрос. Проверьте данные и повторите попытку.";
+};
+
 const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   const headers = new Headers(init?.headers);
   if (init?.body !== undefined && init.body !== null && !headers.has("content-type")) {
@@ -594,13 +603,19 @@ const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
     ...init,
     headers
   });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: { message?: string };
-    } | null;
-    throw new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
-  }
+  if (!response.ok) throw new Error(safeApiErrorMessage(response.status));
   return (await response.json()) as T;
+};
+
+const safeStreamUrl = (value: string, expectedPrefix: string): string | null => {
+  try {
+    const parsed = new URL(value, window.location.origin);
+    if (parsed.origin !== window.location.origin) return null;
+    if (!parsed.pathname.startsWith(expectedPrefix)) return null;
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return null;
+  }
 };
 
 const clientId = (): string =>
@@ -624,16 +639,14 @@ const greetingSeed = (): number => {
 
 const displayedContent = (message: Message): string | null => {
   if (message.status === "cancelled") return "Запуск остановлен владельцем.";
-  if (message.status === "failed")
-    return `Запуск завершился с ошибкой: ${message.error_code ?? "UNKNOWN"}.`;
+  if (message.status === "failed") return "Запуск завершился с ошибкой.";
   if (message.content) return message.content;
   return null;
 };
 
 const displayedGeneralContent = (message: LocalChatMessage): string | null => {
   if (message.status === "cancelled") return "Ответ остановлен владельцем.";
-  if (message.status === "failed")
-    return `Ответ завершился с ошибкой: ${message.error_code ?? "UNKNOWN"}.`;
+  if (message.status === "failed") return "Ответ завершился с ошибкой.";
   return message.content || null;
 };
 
@@ -766,6 +779,8 @@ export default function Home() {
   const initialRouteHandledRef = useRef(false);
   const previousGreetingRef = useRef<string | null>(null);
   const greetingInitializedRef = useRef(false);
+  const submitPendingRef = useRef(false);
+  const projectPromotionPendingRef = useRef(false);
   const activeLocalChat = localChats.find((chat) => chat.id === activeLocalChatId) ?? null;
   const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
   const projectProposal = activeLocalChat?.projectProposal ?? null;
@@ -806,6 +821,22 @@ export default function Home() {
     );
     setLocalChatsHydrated(true);
   }, []);
+
+  const reloadShellData = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    try {
+      await Promise.all([
+        loadProjects(),
+        loadGeneralChats(),
+        api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
+      ]);
+    } catch {
+      setError("API Cosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
+    } finally {
+      setLoading(false);
+    }
+  }, [loadGeneralChats, loadProjects]);
 
   useEffect(() => {
     if (greetingInitializedRef.current) return;
@@ -859,19 +890,13 @@ export default function Home() {
   }, [surface, workspaceSurfaceHydrated]);
 
   useEffect(() => {
-    void Promise.all([
-      loadProjects(),
-      loadGeneralChats(),
-      api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
-    ])
-      .catch(() => setError("API Cosmora пока недоступен. Запусти web и api вместе."))
-      .finally(() => setLoading(false));
+    void reloadShellData();
     return () => {
       viewEpochRef.current += 1;
       streamRef.current?.close();
       streamRef.current = null;
     };
-  }, [loadGeneralChats, loadProjects]);
+  }, [reloadShellData]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -1076,7 +1101,15 @@ export default function Home() {
       const epoch = viewEpochRef.current;
       streamRef.current?.close();
       setActiveRunId(accepted.run_id);
-      const source = new EventSource(accepted.stream_url);
+      const streamUrl = safeStreamUrl(accepted.stream_url, "/api/v1/runs/");
+      if (!streamUrl) {
+        setActiveRunId(null);
+        setSending(false);
+        setRunPhase("failed");
+        setError("Не удалось безопасно открыть поток ответа.");
+        return;
+      }
+      const source = new EventSource(streamUrl);
       streamRef.current = source;
       let assistantId: string | null = null;
       let finished = false;
@@ -1162,16 +1195,15 @@ export default function Home() {
         });
       });
 
-      source.addEventListener("run.failed", (raw) => {
+      source.addEventListener("run.failed", () => {
         if (!isCurrent()) return;
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
-        const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
         setSending(false);
         setActiveRunId(null);
         setRunPhase("failed");
-        setError(`Запуск остановлен: ${event.data.error_code}`);
+        setError("Запуск завершился с ошибкой. Внутренние детали скрыты.");
         void refreshProject(accepted.project.id).catch(() => undefined);
       });
 
@@ -1203,7 +1235,15 @@ export default function Home() {
       const chatIdForRun = accepted.chat.id;
       streamRef.current?.close();
       setActiveRunId(accepted.run_id);
-      const source = new EventSource(accepted.stream_url);
+      const streamUrl = safeStreamUrl(accepted.stream_url, "/api/v1/chat-runs/");
+      if (!streamUrl) {
+        setActiveRunId(null);
+        setSending(false);
+        setRunPhase("failed");
+        setError("Не удалось безопасно открыть поток ответа.");
+        return;
+      }
+      const source = new EventSource(streamUrl);
       streamRef.current = source;
       let assistantId: string | null = null;
       let streamContent = "";
@@ -1287,15 +1327,14 @@ export default function Home() {
           );
         });
       });
-      source.addEventListener("run.failed", (raw) => {
+      source.addEventListener("run.failed", () => {
         if (!isCurrent()) return;
         finished = true;
         closeSource();
-        const event = JSON.parse(String(raw.data)) as { data: { error_code: string } };
         setSending(false);
         setActiveRunId(null);
         setRunPhase("failed");
-        setError(`Ответ остановлен: ${event.data.error_code}`);
+        setError("Ответ завершился с ошибкой. Внутренние детали скрыты.");
         void refreshGeneralChat(chatIdForRun).catch(() => undefined);
       });
       source.addEventListener("run.cancelled", () => {
@@ -1463,50 +1502,104 @@ export default function Home() {
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     const content = draft.trim();
-    if (!content || sending || loading) return;
+    if (!content || sending || loading || submitPendingRef.current) return;
+    submitPendingRef.current = true;
+    try {
+      if (!activeProject) {
+        const assessment = assessTaskComplexity(content);
+        const epoch = viewEpochRef.current;
+        setSending(true);
+        setRunPhase("queued");
+        setError(null);
+        setLastCompletedRoute(null);
+        setDraft("");
+        try {
+          const accepted = activeLocalChatId
+            ? await api<GeneralChatAcceptedResponse>(
+                `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`,
+                {
+                  method: "POST",
+                  body: JSON.stringify({ content, client_message_id: clientId() })
+                }
+              )
+            : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
+                method: "POST",
+                body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+              });
+          if (epoch !== viewEpochRef.current) {
+            void loadGeneralChats().catch(() => undefined);
+            return;
+          }
+          const proposal = assessment.requiresProject ? { content, assessment } : null;
+          setLocalChats((current) => {
+            const existing = current.find((chat) => chat.id === accepted.chat.id);
+            const updated: LocalChatSession = {
+              ...accepted.chat,
+              last_message_preview: content.slice(0, 240),
+              messages: [...(existing?.messages ?? []), accepted.user_message],
+              projectProposal: proposal
+            };
+            return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
+          });
+          setActiveLocalChatId(accepted.chat.id);
+          followGeneralChatStream(accepted);
+          void loadGeneralChats().catch(() => {
+            if (epoch === viewEpochRef.current) {
+              setError("Сообщение принято. Не удалось обновить список чатов.");
+            }
+          });
+        } catch (cause) {
+          if (epoch !== viewEpochRef.current) return;
+          setDraft(content);
+          setSending(false);
+          setRunPhase("failed");
+          setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
+        }
+        return;
+      }
 
-    if (!activeProject) {
-      const assessment = assessTaskComplexity(content);
       const epoch = viewEpochRef.current;
+
       setSending(true);
+      selectProjectView("chat");
       setRunPhase("queued");
       setError(null);
       setLastCompletedRoute(null);
       setDraft("");
       try {
-        const accepted = activeLocalChatId
-          ? await api<GeneralChatAcceptedResponse>(
-              `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`,
-              {
-                method: "POST",
-                body: JSON.stringify({ content, client_message_id: clientId() })
-              }
-            )
-          : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
-              method: "POST",
-              body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
-            });
+        const accepted = await api<AcceptedResponse>(
+          `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
+          {
+            method: "POST",
+            body: JSON.stringify({ content, client_message_id: clientId() })
+          }
+        );
+
         if (epoch !== viewEpochRef.current) {
-          void loadGeneralChats().catch(() => undefined);
+          void loadProjects().catch(() => undefined);
           return;
         }
-        const proposal = assessment.requiresProject ? { content, assessment } : null;
-        setLocalChats((current) => {
-          const existing = current.find((chat) => chat.id === accepted.chat.id);
-          const updated: LocalChatSession = {
-            ...accepted.chat,
-            last_message_preview: content.slice(0, 240),
-            messages: [...(existing?.messages ?? []), accepted.user_message],
-            projectProposal: proposal
-          };
-          return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
-        });
-        setActiveLocalChatId(accepted.chat.id);
-        followGeneralChatStream(accepted);
-        void loadGeneralChats().catch(() => {
-          if (epoch === viewEpochRef.current) {
-            setError("Сообщение принято. Не удалось обновить список чатов.");
-          }
+        selectedProjectRef.current = accepted.project.id;
+        replaceConsoleRoute(accepted.project.id, "chat");
+        // Invalidate snapshots fetched before server acceptance of this run.
+        viewRequestRef.current += 1;
+        setActiveProject(accepted.project);
+        setChatId(accepted.chat_id);
+        setMessages((current) => [...current, accepted.user_message]);
+        setPolicySignals(EMPTY_POLICY_SIGNALS);
+        void api<{ profile: AutonomyProfile }>(
+          `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
+        )
+          .then((response) => {
+            if (epoch === viewEpochRef.current) setAutonomyProfile(response.profile);
+          })
+          .catch(() => {
+            if (epoch === viewEpochRef.current) setAutonomyProfile(null);
+          });
+        followStream(accepted);
+        void loadProjects().catch(() => {
+          if (epoch === viewEpochRef.current)
+            setError("Запуск принят. Не удалось обновить список проектов.");
         });
       } catch (cause) {
         if (epoch !== viewEpochRef.current) return;
@@ -1515,63 +1608,21 @@ export default function Home() {
         setRunPhase("failed");
         setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
       }
-      return;
-    }
-
-    const epoch = viewEpochRef.current;
-
-    setSending(true);
-    selectProjectView("chat");
-    setRunPhase("queued");
-    setError(null);
-    setLastCompletedRoute(null);
-    setDraft("");
-    try {
-      const accepted = await api<AcceptedResponse>(
-        `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
-        {
-          method: "POST",
-          body: JSON.stringify({ content, client_message_id: clientId() })
-        }
-      );
-
-      if (epoch !== viewEpochRef.current) {
-        void loadProjects().catch(() => undefined);
-        return;
-      }
-      selectedProjectRef.current = accepted.project.id;
-      replaceConsoleRoute(accepted.project.id, "chat");
-      // Invalidate snapshots fetched before server acceptance of this run.
-      viewRequestRef.current += 1;
-      setActiveProject(accepted.project);
-      setChatId(accepted.chat_id);
-      setMessages((current) => [...current, accepted.user_message]);
-      setPolicySignals(EMPTY_POLICY_SIGNALS);
-      void api<{ profile: AutonomyProfile }>(
-        `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
-      )
-        .then((response) => {
-          if (epoch === viewEpochRef.current) setAutonomyProfile(response.profile);
-        })
-        .catch(() => {
-          if (epoch === viewEpochRef.current) setAutonomyProfile(null);
-        });
-      followStream(accepted);
-      void loadProjects().catch(() => {
-        if (epoch === viewEpochRef.current)
-          setError("Запуск принят. Не удалось обновить список проектов.");
-      });
-    } catch (cause) {
-      if (epoch !== viewEpochRef.current) return;
-      setDraft(content);
-      setSending(false);
-      setRunPhase("failed");
-      setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
+    } finally {
+      submitPendingRef.current = false;
     }
   };
 
   const promoteToProject = async (): Promise<void> => {
-    if (!projectProposal || !activeLocalChatId || loading) return;
+    if (
+      !projectProposal ||
+      !activeLocalChatId ||
+      loading ||
+      sending ||
+      projectPromotionPendingRef.current
+    )
+      return;
+    projectPromotionPendingRef.current = true;
     const content = projectProposal.content;
     const sourceChatId = activeLocalChatId;
     const epoch = viewEpochRef.current;
@@ -1623,6 +1674,8 @@ export default function Home() {
       setSending(false);
       setRunPhase("failed");
       setError(cause instanceof Error ? cause.message : "Не удалось создать проект");
+    } finally {
+      projectPromotionPendingRef.current = false;
     }
   };
 
@@ -2248,10 +2301,19 @@ export default function Home() {
                       внешние действия автоматически не запускаются.
                     </p>
                     <div className="proposal-actions">
-                      <button type="button" onClick={() => void promoteToProject()}>
+                      <button
+                        type="button"
+                        disabled={sending || loading}
+                        onClick={() => void promoteToProject()}
+                      >
                         Оформить как проект
                       </button>
-                      <button type="button" className="secondary" onClick={dismissProjectProposal}>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={sending || loading}
+                        onClick={dismissProjectProposal}
+                      >
                         Остаться в чате
                       </button>
                     </div>
@@ -2295,7 +2357,7 @@ export default function Home() {
             }
           />
           <div className="composer-footer">
-            <span>
+            <span role={error ? "alert" : undefined} aria-live={error ? "assertive" : "polite"}>
               {error ??
                 (sending
                   ? "Cosmora выполняет запуск…"
@@ -2314,6 +2376,15 @@ export default function Home() {
               </button>
             ) : (
               <div className="composer-actions">
+                {error && (
+                  <button
+                    type="button"
+                    className="restore-run"
+                    onClick={() => void reloadShellData()}
+                  >
+                    ↻ Повторить
+                  </button>
+                )}
                 {recoverableMessage && !draft.trim() && (
                   <button type="button" className="restore-run" onClick={restoreRunDraft}>
                     ↻ Вернуть запрос в редактор
