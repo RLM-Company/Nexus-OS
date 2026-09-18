@@ -839,7 +839,9 @@ export default function Home() {
         api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
       ]);
     } catch {
-      setError("API Cosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
+      setError(
+        "API Cosmora пока недоступен. Проверьте локальное подключение и повторите попытку."
+      );
     } finally {
       setLoading(false);
     }
@@ -1505,49 +1507,101 @@ export default function Home() {
     if (!content || sending || loading || submitPendingRef.current) return;
     submitPendingRef.current = true;
     try {
+      if (!activeProject) {
+        const assessment = assessTaskComplexity(content);
+        const epoch = viewEpochRef.current;
+        setSending(true);
+        setRunPhase("queued");
+        setError(null);
+        setLastCompletedRoute(null);
+        setDraft("");
+        try {
+          const accepted = activeLocalChatId
+            ? await api<GeneralChatAcceptedResponse>(
+                `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`,
+                {
+                  method: "POST",
+                  body: JSON.stringify({ content, client_message_id: clientId() })
+                }
+              )
+            : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
+                method: "POST",
+                body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+              });
+          if (epoch !== viewEpochRef.current) {
+            void loadGeneralChats().catch(() => undefined);
+            return;
+          }
+          const proposal = assessment.requiresProject ? { content, assessment } : null;
+          setLocalChats((current) => {
+            const existing = current.find((chat) => chat.id === accepted.chat.id);
+            const updated: LocalChatSession = {
+              ...accepted.chat,
+              last_message_preview: content.slice(0, 240),
+              messages: [...(existing?.messages ?? []), accepted.user_message],
+              projectProposal: proposal
+            };
+            return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
+          });
+          setActiveLocalChatId(accepted.chat.id);
+          followGeneralChatStream(accepted);
+          void loadGeneralChats().catch(() => {
+            if (epoch === viewEpochRef.current) {
+              setError("Сообщение принято. Не удалось обновить список чатов.");
+            }
+          });
+        } catch (cause) {
+          if (epoch !== viewEpochRef.current) return;
+          setDraft(content);
+          setSending(false);
+          setRunPhase("failed");
+          setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
+        }
+        return;
+      }
 
-    if (!activeProject) {
-      const assessment = assessTaskComplexity(content);
       const epoch = viewEpochRef.current;
+
       setSending(true);
+      selectProjectView("chat");
       setRunPhase("queued");
       setError(null);
       setLastCompletedRoute(null);
       setDraft("");
       try {
-        const accepted = activeLocalChatId
-          ? await api<GeneralChatAcceptedResponse>(
-              `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`,
-              {
-                method: "POST",
-                body: JSON.stringify({ content, client_message_id: clientId() })
-              }
-            )
-          : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
-              method: "POST",
-              body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
-            });
+        const accepted = await api<AcceptedResponse>(
+          `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
+          {
+            method: "POST",
+            body: JSON.stringify({ content, client_message_id: clientId() })
+          }
+        );
+
         if (epoch !== viewEpochRef.current) {
-          void loadGeneralChats().catch(() => undefined);
+          void loadProjects().catch(() => undefined);
           return;
         }
-        const proposal = assessment.requiresProject ? { content, assessment } : null;
-        setLocalChats((current) => {
-          const existing = current.find((chat) => chat.id === accepted.chat.id);
-          const updated: LocalChatSession = {
-            ...accepted.chat,
-            last_message_preview: content.slice(0, 240),
-            messages: [...(existing?.messages ?? []), accepted.user_message],
-            projectProposal: proposal
-          };
-          return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
-        });
-        setActiveLocalChatId(accepted.chat.id);
-        followGeneralChatStream(accepted);
-        void loadGeneralChats().catch(() => {
-          if (epoch === viewEpochRef.current) {
-            setError("Сообщение принято. Не удалось обновить список чатов.");
-          }
+        selectedProjectRef.current = accepted.project.id;
+        replaceConsoleRoute(accepted.project.id, "chat");
+        // Invalidate snapshots fetched before server acceptance of this run.
+        viewRequestRef.current += 1;
+        setActiveProject(accepted.project);
+        setChatId(accepted.chat_id);
+        setMessages((current) => [...current, accepted.user_message]);
+        setPolicySignals(EMPTY_POLICY_SIGNALS);
+        void api<{ profile: AutonomyProfile }>(
+          `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
+        )
+          .then((response) => {
+            if (epoch === viewEpochRef.current) setAutonomyProfile(response.profile);
+          })
+          .catch(() => {
+            if (epoch === viewEpochRef.current) setAutonomyProfile(null);
+          });
+        followStream(accepted);
+        void loadProjects().catch(() => {
+          if (epoch === viewEpochRef.current)
+            setError("Запуск принят. Не удалось обновить список проектов.");
         });
       } catch (cause) {
         if (epoch !== viewEpochRef.current) return;
@@ -1556,59 +1610,6 @@ export default function Home() {
         setRunPhase("failed");
         setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
       }
-      return;
-    }
-
-    const epoch = viewEpochRef.current;
-
-    setSending(true);
-    selectProjectView("chat");
-    setRunPhase("queued");
-    setError(null);
-    setLastCompletedRoute(null);
-    setDraft("");
-    try {
-      const accepted = await api<AcceptedResponse>(
-        `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
-        {
-          method: "POST",
-          body: JSON.stringify({ content, client_message_id: clientId() })
-        }
-      );
-
-      if (epoch !== viewEpochRef.current) {
-        void loadProjects().catch(() => undefined);
-        return;
-      }
-      selectedProjectRef.current = accepted.project.id;
-      replaceConsoleRoute(accepted.project.id, "chat");
-      // Invalidate snapshots fetched before server acceptance of this run.
-      viewRequestRef.current += 1;
-      setActiveProject(accepted.project);
-      setChatId(accepted.chat_id);
-      setMessages((current) => [...current, accepted.user_message]);
-      setPolicySignals(EMPTY_POLICY_SIGNALS);
-      void api<{ profile: AutonomyProfile }>(
-        `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
-      )
-        .then((response) => {
-          if (epoch === viewEpochRef.current) setAutonomyProfile(response.profile);
-        })
-        .catch(() => {
-          if (epoch === viewEpochRef.current) setAutonomyProfile(null);
-        });
-      followStream(accepted);
-      void loadProjects().catch(() => {
-        if (epoch === viewEpochRef.current)
-          setError("Запуск принят. Не удалось обновить список проектов.");
-      });
-    } catch (cause) {
-      if (epoch !== viewEpochRef.current) return;
-      setDraft(content);
-      setSending(false);
-      setRunPhase("failed");
-      setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
-    }
     } finally {
       submitPendingRef.current = false;
     }
