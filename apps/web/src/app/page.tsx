@@ -138,7 +138,9 @@ const parseStreamEnvelope = <T,>(raw: MessageEvent): { data: T } | null => {
   try {
     const parsed = JSON.parse(String(raw.data)) as unknown;
     if (!parsed || typeof parsed !== "object" || !("data" in parsed)) return null;
-    return parsed as { data: T };
+    const data = (parsed as { data?: unknown }).data;
+    if (!data || typeof data !== "object") return null;
+    return { data: data as T };
   } catch {
     return null;
   }
