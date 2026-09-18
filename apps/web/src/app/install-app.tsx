@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -28,6 +28,7 @@ export function InstallApp() {
   const [ios, setIos] = useState(false);
   const [standalone, setStandalone] = useState(false);
   const [showIosHelp, setShowIosHelp] = useState(false);
+  const installButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     setIos(isIosDevice());
@@ -50,6 +51,11 @@ export function InstallApp() {
     };
   }, []);
 
+  const closeIosHelp = (): void => {
+    setShowIosHelp(false);
+    window.requestAnimationFrame(() => installButtonRef.current?.focus());
+  };
+
   if (standalone || (!installPrompt && !ios)) return null;
 
   const install = async (): Promise<void> => {
@@ -65,6 +71,7 @@ export function InstallApp() {
   return (
     <div className="app-install-control">
       <button
+        ref={installButtonRef}
         type="button"
         className="app-install-button"
         aria-label="Установить Cosmora"
@@ -80,13 +87,18 @@ export function InstallApp() {
             type="button"
             className="install-dialog-backdrop"
             aria-label="Закрыть подсказку"
-            onClick={() => setShowIosHelp(false)}
+            onClick={closeIosHelp}
           />
           <section
             className="install-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="install-title"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              closeIosHelp();
+            }}
           >
             <span className="brand-mark" aria-hidden="true">
               C
@@ -95,7 +107,7 @@ export function InstallApp() {
               <h2 id="install-title">Добавить Cosmora на экран «Домой»</h2>
               <p>В Safari нажмите «Поделиться», затем выберите «На экран Домой».</p>
             </div>
-            <button type="button" onClick={() => setShowIosHelp(false)}>
+            <button type="button" autoFocus onClick={closeIosHelp}>
               Понятно
             </button>
           </section>
