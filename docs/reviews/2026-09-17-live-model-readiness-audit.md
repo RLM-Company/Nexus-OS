@@ -31,7 +31,8 @@ Scope: audit `web → API → ManagerService → Model Gateway → streaming →
 - error bodies, provider headers, stop details, and credential values are never rendered or logged by the page.
 - malformed/unavailable operations status fails closed instead of assuming live is safe.
 - the page links to `/live-model-setup.md`, a local activation/removal runbook.
-- Playwright coverage verifies the safe configuration/error surface, Emergency Stop blocking, retry/reconnect, and that internal sentinel text is not rendered.
+- repeated status checks abort superseded requests and use a request epoch, so a delayed older response cannot overwrite a newer readiness result.
+- Playwright coverage verifies the safe configuration/error surface, Emergency Stop blocking, retry/reconnect, stale-response suppression, and that internal sentinel text is not rendered.
 
 ## Remaining blockers and findings not fixed in this branch
 
@@ -67,9 +68,9 @@ Scope: audit `web → API → ManagerService → Model Gateway → streaming →
 
 - **File:** `apps/web/src/app/page.tsx`.
 - Project and general-chat `EventSource.onerror` handlers now close the broken observer and immediately re-read the corresponding durable server state.
-- JSON SSE envelopes are parsed defensively. A malformed envelope closes the observer and uses the same persisted-state recovery path instead of surfacing a parser exception or raw event data.
+- JSON SSE envelopes are parsed defensively, including field/type validation for message-started, message-delta, run-completed, and run-failed payloads. Invalid JSON or a structurally malformed event closes the observer and uses the same persisted-state recovery path instead of surfacing parser/internal data.
 - No recovery path resubmits the original user request and no mock fallback is introduced.
-- **Tests:** `apps/web/e2e/manager-console-races.spec.ts` now covers project disconnect recovery, general-chat disconnect recovery, and malformed SSE JSON recovery, including assertions that no duplicate POST is made.
+- **Tests:** `apps/web/e2e/manager-console-races.spec.ts` now covers project disconnect recovery, general-chat disconnect recovery, malformed SSE JSON, structurally malformed SSE payloads, and empty completed responses, including assertions that recovery does not resubmit the request.
 
 ### B5 — a repository workflow performs a real provider request
 
@@ -107,6 +108,13 @@ This branch does not modify CI. The workflow was not dispatched during this audi
 Current main already has deterministic model-gateway/mock coverage for successful streaming, retry/route selection, timeout normalization, no fallback after partial output, circuit behavior, invalid provider sequencing, cancellation, and durable run recovery/reconnect. `apps/web/e2e/b0.1.spec.ts` covers the real local API/SSE mock path and persisted reload behavior; `apps/web/e2e/manager-console-races.spec.ts` covers stream-delta deduplication, restoration of failed persisted requests, project/general-chat disconnect recovery, and malformed-event recovery.
 
 The new `apps/web/e2e/model-status.spec.ts` adds the safe configuration/error/Emergency Stop surface. Stream-break recovery, malformed-event recovery, and safe rendering for empty completed assistant output are now covered in the allowed web layer. B3 and B7 still prevent honest end-to-end coverage of provider-status categorization and correct backend terminal-state handling for empty provider output without changing the corresponding forbidden gateway/runtime contracts.
+
+## Verification gate status
+
+- The branch was created from and remains based on `origin/main@403ed7143f062bb005a21c2fe1dde53434394e2a`.
+- A full `pnpm check` has **not** completed in the available execution environment. The environment has Node.js but no installed pnpm 11.19.0, and Corepack cannot fetch it because outbound package-registry access fails with `EAI_AGAIN registry.npmjs.org`. Direct external downloads are also unavailable from the command environment.
+- Because the required quality gate has not run, no PR is opened from this branch and the branch must not be described as ready to merge.
+- Offline/static review has still been used to remove concrete type/format/race issues, but it is explicitly not a substitute for `pnpm check`.
 
 ## Live-request safety
 
