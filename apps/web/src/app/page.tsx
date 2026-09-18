@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
 import { InstallApp } from "./install-app";
+import { ProjectContextPanel } from "./project-context-panel";
 
 type Project = {
   id: string;
@@ -100,7 +101,7 @@ type ModelRuntimeStatus = {
 type CompletedRoute = { provider: string; model: string };
 
 type RunPhase = "idle" | "queued" | "running" | "streaming" | "completed" | "failed" | "cancelled";
-type ProjectView = "chat" | "plan" | "project";
+type ProjectView = "chat" | "plan" | "project" | "context";
 type WorkspaceSurface =
   "manager" | "skills" | "code" | "work" | "images" | "video" | "sound" | "multi-agent";
 
@@ -132,7 +133,7 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
 };
 
 const isProjectView = (value: string | null): value is ProjectView =>
-  value === "chat" || value === "plan" || value === "project";
+  value === "chat" || value === "plan" || value === "project" || value === "context";
 
 const replaceConsoleRoute = (projectId: string | null, view: ProjectView = "chat"): void => {
   const route = projectId
@@ -1975,6 +1976,16 @@ export default function Home() {
                 </span>
               )}
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={projectView === "context"}
+              className={projectView === "context" ? "active" : ""}
+              onClick={() => selectProjectView("context")}
+            >
+              <ToolIcon kind="work" />
+              Контекст
+            </button>
           </nav>
         )}
 
@@ -2109,6 +2120,14 @@ export default function Home() {
               </section>
             )}
           </div>
+        )}
+
+        {activeProject && projectView === "context" && (
+          <ProjectContextPanel
+            projectId={activeProject.id}
+            projectTitle={activeProject.title}
+            messageCount={messages.length}
+          />
         )}
 
         {activeProject && projectView === "plan" && (
