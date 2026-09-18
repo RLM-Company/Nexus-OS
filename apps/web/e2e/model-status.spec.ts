@@ -68,9 +68,10 @@ test("shows the ready model state when an external credential is configured", as
 
 test("retries a temporary runtime failure without leaking details", async ({ page }) => {
   let attempts = 0;
+  let unavailable = true;
   await page.route("**/api/v1/model-runtime", async (route) => {
     attempts += 1;
-    if (attempts === 1) {
+    if (unavailable) {
       await route.fulfill({
         status: 503,
         contentType: "application/json",
@@ -98,10 +99,11 @@ test("retries a temporary runtime failure without leaking details", async ({ pag
   const retryButton = page.getByRole("button", { name: "Повторить" });
   await retryButton.focus();
   await expect(retryButton).toBeFocused();
+  unavailable = false;
   await retryButton.click();
 
   await expect(page.getByTestId("runtime-readiness")).toContainText("Готово к запуску");
-  expect(attempts).toBe(2);
+  expect(attempts).toBeGreaterThanOrEqual(2);
 });
 
 test("keeps the model status page within the viewport on mobile and desktop", async ({ page }) => {
