@@ -163,8 +163,9 @@ const isMessageDeltaData = (
 ): value is { message_id: string; seq: number; delta: string } =>
   isRecord(value) &&
   typeof value.message_id === "string" &&
+  typeof value.seq === "number" &&
   Number.isInteger(value.seq) &&
-  (value.seq as number) >= 0 &&
+  value.seq >= 0 &&
   typeof value.delta === "string";
 
 const isRunCompletedData = (
