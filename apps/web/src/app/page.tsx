@@ -99,7 +99,14 @@ type ModelRuntimeStatus = {
 
 type CompletedRoute = { provider: string; model: string };
 
-type RunPhase = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
+type RunPhase =
+  | "idle"
+  | "queued"
+  | "running"
+  | "streaming"
+  | "completed"
+  | "failed"
+  | "cancelled";
 type ProjectView = "chat" | "plan" | "project";
 type WorkspaceSurface =
   "manager" | "skills" | "code" | "work" | "images" | "video" | "sound" | "multi-agent";
@@ -199,8 +206,9 @@ const DEMO_RUN_STATUS_LABEL: Record<DemoManagerRun["status"], string> = {
 
 const RUN_PHASE_LABEL: Record<RunPhase, string> = {
   idle: "Готов",
-  queued: "В очереди",
-  running: "Менеджер отвечает",
+  queued: "Ожидает запуска",
+  running: "Выполняется",
+  streaming: "Ответ поступает",
   completed: "Ответ получен",
   failed: "Ошибка запуска",
   cancelled: "Остановлен"
@@ -608,7 +616,11 @@ const clientId = (): string =>
     : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const SIDEBAR_SECTIONS_STORAGE_KEY = "cosmora:sidebar-sections";
+const WORKSPACE_SURFACE_STORAGE_KEY = "cosmora:workspace-surface";
 const EMPTY_LOCAL_CHAT_MESSAGES: LocalChatMessage[] = [];
+
+const isToolSurface = (value: string | null): value is ToolSurface =>
+  TOOL_ITEMS.some((item) => item.id === value);
 
 const greetingSeed = (): number => {
   if (typeof crypto.getRandomValues === "function") {
@@ -654,8 +666,11 @@ const restoredRunState = (
       : { phase: "idle", activeRunId: null };
   }
 
-  if (assistant.status === "pending" || assistant.status === "streaming") {
+  if (assistant.status === "pending") {
     return { phase: "running", activeRunId: runId };
+  }
+  if (assistant.status === "streaming") {
+    return { phase: "streaming", activeRunId: runId };
   }
   if (assistant.status === "completed") return { phase: "completed", activeRunId: null };
   if (assistant.status === "failed") return { phase: "failed", activeRunId: null };
@@ -748,6 +763,7 @@ export default function Home() {
   const [chatsExpanded, setChatsExpanded] = useState(true);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
   const [sidebarSectionsHydrated, setSidebarSectionsHydrated] = useState(false);
+  const [workspaceSurfaceHydrated, setWorkspaceSurfaceHydrated] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -829,6 +845,25 @@ export default function Home() {
       // Section toggles still work for the current page when storage is unavailable.
     }
   }, [chatsExpanded, projectsExpanded, sidebarSectionsHydrated]);
+
+  useEffect(() => {
+    try {
+      const savedSurface = window.localStorage.getItem(WORKSPACE_SURFACE_STORAGE_KEY);
+      if (isToolSurface(savedSurface)) setSurface(savedSurface);
+    } catch {
+      // Keep Manager as the safe default when local UI storage is unavailable.
+    }
+    setWorkspaceSurfaceHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceSurfaceHydrated) return;
+    try {
+      window.localStorage.setItem(WORKSPACE_SURFACE_STORAGE_KEY, surface);
+    } catch {
+      // Surface selection remains usable for the current page without persistence.
+    }
+  }, [surface, workspaceSurfaceHydrated]);
 
   useEffect(() => {
     void Promise.all([
@@ -1082,6 +1117,7 @@ export default function Home() {
 
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
+        setRunPhase("streaming");
         const event = JSON.parse(String(raw.data)) as {
           data: { message_id: string; seq: number; delta: string };
         };
@@ -1210,6 +1246,7 @@ export default function Home() {
       });
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
+        setRunPhase("streaming");
         const event = JSON.parse(String(raw.data)) as {
           data: { message_id: string; seq: number; delta: string };
         };
