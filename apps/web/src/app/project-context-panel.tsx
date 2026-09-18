@@ -194,7 +194,7 @@ export function ProjectContextPanel({
   };
 
   const connectPreview = (): void => {
-    if (!preview) return;
+    if (!preview || used + preview.size > CONTEXT_LIMIT) return;
     setState((current) => ({
       sources: current.sources.map((item) =>
         item.id === preview.id ? { ...item, connected: true } : item
@@ -333,11 +333,20 @@ export function ProjectContextPanel({
                 <dd>{formatTokens(preview.size)} токенов</dd>
               </div>
             </dl>
+            {used + preview.size > CONTEXT_LIMIT && (
+              <p className={styles.error} role="alert">
+                Источник не подключён: будет превышен лимит 64 000 токенов.
+              </p>
+            )}
             <div className={styles.modalActions}>
               <button type="button" className={styles.secondary} onClick={() => setPreview(null)}>
                 Отмена
               </button>
-              <button type="button" onClick={connectPreview}>
+              <button
+                type="button"
+                disabled={used + preview.size > CONTEXT_LIMIT}
+                onClick={connectPreview}
+              >
                 Подключить источник
               </button>
             </div>
