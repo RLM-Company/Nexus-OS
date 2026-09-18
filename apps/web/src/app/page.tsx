@@ -842,9 +842,7 @@ export default function Home() {
         api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
       ]);
     } catch {
-      setError(
-        "API Cosmora пока недоступен. Проверьте локальное подключение и повторите попытку."
-      );
+      setError("API Cosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
     } finally {
       setLoading(false);
     }
