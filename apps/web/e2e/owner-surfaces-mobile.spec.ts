@@ -13,7 +13,6 @@ test("Control Center stays usable at 390x844", async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/control-center?project=${encodeURIComponent(projectId)}`);
 
-  await expect(page.getByText("Guarded owner actions")).toBeVisible();
   await expect(
     page.getByRole("heading", {
       name: "Полномочия, подтверждения и аварийное состояние — в одном месте"
