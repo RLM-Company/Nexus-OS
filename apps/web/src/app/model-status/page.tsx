@@ -196,11 +196,13 @@ export default function ModelStatusPage() {
         fetch("/api/v1/operations/status", { cache: "no-store", signal: controller.signal })
       ]);
       if (!runtimeResponse.ok) {
-        if (isCurrent()) setState({ kind: "error", error: safeErrorForStatus(runtimeResponse.status) });
+        if (isCurrent())
+          setState({ kind: "error", error: safeErrorForStatus(runtimeResponse.status) });
         return;
       }
       if (!operationsResponse.ok) {
-        if (isCurrent()) setState({ kind: "error", error: safeErrorForStatus(operationsResponse.status) });
+        if (isCurrent())
+          setState({ kind: "error", error: safeErrorForStatus(operationsResponse.status) });
         return;
       }
 
