@@ -349,6 +349,22 @@ test("recovers persisted project state after malformed SSE JSON", async ({ page 
   expect(state.posts).toBe(0);
 });
 
+test("shows a safe message for an empty completed assistant response", async ({ page }) => {
+  const state = await fixture(page);
+  state.alpha = detail("alpha", "", "completed");
+
+  await page.goto("/");
+  await page
+    .locator(".project-list")
+    .getByRole("button", { name: /Project Alpha/ })
+    .click();
+
+  await expect(
+    page.getByText("Модель завершила ответ без текста. Повторите запрос после проверки подключения.")
+  ).toBeVisible();
+  expect(state.posts).toBe(0);
+});
+
 test("preserves an accepted run when only the sidebar refresh fails", async ({ page }) => {
   const state = await fixture(page);
   state.alpha = detail("alpha", "", "streaming");
