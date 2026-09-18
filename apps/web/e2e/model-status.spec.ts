@@ -214,7 +214,9 @@ test("shows a safe error for malformed status payloads", async ({ page }) => {
   await expect(page.getByText("INTERNAL_RESPONSE_SENTINEL")).toHaveCount(0);
 });
 
-test("rejects malformed Emergency Stop status instead of assuming live is safe", async ({ page }) => {
+test(
+  "rejects malformed Emergency Stop status instead of assuming live is safe",
+  async ({ page }) => {
   await fulfillRuntime(page, {
     mode: "openai-compatible",
     provider: "vibecode",
@@ -234,7 +236,8 @@ test("rejects malformed Emergency Stop status instead of assuming live is safe",
 
   await expect(page.getByText("Получен неожиданный ответ")).toBeVisible();
   await expect(page.getByText("Live-провайдер настроен")).toHaveCount(0);
-});
+  }
+);
 
 test("times out locally without surfacing a delayed response body", async ({ page }) => {
   await fulfillOperations(page);
@@ -287,7 +290,9 @@ test("retry recovers after a temporary server failure", async ({ page }) => {
   expect(attempts).toBe(2);
 });
 
-test("shows offline state and refreshes automatically after reconnect", async ({ page, context }) => {
+test(
+  "shows offline state and refreshes automatically after reconnect",
+  async ({ page, context }) => {
   await fulfillSafeStatus(page, {
     mode: "openai-compatible",
     provider: "vibecode",
@@ -303,4 +308,5 @@ test("shows offline state and refreshes automatically after reconnect", async ({
 
   await context.setOffline(false);
   await expect(page.getByText("Live-провайдер настроен")).toBeVisible();
-});
+  }
+);
