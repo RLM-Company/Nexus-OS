@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
+import { safeApiError } from "../safe-api-error";
 import styles from "./blueprint-controls.module.css";
 
 type Reference = { id: string; version: number };
@@ -91,12 +92,7 @@ const numberValue = (form: FormData, name: string): number => {
   return Number.isFinite(value) && value >= 0 ? value : 0;
 };
 
-const readError = async (response: Response): Promise<Error> => {
-  const body = (await response.json().catch(() => null)) as {
-    error?: { message?: string };
-  } | null;
-  return new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
-};
+const readError = async (response: Response): Promise<Error> => safeApiError(response);
 
 export default function BlueprintControls({
   projectId,
