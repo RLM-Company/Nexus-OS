@@ -313,7 +313,10 @@ export function ProjectContextPanel({
                   <p>{redactContextText(source.summary)}</p>
                   <small>{formatTokens(source.size)} токенов · mock estimate</small>
                 </div>
-                <button type="button" onClick={(event) => toggleSource(source, event.currentTarget)}>
+                <button
+                  type="button"
+                  onClick={(event) => toggleSource(source, event.currentTarget)}
+                >
                   {source.connected ? "Отключить" : "Подключить"}
                 </button>
               </article>
