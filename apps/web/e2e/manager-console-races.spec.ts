@@ -37,6 +37,15 @@ const detail = (id: string, content = "Ответ", status = "completed") => ({
 const fixture = async (page: Page) => {
   const state = {
     alpha: detail("alpha"),
+    general: {
+      chat: {
+        id: "general-alpha",
+        title: "Оформи новую задачу как проект",
+        created_at: "2026-09-01T00:00:00.000Z",
+        updated_at: "2026-09-01T00:00:00.000Z"
+      },
+      messages: [] as Array<Record<string, unknown>>
+    },
     waitForAlpha: Promise.resolve(),
     unavailablePolicy: false,
     failProjectList: false,
@@ -70,6 +79,9 @@ const fixture = async (page: Page) => {
         run_id: "general-run-alpha",
         stream_url: "/api/v1/chat-runs/general-run-alpha/events"
       };
+      state.general.messages = [body.user_message as Record<string, unknown>];
+    } else if (path === "/api/v1/chats/general-alpha") {
+      body = state.general;
     } else if (path === "/api/v1/chats") {
       body = {
         items: state.generalChatCreated
@@ -124,6 +136,14 @@ const fixture = async (page: Page) => {
       onerror: (() => void) | null = null;
       readonly receive = (event: Event): void => {
         const { type, data } = (event as CustomEvent<{ type: string; data: unknown }>).detail;
+        if (type === "__error__") {
+          this.onerror?.();
+          return;
+        }
+        if (type === "__raw__") {
+          this.dispatchEvent(new MessageEvent("message.delta", { data: String(data) }));
+          return;
+        }
         this.dispatchEvent(new MessageEvent(type, { data: JSON.stringify({ data }) }));
       };
       constructor() {
@@ -222,6 +242,98 @@ test("does not append a streamed delta twice when polling already contains it", 
   await emit(1, "B");
   await expect(page.locator(".message.assistant p")).toHaveText("AB");
   await expect(page.getByRole("button", { name: "Остановить" })).toBeEnabled();
+});
+
+
+test("recovers persisted project state after the stream connection breaks", async ({ page }) => {
+  const state = await fixture(page);
+  state.alpha = detail("alpha", "Partial response", "streaming");
+
+  await page.goto("/");
+  await page
+    .locator(".project-list")
+    .getByRole("button", { name: /Project Alpha/ })
+    .click();
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
+
+  state.alpha = detail("alpha", "Recovered project response", "completed");
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("fixture:sse", { detail: { type: "__error__", data: null } })
+    );
+  });
+
+  await expect(page.locator(".message.assistant p")).toHaveText("Recovered project response");
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "closed");
+  expect(state.posts).toBe(0);
+});
+
+test("recovers persisted general chat state after the stream connection breaks", async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto("/");
+  await page.getByLabel("Сообщение Cosmora").fill("Оформи новую задачу как проект");
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
+
+  state.general.messages = [
+    {
+      id: "general-message-alpha",
+      chat_id: "general-alpha",
+      role: "user",
+      content_type: "text",
+      content: "Оформи новую задачу как проект",
+      status: "completed",
+      run_id: "general-run-alpha",
+      error_code: null,
+      created_at: "2026-09-01T00:00:00.000Z",
+      updated_at: "2026-09-01T00:00:00.000Z"
+    },
+    {
+      id: "general-assistant-alpha",
+      chat_id: "general-alpha",
+      role: "assistant",
+      content_type: "text",
+      content: "Recovered general response",
+      status: "completed",
+      run_id: "general-run-alpha",
+      error_code: null,
+      created_at: "2026-09-01T00:00:00.000Z",
+      updated_at: "2026-09-01T00:00:00.000Z"
+    }
+  ];
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("fixture:sse", { detail: { type: "__error__", data: null } })
+    );
+  });
+
+  await expect(page.locator(".message.assistant p")).toHaveText("Recovered general response");
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "closed");
+  expect(state.posts).toBe(0);
+});
+
+test("recovers persisted project state after malformed SSE JSON", async ({ page }) => {
+  const state = await fixture(page);
+  state.alpha = detail("alpha", "Partial response", "streaming");
+
+  await page.goto("/");
+  await page
+    .locator(".project-list")
+    .getByRole("button", { name: /Project Alpha/ })
+    .click();
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
+
+  state.alpha = detail("alpha", "Recovered malformed response", "completed");
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("fixture:sse", { detail: { type: "__raw__", data: "{not-json" } })
+    );
+  });
+
+  await expect(page.locator(".message.assistant p")).toHaveText("Recovered malformed response");
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "closed");
+  expect(state.posts).toBe(0);
 });
 
 test("preserves an accepted run when only the sidebar refresh fails", async ({ page }) => {
