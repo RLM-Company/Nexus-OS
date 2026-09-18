@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { safeApiError } from "../safe-api-error";
 import styles from "./blueprint-controls.module.css";
 
@@ -105,6 +105,7 @@ export default function BlueprintControls({
   const [functionId, setFunctionId] = useState(functions[0]?.function_id ?? "");
   const [patternId, setPatternId] = useState("");
   const [pending, setPending] = useState(false);
+  const mutationLockRef = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,7 +145,7 @@ export default function BlueprintControls({
 
   const save = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    if (!selectedFunction || !selectedPattern) return;
+    if (mutationLockRef.current || !selectedFunction || !selectedPattern) return;
     const form = new FormData(event.currentTarget);
     const validUntilRaw = formString(form, "valid-until");
     const validUntilDate = new Date(validUntilRaw);
@@ -193,6 +194,7 @@ export default function BlueprintControls({
       close_conditions: closeConditions
     };
 
+    mutationLockRef.current = true;
     setPending(true);
     setNotice(null);
     setError(null);
@@ -224,6 +226,7 @@ export default function BlueprintControls({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось сохранить чертёж");
     } finally {
+      mutationLockRef.current = false;
       setPending(false);
     }
   };
