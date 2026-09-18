@@ -1920,6 +1920,13 @@ export default function Home() {
           <div className="system-status" aria-label="Статус системы">
             <Link
               className="runtime-status-link"
+              href="/github"
+              title="Открыть безопасный GitHub read-only preview"
+            >
+              GitHub preview
+            </Link>
+            <Link
+              className="runtime-status-link"
               href="/model-status"
               title="Открыть состояние подключения модели"
             >
