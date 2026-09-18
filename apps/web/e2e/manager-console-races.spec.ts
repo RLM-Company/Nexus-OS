@@ -46,6 +46,13 @@ const fixture = async (page: Page) => {
       },
       messages: [] as Array<Record<string, unknown>>
     },
+    runtime: {
+      mode: "mock" as "mock" | "openai-compatible" | "anthropic-compatible",
+      provider: "mock",
+      model: "fixture",
+      credential_configured: false,
+      fallback_to_mock: false
+    },
     waitForAlpha: Promise.resolve(),
     unavailablePolicy: false,
     failProjectList: false,
@@ -123,7 +130,7 @@ const fixture = async (page: Page) => {
       if (state.failProjectList) return route.fulfill({ status: 503, body: "{}" });
       body = { items: [project("alpha"), project("beta")] };
     } else if (path === "/api/v1/model-runtime") {
-      body = { mode: "mock", provider: "mock", model: "fixture", fallback_to_mock: false };
+      body = state.runtime;
     } else if (path === "/api/v1/projects/alpha") {
       const snapshot = structuredClone(state.alpha);
       await state.waitForAlpha;
@@ -217,6 +224,38 @@ for (const destination of ["beta", "new"] as const) {
     }
   });
 }
+
+test("shows explicit mock/live configuration status in the main header", async ({ page }) => {
+  const state = await fixture(page);
+
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Mock режим" })).toBeVisible();
+
+  state.runtime = {
+    mode: "openai-compatible",
+    provider: "vibecode",
+    model: "gpt-5.5",
+    credential_configured: false,
+    fallback_to_mock: false
+  };
+  await page.reload();
+  await expect(page.getByRole("link", { name: "Live не настроен" })).toBeVisible();
+
+  state.runtime = {
+    ...state.runtime,
+    credential_configured: true,
+    fallback_to_mock: true
+  };
+  await page.reload();
+  await expect(page.getByRole("link", { name: "Live: fallback включён" })).toBeVisible();
+
+  state.runtime = {
+    ...state.runtime,
+    fallback_to_mock: false
+  };
+  await page.reload();
+  await expect(page.getByRole("link", { name: "Live настроен" })).toBeVisible();
+});
 
 test("opens a project tab directly from a durable console URL", async ({ page }) => {
   await fixture(page);
