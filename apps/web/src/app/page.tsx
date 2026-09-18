@@ -722,7 +722,6 @@ const generalMessagePlaceholder = (id: string, chatId: string, runId: string): L
   };
 };
 
-
 type ProjectContextSource = {
   id: string;
   title: string;
