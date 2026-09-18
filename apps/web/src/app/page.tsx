@@ -358,6 +358,16 @@ const CapabilityWorkspace = ({
           Подключайте специализации Менеджера и управляйте их доступом в одном месте.
         </p>
         <div className="capability-grid">
+          <Link className="capability-card" href="/skills" aria-label="Каталог Skills">
+            <span>
+              <ToolIcon kind="skills" />
+            </span>
+            <div>
+              <strong>Каталог Skills</strong>
+              <p>Manifest и permissions preview без запуска произвольного кода.</p>
+            </div>
+            <i>Preview</i>
+          </Link>
           <Link className="capability-card" href={agentStudioHref}>
             <span>
               <ToolIcon kind="multi-agent" />
