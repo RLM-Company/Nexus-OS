@@ -51,7 +51,17 @@ Merge order after owner authorization:
    - no OAuth, tokens or GitHub write operations;
    - CI #616 passed with 44 Playwright scenarios.
 
-All four PRs are open, ready for review and mergeable.
+5. **#162 — Project Context preview**
+   - browser-local mock context only;
+   - source preview is required before connecting a new source;
+   - connect, disconnect and explicit clear confirmation are implemented;
+   - local state is bounded, validated and scoped to the active project before persistence;
+   - secret-like source metadata is redacted for rendering and scrubbed from normalized persisted state;
+   - offline, reload and 390×844 mobile coverage are included;
+   - the missing backend/runtime contract is documented separately;
+   - CI run `35393253569` passed with 48 Playwright scenarios.
+
+All five PRs are open, ready for review and mergeable.
 
 Their diffs contain no:
 
@@ -60,51 +70,22 @@ Their diffs contain no:
 - package or lockfile changes;
 - CI changes;
 - forbidden backend packages;
-- credential literals;
-- conflict markers;
-- trailing whitespace.
+- real credential literals;
+- conflict markers.
 
 ## Other green PRs
 
 - **#146** — user E2E audit coverage, CI #563 passed.
 - **#147** — model runtime status retry/error UX, CI #566 passed.
 - **#148** — local user guide, CI #565 passed.
+- **#164** — Control Center and Agent Studio mobile smoke coverage at 390×844; CI run `35392811767` passed with 35 Playwright scenarios.
+- **#165** — owner-surface API error redaction; CI run `35391174018` passed with 35 Playwright scenarios.
+- **#166** — Agent Studio accessible success/error feedback, stacked on #165; CI run `35392815371` passed with 36 Playwright scenarios.
 
 The user guide explicitly states that `manager:smoke` is paid.
 It requires separate authorization.
 
 These PRs are not merged automatically.
-
-## Project Context follow-up
-
-The old **#151** Project Context branch is stale.
-
-It passed:
-
-- formatting;
-- secret scan;
-- lint;
-- typecheck;
-- build.
-
-It failed one Playwright scenario.
-It also modifies an older `page.tsx`.
-
-A replacement **#162** is being built on the green web release stack.
-
-Its intended boundary is:
-
-- browser-local mock context only;
-- bounded and validated localStorage state;
-- source preview before connect;
-- explicit clear confirmation;
-- secret-like text redaction;
-- offline, reload and mobile coverage;
-- no database or migrations;
-- no arbitrary file upload;
-- no Manager Runtime authority.
-
-Until #162 is green, Project Context is not part of release acceptance.
 
 ## Alpha acceptance status
 
@@ -115,15 +96,16 @@ Passed:
 - project creation requires confirmation;
 - reload preserves console UI state;
 - streaming and running states remain observable;
-- 390×844 console coverage exists;
-- API errors hide internal details;
+- 390×844 console and owner-surface coverage exists;
+- main-console and owner-surface API errors hide internal details;
 - unsafe stream URLs fail closed;
+- model-status retry/error UX is covered;
 - Skills has a safe preview;
-- GitHub has a safe read-only preview.
-
-Pending:
-
-- Project Context preview through #162.
+- GitHub has a safe read-only preview;
+- Project Context has a bounded browser-local preview with explicit source confirmation;
+- Project Context state is isolated by project before persistence;
+- secret-like Project Context metadata is scrubbed from normalized browser-local state;
+- Agent Studio success/error feedback is exposed through accessible live regions.
 
 Owner-local:
 
@@ -134,13 +116,18 @@ Owner permission required:
 
 - real GitHub backend integration.
 
+Manual hardware/network validation:
+
+- physical phone/LAN dry run.
+
 Not ready:
 
-- production or autonomous system claims.
+- production or autonomous system claims;
+- autonomous Manager/worker task-graph execution.
 
 ## Security and scope boundaries preserved
 
-The release stack does not change:
+The release stack and follow-up web PRs do not change:
 
 - `apps/api`;
 - `packages/model-gateway`;
@@ -160,38 +147,48 @@ No paid model request was used as release evidence.
 ## Remaining owner actions
 
 1. Explicitly authorize merge of green PRs.
-2. Add `MODEL_API_KEY` only in the owner's local environment.
+2. Add `MODEL_API_KEY` only in the owner's local environment when live-model use is desired.
 3. Run non-paid preflight before any live model request.
 4. Give separate permission before real GitHub backend work.
 5. Perform a physical phone/LAN dry run if that path will be shown.
 
 ## Merge discipline
 
-Do not bulk-merge the stack blindly.
+Do not bulk-merge stacked PRs blindly.
 
-After each merge:
+Core stack order:
+
+`#153 → #157 → #160 → #161 → #162`
+
+Owner-surface stack order:
+
+`#165 → #166`
+
+Independent green PRs:
+
+`#146`, `#147`, `#148`, `#164`.
+
+After each stacked merge:
 
 1. refresh `origin/main`;
-2. retarget or rebase the next PR;
+2. retarget or rebase the next PR as needed;
 3. verify the intended diff;
 4. run the full quality gate;
 5. merge only after the updated target is green.
 
 ## Superseded and stale work
 
-- #149 is historical and is not the current readiness source.
-- superseded intermediate release PRs were closed without merge;
-- #151 should be superseded only after #162 is green.
+- #149 is closed historical readiness work and is not the current readiness source.
+- #151 is closed and superseded by the green #162 Project Context implementation.
+- superseded intermediate release PRs were closed without merge.
 
 ## Current conclusion
 
-The core local-alpha web release candidate is green.
+The local-alpha web release candidate, including the safe Project Context preview, is green.
 
-The remaining work is:
+There is no remaining known P0/P1 defect in this verified web release slice.
 
-- integration;
-- owner authorization;
-- optional safe follow-up surfaces.
+The remaining gates are integration/merge authorization, owner-local live-model configuration, optional real GitHub backend permission and physical phone/LAN validation.
 
 This is not evidence of production readiness.
 It is not evidence of an autonomous company runtime.
