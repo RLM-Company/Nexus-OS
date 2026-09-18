@@ -191,7 +191,7 @@ const EMPTY_POLICY_SIGNALS: PolicySignals = { pendingConfirmations: null, recove
 
 const DEMO_RUN_STATUS_LABEL: Record<DemoManagerRun["status"], string> = {
   queued: "План готов к запуску",
-  running: "Выполняется",
+  running: "Менеджер отвечает",
   succeeded: "Завершён с checkpoint",
   failed: "Требует внимания",
   cancelled: "Остановлен владельцем"
@@ -199,7 +199,7 @@ const DEMO_RUN_STATUS_LABEL: Record<DemoManagerRun["status"], string> = {
 
 const RUN_PHASE_LABEL: Record<RunPhase, string> = {
   idle: "Готов",
-  queued: "Ожидает запуска",
+  queued: "В очереди",
   running: "Выполняется",
   streaming: "Ответ поступает",
   completed: "Ответ получен",
@@ -962,7 +962,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!activeProject || (runPhase !== "queued" && runPhase !== "running")) {
+    if (
+      !activeProject ||
+      (runPhase !== "queued" && runPhase !== "running" && runPhase !== "streaming")
+    ) {
       return;
     }
     const projectId = activeProject.id;
@@ -980,7 +983,11 @@ export default function Home() {
   }, [activeProject, loadProjectView, runPhase]);
 
   useEffect(() => {
-    if (activeProject || !activeLocalChatId || (runPhase !== "queued" && runPhase !== "running")) {
+    if (
+      activeProject ||
+      !activeLocalChatId ||
+      (runPhase !== "queued" && runPhase !== "running" && runPhase !== "streaming")
+    ) {
       return;
     }
     const generalChatId = activeLocalChatId;
