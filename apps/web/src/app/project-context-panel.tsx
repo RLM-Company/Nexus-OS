@@ -83,9 +83,9 @@ const sanitizeSources = (value: unknown): ProjectContextSource[] | null => {
 
     sources.push({
       id: item.id.slice(0, 120),
-      title: item.title.slice(0, 500),
+      title: redactContextText(item.title).slice(0, 500),
       kind: item.kind,
-      summary: item.summary.slice(0, 2_000),
+      summary: redactContextText(item.summary).slice(0, 2_000),
       size: Math.min(CONTEXT_LIMIT, Math.max(0, Math.round(item.size))),
       connected: item.connected
     });
