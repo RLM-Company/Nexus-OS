@@ -31,7 +31,9 @@ test("keeps the iOS install help keyboard-accessible", async ({ page }) => {
   await expect(install).toBeFocused();
 
   await install.click();
-  await page.getByRole("button", { name: "Закрыть подсказку" }).click();
+  await page.getByRole("button", { name: "Закрыть подсказку" }).click({
+    position: { x: 8, y: 8 }
+  });
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(install).toBeFocused();
 });
