@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { safeApiError } from "../safe-api-error";
 import styles from "./proposal-controls.module.css";
 
@@ -70,6 +70,7 @@ export default function ProposalControls({
   onSaved
 }: ProposalControlsProps) {
   const [pending, setPending] = useState<"root" | "delegated" | null>(null);
+  const mutationLockRef = useRef(false);
   const [selectedParentId, setSelectedParentId] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,11 +94,13 @@ export default function ProposalControls({
 
   const saveRoot = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
+    if (mutationLockRef.current) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const rawRef = formString(form, "root-blueprint");
     if (!rawRef) return;
 
+    mutationLockRef.current = true;
     setPending("root");
     setNotice(null);
     setError(null);
@@ -109,18 +112,21 @@ export default function ProposalControls({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось сохранить предложение");
     } finally {
+      mutationLockRef.current = false;
       setPending(null);
     }
   };
 
   const saveDelegated = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
+    if (mutationLockRef.current) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const parentInstanceId = formString(form, "parent-instance");
     const rawRef = formString(form, "child-blueprint");
     if (!parentInstanceId || !rawRef) return;
 
+    mutationLockRef.current = true;
     setPending("delegated");
     setNotice(null);
     setError(null);
@@ -136,6 +142,7 @@ export default function ProposalControls({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Policy Engine отклонил предложение");
     } finally {
+      mutationLockRef.current = false;
       setPending(null);
     }
   };
