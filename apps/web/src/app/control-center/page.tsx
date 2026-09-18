@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { safeApiError } from "../safe-api-error";
 import styles from "./control-center.module.css";
 
 type AutonomyLevel = "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
@@ -235,12 +236,7 @@ const api = async <T,>(url: string, options: ApiOptions = {}): Promise<T> => {
     ...(headers ? { headers } : {}),
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) ?? "null" })
   });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: { message?: string };
-    } | null;
-    throw new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
-  }
+  if (!response.ok) throw safeApiError(response);
   return (await response.json()) as T;
 };
 
