@@ -772,7 +772,7 @@ const redactContextText = (value: string): string =>
       "$1=[скрыто]"
     );
 
-const contextStorageKey = (projectId: string): string => \`cosmora:project-context:\${projectId}\`;
+const contextStorageKey = (projectId: string): string => `cosmora:project-context:${projectId}`;
 
 function ProjectContextPanel({
   projectId,
@@ -833,7 +833,7 @@ function ProjectContextPanel({
   const historySummary =
     messageCount === 0
       ? "В проекте пока нет сообщений. История появится после первой работы с Менеджером."
-      : \`\${projectTitle}: \${messageCount} сообщений. Контекст проекта хранит только выбранные источники и краткие резюме; секреты не отображаются.\`;
+      : `${projectTitle}: ${messageCount} сообщений. Контекст проекта хранит только выбранные источники и краткие резюме; секреты не отображаются.`;
 
   const toggleSource = (source: ProjectContextSource) => {
     if (!source.connected) {
@@ -901,7 +901,7 @@ function ProjectContextPanel({
           <strong>{used.toLocaleString("ru")} / {CONTEXT_LIMIT.toLocaleString("ru")} токенов</strong>
         </div>
         <div className="context-meter-track" aria-hidden="true">
-          <i style={{ width: \`\${percent}%\` }} />
+          <i style={{ width: `${percent}%` }} />
         </div>
         <small>{percent}% лимита · расчёт mock, backend-контракт пока не подключён</small>
       </section>
