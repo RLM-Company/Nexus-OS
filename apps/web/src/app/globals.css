@@ -3170,3 +3170,221 @@ textarea:focus-visible {
     justify-content: center;
   }
 }
+
+
+/* Safe project-context web layer. */
+.project-context-panel {
+  width: min(100%, 54rem);
+  margin: 1.5rem auto 5rem;
+  padding: 0 1rem;
+}
+.context-header,
+.context-section-title,
+.context-meter > div:first-child,
+.context-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.context-header {
+  align-items: flex-start;
+}
+.context-header h2,
+.context-section-title h3,
+.context-modal h3 {
+  margin: 0.2rem 0 0;
+  color: #202123;
+}
+.context-header p,
+.context-history p,
+.context-source-list p,
+.context-empty p,
+.context-modal p,
+.context-boundary {
+  color: #6e6e80;
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+.context-header small,
+.context-history small,
+.context-section-title small,
+.context-modal small,
+.context-source-kind {
+  color: #8e8e9f;
+  font-size: 0.61rem;
+}
+.context-health {
+  flex: 0 0 auto;
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+}
+.context-health.online {
+  color: #23643b;
+  background: #edf8f0;
+}
+.context-health.offline {
+  color: #8a5b14;
+  background: #fff6df;
+}
+.context-alert,
+.context-state,
+.context-empty {
+  margin-top: 1rem;
+  padding: 0.9rem;
+  border: 1px solid #e5e5e9;
+  border-radius: 0.8rem;
+  background: #fafafa;
+}
+.context-alert.error {
+  color: #8a2f2f;
+  background: #fff3f3;
+}
+.context-meter,
+.context-history,
+.context-sources {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #e5e5e9;
+  border-radius: 0.95rem;
+  background: #fff;
+}
+.context-meter span,
+.context-meter small {
+  color: #8e8e9f;
+  font-size: 0.62rem;
+}
+.context-meter strong {
+  color: #202123;
+  font-size: 0.76rem;
+}
+.context-meter-track {
+  height: 0.42rem;
+  margin: 0.75rem 0 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #ececf1;
+}
+.context-meter-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #6d5bd0;
+}
+.context-source-list {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.context-source-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem;
+  border: 1px solid #e5e5e9;
+  border-radius: 0.8rem;
+  background: #fafafa;
+}
+.context-source-list article.connected {
+  border-color: #dcd8f2;
+  background: #fbfaff;
+}
+.context-source-list strong {
+  display: block;
+  margin-top: 0.18rem;
+  color: #202123;
+  font-size: 0.76rem;
+}
+.context-source-list p {
+  margin: 0.25rem 0;
+}
+.context-source-list button,
+.context-danger,
+.context-modal-actions button {
+  min-height: 2.2rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #dcdce2;
+  border-radius: 0.6rem;
+  color: #343541;
+  background: #fff;
+  font-size: 0.66rem;
+}
+.context-danger {
+  color: #8a2f2f;
+}
+.context-danger:disabled {
+  opacity: 0.45;
+}
+.context-boundary {
+  margin-top: 0.9rem;
+}
+.context-modal-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(32, 33, 35, 0.34);
+}
+.context-modal {
+  width: min(100%, 28rem);
+  padding: 1rem;
+  border-radius: 0.95rem;
+  background: #fff;
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.18);
+}
+.context-modal dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.85rem 0;
+}
+.context-modal dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.context-modal dt,
+.context-modal dd {
+  margin: 0;
+  color: #6e6e80;
+  font-size: 0.68rem;
+}
+.context-modal-actions {
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+.context-modal-actions button:not(.secondary) {
+  border-color: #202123;
+  color: #fff;
+  background: #202123;
+}
+.context-modal-actions button.danger {
+  border-color: #9e3535;
+  background: #9e3535;
+}
+
+@media (max-width: 620px) {
+  .context-header,
+  .context-section-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .context-health {
+    align-self: flex-start;
+  }
+  .context-source-list article {
+    grid-template-columns: 1fr;
+  }
+  .context-source-list button {
+    width: 100%;
+  }
+  .context-modal-actions {
+    flex-direction: column-reverse;
+  }
+  .context-modal-actions button {
+    width: 100%;
+  }
+}
