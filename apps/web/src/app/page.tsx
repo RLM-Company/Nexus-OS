@@ -99,6 +99,14 @@ type ModelRuntimeStatus = {
 
 type CompletedRoute = { provider: string; model: string };
 
+const runtimeStatusLabel = (runtime: ModelRuntimeStatus | null): string => {
+  if (!runtime) return "Проверяю модель";
+  if (runtime.mode === "mock") return "Mock режим";
+  if (!runtime.credential_configured) return "Live не настроен";
+  if (runtime.fallback_to_mock) return "Live: fallback включён";
+  return "Live настроен";
+};
+
 type RunPhase = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 type ProjectView = "chat" | "plan" | "project";
 type WorkspaceSurface =
@@ -1911,7 +1919,7 @@ export default function Home() {
               title="Открыть состояние подключения модели"
             >
               <i className="status-dot" />
-              {runtime && runtime.mode !== "mock" ? "Провайдер настроен" : "Модель не подключена"}
+              {runtimeStatusLabel(runtime)}
             </Link>
             <span className="privacy-badge">
               <ShieldIcon />
