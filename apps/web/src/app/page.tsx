@@ -766,7 +766,10 @@ const DEFAULT_CONTEXT_SOURCES: ProjectContextSource[] = [
 
 const redactContextText = (value: string): string =>
   value
-    .replace(/\b(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|Bearer\s+[A-Za-z0-9._-]{8,})\b/gi, "[скрыто]")
+    .replace(
+      /\b(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|Bearer\s+[A-Za-z0-9._-]{8,})\b/gi,
+      "[скрыто]"
+    )
     .replace(
       /\b(api[_-]?key|token|secret|password)\s*[:=]\s*["']?[^\s,"']+/gi,
       "$1=[скрыто]"
@@ -874,7 +877,11 @@ function ProjectContextPanel({
   }
 
   return (
-    <div className="project-context-panel view-panel" role="tabpanel" aria-label="Контекст проекта">
+    <div
+      className="project-context-panel view-panel"
+      role="tabpanel"
+      aria-label="Контекст проекта"
+    >
       <header className="context-header">
         <div>
           <small>Project context · web preview</small>
@@ -898,7 +905,9 @@ function ProjectContextPanel({
       <section className="context-meter" aria-label="Размер контекста">
         <div>
           <span>Использовано</span>
-          <strong>{used.toLocaleString("ru")} / {CONTEXT_LIMIT.toLocaleString("ru")} токенов</strong>
+          <strong>
+            {used.toLocaleString("ru")} / {CONTEXT_LIMIT.toLocaleString("ru")} токенов
+          </strong>
         </div>
         <div className="context-meter-track" aria-hidden="true">
           <i style={{ width: `${percent}%` }} />
@@ -915,7 +924,9 @@ function ProjectContextPanel({
         <div className="context-section-title">
           <div>
             <small>Источники</small>
-            <h3 id="context-sources-title">Подключено {connected.length} из {state.sources.length}</h3>
+            <h3 id="context-sources-title">
+              Подключено {connected.length} из {state.sources.length}
+            </h3>
           </div>
           <button
             type="button"
@@ -930,7 +941,9 @@ function ProjectContextPanel({
         {state.sources.length === 0 ? (
           <div className="context-empty">
             <strong>Источников пока нет</strong>
-            <p>Произвольная загрузка файлов отключена. Здесь появятся только разрешённые источники.</p>
+            <p>
+              Произвольная загрузка файлов отключена. Здесь появятся только разрешённые источники.
+            </p>
           </div>
         ) : (
           <div className="context-source-list">
@@ -964,17 +977,32 @@ function ProjectContextPanel({
 
       {preview && (
         <div className="context-modal-backdrop" role="presentation">
-          <section className="context-modal" role="dialog" aria-modal="true" aria-labelledby="context-preview-title">
+          <section
+            className="context-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="context-preview-title"
+          >
             <small>Предпросмотр перед добавлением</small>
             <h3 id="context-preview-title">{redactContextText(preview.title)}</h3>
             <p>{redactContextText(preview.summary)}</p>
             <dl>
-              <div><dt>Тип</dt><dd>{preview.kind}</dd></div>
-              <div><dt>Размер</dt><dd>{preview.size.toLocaleString("ru")} токенов</dd></div>
+              <div>
+                <dt>Тип</dt>
+                <dd>{preview.kind}</dd>
+              </div>
+              <div>
+                <dt>Размер</dt>
+                <dd>{preview.size.toLocaleString("ru")} токенов</dd>
+              </div>
             </dl>
             <div className="context-modal-actions">
-              <button type="button" className="secondary" onClick={() => setPreview(null)}>Отмена</button>
-              <button type="button" onClick={connectPreview}>Подключить источник</button>
+              <button type="button" className="secondary" onClick={() => setPreview(null)}>
+                Отмена
+              </button>
+              <button type="button" onClick={connectPreview}>
+                Подключить источник
+              </button>
             </div>
           </section>
         </div>
@@ -982,13 +1010,22 @@ function ProjectContextPanel({
 
       {confirmClear && (
         <div className="context-modal-backdrop" role="presentation">
-          <section className="context-modal" role="dialog" aria-modal="true" aria-labelledby="context-clear-title">
+          <section
+            className="context-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="context-clear-title"
+          >
             <small>Явное подтверждение</small>
             <h3 id="context-clear-title">Очистить контекст проекта?</h3>
             <p>Все источники будут отключены. История чата, проект и документы не удаляются.</p>
             <div className="context-modal-actions">
-              <button type="button" className="secondary" onClick={() => setConfirmClear(false)}>Отмена</button>
-              <button type="button" className="danger" onClick={clearContext}>Очистить контекст</button>
+              <button type="button" className="secondary" onClick={() => setConfirmClear(false)}>
+                Отмена
+              </button>
+              <button type="button" className="danger" onClick={clearContext}>
+                Очистить контекст
+              </button>
             </div>
           </section>
         </div>
