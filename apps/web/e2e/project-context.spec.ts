@@ -122,6 +122,14 @@ test("redacts secret-like values from browser-local context", async ({ page }) =
   await expect(panel).not.toContainText("super-secret-value");
   await expect(panel).not.toContainText("abcdefghijklmnop");
   await expect(panel).not.toContainText("very-secret-token");
+
+  const stored = await page.evaluate(() =>
+    window.localStorage.getItem("cosmora:project-context:context-alpha")
+  );
+  expect(stored).toContain("[скрыто]");
+  expect(stored).not.toContain("super-secret-value");
+  expect(stored).not.toContain("abcdefghijklmnop");
+  expect(stored).not.toContain("very-secret-token");
 });
 
 test("shows offline state without losing local context", async ({ page, context }) => {
