@@ -98,14 +98,15 @@ This branch does not modify CI. The workflow was not dispatched during this audi
 - **Functions / exact behavior:** both compatible adapter `stream()` implementations emit `response.completed` after consuming the body even when no `text.delta` was produced; the coordinator checks only that a completion event exists, not that the assistant response has content.
 - **Reproduction:** return HTTP 200 with a syntactically valid stream that contains no text delta and then ends normally.
 - **Risk:** a run can be persisted as successful with an empty assistant answer.
+- **Web mitigation in this branch:** a completed assistant message with empty or whitespace-only content now renders a fixed safe notice instead of an endless typing placeholder. `apps/web/e2e/manager-console-races.spec.ts` verifies that behavior without resubmitting the request.
 - **Minimal safe fix:** track whether user-visible content was produced and fail with a normalized non-sensitive empty-response code, or explicitly define and safely handle an empty-success contract before marking the run complete.
-- **Required test:** OpenAI-compatible and Anthropic-compatible empty streams must produce the chosen safe terminal state; web E2E must show fixed user-safe copy and never raw provider data.
+- **Required backend test:** OpenAI-compatible and Anthropic-compatible empty streams must produce the chosen safe terminal state and never expose raw provider data.
 
 ## Existing mock coverage relevant to this audit
 
 Current main already has deterministic model-gateway/mock coverage for successful streaming, retry/route selection, timeout normalization, no fallback after partial output, circuit behavior, invalid provider sequencing, cancellation, and durable run recovery/reconnect. `apps/web/e2e/b0.1.spec.ts` covers the real local API/SSE mock path and persisted reload behavior; `apps/web/e2e/manager-console-races.spec.ts` covers stream-delta deduplication, restoration of failed persisted requests, project/general-chat disconnect recovery, and malformed-event recovery.
 
-The new `apps/web/e2e/model-status.spec.ts` adds the safe configuration/error/Emergency Stop surface. B3/B4/B7 prevent honest end-to-end coverage of every requested provider-status/stream-break/empty-response case without changing the corresponding contract/recovery implementation, so those cases remain explicit required tests for the blocker fixes rather than tests that encode incorrect behavior.
+The new `apps/web/e2e/model-status.spec.ts` adds the safe configuration/error/Emergency Stop surface. Stream-break recovery, malformed-event recovery, and safe rendering for empty completed assistant output are now covered in the allowed web layer. B3 and B7 still prevent honest end-to-end coverage of provider-status categorization and correct backend terminal-state handling for empty provider output without changing the corresponding forbidden gateway/runtime contracts.
 
 ## Live-request safety
 
