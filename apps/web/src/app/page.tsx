@@ -1155,6 +1155,7 @@ export default function Home() {
         closeSource();
         if (!finished) {
           setError("Поток ответа прерван. Проверяю сохранённое состояние запуска на сервере.");
+          void refreshProject(accepted.project.id).catch(() => undefined);
         }
       };
     },
@@ -1275,6 +1276,7 @@ export default function Home() {
         closeSource();
         if (!finished) {
           setError("Поток ответа прерван. Проверяю сохранённое состояние на сервере.");
+          void refreshGeneralChat(chatIdForRun).catch(() => undefined);
         }
       };
     },
