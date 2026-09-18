@@ -32,7 +32,8 @@ Scope: audit `web → API → ManagerService → Model Gateway → streaming →
 - malformed/unavailable operations status fails closed instead of assuming live is safe.
 - the page links to `/live-model-setup.md`, a local activation/removal runbook.
 - repeated status checks abort superseded requests and use a request epoch, so a delayed older response cannot overwrite a newer readiness result.
-- Playwright coverage verifies the safe configuration/error surface, Emergency Stop blocking, retry/reconnect, stale-response suppression, and that internal sentinel text is not rendered.
+- the main Cosmora header no longer labels every external mode as configured: it distinguishes mock, missing credential, enabled mock fallback, and safely configured live states, while linking to the detailed status page.
+- Playwright coverage verifies the safe configuration/error surface, Emergency Stop blocking, retry/reconnect, stale-response suppression, header-state labels, and that internal sentinel text is not rendered.
 
 ## Remaining blockers and findings not fixed in this branch
 
