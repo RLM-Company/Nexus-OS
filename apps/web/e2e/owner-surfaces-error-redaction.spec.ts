@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const rawSecret =
-  "INTERNAL_PROVIDER_FAILURE Authorization: Bearer owner-secret-debug-marker";
+const rawSecret = "INTERNAL_PROVIDER_FAILURE Authorization: Bearer owner-secret-debug-marker";
 
 const installServerFailure = async (page: import("@playwright/test").Page): Promise<void> => {
   await page.route("**/api/v1/**", async (route) => {
