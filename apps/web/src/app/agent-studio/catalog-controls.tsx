@@ -30,7 +30,7 @@ const formString = (form: FormData, name: string): string => {
   return typeof value === "string" ? value.trim() : "";
 };
 
-const readError = async (response: Response): Promise<Error> => safeApiError(response);
+const readError = (response: Response): Error => safeApiError(response);
 
 const postJson = async (url: string, payload: unknown): Promise<void> => {
   const response = await fetch(url, {
@@ -43,12 +43,12 @@ const postJson = async (url: string, payload: unknown): Promise<void> => {
     body: JSON.stringify(payload)
   });
 
-  if (!response.ok) throw await readError(response);
+  if (!response.ok) throw readError(response);
 };
 
 const postAction = async (url: string): Promise<void> => {
   const response = await fetch(url, { method: "POST", cache: "no-store" });
-  if (!response.ok) throw await readError(response);
+  if (!response.ok) throw readError(response);
 };
 
 export default function CatalogControls({
