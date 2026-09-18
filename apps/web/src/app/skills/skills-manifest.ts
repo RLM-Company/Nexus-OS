@@ -1,12 +1,5 @@
-export type SkillPermissionId =
-  | "project.read"
-  | "context.read"
-  | "documents.read"
-  | "network.preview"
-  | "github.read";
-
 export type SkillPermission = {
-  id: SkillPermissionId;
+  id: string;
   label: string;
   mode: "read" | "preview";
   description: string;
@@ -85,22 +78,4 @@ const catalog: SkillManifest[] = [
   }
 ];
 
-const isSafePermission = (permission: SkillPermission): boolean =>
-  permission.mode === "read" || permission.mode === "preview";
-
-export const loadMockSkillCatalog = (): SkillManifest[] => {
-  const safeCatalog: SkillManifest[] = [];
-
-  for (const skill of catalog) {
-    if (skill.source !== "mock" || skill.execution !== "disabled") continue;
-
-    const safePermissions: SkillPermission[] = [];
-    for (const permission of skill.permissions) {
-      if (isSafePermission(permission)) safePermissions.push(permission);
-    }
-
-    safeCatalog.push({ ...skill, permissions: safePermissions });
-  }
-
-  return safeCatalog;
-};
+export const loadMockSkillCatalog = (): SkillManifest[] => catalog;
