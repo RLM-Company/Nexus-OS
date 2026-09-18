@@ -372,6 +372,22 @@ svg {
   width: 0.9rem;
   height: 0.9rem;
 }
+.app-install-error {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 90;
+  width: min(20rem, 80vw);
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(255, 173, 173, 0.28);
+  border-radius: 0.72rem;
+  color: #ffe4e4;
+  background: rgba(46, 20, 24, 0.96);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  box-shadow: 0 0.8rem 2.5rem rgba(0, 0, 0, 0.35);
+}
 .install-dialog-layer {
   position: fixed;
   inset: 0;
