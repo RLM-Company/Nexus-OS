@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { safeApiError } from "../safe-api-error";
 import BlueprintControls from "./blueprint-controls";
 import CatalogControls from "./catalog-controls";
 import ProposalControls from "./proposal-controls";
@@ -85,12 +86,7 @@ const emptyData: StudioData = {
 
 const api = async <T,>(url: string): Promise<T> => {
   const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: { message?: string };
-    } | null;
-    throw new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
-  }
+  if (!response.ok) throw safeApiError(response);
   return (await response.json()) as T;
 };
 
