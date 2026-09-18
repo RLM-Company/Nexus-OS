@@ -284,48 +284,48 @@ test("recovers persisted project state after the stream connection breaks", asyn
 test(
   "recovers persisted general chat state after the stream connection breaks",
   async ({ page }) => {
-  const state = await fixture(page);
-  await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Оформи новую задачу как проект");
-  await page.getByRole("button", { name: "Отправить", exact: true }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
+    const state = await fixture(page);
+    await page.goto("/");
+    await page.getByLabel("Сообщение Cosmora").fill("Оформи новую задачу как проект");
+    await page.getByRole("button", { name: "Отправить", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
 
-  state.general.messages = [
-    {
-      id: "general-message-alpha",
-      chat_id: "general-alpha",
-      role: "user",
-      content_type: "text",
-      content: "Оформи новую задачу как проект",
-      status: "completed",
-      run_id: "general-run-alpha",
-      error_code: null,
-      created_at: "2026-09-01T00:00:00.000Z",
-      updated_at: "2026-09-01T00:00:00.000Z"
-    },
-    {
-      id: "general-assistant-alpha",
-      chat_id: "general-alpha",
-      role: "assistant",
-      content_type: "text",
-      content: "Recovered general response",
-      status: "completed",
-      run_id: "general-run-alpha",
-      error_code: null,
-      created_at: "2026-09-01T00:00:00.000Z",
-      updated_at: "2026-09-01T00:00:00.000Z"
-    }
-  ];
+    state.general.messages = [
+      {
+        id: "general-message-alpha",
+        chat_id: "general-alpha",
+        role: "user",
+        content_type: "text",
+        content: "Оформи новую задачу как проект",
+        status: "completed",
+        run_id: "general-run-alpha",
+        error_code: null,
+        created_at: "2026-09-01T00:00:00.000Z",
+        updated_at: "2026-09-01T00:00:00.000Z"
+      },
+      {
+        id: "general-assistant-alpha",
+        chat_id: "general-alpha",
+        role: "assistant",
+        content_type: "text",
+        content: "Recovered general response",
+        status: "completed",
+        run_id: "general-run-alpha",
+        error_code: null,
+        created_at: "2026-09-01T00:00:00.000Z",
+        updated_at: "2026-09-01T00:00:00.000Z"
+      }
+    ];
 
-  await page.evaluate(() => {
-    window.dispatchEvent(
-      new CustomEvent("fixture:sse", { detail: { type: "__error__", data: null } })
-    );
-  });
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new CustomEvent("fixture:sse", { detail: { type: "__error__", data: null } })
+      );
+    });
 
-  await expect(page.locator(".message.assistant p")).toHaveText("Recovered general response");
-  await expect(page.locator("html")).toHaveAttribute("data-observer", "closed");
-  expect(state.posts).toBe(0);
+    await expect(page.locator(".message.assistant p")).toHaveText("Recovered general response");
+    await expect(page.locator("html")).toHaveAttribute("data-observer", "closed");
+    expect(state.posts).toBe(0);
   }
 );
 
@@ -355,30 +355,30 @@ test("recovers persisted project state after malformed SSE JSON", async ({ page 
 test(
   "recovers persisted project state after a structurally malformed SSE event",
   async ({ page }) => {
-  const state = await fixture(page);
-  state.alpha = detail("alpha", "Partial response", "streaming");
+    const state = await fixture(page);
+    state.alpha = detail("alpha", "Partial response", "streaming");
 
-  await page.goto("/");
-  await page
-    .locator(".project-list")
-    .getByRole("button", { name: /Project Alpha/ })
-    .click();
-  await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
+    await page.goto("/");
+    await page
+      .locator(".project-list")
+      .getByRole("button", { name: /Project Alpha/ })
+      .click();
+    await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
 
-  state.alpha = detail("alpha", "Recovered malformed shape response", "completed");
-  await page.evaluate(() => {
-    window.dispatchEvent(
-      new CustomEvent("fixture:sse", {
-        detail: { type: "message.delta", data: { message_id: 42, seq: "bad", delta: null } }
-      })
+    state.alpha = detail("alpha", "Recovered malformed shape response", "completed");
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new CustomEvent("fixture:sse", {
+          detail: { type: "message.delta", data: { message_id: 42, seq: "bad", delta: null } }
+        })
+      );
+    });
+
+    await expect(page.locator(".message.assistant p")).toHaveText(
+      "Recovered malformed shape response"
     );
-  });
-
-  await expect(page.locator(".message.assistant p")).toHaveText(
-    "Recovered malformed shape response"
-  );
-  await expect(page.locator("html")).toHaveAttribute("data-observer", "closed");
-  expect(state.posts).toBe(0);
+    await expect(page.locator("html")).toHaveAttribute("data-observer", "closed");
+    expect(state.posts).toBe(0);
   }
 );
 
