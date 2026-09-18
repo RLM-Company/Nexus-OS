@@ -349,6 +349,33 @@ test("recovers persisted project state after malformed SSE JSON", async ({ page 
   expect(state.posts).toBe(0);
 });
 
+test("recovers persisted project state after a structurally malformed SSE event", async ({ page }) => {
+  const state = await fixture(page);
+  state.alpha = detail("alpha", "Partial response", "streaming");
+
+  await page.goto("/");
+  await page
+    .locator(".project-list")
+    .getByRole("button", { name: /Project Alpha/ })
+    .click();
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
+
+  state.alpha = detail("alpha", "Recovered malformed shape response", "completed");
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("fixture:sse", {
+        detail: { type: "message.delta", data: { message_id: 42, seq: "bad", delta: null } }
+      })
+    );
+  });
+
+  await expect(page.locator(".message.assistant p")).toHaveText(
+    "Recovered malformed shape response"
+  );
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "closed");
+  expect(state.posts).toBe(0);
+});
+
 test("shows a safe message for an empty completed assistant response", async ({ page }) => {
   const state = await fixture(page);
   state.alpha = detail("alpha", "", "completed");
