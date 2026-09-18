@@ -99,14 +99,7 @@ type ModelRuntimeStatus = {
 
 type CompletedRoute = { provider: string; model: string };
 
-type RunPhase =
-  | "idle"
-  | "queued"
-  | "running"
-  | "streaming"
-  | "completed"
-  | "failed"
-  | "cancelled";
+type RunPhase = "idle" | "queued" | "running" | "streaming" | "completed" | "failed" | "cancelled";
 type ProjectView = "chat" | "plan" | "project";
 type WorkspaceSurface =
   "manager" | "skills" | "code" | "work" | "images" | "video" | "sound" | "multi-agent";
