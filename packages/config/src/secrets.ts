@@ -14,6 +14,8 @@ export class EnvironmentSecretResolver implements SecretResolver {
   async resolve(name: SecretName): Promise<string | null> {
     await Promise.resolve();
     const value = this.#environment[name];
-    return typeof value === "string" && value.trim().length > 0 ? value : null;
+    return typeof value === "string" && value.trim().length > 0 && value === value.trim()
+      ? value
+      : null;
   }
 }
