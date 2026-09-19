@@ -276,7 +276,7 @@ export default function SettingsPage() {
                 onChange={(event) =>
                   update(
                     "maxProactivePerDay",
-                    Math.max(0, Math.min(20, Number(event.target.value))
+                    Math.max(0, Math.min(20, Number(event.target.value)))
                   )
                 }
                 disabled={!settings.companionEnabled}
