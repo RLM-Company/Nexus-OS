@@ -6,6 +6,10 @@ import type {
   ModelRequest
 } from "@cosmora/contracts";
 import { estimateInputTokensUpperBound } from "./manager.js";
+import {
+  assertEntityId,
+  normalizeCommonModelServiceOptions
+} from "./model-service-options.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
@@ -44,7 +48,7 @@ export class ChatService {
   };
 
   constructor(options: ChatServiceOptions) {
-    this.#options = {
+    this.#options = normalizeCommonModelServiceOptions({
       requiredFeatures: ["streaming"],
       confidential: false,
       maxCost: null,
@@ -53,10 +57,13 @@ export class ChatService {
       maxOutputTokens: 1_200,
       systemPrompt: DEFAULT_CHAT_SYSTEM_PROMPT,
       ...options
-    };
+    });
   }
 
   buildRequest(context: ChatRunContext): ModelRequest {
+    assertEntityId(context.chatId, "chatId");
+    assertEntityId(context.runId, "runId");
+
     const conversation: ModelMessage[] = context.messages
       .filter((message) => message.content.trim().length > 0)
       .map((message) => ({ role: message.role, content: message.content }));
