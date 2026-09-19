@@ -18,17 +18,32 @@ const isNonEmptyString = (value: unknown): value is string =>
 const isPositiveSafeInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 
+const MODEL_FEATURES = new Set<ModelFeature>([
+  "streaming",
+  "structured_output",
+  "tool_calling",
+  "vision"
+]);
+
 export const normalizeCommonModelServiceOptions = <T extends CommonModelServiceOptions>(
   options: T
-): T => {
+): Omit<T, "requiredFeatures"> & { requiredFeatures: ModelFeature[] } => {
   if (!isNonEmptyString(options.preferredProvider)) throw invalidOption("preferredProvider");
   if (!isNonEmptyString(options.preferredModelAlias)) throw invalidOption("preferredModelAlias");
   if (!isPositiveSafeInteger(options.timeoutMs)) throw invalidOption("timeoutMs");
   if (!isPositiveSafeInteger(options.maxOutputTokens)) throw invalidOption("maxOutputTokens");
+  if (
+    !Array.isArray(options.requiredFeatures) ||
+    options.requiredFeatures.some((feature) => !MODEL_FEATURES.has(feature))
+  ) {
+    throw invalidOption("requiredFeatures");
+  }
 
   if (
     options.maxCost !== null &&
-    (!Number.isFinite(options.maxCost.amount) || options.maxCost.amount < 0)
+    (!Number.isFinite(options.maxCost.amount) ||
+      options.maxCost.amount < 0 ||
+      (options.maxCost.currency !== "USD" && options.maxCost.currency !== "RUB"))
   ) {
     throw invalidOption("maxCost");
   }
