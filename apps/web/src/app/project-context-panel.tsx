@@ -52,7 +52,10 @@ const redactContextText = (value: string): string =>
       /\b(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|Bearer\s+[A-Za-z0-9._-]{8,})\b/gi,
       "[скрыто]"
     )
-    .replace(/\b(api[_-]?key|token|secret|password)\s*[:=]\s*["']?[^\s,"']+/gi, "$1=[скрыто]");
+    .replace(
+      /\b(api[_-]?key|token|secret|password)\s*[:=]\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi,
+      "$1=[скрыто]"
+    );
 
 const contextStorageKey = (projectId: string): string => `cosmora:project-context:${projectId}`;
 
