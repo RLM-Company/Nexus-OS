@@ -14,6 +14,7 @@ describe("EnvironmentSecretResolver", () => {
       new EnvironmentSecretResolver({ MODEL_API_KEY: "" }).resolve("MODEL_API_KEY")
     ).resolves.toBeNull();
   });
+
   it("treats whitespace-only values as unavailable without mutating real secrets", async () => {
     await expect(
       new EnvironmentSecretResolver({ MODEL_API_KEY: "   " }).resolve("MODEL_API_KEY")
@@ -24,5 +25,4 @@ describe("EnvironmentSecretResolver", () => {
       )
     ).resolves.toBe(" runtime-only-value ");
   });
-
 });
