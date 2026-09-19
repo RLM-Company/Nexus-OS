@@ -104,6 +104,34 @@ describe("ManagerService", () => {
           maxCost: { amount: -1, currency: "USD" }
         })
     ).toThrow("Invalid model request option: maxCost");
+
+    expect(
+      () =>
+        new ManagerService({
+          preferredProvider: " mock ",
+          preferredModelAlias: "manager",
+          fallbackAllowed: false
+        })
+    ).toThrow("Invalid model request option: preferredProvider");
+
+    expect(
+      () =>
+        new ManagerService({
+          preferredProvider: "mock",
+          preferredModelAlias: "manager",
+          fallbackAllowed: false,
+          systemPrompt: "   "
+        })
+    ).toThrow("Invalid model request option: systemPrompt");
+
+    expect(
+      () =>
+        new ManagerService({
+          preferredProvider: "mock",
+          preferredModelAlias: "manager",
+          fallbackAllowed: "yes" as never
+        })
+    ).toThrow("Invalid model request option: fallbackAllowed");
   });
 
   it("normalizes features and rejects invalid request identities", () => {
@@ -128,6 +156,16 @@ describe("ManagerService", () => {
         messages: [message({})]
       })
     ).toThrow("Invalid model request identity: projectId");
+
+    for (const projectId of ["   ", "project id", "project\t1"]) {
+      expect(() =>
+        manager.buildRequest({
+          projectId,
+          runId: "run-1",
+          messages: [message({})]
+        })
+      ).toThrow("Invalid model request identity: projectId");
+    }
 
     expect(() =>
       manager.buildRequest({
