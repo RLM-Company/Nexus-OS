@@ -161,6 +161,31 @@ describe("loadServerConfig", () => {
     );
   });
 
+  it("rejects non-canonical external model settings without exposing values", () => {
+    const valid = {
+      MODEL_PROVIDER: "openai-compatible",
+      MODEL_BASE_URL: "https://provider.example/v1",
+      MODEL_API_KEY: "runtime-secret",
+      MODEL_NAME: "manager-model"
+    } as const;
+
+    expect(() => loadServerConfig({ ...valid, MODEL_PROVIDER_ID: " provider " })).toThrow(
+      "Invalid server configuration: /MODEL_PROVIDER_ID"
+    );
+    expect(() => loadServerConfig({ ...valid, MODEL_PROVIDER_ID: "provider id" })).toThrow(
+      "Invalid server configuration: /MODEL_PROVIDER_ID"
+    );
+    expect(() =>
+      loadServerConfig({ ...valid, MODEL_BASE_URL: " https://provider.example/v1" })
+    ).toThrow("Invalid server configuration: /MODEL_BASE_URL");
+    expect(() => loadServerConfig({ ...valid, MODEL_API_KEY: "runtime-secret " })).toThrow(
+      "Invalid server configuration: /MODEL_API_KEY"
+    );
+    expect(() => loadServerConfig({ ...valid, MODEL_NAME: "manager-model " })).toThrow(
+      "Invalid server configuration: /MODEL_NAME"
+    );
+  });
+
   it("rejects whitespace-only external model settings without exposing values", () => {
     const valid = {
       MODEL_PROVIDER: "openai-compatible",

@@ -130,6 +130,12 @@ const toRawConfig = (env: NodeJS.ProcessEnv): unknown =>
 const hasMeaningfulValue = (value: string | undefined): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
+const hasCanonicalValue = (value: string | undefined): value is string =>
+  hasMeaningfulValue(value) && value === value.trim();
+
+const hasCanonicalIdentifier = (value: string | undefined): value is string =>
+  hasCanonicalValue(value) && !/\s/u.test(value);
+
 export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerConfig => {
   const candidate = toRawConfig(env);
 
@@ -154,11 +160,11 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
   }
   if (modelProvider !== "mock") {
     for (const key of ["MODEL_BASE_URL", "MODEL_API_KEY", "MODEL_NAME"] as const) {
-      if (!hasMeaningfulValue(raw[key])) {
+      if (!hasCanonicalValue(raw[key])) {
         throw new Error(`Invalid server configuration: /${key}`);
       }
     }
-    if (raw.MODEL_PROVIDER_ID !== undefined && !hasMeaningfulValue(raw.MODEL_PROVIDER_ID)) {
+    if (raw.MODEL_PROVIDER_ID !== undefined && !hasCanonicalIdentifier(raw.MODEL_PROVIDER_ID)) {
       throw new Error("Invalid server configuration: /MODEL_PROVIDER_ID");
     }
 
@@ -224,7 +230,7 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
     modelProviderId: raw.MODEL_PROVIDER_ID ?? (modelProvider === "mock" ? "mock" : "vibecode"),
     modelRegistryPath: raw.MODEL_REGISTRY_PATH ?? null,
     modelBaseUrl: raw.MODEL_BASE_URL ?? null,
-    modelApiKeyConfigured: hasMeaningfulValue(raw.MODEL_API_KEY),
+    modelApiKeyConfigured: hasCanonicalValue(raw.MODEL_API_KEY),
     modelName: raw.MODEL_NAME ?? "manager",
     modelFallbackToMock: raw.MODEL_FALLBACK_TO_MOCK !== "false",
     modelMaxAttemptsPerRoute,
