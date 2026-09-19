@@ -39,21 +39,34 @@ export interface ChatRunContext {
   messages: GeneralChatMessage[];
 }
 
+interface NormalizedChatOptions {
+  preferredProvider: string;
+  preferredModelAlias: string;
+  fallbackAllowed: boolean;
+  requiredFeatures: ModelFeature[];
+  confidential: boolean;
+  maxCost: { amount: number; currency: Currency } | null;
+  optimizeFor: "balanced" | "quality" | "latency" | "cost";
+  timeoutMs: number;
+  maxOutputTokens: number;
+  systemPrompt: string;
+}
+
 export class ChatService {
-  readonly #options: Required<Omit<ChatServiceOptions, "maxCost">> & {
-    maxCost: ChatServiceOptions["maxCost"];
-  };
+  readonly #options: NormalizedChatOptions;
 
   constructor(options: ChatServiceOptions) {
     this.#options = normalizeCommonModelServiceOptions({
-      requiredFeatures: ["streaming"],
-      confidential: false,
-      maxCost: null,
-      optimizeFor: "balanced",
-      timeoutMs: 60_000,
-      maxOutputTokens: 1_200,
-      systemPrompt: DEFAULT_CHAT_SYSTEM_PROMPT,
-      ...options
+      preferredProvider: options.preferredProvider,
+      preferredModelAlias: options.preferredModelAlias,
+      fallbackAllowed: options.fallbackAllowed,
+      requiredFeatures: options.requiredFeatures ?? ["streaming"],
+      confidential: options.confidential ?? false,
+      maxCost: options.maxCost ?? null,
+      optimizeFor: options.optimizeFor ?? "balanced",
+      timeoutMs: options.timeoutMs ?? 60_000,
+      maxOutputTokens: options.maxOutputTokens ?? 1_200,
+      systemPrompt: options.systemPrompt ?? DEFAULT_CHAT_SYSTEM_PROMPT
     });
   }
 
