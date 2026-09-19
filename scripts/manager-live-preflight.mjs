@@ -36,6 +36,36 @@ const fetchJson = async (origin, path, label) => {
   }
 };
 
+
+const assertHtmlRoute = async (origin, path, label) => {
+  const response = await fetchResponse(origin, path, label);
+  const contentType = response.headers.get("content-type") ?? "";
+  assert(contentType.includes("text/html"), `${label} did not return HTML`);
+};
+
+const assertWebSurfaces = async (origin) => {
+  await Promise.all([
+    assertHtmlRoute(origin, "/model-status", "Model Status page"),
+    assertHtmlRoute(origin, "/skills", "Skills preview"),
+    assertHtmlRoute(origin, "/github", "GitHub preview")
+  ]);
+
+  const manifest = await fetchJson(origin, "/manifest.webmanifest", "PWA manifest");
+  assert(manifest.name === "Cosmora AI", "PWA manifest has an unexpected app name");
+  assert(manifest.short_name === "Cosmora", "PWA manifest has an unexpected short name");
+  assert(manifest.start_url === "/", "PWA manifest has an unexpected start URL");
+  assert(manifest.scope === "/", "PWA manifest has an unexpected scope");
+  assert(manifest.display === "standalone", "PWA manifest is not standalone");
+  assert(
+    Array.isArray(manifest.icons) && manifest.icons.some((icon) => icon?.src === "/icon"),
+    "PWA manifest does not expose the primary icon"
+  );
+
+  const icon = await fetchResponse(origin, "/icon", "PWA icon");
+  const iconType = icon.headers.get("content-type") ?? "";
+  assert(iconType.includes("image/png"), "PWA icon did not return PNG");
+};
+
 const main = async () => {
   assertLocalOrigin("API origin", apiOrigin);
   assertLocalOrigin("Web origin", webOrigin);
@@ -72,6 +102,7 @@ const main = async () => {
   const web = await fetchResponse(webOrigin, "/", "Manager Console");
   const html = await web.text();
   assert(html.includes("Cosmora OS"), "Manager Console HTML is not the expected Cosmora page");
+  await assertWebSurfaces(webOrigin);
 
   const proxiedHealth = await fetchJson(webOrigin, "/api/v1/health", "Web-to-API proxy");
   assert(proxiedHealth.status === "ok", "Web-to-API proxy health is not ok");
@@ -98,6 +129,8 @@ const main = async () => {
       `- Model route: ${runtime.provider}:${runtime.model} (${runtime.mode})`,
       `- Registry: ${runtime.registry_version}`,
       "- Ordinary chat API: ready (no model request sent)",
+      "- Web surfaces: Manager, Model Status, Skills, GitHub preview",
+      "- PWA manifest/icon: ready",
       `- Mock fallback: ${runtime.fallback_to_mock ? "enabled" : "disabled"}`,
       "- Emergency stops: clear",
       "- No paid model request was sent by this check"
