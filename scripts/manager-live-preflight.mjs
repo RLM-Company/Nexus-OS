@@ -46,7 +46,9 @@ const assertWebSurfaces = async (origin) => {
   await Promise.all([
     assertHtmlRoute(origin, "/model-status", "Model Status page"),
     assertHtmlRoute(origin, "/skills", "Skills preview"),
-    assertHtmlRoute(origin, "/github", "GitHub preview")
+    assertHtmlRoute(origin, "/github", "GitHub preview"),
+    assertHtmlRoute(origin, "/agent-studio", "Agent Studio"),
+    assertHtmlRoute(origin, "/control-center", "Control Center")
   ]);
 
   const manifest = await fetchJson(origin, "/manifest.webmanifest", "PWA manifest");
@@ -63,6 +65,10 @@ const assertWebSurfaces = async (origin) => {
   const icon = await fetchResponse(origin, "/icon", "PWA icon");
   const iconType = icon.headers.get("content-type") ?? "";
   assert(iconType.includes("image/png"), "PWA icon did not return PNG");
+
+  const appleIcon = await fetchResponse(origin, "/apple-icon", "Apple PWA icon");
+  const appleIconType = appleIcon.headers.get("content-type") ?? "";
+  assert(appleIconType.includes("image/png"), "Apple PWA icon did not return PNG");
 };
 
 const main = async () => {
@@ -128,8 +134,8 @@ const main = async () => {
       `- Model route: ${runtime.provider}:${runtime.model} (${runtime.mode})`,
       `- Registry: ${runtime.registry_version}`,
       "- Ordinary chat API: ready (no model request sent)",
-      "- Web surfaces: Manager, Model Status, Skills, GitHub preview",
-      "- PWA manifest/icon: ready",
+      "- Web surfaces: Manager, Model Status, Skills, GitHub preview, Agent Studio, Control Center",
+      "- PWA manifest/icons: ready",
       `- Mock fallback: ${runtime.fallback_to_mock ? "enabled" : "disabled"}`,
       "- Emergency stops: clear",
       "- No paid model request was sent by this check"
