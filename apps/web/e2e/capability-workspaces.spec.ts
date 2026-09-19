@@ -25,9 +25,10 @@ test("keeps every capability workspace mobile and write-free", async ({ page }) 
   for (const [buttonName, headingName] of surfaces) {
     await mobileNav.getByRole("button", { name: buttonName, exact: true }).click();
     await expect(page.getByRole("heading", { name: headingName, exact: true })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
-      true
+    const fitsViewport = await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth
     );
+    expect(fitsViewport).toBe(true);
   }
 
   expect(writes).toEqual([]);
