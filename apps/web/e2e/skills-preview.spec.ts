@@ -8,11 +8,13 @@ test("shows a mock-only Skills catalog with permission previews", async ({ page 
   await expect(page.getByTestId("skills-catalog")).toContainText("Research Brief");
   await expect(page.getByTestId("skills-catalog")).toContainText("Document Review");
   await expect(page.getByTestId("skills-catalog")).toContainText("GitHub Audit Preview");
+  await expect(page.getByTestId("skills-catalog")).toContainText("Контекстный компрессор");
+  await expect(page.getByTestId("skills-catalog")).toContainText("Короткий результат");
   await expect(page.getByText("Read-only").first()).toBeVisible();
 
   const disabledRunButtons = page.getByRole("button", { name: "Запуск отключён" });
-  await expect(disabledRunButtons).toHaveCount(3);
-  for (let index = 0; index < 3; index += 1) {
+  await expect(disabledRunButtons).toHaveCount(5);
+  for (let index = 0; index < 5; index += 1) {
     await expect(disabledRunButtons.nth(index)).toBeDisabled();
   }
 

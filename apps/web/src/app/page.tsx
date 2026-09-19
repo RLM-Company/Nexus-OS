@@ -1958,6 +1958,13 @@ export default function Home() {
           <div className="system-status" aria-label="Статус системы">
             <Link
               className="runtime-status-link"
+              href="/settings"
+              title="Настроить экономию токенов"
+            >
+              Экономия токенов
+            </Link>
+            <Link
+              className="runtime-status-link"
               href="/github"
               title="Открыть безопасный GitHub read-only preview"
             >

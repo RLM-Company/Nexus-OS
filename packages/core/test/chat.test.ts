@@ -44,6 +44,28 @@ describe("ChatService", () => {
     );
   });
 
+  it("uses bounded recent context and cost routing only when token economy is enabled", () => {
+    const chat = new ChatService({
+      preferredProvider: "mock",
+      preferredModelAlias: "chat",
+      fallbackAllowed: false,
+      maxOutputTokens: 900
+    });
+    const oldContent = "старый контекст ".repeat(1_000);
+    const request = chat.buildRequest({
+      chatId: "chat-1",
+      runId: "run-economy",
+      tokenEconomyEnabled: true,
+      messages: [message("user", oldContent), message("user", "Последний вопрос")]
+    });
+
+    expect(request.constraints.max_output_tokens).toBe(360);
+    expect(request.routing.optimize_for).toBe("cost");
+    expect(request.messages[0]?.content).toContain("Режим экономии токенов включён");
+    expect(request.messages).not.toContainEqual({ role: "user", content: oldContent });
+    expect(request.messages).toContainEqual({ role: "user", content: "Последний вопрос" });
+  });
+
   it("rejects invalid direct options and request identities", () => {
     expect(
       () =>

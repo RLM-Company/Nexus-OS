@@ -16,6 +16,7 @@ import type {
 } from "./manager-runtime-project-store.js";
 import { EmergencyStopActivatedError } from "./operations.js";
 import type { RuntimeMetrics } from "./operations.js";
+import { TokenEconomyStore } from "./token-economy.js";
 
 export interface ManagerBackgroundRunCoordinatorOptions {
   store: ManagerRuntimeProjectStore;
@@ -23,6 +24,7 @@ export interface ManagerBackgroundRunCoordinatorOptions {
   manager: ManagerService;
   runtimeMetrics: RuntimeMetrics;
   emergencyStopStore?: EmergencyStopStore;
+  tokenEconomyStore?: TokenEconomyStore;
   logger?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   pollIntervalMs?: number;
   controlPollIntervalMs?: number;
@@ -45,6 +47,7 @@ export class ManagerBackgroundRunCoordinator {
   readonly #manager: ManagerService;
   readonly #runtimeMetrics: RuntimeMetrics;
   readonly #emergencyStopStore: EmergencyStopStore | undefined;
+  readonly #tokenEconomyStore: TokenEconomyStore;
   readonly #logger: Pick<FastifyBaseLogger, "info" | "warn" | "error"> | undefined;
   readonly #pollIntervalMs: number;
   readonly #controlPollIntervalMs: number;
@@ -60,6 +63,7 @@ export class ManagerBackgroundRunCoordinator {
     this.#manager = options.manager;
     this.#runtimeMetrics = options.runtimeMetrics;
     this.#emergencyStopStore = options.emergencyStopStore;
+    this.#tokenEconomyStore = options.tokenEconomyStore ?? new TokenEconomyStore();
     this.#logger = options.logger;
     this.#pollIntervalMs = positiveInteger(options.pollIntervalMs, 100);
     this.#controlPollIntervalMs = positiveInteger(options.controlPollIntervalMs, 50);
@@ -180,7 +184,8 @@ export class ManagerBackgroundRunCoordinator {
       const modelRequest = this.#manager.buildRequest({
         projectId: queued.project_id,
         runId: queued.run_id,
-        messages: conversation
+        messages: conversation,
+        tokenEconomyEnabled: this.#tokenEconomyStore.get(queued.owner_id).enabled
       });
       let completed: Extract<ModelGatewayStreamEvent, { type: "response.completed" }> | undefined;
 

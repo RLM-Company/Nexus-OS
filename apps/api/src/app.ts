@@ -148,6 +148,7 @@ import {
   projectUsageLimitStepUpChallenge
 } from "./step-up-challenge.js";
 import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-routes.js";
+import { TokenEconomyStore } from "./token-economy.js";
 
 export interface AppDependencies {
   config: ServerConfig;
@@ -174,6 +175,7 @@ export interface AppDependencies {
   runtimeMetrics?: RuntimeMetrics;
   managerRunExecutionMode?: "stream" | "background";
   generalChatRunExecutionMode?: "stream" | "background";
+  tokenEconomyStore?: TokenEconomyStore;
   now?: () => string;
 }
 
@@ -555,6 +557,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   }).withTypeProvider<TypeBoxTypeProvider>();
 
   const activeRuns = new Map<string, ActiveModelRun>();
+  const tokenEconomyStore = dependencies.tokenEconomyStore ?? new TokenEconomyStore();
   const runObservers = new Set<AbortController>();
   const managerRunsExecuteInBackground = dependencies.managerRunExecutionMode === "background";
   const runtimeMetrics = dependencies.runtimeMetrics ?? new RuntimeMetrics();
@@ -612,6 +615,21 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       };
       return reply.status(database === "ok" ? 200 : 503).send(response);
     }
+  );
+
+  const tokenEconomySchema = Type.Object(
+    { enabled: Type.Boolean() },
+    { additionalProperties: false }
+  );
+  app.get(
+    "/api/v1/settings/token-economy",
+    { schema: { response: { 200: tokenEconomySchema } } },
+    (request) => tokenEconomyStore.get(identityFor(request).owner_id)
+  );
+  app.put(
+    "/api/v1/settings/token-economy",
+    { schema: { body: tokenEconomySchema, response: { 200: tokenEconomySchema } } },
+    (request) => tokenEconomyStore.set(identityFor(request).owner_id, request.body)
   );
 
   if (dependencies.identityStore) {
@@ -979,6 +997,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         ? { runExecutionMode: dependencies.generalChatRunExecutionMode }
         : {}),
       identityFor,
+      tokenEconomyStore,
       ...(dependencies.emergencyStopStore
         ? { emergencyStopStore: dependencies.emergencyStopStore }
         : {})
@@ -2688,7 +2707,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           const modelRequest = manager.buildRequest({
             projectId: run.project_id,
             runId: run.id,
-            messages: conversation
+            messages: conversation,
+            tokenEconomyEnabled: tokenEconomyStore.get(ownerId).enabled
           });
           for await (const event of modelGateway.stream(modelRequest, controller.signal)) {
             if (event.type === "route.selected") {

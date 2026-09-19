@@ -4,3 +4,4 @@ export * from "./manager-runtime-task-readiness.js";
 export * from "./manager.js";
 export * from "./chat.js";
 export * from "./demo-manager-plan.js";
+export * from "./token-economy.js";

@@ -28,6 +28,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.js";
+import type { TokenEconomyStore } from "./token-economy.js";
 
 export type ActiveModelRun = {
   projectId: string | null;
@@ -46,6 +47,7 @@ export interface GeneralChatRouteOptions {
   runExecutionMode?: "stream" | "background";
   identityFor(request: FastifyRequest): IdentityContext;
   emergencyStopStore?: EmergencyStopStore;
+  tokenEconomyStore: TokenEconomyStore;
 }
 
 const error = (
@@ -443,7 +445,8 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         const modelRequest = options.chat.buildRequest({
           chatId: run.chat_id,
           runId: run.id,
-          messages: conversation
+          messages: conversation,
+          tokenEconomyEnabled: options.tokenEconomyStore.get(identity.owner_id).enabled
         });
         for await (const event of options.modelGateway.stream(modelRequest, controller.signal)) {
           if (event.type === "route.selected") {

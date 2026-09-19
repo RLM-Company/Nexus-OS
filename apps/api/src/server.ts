@@ -28,6 +28,7 @@ import { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
 import { ManagerRuntimeProjectStore } from "./manager-runtime-project-store.js";
 import { buildModelRuntime } from "./model-runtime.js";
 import { RuntimeMetrics } from "./operations.js";
+import { TokenEconomyStore } from "./token-economy.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
@@ -69,6 +70,7 @@ try {
   const identityStore = new IdentityStore(database.sqlite);
   const stepUpProofStore = new StepUpProofStore(database.sqlite);
   const runtimeMetrics = new RuntimeMetrics();
+  const tokenEconomyStore = new TokenEconomyStore();
   const identityResolver =
     config.nodeEnv === "production"
       ? new BearerSessionIdentityResolver(identityStore)
@@ -105,6 +107,7 @@ try {
     identityResolver,
     stepUpProofConsumer: new StoredStepUpProofConsumer(stepUpProofStore),
     runtimeMetrics,
+    tokenEconomyStore,
     managerRunExecutionMode: "background",
     generalChatRunExecutionMode: "background",
     closeDatabase: () => database.close()
@@ -115,6 +118,7 @@ try {
     manager: modelRuntime.manager,
     runtimeMetrics,
     emergencyStopStore,
+    tokenEconomyStore,
     logger: app.log
   });
   generalChatBackgroundCoordinator = new GeneralChatBackgroundRunCoordinator({
@@ -123,6 +127,7 @@ try {
     chat: modelRuntime.chat,
     runtimeMetrics,
     emergencyStopStore,
+    tokenEconomyStore,
     logger: app.log
   });
   if (recoveredRuns > 0) {

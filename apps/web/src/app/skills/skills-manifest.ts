@@ -75,6 +75,40 @@ const catalog: SkillManifest[] = [
         description: "Показывает будущую сетевую границу без реальных запросов."
       }
     ]
+  },
+  {
+    id: "token-economy",
+    name: "Контекстный компрессор",
+    version: "0.1.0",
+    summary:
+      "При включённой владельцем экономии передаёт только недавний контекст и сохраняет историю Cosmora целиком.",
+    source: "mock",
+    execution: "disabled",
+    permissions: [
+      {
+        id: "conversation.read",
+        label: "Диалог",
+        mode: "read",
+        description: "Отбирает недавние полные реплики только для следующего model-запроса."
+      }
+    ]
+  },
+  {
+    id: "compact-result",
+    name: "Короткий результат",
+    version: "0.1.0",
+    summary:
+      "Паттерн краткого ответа без повторов; используется только вместе с явной настройкой экономии.",
+    source: "mock",
+    execution: "disabled",
+    permissions: [
+      {
+        id: "response.preview",
+        label: "Ответ",
+        mode: "preview",
+        description: "Показывает границу краткого ответа, не выполняя внешних действий."
+      }
+    ]
   }
 ];
 
