@@ -47,8 +47,8 @@ export const StreamEventSchema = Type.Union([
     data: Type.Object(
       {
         run_id: EntityIdSchema,
-        provider: Type.String({ minLength: 1, maxLength: 128 }),
-        model_resolved: Type.String({ minLength: 1, maxLength: 256 })
+        provider: Type.String({ minLength: 1, maxLength: 128, pattern: "^[^\\s]+$" }),
+        model_resolved: Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\s]+$" })
       },
       { additionalProperties: false }
     )
@@ -58,7 +58,7 @@ export const StreamEventSchema = Type.Union([
     data: Type.Object(
       {
         run_id: EntityIdSchema,
-        error_code: Type.String({ minLength: 1, maxLength: 128 }),
+        error_code: Type.String({ minLength: 1, maxLength: 128, pattern: "^[^\\s]+$" }),
         retryable: Type.Boolean()
       },
       { additionalProperties: false }
