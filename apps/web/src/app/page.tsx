@@ -1098,10 +1098,7 @@ export default function Home() {
     if (activeProject) replaceConsoleRoute(activeProject.id, view);
   };
 
-  const handleProjectTabKeyDown = (
-    event: ProjectTabKeyEvent,
-    currentView: ProjectView
-  ): void => {
+  const handleProjectTabKeyDown = (event: ProjectTabKeyEvent, currentView: ProjectView): void => {
     const currentIndex = PROJECT_VIEW_ORDER.indexOf(currentView);
     const nextIndex = (currentIndex + 1) % PROJECT_VIEW_ORDER.length;
     const previousIndex =
