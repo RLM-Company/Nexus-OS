@@ -46,7 +46,9 @@ const assertWebSurfaces = async (origin) => {
   await Promise.all([
     assertHtmlRoute(origin, "/model-status", "Model Status page"),
     assertHtmlRoute(origin, "/skills", "Skills preview"),
-    assertHtmlRoute(origin, "/github", "GitHub preview")
+    assertHtmlRoute(origin, "/github", "GitHub preview"),
+    assertHtmlRoute(origin, "/agent-studio", "Agent Studio"),
+    assertHtmlRoute(origin, "/control-center", "Control Center")
   ]);
 
   const manifest = await fetchJson(origin, "/manifest.webmanifest", "PWA manifest");
@@ -63,6 +65,10 @@ const assertWebSurfaces = async (origin) => {
   const icon = await fetchResponse(origin, "/icon", "PWA icon");
   const iconType = icon.headers.get("content-type") ?? "";
   assert(iconType.includes("image/png"), "PWA icon did not return PNG");
+
+  const appleIcon = await fetchResponse(origin, "/apple-icon", "Apple PWA icon");
+  const appleIconType = appleIcon.headers.get("content-type") ?? "";
+  assert(appleIconType.includes("image/png"), "Apple PWA icon did not return PNG");
 };
 
 const main = async () => {
@@ -100,8 +106,8 @@ const main = async () => {
       `- API: ${apiOrigin.origin} (SQLite ok)`,
       `- Web: ${webOrigin.origin} (API proxy ok)`,
       "- Model route: mock only; no credential configured",
-      "- Web surfaces: Manager, Model Status, Skills, GitHub preview",
-      "- PWA manifest/icon: ready",
+      "- Web surfaces: Manager, Model Status, Skills, GitHub preview, Agent Studio, Control Center",
+      "- PWA manifest/icons: ready",
       "- Emergency stops: clear"
     ].join("\n") + "\n"
   );
