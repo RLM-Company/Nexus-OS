@@ -23,8 +23,8 @@ test("persists companion and communication settings", async ({ page }) => {
   await expect(page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" })).toBeChecked();
   await expect(page.getByLabel("Частота")).toHaveValue("rare");
   await expect(page.getByLabel("Максимум в день")).toHaveValue("2");
-  await expect(page.getByLabel("Тихие часы с").toHaveValue("23:00"));
-  await expect(page.getByLabel("Тихие часы до").toHaveValue("07:30");
+  await expect(page.getByLabel("Тихие часы с")).toHaveValue("23:00");
+  await expect(page.getByLabel("Тихие часы до")).toHaveValue("07:30");
   await expect(page.getByLabel("Тон")).toHaveValue("direct");
   await expect(page.getByLabel("Подробность")).toHaveValue("short");
   await expect(page.getByLabel("Инициативность")).toHaveValue("proactive");
