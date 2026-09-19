@@ -2,6 +2,10 @@ import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import {
   ActivateEmergencyStopRequestSchema,
+  AuthCallbackSchema,
+  AuthSessionBootstrapSchema,
+  AuthStartRequestSchema,
+  ExternalIdentitySchema,
   CompanionGateDecisionSchema,
   CompanionMessageProposalSchema,
   CompanionPreferencesSchema,
@@ -238,6 +242,61 @@ describe("shared contracts", () => {
         decided_at: "2026-09-19T18:00:00.000Z"
       })
     ).toBe(true);
+  });
+
+  it("accepts the external-auth bootstrap contract without raw tokens", () => {
+    expect(
+      Value.Check(AuthStartRequestSchema, {
+        provider: "google",
+        state: "state-value-123456",
+        nonce: "nonce-value-123456",
+        code_challenge: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~",
+        code_challenge_method: "S256"
+      })
+    ).toBe(true);
+
+    expect(
+      Value.Check(AuthCallbackSchema, {
+        provider: "telegram",
+        code: "authorization-code",
+        state: "state-value-123456"
+      })
+    ).toBe(true);
+
+    expect(
+      Value.Check(ExternalIdentitySchema, {
+        provider: "telegram",
+        subject: "telegram-user-1",
+        verification_status: "verified",
+        email: null,
+        email_verified: false,
+        phone_verified: true,
+        display_name: "Cosmora User",
+        linked_at: "2026-09-19T18:00:00.000Z",
+        last_verified_at: "2026-09-19T18:00:00.000Z"
+      })
+    ).toBe(true);
+
+    expect(
+      Value.Check(AuthSessionBootstrapSchema, {
+        session_id: "session-1",
+        provider: "google",
+        subject: "google-subject-1",
+        assurance: "single_factor",
+        issued_at: "2026-09-19T18:00:00.000Z",
+        expires_at: "2026-09-19T19:00:00.000Z"
+      })
+    ).toBe(true);
+
+    expect(
+      Value.Check(AuthStartRequestSchema, {
+        provider: "google",
+        state: "short",
+        nonce: "short",
+        code_challenge: "short",
+        code_challenge_method: "S256"
+      })
+    ).toBe(false);
   });
 
   it("accepts the bounded emergency-stop transport shape", () => {
