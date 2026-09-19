@@ -1,20 +1,32 @@
 import { expect, test } from "@playwright/test";
 
+const exposeInstallPrompt = async (
+  page: import("@playwright/test").Page,
+  mode: "fail" | "dismiss"
+): Promise<void> => {
+  await expect
+    .poll(async () =>
+      page.evaluate((promptMode) => {
+        const event = Object.assign(new Event("beforeinstallprompt", { cancelable: true }), {
+          prompt: async () => {
+            if (promptMode === "fail") {
+              throw new Error("internal install failure secret-marker");
+            }
+          },
+          userChoice: Promise.resolve({ outcome: "dismissed", platform: "web" })
+        });
+        window.dispatchEvent(event);
+        return Boolean(document.querySelector('[aria-label="Установить Cosmora"]'));
+      }, mode)
+    )
+    .toBe(true);
+};
+
 test("shows safe install feedback when browser prompt fails", async ({ page }) => {
   await page.goto("/");
-
-  await page.evaluate(() => {
-    const event = Object.assign(new Event("beforeinstallprompt", { cancelable: true }), {
-      prompt: async () => {
-        throw new Error("internal install failure secret-marker");
-      },
-      userChoice: Promise.resolve({ outcome: "dismissed", platform: "web" })
-    });
-    window.dispatchEvent(event);
-  });
+  await exposeInstallPrompt(page, "fail");
 
   const install = page.getByRole("button", { name: "Установить Cosmora" });
-  await expect(install).toBeVisible();
   await install.click();
 
   const alert = page
@@ -27,17 +39,9 @@ test("shows safe install feedback when browser prompt fails", async ({ page }) =
 
 test("consumes a dismissed browser install prompt once", async ({ page }) => {
   await page.goto("/");
-
-  await page.evaluate(() => {
-    const event = Object.assign(new Event("beforeinstallprompt", { cancelable: true }), {
-      prompt: async () => undefined,
-      userChoice: Promise.resolve({ outcome: "dismissed", platform: "web" })
-    });
-    window.dispatchEvent(event);
-  });
+  await exposeInstallPrompt(page, "dismiss");
 
   const install = page.getByRole("button", { name: "Установить Cosmora" });
-  await expect(install).toBeVisible();
   await install.click();
   await expect(install).toHaveCount(0);
 });
