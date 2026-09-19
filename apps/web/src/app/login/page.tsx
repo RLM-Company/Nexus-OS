@@ -11,8 +11,8 @@ export default function LoginPage() {
         <span className={styles.eyebrow}>Cosmora / Identity</span>
         <h1 id="login-title">Вход в Cosmora</h1>
         <p className={styles.lead}>
-          Единый аккаунт нужен для синхронизации чатов, companion-настроек и будущих уведомлений между
-          устройствами.
+          Единый аккаунт нужен для синхронизации чатов, companion-настроек и будущих уведомлений
+          между устройствами.
         </p>
 
         <div className={styles.providerList}>

@@ -274,7 +274,10 @@ export default function SettingsPage() {
                 max={20}
                 value={settings.maxProactivePerDay}
                 onChange={(event) =>
-                  update("maxProactivePerDay", Math.max(0, Math.min(20, Number(event.target.value))))
+                  update(
+                    "maxProactivePerDay",
+                    Math.max(0, Math.min(20, Number(event.target.value))),
+                  )
                 }
                 disabled={!settings.companionEnabled}
               />
@@ -414,7 +417,9 @@ export default function SettingsPage() {
             onClick={() => void requestNotifications()}
             disabled={notificationPermission === "unsupported"}
           >
-            {notificationPermission === "granted" ? "Уведомления разрешены" : "Разрешить уведомления"}
+            {notificationPermission === "granted"
+              ? "Уведомления разрешены"
+              : "Разрешить уведомления"}
           </button>
         </section>
 
@@ -428,7 +433,10 @@ export default function SettingsPage() {
           <ul className={styles.list}>
             <li>Настройки этой страницы хранятся только в localStorage текущего браузера.</li>
             <li>OAuth credentials, токены и секреты сюда не записываются.</li>
-            <li>Реальный companion не должен использовать чувствительный контекст без отдельного разрешения.</li>
+            <li>
+              Реальный companion не должен использовать чувствительный контекст без отдельного
+              разрешения.
+            </li>
             <li>Любая будущая отправка proactive-сообщения должна быть отменяема до delivery.</li>
           </ul>
           <button type="button" className={styles.danger} onClick={resetSettings}>
