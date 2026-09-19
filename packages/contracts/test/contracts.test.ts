@@ -32,6 +32,18 @@ describe("shared contracts", () => {
     ).toBe(false);
   });
 
+
+  it("rejects whitespace in shared entity ids", () => {
+    for (const clientMessageId of ["", "   ", "client id", "client\t1", "client\n1"]) {
+      expect(
+        Value.Check(CreateProjectRequestSchema, {
+          initial_message: "Создай проект",
+          client_message_id: clientMessageId
+        })
+      ).toBe(false);
+    }
+  });
+
   it("accepts a provider-neutral model request", () => {
     expect(
       Value.Check(ModelRequestSchema, {
