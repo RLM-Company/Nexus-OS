@@ -2,10 +2,19 @@ const REQUEST_TIMEOUT_MS = 120_000;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const PAID_SMOKE_CONFIRMATION = "SEND_TWO_PAID_REQUESTS";
 
-const apiOrigin = new URL(process.env.COSMORA_API_ORIGIN ?? "http://127.0.0.1:3100");
+let apiOrigin = null;
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
+};
+
+const parseOrigin = (envName, fallback, label) => {
+  const configured = process.env[envName] ?? fallback;
+  try {
+    return new URL(configured);
+  } catch {
+    throw new Error(`${label} is invalid`);
+  }
 };
 
 const assertLocalOrigin = (origin) => {
@@ -15,9 +24,14 @@ const assertLocalOrigin = (origin) => {
     origin.username === "" && origin.password === "",
     "API origin must not contain credentials"
   );
+  assert(
+    origin.pathname === "/" && origin.search === "" && origin.hash === "",
+    "API origin must be an origin without path, query or fragment"
+  );
 };
 
 const fetchResponse = async (path, label, init = {}) => {
+  assert(apiOrigin instanceof URL, "API origin is unavailable");
   const url = new URL(path, apiOrigin);
   assert(url.origin === apiOrigin.origin, `${label} must stay on the configured loopback API`);
 
@@ -52,6 +66,7 @@ const postJson = (path, label, body) =>
   });
 
 const assertAcceptedRun = (accepted, expectedStreamPrefix, label) => {
+  assert(apiOrigin instanceof URL, "API origin is unavailable");
   assert(typeof accepted?.run_id === "string", `${label} did not return a run id`);
   assert(typeof accepted?.stream_url === "string", `${label} did not return a stream URL`);
   const streamUrl = new URL(accepted.stream_url, apiOrigin);
@@ -86,6 +101,7 @@ const assertCompletedAssistant = (detail, label) => {
 };
 
 const main = async () => {
+  apiOrigin = parseOrigin("COSMORA_API_ORIGIN", "http://127.0.0.1:3100", "API origin");
   assert(
     process.env.COSMORA_ALLOW_PAID_SMOKE === PAID_SMOKE_CONFIRMATION,
     `Set COSMORA_ALLOW_PAID_SMOKE=${PAID_SMOKE_CONFIRMATION} to authorize exactly two model requests`

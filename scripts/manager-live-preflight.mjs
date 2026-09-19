@@ -1,17 +1,27 @@
 const REQUEST_TIMEOUT_MS = 5_000;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
-const apiOrigin = new URL(process.env.COSMORA_API_ORIGIN ?? "http://127.0.0.1:3100");
-const webOrigin = new URL(process.env.COSMORA_WEB_ORIGIN ?? "http://127.0.0.1:3000");
-
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
+};
+
+const parseOrigin = (envName, fallback, label) => {
+  const configured = process.env[envName] ?? fallback;
+  try {
+    return new URL(configured);
+  } catch {
+    throw new Error(`${label} is invalid`);
+  }
 };
 
 const assertLocalOrigin = (label, origin) => {
   assert(origin.protocol === "http:", `${label} must use local HTTP`);
   assert(LOOPBACK_HOSTS.has(origin.hostname), `${label} must stay on loopback`);
   assert(origin.username === "" && origin.password === "", `${label} must not contain credentials`);
+  assert(
+    origin.pathname === "/" && origin.search === "" && origin.hash === "",
+    `${label} must be an origin without path, query or fragment`
+  );
 };
 
 const fetchResponse = async (origin, path, label) => {
@@ -72,6 +82,8 @@ const assertWebSurfaces = async (origin) => {
 };
 
 const main = async () => {
+  const apiOrigin = parseOrigin("COSMORA_API_ORIGIN", "http://127.0.0.1:3100", "API origin");
+  const webOrigin = parseOrigin("COSMORA_WEB_ORIGIN", "http://127.0.0.1:3000", "Web origin");
   assertLocalOrigin("API origin", apiOrigin);
   assertLocalOrigin("Web origin", webOrigin);
 
