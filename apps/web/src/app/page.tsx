@@ -1909,6 +1909,10 @@ export default function Home() {
                 <span>{item.label}</span>
               </button>
             ))}
+            <Link className="sidebar-tool" href="/settings" aria-label="Настройки">
+              <span aria-hidden="true">⚙</span>
+              <span>Настройки</span>
+            </Link>
           </div>
         </nav>
 
