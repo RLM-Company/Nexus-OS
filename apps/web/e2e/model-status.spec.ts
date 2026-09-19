@@ -66,6 +66,46 @@ test("shows the ready model state when an external credential is configured", as
   await expect(page.getByTestId("runtime-fallback")).toHaveText("Нет");
 });
 
+test("retries a temporary runtime failure without leaking details", async ({ page }) => {
+  let attempts = 0;
+  let unavailable = true;
+  await page.route("**/api/v1/model-runtime", async (route) => {
+    attempts += 1;
+    if (unavailable) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { message: "INTERNAL_PROVIDER_TIMEOUT secret-debug-marker" }
+        })
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(readyRuntime)
+    });
+  });
+
+  await page.goto("/model-status");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "API временно недоступен" })
+  ).toContainText("API временно недоступен");
+  await expect(page.locator("body")).not.toContainText("INTERNAL_PROVIDER_TIMEOUT");
+  await expect(page.locator("body")).not.toContainText("secret-debug-marker");
+
+  const retryButton = page.getByRole("button", { name: "Повторить" });
+  await retryButton.focus();
+  await expect(retryButton).toBeFocused();
+  unavailable = false;
+  await retryButton.click();
+
+  await expect(page.getByTestId("runtime-readiness")).toContainText("Готово к запуску");
+  expect(attempts).toBeGreaterThanOrEqual(2);
+});
+
 test("keeps the model status page within the viewport on mobile and desktop", async ({ page }) => {
   await mockRuntimeRequest(page, readyRuntime);
 

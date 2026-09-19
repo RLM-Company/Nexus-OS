@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
+import { safeApiError } from "../safe-api-error";
 import styles from "./blueprint-controls.module.css";
 
 type Reference = { id: string; version: number };
@@ -91,12 +92,7 @@ const numberValue = (form: FormData, name: string): number => {
   return Number.isFinite(value) && value >= 0 ? value : 0;
 };
 
-const readError = async (response: Response): Promise<Error> => {
-  const body = (await response.json().catch(() => null)) as {
-    error?: { message?: string };
-  } | null;
-  return new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
-};
+const readError = (response: Response): Error => safeApiError(response);
 
 export default function BlueprintControls({
   projectId,
@@ -109,6 +105,7 @@ export default function BlueprintControls({
   const [functionId, setFunctionId] = useState(functions[0]?.function_id ?? "");
   const [patternId, setPatternId] = useState("");
   const [pending, setPending] = useState(false);
+  const mutationLockRef = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -148,7 +145,7 @@ export default function BlueprintControls({
 
   const save = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    if (!selectedFunction || !selectedPattern) return;
+    if (mutationLockRef.current || !selectedFunction || !selectedPattern) return;
     const form = new FormData(event.currentTarget);
     const validUntilRaw = formString(form, "valid-until");
     const validUntilDate = new Date(validUntilRaw);
@@ -197,6 +194,7 @@ export default function BlueprintControls({
       close_conditions: closeConditions
     };
 
+    mutationLockRef.current = true;
     setPending(true);
     setNotice(null);
     setError(null);
@@ -216,7 +214,7 @@ export default function BlueprintControls({
           selectedBlueprint ? { ...payload, expected_version: selectedBlueprint.version } : payload
         )
       });
-      if (!response.ok) throw await readError(response);
+      if (!response.ok) throw readError(response);
       setNotice(
         selectedBlueprint
           ? `Новая версия чертежа сохранена: v${selectedBlueprint.version + 1}.`
@@ -228,6 +226,7 @@ export default function BlueprintControls({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось сохранить чертёж");
     } finally {
+      mutationLockRef.current = false;
       setPending(false);
     }
   };
@@ -532,8 +531,16 @@ export default function BlueprintControls({
       {eligiblePatterns.length === 0 && functionId && (
         <p className={styles.warning}>Для выбранной функции нет активного разрешающего паттерна.</p>
       )}
-      {notice && <p className={styles.notice}>{notice}</p>}
-      {error && <p className={styles.error}>{error}</p>}
+      {notice && (
+        <p className={styles.notice} role="status" aria-live="polite">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
