@@ -138,6 +138,7 @@ describe("loadServerConfig", () => {
       "Invalid server configuration: /RUNTIME_EMERGENCY_STOP"
     );
   });
+
   it("rejects whitespace-only external model settings without exposing values", () => {
     const valid = {
       MODEL_PROVIDER: "openai-compatible",
@@ -157,5 +158,4 @@ describe("loadServerConfig", () => {
     );
     expect(loadServerConfig({ MODEL_API_KEY: "   " }).modelApiKeyConfigured).toBe(false);
   });
-
 });
