@@ -53,8 +53,8 @@ export const normalizeCommonModelServiceOptions = <T extends CommonModelServiceO
   };
 };
 
-export const assertEntityId = (value: unknown, field: string): asserts value is string => {
+export function assertEntityId(value: unknown, field: string): asserts value is string {
   if (typeof value !== "string" || value.length < 1 || value.length > 128) {
     throw new Error(`Invalid model request identity: ${field}`);
   }
-};
+}
