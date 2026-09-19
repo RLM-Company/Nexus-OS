@@ -5,6 +5,10 @@ import type {
   ModelMessage,
   ModelRequest
 } from "@cosmora/contracts";
+import {
+  assertEntityId,
+  normalizeCommonModelServiceOptions
+} from "./model-service-options.js";
 
 export const MANAGER_AGENT_ID = "cosmora-manager";
 
@@ -68,7 +72,7 @@ export class ManagerService {
   readonly #options: NormalizedManagerOptions;
 
   constructor(options: ManagerServiceOptions) {
-    this.#options = {
+    this.#options = normalizeCommonModelServiceOptions({
       requiredFeatures: ["streaming"],
       confidential: false,
       maxCost: null,
@@ -77,10 +81,13 @@ export class ManagerService {
       maxOutputTokens: 1_200,
       systemPrompt: DEFAULT_MANAGER_SYSTEM_PROMPT,
       ...options
-    };
+    });
   }
 
   buildRequest(context: ManagerRunContext): ModelRequest {
+    assertEntityId(context.projectId, "projectId");
+    assertEntityId(context.runId, "runId");
+
     const conversation = context.messages.flatMap((message) => {
       const mapped = toModelMessage(message);
       return mapped ? [mapped] : [];
