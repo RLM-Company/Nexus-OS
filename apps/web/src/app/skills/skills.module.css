@@ -1,0 +1,177 @@
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  background: var(--bg);
+}
+
+.shell {
+  width: min(100%, 70rem);
+  margin: 0 auto;
+}
+
+.header {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.backLink {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.eyebrow {
+  margin: 0 0 0.45rem;
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  letter-spacing: -0.04em;
+}
+
+.lead {
+  max-width: 48rem;
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.boundary {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--panel);
+}
+
+.boundary strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.boundary p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.catalog {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.card {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--panel);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.cardHeader small,
+.permission small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.cardHeader h2 {
+  margin: 0.2rem 0 0;
+  font-size: 1.05rem;
+}
+
+.badge {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-hover);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.summary {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.permissions {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.permissions h3 {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.permission {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 0.6rem;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
+.permission div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.permission > span {
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.permission p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.card button {
+  align-self: end;
+  width: 100%;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--surface-hover);
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+}
+
+@media (max-width: 56rem) {
+  .catalog {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 42rem) {
+  .page {
+    padding: max(1rem, env(safe-area-inset-top)) max(0.9rem, env(safe-area-inset-right))
+      max(1rem, env(safe-area-inset-bottom)) max(0.9rem, env(safe-area-inset-left));
+  }
+}

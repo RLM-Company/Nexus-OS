@@ -174,7 +174,7 @@ test("opens the image workspace and keeps generation local until a model is conn
   await page.getByRole("button", { name: "16:9" }).click();
   await page.getByRole("button", { name: "Подготовить промпт" }).click();
 
-  await expect(page.getByRole("status")).toContainText("сохранён локально");
+  await expect(page.getByRole("status")).toContainText("подготовлен локально");
   await expect(page.getByText("Внешняя модель не подключена")).toBeVisible();
 });
 

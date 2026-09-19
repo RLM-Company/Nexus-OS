@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
+import { safeApiError } from "../safe-api-error";
 import styles from "./catalog-controls.module.css";
 
 type AgentFunction = {
@@ -29,12 +30,7 @@ const formString = (form: FormData, name: string): string => {
   return typeof value === "string" ? value.trim() : "";
 };
 
-const readError = async (response: Response): Promise<Error> => {
-  const body = (await response.json().catch(() => null)) as {
-    error?: { message?: string };
-  } | null;
-  return new Error(body?.error?.message ?? `Cosmora API returned ${response.status}`);
-};
+const readError = (response: Response): Error => safeApiError(response);
 
 const postJson = async (url: string, payload: unknown): Promise<void> => {
   const response = await fetch(url, {
@@ -47,12 +43,12 @@ const postJson = async (url: string, payload: unknown): Promise<void> => {
     body: JSON.stringify(payload)
   });
 
-  if (!response.ok) throw await readError(response);
+  if (!response.ok) throw readError(response);
 };
 
 const postAction = async (url: string): Promise<void> => {
   const response = await fetch(url, { method: "POST", cache: "no-store" });
-  if (!response.ok) throw await readError(response);
+  if (!response.ok) throw readError(response);
 };
 
 export default function CatalogControls({
@@ -62,6 +58,7 @@ export default function CatalogControls({
   onSaved
 }: CatalogControlsProps) {
   const [pending, setPending] = useState<MutationKind | null>(null);
+  const mutationLockRef = useRef(false);
   const [functionTarget, setFunctionTarget] = useState("");
   const [patternTarget, setPatternTarget] = useState("");
   const [archiveTarget, setArchiveTarget] = useState("");
@@ -84,6 +81,7 @@ export default function CatalogControls({
 
   const saveFunction = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
+    if (mutationLockRef.current) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const payload = {
@@ -93,6 +91,7 @@ export default function CatalogControls({
     };
     if (!payload.name || !payload.description || !payload.result_contract) return;
 
+    mutationLockRef.current = true;
     setPending("function");
     setNotice(null);
     setError(null);
@@ -116,12 +115,14 @@ export default function CatalogControls({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось сохранить функцию");
     } finally {
+      mutationLockRef.current = false;
       setPending(null);
     }
   };
 
   const savePattern = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
+    if (mutationLockRef.current) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const allowedFunctionIds = form
@@ -148,6 +149,7 @@ export default function CatalogControls({
       return;
     }
 
+    mutationLockRef.current = true;
     setPending("pattern");
     setNotice(null);
     setError(null);
@@ -171,14 +173,16 @@ export default function CatalogControls({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось сохранить паттерн");
     } finally {
+      mutationLockRef.current = false;
       setPending(null);
     }
   };
 
   const archivePattern = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    if (!selectedArchivePattern) return;
+    if (mutationLockRef.current || !selectedArchivePattern) return;
 
+    mutationLockRef.current = true;
     setPending("archive");
     setNotice(null);
     setError(null);
@@ -193,6 +197,7 @@ export default function CatalogControls({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось архивировать паттерн");
     } finally {
+      mutationLockRef.current = false;
       setPending(null);
     }
   };
@@ -363,8 +368,16 @@ export default function CatalogControls({
         </button>
       </form>
 
-      {notice && <p className={styles.notice}>{notice}</p>}
-      {error && <p className={styles.error}>{error}</p>}
+      {notice && (
+        <p className={styles.notice} role="status" aria-live="polite">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

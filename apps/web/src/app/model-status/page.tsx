@@ -28,12 +28,14 @@ const BooleanValue = ({ value }: { value: boolean }) => (
 
 export default function ModelStatusPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
 
     const load = async (): Promise<void> => {
+      setState({ kind: "loading" });
       try {
         const response = await fetch("/api/v1/model-runtime", {
           method: "GET",
@@ -55,7 +57,7 @@ export default function ModelStatusPage() {
       active = false;
       controller.abort();
     };
-  }, []);
+  }, [retryKey]);
 
   const readiness = useMemo(() => {
     if (state.kind !== "loaded") return null;
@@ -103,7 +105,14 @@ export default function ModelStatusPage() {
               </span>
               <div>
                 <strong>Не удалось получить состояние runtime</strong>
-                <p>Проверьте доступность API и обновите страницу.</p>
+                <p>API временно недоступен. Проверьте подключение и повторите попытку.</p>
+                <button
+                  type="button"
+                  className={styles.retryButton}
+                  onClick={() => setRetryKey((value) => value + 1)}
+                >
+                  Повторить
+                </button>
               </div>
             </div>
           )}

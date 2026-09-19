@@ -10,6 +10,12 @@ agent runtime.
 
 - responsive Next.js project shell with separately persisted ordinary chats and projects,
   server-side streaming, cancellation and restart recovery;
+- browser-local Project Context preview with bounded source metadata, explicit preview before
+  connecting a source, per-project local isolation, safe redaction and explicit clear confirmation;
+- mock-only Skills preview with read/preview permissions and disabled arbitrary execution, plus a
+  mock/read-only GitHub preview with strict `github.com` URL allowlisting and disabled write actions;
+- local Image, Video and Sound prompt workspaces that do not send prompts to an external model while
+  that model surface is disconnected;
 - Agent Studio catalogs, blueprints and owner/delegated proposal flows with idempotent writes and
   Decision Trace records;
 - Autonomy Control Center with the canonical A0–A6 profile, point-override editor, server authority
@@ -40,6 +46,9 @@ agent runtime.
 ## Current boundary
 
 - Manager and worker agents do not execute task graphs or make model calls as agents yet.
+- Project Context source selection is browser-local preview state, not authoritative runtime context.
+- Skills preview does not execute packages or arbitrary code, and GitHub preview does not authenticate
+  to GitHub or perform repository writes.
 - External tool effects and the local daemon are not connected to an autonomous agent loop.
 - Manager Runtime Step 6 is accepted as `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`.
 - Roadmap Step 5 owner-facing control slices are implemented. Finite-use override counters are
