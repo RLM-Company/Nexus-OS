@@ -5,10 +5,7 @@ import type {
   ModelMessage,
   ModelRequest
 } from "@cosmora/contracts";
-import {
-  assertEntityId,
-  normalizeCommonModelServiceOptions
-} from "./model-service-options.js";
+import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
 
 export const MANAGER_AGENT_ID = "cosmora-manager";
 
