@@ -18,9 +18,7 @@ test("shows safe feedback when the browser install prompt fails", async ({ page 
   await install.click();
 
   await expect(
-    page
-      .getByRole("alert")
-      .filter({ hasText: "Не удалось открыть установку Cosmora." })
+    page.getByRole("alert").filter({ hasText: "Не удалось открыть установку Cosmora." })
   ).toHaveCount(1);
   await expect(page.locator("body")).not.toContainText("internal install failure");
   await expect(page.locator("body")).not.toContainText("secret-marker");
