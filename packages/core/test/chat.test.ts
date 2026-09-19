@@ -92,6 +92,16 @@ describe("ChatService", () => {
         })
     ).toThrow("Invalid model request option: confidential");
 
+    expect(
+      () =>
+        new ChatService({
+          preferredProvider: "mock",
+          preferredModelAlias: "chat",
+          fallbackAllowed: false,
+          maxOutputTokens: 100_001
+        })
+    ).toThrow("Invalid model request option: maxOutputTokens");
+
     const chat = new ChatService({
       preferredProvider: "mock",
       preferredModelAlias: "chat",

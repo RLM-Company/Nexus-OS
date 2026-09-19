@@ -24,8 +24,11 @@ const isCanonicalIdentifier = (value: unknown): value is string =>
 const isNonEmptyPrompt = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0 && value.length <= 100_000;
 
-const isPositiveSafeInteger = (value: unknown): value is number =>
-  typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+const isBoundedPositiveSafeInteger = (value: unknown, maximum: number): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= maximum;
+
+const MAX_TIMEOUT_MS = 600_000;
+const MAX_OUTPUT_TOKENS = 100_000;
 
 const MODEL_FEATURES = new Set<ModelFeature>([
   "streaming",
@@ -47,8 +50,12 @@ export const normalizeCommonModelServiceOptions = <T extends CommonModelServiceO
     throw invalidOption("optimizeFor");
   }
   if (!isNonEmptyPrompt(options.systemPrompt)) throw invalidOption("systemPrompt");
-  if (!isPositiveSafeInteger(options.timeoutMs)) throw invalidOption("timeoutMs");
-  if (!isPositiveSafeInteger(options.maxOutputTokens)) throw invalidOption("maxOutputTokens");
+  if (!isBoundedPositiveSafeInteger(options.timeoutMs, MAX_TIMEOUT_MS)) {
+    throw invalidOption("timeoutMs");
+  }
+  if (!isBoundedPositiveSafeInteger(options.maxOutputTokens, MAX_OUTPUT_TOKENS)) {
+    throw invalidOption("maxOutputTokens");
+  }
   if (
     !Array.isArray(options.requiredFeatures) ||
     options.requiredFeatures.some((feature) => !MODEL_FEATURES.has(feature))
