@@ -256,9 +256,7 @@ export default function SettingsPage() {
               Частота
               <select
                 value={settings.proactiveFrequency}
-                onChange={(event) =>
-                  update("proactiveFrequency", event.target.value as Frequency)
-                }
+                onChange={(event) => update("proactiveFrequency", event.target.value as Frequency)}
                 disabled={!settings.companionEnabled}
               >
                 <option value="rare">Редко</option>
