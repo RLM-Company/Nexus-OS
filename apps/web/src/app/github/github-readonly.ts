@@ -158,12 +158,17 @@ export class MockGitHubReadonlyAdapter implements GitHubReadonlyAdapter {
   }
 }
 
-const safeUrl = (value: string): string => {
+export const safeGitHubUrl = (value: string): string => {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && url.hostname === "github.com"
-      ? url.toString()
-      : "https://github.com/";
+    const isSafeOrigin =
+      url.protocol === "https:" &&
+      url.hostname === "github.com" &&
+      url.port === "" &&
+      url.username === "" &&
+      url.password === "";
+
+    return isSafeOrigin ? url.toString() : "https://github.com/";
   } catch {
     return "https://github.com/";
   }
@@ -175,7 +180,7 @@ const sanitizeRepository = (repository: GitHubRepository): GitHubRepository => (
   name: repository.name,
   defaultBranch: repository.defaultBranch,
   visibility: repository.visibility,
-  webUrl: safeUrl(repository.webUrl)
+  webUrl: safeGitHubUrl(repository.webUrl)
 });
 
 export async function loadGitHubPanel(adapter: GitHubReadonlyAdapter): Promise<GitHubPanelState> {
