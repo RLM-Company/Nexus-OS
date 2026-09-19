@@ -1,6 +1,6 @@
 import { Type, type Static } from "typebox";
 
-export const EntityIdSchema = Type.String({ minLength: 1, maxLength: 128 });
+export const EntityIdSchema = Type.String({ minLength: 1, maxLength: 128, pattern: "^[^\\s]+$" });
 export type EntityId = Static<typeof EntityIdSchema>;
 
 export const IsoDateTimeSchema = Type.String({
