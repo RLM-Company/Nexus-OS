@@ -15,7 +15,7 @@ test("persists companion and communication settings", async ({ page }) => {
   await page.getByLabel("Подробность").selectOption("short");
   await page.getByLabel("Инициативность").selectOption("proactive");
 
-  await expect(page.getByText(/до 2 сообщений\\/день/)).toBeVisible();
+  await expect(page.getByText(/до 2 сообщений\/день/)).toBeVisible();
   await page.getByRole("button", { name: "Проверить preview" }).click();
   await expect(page.getByText("Напишу только когда есть понятный повод")).toBeVisible();
 
