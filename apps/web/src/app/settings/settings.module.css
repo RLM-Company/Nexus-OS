@@ -1,0 +1,95 @@
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(1rem, 4vw, 3rem);
+  background: var(--bg);
+}
+.shell {
+  width: min(100%, 48rem);
+  margin: 0 auto;
+  display: grid;
+  gap: 1.2rem;
+}
+.backLink {
+  width: fit-content;
+  color: var(--muted);
+  font-weight: 700;
+}
+.eyebrow {
+  margin: 0 0 0.4rem;
+  color: var(--accent-strong);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.shell h1 {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 3.2rem);
+  letter-spacing: -0.04em;
+}
+.shell header > p:last-child {
+  color: var(--muted);
+  line-height: 1.55;
+}
+.card,
+.skills {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--panel);
+}
+.card h2,
+.skills h2,
+.skills p {
+  margin: 0;
+}
+.card p,
+.skills p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+.switchOn,
+.switchOff {
+  width: fit-content;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.switchOn {
+  color: #fff;
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+.switchOff {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.switchOn:focus-visible,
+.switchOff:focus-visible,
+.backLink:focus-visible {
+  outline: 3px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+.switchOn:disabled,
+.switchOff:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.error {
+  color: #b42318 !important;
+  font-weight: 700;
+}
+.skills article {
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+.skills article strong {
+  display: block;
+  margin-bottom: 0.3rem;
+}

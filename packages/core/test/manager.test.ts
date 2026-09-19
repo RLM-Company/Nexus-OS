@@ -75,6 +75,27 @@ describe("ManagerService", () => {
     expect(system).toContain("ключи");
   });
 
+  it("keeps Manager boundaries while using the explicit token economy mode", () => {
+    const manager = new ManagerService({
+      preferredProvider: "mock",
+      preferredModelAlias: "manager",
+      fallbackAllowed: false,
+      maxOutputTokens: 480,
+      optimizeFor: "quality"
+    });
+    const request = manager.buildRequest({
+      projectId: "project-1",
+      runId: "run-economy",
+      tokenEconomyEnabled: true,
+      messages: [message({ content: "Составь краткий план" })]
+    });
+
+    expect(request.constraints.max_output_tokens).toBe(360);
+    expect(request.routing.optimize_for).toBe("cost");
+    expect(request.messages[0]?.content).toContain("Режим экономии токенов включён");
+    expect(request.messages[0]?.content).toContain("запрашивай подтверждение");
+  });
+
   it("rejects invalid direct model options without exposing values", () => {
     expect(
       () =>

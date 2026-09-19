@@ -6,6 +6,11 @@ import type {
   ModelRequest
 } from "@cosmora/contracts";
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
+import {
+  compactConversationForTokenEconomy,
+  TOKEN_ECONOMY_MAX_OUTPUT_TOKENS,
+  TOKEN_ECONOMY_SYSTEM_NOTE
+} from "./token-economy.js";
 
 export const MANAGER_AGENT_ID = "cosmora-manager";
 
@@ -39,6 +44,7 @@ export interface ManagerRunContext {
   projectId: string;
   runId: string;
   messages: Message[];
+  tokenEconomyEnabled?: boolean;
 }
 
 const toModelMessage = (message: Message): ModelMessage | null => {
@@ -92,9 +98,15 @@ export class ManagerService {
       return mapped ? [mapped] : [];
     });
 
+    const economy = context.tokenEconomyEnabled === true;
     const messages: ModelMessage[] = [
-      { role: "system", content: this.#options.systemPrompt },
-      ...conversation
+      {
+        role: "system",
+        content: economy
+          ? `${this.#options.systemPrompt}\n\n${TOKEN_ECONOMY_SYSTEM_NOTE}`
+          : this.#options.systemPrompt
+      },
+      ...(economy ? compactConversationForTokenEconomy(conversation) : conversation)
     ];
 
     return {
@@ -107,7 +119,9 @@ export class ManagerService {
       messages,
       constraints: {
         timeout_ms: this.#options.timeoutMs,
-        max_output_tokens: this.#options.maxOutputTokens
+        max_output_tokens: economy
+          ? Math.min(this.#options.maxOutputTokens, TOKEN_ECONOMY_MAX_OUTPUT_TOKENS)
+          : this.#options.maxOutputTokens
       },
       routing: {
         preferred_provider: this.#options.preferredProvider,
@@ -117,7 +131,7 @@ export class ManagerService {
         confidential: this.#options.confidential,
         estimated_input_tokens: estimateInputTokensUpperBound(messages),
         max_cost: this.#options.maxCost,
-        optimize_for: this.#options.optimizeFor
+        optimize_for: economy ? "cost" : this.#options.optimizeFor
       },
       idempotency_key: `manager-run:${context.runId}`
     };

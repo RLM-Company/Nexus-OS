@@ -11,6 +11,7 @@ import type {
   QueuedGeneralChatRun
 } from "./general-chat-runtime-store.js";
 import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.js";
+import { TokenEconomyStore } from "./token-economy.js";
 
 export interface GeneralChatBackgroundRunCoordinatorOptions {
   store: GeneralChatRuntimeStore;
@@ -18,6 +19,7 @@ export interface GeneralChatBackgroundRunCoordinatorOptions {
   chat: ChatService;
   runtimeMetrics: RuntimeMetrics;
   emergencyStopStore?: EmergencyStopStore;
+  tokenEconomyStore?: TokenEconomyStore;
   logger?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   pollIntervalMs?: number;
   controlPollIntervalMs?: number;
@@ -39,6 +41,7 @@ export class GeneralChatBackgroundRunCoordinator {
   readonly #chat: ChatService;
   readonly #runtimeMetrics: RuntimeMetrics;
   readonly #emergencyStopStore: EmergencyStopStore | undefined;
+  readonly #tokenEconomyStore: TokenEconomyStore;
   readonly #logger: Pick<FastifyBaseLogger, "info" | "warn" | "error"> | undefined;
   readonly #pollIntervalMs: number;
   readonly #controlPollIntervalMs: number;
@@ -54,6 +57,7 @@ export class GeneralChatBackgroundRunCoordinator {
     this.#chat = options.chat;
     this.#runtimeMetrics = options.runtimeMetrics;
     this.#emergencyStopStore = options.emergencyStopStore;
+    this.#tokenEconomyStore = options.tokenEconomyStore ?? new TokenEconomyStore();
     this.#logger = options.logger;
     this.#pollIntervalMs = positiveInteger(options.pollIntervalMs, 100);
     this.#controlPollIntervalMs = positiveInteger(options.controlPollIntervalMs, 50);
@@ -167,7 +171,8 @@ export class GeneralChatBackgroundRunCoordinator {
       const modelRequest = this.#chat.buildRequest({
         chatId: queued.chat_id,
         runId: queued.run_id,
-        messages: conversation
+        messages: conversation,
+        tokenEconomyEnabled: this.#tokenEconomyStore.get(queued.owner_id).enabled
       });
       let completed: Extract<ModelGatewayStreamEvent, { type: "response.completed" }> | undefined;
 

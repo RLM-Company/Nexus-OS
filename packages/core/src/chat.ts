@@ -7,6 +7,11 @@ import type {
 } from "@cosmora/contracts";
 import { estimateInputTokensUpperBound } from "./manager.js";
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
+import {
+  compactConversationForTokenEconomy,
+  TOKEN_ECONOMY_MAX_OUTPUT_TOKENS,
+  TOKEN_ECONOMY_SYSTEM_NOTE
+} from "./token-economy.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
@@ -37,6 +42,7 @@ export interface ChatRunContext {
   chatId: string;
   runId: string;
   messages: GeneralChatMessage[];
+  tokenEconomyEnabled?: boolean;
 }
 
 interface NormalizedChatOptions {
@@ -77,9 +83,15 @@ export class ChatService {
     const conversation: ModelMessage[] = context.messages
       .filter((message) => message.content.trim().length > 0)
       .map((message) => ({ role: message.role, content: message.content }));
+    const economy = context.tokenEconomyEnabled === true;
     const messages: ModelMessage[] = [
-      { role: "system", content: this.#options.systemPrompt },
-      ...conversation
+      {
+        role: "system",
+        content: economy
+          ? `${this.#options.systemPrompt}\n\n${TOKEN_ECONOMY_SYSTEM_NOTE}`
+          : this.#options.systemPrompt
+      },
+      ...(economy ? compactConversationForTokenEconomy(conversation) : conversation)
     ];
 
     return {
@@ -92,7 +104,9 @@ export class ChatService {
       messages,
       constraints: {
         timeout_ms: this.#options.timeoutMs,
-        max_output_tokens: this.#options.maxOutputTokens
+        max_output_tokens: economy
+          ? Math.min(this.#options.maxOutputTokens, TOKEN_ECONOMY_MAX_OUTPUT_TOKENS)
+          : this.#options.maxOutputTokens
       },
       routing: {
         preferred_provider: this.#options.preferredProvider,
@@ -102,7 +116,7 @@ export class ChatService {
         confidential: this.#options.confidential,
         estimated_input_tokens: estimateInputTokensUpperBound(messages),
         max_cost: this.#options.maxCost ?? null,
-        optimize_for: this.#options.optimizeFor
+        optimize_for: economy ? "cost" : this.#options.optimizeFor
       },
       idempotency_key: `chat-run:${context.runId}`
     };
