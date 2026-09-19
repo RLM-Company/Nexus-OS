@@ -2304,14 +2304,20 @@ export default function Home() {
 
       <nav className="mobile-nav" aria-label="Мобильная навигация">
         <button
+          type="button"
           className={surface === "manager" && !activeProject && !activeLocalChatId ? "active" : ""}
+          aria-current={
+            surface === "manager" && !activeProject && !activeLocalChatId ? "page" : undefined
+          }
           onClick={newChat}
         >
           <ToolIcon kind="new-chat" />
           <span>Новый чат</span>
         </button>
         <button
+          type="button"
           className={surface === "manager" && activeProject ? "active" : ""}
+          aria-current={surface === "manager" && activeProject ? "page" : undefined}
           onClick={() => {
             if (activeProject) setSurface("manager");
             else if (projects[0]) void openProject(projects[0].id);
@@ -2326,6 +2332,7 @@ export default function Home() {
             key={item.id}
             type="button"
             className={surface === item.id ? "active" : ""}
+            aria-current={surface === item.id ? "page" : undefined}
             onClick={() => selectSurface(item.id)}
           >
             <ToolIcon kind={item.id} />
