@@ -4,6 +4,7 @@ import {
   ActivateEmergencyStopRequestSchema,
   CreateProjectRequestSchema,
   ModelRequestSchema,
+  ModelResponseSchema,
   StreamEventSchema
 } from "../src/index.js";
 
@@ -67,6 +68,61 @@ describe("shared contracts", () => {
         idempotency_key: "stable-key"
       })
     ).toBe(true);
+  });
+
+  it("rejects malformed model envelope metadata", () => {
+    const baseRequest = {
+      request_id: "req-1",
+      project_id: "project-1",
+      run_id: "run-1",
+      agent_id: "manager",
+      role: "manager",
+      task_type: "chat_response",
+      messages: [{ role: "user", content: "Привет" }],
+      constraints: { timeout_ms: 30_000, max_output_tokens: 1_000 },
+      routing: {
+        preferred_provider: "mock",
+        preferred_model_alias: "manager",
+        fallback_allowed: false,
+        required_features: ["streaming"],
+        confidential: false,
+        estimated_input_tokens: 100,
+        max_cost: null,
+        optimize_for: "balanced"
+      },
+      idempotency_key: "stable-key"
+    };
+
+    expect(Value.Check(ModelRequestSchema, { ...baseRequest, messages: [] })).toBe(false);
+    expect(
+      Value.Check(ModelRequestSchema, {
+        ...baseRequest,
+        routing: { ...baseRequest.routing, preferred_provider: " mock " }
+      })
+    ).toBe(false);
+    expect(Value.Check(ModelRequestSchema, { ...baseRequest, idempotency_key: "stable key" })).toBe(
+      false
+    );
+
+    expect(
+      Value.Check(ModelResponseSchema, {
+        request_id: "req-1",
+        status: "succeeded",
+        provider: "mock",
+        model_requested: "manager",
+        model_resolved: "manager",
+        content: [{ type: "text", text: "Готово" }],
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          calculated_cost: 0,
+          currency: "USD"
+        },
+        timing: { first_token_ms: 1, total_ms: 2 },
+        finish_reason: "",
+        warnings: []
+      })
+    ).toBe(false);
   });
 
   it("accepts a typed streaming delta", () => {
