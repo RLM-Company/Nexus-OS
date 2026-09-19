@@ -32,6 +32,17 @@ describe("shared contracts", () => {
     ).toBe(false);
   });
 
+  it("rejects whitespace in shared entity ids", () => {
+    for (const clientMessageId of ["", "   ", "client id", "client\t1", "client\n1"]) {
+      expect(
+        Value.Check(CreateProjectRequestSchema, {
+          initial_message: "Создай проект",
+          client_message_id: clientMessageId
+        })
+      ).toBe(false);
+    }
+  });
+
   it("accepts a provider-neutral model request", () => {
     expect(
       Value.Check(ModelRequestSchema, {
@@ -65,6 +76,27 @@ describe("shared contracts", () => {
         data: { run_id: "run-1", message_id: "message-1", seq: 0, delta: "Я" }
       })
     ).toBe(true);
+  });
+
+  it("rejects empty streaming completion metadata", () => {
+    expect(
+      Value.Check(StreamEventSchema, {
+        type: "run.completed",
+        data: { run_id: "run-1", provider: "", model_resolved: "model-1" }
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(StreamEventSchema, {
+        type: "message.completed",
+        data: { run_id: "run-1", message_id: "message-1", size: 1, finish_reason: "" }
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(StreamEventSchema, {
+        type: "run.failed",
+        data: { run_id: "run-1", error_code: "", retryable: false }
+      })
+    ).toBe(false);
   });
 
   it("accepts the bounded emergency-stop transport shape", () => {
