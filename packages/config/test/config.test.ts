@@ -138,4 +138,24 @@ describe("loadServerConfig", () => {
       "Invalid server configuration: /RUNTIME_EMERGENCY_STOP"
     );
   });
+  it("rejects whitespace-only external model settings without exposing values", () => {
+    const valid = {
+      MODEL_PROVIDER: "openai-compatible",
+      MODEL_BASE_URL: "https://provider.example/v1",
+      MODEL_API_KEY: "runtime-secret",
+      MODEL_NAME: "manager-model"
+    } as const;
+
+    expect(() => loadServerConfig({ ...valid, MODEL_BASE_URL: "   " })).toThrow(
+      "Invalid server configuration: /MODEL_BASE_URL"
+    );
+    expect(() => loadServerConfig({ ...valid, MODEL_API_KEY: "   " })).toThrow(
+      "Invalid server configuration: /MODEL_API_KEY"
+    );
+    expect(() => loadServerConfig({ ...valid, MODEL_NAME: "   " })).toThrow(
+      "Invalid server configuration: /MODEL_NAME"
+    );
+    expect(loadServerConfig({ MODEL_API_KEY: "   " }).modelApiKeyConfigured).toBe(false);
+  });
+
 });
