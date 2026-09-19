@@ -58,11 +58,13 @@ const normalizeSettings = (value: unknown): SettingsState => {
         ? candidate.proactiveFrequency
         : DEFAULT_SETTINGS.proactiveFrequency,
     quietStart:
-      typeof candidate.quietStart === "string" && /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietStart)
+      typeof candidate.quietStart === "string" &&
+      /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietStart)
         ? candidate.quietStart
         : DEFAULT_SETTINGS.quietStart,
     quietEnd:
-      typeof candidate.quietEnd === "string" && /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietEnd)
+      typeof candidate.quietEnd === "string" &&
+      /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietEnd)
         ? candidate.quietEnd
         : DEFAULT_SETTINGS.quietEnd,
     maxProactivePerDay:
@@ -247,8 +249,8 @@ export default function SettingsPage() {
           <div className={styles.notice}>
             <strong>Сейчас это безопасный preview.</strong>
             <span>
-              Настройка уже сохраняется, но реальный scheduler/delivery backend ещё не подключён. Он
-              должен проверять согласие, тихие часы, лимиты, отсутствие активного диалога и
+              Настройка уже сохраняется, но реальный scheduler/delivery backend ещё не подключён.
+              Он должен проверять согласие, тихие часы, лимиты, отсутствие активного диалога и
               emergency-stop до отправки любого proactive-сообщения.
             </span>
           </div>
