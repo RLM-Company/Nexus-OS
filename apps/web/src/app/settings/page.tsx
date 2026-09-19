@@ -247,8 +247,8 @@ export default function SettingsPage() {
           <div className={styles.notice}>
             <strong>Сейчас это безопасный preview.</strong>
             <span>
-              Настройка уже сохраняется, но реальный scheduler/delivery backend ещё не подключён.
-              Он должен проверять согласие, тихие часы, лимиты, отсутствие активного диалога и
+              Настройка уже сохраняется, но реальный scheduler/delivery backend ещё не подключён. Он
+              должен проверять согласие, тихие часы, лимиты, отсутствие активного диалога и
               emergency-stop до отправки любого proactive-сообщения.
             </span>
           </div>
