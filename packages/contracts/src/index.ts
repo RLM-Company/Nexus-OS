@@ -1,5 +1,6 @@
 export * from "./agent-studio.js";
 export * from "./domain.js";
+export * from "./companion.js";
 export * from "./demo-manager.js";
 export * from "./errors.js";
 export * from "./events.js";

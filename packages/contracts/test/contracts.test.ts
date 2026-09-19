@@ -2,6 +2,9 @@ import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import {
   ActivateEmergencyStopRequestSchema,
+  CompanionGateDecisionSchema,
+  CompanionMessageProposalSchema,
+  CompanionPreferencesSchema,
   CreateProjectRequestSchema,
   ModelRequestSchema,
   ModelResponseSchema,
@@ -183,6 +186,58 @@ describe("shared contracts", () => {
         data: { run_id: "run-1", error_code: "PROVIDER ERROR", retryable: false }
       })
     ).toBe(false);
+  });
+
+  it("accepts bounded live-companion preferences and decisions", () => {
+    expect(
+      Value.Check(CompanionPreferencesSchema, {
+        enabled: true,
+        frequency: "balanced",
+        max_proactive_per_day: 3,
+        min_gap_minutes: 120,
+        quiet_hours: { start: "22:00", end: "08:00", timezone: "Europe/Moscow" },
+        suppress_when_active: true,
+        backoff_after_unanswered: 3,
+        allow_push: true,
+        allow_telegram: false
+      })
+    ).toBe(true);
+
+    expect(
+      Value.Check(CompanionPreferencesSchema, {
+        enabled: true,
+        frequency: "balanced",
+        max_proactive_per_day: 21,
+        min_gap_minutes: 120,
+        quiet_hours: { start: "22:00", end: "08:00", timezone: "Europe/Moscow" },
+        suppress_when_active: true,
+        backoff_after_unanswered: 3,
+        allow_push: true,
+        allow_telegram: false
+      })
+    ).toBe(false);
+
+    expect(
+      Value.Check(CompanionMessageProposalSchema, {
+        proposal_id: "proposal-1",
+        conversation_id: "conversation-1",
+        trigger: "follow_up",
+        message: "Как прошло собеседование?",
+        preferred_surface: "in_app",
+        created_at: "2026-09-19T18:00:00.000Z",
+        expires_at: "2026-09-19T20:00:00.000Z"
+      })
+    ).toBe(true);
+
+    expect(
+      Value.Check(CompanionGateDecisionSchema, {
+        proposal_id: "proposal-1",
+        decision: "suppress",
+        reason: "quiet_hours",
+        surface: null,
+        decided_at: "2026-09-19T18:00:00.000Z"
+      })
+    ).toBe(true);
   });
 
   it("accepts the bounded emergency-stop transport shape", () => {
