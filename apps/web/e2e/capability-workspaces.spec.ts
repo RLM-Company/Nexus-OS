@@ -20,7 +20,7 @@ test("keeps every media prompt local until a model is connected", async ({ page 
     await sidebar.getByRole("button", { name: surface, exact: true }).click();
     await page.getByLabel(`Промпт для ${label}`).fill(`Безопасный локальный prompt: ${label}`);
     await page.getByRole("button", { name: "Подготовить промпт" }).click();
-    await expect(page.getByRole("status")).toContainText("сохранён локально");
+    await expect(page.getByRole("status")).toContainText("подготовлен локально");
     await expect(page.getByText("Внешняя модель не подключена")).toBeVisible();
   }
 
