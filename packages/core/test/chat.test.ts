@@ -57,6 +57,24 @@ describe("ChatService", () => {
     expect(
       () =>
         new ChatService({
+          preferredProvider: "mock provider",
+          preferredModelAlias: "chat",
+          fallbackAllowed: false
+        })
+    ).toThrow("Invalid model request option: preferredProvider");
+
+    expect(
+      () =>
+        new ChatService({
+          preferredProvider: "mock",
+          preferredModelAlias: "chat alias",
+          fallbackAllowed: false
+        })
+    ).toThrow("Invalid model request option: preferredModelAlias");
+
+    expect(
+      () =>
+        new ChatService({
           preferredProvider: "mock",
           preferredModelAlias: "chat",
           fallbackAllowed: false,

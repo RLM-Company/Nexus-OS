@@ -16,7 +16,10 @@ export interface CommonModelServiceOptions {
 const invalidOption = (field: string): Error => new Error(`Invalid model request option: ${field}`);
 
 const isCanonicalIdentifier = (value: unknown): value is string =>
-  typeof value === "string" && value.trim().length > 0 && value === value.trim();
+  typeof value === "string" &&
+  value.trim().length > 0 &&
+  value === value.trim() &&
+  !/\s/u.test(value);
 
 const isNonEmptyPrompt = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0 && value.length <= 100_000;
