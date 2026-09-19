@@ -1,0 +1,21 @@
+import { expect, test } from "@playwright/test";
+
+test("shows a visible keyboard focus ring on media prompt textareas", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Изображения", exact: true }).click();
+
+  const prompt = page.getByLabel("Промпт для изображения");
+  await prompt.focus();
+  await expect(prompt).toBeFocused();
+
+  const focusStyle = await prompt.evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return {
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth
+    };
+  });
+
+  expect(focusStyle.outlineStyle).not.toBe("none");
+  expect(Number.parseFloat(focusStyle.outlineWidth)).toBeGreaterThan(0);
+});
