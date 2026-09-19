@@ -70,14 +70,16 @@ export class ManagerService {
 
   constructor(options: ManagerServiceOptions) {
     this.#options = normalizeCommonModelServiceOptions({
-      requiredFeatures: ["streaming"],
-      confidential: false,
-      maxCost: null,
-      optimizeFor: "balanced",
-      timeoutMs: 60_000,
-      maxOutputTokens: 1_200,
-      systemPrompt: DEFAULT_MANAGER_SYSTEM_PROMPT,
-      ...options
+      preferredProvider: options.preferredProvider,
+      preferredModelAlias: options.preferredModelAlias,
+      fallbackAllowed: options.fallbackAllowed,
+      requiredFeatures: options.requiredFeatures ?? ["streaming"],
+      confidential: options.confidential ?? false,
+      maxCost: options.maxCost ?? null,
+      optimizeFor: options.optimizeFor ?? "balanced",
+      timeoutMs: options.timeoutMs ?? 60_000,
+      maxOutputTokens: options.maxOutputTokens ?? 1_200,
+      systemPrompt: options.systemPrompt ?? DEFAULT_MANAGER_SYSTEM_PROMPT
     });
   }
 
