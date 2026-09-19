@@ -92,7 +92,7 @@ export const loadMockSkillCatalog = (): SkillManifest[] => {
     const permissions: SkillPermission[] = [];
     for (const permission of skill.permissions) {
       if (isSafePermission(permission)) {
-        permissions.push(permission);
+        permissions.push({ ...permission });
       }
     }
 
