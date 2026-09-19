@@ -27,8 +27,8 @@ export const ModelRequestSchema = Type.Object(
     messages: Type.Array(ModelMessageSchema, { minItems: 1 }),
     constraints: Type.Object(
       {
-        timeout_ms: Type.Integer({ minimum: 1 }),
-        max_output_tokens: Type.Integer({ minimum: 1 })
+        timeout_ms: Type.Integer({ minimum: 1, maximum: 600_000 }),
+        max_output_tokens: Type.Integer({ minimum: 1, maximum: 100_000 })
       },
       { additionalProperties: false }
     ),

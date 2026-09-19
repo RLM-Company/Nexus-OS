@@ -97,6 +97,18 @@ describe("shared contracts", () => {
     expect(
       Value.Check(ModelRequestSchema, {
         ...baseRequest,
+        constraints: { ...baseRequest.constraints, timeout_ms: 600_001 }
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(ModelRequestSchema, {
+        ...baseRequest,
+        constraints: { ...baseRequest.constraints, max_output_tokens: 100_001 }
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(ModelRequestSchema, {
+        ...baseRequest,
         routing: { ...baseRequest.routing, preferred_provider: " mock " }
       })
     ).toBe(false);
