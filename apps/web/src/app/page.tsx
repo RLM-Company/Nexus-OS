@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent
+} from "react";
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
 import { InstallApp } from "./install-app";
 import { ProjectContextPanel } from "./project-context-panel";
@@ -102,6 +109,7 @@ type CompletedRoute = { provider: string; model: string };
 
 type RunPhase = "idle" | "queued" | "running" | "streaming" | "completed" | "failed" | "cancelled";
 type ProjectView = "chat" | "plan" | "project" | "context";
+const PROJECT_VIEW_ORDER: ProjectView[] = ["chat", "plan", "project", "context"];
 type WorkspaceSurface =
   "manager" | "skills" | "code" | "work" | "images" | "video" | "sound" | "multi-agent";
 
@@ -1091,6 +1099,38 @@ export default function Home() {
     if (activeProject) replaceConsoleRoute(activeProject.id, view);
   };
 
+  const handleProjectTabKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    currentView: ProjectView
+  ): void => {
+    const currentIndex = PROJECT_VIEW_ORDER.indexOf(currentView);
+    let nextView: ProjectView | null = null;
+
+    if (event.key === "ArrowRight") {
+      nextView = PROJECT_VIEW_ORDER[(currentIndex + 1) % PROJECT_VIEW_ORDER.length] ?? null;
+    } else if (event.key === "ArrowLeft") {
+      nextView =
+        PROJECT_VIEW_ORDER[
+          (currentIndex - 1 + PROJECT_VIEW_ORDER.length) % PROJECT_VIEW_ORDER.length
+        ] ?? null;
+    } else if (event.key === "Home") {
+      nextView = PROJECT_VIEW_ORDER[0] ?? null;
+    } else if (event.key === "End") {
+      nextView = PROJECT_VIEW_ORDER[PROJECT_VIEW_ORDER.length - 1] ?? null;
+    }
+
+    if (!nextView) return;
+
+    event.preventDefault();
+    const tabList = event.currentTarget.parentElement;
+    selectProjectView(nextView);
+    window.requestAnimationFrame(() => {
+      tabList
+        ?.querySelector<HTMLButtonElement>(`button[data-project-view="${nextView}"]`)
+        ?.focus();
+    });
+  };
+
   const refreshProject = useCallback(
     async (projectId: string) => {
       await loadProjectView(projectId);
@@ -1941,9 +1981,12 @@ export default function Home() {
             <button
               type="button"
               role="tab"
+              data-project-view="chat"
               aria-selected={projectView === "chat"}
+              tabIndex={projectView === "chat" ? 0 : -1}
               className={projectView === "chat" ? "active" : ""}
               onClick={() => selectProjectView("chat")}
+              onKeyDown={(event) => handleProjectTabKeyDown(event, "chat")}
             >
               <SparkIcon />
               Чат
@@ -1951,9 +1994,12 @@ export default function Home() {
             <button
               type="button"
               role="tab"
+              data-project-view="plan"
               aria-selected={projectView === "plan"}
+              tabIndex={projectView === "plan" ? 0 : -1}
               className={projectView === "plan" ? "active" : ""}
               onClick={() => selectProjectView("plan")}
+              onKeyDown={(event) => handleProjectTabKeyDown(event, "plan")}
             >
               <GridIcon />
               План
@@ -1962,9 +2008,12 @@ export default function Home() {
             <button
               type="button"
               role="tab"
+              data-project-view="project"
               aria-selected={projectView === "project"}
+              tabIndex={projectView === "project" ? 0 : -1}
               className={projectView === "project" ? "active" : ""}
               onClick={() => selectProjectView("project")}
+              onKeyDown={(event) => handleProjectTabKeyDown(event, "project")}
             >
               <ShieldIcon />
               Проект
@@ -1979,9 +2028,12 @@ export default function Home() {
             <button
               type="button"
               role="tab"
+              data-project-view="context"
               aria-selected={projectView === "context"}
+              tabIndex={projectView === "context" ? 0 : -1}
               className={projectView === "context" ? "active" : ""}
               onClick={() => selectProjectView("context")}
+              onKeyDown={(event) => handleProjectTabKeyDown(event, "context")}
             >
               <ToolIcon kind="work" />
               Контекст
