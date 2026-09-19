@@ -116,7 +116,9 @@ export default function SettingsPage() {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored) setSettings(normalizeSettings(JSON.parse(stored)));
     } catch {
-      setSavedNotice("Не удалось прочитать локальные настройки. Используются безопасные значения.");
+      setSavedNotice(
+        "Не удалось прочитать локальные настройки. Используются безопасные значения."
+      );
     }
     if ("Notification" in window) {
       setNotificationPermission(window.Notification.permission);
