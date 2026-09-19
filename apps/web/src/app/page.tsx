@@ -526,7 +526,7 @@ const CapabilityWorkspace = ({
         onSubmit={(event) => {
           event.preventDefault();
           setNotice(
-            `Промпт для ${mediaPromptLabel} сохранён локально. Подключение модели будет следующим этапом.`
+            `Промпт для ${mediaPromptLabel} подготовлен локально и не отправлен внешней модели.`
           );
         }}
       >
