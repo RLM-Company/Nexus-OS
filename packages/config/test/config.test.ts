@@ -90,6 +90,28 @@ describe("loadServerConfig", () => {
     }
   );
 
+  it("rejects unsafe external provider identity and URL credentials", () => {
+    const valid = {
+      MODEL_PROVIDER: "openai-compatible",
+      MODEL_BASE_URL: "https://provider.example/v1",
+      MODEL_API_KEY: "runtime-secret",
+      MODEL_NAME: "manager-model"
+    } as const;
+
+    expect(() => loadServerConfig({ ...valid, MODEL_PROVIDER_ID: "   " })).toThrow(
+      "Invalid server configuration: /MODEL_PROVIDER_ID"
+    );
+    expect(() =>
+      loadServerConfig({
+        ...valid,
+        MODEL_BASE_URL: "https://embedded-user:embedded-password@provider.example/v1"
+      })
+    ).toThrow("Invalid server configuration: /MODEL_BASE_URL");
+    expect(() => loadServerConfig({ ...valid, MODEL_BASE_URL: "https://" })).toThrow(
+      "Invalid server configuration: /MODEL_BASE_URL"
+    );
+  });
+
   it("rejects unsafe manager limits", () => {
     expect(() => loadServerConfig({ MANAGER_TIMEOUT_MS: "20" })).toThrow(
       "Invalid server configuration: /MANAGER_TIMEOUT_MS"

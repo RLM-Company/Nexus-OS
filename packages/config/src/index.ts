@@ -158,6 +158,19 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
         throw new Error(`Invalid server configuration: /${key}`);
       }
     }
+    if (raw.MODEL_PROVIDER_ID !== undefined && !hasMeaningfulValue(raw.MODEL_PROVIDER_ID)) {
+      throw new Error("Invalid server configuration: /MODEL_PROVIDER_ID");
+    }
+
+    let providerBaseUrl: URL;
+    try {
+      providerBaseUrl = new URL(raw.MODEL_BASE_URL as string);
+    } catch {
+      throw new Error("Invalid server configuration: /MODEL_BASE_URL");
+    }
+    if (providerBaseUrl.username || providerBaseUrl.password) {
+      throw new Error("Invalid server configuration: /MODEL_BASE_URL");
+    }
   }
 
   const managerTimeoutMs = Number(raw.MANAGER_TIMEOUT_MS ?? "60000");
