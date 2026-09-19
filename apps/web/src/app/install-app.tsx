@@ -29,7 +29,9 @@ export function InstallApp() {
   const [standalone, setStandalone] = useState(false);
   const [showIosHelp, setShowIosHelp] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
+  const [installPending, setInstallPending] = useState(false);
   const installButtonRef = useRef<HTMLButtonElement | null>(null);
+  const installPendingRef = useRef(false);
 
   useEffect(() => {
     setIos(isIosDevice());
@@ -62,12 +64,16 @@ export function InstallApp() {
   if (standalone || (!installPrompt && !ios)) return null;
 
   const install = async (): Promise<void> => {
+    if (installPendingRef.current) return;
+
     setInstallError(null);
     if (!installPrompt) {
       setShowIosHelp(true);
       return;
     }
 
+    installPendingRef.current = true;
+    setInstallPending(true);
     try {
       await installPrompt.prompt();
       await installPrompt.userChoice;
@@ -76,6 +82,9 @@ export function InstallApp() {
       setInstallError(
         "Не удалось открыть установку Cosmora. Используйте меню браузера и повторите попытку."
       );
+    } finally {
+      installPendingRef.current = false;
+      setInstallPending(false);
     }
   };
 
@@ -86,6 +95,7 @@ export function InstallApp() {
         type="button"
         className="app-install-button"
         aria-label="Установить Cosmora"
+        disabled={installPending}
         onClick={() => void install()}
       >
         <InstallIcon />
