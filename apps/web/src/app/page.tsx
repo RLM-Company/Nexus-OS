@@ -1,14 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent
-} from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
 import { InstallApp } from "./install-app";
 import { ProjectContextPanel } from "./project-context-panel";
@@ -109,6 +102,12 @@ type CompletedRoute = { provider: string; model: string };
 
 type RunPhase = "idle" | "queued" | "running" | "streaming" | "completed" | "failed" | "cancelled";
 type ProjectView = "chat" | "plan" | "project" | "context";
+type ProjectTabKeyEvent = {
+  key: string;
+  currentTarget: HTMLButtonElement;
+  preventDefault(): void;
+};
+
 const PROJECT_VIEW_ORDER: ProjectView[] = ["chat", "plan", "project", "context"];
 type WorkspaceSurface =
   "manager" | "skills" | "code" | "work" | "images" | "video" | "sound" | "multi-agent";
@@ -1100,19 +1099,19 @@ export default function Home() {
   };
 
   const handleProjectTabKeyDown = (
-    event: ReactKeyboardEvent<HTMLButtonElement>,
+    event: ProjectTabKeyEvent,
     currentView: ProjectView
   ): void => {
     const currentIndex = PROJECT_VIEW_ORDER.indexOf(currentView);
+    const nextIndex = (currentIndex + 1) % PROJECT_VIEW_ORDER.length;
+    const previousIndex =
+      (currentIndex - 1 + PROJECT_VIEW_ORDER.length) % PROJECT_VIEW_ORDER.length;
     let nextView: ProjectView | null = null;
 
     if (event.key === "ArrowRight") {
-      nextView = PROJECT_VIEW_ORDER[(currentIndex + 1) % PROJECT_VIEW_ORDER.length] ?? null;
+      nextView = PROJECT_VIEW_ORDER[nextIndex] ?? null;
     } else if (event.key === "ArrowLeft") {
-      nextView =
-        PROJECT_VIEW_ORDER[
-          (currentIndex - 1 + PROJECT_VIEW_ORDER.length) % PROJECT_VIEW_ORDER.length
-        ] ?? null;
+      nextView = PROJECT_VIEW_ORDER[previousIndex] ?? null;
     } else if (event.key === "Home") {
       nextView = PROJECT_VIEW_ORDER[0] ?? null;
     } else if (event.key === "End") {
@@ -1123,11 +1122,10 @@ export default function Home() {
 
     event.preventDefault();
     const tabList = event.currentTarget.parentElement;
+    const selector = `button[data-project-view="${nextView}"]`;
     selectProjectView(nextView);
     window.requestAnimationFrame(() => {
-      tabList
-        ?.querySelector<HTMLButtonElement>(`button[data-project-view="${nextView}"]`)
-        ?.focus();
+      tabList?.querySelector<HTMLButtonElement>(selector)?.focus();
     });
   };
 
