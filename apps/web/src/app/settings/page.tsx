@@ -58,11 +58,11 @@ const normalizeSettings = (value: unknown): SettingsState => {
         ? candidate.proactiveFrequency
         : DEFAULT_SETTINGS.proactiveFrequency,
     quietStart:
-      typeof candidate.quietStart === "string" && /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietStart)
+      typeof candidate.quietStart === "string" &&\n      /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietStart)
         ? candidate.quietStart
         : DEFAULT_SETTINGS.quietStart,
     quietEnd:
-      typeof candidate.quietEnd === "string" && /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietEnd)
+      typeof candidate.quietEnd === "string" &&\n      /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietEnd)
         ? candidate.quietEnd
         : DEFAULT_SETTINGS.quietEnd,
     maxProactivePerDay:
@@ -105,7 +105,7 @@ const normalizeSettings = (value: unknown): SettingsState => {
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
   const [hydrated, setHydrated] = useState(false);
-  const [savedNotice, setSavedNotice] = useState("Настройки сохраняются только в этом браузере.");
+  const [savedNotice, setSavedNotice] = useState(\n    "Настройки сохраняются только в этом браузере."\n  );
   const [preview, setPreview] = useState(PROACTIVE_PREVIEW.balanced);
   const [notificationPermission, setNotificationPermission] = useState<
     "unsupported" | "default" | "granted" | "denied"
@@ -258,7 +258,7 @@ export default function SettingsPage() {
               Частота
               <select
                 value={settings.proactiveFrequency}
-                onChange={(event) => update("proactiveFrequency", event.target.value as Frequency)}
+                onChange={(event) =>\n                  update("proactiveFrequency", event.target.value as Frequency)\n                }
                 disabled={!settings.companionEnabled}
               >
                 <option value="rare">Редко</option>
@@ -379,7 +379,7 @@ export default function SettingsPage() {
             <input
               type="checkbox"
               checked={settings.naturalCommunicationGuardrail}
-              onChange={(event) => update("naturalCommunicationGuardrail", event.target.checked)}
+              onChange={(event) =>\n                update("naturalCommunicationGuardrail", event.target.checked)\n              }
             />
             <span>
               <strong>Natural Communication Guardrail</strong>
