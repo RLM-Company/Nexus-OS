@@ -16,6 +16,68 @@ const message = (overrides: Partial<Message>): Message => ({
   created_at: "2026-08-20T10:00:00.000Z",
   updated_at: "2026-08-20T10:00:00.000Z",
   ...overrides
+  it("rejects invalid direct model options without exposing values", () => {
+    expect(
+      () =>
+        new ManagerService({
+          preferredProvider: "   ",
+          preferredModelAlias: "manager",
+          fallbackAllowed: false
+        })
+    ).toThrow("Invalid model request option: preferredProvider");
+
+    expect(
+      () =>
+        new ManagerService({
+          preferredProvider: "mock",
+          preferredModelAlias: "manager",
+          fallbackAllowed: false,
+          timeoutMs: 0
+        })
+    ).toThrow("Invalid model request option: timeoutMs");
+
+    expect(
+      () =>
+        new ManagerService({
+          preferredProvider: "mock",
+          preferredModelAlias: "manager",
+          fallbackAllowed: false,
+          maxCost: { amount: -1, currency: "USD" }
+        })
+    ).toThrow("Invalid model request option: maxCost");
+  });
+
+  it("normalizes features and rejects invalid request identities", () => {
+    const manager = new ManagerService({
+      preferredProvider: "mock",
+      preferredModelAlias: "manager",
+      fallbackAllowed: false,
+      requiredFeatures: ["streaming", "streaming"]
+    });
+
+    const request = manager.buildRequest({
+      projectId: "project-1",
+      runId: "run-1",
+      messages: [message({})]
+    });
+    expect(request.routing.required_features).toEqual(["streaming"]);
+
+    expect(() =>
+      manager.buildRequest({
+        projectId: "",
+        runId: "run-1",
+        messages: [message({})]
+      })
+    ).toThrow("Invalid model request identity: projectId");
+
+    expect(() =>
+      manager.buildRequest({
+        projectId: "project-1",
+        runId: "r".repeat(129),
+        messages: [message({})]
+      })
+    ).toThrow("Invalid model request identity: runId");
+  });
 });
 
 describe("ManagerService", () => {
