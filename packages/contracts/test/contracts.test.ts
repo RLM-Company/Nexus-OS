@@ -79,6 +79,27 @@ describe("shared contracts", () => {
     ).toBe(true);
   });
 
+  it("rejects empty streaming completion metadata", () => {
+    expect(
+      Value.Check(StreamEventSchema, {
+        type: "run.completed",
+        data: { run_id: "run-1", provider: "", model_resolved: "model-1" }
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(StreamEventSchema, {
+        type: "message.completed",
+        data: { run_id: "run-1", message_id: "message-1", size: 1, finish_reason: "" }
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(StreamEventSchema, {
+        type: "run.failed",
+        data: { run_id: "run-1", error_code: "", retryable: false }
+      })
+    ).toBe(false);
+  });
+
   it("accepts the bounded emergency-stop transport shape", () => {
     expect(
       Value.Check(ActivateEmergencyStopRequestSchema, {
