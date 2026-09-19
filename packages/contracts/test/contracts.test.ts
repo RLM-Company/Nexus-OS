@@ -9,6 +9,7 @@ import {
   CompanionGateDecisionSchema,
   CompanionMessageProposalSchema,
   CompanionPreferencesSchema,
+  CommunicationProfileSchema,
   CreateProjectRequestSchema,
   ModelRequestSchema,
   ModelResponseSchema,
@@ -295,6 +296,32 @@ describe("shared contracts", () => {
         nonce: "short",
         code_challenge: "short",
         code_challenge_method: "S256"
+      })
+    ).toBe(false);
+  });
+
+  it("accepts a communication profile for natural assistant behavior", () => {
+    expect(
+      Value.Check(CommunicationProfileSchema, {
+        tone: "natural",
+        verbosity: "balanced",
+        initiative: "proactive",
+        natural_guardrail_enabled: true,
+        avoid_canned_framing: true,
+        prefer_concrete_examples: true,
+        preserve_user_register: true
+      })
+    ).toBe(true);
+
+    expect(
+      Value.Check(CommunicationProfileSchema, {
+        tone: "unknown",
+        verbosity: "balanced",
+        initiative: "reactive",
+        natural_guardrail_enabled: true,
+        avoid_canned_framing: true,
+        prefer_concrete_examples: true,
+        preserve_user_register: true
       })
     ).toBe(false);
   });
