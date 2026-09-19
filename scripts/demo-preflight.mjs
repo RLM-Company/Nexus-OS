@@ -36,7 +36,6 @@ const fetchJson = async (origin, path, label) => {
   }
 };
 
-
 const assertHtmlRoute = async (origin, path, label) => {
   const response = await fetchResponse(origin, path, label);
   const contentType = response.headers.get("content-type") ?? "";
