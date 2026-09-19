@@ -148,6 +148,8 @@ import {
   projectUsageLimitStepUpChallenge
 } from "./step-up-challenge.js";
 import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-routes.js";
+import type { GitHubReadonlyService } from "./github-readonly.js";
+import { registerGitHubReadonlyRoutes } from "./github-readonly-routes.js";
 
 export interface AppDependencies {
   config: ServerConfig;
@@ -174,6 +176,7 @@ export interface AppDependencies {
   runtimeMetrics?: RuntimeMetrics;
   managerRunExecutionMode?: "stream" | "background";
   generalChatRunExecutionMode?: "stream" | "background";
+  githubReadonly?: GitHubReadonlyService;
   now?: () => string;
 }
 
@@ -613,6 +616,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       return reply.status(database === "ok" ? 200 : 503).send(response);
     }
   );
+
+  if (dependencies.githubReadonly) {
+    registerGitHubReadonlyRoutes(app, dependencies.githubReadonly);
+  }
 
   if (dependencies.identityStore) {
     const identityStore = dependencies.identityStore;

@@ -28,6 +28,7 @@ import { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
 import { ManagerRuntimeProjectStore } from "./manager-runtime-project-store.js";
 import { buildModelRuntime } from "./model-runtime.js";
 import { RuntimeMetrics } from "./operations.js";
+import { GitHubReadonlyClient } from "./github-readonly.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
@@ -105,6 +106,7 @@ try {
     identityResolver,
     stepUpProofConsumer: new StoredStepUpProofConsumer(stepUpProofStore),
     runtimeMetrics,
+    githubReadonly: new GitHubReadonlyClient({ secretResolver: new EnvironmentSecretResolver() }),
     managerRunExecutionMode: "background",
     generalChatRunExecutionMode: "background",
     closeDatabase: () => database.close()

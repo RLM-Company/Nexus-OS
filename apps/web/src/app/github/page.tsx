@@ -6,23 +6,30 @@ import {
   githubWritePreviews,
   loadGitHubPanel,
   MockGitHubReadonlyAdapter,
+  ServerGitHubReadonlyAdapter,
   type GitHubPanelState,
   type MockGitHubMode
 } from "./github-readonly";
 import styles from "./github.module.css";
 
-const modeFromLocation = (): MockGitHubMode => {
+const modeFromLocation = (): MockGitHubMode | null => {
   const value = new URLSearchParams(window.location.search).get("state");
-  return value === "empty" || value === "offline" || value === "error" ? value : "ready";
+  return value === "ready" || value === "empty" || value === "offline" || value === "error"
+    ? value
+    : null;
 };
 
 export default function GitHubReadonlyPage() {
   const [state, setState] = useState<GitHubPanelState>({ kind: "loading" });
-  const [mode, setMode] = useState<MockGitHubMode>("ready");
+  const [mode, setMode] = useState<MockGitHubMode | null>(null);
 
-  const load = useCallback(async (requestedMode: MockGitHubMode): Promise<void> => {
+  const load = useCallback(async (requestedMode: MockGitHubMode | null): Promise<void> => {
     setState({ kind: "loading" });
-    const nextState = await loadGitHubPanel(new MockGitHubReadonlyAdapter(requestedMode));
+    const nextState = await loadGitHubPanel(
+      requestedMode
+        ? new MockGitHubReadonlyAdapter(requestedMode)
+        : new ServerGitHubReadonlyAdapter()
+    );
     setState(nextState);
   }, []);
 
@@ -33,8 +40,8 @@ export default function GitHubReadonlyPage() {
   }, [load]);
 
   const retry = (): void => {
-    setMode("ready");
-    void load("ready");
+    setMode(null);
+    void load(null);
   };
 
   return (
@@ -48,8 +55,7 @@ export default function GitHubReadonlyPage() {
             <p className={styles.eyebrow}>Integration preview</p>
             <h1>GitHub</h1>
             <p className={styles.lead}>
-              Безопасный read-only preview для Cosmora. Внешнее подключение, OAuth и операции записи
-              не выполняются.
+              Безопасное read-only подключение. Операции записи, merge и deploy не выполняются.
             </p>
           </div>
         </header>
@@ -58,6 +64,16 @@ export default function GitHubReadonlyPage() {
           {state.kind === "loading" && (
             <div className={styles.loading} data-testid="github-loading">
               Загружаем read-only данные GitHub…
+            </div>
+          )}
+
+          {state.kind === "not_configured" && (
+            <div className={styles.empty} data-testid="github-not-configured">
+              <strong>GitHub ещё не подключён</strong>
+              <p>
+                Добавьте локальный fine-grained <code>GITHUB_TOKEN</code> с правами только на
+                чтение, затем перезапустите API. Токен не передаётся браузеру.
+              </p>
             </div>
           )}
 
@@ -92,7 +108,11 @@ export default function GitHubReadonlyPage() {
             <div className={styles.ready} data-testid="github-ready">
               <div className={styles.readyBanner}>
                 <span className={styles.readonlyBadge}>Read-only</span>
-                <p>Демонстрационные данные mock adapter; внешние запросы не выполнялись.</p>
+                <p>
+                  {mode
+                    ? "Демонстрационные mock-данные; внешние запросы не выполнялись."
+                    : "Данные получены сервером в read-only режиме; токен не передаётся браузеру."}
+                </p>
               </div>
 
               <div className={styles.sections}>
@@ -155,7 +175,7 @@ export default function GitHubReadonlyPage() {
         </section>
 
         <p className={styles.modeNote} data-testid="github-mode">
-          Mock state: {mode}
+          {mode ? `Mock state: ${mode}` : "Server read-only mode"}
         </p>
       </div>
     </main>

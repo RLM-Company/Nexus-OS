@@ -1,4 +1,4 @@
-export type GitHubFailureKind = "offline" | "unavailable" | "unknown";
+export type GitHubFailureKind = "not_configured" | "offline" | "unavailable" | "unknown";
 
 export type GitHubResult<T> = { ok: true; data: T } | { ok: false; kind: GitHubFailureKind };
 
@@ -57,6 +57,7 @@ export interface GitHubReadonlyAdapter {
 
 export type GitHubPanelState =
   | { kind: "loading" }
+  | { kind: "not_configured" }
   | { kind: "empty" }
   | { kind: "offline" }
   | { kind: "error" }
@@ -158,6 +159,132 @@ export class MockGitHubReadonlyAdapter implements GitHubReadonlyAdapter {
   }
 }
 
+type ApiErrorResponse = { error?: { code?: string } };
+
+type ApiRepository = {
+  id: string;
+  owner: string;
+  name: string;
+  default_branch: string;
+  visibility: "private" | "public";
+  web_url: string;
+};
+
+type ApiRepositorySummary = {
+  repository: ApiRepository;
+  branches: Array<{ name: string; protected: boolean; last_commit_sha: string }>;
+  commits: Array<{ sha: string; short_sha: string; message: string; author: string }>;
+  issues: Array<{ number: number; title: string; state: "open" | "closed" }>;
+  pull_requests: Array<{
+    number: number;
+    title: string;
+    state: "open" | "closed" | "merged";
+    source_branch: string;
+    target_branch: string;
+  }>;
+  ci: GitHubCiStatus;
+};
+
+const toRepository = (repository: ApiRepository): GitHubRepository => ({
+  id: repository.id,
+  owner: repository.owner,
+  name: repository.name,
+  defaultBranch: repository.default_branch,
+  visibility: repository.visibility,
+  webUrl: safeGitHubUrl(repository.web_url)
+});
+
+export class ServerGitHubReadonlyAdapter implements GitHubReadonlyAdapter {
+  readonly #summaries = new Map<string, Promise<GitHubResult<ApiRepositorySummary>>>();
+
+  async listRepositories(): Promise<GitHubResult<GitHubRepository[]>> {
+    const response = await this.#request<{ items: ApiRepository[] }>("/api/v1/github/repositories");
+    return response.ok ? { ok: true, data: response.data.items.map(toRepository) } : response;
+  }
+
+  async listBranches(query: RepositoryQuery): Promise<GitHubResult<GitHubBranch[]>> {
+    const summary = await this.#summary(query);
+    return summary.ok
+      ? {
+          ok: true,
+          data: summary.data.branches.map((branch) => ({
+            name: branch.name,
+            protected: branch.protected,
+            lastCommitSha: branch.last_commit_sha
+          }))
+        }
+      : summary;
+  }
+
+  async listCommits(query: RepositoryQuery): Promise<GitHubResult<GitHubCommit[]>> {
+    const summary = await this.#summary(query);
+    return summary.ok
+      ? {
+          ok: true,
+          data: summary.data.commits.map((commit) => ({
+            sha: commit.sha,
+            shortSha: commit.short_sha,
+            message: commit.message,
+            author: commit.author
+          }))
+        }
+      : summary;
+  }
+
+  async listIssues(query: RepositoryQuery): Promise<GitHubResult<GitHubIssue[]>> {
+    const summary = await this.#summary(query);
+    return summary.ok ? { ok: true, data: summary.data.issues } : summary;
+  }
+
+  async listPullRequests(query: RepositoryQuery): Promise<GitHubResult<GitHubPullRequest[]>> {
+    const summary = await this.#summary(query);
+    return summary.ok
+      ? {
+          ok: true,
+          data: summary.data.pull_requests.map((pullRequest) => ({
+            number: pullRequest.number,
+            title: pullRequest.title,
+            state: pullRequest.state,
+            sourceBranch: pullRequest.source_branch,
+            targetBranch: pullRequest.target_branch
+          }))
+        }
+      : summary;
+  }
+
+  async getCiStatus(query: RepositoryQuery): Promise<GitHubResult<GitHubCiStatus>> {
+    const summary = await this.#summary(query);
+    return summary.ok ? { ok: true, data: summary.data.ci } : summary;
+  }
+
+  #summary(query: RepositoryQuery): Promise<GitHubResult<ApiRepositorySummary>> {
+    const key = `${query.owner}/${query.repository}`;
+    const existing = this.#summaries.get(key);
+    if (existing) return existing;
+    const request = this.#request<ApiRepositorySummary>(
+      `/api/v1/github/repositories/${encodeURIComponent(query.owner)}/${encodeURIComponent(query.repository)}/summary`
+    );
+    this.#summaries.set(key, request);
+    return request;
+  }
+
+  async #request<T>(path: string): Promise<GitHubResult<T>> {
+    try {
+      const response = await fetch(path, { cache: "no-store", credentials: "same-origin" });
+      if (response.ok) return { ok: true, data: (await response.json()) as T };
+      if (response.status === 503) {
+        const error = (await response.json().catch(() => null)) as ApiErrorResponse | null;
+        if (error?.error?.code === "GITHUB_NOT_CONFIGURED") {
+          return { ok: false, kind: "not_configured" };
+        }
+      }
+      return { ok: false, kind: "unavailable" };
+    } catch {
+      return { ok: false, kind: "offline" };
+    }
+  }
+}
+
 export const safeGitHubUrl = (value: string): string => {
   try {
     const url = new URL(value);
@@ -186,7 +313,11 @@ const sanitizeRepository = (repository: GitHubRepository): GitHubRepository => (
 export async function loadGitHubPanel(adapter: GitHubReadonlyAdapter): Promise<GitHubPanelState> {
   const repositories = await adapter.listRepositories();
   if (!repositories.ok)
-    return repositories.kind === "offline" ? { kind: "offline" } : { kind: "error" };
+    return repositories.kind === "not_configured"
+      ? { kind: "not_configured" }
+      : repositories.kind === "offline"
+        ? { kind: "offline" }
+        : { kind: "error" };
   const firstRepository = repositories.data[0];
   if (!firstRepository) return { kind: "empty" };
 
@@ -200,11 +331,20 @@ export async function loadGitHubPanel(adapter: GitHubReadonlyAdapter): Promise<G
   ]);
   const failed = [branches, commits, issues, pullRequests].find((result) => !result.ok);
   if (failed && !failed.ok)
-    return failed.kind === "offline" ? { kind: "offline" } : { kind: "error" };
+    return failed.kind === "not_configured"
+      ? { kind: "not_configured" }
+      : failed.kind === "offline"
+        ? { kind: "offline" }
+        : { kind: "error" };
   if (!branches.ok || !commits.ok || !issues.ok || !pullRequests.ok) return { kind: "error" };
 
   const ci = await adapter.getCiStatus({ ...query, sha: commits.data[0]?.sha ?? "" });
-  if (!ci.ok) return ci.kind === "offline" ? { kind: "offline" } : { kind: "error" };
+  if (!ci.ok)
+    return ci.kind === "not_configured"
+      ? { kind: "not_configured" }
+      : ci.kind === "offline"
+        ? { kind: "offline" }
+        : { kind: "error" };
 
   return {
     kind: "ready",
