@@ -6,10 +6,7 @@ import type {
   ModelRequest
 } from "@cosmora/contracts";
 import { estimateInputTokensUpperBound } from "./manager.js";
-import {
-  assertEntityId,
-  normalizeCommonModelServiceOptions
-} from "./model-service-options.js";
+import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
