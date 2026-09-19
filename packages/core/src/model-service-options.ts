@@ -3,16 +3,23 @@ import type { Currency, ModelFeature } from "@cosmora/contracts";
 export interface CommonModelServiceOptions {
   preferredProvider: string;
   preferredModelAlias: string;
+  fallbackAllowed: boolean;
   requiredFeatures: ModelFeature[];
+  confidential: boolean;
+  maxCost: { amount: number; currency: Currency } | null;
+  optimizeFor: "balanced" | "quality" | "latency" | "cost";
   timeoutMs: number;
   maxOutputTokens: number;
-  maxCost: { amount: number; currency: Currency } | null;
+  systemPrompt: string;
 }
 
 const invalidOption = (field: string): Error => new Error(`Invalid model request option: ${field}`);
 
-const isNonEmptyString = (value: unknown): value is string =>
-  typeof value === "string" && value.trim().length > 0;
+const isCanonicalIdentifier = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0 && value === value.trim();
+
+const isNonEmptyPrompt = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0 && value.length <= 100_000;
 
 const isPositiveSafeInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -27,8 +34,16 @@ const MODEL_FEATURES = new Set<ModelFeature>([
 export const normalizeCommonModelServiceOptions = <T extends CommonModelServiceOptions>(
   options: T
 ): Omit<T, "requiredFeatures"> & { requiredFeatures: ModelFeature[] } => {
-  if (!isNonEmptyString(options.preferredProvider)) throw invalidOption("preferredProvider");
-  if (!isNonEmptyString(options.preferredModelAlias)) throw invalidOption("preferredModelAlias");
+  if (!isCanonicalIdentifier(options.preferredProvider)) throw invalidOption("preferredProvider");
+  if (!isCanonicalIdentifier(options.preferredModelAlias)) {
+    throw invalidOption("preferredModelAlias");
+  }
+  if (typeof options.fallbackAllowed !== "boolean") throw invalidOption("fallbackAllowed");
+  if (typeof options.confidential !== "boolean") throw invalidOption("confidential");
+  if (!["balanced", "quality", "latency", "cost"].includes(options.optimizeFor)) {
+    throw invalidOption("optimizeFor");
+  }
+  if (!isNonEmptyPrompt(options.systemPrompt)) throw invalidOption("systemPrompt");
   if (!isPositiveSafeInteger(options.timeoutMs)) throw invalidOption("timeoutMs");
   if (!isPositiveSafeInteger(options.maxOutputTokens)) throw invalidOption("maxOutputTokens");
   if (
@@ -54,7 +69,7 @@ export const normalizeCommonModelServiceOptions = <T extends CommonModelServiceO
 };
 
 export function assertEntityId(value: unknown, field: string): asserts value is string {
-  if (typeof value !== "string" || value.length < 1 || value.length > 128) {
+  if (typeof value !== "string" || value.length < 1 || value.length > 128 || /\s/.test(value)) {
     throw new Error(`Invalid model request identity: ${field}`);
   }
 }
