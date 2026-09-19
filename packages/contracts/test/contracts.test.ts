@@ -32,7 +32,6 @@ describe("shared contracts", () => {
     ).toBe(false);
   });
 
-
   it("rejects whitespace in shared entity ids", () => {
     for (const clientMessageId of ["", "   ", "client id", "client\t1", "client\n1"]) {
       expect(
