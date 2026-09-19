@@ -9,8 +9,7 @@ export interface CommonModelServiceOptions {
   maxCost: { amount: number; currency: Currency } | null;
 }
 
-const invalidOption = (field: string): Error =>
-  new Error(`Invalid model request option: ${field}`);
+const invalidOption = (field: string): Error => new Error(`Invalid model request option: ${field}`);
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
