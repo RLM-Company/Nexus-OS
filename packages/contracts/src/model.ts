@@ -22,9 +22,9 @@ export const ModelRequestSchema = Type.Object(
     project_id: EntityIdSchema,
     run_id: EntityIdSchema,
     agent_id: EntityIdSchema,
-    role: Type.String({ minLength: 1 }),
-    task_type: Type.String({ minLength: 1 }),
-    messages: Type.Array(ModelMessageSchema),
+    role: Type.String({ minLength: 1, maxLength: 128, pattern: "^[^\\s]+$" }),
+    task_type: Type.String({ minLength: 1, maxLength: 128, pattern: "^[^\\s]+$" }),
+    messages: Type.Array(ModelMessageSchema, { minItems: 1 }),
     constraints: Type.Object(
       {
         timeout_ms: Type.Integer({ minimum: 1 }),
@@ -34,8 +34,16 @@ export const ModelRequestSchema = Type.Object(
     ),
     routing: Type.Object(
       {
-        preferred_provider: Type.String({ minLength: 1 }),
-        preferred_model_alias: Type.String({ minLength: 1 }),
+        preferred_provider: Type.String({
+          minLength: 1,
+          maxLength: 128,
+          pattern: "^[^\\s]+$"
+        }),
+        preferred_model_alias: Type.String({
+          minLength: 1,
+          maxLength: 256,
+          pattern: "^[^\\s]+$"
+        }),
         fallback_allowed: Type.Boolean(),
         required_features: Type.Array(ModelFeatureSchema, { uniqueItems: true }),
         confidential: Type.Boolean(),
@@ -56,7 +64,11 @@ export const ModelRequestSchema = Type.Object(
       },
       { additionalProperties: false }
     ),
-    idempotency_key: Type.String({ minLength: 1, maxLength: 256 })
+    idempotency_key: Type.String({
+      minLength: 1,
+      maxLength: 256,
+      pattern: "^[^\\s]+$"
+    })
   },
   { additionalProperties: false }
 );
@@ -66,9 +78,9 @@ export const ModelResponseSchema = Type.Object(
   {
     request_id: EntityIdSchema,
     status: Type.Union([Type.Literal("succeeded"), Type.Literal("failed")]),
-    provider: Type.String({ minLength: 1 }),
-    model_requested: Type.String({ minLength: 1 }),
-    model_resolved: Type.String({ minLength: 1 }),
+    provider: Type.String({ minLength: 1, maxLength: 128, pattern: "^[^\\s]+$" }),
+    model_requested: Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\s]+$" }),
+    model_resolved: Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\s]+$" }),
     content: Type.Array(
       Type.Object(
         {
@@ -94,8 +106,8 @@ export const ModelResponseSchema = Type.Object(
       },
       { additionalProperties: false }
     ),
-    finish_reason: Type.String(),
-    warnings: Type.Array(Type.String())
+    finish_reason: Type.String({ minLength: 1, maxLength: 128 }),
+    warnings: Type.Array(Type.String({ minLength: 1, maxLength: 1_000 }), { maxItems: 50 })
   },
   { additionalProperties: false }
 );

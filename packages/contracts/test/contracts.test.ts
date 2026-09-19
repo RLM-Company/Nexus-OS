@@ -4,6 +4,7 @@ import {
   ActivateEmergencyStopRequestSchema,
   CreateProjectRequestSchema,
   ModelRequestSchema,
+  ModelResponseSchema,
   StreamEventSchema
 } from "../src/index.js";
 
@@ -32,6 +33,17 @@ describe("shared contracts", () => {
     ).toBe(false);
   });
 
+  it("rejects whitespace in shared entity ids", () => {
+    for (const clientMessageId of ["", "   ", "client id", "client\t1", "client\n1"]) {
+      expect(
+        Value.Check(CreateProjectRequestSchema, {
+          initial_message: "Создай проект",
+          client_message_id: clientMessageId
+        })
+      ).toBe(false);
+    }
+  });
+
   it("accepts a provider-neutral model request", () => {
     expect(
       Value.Check(ModelRequestSchema, {
@@ -58,6 +70,61 @@ describe("shared contracts", () => {
     ).toBe(true);
   });
 
+  it("rejects malformed model envelope metadata", () => {
+    const baseRequest = {
+      request_id: "req-1",
+      project_id: "project-1",
+      run_id: "run-1",
+      agent_id: "manager",
+      role: "manager",
+      task_type: "chat_response",
+      messages: [{ role: "user", content: "Привет" }],
+      constraints: { timeout_ms: 30_000, max_output_tokens: 1_000 },
+      routing: {
+        preferred_provider: "mock",
+        preferred_model_alias: "manager",
+        fallback_allowed: false,
+        required_features: ["streaming"],
+        confidential: false,
+        estimated_input_tokens: 100,
+        max_cost: null,
+        optimize_for: "balanced"
+      },
+      idempotency_key: "stable-key"
+    };
+
+    expect(Value.Check(ModelRequestSchema, { ...baseRequest, messages: [] })).toBe(false);
+    expect(
+      Value.Check(ModelRequestSchema, {
+        ...baseRequest,
+        routing: { ...baseRequest.routing, preferred_provider: " mock " }
+      })
+    ).toBe(false);
+    expect(Value.Check(ModelRequestSchema, { ...baseRequest, idempotency_key: "stable key" })).toBe(
+      false
+    );
+
+    expect(
+      Value.Check(ModelResponseSchema, {
+        request_id: "req-1",
+        status: "succeeded",
+        provider: "mock",
+        model_requested: "manager",
+        model_resolved: "manager",
+        content: [{ type: "text", text: "Готово" }],
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          calculated_cost: 0,
+          currency: "USD"
+        },
+        timing: { first_token_ms: 1, total_ms: 2 },
+        finish_reason: "",
+        warnings: []
+      })
+    ).toBe(false);
+  });
+
   it("accepts a typed streaming delta", () => {
     expect(
       Value.Check(StreamEventSchema, {
@@ -65,6 +132,27 @@ describe("shared contracts", () => {
         data: { run_id: "run-1", message_id: "message-1", seq: 0, delta: "Я" }
       })
     ).toBe(true);
+  });
+
+  it("rejects empty streaming completion metadata", () => {
+    expect(
+      Value.Check(StreamEventSchema, {
+        type: "run.completed",
+        data: { run_id: "run-1", provider: "", model_resolved: "model-1" }
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(StreamEventSchema, {
+        type: "message.completed",
+        data: { run_id: "run-1", message_id: "message-1", size: 1, finish_reason: "" }
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(StreamEventSchema, {
+        type: "run.failed",
+        data: { run_id: "run-1", error_code: "", retryable: false }
+      })
+    ).toBe(false);
   });
 
   it("accepts the bounded emergency-stop transport shape", () => {

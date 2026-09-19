@@ -127,6 +127,9 @@ const toRawConfig = (env: NodeJS.ProcessEnv): unknown =>
     configKeys.flatMap((key) => (env[key] === undefined ? [] : [[key, env[key]]]))
   );
 
+const hasMeaningfulValue = (value: string | undefined): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
 export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerConfig => {
   const candidate = toRawConfig(env);
 
@@ -151,7 +154,22 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
   }
   if (modelProvider !== "mock") {
     for (const key of ["MODEL_BASE_URL", "MODEL_API_KEY", "MODEL_NAME"] as const) {
-      if (!raw[key]) throw new Error(`Invalid server configuration: /${key}`);
+      if (!hasMeaningfulValue(raw[key])) {
+        throw new Error(`Invalid server configuration: /${key}`);
+      }
+    }
+    if (raw.MODEL_PROVIDER_ID !== undefined && !hasMeaningfulValue(raw.MODEL_PROVIDER_ID)) {
+      throw new Error("Invalid server configuration: /MODEL_PROVIDER_ID");
+    }
+
+    let providerBaseUrl: URL;
+    try {
+      providerBaseUrl = new URL(raw.MODEL_BASE_URL as string);
+    } catch {
+      throw new Error("Invalid server configuration: /MODEL_BASE_URL");
+    }
+    if (providerBaseUrl.username || providerBaseUrl.password) {
+      throw new Error("Invalid server configuration: /MODEL_BASE_URL");
     }
   }
 
@@ -206,7 +224,7 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
     modelProviderId: raw.MODEL_PROVIDER_ID ?? (modelProvider === "mock" ? "mock" : "vibecode"),
     modelRegistryPath: raw.MODEL_REGISTRY_PATH ?? null,
     modelBaseUrl: raw.MODEL_BASE_URL ?? null,
-    modelApiKeyConfigured: Boolean(raw.MODEL_API_KEY),
+    modelApiKeyConfigured: hasMeaningfulValue(raw.MODEL_API_KEY),
     modelName: raw.MODEL_NAME ?? "manager",
     modelFallbackToMock: raw.MODEL_FALLBACK_TO_MOCK !== "false",
     modelMaxAttemptsPerRoute,

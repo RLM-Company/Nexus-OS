@@ -18,8 +18,12 @@ const textExtensions = new Set([
   ".js",
   ".json",
   ".jsx",
+  ".html",
   ".md",
   ".mjs",
+  ".ps1",
+  ".sh",
+  ".txt",
   ".sql",
   ".ts",
   ".tsx",
@@ -30,7 +34,8 @@ const textExtensions = new Set([
 const patterns = [
   { name: "private key", value: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
   { name: "OpenAI-style key", value: /\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}\b/ },
-  { name: "GitHub token", value: /\bgh[opsu]_[A-Za-z0-9]{30,}\b/ },
+  { name: "GitHub token", value: /\bgh[opsur]_[A-Za-z0-9]{30,}\b/ },
+  { name: "GitHub fine-grained token", value: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/ },
   { name: "AWS access key", value: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/ }
 ];
 
