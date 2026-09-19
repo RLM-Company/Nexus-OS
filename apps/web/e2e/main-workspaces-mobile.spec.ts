@@ -20,7 +20,9 @@ test("keeps every main workspace usable at 390x844", async ({ page }) => {
   for (const workspace of mobileWorkspaces) {
     await mobileNav.getByRole("button", { name: workspace.button, exact: true }).click();
     await expect(page.locator(".topbar h1")).toHaveText(workspace.button);
-    await expect(page.getByRole("heading", { name: workspace.heading })).toBeVisible();
+    await expect(
+      page.locator(".capability-workspace").getByRole("heading", { name: workspace.heading })
+    ).toBeVisible();
 
     const layout = await page.evaluate(() => ({
       viewportWidth: window.innerWidth,
