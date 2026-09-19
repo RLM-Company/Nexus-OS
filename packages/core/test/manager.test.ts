@@ -117,6 +117,24 @@ describe("ManagerService", () => {
     expect(
       () =>
         new ManagerService({
+          preferredProvider: "mock provider",
+          preferredModelAlias: "manager",
+          fallbackAllowed: false
+        })
+    ).toThrow("Invalid model request option: preferredProvider");
+
+    expect(
+      () =>
+        new ManagerService({
+          preferredProvider: "mock",
+          preferredModelAlias: "manager alias",
+          fallbackAllowed: false
+        })
+    ).toThrow("Invalid model request option: preferredModelAlias");
+
+    expect(
+      () =>
+        new ManagerService({
           preferredProvider: "mock",
           preferredModelAlias: "manager",
           fallbackAllowed: false,
