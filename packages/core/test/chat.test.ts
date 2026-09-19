@@ -43,4 +43,38 @@ describe("ChatService", () => {
       "внешние действия из обычного чата не выполняются"
     );
   });
+
+  it("rejects invalid direct options and request identities", () => {
+    expect(
+      () =>
+        new ChatService({
+          preferredProvider: "mock",
+          preferredModelAlias: "",
+          fallbackAllowed: false
+        })
+    ).toThrow("Invalid model request option: preferredModelAlias");
+
+    const chat = new ChatService({
+      preferredProvider: "mock",
+      preferredModelAlias: "chat",
+      fallbackAllowed: false,
+      maxOutputTokens: 600
+    });
+
+    expect(() =>
+      chat.buildRequest({
+        chatId: "",
+        runId: "run-1",
+        messages: [message("user", "Привет")]
+      })
+    ).toThrow("Invalid model request identity: chatId");
+
+    expect(() =>
+      chat.buildRequest({
+        chatId: "chat-1",
+        runId: "r".repeat(129),
+        messages: [message("user", "Привет")]
+      })
+    ).toThrow("Invalid model request identity: runId");
+  });
 });
