@@ -101,6 +101,16 @@ describe("ManagerService", () => {
           preferredProvider: "mock",
           preferredModelAlias: "manager",
           fallbackAllowed: false,
+          timeoutMs: 600_001
+        })
+    ).toThrow("Invalid model request option: timeoutMs");
+
+    expect(
+      () =>
+        new ManagerService({
+          preferredProvider: "mock",
+          preferredModelAlias: "manager",
+          fallbackAllowed: false,
           maxCost: { amount: -1, currency: "USD" }
         })
     ).toThrow("Invalid model request option: maxCost");
