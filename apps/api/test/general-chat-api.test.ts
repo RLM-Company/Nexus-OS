@@ -80,6 +80,33 @@ describe("ordinary chat API", () => {
     expect(list.json<{ items: unknown[] }>().items).toHaveLength(1);
   });
 
+  it("accepts a mini-AI profile without exposing its instructions in chat responses", async () => {
+    const payload = {
+      initial_message: "Проверь мой текст",
+      client_message_id: "ordinary-profile",
+      assistant_profile: { name: "Редактор", instructions: "Сохраняй смысл и пиши короче." }
+    };
+    const created = await app.inject({ method: "POST", url: "/api/v1/chats", payload });
+    expect(created.statusCode, created.body).toBe(201);
+    const body = created.json<{ chat: { id: string; assistant_profile_name: string | null } }>();
+    expect(body.chat.assistant_profile_name).toBe("Редактор");
+    expect(created.body).not.toContain(payload.assistant_profile.instructions);
+    expect(chats.getChat(body.chat.id)).toMatchObject({
+      assistant_profile_name: "Редактор",
+      assistant_profile_instructions: payload.assistant_profile.instructions
+    });
+
+    const changedProfile = await app.inject({
+      method: "POST",
+      url: "/api/v1/chats",
+      payload: {
+        ...payload,
+        assistant_profile: { name: "Аналитик", instructions: "Сравни варианты." }
+      }
+    });
+    expect(changedProfile.statusCode).toBe(409);
+  });
+
   it("fails closed while the process emergency stop is active", async () => {
     const created = await app.inject({
       method: "POST",

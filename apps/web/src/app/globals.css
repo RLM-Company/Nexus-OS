@@ -2214,6 +2214,39 @@ svg {
 .composer textarea::placeholder {
   color: #8e8e9f;
 }
+.assistant-profile-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.15rem 0.35rem 0.4rem;
+  color: #565869;
+  font-size: 0.72rem;
+}
+.assistant-profile-picker label {
+  width: auto;
+  margin: 0;
+  color: #565869;
+  font-size: inherit;
+}
+.assistant-profile-picker select {
+  min-width: 0;
+  max-width: 14rem;
+  padding: 0.28rem 0.45rem;
+  border: 1px solid #d9d9e3;
+  border-radius: 0.45rem;
+  color: #202123;
+  font: inherit;
+  background: #fff;
+}
+.assistant-profile-picker a {
+  color: #565869;
+  font-weight: 700;
+}
+.assistant-profile-picker select:focus-visible,
+.assistant-profile-picker a:focus-visible {
+  outline: 3px solid #202123;
+  outline-offset: 2px;
+}
 .composer-footer {
   min-height: 2.05rem;
   padding: 0.2rem 0 0 0.35rem;

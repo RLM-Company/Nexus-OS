@@ -134,6 +134,13 @@
       "when": 1789545600000,
       "tag": "0018_general_chats",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1789842623280,
+      "tag": "0019_custom_chat_profiles",
+      "breakpoints": true
     }
   ]
 }

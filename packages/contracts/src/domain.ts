@@ -143,12 +143,22 @@ export const GeneralChatSchema = Type.Object(
   {
     id: EntityIdSchema,
     title: Type.String({ minLength: 1, maxLength: 160 }),
+    assistant_profile_name: Type.Union([Type.String({ minLength: 1, maxLength: 80 }), Type.Null()]),
     created_at: IsoDateTimeSchema,
     updated_at: IsoDateTimeSchema
   },
   { additionalProperties: false }
 );
 export type GeneralChat = Static<typeof GeneralChatSchema>;
+
+export const AssistantProfileSnapshotSchema = Type.Object(
+  {
+    name: Type.String({ minLength: 1, maxLength: 80 }),
+    instructions: Type.String({ minLength: 1, maxLength: 4_000 })
+  },
+  { additionalProperties: false }
+);
+export type AssistantProfileSnapshot = Static<typeof AssistantProfileSnapshotSchema>;
 
 export const GeneralChatSummarySchema = Type.Object(
   {
@@ -179,7 +189,8 @@ export type GeneralChatMessage = Static<typeof GeneralChatMessageSchema>;
 export const CreateGeneralChatRequestSchema = Type.Object(
   {
     initial_message: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
-    client_message_id: EntityIdSchema
+    client_message_id: EntityIdSchema,
+    assistant_profile: Type.Optional(AssistantProfileSnapshotSchema)
   },
   { additionalProperties: false }
 );

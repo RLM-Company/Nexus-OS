@@ -416,6 +416,8 @@ export const generalChats = sqliteTable(
     id: text("id").primaryKey(),
     ownerId: text("owner_id").notNull(),
     title: text("title").notNull(),
+    assistantProfileName: text("assistant_profile_name"),
+    assistantProfileInstructions: text("assistant_profile_instructions"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
   },

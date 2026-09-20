@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
+import { readCustomAiProfiles, type CustomAiProfile } from "./custom-ai-profiles";
 import { InstallApp } from "./install-app";
 import { ProjectContextPanel } from "./project-context-panel";
 
@@ -68,18 +69,25 @@ type LocalChatSession = {
   projectProposal: ProjectProposal | null;
   created_at: string;
   updated_at: string;
+  assistant_profile_name: string | null;
   last_message_preview?: string | null;
 };
 
 type GeneralChatAcceptedResponse = {
-  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at">;
+  chat: Pick<
+    LocalChatSession,
+    "id" | "title" | "created_at" | "updated_at" | "assistant_profile_name"
+  >;
   user_message: LocalChatMessage;
   run_id: string;
   stream_url: string;
 };
 
 type GeneralChatDetail = {
-  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at">;
+  chat: Pick<
+    LocalChatSession,
+    "id" | "title" | "created_at" | "updated_at" | "assistant_profile_name"
+  >;
   messages: LocalChatMessage[];
 };
 
@@ -783,6 +791,8 @@ export default function Home() {
   const [greeting, setGreeting] = useState("Чем могу помочь?");
   const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
   const [activeLocalChatId, setActiveLocalChatId] = useState<string | null>(null);
+  const [customAiProfiles, setCustomAiProfiles] = useState<CustomAiProfile[]>([]);
+  const [selectedCustomAiProfileId, setSelectedCustomAiProfileId] = useState("");
   const [localChatsHydrated, setLocalChatsHydrated] = useState(false);
   const [chatsExpanded, setChatsExpanded] = useState(true);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
@@ -800,6 +810,8 @@ export default function Home() {
   const submitPendingRef = useRef(false);
   const projectPromotionPendingRef = useRef(false);
   const activeLocalChat = localChats.find((chat) => chat.id === activeLocalChatId) ?? null;
+  const selectedCustomAiProfile =
+    customAiProfiles.find((profile) => profile.id === selectedCustomAiProfileId) ?? null;
   const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
   const projectProposal = activeLocalChat?.projectProposal ?? null;
 
@@ -826,7 +838,10 @@ export default function Home() {
   const loadGeneralChats = useCallback(async () => {
     const data = await api<{
       items: Array<
-        Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at"> & {
+        Pick<
+          LocalChatSession,
+          "id" | "title" | "created_at" | "updated_at" | "assistant_profile_name"
+        > & {
           last_message_preview: string | null;
         }
       >;
@@ -870,6 +885,10 @@ export default function Home() {
     }
     rotateGreeting();
   }, [rotateGreeting]);
+
+  useEffect(() => {
+    setCustomAiProfiles(readCustomAiProfiles());
+  }, []);
 
   useEffect(() => {
     try {
@@ -1578,7 +1597,18 @@ export default function Home() {
               )
             : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
                 method: "POST",
-                body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+                body: JSON.stringify({
+                  initial_message: content,
+                  client_message_id: clientId(),
+                  ...(selectedCustomAiProfile
+                    ? {
+                        assistant_profile: {
+                          name: selectedCustomAiProfile.name,
+                          instructions: selectedCustomAiProfile.instructions
+                        }
+                      }
+                    : {})
+                })
               });
           if (epoch !== viewEpochRef.current) {
             void loadGeneralChats().catch(() => undefined);
@@ -2341,7 +2371,7 @@ export default function Home() {
           <section className="chat-panel general-chat-panel" aria-label="Обычный чат Cosmora">
             <div className="chat-heading general-chat-heading">
               <div>
-                <strong>Cosmora</strong>
+                <strong>{activeLocalChat?.assistant_profile_name ?? "Cosmora"}</strong>
                 <small>
                   {lastCompletedRoute
                     ? `${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
@@ -2362,7 +2392,11 @@ export default function Home() {
                   </span>
                   <div>
                     <header>
-                      <strong>{message.role === "user" ? "Вы" : "Cosmora"}</strong>
+                      <strong>
+                        {message.role === "user"
+                          ? "Вы"
+                          : (activeLocalChat?.assistant_profile_name ?? "Cosmora")}
+                      </strong>
                       <time>
                         {new Date(message.created_at).toLocaleTimeString("ru", {
                           hour: "2-digit",
@@ -2430,8 +2464,31 @@ export default function Home() {
           onSubmit={(event) => void submit(event)}
         >
           <label htmlFor="task">
-            {activeProject ? "Сообщение менеджеру" : "Сообщение Cosmora"}
+            {activeProject
+              ? "Сообщение менеджеру"
+              : activeLocalChat?.assistant_profile_name
+                ? `Сообщение ${activeLocalChat.assistant_profile_name}`
+                : "Сообщение Cosmora"}
           </label>
+          {!activeProject && !activeLocalChatId && customAiProfiles.length > 0 && (
+            <div className="assistant-profile-picker">
+              <label htmlFor="assistant-profile">Мини‑ИИ для нового чата</label>
+              <select
+                id="assistant-profile"
+                value={selectedCustomAiProfileId}
+                onChange={(event) => setSelectedCustomAiProfileId(event.target.value)}
+                disabled={sending || loading}
+              >
+                <option value="">Cosmora — обычный чат</option>
+                {customAiProfiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+              <Link href="/settings#mini-ai">Настроить</Link>
+            </div>
+          )}
           <textarea
             id="task"
             ref={composerRef}

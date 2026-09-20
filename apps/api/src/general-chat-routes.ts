@@ -251,7 +251,8 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       const accepted = options.store.createChat(
         request.body.initial_message,
         request.body.client_message_id,
-        options.identityFor(request).owner_id
+        options.identityFor(request).owner_id,
+        request.body.assistant_profile
       );
       return reply.status(accepted.duplicate ? 200 : 201).send(acceptedResponse(accepted));
     }
@@ -446,7 +447,15 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           chatId: run.chat_id,
           runId: run.id,
           messages: conversation,
-          tokenEconomyEnabled: options.tokenEconomyStore.get(identity.owner_id).enabled
+          tokenEconomyEnabled: options.tokenEconomyStore.get(identity.owner_id).enabled,
+          assistantProfile: (() => {
+            const chat = options.store.getChat(run.chat_id, identity.owner_id);
+            if (!chat?.assistant_profile_name || !chat.assistant_profile_instructions) return null;
+            return {
+              name: chat.assistant_profile_name,
+              instructions: chat.assistant_profile_instructions
+            };
+          })()
         });
         for await (const event of options.modelGateway.stream(modelRequest, controller.signal)) {
           if (event.type === "route.selected") {

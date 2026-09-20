@@ -73,4 +73,30 @@ describe("GeneralChatStore", () => {
       database.close();
     }
   });
+
+  it("persists the mini-AI snapshot with a new chat and guards its idempotency", async () => {
+    const database = openDatabase(":memory:");
+    try {
+      await runMigrations(database);
+      const store = new GeneralChatStore(database.sqlite);
+      const profile = { name: "Редактор", instructions: "Пиши короче." };
+      const accepted = store.createChat("Проверь текст", "profile-key", "owner-a", profile);
+
+      expect(accepted.chat).toMatchObject({
+        assistant_profile_name: "Редактор",
+        assistant_profile_instructions: "Пиши короче."
+      });
+      expect(store.createChat("Проверь текст", "profile-key", "owner-a", profile).duplicate).toBe(
+        true
+      );
+      expect(() =>
+        store.createChat("Проверь текст", "profile-key", "owner-a", {
+          name: "Аналитик",
+          instructions: "Сравни варианты."
+        })
+      ).toThrow(IdempotencyConflictError);
+    } finally {
+      database.close();
+    }
+  });
 });

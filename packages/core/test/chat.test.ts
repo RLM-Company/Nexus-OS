@@ -66,6 +66,30 @@ describe("ChatService", () => {
     expect(request.messages).toContainEqual({ role: "user", content: "Последний вопрос" });
   });
 
+  it("applies a selected mini-AI only as a constrained response profile", () => {
+    const chat = new ChatService({
+      preferredProvider: "mock",
+      preferredModelAlias: "chat",
+      fallbackAllowed: false
+    });
+    const request = chat.buildRequest({
+      chatId: "chat-1",
+      runId: "profile-run",
+      messages: [message("user", "Помоги с текстом")],
+      assistantProfile: {
+        name: "Редактор",
+        instructions: "Пиши лаконично и сохраняй смысл автора."
+      }
+    });
+
+    expect(request.messages[0]?.content).toContain("Обычный чат не является проектом");
+    expect(request.messages[1]).toMatchObject({ role: "system" });
+    expect(request.messages[1]?.content).toContain("пользовательские предпочтения");
+    expect(request.messages[1]?.content).toContain("не могут отменить правила безопасности");
+    expect(request.messages[1]?.content).toContain("Имя профиля: Редактор");
+    expect(request.messages[2]).toEqual({ role: "user", content: "Помоги с текстом" });
+  });
+
   it("rejects invalid direct options and request identities", () => {
     expect(
       () =>

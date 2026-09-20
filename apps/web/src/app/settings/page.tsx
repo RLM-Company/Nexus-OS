@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import {
+  CUSTOM_AI_TEMPLATES,
+  readCustomAiProfiles,
+  writeCustomAiProfiles,
+  type CustomAiProfile
+} from "../custom-ai-profiles";
 import styles from "./settings.module.css";
 
 type Settings = { enabled: boolean };
@@ -12,6 +18,10 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({ enabled: false });
   const [state, setState] = useState<State>("loading");
   const [saving, setSaving] = useState(false);
+  const [profiles, setProfiles] = useState<CustomAiProfile[]>([]);
+  const [profileName, setProfileName] = useState("");
+  const [profileInstructions, setProfileInstructions] = useState("");
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   const save = async (next: Settings): Promise<void> => {
     setSaving(true);
@@ -34,6 +44,7 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
+    setProfiles(readCustomAiProfiles());
     let active = true;
     let cached: Settings | null = null;
     try {
@@ -73,6 +84,40 @@ export default function SettingsPage() {
       active = false;
     };
   }, []);
+
+  const chooseTemplate = (name: string, instructions: string): void => {
+    setProfileName(name);
+    setProfileInstructions(instructions);
+    setProfileError(null);
+  };
+
+  const saveProfile = (): void => {
+    const name = profileName.trim();
+    const instructions = profileInstructions.trim();
+    if (!name || !instructions) {
+      setProfileError("Укажите имя и инструкции для мини‑ИИ.");
+      return;
+    }
+    const next = [
+      ...profiles,
+      {
+        id: crypto.randomUUID(),
+        name: name.slice(0, 80),
+        instructions: instructions.slice(0, 4_000)
+      }
+    ];
+    writeCustomAiProfiles(next);
+    setProfiles(next);
+    setProfileName("");
+    setProfileInstructions("");
+    setProfileError(null);
+  };
+
+  const removeProfile = (id: string): void => {
+    const next = profiles.filter((profile) => profile.id !== id);
+    writeCustomAiProfiles(next);
+    setProfiles(next);
+  };
 
   return (
     <main className={styles.page}>
@@ -127,6 +172,69 @@ export default function SettingsPage() {
               Просит начать с ответа и не повторять вводные, чтобы не расходовать output-токены.
             </p>
           </article>
+        </section>
+        <section className={styles.profiles} id="mini-ai" aria-labelledby="mini-ai-title">
+          <header>
+            <p className={styles.eyebrow}>Персонализация</p>
+            <h2 id="mini-ai-title">Мои мини‑ИИ</h2>
+            <p>
+              Создайте профиль роли и ответа, затем выберите его перед началом нового чата. Он не
+              меняет модель, доступы, инструменты или правила безопасности.
+            </p>
+          </header>
+          <div className={styles.templates} aria-label="Шаблоны мини-ИИ">
+            {CUSTOM_AI_TEMPLATES.map((template) => (
+              <button
+                key={template.name}
+                type="button"
+                onClick={() => chooseTemplate(template.name, template.instructions)}
+              >
+                <strong>{template.name}</strong>
+                <span>{template.description}</span>
+              </button>
+            ))}
+          </div>
+          <div className={styles.profileForm}>
+            <label>
+              Имя
+              <input
+                value={profileName}
+                maxLength={80}
+                placeholder="Например, Мой редактор"
+                onChange={(event) => setProfileName(event.target.value)}
+              />
+            </label>
+            <label>
+              Инструкции для стиля ответа
+              <textarea
+                value={profileInstructions}
+                maxLength={4_000}
+                placeholder="Как этот мини‑ИИ должен отвечать?"
+                onChange={(event) => setProfileInstructions(event.target.value)}
+              />
+            </label>
+            <button type="button" className={styles.saveProfile} onClick={saveProfile}>
+              Сохранить мини‑ИИ
+            </button>
+            {profileError && <p className={styles.error}>{profileError}</p>}
+          </div>
+          <div className={styles.profileList} aria-live="polite">
+            {profiles.length === 0 ? (
+              <p>Пока нет сохранённых мини‑ИИ. Начните с шаблона или создайте свой.</p>
+            ) : (
+              profiles.map((profile) => (
+                <article key={profile.id}>
+                  <div>
+                    <strong>{profile.name}</strong>
+                    <p>{profile.instructions}</p>
+                  </div>
+                  <button type="button" onClick={() => removeProfile(profile.id)}>
+                    Удалить
+                  </button>
+                </article>
+              ))
+            )}
+          </div>
         </section>
       </div>
     </main>

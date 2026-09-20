@@ -172,7 +172,15 @@ export class GeneralChatBackgroundRunCoordinator {
         chatId: queued.chat_id,
         runId: queued.run_id,
         messages: conversation,
-        tokenEconomyEnabled: this.#tokenEconomyStore.get(queued.owner_id).enabled
+        tokenEconomyEnabled: this.#tokenEconomyStore.get(queued.owner_id).enabled,
+        assistantProfile: (() => {
+          const chat = this.#store.getChat(queued.chat_id, queued.owner_id);
+          if (!chat?.assistant_profile_name || !chat.assistant_profile_instructions) return null;
+          return {
+            name: chat.assistant_profile_name,
+            instructions: chat.assistant_profile_instructions
+          };
+        })()
       });
       let completed: Extract<ModelGatewayStreamEvent, { type: "response.completed" }> | undefined;
 

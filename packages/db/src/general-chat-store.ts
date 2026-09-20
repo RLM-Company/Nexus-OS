@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { Currency } from "@cosmora/contracts";
+import type { AssistantProfileSnapshot, Currency } from "@cosmora/contracts";
 import {
   IdempotencyConflictError,
   LOCAL_OWNER_ID,
@@ -18,6 +18,8 @@ export class GeneralChatBusyError extends Error {
 export interface StoredGeneralChat {
   id: string;
   title: string;
+  assistant_profile_name: string | null;
+  assistant_profile_instructions: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -88,6 +90,33 @@ const titleFor = (content: string): string => {
   return compact.length > 58 ? `${compact.slice(0, 57)}…` : compact;
 };
 
+const profileForStorage = (
+  profile: AssistantProfileSnapshot | undefined
+): AssistantProfileSnapshot | null => {
+  if (!profile) return null;
+  const name = profile.name.trim();
+  const instructions = profile.instructions.trim();
+  if (!name || !instructions) return null;
+  return { name, instructions };
+};
+
+const matchesProfile = (
+  chat: StoredGeneralChat,
+  profile: AssistantProfileSnapshot | undefined
+): boolean => {
+  const stored = profileForStorage(profile);
+  return (
+    chat.assistant_profile_name === (stored?.name ?? null) &&
+    chat.assistant_profile_instructions === (stored?.instructions ?? null)
+  );
+};
+
+const CHAT_COLUMNS = `id, title, assistant_profile_name, assistant_profile_instructions,
+  created_at, updated_at`;
+const CHAT_COLUMNS_WITH_ALIAS = CHAT_COLUMNS.split(",")
+  .map((column) => `c.${column.trim()}`)
+  .join(", ");
+
 const MESSAGE_COLUMNS = `id, chat_id, role, content_type, content, status,
   run_id, error_code, created_at, updated_at`;
 const RUN_COLUMNS = `id, chat_id, status, provider, model_resolved,
@@ -109,7 +138,7 @@ export class GeneralChatStore {
   ): Array<StoredGeneralChat & { last_message_preview: string | null }> {
     return this.#sqlite
       .prepare(
-        `SELECT c.id, c.title, c.created_at, c.updated_at,
+        `SELECT ${CHAT_COLUMNS_WITH_ALIAS},
           (SELECT substr(content, 1, 240) FROM general_chat_messages m
            WHERE m.chat_id = c.id ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1)
            AS last_message_preview
@@ -123,9 +152,7 @@ export class GeneralChatStore {
 
   getChat(chatId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChat | null {
     const row = this.#sqlite
-      .prepare(
-        "SELECT id, title, created_at, updated_at FROM general_chats WHERE id = ? AND owner_id = ?"
-      )
+      .prepare(`SELECT ${CHAT_COLUMNS} FROM general_chats WHERE id = ? AND owner_id = ?`)
       .get(chatId, ownerId) as SqlRow | undefined;
     return row ? asChat(row) : null;
   }
@@ -143,23 +170,40 @@ export class GeneralChatStore {
   createChat(
     initialMessage: string,
     clientMessageId: string,
-    ownerId = LOCAL_OWNER_ID
+    ownerId = LOCAL_OWNER_ID,
+    assistantProfile?: AssistantProfileSnapshot
   ): AcceptedGeneralChatMessage {
     const existing = this.findByClientMessageId(clientMessageId, ownerId);
     if (existing) {
-      if (existing.userMessage.content !== initialMessage) throw new IdempotencyConflictError();
+      if (
+        existing.userMessage.content !== initialMessage ||
+        !matchesProfile(existing.chat, assistantProfile)
+      ) {
+        throw new IdempotencyConflictError();
+      }
       return { ...existing, duplicate: true };
     }
 
     const chatId = randomUUID();
     const createdAt = timestamp();
+    const profile = profileForStorage(assistantProfile);
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
       this.#sqlite
         .prepare(
-          "INSERT INTO general_chats (id, owner_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+          `INSERT INTO general_chats
+            (id, owner_id, title, assistant_profile_name, assistant_profile_instructions, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(chatId, ownerId, titleFor(initialMessage), createdAt, createdAt);
+        .run(
+          chatId,
+          ownerId,
+          titleFor(initialMessage),
+          profile?.name ?? null,
+          profile?.instructions ?? null,
+          createdAt,
+          createdAt
+        );
       const accepted = this.#insertMessage(
         chatId,
         initialMessage,

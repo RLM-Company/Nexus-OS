@@ -93,3 +93,121 @@
   display: block;
   margin-bottom: 0.3rem;
 }
+.profiles {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--panel);
+}
+.profiles h2,
+.profiles p {
+  margin: 0;
+}
+.profiles header > p:last-child,
+.profileList p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+.templates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.templates button,
+.profileList article,
+.profileForm input,
+.profileForm textarea,
+.profileList button {
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  font: inherit;
+}
+.templates button {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-hover);
+  cursor: pointer;
+}
+.templates button:hover,
+.templates button:focus-visible {
+  border-color: var(--accent-strong);
+}
+.templates span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+.profileForm {
+  display: grid;
+  gap: 0.8rem;
+}
+.profileForm label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+.profileForm input,
+.profileForm textarea {
+  width: 100%;
+  padding: 0.7rem;
+  color: var(--text);
+  background: var(--bg);
+}
+.profileForm textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+.saveProfile {
+  width: fit-content;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--accent-strong);
+  border-radius: 999px;
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  background: var(--accent-strong);
+  cursor: pointer;
+}
+.profileList {
+  display: grid;
+  gap: 0.65rem;
+}
+.profileList article {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem;
+  background: var(--surface-hover);
+}
+.profileList article p {
+  margin-top: 0.25rem;
+  white-space: pre-wrap;
+}
+.profileList button {
+  align-self: start;
+  padding: 0.45rem 0.65rem;
+  color: var(--text);
+  background: var(--panel);
+  cursor: pointer;
+}
+.templates button:focus-visible,
+.profileForm input:focus-visible,
+.profileForm textarea:focus-visible,
+.saveProfile:focus-visible,
+.profileList button:focus-visible {
+  outline: 3px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+@media (max-width: 34rem) {
+  .templates {
+    grid-template-columns: 1fr;
+  }
+  .profileList article {
+    flex-direction: column;
+  }
+}
