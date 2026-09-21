@@ -111,9 +111,30 @@
   line-height: 1.55;
 }
 .profiles header .profileStoreStatus {
-  margin-top: 0.65rem;
   font-size: 0.8rem;
   font-weight: 700;
+}
+.profileStoreRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+.retryProfiles {
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--panel);
+  cursor: pointer;
+}
+.retryProfiles:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 .templates {
   display: grid;
@@ -352,6 +373,7 @@
   font-weight: 700;
 }
 .templates button:focus-visible,
+.retryProfiles:focus-visible,
 .profileTransfer button:focus-visible,
 .profileForm input:focus-visible,
 .profileForm textarea:focus-visible,

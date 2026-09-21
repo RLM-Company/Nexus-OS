@@ -65,6 +65,7 @@ export default function SettingsPage() {
   const [profileNotice, setProfileNotice] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileStoreMode, setProfileStoreMode] = useState<ProfileStoreMode>("loading");
+  const [profileReloadNonce, setProfileReloadNonce] = useState(0);
   const [profileSaving, setProfileSaving] = useState(false);
   const [defaultProfileId, setDefaultProfileId] = useState<string | null>(null);
   const [pendingProfileDeleteId, setPendingProfileDeleteId] = useState<string | null>(null);
@@ -138,6 +139,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     let active = true;
+    setProfileStoreMode("loading");
     const cached = readCustomAiProfiles();
     const preferredProfileId = readDefaultCustomAiProfileId();
     setDefaultProfileId(preferredProfileId);
@@ -167,7 +169,7 @@ export default function SettingsPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [profileReloadNonce]);
 
   const chooseTemplate = (template: CustomAiTemplate): void => {
     setProfileName(template.name);
@@ -412,13 +414,28 @@ export default function SettingsPage() {
               Создайте профиль роли и ответа, затем выберите его перед началом нового чата. Он не
               меняет модель, доступы, инструменты или правила безопасности.
             </p>
-            <p className={styles.profileStoreStatus} role="status">
-              {profileStoreMode === "loading"
-                ? "Подключаем библиотеку…"
-                : profileStoreMode === "server"
-                  ? "Профили синхронизируются с вашим локальным сервером Cosmora."
-                  : "API недоступен: профили временно сохраняются только в этом браузере."}
-            </p>
+            <div className={styles.profileStoreRow}>
+              <p className={styles.profileStoreStatus} role="status">
+                {profileStoreMode === "loading"
+                  ? "Подключаем библиотеку…"
+                  : profileStoreMode === "server"
+                    ? "Профили синхронизируются с вашим локальным сервером Cosmora."
+                    : "API недоступен: профили временно сохраняются только в этом браузере."}
+              </p>
+              {profileStoreMode === "local" && (
+                <button
+                  type="button"
+                  className={styles.retryProfiles}
+                  disabled={profileSaving}
+                  onClick={() => {
+                    setProfileError(null);
+                    setProfileReloadNonce((current) => current + 1);
+                  }}
+                >
+                  Повторить подключение
+                </button>
+              )}
+            </div>
           </header>
           <div className={styles.templates} aria-label="Шаблоны мини-ИИ">
             {CUSTOM_AI_TEMPLATES.map((template) => (

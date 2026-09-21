@@ -131,3 +131,34 @@ test("persists a mini-AI on the server and sends its snapshot only with a new ch
   await expect(page.getByLabel("Значок")).toHaveValue("🧩");
   await expect(page.getByLabel("Запрос 1")).toHaveValue("Помоги начать");
 });
+
+test("reconnects the mini-AI library after a temporary API failure", async ({ page }) => {
+  let listAttempts = 0;
+  let apiAvailable = false;
+  await page.route("**/api/v1/settings/token-economy", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ enabled: false })
+    });
+  });
+  await page.route("**/api/v1/assistant-profiles", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    listAttempts += 1;
+    if (!apiAvailable) {
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "TEMPORARY_FAILURE" } })
+      });
+    }
+    return route.continue();
+  });
+
+  await page.goto("/settings");
+  await expect(page.getByRole("button", { name: "Повторить подключение" })).toBeVisible();
+  apiAvailable = true;
+  await page.getByRole("button", { name: "Повторить подключение" }).click();
+  await expect(page.getByText(/Профили синхронизируются/)).toBeVisible();
+  expect(listAttempts).toBeGreaterThanOrEqual(2);
+});
