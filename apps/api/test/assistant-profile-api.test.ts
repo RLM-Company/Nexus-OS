@@ -27,7 +27,9 @@ describe("assistant profile API", () => {
     const payload = {
       profile_id: "profile-api-1",
       name: "Репетитор",
-      instructions: "Объясняй по шагам."
+      instructions: "Объясняй по шагам.",
+      avatar: "🎓",
+      starter_prompts: ["Объясни эту тему", "Проверь мои знания"]
     };
     const created = await app.inject({
       method: "POST",
@@ -35,7 +37,12 @@ describe("assistant profile API", () => {
       payload
     });
     expect(created.statusCode, created.body).toBe(201);
-    expect(created.json()).toMatchObject({ id: payload.profile_id, version: 1 });
+    expect(created.json()).toMatchObject({
+      id: payload.profile_id,
+      avatar: "🎓",
+      starter_prompts: payload.starter_prompts,
+      version: 1
+    });
 
     const duplicate = await app.inject({
       method: "POST",
@@ -50,10 +57,21 @@ describe("assistant profile API", () => {
     const updated = await app.inject({
       method: "PUT",
       url: `/api/v1/assistant-profiles/${payload.profile_id}`,
-      payload: { name: "Репетитор Pro", instructions: "Добавляй примеры.", expected_version: 1 }
+      payload: {
+        name: "Репетитор Pro",
+        instructions: "Добавляй примеры.",
+        avatar: "🧑‍🏫",
+        starter_prompts: ["Начнём урок"],
+        expected_version: 1
+      }
     });
     expect(updated.statusCode, updated.body).toBe(200);
-    expect(updated.json()).toMatchObject({ name: "Репетитор Pro", version: 2 });
+    expect(updated.json()).toMatchObject({
+      name: "Репетитор Pro",
+      avatar: "🧑‍🏫",
+      starter_prompts: ["Начнём урок"],
+      version: 2
+    });
 
     const stale = await app.inject({
       method: "PUT",
@@ -78,5 +96,17 @@ describe("assistant profile API", () => {
     });
     expect(whitespace.statusCode).toBe(400);
     expect(whitespace.json()).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
+
+    const invalidStarter = await app.inject({
+      method: "POST",
+      url: "/api/v1/assistant-profiles",
+      payload: {
+        profile_id: "profile-invalid-starter",
+        name: "Помощник",
+        instructions: "Помогай.",
+        starter_prompts: ["   "]
+      }
+    });
+    expect(invalidStarter.statusCode).toBe(400);
   });
 });

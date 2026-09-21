@@ -434,6 +434,8 @@ export const assistantProfiles = sqliteTable(
     ownerId: text("owner_id").notNull(),
     name: text("name").notNull(),
     instructions: text("instructions").notNull(),
+    avatar: text("avatar"),
+    starterPromptsJson: text("starter_prompts_json").notNull().default("[]"),
     version: integer("version").notNull().default(1),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()

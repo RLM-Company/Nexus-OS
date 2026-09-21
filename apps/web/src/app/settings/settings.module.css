@@ -162,6 +162,11 @@
   margin: 0;
   font-size: 1rem;
 }
+.profileForm small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
 .behaviorBuilder {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -195,6 +200,24 @@
   font-weight: 700;
   background: var(--panel);
   cursor: pointer;
+}
+.starterBuilder {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+}
+.starterBuilder legend {
+  padding: 0 0.35rem;
+  font-weight: 800;
+}
+.starterBuilder > p {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 .profileForm label {
   display: grid;
@@ -258,6 +281,21 @@
   margin-top: 0.25rem;
   white-space: pre-wrap;
 }
+.savedStarters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.savedStarters li {
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
 .templates button:focus-visible,
 .profileForm input:focus-visible,
 .profileForm textarea:focus-visible,
@@ -277,6 +315,9 @@
     flex-direction: column;
   }
   .behaviorBuilder {
+    grid-template-columns: 1fr;
+  }
+  .starterBuilder {
     grid-template-columns: 1fr;
   }
 }

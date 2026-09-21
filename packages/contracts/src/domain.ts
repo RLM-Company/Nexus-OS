@@ -164,6 +164,10 @@ export const AssistantProfileSchema = Type.Object(
   {
     id: EntityIdSchema,
     ...AssistantProfileSnapshotSchema.properties,
+    avatar: Type.Union([Type.String({ minLength: 1, maxLength: 16, pattern: "\\S" }), Type.Null()]),
+    starter_prompts: Type.Array(Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }), {
+      maxItems: 4
+    }),
     version: Type.Integer({ minimum: 1 }),
     created_at: IsoDateTimeSchema,
     updated_at: IsoDateTimeSchema
@@ -179,7 +183,16 @@ export const AssistantProfileListResponseSchema = Type.Object(
 export type AssistantProfileListResponse = Static<typeof AssistantProfileListResponseSchema>;
 
 export const CreateAssistantProfileRequestSchema = Type.Object(
-  { profile_id: EntityIdSchema, ...AssistantProfileSnapshotSchema.properties },
+  {
+    profile_id: EntityIdSchema,
+    ...AssistantProfileSnapshotSchema.properties,
+    avatar: Type.Optional(
+      Type.Union([Type.String({ minLength: 1, maxLength: 16, pattern: "\\S" }), Type.Null()])
+    ),
+    starter_prompts: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }), { maxItems: 4 })
+    )
+  },
   { additionalProperties: false }
 );
 export type CreateAssistantProfileRequest = Static<typeof CreateAssistantProfileRequestSchema>;
@@ -187,6 +200,12 @@ export type CreateAssistantProfileRequest = Static<typeof CreateAssistantProfile
 export const UpdateAssistantProfileRequestSchema = Type.Object(
   {
     ...AssistantProfileSnapshotSchema.properties,
+    avatar: Type.Optional(
+      Type.Union([Type.String({ minLength: 1, maxLength: 16, pattern: "\\S" }), Type.Null()])
+    ),
+    starter_prompts: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }), { maxItems: 4 })
+    ),
     expected_version: Type.Integer({ minimum: 1 })
   },
   { additionalProperties: false }

@@ -148,6 +148,13 @@
       "when": 1790020800000,
       "tag": "0020_assistant_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1790107200000,
+      "tag": "0021_assistant_profile_identity",
+      "breakpoints": true
     }
   ]
 }

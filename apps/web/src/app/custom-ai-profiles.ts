@@ -2,12 +2,17 @@ export type CustomAiProfile = {
   id: string;
   name: string;
   instructions: string;
+  avatar: string | null;
+  starter_prompts: string[];
   version: number;
   created_at: string;
   updated_at: string;
 };
 
-export type CustomAiTemplate = Pick<CustomAiProfile, "name" | "instructions"> & {
+export type CustomAiTemplate = Pick<
+  CustomAiProfile,
+  "name" | "instructions" | "avatar" | "starter_prompts"
+> & {
   description: string;
 };
 
@@ -16,24 +21,32 @@ export const CUSTOM_AI_PROFILES_STORAGE_KEY = "cosmora:custom-ai-profiles";
 export const CUSTOM_AI_TEMPLATES: CustomAiTemplate[] = [
   {
     name: "Эксперт",
+    avatar: "🧭",
+    starter_prompts: ["Разбери сложную задачу", "Сравни два варианта"],
     description: "Структурирует сложные решения и отмечает допущения.",
     instructions:
       "Отвечай как практичный эксперт. Сначала дай вывод, затем коротко обоснуй его. Явно отмечай допущения и риски."
   },
   {
     name: "Репетитор",
+    avatar: "🎓",
+    starter_prompts: ["Объясни тему простыми словами", "Проверь мои знания"],
     description: "Объясняет спокойно, по шагам и с примерами.",
     instructions:
       "Объясняй по шагам простым языком. Сначала проверь уровень понимания из контекста, затем приведи небольшой пример и предложи следующий шаг."
   },
   {
     name: "Редактор",
+    avatar: "✍️",
+    starter_prompts: ["Улучши мой текст", "Сделай текст короче"],
     description: "Улучшает текст, сохраняя авторский смысл.",
     instructions:
       "Работай как внимательный редактор. Сохраняй смысл автора, предлагай ясные формулировки и кратко объясняй существенные правки."
   },
   {
     name: "Аналитик",
+    avatar: "📊",
+    starter_prompts: ["Сравни варианты", "Выдели риски и допущения"],
     description: "Сравнивает варианты и отделяет факты от выводов.",
     instructions:
       "Работай как аналитик. Отделяй известные факты от предположений, сравнивай варианты по критериям и заканчивай практической рекомендацией."
@@ -54,6 +67,19 @@ const normalize = (value: unknown): CustomAiProfile | null => {
   const name = candidate.name.trim();
   const instructions = candidate.instructions.trim();
   if (!id || !name || !instructions || name.length > 80 || instructions.length > 4_000) return null;
+  const avatar =
+    typeof candidate.avatar === "string" && candidate.avatar.trim().length <= 16
+      ? candidate.avatar.trim() || null
+      : null;
+  const starterPrompts = Array.isArray(candidate.starter_prompts)
+    ? candidate.starter_prompts
+        .filter(
+          (prompt): prompt is string =>
+            typeof prompt === "string" && Boolean(prompt.trim()) && prompt.trim().length <= 160
+        )
+        .slice(0, 4)
+        .map((prompt) => prompt.trim())
+    : [];
   const version =
     typeof candidate.version === "number" &&
     Number.isInteger(candidate.version) &&
@@ -64,6 +90,8 @@ const normalize = (value: unknown): CustomAiProfile | null => {
     id,
     name,
     instructions,
+    avatar,
+    starter_prompts: starterPrompts,
     version,
     created_at: typeof candidate.created_at === "string" ? candidate.created_at : "",
     updated_at: typeof candidate.updated_at === "string" ? candidate.updated_at : ""
@@ -92,7 +120,7 @@ export const loadAssistantProfiles = async (): Promise<CustomAiProfile[]> => {
 };
 
 export const createAssistantProfile = async (
-  profile: Pick<CustomAiProfile, "id" | "name" | "instructions">
+  profile: Pick<CustomAiProfile, "id" | "name" | "instructions" | "avatar" | "starter_prompts">
 ): Promise<CustomAiProfile> =>
   requireProfile(
     await checkedJson(
@@ -102,14 +130,19 @@ export const createAssistantProfile = async (
         body: JSON.stringify({
           profile_id: profile.id,
           name: profile.name,
-          instructions: profile.instructions
+          instructions: profile.instructions,
+          avatar: profile.avatar,
+          starter_prompts: profile.starter_prompts
         })
       })
     )
   );
 
 export const updateAssistantProfile = async (
-  profile: Pick<CustomAiProfile, "id" | "name" | "instructions" | "version">
+  profile: Pick<
+    CustomAiProfile,
+    "id" | "name" | "instructions" | "avatar" | "starter_prompts" | "version"
+  >
 ): Promise<CustomAiProfile> =>
   requireProfile(
     await checkedJson(
@@ -119,6 +152,8 @@ export const updateAssistantProfile = async (
         body: JSON.stringify({
           name: profile.name,
           instructions: profile.instructions,
+          avatar: profile.avatar,
+          starter_prompts: profile.starter_prompts,
           expected_version: profile.version
         })
       })

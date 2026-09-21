@@ -10,7 +10,8 @@ import {
   readCustomAiProfiles,
   updateAssistantProfile,
   writeCustomAiProfiles,
-  type CustomAiProfile
+  type CustomAiProfile,
+  type CustomAiTemplate
 } from "../custom-ai-profiles";
 import styles from "./settings.module.css";
 
@@ -43,6 +44,8 @@ export default function SettingsPage() {
   const [profiles, setProfiles] = useState<CustomAiProfile[]>([]);
   const [profileName, setProfileName] = useState("");
   const [profileInstructions, setProfileInstructions] = useState("");
+  const [profileAvatar, setProfileAvatar] = useState("");
+  const [profileStarters, setProfileStarters] = useState<string[]>(["", "", "", ""]);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileStoreMode, setProfileStoreMode] = useState<ProfileStoreMode>("loading");
@@ -140,9 +143,11 @@ export default function SettingsPage() {
     };
   }, []);
 
-  const chooseTemplate = (name: string, instructions: string): void => {
-    setProfileName(name);
-    setProfileInstructions(instructions);
+  const chooseTemplate = (template: CustomAiTemplate): void => {
+    setProfileName(template.name);
+    setProfileInstructions(template.instructions);
+    setProfileAvatar(template.avatar ?? "");
+    setProfileStarters([...template.starter_prompts, "", "", ""].slice(0, 4));
     setProfileError(null);
     setEditingProfileId(null);
     setPendingProfileDeleteId(null);
@@ -166,6 +171,8 @@ export default function SettingsPage() {
       id: editingProfileId ?? crypto.randomUUID(),
       name: name.slice(0, 80),
       instructions: instructions.slice(0, 4_000),
+      avatar: profileAvatar.trim().slice(0, 16) || null,
+      starter_prompts: profileStarters.map((prompt) => prompt.trim().slice(0, 160)).filter(Boolean),
       version: current?.version ?? 0,
       created_at: current?.created_at ?? "",
       updated_at: current?.updated_at ?? ""
@@ -184,6 +191,8 @@ export default function SettingsPage() {
       setProfiles(next);
       setProfileName("");
       setProfileInstructions("");
+      setProfileAvatar("");
+      setProfileStarters(["", "", "", ""]);
       setEditingProfileId(null);
     } catch (cause) {
       setProfileError(
@@ -198,6 +207,8 @@ export default function SettingsPage() {
     setEditingProfileId(profile.id);
     setProfileName(profile.name);
     setProfileInstructions(profile.instructions);
+    setProfileAvatar(profile.avatar ?? "");
+    setProfileStarters([...profile.starter_prompts, "", "", "", ""].slice(0, 4));
     setProfileError(null);
     setPendingProfileDeleteId(null);
   };
@@ -206,6 +217,8 @@ export default function SettingsPage() {
     setEditingProfileId(null);
     setProfileName(`${profile.name} — вариант`.slice(0, 80));
     setProfileInstructions(profile.instructions);
+    setProfileAvatar(profile.avatar ?? "");
+    setProfileStarters([...profile.starter_prompts, "", "", "", ""].slice(0, 4));
     setProfileError(null);
     setPendingProfileDeleteId(null);
   };
@@ -214,6 +227,8 @@ export default function SettingsPage() {
     setEditingProfileId(null);
     setProfileName("");
     setProfileInstructions("");
+    setProfileAvatar("");
+    setProfileStarters(["", "", "", ""]);
     setProfileError(null);
     setPendingProfileDeleteId(null);
   };
@@ -330,9 +345,11 @@ export default function SettingsPage() {
                 key={template.name}
                 type="button"
                 disabled={profileSaving}
-                onClick={() => chooseTemplate(template.name, template.instructions)}
+                onClick={() => chooseTemplate(template)}
               >
-                <strong>{template.name}</strong>
+                <strong>
+                  {template.avatar} {template.name}
+                </strong>
                 <span>{template.description}</span>
               </button>
             ))}
@@ -395,6 +412,17 @@ export default function SettingsPage() {
               />
             </label>
             <label>
+              Значок
+              <input
+                value={profileAvatar}
+                maxLength={16}
+                placeholder="Например, ✨"
+                aria-describedby="profile-avatar-hint"
+                onChange={(event) => setProfileAvatar(event.target.value)}
+              />
+              <small id="profile-avatar-hint">Эмодзи или короткий символ до 16 знаков.</small>
+            </label>
+            <label>
               Инструкции для стиля ответа
               <textarea
                 value={profileInstructions}
@@ -403,6 +431,27 @@ export default function SettingsPage() {
                 onChange={(event) => setProfileInstructions(event.target.value)}
               />
             </label>
+            <fieldset className={styles.starterBuilder}>
+              <legend>Стартовые запросы</legend>
+              <p>До четырёх кнопок для начала диалога. Нажатие только заполнит поле ввода.</p>
+              {profileStarters.map((prompt, index) => (
+                <label key={index}>
+                  Запрос {index + 1}
+                  <input
+                    value={prompt}
+                    maxLength={160}
+                    placeholder={index === 0 ? "Например, помоги составить план" : "Необязательно"}
+                    onChange={(event) =>
+                      setProfileStarters((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index ? event.target.value : item
+                        )
+                      )
+                    }
+                  />
+                </label>
+              ))}
+            </fieldset>
             <div className={styles.formActions}>
               <button
                 type="button"
@@ -432,8 +481,18 @@ export default function SettingsPage() {
               profiles.map((profile) => (
                 <article key={profile.id}>
                   <div>
-                    <strong>{profile.name}</strong>
+                    <strong>
+                      {profile.avatar ? `${profile.avatar} ` : ""}
+                      {profile.name}
+                    </strong>
                     <p>{profile.instructions}</p>
+                    {profile.starter_prompts.length > 0 && (
+                      <ul className={styles.savedStarters} aria-label="Стартовые запросы">
+                        {profile.starter_prompts.map((prompt, index) => (
+                          <li key={`${index}:${prompt}`}>{prompt}</li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                   <div className={styles.profileActions}>
                     <button

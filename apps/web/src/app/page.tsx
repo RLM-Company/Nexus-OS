@@ -2471,15 +2471,33 @@ export default function Home() {
             <section className="hero">
               <h2>
                 {selectedCustomAiProfile
-                  ? `${selectedCustomAiProfile.name} готов помочь`
+                  ? `${selectedCustomAiProfile.avatar ? `${selectedCustomAiProfile.avatar} ` : ""}${selectedCustomAiProfile.name} готов помочь`
                   : greeting}
               </h2>
               {selectedCustomAiProfile && (
-                <p className="selected-assistant-summary">
-                  {selectedCustomAiProfile.instructions.length > 180
-                    ? `${selectedCustomAiProfile.instructions.slice(0, 179)}…`
-                    : selectedCustomAiProfile.instructions}
-                </p>
+                <>
+                  <p className="selected-assistant-summary">
+                    {selectedCustomAiProfile.instructions.length > 180
+                      ? `${selectedCustomAiProfile.instructions.slice(0, 179)}…`
+                      : selectedCustomAiProfile.instructions}
+                  </p>
+                  {selectedCustomAiProfile.starter_prompts.length > 0 && (
+                    <div className="assistant-starters" aria-label="Стартовые запросы">
+                      {selectedCustomAiProfile.starter_prompts.map((prompt, index) => (
+                        <button
+                          key={`${index}:${prompt}`}
+                          type="button"
+                          onClick={() => {
+                            setDraft(prompt);
+                            requestAnimationFrame(() => composerRef.current?.focus());
+                          }}
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </section>
           </>
@@ -2510,6 +2528,7 @@ export default function Home() {
                 <option value="">Cosmora — обычный чат</option>
                 {customAiProfiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
+                    {profile.avatar ? `${profile.avatar} ` : ""}
                     {profile.name}
                   </option>
                 ))}

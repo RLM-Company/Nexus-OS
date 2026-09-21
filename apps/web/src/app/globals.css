@@ -1479,6 +1479,35 @@ svg {
   font-size: 0.9rem;
   line-height: 1.5;
 }
+.assistant-starters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+.assistant-starters button {
+  max-width: 18rem;
+  padding: 0.5rem 0.75rem;
+  overflow: hidden;
+  border: 1px solid #d9d9e3;
+  border-radius: 999px;
+  color: #565869;
+  font: inherit;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #fff;
+  cursor: pointer;
+}
+.assistant-starters button:hover {
+  color: #202123;
+  border-color: #b8b8c4;
+}
+.assistant-starters button:focus-visible {
+  outline: 3px solid #202123;
+  outline-offset: 2px;
+}
 .composer textarea::placeholder {
   color: #9a9a9a;
 }

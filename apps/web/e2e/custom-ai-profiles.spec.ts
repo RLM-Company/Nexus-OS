@@ -22,8 +22,10 @@ test("persists a mini-AI on the server and sends its snapshot only with a new ch
   );
   await expect(page.getByLabel("Инструкции для стиля ответа")).toHaveValue(/Короткие ответы/);
   await expect(page.getByLabel("Инструкции для стиля ответа")).toHaveValue(/Пошаговая структура/);
+  await page.getByLabel("Значок").fill("📝");
+  await page.getByLabel("Запрос 1").fill("Отредактируй важное письмо");
   await page.getByRole("button", { name: "Сохранить мини‑ИИ" }).click();
-  await expect(page.getByText("Редактор", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("📝 Редактор", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Изменить" }).click();
   await page
@@ -39,11 +41,14 @@ test("persists a mini-AI on the server and sends its snapshot only with a new ch
   await page.goto("/");
   const profile = page.getByLabel("Мини‑ИИ для нового чата");
   await expect(profile).toHaveValue("");
-  await profile.selectOption({ label: "Редактор" });
+  await profile.selectOption({ label: "📝 Редактор" });
+  await expect(page.getByRole("heading", { name: "📝 Редактор готов помочь" })).toBeVisible();
 
   let sentProfile: unknown = null;
+  let createdChats = 0;
   await page.route("**/api/v1/chats", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
+    createdChats += 1;
     sentProfile = (route.request().postDataJSON() as { assistant_profile?: unknown })
       .assistant_profile;
     await route.fulfill({
@@ -74,6 +79,9 @@ test("persists a mini-AI on the server and sends its snapshot only with a new ch
       })
     });
   });
+  await page.getByRole("button", { name: "Отредактируй важное письмо" }).click();
+  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Отредактируй важное письмо");
+  await expect.poll(() => createdChats).toBe(0);
   await page.getByLabel("Сообщение Cosmora").fill("Проверь мой текст");
   await page.getByRole("button", { name: "Отправить" }).click();
 
@@ -83,5 +91,6 @@ test("persists a mini-AI on the server and sends its snapshot only with a new ch
       name: "Редактор",
       instructions: "Редактируй лаконично, сохраняй смысл и перечисляй важные изменения."
     });
+  expect(createdChats).toBe(1);
   await expect(page.getByText("Редактор", { exact: true }).last()).toBeVisible();
 });
