@@ -105,10 +105,15 @@
 .profiles p {
   margin: 0;
 }
-.profiles header > p:last-child,
+.profiles header > p,
 .profileList p {
   color: var(--muted);
   line-height: 1.55;
+}
+.profiles header .profileStoreStatus {
+  margin-top: 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 .templates {
   display: grid;
@@ -136,6 +141,13 @@
 .templates button:hover,
 .templates button:focus-visible {
   border-color: var(--accent-strong);
+}
+.templates button:disabled,
+.saveProfile:disabled,
+.cancelProfile:disabled,
+.profileActions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 .templates span {
   color: var(--muted);
@@ -192,6 +204,10 @@
   font: inherit;
   background: var(--panel);
   cursor: pointer;
+}
+.profileActions .confirmDelete {
+  border-color: #b42318;
+  color: #b42318;
 }
 .profileList {
   display: grid;

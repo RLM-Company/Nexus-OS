@@ -160,6 +160,51 @@ export const AssistantProfileSnapshotSchema = Type.Object(
 );
 export type AssistantProfileSnapshot = Static<typeof AssistantProfileSnapshotSchema>;
 
+export const AssistantProfileSchema = Type.Object(
+  {
+    id: EntityIdSchema,
+    ...AssistantProfileSnapshotSchema.properties,
+    version: Type.Integer({ minimum: 1 }),
+    created_at: IsoDateTimeSchema,
+    updated_at: IsoDateTimeSchema
+  },
+  { additionalProperties: false }
+);
+export type AssistantProfile = Static<typeof AssistantProfileSchema>;
+
+export const AssistantProfileListResponseSchema = Type.Object(
+  { items: Type.Array(AssistantProfileSchema, { maxItems: 50 }) },
+  { additionalProperties: false }
+);
+export type AssistantProfileListResponse = Static<typeof AssistantProfileListResponseSchema>;
+
+export const CreateAssistantProfileRequestSchema = Type.Object(
+  { profile_id: EntityIdSchema, ...AssistantProfileSnapshotSchema.properties },
+  { additionalProperties: false }
+);
+export type CreateAssistantProfileRequest = Static<typeof CreateAssistantProfileRequestSchema>;
+
+export const UpdateAssistantProfileRequestSchema = Type.Object(
+  {
+    ...AssistantProfileSnapshotSchema.properties,
+    expected_version: Type.Integer({ minimum: 1 })
+  },
+  { additionalProperties: false }
+);
+export type UpdateAssistantProfileRequest = Static<typeof UpdateAssistantProfileRequestSchema>;
+
+export const DeleteAssistantProfileRequestSchema = Type.Object(
+  { expected_version: Type.Integer({ minimum: 1 }) },
+  { additionalProperties: false }
+);
+export type DeleteAssistantProfileRequest = Static<typeof DeleteAssistantProfileRequestSchema>;
+
+export const DeleteAssistantProfileResponseSchema = Type.Object(
+  { profile_id: EntityIdSchema, deleted: Type.Literal(true) },
+  { additionalProperties: false }
+);
+export type DeleteAssistantProfileResponse = Static<typeof DeleteAssistantProfileResponseSchema>;
+
 export const GeneralChatSummarySchema = Type.Object(
   {
     ...GeneralChatSchema.properties,

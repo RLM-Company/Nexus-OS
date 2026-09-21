@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("creates a mini-AI locally and sends its snapshot only with a new chat", async ({ page }) => {
+test("persists a mini-AI on the server and sends its snapshot only with a new chat", async ({
+  page
+}) => {
   await page.route("**/api/v1/settings/token-economy", async (route) => {
     await route.fulfill({
       status: 200,
@@ -13,6 +15,17 @@ test("creates a mini-AI locally and sends its snapshot only with a new chat", as
   await page.getByRole("button", { name: "Редактор" }).click();
   await page.getByRole("button", { name: "Сохранить мини‑ИИ" }).click();
   await expect(page.getByText("Редактор", { exact: true }).last()).toBeVisible();
+
+  await page.getByRole("button", { name: "Изменить" }).click();
+  await page
+    .getByLabel("Инструкции для стиля ответа")
+    .fill("Редактируй лаконично, сохраняй смысл и перечисляй важные изменения.");
+  await page.getByRole("button", { name: "Сохранить изменения" }).click();
+  await expect(page.getByText(/Редактируй лаконично/)).toBeVisible();
+
+  await page.evaluate(() => window.localStorage.removeItem("cosmora:custom-ai-profiles"));
+  await page.reload();
+  await expect(page.getByText(/Редактируй лаконично/)).toBeVisible();
 
   await page.goto("/");
   const profile = page.getByLabel("Мини‑ИИ для нового чата");
@@ -59,8 +72,7 @@ test("creates a mini-AI locally and sends its snapshot only with a new chat", as
     .poll(() => sentProfile)
     .toEqual({
       name: "Редактор",
-      instructions:
-        "Работай как внимательный редактор. Сохраняй смысл автора, предлагай ясные формулировки и кратко объясняй существенные правки."
+      instructions: "Редактируй лаконично, сохраняй смысл и перечисляй важные изменения."
     });
   await expect(page.getByText("Редактор", { exact: true }).last()).toBeVisible();
 });

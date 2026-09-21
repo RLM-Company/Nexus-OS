@@ -105,6 +105,7 @@ import {
   type AgentInstanceStore,
   AgentStudioIdempotencyConflictError,
   type AgentStudioMutationStore,
+  type AssistantProfileStore,
   AgentStudioMutationValidationError,
   DemoManagerStoreValidationError,
   IdempotencyConflictError,
@@ -149,6 +150,7 @@ import {
 } from "./step-up-challenge.js";
 import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-routes.js";
 import { TokenEconomyStore } from "./token-economy.js";
+import { registerAssistantProfileRoutes } from "./assistant-profile-routes.js";
 
 export interface AppDependencies {
   config: ServerConfig;
@@ -165,6 +167,7 @@ export interface AppDependencies {
   agentBlueprintStore?: AgentBlueprintStore;
   agentInstanceStore?: AgentInstanceStore;
   agentStudioMutationStore?: AgentStudioMutationStore;
+  assistantProfileStore?: AssistantProfileStore;
   modelGateway?: ModelGateway;
   chat?: ChatService;
   manager?: ManagerService;
@@ -631,6 +634,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     { schema: { body: tokenEconomySchema, response: { 200: tokenEconomySchema } } },
     (request) => tokenEconomyStore.set(identityFor(request).owner_id, request.body)
   );
+
+  if (dependencies.assistantProfileStore) {
+    registerAssistantProfileRoutes({
+      app,
+      store: dependencies.assistantProfileStore,
+      identityFor
+    });
+  }
 
   if (dependencies.identityStore) {
     const identityStore = dependencies.identityStore;

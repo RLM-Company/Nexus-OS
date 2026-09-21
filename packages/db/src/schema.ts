@@ -427,6 +427,23 @@ export const generalChats = sqliteTable(
   ]
 );
 
+export const assistantProfiles = sqliteTable(
+  "assistant_profiles",
+  {
+    id: text("id").notNull(),
+    ownerId: text("owner_id").notNull(),
+    name: text("name").notNull(),
+    instructions: text("instructions").notNull(),
+    version: integer("version").notNull().default(1),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.id, table.ownerId] }),
+    index("assistant_profiles_owner_updated_idx").on(table.ownerId, table.updatedAt)
+  ]
+);
+
 export const generalChatRuns = sqliteTable(
   "general_chat_runs",
   {

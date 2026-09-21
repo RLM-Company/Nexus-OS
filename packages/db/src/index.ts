@@ -96,6 +96,7 @@ export const runMigrations = (
 
 export { schema };
 export * from "./agent-blueprint-store.js";
+export * from "./assistant-profile-store.js";
 export * from "./agent-instance-store.js";
 export * from "./agent-studio-mutation-store.js";
 export * from "./emergency-stop-store.js";

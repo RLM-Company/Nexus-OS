@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   CUSTOM_AI_TEMPLATES,
+  createAssistantProfile,
+  deleteAssistantProfile,
+  loadAssistantProfiles,
   readCustomAiProfiles,
+  updateAssistantProfile,
   writeCustomAiProfiles,
   type CustomAiProfile
 } from "../custom-ai-profiles";
@@ -12,6 +16,7 @@ import styles from "./settings.module.css";
 
 type Settings = { enabled: boolean };
 type State = "loading" | "ready" | "error";
+type ProfileStoreMode = "loading" | "server" | "local";
 const STORAGE_KEY = "cosmora:token-economy";
 
 export default function SettingsPage() {
@@ -23,6 +28,9 @@ export default function SettingsPage() {
   const [profileInstructions, setProfileInstructions] = useState("");
   const [profileError, setProfileError] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [profileStoreMode, setProfileStoreMode] = useState<ProfileStoreMode>("loading");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [pendingProfileDeleteId, setPendingProfileDeleteId] = useState<string | null>(null);
 
   const save = async (next: Settings): Promise<void> => {
     setSaving(true);
@@ -45,7 +53,6 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    setProfiles(readCustomAiProfiles());
     let active = true;
     let cached: Settings | null = null;
     try {
@@ -86,34 +93,85 @@ export default function SettingsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const cached = readCustomAiProfiles();
+    setProfiles(cached);
+    void loadAssistantProfiles()
+      .then(async (stored) => {
+        if (stored.length > 0 || cached.length === 0) return stored;
+        const migrated: CustomAiProfile[] = [];
+        for (const profile of cached) {
+          migrated.push(await createAssistantProfile(profile));
+        }
+        return migrated;
+      })
+      .then((stored) => {
+        if (!active) return;
+        setProfiles(stored);
+        writeCustomAiProfiles(stored);
+        setProfileStoreMode("server");
+      })
+      .catch(() => {
+        if (active) setProfileStoreMode("local");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const chooseTemplate = (name: string, instructions: string): void => {
     setProfileName(name);
     setProfileInstructions(instructions);
     setProfileError(null);
     setEditingProfileId(null);
+    setPendingProfileDeleteId(null);
   };
 
-  const saveProfile = (): void => {
+  const saveProfile = async (): Promise<void> => {
     const name = profileName.trim();
     const instructions = profileInstructions.trim();
     if (!name || !instructions) {
       setProfileError("Укажите имя и инструкции для мини‑ИИ.");
       return;
     }
-    const profile = {
+    const current = editingProfileId
+      ? profiles.find((profile) => profile.id === editingProfileId)
+      : null;
+    if (editingProfileId && !current) {
+      setProfileError("Профиль уже изменён или удалён. Обновите страницу.");
+      return;
+    }
+    const draft = {
       id: editingProfileId ?? crypto.randomUUID(),
       name: name.slice(0, 80),
-      instructions: instructions.slice(0, 4_000)
+      instructions: instructions.slice(0, 4_000),
+      version: current?.version ?? 0,
+      created_at: current?.created_at ?? "",
+      updated_at: current?.updated_at ?? ""
     };
-    const next = editingProfileId
-      ? profiles.map((current) => (current.id === editingProfileId ? profile : current))
-      : [...profiles, profile];
-    writeCustomAiProfiles(next);
-    setProfiles(next);
-    setProfileName("");
-    setProfileInstructions("");
+    setProfileSaving(true);
     setProfileError(null);
-    setEditingProfileId(null);
+    try {
+      const saved =
+        profileStoreMode === "server"
+          ? editingProfileId
+            ? await updateAssistantProfile(draft)
+            : await createAssistantProfile(draft)
+          : draft;
+      const next = [saved, ...profiles.filter((profile) => profile.id !== saved.id)];
+      writeCustomAiProfiles(next);
+      setProfiles(next);
+      setProfileName("");
+      setProfileInstructions("");
+      setEditingProfileId(null);
+    } catch (cause) {
+      setProfileError(
+        cause instanceof Error ? cause.message : "Не удалось сохранить профиль мини‑ИИ."
+      );
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   const editProfile = (profile: CustomAiProfile): void => {
@@ -121,6 +179,7 @@ export default function SettingsPage() {
     setProfileName(profile.name);
     setProfileInstructions(profile.instructions);
     setProfileError(null);
+    setPendingProfileDeleteId(null);
   };
 
   const createVariant = (profile: CustomAiProfile): void => {
@@ -128,6 +187,7 @@ export default function SettingsPage() {
     setProfileName(`${profile.name} — вариант`.slice(0, 80));
     setProfileInstructions(profile.instructions);
     setProfileError(null);
+    setPendingProfileDeleteId(null);
   };
 
   const cancelProfileEdit = (): void => {
@@ -135,13 +195,30 @@ export default function SettingsPage() {
     setProfileName("");
     setProfileInstructions("");
     setProfileError(null);
+    setPendingProfileDeleteId(null);
   };
 
-  const removeProfile = (id: string): void => {
-    const next = profiles.filter((profile) => profile.id !== id);
-    writeCustomAiProfiles(next);
-    setProfiles(next);
-    if (editingProfileId === id) cancelProfileEdit();
+  const removeProfile = async (profile: CustomAiProfile): Promise<void> => {
+    if (pendingProfileDeleteId !== profile.id) {
+      setPendingProfileDeleteId(profile.id);
+      return;
+    }
+    setProfileSaving(true);
+    setProfileError(null);
+    try {
+      if (profileStoreMode === "server") await deleteAssistantProfile(profile);
+      const next = profiles.filter((candidate) => candidate.id !== profile.id);
+      writeCustomAiProfiles(next);
+      setProfiles(next);
+      if (editingProfileId === profile.id) cancelProfileEdit();
+      setPendingProfileDeleteId(null);
+    } catch (cause) {
+      setProfileError(
+        cause instanceof Error ? cause.message : "Не удалось удалить профиль мини‑ИИ."
+      );
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   return (
@@ -206,12 +283,20 @@ export default function SettingsPage() {
               Создайте профиль роли и ответа, затем выберите его перед началом нового чата. Он не
               меняет модель, доступы, инструменты или правила безопасности.
             </p>
+            <p className={styles.profileStoreStatus} role="status">
+              {profileStoreMode === "loading"
+                ? "Подключаем библиотеку…"
+                : profileStoreMode === "server"
+                  ? "Профили синхронизируются с вашим локальным сервером Cosmora."
+                  : "API недоступен: профили временно сохраняются только в этом браузере."}
+            </p>
           </header>
           <div className={styles.templates} aria-label="Шаблоны мини-ИИ">
             {CUSTOM_AI_TEMPLATES.map((template) => (
               <button
                 key={template.name}
                 type="button"
+                disabled={profileSaving}
                 onClick={() => chooseTemplate(template.name, template.instructions)}
               >
                 <strong>{template.name}</strong>
@@ -240,11 +325,21 @@ export default function SettingsPage() {
               />
             </label>
             <div className={styles.formActions}>
-              <button type="button" className={styles.saveProfile} onClick={saveProfile}>
+              <button
+                type="button"
+                className={styles.saveProfile}
+                disabled={profileSaving || profileStoreMode === "loading"}
+                onClick={() => void saveProfile()}
+              >
                 {editingProfileId ? "Сохранить изменения" : "Сохранить мини‑ИИ"}
               </button>
               {editingProfileId && (
-                <button type="button" className={styles.cancelProfile} onClick={cancelProfileEdit}>
+                <button
+                  type="button"
+                  className={styles.cancelProfile}
+                  disabled={profileSaving}
+                  onClick={cancelProfileEdit}
+                >
                   Отменить
                 </button>
               )}
@@ -262,14 +357,29 @@ export default function SettingsPage() {
                     <p>{profile.instructions}</p>
                   </div>
                   <div className={styles.profileActions}>
-                    <button type="button" onClick={() => editProfile(profile)}>
+                    <button
+                      type="button"
+                      disabled={profileSaving}
+                      onClick={() => editProfile(profile)}
+                    >
                       Изменить
                     </button>
-                    <button type="button" onClick={() => createVariant(profile)}>
+                    <button
+                      type="button"
+                      disabled={profileSaving}
+                      onClick={() => createVariant(profile)}
+                    >
                       Создать вариант
                     </button>
-                    <button type="button" onClick={() => removeProfile(profile.id)}>
-                      Удалить
+                    <button
+                      type="button"
+                      disabled={profileSaving}
+                      className={
+                        pendingProfileDeleteId === profile.id ? styles.confirmDelete : undefined
+                      }
+                      onClick={() => void removeProfile(profile)}
+                    >
+                      {pendingProfileDeleteId === profile.id ? "Подтвердить удаление" : "Удалить"}
                     </button>
                   </div>
                 </article>

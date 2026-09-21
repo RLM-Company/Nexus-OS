@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
-import { readCustomAiProfiles, type CustomAiProfile } from "./custom-ai-profiles";
+import {
+  loadAssistantProfiles,
+  readCustomAiProfiles,
+  writeCustomAiProfiles,
+  type CustomAiProfile
+} from "./custom-ai-profiles";
 import { InstallApp } from "./install-app";
 import { ProjectContextPanel } from "./project-context-panel";
 
@@ -887,7 +892,19 @@ export default function Home() {
   }, [rotateGreeting]);
 
   useEffect(() => {
-    setCustomAiProfiles(readCustomAiProfiles());
+    let active = true;
+    void loadAssistantProfiles()
+      .then((profiles) => {
+        if (!active) return;
+        setCustomAiProfiles(profiles);
+        writeCustomAiProfiles(profiles);
+      })
+      .catch(() => {
+        if (active) setCustomAiProfiles(readCustomAiProfiles());
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {

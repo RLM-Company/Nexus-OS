@@ -3,6 +3,7 @@ import {
   AgentBlueprintStore,
   AgentInstanceStore,
   AgentStudioMutationStore,
+  AssistantProfileStore,
   DemoManagerStore,
   EmergencyStopStore,
   IdentityStore,
@@ -69,6 +70,7 @@ try {
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
   const stepUpProofStore = new StepUpProofStore(database.sqlite);
+  const assistantProfileStore = new AssistantProfileStore(database.sqlite);
   const runtimeMetrics = new RuntimeMetrics();
   const tokenEconomyStore = new TokenEconomyStore();
   const identityResolver =
@@ -100,6 +102,7 @@ try {
       delegationValidator: validateAgentDelegation
     }),
     agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite),
+    assistantProfileStore,
     modelGateway: modelRuntime.gateway,
     chat: modelRuntime.chat,
     manager: modelRuntime.manager,
