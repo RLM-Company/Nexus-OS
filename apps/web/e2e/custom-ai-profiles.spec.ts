@@ -37,11 +37,14 @@ test("persists a mini-AI on the server and sends its snapshot only with a new ch
   await page.evaluate(() => window.localStorage.removeItem("cosmora:custom-ai-profiles"));
   await page.reload();
   await expect(page.getByText(/Редактируй лаконично/)).toBeVisible();
+  await page.getByRole("button", { name: "Сделать основным" }).click();
+  await expect(page.getByText("Основной на этом устройстве")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Основной на этом устройстве")).toBeVisible();
 
   await page.goto("/");
   const profile = page.getByLabel("Мини‑ИИ для нового чата");
-  await expect(profile).toHaveValue("");
-  await profile.selectOption({ label: "📝 Редактор" });
+  await expect(profile).not.toHaveValue("");
   await expect(page.getByRole("heading", { name: "📝 Редактор готов помочь" })).toBeVisible();
 
   let sentProfile: unknown = null;

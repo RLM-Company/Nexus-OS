@@ -7,8 +7,10 @@ import {
   createAssistantProfile,
   deleteAssistantProfile,
   loadAssistantProfiles,
+  readDefaultCustomAiProfileId,
   readCustomAiProfiles,
   updateAssistantProfile,
+  writeDefaultCustomAiProfileId,
   writeCustomAiProfiles,
   type CustomAiProfile,
   type CustomAiTemplate
@@ -50,6 +52,7 @@ export default function SettingsPage() {
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileStoreMode, setProfileStoreMode] = useState<ProfileStoreMode>("loading");
   const [profileSaving, setProfileSaving] = useState(false);
+  const [defaultProfileId, setDefaultProfileId] = useState<string | null>(null);
   const [pendingProfileDeleteId, setPendingProfileDeleteId] = useState<string | null>(null);
   const [profileTone, setProfileTone] = useState<keyof typeof TONE_OPTIONS>("friendly");
   const [profileLength, setProfileLength] = useState<keyof typeof LENGTH_OPTIONS>("balanced");
@@ -119,6 +122,8 @@ export default function SettingsPage() {
   useEffect(() => {
     let active = true;
     const cached = readCustomAiProfiles();
+    const preferredProfileId = readDefaultCustomAiProfileId();
+    setDefaultProfileId(preferredProfileId);
     setProfiles(cached);
     void loadAssistantProfiles()
       .then(async (stored) => {
@@ -133,6 +138,10 @@ export default function SettingsPage() {
         if (!active) return;
         setProfiles(stored);
         writeCustomAiProfiles(stored);
+        if (preferredProfileId && !stored.some((profile) => profile.id === preferredProfileId)) {
+          writeDefaultCustomAiProfileId(null);
+          setDefaultProfileId(null);
+        }
         setProfileStoreMode("server");
       })
       .catch(() => {
@@ -258,6 +267,10 @@ export default function SettingsPage() {
       const next = profiles.filter((candidate) => candidate.id !== profile.id);
       writeCustomAiProfiles(next);
       setProfiles(next);
+      if (defaultProfileId === profile.id) {
+        writeDefaultCustomAiProfileId(null);
+        setDefaultProfileId(null);
+      }
       if (editingProfileId === profile.id) cancelProfileEdit();
       setPendingProfileDeleteId(null);
     } catch (cause) {
@@ -267,6 +280,12 @@ export default function SettingsPage() {
     } finally {
       setProfileSaving(false);
     }
+  };
+
+  const toggleDefaultProfile = (profile: CustomAiProfile): void => {
+    const next = defaultProfileId === profile.id ? null : profile.id;
+    writeDefaultCustomAiProfileId(next);
+    setDefaultProfileId(next);
   };
 
   return (
@@ -485,6 +504,9 @@ export default function SettingsPage() {
                       {profile.avatar ? `${profile.avatar} ` : ""}
                       {profile.name}
                     </strong>
+                    {defaultProfileId === profile.id && (
+                      <span className={styles.defaultBadge}>Основной на этом устройстве</span>
+                    )}
                     <p>{profile.instructions}</p>
                     {profile.starter_prompts.length > 0 && (
                       <ul className={styles.savedStarters} aria-label="Стартовые запросы">
@@ -495,6 +517,16 @@ export default function SettingsPage() {
                     )}
                   </div>
                   <div className={styles.profileActions}>
+                    <button
+                      type="button"
+                      disabled={profileSaving || profileStoreMode === "loading"}
+                      aria-pressed={defaultProfileId === profile.id}
+                      onClick={() => toggleDefaultProfile(profile)}
+                    >
+                      {defaultProfileId === profile.id
+                        ? "Не использовать основным"
+                        : "Сделать основным"}
+                    </button>
                     <button
                       type="button"
                       disabled={profileSaving}

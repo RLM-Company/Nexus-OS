@@ -17,6 +17,7 @@ export type CustomAiTemplate = Pick<
 };
 
 export const CUSTOM_AI_PROFILES_STORAGE_KEY = "cosmora:custom-ai-profiles";
+export const CUSTOM_AI_DEFAULT_PROFILE_STORAGE_KEY = "cosmora:default-custom-ai-profile";
 
 export const CUSTOM_AI_TEMPLATES: CustomAiTemplate[] = [
   {
@@ -184,4 +185,21 @@ export const readCustomAiProfiles = (): CustomAiProfile[] => {
 
 export const writeCustomAiProfiles = (profiles: CustomAiProfile[]): void => {
   window.localStorage.setItem(CUSTOM_AI_PROFILES_STORAGE_KEY, JSON.stringify(profiles));
+};
+
+export const readDefaultCustomAiProfileId = (): string | null => {
+  try {
+    return window.localStorage.getItem(CUSTOM_AI_DEFAULT_PROFILE_STORAGE_KEY)?.trim() || null;
+  } catch {
+    return null;
+  }
+};
+
+export const writeDefaultCustomAiProfileId = (profileId: string | null): void => {
+  try {
+    if (profileId) window.localStorage.setItem(CUSTOM_AI_DEFAULT_PROFILE_STORAGE_KEY, profileId);
+    else window.localStorage.removeItem(CUSTOM_AI_DEFAULT_PROFILE_STORAGE_KEY);
+  } catch {
+    // A blocked browser preference must not stop profile use for the current session.
+  }
 };

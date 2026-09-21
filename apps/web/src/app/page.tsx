@@ -5,7 +5,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
 import {
   loadAssistantProfiles,
+  readDefaultCustomAiProfileId,
   readCustomAiProfiles,
+  writeDefaultCustomAiProfileId,
   writeCustomAiProfiles,
   type CustomAiProfile
 } from "./custom-ai-profiles";
@@ -898,9 +900,23 @@ export default function Home() {
         if (!active) return;
         setCustomAiProfiles(profiles);
         writeCustomAiProfiles(profiles);
+        const preferredProfileId = readDefaultCustomAiProfileId();
+        const preferredProfileExists =
+          preferredProfileId !== null &&
+          profiles.some((profile) => profile.id === preferredProfileId);
+        if (preferredProfileId && !preferredProfileExists) writeDefaultCustomAiProfileId(null);
+        setSelectedCustomAiProfileId(preferredProfileExists ? (preferredProfileId ?? "") : "");
       })
       .catch(() => {
-        if (active) setCustomAiProfiles(readCustomAiProfiles());
+        if (!active) return;
+        const profiles = readCustomAiProfiles();
+        const preferredProfileId = readDefaultCustomAiProfileId();
+        const preferredProfileExists =
+          preferredProfileId !== null &&
+          profiles.some((profile) => profile.id === preferredProfileId);
+        if (preferredProfileId && !preferredProfileExists) writeDefaultCustomAiProfileId(null);
+        setCustomAiProfiles(profiles);
+        setSelectedCustomAiProfileId(preferredProfileExists ? (preferredProfileId ?? "") : "");
       });
     return () => {
       active = false;
