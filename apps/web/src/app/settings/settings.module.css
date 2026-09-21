@@ -146,6 +146,10 @@
   display: grid;
   gap: 0.8rem;
 }
+.profileForm h3 {
+  margin: 0;
+  font-size: 1rem;
+}
 .profileForm label {
   display: grid;
   gap: 0.35rem;
@@ -173,6 +177,22 @@
   background: var(--accent-strong);
   cursor: pointer;
 }
+.formActions,
+.profileActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.cancelProfile,
+.profileActions button {
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  color: var(--text);
+  font: inherit;
+  background: var(--panel);
+  cursor: pointer;
+}
 .profileList {
   display: grid;
   gap: 0.65rem;
@@ -188,18 +208,12 @@
   margin-top: 0.25rem;
   white-space: pre-wrap;
 }
-.profileList button {
-  align-self: start;
-  padding: 0.45rem 0.65rem;
-  color: var(--text);
-  background: var(--panel);
-  cursor: pointer;
-}
 .templates button:focus-visible,
 .profileForm input:focus-visible,
 .profileForm textarea:focus-visible,
 .saveProfile:focus-visible,
-.profileList button:focus-visible {
+.cancelProfile:focus-visible,
+.profileActions button:focus-visible {
   outline: 3px solid var(--accent-strong);
   outline-offset: 2px;
 }

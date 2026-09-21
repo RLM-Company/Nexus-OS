@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [profileName, setProfileName] = useState("");
   const [profileInstructions, setProfileInstructions] = useState("");
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
 
   const save = async (next: Settings): Promise<void> => {
     setSaving(true);
@@ -89,6 +90,7 @@ export default function SettingsPage() {
     setProfileName(name);
     setProfileInstructions(instructions);
     setProfileError(null);
+    setEditingProfileId(null);
   };
 
   const saveProfile = (): void => {
@@ -98,16 +100,38 @@ export default function SettingsPage() {
       setProfileError("Укажите имя и инструкции для мини‑ИИ.");
       return;
     }
-    const next = [
-      ...profiles,
-      {
-        id: crypto.randomUUID(),
-        name: name.slice(0, 80),
-        instructions: instructions.slice(0, 4_000)
-      }
-    ];
+    const profile = {
+      id: editingProfileId ?? crypto.randomUUID(),
+      name: name.slice(0, 80),
+      instructions: instructions.slice(0, 4_000)
+    };
+    const next = editingProfileId
+      ? profiles.map((current) => (current.id === editingProfileId ? profile : current))
+      : [...profiles, profile];
     writeCustomAiProfiles(next);
     setProfiles(next);
+    setProfileName("");
+    setProfileInstructions("");
+    setProfileError(null);
+    setEditingProfileId(null);
+  };
+
+  const editProfile = (profile: CustomAiProfile): void => {
+    setEditingProfileId(profile.id);
+    setProfileName(profile.name);
+    setProfileInstructions(profile.instructions);
+    setProfileError(null);
+  };
+
+  const createVariant = (profile: CustomAiProfile): void => {
+    setEditingProfileId(null);
+    setProfileName(`${profile.name} — вариант`.slice(0, 80));
+    setProfileInstructions(profile.instructions);
+    setProfileError(null);
+  };
+
+  const cancelProfileEdit = (): void => {
+    setEditingProfileId(null);
     setProfileName("");
     setProfileInstructions("");
     setProfileError(null);
@@ -117,6 +141,7 @@ export default function SettingsPage() {
     const next = profiles.filter((profile) => profile.id !== id);
     writeCustomAiProfiles(next);
     setProfiles(next);
+    if (editingProfileId === id) cancelProfileEdit();
   };
 
   return (
@@ -195,6 +220,7 @@ export default function SettingsPage() {
             ))}
           </div>
           <div className={styles.profileForm}>
+            <h3>{editingProfileId ? "Редактировать мини‑ИИ" : "Создать мини‑ИИ"}</h3>
             <label>
               Имя
               <input
@@ -213,9 +239,16 @@ export default function SettingsPage() {
                 onChange={(event) => setProfileInstructions(event.target.value)}
               />
             </label>
-            <button type="button" className={styles.saveProfile} onClick={saveProfile}>
-              Сохранить мини‑ИИ
-            </button>
+            <div className={styles.formActions}>
+              <button type="button" className={styles.saveProfile} onClick={saveProfile}>
+                {editingProfileId ? "Сохранить изменения" : "Сохранить мини‑ИИ"}
+              </button>
+              {editingProfileId && (
+                <button type="button" className={styles.cancelProfile} onClick={cancelProfileEdit}>
+                  Отменить
+                </button>
+              )}
+            </div>
             {profileError && <p className={styles.error}>{profileError}</p>}
           </div>
           <div className={styles.profileList} aria-live="polite">
@@ -228,9 +261,17 @@ export default function SettingsPage() {
                     <strong>{profile.name}</strong>
                     <p>{profile.instructions}</p>
                   </div>
-                  <button type="button" onClick={() => removeProfile(profile.id)}>
-                    Удалить
-                  </button>
+                  <div className={styles.profileActions}>
+                    <button type="button" onClick={() => editProfile(profile)}>
+                      Изменить
+                    </button>
+                    <button type="button" onClick={() => createVariant(profile)}>
+                      Создать вариант
+                    </button>
+                    <button type="button" onClick={() => removeProfile(profile.id)}>
+                      Удалить
+                    </button>
+                  </div>
                 </article>
               ))
             )}
