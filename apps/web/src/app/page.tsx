@@ -2469,7 +2469,18 @@ export default function Home() {
         ) : !activeProject ? (
           <>
             <section className="hero">
-              <h2>{greeting}</h2>
+              <h2>
+                {selectedCustomAiProfile
+                  ? `${selectedCustomAiProfile.name} готов помочь`
+                  : greeting}
+              </h2>
+              {selectedCustomAiProfile && (
+                <p className="selected-assistant-summary">
+                  {selectedCustomAiProfile.instructions.length > 180
+                    ? `${selectedCustomAiProfile.instructions.slice(0, 179)}…`
+                    : selectedCustomAiProfile.instructions}
+                </p>
+              )}
             </section>
           </>
         ) : null}
@@ -2487,7 +2498,7 @@ export default function Home() {
                 ? `Сообщение ${activeLocalChat.assistant_profile_name}`
                 : "Сообщение Cosmora"}
           </label>
-          {!activeProject && !activeLocalChatId && customAiProfiles.length > 0 && (
+          {!activeProject && !activeLocalChatId && (
             <div className="assistant-profile-picker">
               <label htmlFor="assistant-profile">Мини‑ИИ для нового чата</label>
               <select
@@ -2503,7 +2514,9 @@ export default function Home() {
                   </option>
                 ))}
               </select>
-              <Link href="/settings#mini-ai">Настроить</Link>
+              <Link href="/settings#mini-ai">
+                {customAiProfiles.length > 0 ? "Настроить" : "Создать мини‑ИИ"}
+              </Link>
             </div>
           )}
           <textarea

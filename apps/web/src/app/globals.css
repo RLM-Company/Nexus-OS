@@ -467,6 +467,14 @@ svg {
   letter-spacing: -0.055em;
   line-height: 1.03;
 }
+.hero .selected-assistant-summary {
+  max-width: 32rem;
+  margin: 0.65rem auto 0;
+  color: #6e6e80;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  text-align: center;
+}
 .hero p {
   max-width: 39rem;
   margin: 0 auto;

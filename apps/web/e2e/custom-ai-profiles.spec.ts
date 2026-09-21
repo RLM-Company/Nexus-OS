@@ -13,6 +13,15 @@ test("persists a mini-AI on the server and sends its snapshot only with a new ch
 
   await page.goto("/settings");
   await page.getByRole("button", { name: "Редактор" }).click();
+  await page.getByLabel("Тон").selectOption("direct");
+  await page.getByLabel("Подробность").selectOption("short");
+  await page.getByLabel("Формат").selectOption("steps");
+  await page.getByRole("button", { name: "Применить к инструкции" }).click();
+  await expect(page.getByLabel("Инструкции для стиля ответа")).toHaveValue(
+    /Прямой тон без лишних вступлений/
+  );
+  await expect(page.getByLabel("Инструкции для стиля ответа")).toHaveValue(/Короткие ответы/);
+  await expect(page.getByLabel("Инструкции для стиля ответа")).toHaveValue(/Пошаговая структура/);
   await page.getByRole("button", { name: "Сохранить мини‑ИИ" }).click();
   await expect(page.getByText("Редактор", { exact: true }).last()).toBeVisible();
 

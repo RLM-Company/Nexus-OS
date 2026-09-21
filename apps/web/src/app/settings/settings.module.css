@@ -162,6 +162,40 @@
   margin: 0;
   font-size: 1rem;
 }
+.behaviorBuilder {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+}
+.behaviorBuilder legend {
+  padding: 0 0.35rem;
+  font-weight: 800;
+}
+.behaviorBuilder select {
+  min-width: 0;
+  padding: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  color: var(--text);
+  font: inherit;
+  background: var(--bg);
+}
+.behaviorBuilder button {
+  grid-column: 1 / -1;
+  width: fit-content;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  background: var(--panel);
+  cursor: pointer;
+}
 .profileForm label {
   display: grid;
   gap: 0.35rem;
@@ -227,6 +261,8 @@
 .templates button:focus-visible,
 .profileForm input:focus-visible,
 .profileForm textarea:focus-visible,
+.behaviorBuilder select:focus-visible,
+.behaviorBuilder button:focus-visible,
 .saveProfile:focus-visible,
 .cancelProfile:focus-visible,
 .profileActions button:focus-visible {
@@ -239,5 +275,8 @@
   }
   .profileList article {
     flex-direction: column;
+  }
+  .behaviorBuilder {
+    grid-template-columns: 1fr;
   }
 }

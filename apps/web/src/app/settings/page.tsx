@@ -18,6 +18,23 @@ type Settings = { enabled: boolean };
 type State = "loading" | "ready" | "error";
 type ProfileStoreMode = "loading" | "server" | "local";
 const STORAGE_KEY = "cosmora:token-economy";
+const RESPONSE_PREFERENCES_MARKER = "\n\nПараметры ответа (Cosmora):\n";
+const TONE_OPTIONS = {
+  friendly: "Дружелюбный и поддерживающий тон",
+  direct: "Прямой тон без лишних вступлений",
+  formal: "Сдержанный деловой тон",
+  creative: "Живой творческий тон"
+} as const;
+const LENGTH_OPTIONS = {
+  short: "Короткие ответы",
+  balanced: "Умеренно подробные ответы",
+  detailed: "Подробные ответы с объяснениями"
+} as const;
+const FORMAT_OPTIONS = {
+  natural: "Естественный формат по ситуации",
+  bullets: "Списки для перечислений",
+  steps: "Пошаговая структура для задач"
+} as const;
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({ enabled: false });
@@ -31,6 +48,9 @@ export default function SettingsPage() {
   const [profileStoreMode, setProfileStoreMode] = useState<ProfileStoreMode>("loading");
   const [profileSaving, setProfileSaving] = useState(false);
   const [pendingProfileDeleteId, setPendingProfileDeleteId] = useState<string | null>(null);
+  const [profileTone, setProfileTone] = useState<keyof typeof TONE_OPTIONS>("friendly");
+  const [profileLength, setProfileLength] = useState<keyof typeof LENGTH_OPTIONS>("balanced");
+  const [profileFormat, setProfileFormat] = useState<keyof typeof FORMAT_OPTIONS>("natural");
 
   const save = async (next: Settings): Promise<void> => {
     setSaving(true);
@@ -198,6 +218,19 @@ export default function SettingsPage() {
     setPendingProfileDeleteId(null);
   };
 
+  const applyResponsePreferences = (): void => {
+    const base = profileInstructions.split(RESPONSE_PREFERENCES_MARKER, 1)[0]?.trim() ?? "";
+    const preferences = [
+      TONE_OPTIONS[profileTone],
+      LENGTH_OPTIONS[profileLength],
+      FORMAT_OPTIONS[profileFormat]
+    ];
+    setProfileInstructions(
+      `${base.slice(0, 3_750)}${RESPONSE_PREFERENCES_MARKER}${preferences.map((item) => `- ${item}`).join("\n")}`.trim()
+    );
+    setProfileError(null);
+  };
+
   const removeProfile = async (profile: CustomAiProfile): Promise<void> => {
     if (pendingProfileDeleteId !== profile.id) {
       setPendingProfileDeleteId(profile.id);
@@ -306,6 +339,52 @@ export default function SettingsPage() {
           </div>
           <div className={styles.profileForm}>
             <h3>{editingProfileId ? "Редактировать мини‑ИИ" : "Создать мини‑ИИ"}</h3>
+            <fieldset className={styles.behaviorBuilder}>
+              <legend>Характер ответа</legend>
+              <label>
+                Тон
+                <select
+                  value={profileTone}
+                  onChange={(event) =>
+                    setProfileTone(event.target.value as keyof typeof TONE_OPTIONS)
+                  }
+                >
+                  <option value="friendly">Дружелюбный</option>
+                  <option value="direct">Прямой</option>
+                  <option value="formal">Деловой</option>
+                  <option value="creative">Творческий</option>
+                </select>
+              </label>
+              <label>
+                Подробность
+                <select
+                  value={profileLength}
+                  onChange={(event) =>
+                    setProfileLength(event.target.value as keyof typeof LENGTH_OPTIONS)
+                  }
+                >
+                  <option value="short">Коротко</option>
+                  <option value="balanced">Сбалансированно</option>
+                  <option value="detailed">Подробно</option>
+                </select>
+              </label>
+              <label>
+                Формат
+                <select
+                  value={profileFormat}
+                  onChange={(event) =>
+                    setProfileFormat(event.target.value as keyof typeof FORMAT_OPTIONS)
+                  }
+                >
+                  <option value="natural">По ситуации</option>
+                  <option value="bullets">Списки</option>
+                  <option value="steps">По шагам</option>
+                </select>
+              </label>
+              <button type="button" onClick={applyResponsePreferences}>
+                Применить к инструкции
+              </button>
+            </fieldset>
             <label>
               Имя
               <input
