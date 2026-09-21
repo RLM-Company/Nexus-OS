@@ -16,12 +16,20 @@ test("persists a mini-AI on the server and sends its snapshot only with a new ch
   await page.getByLabel("Тон").selectOption("direct");
   await page.getByLabel("Подробность").selectOption("short");
   await page.getByLabel("Формат").selectOption("steps");
+  await page.getByLabel("Язык").selectOption("russian");
+  await page.getByLabel("Уровень").selectOption("professional");
   await page.getByRole("button", { name: "Применить к инструкции" }).click();
   await expect(page.getByLabel("Инструкции для стиля ответа")).toHaveValue(
     /Прямой тон без лишних вступлений/
   );
   await expect(page.getByLabel("Инструкции для стиля ответа")).toHaveValue(/Короткие ответы/);
   await expect(page.getByLabel("Инструкции для стиля ответа")).toHaveValue(/Пошаговая структура/);
+  await expect(page.getByLabel("Инструкции для стиля ответа")).toHaveValue(
+    /Отвечай на русском языке/
+  );
+  await expect(page.getByLabel("Инструкции для стиля ответа")).toHaveValue(
+    /Пиши для опытного специалиста/
+  );
   await page.getByLabel("Значок").fill("📝");
   await page.getByLabel("Запрос 1").fill("Отредактируй важное письмо");
   await page.getByRole("button", { name: "Сохранить мини‑ИИ" }).click();

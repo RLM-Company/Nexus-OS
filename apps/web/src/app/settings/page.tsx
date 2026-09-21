@@ -41,6 +41,16 @@ const FORMAT_OPTIONS = {
   bullets: "Списки для перечислений",
   steps: "Пошаговая структура для задач"
 } as const;
+const LANGUAGE_OPTIONS = {
+  auto: "Отвечай на языке пользователя",
+  russian: "Отвечай на русском языке",
+  english: "Отвечай на английском языке"
+} as const;
+const AUDIENCE_OPTIONS = {
+  general: "Объясняй ясно без лишнего профессионального жаргона",
+  beginner: "Объясняй для новичка и раскрывай незнакомые термины",
+  professional: "Пиши для опытного специалиста и не разжёвывай базовые понятия"
+} as const;
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({ enabled: false });
@@ -61,6 +71,8 @@ export default function SettingsPage() {
   const [profileTone, setProfileTone] = useState<keyof typeof TONE_OPTIONS>("friendly");
   const [profileLength, setProfileLength] = useState<keyof typeof LENGTH_OPTIONS>("balanced");
   const [profileFormat, setProfileFormat] = useState<keyof typeof FORMAT_OPTIONS>("natural");
+  const [profileLanguage, setProfileLanguage] = useState<keyof typeof LANGUAGE_OPTIONS>("auto");
+  const [profileAudience, setProfileAudience] = useState<keyof typeof AUDIENCE_OPTIONS>("general");
   const profileImportRef = useRef<HTMLInputElement | null>(null);
 
   const save = async (next: Settings): Promise<void> => {
@@ -258,10 +270,12 @@ export default function SettingsPage() {
     const preferences = [
       TONE_OPTIONS[profileTone],
       LENGTH_OPTIONS[profileLength],
-      FORMAT_OPTIONS[profileFormat]
+      FORMAT_OPTIONS[profileFormat],
+      LANGUAGE_OPTIONS[profileLanguage],
+      AUDIENCE_OPTIONS[profileAudience]
     ];
     setProfileInstructions(
-      `${base.slice(0, 3_750)}${RESPONSE_PREFERENCES_MARKER}${preferences.map((item) => `- ${item}`).join("\n")}`.trim()
+      `${base.slice(0, 3_600)}${RESPONSE_PREFERENCES_MARKER}${preferences.map((item) => `- ${item}`).join("\n")}`.trim()
     );
     setProfileError(null);
   };
@@ -480,6 +494,32 @@ export default function SettingsPage() {
                   <option value="natural">По ситуации</option>
                   <option value="bullets">Списки</option>
                   <option value="steps">По шагам</option>
+                </select>
+              </label>
+              <label>
+                Язык
+                <select
+                  value={profileLanguage}
+                  onChange={(event) =>
+                    setProfileLanguage(event.target.value as keyof typeof LANGUAGE_OPTIONS)
+                  }
+                >
+                  <option value="auto">Как у пользователя</option>
+                  <option value="russian">Русский</option>
+                  <option value="english">English</option>
+                </select>
+              </label>
+              <label>
+                Уровень
+                <select
+                  value={profileAudience}
+                  onChange={(event) =>
+                    setProfileAudience(event.target.value as keyof typeof AUDIENCE_OPTIONS)
+                  }
+                >
+                  <option value="general">Универсальный</option>
+                  <option value="beginner">Для новичка</option>
+                  <option value="professional">Для специалиста</option>
                 </select>
               </label>
               <button type="button" onClick={applyResponsePreferences}>
