@@ -115,7 +115,21 @@ const requireProfile = (value: unknown): CustomAiProfile => {
 };
 
 const checkedJson = async (response: Response): Promise<unknown> => {
-  if (!response.ok) throw new Error("Библиотека мини‑ИИ временно недоступна");
+  if (!response.ok) {
+    if (response.status === 400) {
+      throw new Error("Проверьте имя, инструкции и стартовые запросы мини‑ИИ");
+    }
+    if (response.status === 404) {
+      throw new Error("Профиль уже удалён. Обновите страницу");
+    }
+    if (response.status === 409) {
+      throw new Error("Профиль изменился в другой вкладке. Обновите страницу и повторите правку");
+    }
+    if (response.status >= 500) {
+      throw new Error("Локальный API мини‑ИИ временно недоступен. Попробуйте ещё раз");
+    }
+    throw new Error("Не удалось обратиться к библиотеке мини‑ИИ");
+  }
   return response.json() as Promise<unknown>;
 };
 
