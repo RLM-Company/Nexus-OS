@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   CUSTOM_AI_TEMPLATES,
   createAssistantProfile,
+  customAiProfileFileName,
   deleteAssistantProfile,
   loadAssistantProfiles,
+  parseCustomAiProfile,
   readDefaultCustomAiProfileId,
   readCustomAiProfiles,
+  serializeCustomAiProfile,
   updateAssistantProfile,
   writeDefaultCustomAiProfileId,
   writeCustomAiProfiles,
@@ -49,6 +52,7 @@ export default function SettingsPage() {
   const [profileAvatar, setProfileAvatar] = useState("");
   const [profileStarters, setProfileStarters] = useState<string[]>(["", "", "", ""]);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileNotice, setProfileNotice] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileStoreMode, setProfileStoreMode] = useState<ProfileStoreMode>("loading");
   const [profileSaving, setProfileSaving] = useState(false);
@@ -57,6 +61,7 @@ export default function SettingsPage() {
   const [profileTone, setProfileTone] = useState<keyof typeof TONE_OPTIONS>("friendly");
   const [profileLength, setProfileLength] = useState<keyof typeof LENGTH_OPTIONS>("balanced");
   const [profileFormat, setProfileFormat] = useState<keyof typeof FORMAT_OPTIONS>("natural");
+  const profileImportRef = useRef<HTMLInputElement | null>(null);
 
   const save = async (next: Settings): Promise<void> => {
     setSaving(true);
@@ -158,6 +163,7 @@ export default function SettingsPage() {
     setProfileAvatar(template.avatar ?? "");
     setProfileStarters([...template.starter_prompts, "", "", ""].slice(0, 4));
     setProfileError(null);
+    setProfileNotice(null);
     setEditingProfileId(null);
     setPendingProfileDeleteId(null);
   };
@@ -188,6 +194,7 @@ export default function SettingsPage() {
     };
     setProfileSaving(true);
     setProfileError(null);
+    setProfileNotice(null);
     try {
       const saved =
         profileStoreMode === "server"
@@ -203,6 +210,7 @@ export default function SettingsPage() {
       setProfileAvatar("");
       setProfileStarters(["", "", "", ""]);
       setEditingProfileId(null);
+      setProfileNotice("Мини‑ИИ сохранён.");
     } catch (cause) {
       setProfileError(
         cause instanceof Error ? cause.message : "Не удалось сохранить профиль мини‑ИИ."
@@ -219,6 +227,7 @@ export default function SettingsPage() {
     setProfileAvatar(profile.avatar ?? "");
     setProfileStarters([...profile.starter_prompts, "", "", "", ""].slice(0, 4));
     setProfileError(null);
+    setProfileNotice(null);
     setPendingProfileDeleteId(null);
   };
 
@@ -229,6 +238,7 @@ export default function SettingsPage() {
     setProfileAvatar(profile.avatar ?? "");
     setProfileStarters([...profile.starter_prompts, "", "", "", ""].slice(0, 4));
     setProfileError(null);
+    setProfileNotice(null);
     setPendingProfileDeleteId(null);
   };
 
@@ -239,6 +249,7 @@ export default function SettingsPage() {
     setProfileAvatar("");
     setProfileStarters(["", "", "", ""]);
     setProfileError(null);
+    setProfileNotice(null);
     setPendingProfileDeleteId(null);
   };
 
@@ -286,6 +297,43 @@ export default function SettingsPage() {
     const next = defaultProfileId === profile.id ? null : profile.id;
     writeDefaultCustomAiProfileId(next);
     setDefaultProfileId(next);
+  };
+
+  const exportProfile = (profile: CustomAiProfile): void => {
+    const blob = new Blob([serializeCustomAiProfile(profile)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = customAiProfileFileName(profile.name);
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const importProfile = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setProfileError(null);
+    setProfileNotice(null);
+    try {
+      if (file.size > 20_000) throw new Error("Файл мини‑ИИ слишком большой");
+      const profile = parseCustomAiProfile(await file.text());
+      setEditingProfileId(null);
+      setProfileName(profile.name);
+      setProfileInstructions(profile.instructions);
+      setProfileAvatar(profile.avatar ?? "");
+      setProfileStarters([...profile.starter_prompts, "", "", "", ""].slice(0, 4));
+      setPendingProfileDeleteId(null);
+      setProfileNotice(
+        "Профиль загружен как черновик. Проверьте его и нажмите «Сохранить мини‑ИИ»."
+      );
+    } catch (cause) {
+      setProfileError(
+        cause instanceof Error ? cause.message : "Не удалось прочитать файл мини‑ИИ."
+      );
+    }
   };
 
   return (
@@ -372,6 +420,23 @@ export default function SettingsPage() {
                 <span>{template.description}</span>
               </button>
             ))}
+          </div>
+          <div className={styles.profileTransfer}>
+            <button
+              type="button"
+              disabled={profileSaving}
+              onClick={() => profileImportRef.current?.click()}
+            >
+              Импортировать профиль
+            </button>
+            <input
+              ref={profileImportRef}
+              type="file"
+              accept="application/json,.json"
+              aria-label="Файл профиля мини‑ИИ"
+              onChange={(event) => void importProfile(event)}
+            />
+            <span>Импорт создаёт только черновик. Экспорт не включает чаты, ключи и доступы.</span>
           </div>
           <div className={styles.profileForm}>
             <h3>{editingProfileId ? "Редактировать мини‑ИИ" : "Создать мини‑ИИ"}</h3>
@@ -492,6 +557,11 @@ export default function SettingsPage() {
               )}
             </div>
             {profileError && <p className={styles.error}>{profileError}</p>}
+            {profileNotice && (
+              <p className={styles.profileNotice} role="status">
+                {profileNotice}
+              </p>
+            )}
           </div>
           <div className={styles.profileList} aria-live="polite">
             {profiles.length === 0 ? (
@@ -540,6 +610,13 @@ export default function SettingsPage() {
                       onClick={() => createVariant(profile)}
                     >
                       Создать вариант
+                    </button>
+                    <button
+                      type="button"
+                      disabled={profileSaving}
+                      onClick={() => exportProfile(profile)}
+                    >
+                      Экспортировать
                     </button>
                     <button
                       type="button"

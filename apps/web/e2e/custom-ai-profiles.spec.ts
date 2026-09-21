@@ -26,6 +26,10 @@ test("persists a mini-AI on the server and sends its snapshot only with a new ch
   await page.getByLabel("Запрос 1").fill("Отредактируй важное письмо");
   await page.getByRole("button", { name: "Сохранить мини‑ИИ" }).click();
   await expect(page.getByText("📝 Редактор", { exact: true })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Экспортировать" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("cosmora-Редактор.json");
 
   await page.getByRole("button", { name: "Изменить" }).click();
   await page
@@ -96,4 +100,26 @@ test("persists a mini-AI on the server and sends its snapshot only with a new ch
     });
   expect(createdChats).toBe(1);
   await expect(page.getByText("Редактор", { exact: true }).last()).toBeVisible();
+
+  await page.goto("/settings");
+  await page.getByLabel("Файл профиля мини‑ИИ").setInputFiles({
+    name: "shared-profile.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        format: "cosmora-mini-ai",
+        version: 1,
+        profile: {
+          name: "Помощник из файла",
+          instructions: "Отвечай спокойно и по существу.",
+          avatar: "🧩",
+          starter_prompts: ["Помоги начать"]
+        }
+      })
+    )
+  });
+  await expect(page.getByText(/Профиль загружен как черновик/)).toBeVisible();
+  await expect(page.getByLabel("Имя")).toHaveValue("Помощник из файла");
+  await expect(page.getByLabel("Значок")).toHaveValue("🧩");
+  await expect(page.getByLabel("Запрос 1")).toHaveValue("Помоги начать");
 });

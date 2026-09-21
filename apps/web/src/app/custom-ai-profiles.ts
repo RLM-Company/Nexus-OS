@@ -16,8 +16,15 @@ export type CustomAiTemplate = Pick<
   description: string;
 };
 
+export type CustomAiProfileDraft = Pick<
+  CustomAiProfile,
+  "name" | "instructions" | "avatar" | "starter_prompts"
+>;
+
 export const CUSTOM_AI_PROFILES_STORAGE_KEY = "cosmora:custom-ai-profiles";
 export const CUSTOM_AI_DEFAULT_PROFILE_STORAGE_KEY = "cosmora:default-custom-ai-profile";
+const CUSTOM_AI_SHARE_FORMAT = "cosmora-mini-ai";
+const CUSTOM_AI_IMPORT_MAX_CHARACTERS = 20_000;
 
 export const CUSTOM_AI_TEMPLATES: CustomAiTemplate[] = [
   {
@@ -202,4 +209,79 @@ export const writeDefaultCustomAiProfileId = (profileId: string | null): void =>
   } catch {
     // A blocked browser preference must not stop profile use for the current session.
   }
+};
+
+export const serializeCustomAiProfile = (profile: CustomAiProfileDraft): string =>
+  JSON.stringify(
+    {
+      format: CUSTOM_AI_SHARE_FORMAT,
+      version: 1,
+      profile: {
+        name: profile.name,
+        instructions: profile.instructions,
+        avatar: profile.avatar,
+        starter_prompts: profile.starter_prompts
+      }
+    },
+    null,
+    2
+  );
+
+export const customAiProfileFileName = (name: string): string => {
+  const safeName = name
+    .trim()
+    .replace(/[<>:"/\\|?*]/g, "-")
+    .split("")
+    .map((character) => (character.charCodeAt(0) < 32 ? "-" : character))
+    .join("")
+    .replace(/\s+/g, " ")
+    .slice(0, 60);
+  return `cosmora-${safeName || "mini-ai"}.json`;
+};
+
+export const parseCustomAiProfile = (text: string): CustomAiProfileDraft => {
+  if (text.length > CUSTOM_AI_IMPORT_MAX_CHARACTERS) {
+    throw new Error("Файл мини‑ИИ слишком большой");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error("Файл мини‑ИИ содержит некорректный JSON");
+  }
+  if (!value || typeof value !== "object") throw new Error("Это не файл профиля Cosmora");
+  const envelope = value as { format?: unknown; version?: unknown; profile?: unknown };
+  if (
+    envelope.format !== CUSTOM_AI_SHARE_FORMAT ||
+    envelope.version !== 1 ||
+    !envelope.profile ||
+    typeof envelope.profile !== "object"
+  ) {
+    throw new Error("Формат профиля мини‑ИИ не поддерживается");
+  }
+  const profile = envelope.profile as Partial<CustomAiProfileDraft>;
+  const name = typeof profile.name === "string" ? profile.name.trim() : "";
+  const instructions = typeof profile.instructions === "string" ? profile.instructions.trim() : "";
+  const avatar =
+    typeof profile.avatar === "string" ? profile.avatar.trim() || null : profile.avatar;
+  if (
+    !name ||
+    name.length > 80 ||
+    !instructions ||
+    instructions.length > 4_000 ||
+    (avatar !== null && (typeof avatar !== "string" || avatar.length > 16)) ||
+    !Array.isArray(profile.starter_prompts) ||
+    profile.starter_prompts.length > 4 ||
+    profile.starter_prompts.some(
+      (prompt) => typeof prompt !== "string" || !prompt.trim() || prompt.trim().length > 160
+    )
+  ) {
+    throw new Error("Поля профиля мини‑ИИ заполнены некорректно");
+  }
+  return {
+    name,
+    instructions,
+    avatar,
+    starter_prompts: profile.starter_prompts.map((prompt) => prompt.trim())
+  };
 };
