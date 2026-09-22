@@ -182,6 +182,9 @@ export const validateManagerExecutionSnapshot = (input: {
   if (snapshot.graph_id !== graph.graph_id) {
     issues.push("Execution snapshot belongs to another task graph");
   }
+  if (Date.parse(snapshot.updated_at) < Date.parse(graph.created_at)) {
+    issues.push("Execution snapshot cannot predate its task graph");
+  }
 
   const graphTasks = new Map(graph.nodes.map((task) => [task.task_id, task]));
   const snapshotTaskIds = new Set<string>();
@@ -281,6 +284,33 @@ export const validateManagerExecutionSnapshot = (input: {
   }
 
   if (snapshot.result !== null) {
+    if (Date.parse(snapshot.result.created_at) > Date.parse(snapshot.updated_at)) {
+      issues.push("Execution result postdates execution snapshot");
+    }
+    for (const verification of snapshot.verifications) {
+      if (Date.parse(snapshot.result.created_at) < Date.parse(verification.created_at)) {
+        issues.push(
+          `Execution result predates verification ${verification.verification_id}`
+        );
+      }
+    }
+    const resultArtifactIds = new Set([
+      ...(snapshot.result.summary_artifact_id === null
+        ? []
+        : [snapshot.result.summary_artifact_id]),
+      ...snapshot.result.deliverable_artifact_ids,
+      ...snapshot.result.verified_artifact_ids
+    ]);
+    for (const artifactId of resultArtifactIds) {
+      const artifact = artifactsById.get(artifactId);
+      if (
+        artifact !== undefined &&
+        Date.parse(snapshot.result.created_at) < Date.parse(artifact.created_at)
+      ) {
+        issues.push(`Execution result predates referenced artifact ${artifactId}`);
+      }
+    }
+
     if (snapshot.result.status !== snapshot.phase) {
       issues.push("Execution result status must match the terminal phase");
     }
