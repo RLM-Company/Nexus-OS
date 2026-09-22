@@ -7,6 +7,7 @@ import {
   AgentInstanceStatusSchema,
   AgentInstructionPrecedenceSchema,
   AgentMemoryScopeSchema,
+  AgentStudioDecisionEventListResponseSchema,
   AgentStudioDecisionEventSchema,
   AgentStudioDecisionObjectTypeSchema,
   AgentStudioDecisionOperationSchema,
@@ -19,7 +20,8 @@ import {
   CreateBehaviorPatternVersionRequestSchema,
   ProposeDelegatedAgentRequestSchema,
   ProposeRootAgentRequestSchema,
-  VersionedAgentReferenceSchema
+  VersionedAgentReferenceSchema,
+  VersionedInstructionTextSourceSchema
 } from "../src/index.js";
 
 const timestamp = "2026-09-22T20:00:00.000Z";
@@ -532,6 +534,82 @@ describe("agent studio versioned and decision boundaries", () => {
       })
     ).toBe(false);
     expect(Value.Check(AgentStudioDecisionEventSchema, { ...event, unexpected: true })).toBe(false);
+  });
+});
+
+describe("agent studio instruction source and history boundaries", () => {
+  it("checks versioned instruction text limits and strict shape", () => {
+    const source = {
+      source_ref: reference,
+      instructions: "x"
+    };
+
+    expect(Value.Check(VersionedInstructionTextSourceSchema, source)).toBe(true);
+    expect(
+      Value.Check(VersionedInstructionTextSourceSchema, {
+        ...source,
+        instructions: "x".repeat(100_000)
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(VersionedInstructionTextSourceSchema, {
+        ...source,
+        instructions: ""
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(VersionedInstructionTextSourceSchema, {
+        ...source,
+        instructions: "x".repeat(100_001)
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(VersionedInstructionTextSourceSchema, {
+        ...source,
+        source_ref: { id: "source-1", version: 0 }
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(VersionedInstructionTextSourceSchema, {
+        ...source,
+        unexpected: true
+      })
+    ).toBe(false);
+  });
+
+  it("enforces the decision history response limit", () => {
+    const makeEvent = (index: number) => ({
+      event_id: `event-${index}`,
+      owner_id: "owner-1",
+      project_id: "project-1",
+      actor_id: "actor-1",
+      operation: "function.create",
+      object_type: "function",
+      object_ref: {
+        id: `function-${index}`,
+        version: 1
+      },
+      created_at: timestamp
+    });
+
+    expect(
+      Value.Check(AgentStudioDecisionEventListResponseSchema, {
+        items: Array.from({ length: 100 }, (_, index) => makeEvent(index))
+      })
+    ).toBe(true);
+
+    expect(
+      Value.Check(AgentStudioDecisionEventListResponseSchema, {
+        items: Array.from({ length: 101 }, (_, index) => makeEvent(index))
+      })
+    ).toBe(false);
+
+    expect(
+      Value.Check(AgentStudioDecisionEventListResponseSchema, {
+        items: [],
+        unexpected: true
+      })
+    ).toBe(false);
   });
 });
 
