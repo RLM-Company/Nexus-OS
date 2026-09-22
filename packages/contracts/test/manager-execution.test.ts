@@ -390,6 +390,68 @@ describe("Manager execution contracts", () => {
     );
   });
 
+  it("rejects verification timestamps that violate execution trace order", () => {
+    const verificationBeforeArtifact = completedSnapshot();
+    const artifactsWithLateResult = artifacts.map((candidate) =>
+      candidate.artifact_id === "result-artifact"
+        ? { ...candidate, created_at: "2026-09-22T12:01:00.000Z" }
+        : candidate
+    );
+
+    expect(
+      validateManagerExecutionSnapshot({
+        snapshot: verificationBeforeArtifact,
+        graph,
+        artifacts: artifactsWithLateResult
+      })
+    ).toContain("Verification verification-result predates verified artifact");
+
+    const verificationAfterSnapshot = completedSnapshot();
+    verificationAfterSnapshot.verifications = verificationAfterSnapshot.verifications.map(
+      (verification) => ({
+        ...verification,
+        created_at: "2026-09-22T12:01:00.000Z"
+      })
+    );
+
+    expect(
+      validateManagerExecutionSnapshot({
+        snapshot: verificationAfterSnapshot,
+        graph,
+        artifacts
+      })
+    ).toContain("Verification verification-result postdates execution snapshot");
+
+    const criticBeforeVerdict = completedSnapshot();
+    criticBeforeVerdict.verifications = [
+      ...criticBeforeVerdict.verifications,
+      {
+        verification_id: "verification-analysis-critic-time",
+        project_id: "project-1",
+        task_id: "analysis-task",
+        artifact_id: "analysis-artifact",
+        verifier: "critic",
+        status: "PASS",
+        check_ids: ["critic-review"],
+        critic_verdict_id: "critic-artifact",
+        created_at: timestamp
+      }
+    ];
+    const artifactsWithLateVerdict = artifacts.map((candidate) =>
+      candidate.artifact_id === "critic-artifact"
+        ? { ...candidate, created_at: "2026-09-22T12:01:00.000Z" }
+        : candidate
+    );
+
+    expect(
+      validateManagerExecutionSnapshot({
+        snapshot: criticBeforeVerdict,
+        graph,
+        artifacts: artifactsWithLateVerdict
+      })
+    ).toContain("Critic verification verification-analysis-critic-time predates its verdict");
+  });
+
   it("requires critic evidence only for critic verification", () => {
     const criticWithoutVerdict = completedSnapshot();
     const verification = firstVerification(criticWithoutVerdict);
