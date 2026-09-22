@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./settings.module.css";
 
 type Frequency = "rare" | "balanced" | "often";
@@ -15,14 +15,49 @@ type SettingsState = {
   quietStart: string;
   quietEnd: string;
   maxProactivePerDay: number;
+  minGapMinutes: number;
+  suppressWhenActive: boolean;
+  backoffAfterUnanswered: number;
+  allowPush: boolean;
+  allowTelegram: boolean;
   tone: Tone;
   verbosity: Verbosity;
   initiative: Initiative;
   naturalCommunicationGuardrail: boolean;
+  avoidCannedFraming: boolean;
+  preferConcreteExamples: boolean;
+  preserveUserRegister: boolean;
   notificationsEnabled: boolean;
 };
 
-const STORAGE_KEY = "cosmora:settings:v1";
+type SettingsEnvelopeV2 = {
+  version: 2;
+  companion: {
+    enabled: boolean;
+    frequency: Frequency;
+    max_proactive_per_day: number;
+    min_gap_minutes: number;
+    quiet_hours: { start: string; end: string; timezone: string };
+    suppress_when_active: boolean;
+    backoff_after_unanswered: number;
+    allow_push: boolean;
+    allow_telegram: boolean;
+  };
+  communication: {
+    tone: Tone;
+    verbosity: Verbosity;
+    initiative: Initiative;
+    natural_guardrail_enabled: boolean;
+    avoid_canned_framing: boolean;
+    prefer_concrete_examples: boolean;
+    preserve_user_register: boolean;
+  };
+  notifications_enabled: boolean;
+};
+
+const STORAGE_KEY = "cosmora:settings:v2";
+const LEGACY_STORAGE_KEY = "cosmora:settings:v1";
+const TIME_PATTERN = /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/;
 
 const DEFAULT_SETTINGS: SettingsState = {
   companionEnabled: false,
@@ -30,10 +65,18 @@ const DEFAULT_SETTINGS: SettingsState = {
   quietStart: "22:00",
   quietEnd: "08:00",
   maxProactivePerDay: 3,
+  minGapMinutes: 120,
+  suppressWhenActive: true,
+  backoffAfterUnanswered: 3,
+  allowPush: false,
+  allowTelegram: false,
   tone: "natural",
   verbosity: "balanced",
   initiative: "balanced",
   naturalCommunicationGuardrail: true,
+  avoidCannedFraming: true,
+  preferConcreteExamples: true,
+  preserveUserRegister: true,
   notificationsEnabled: false
 };
 
@@ -43,69 +86,176 @@ const PROACTIVE_PREVIEW: Record<Frequency, string> = {
   often: "Могу чаще предлагать тему или возвращаться к незавершённому разговору."
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const boundedInteger = (
+  value: unknown,
+  minimum: number,
+  maximum: number,
+  fallback: number
+): number =>
+  typeof value === "number" && Number.isInteger(value) && value >= minimum && value <= maximum
+    ? value
+    : fallback;
+
 const normalizeSettings = (value: unknown): SettingsState => {
-  if (!value || typeof value !== "object") return DEFAULT_SETTINGS;
-  const candidate = value as Partial<SettingsState>;
+  if (!isRecord(value)) return DEFAULT_SETTINGS;
+
+  const isV2 = value.version === 2 && isRecord(value.companion) && isRecord(value.communication);
+  const companion = isV2 ? (value.companion as Record<string, unknown>) : value;
+  const communication = isV2 ? (value.communication as Record<string, unknown>) : value;
+
+  const frequencyValue = isV2 ? companion.frequency : companion.proactiveFrequency;
+  const quietStartValue =
+    isV2 && isRecord(companion.quiet_hours) ? companion.quiet_hours.start : companion.quietStart;
+  const quietEndValue =
+    isV2 && isRecord(companion.quiet_hours) ? companion.quiet_hours.end : companion.quietEnd;
+  const toneValue = communication.tone;
+  const verbosityValue = communication.verbosity;
+  const initiativeValue = communication.initiative;
+
   return {
     companionEnabled:
-      typeof candidate.companionEnabled === "boolean"
-        ? candidate.companionEnabled
+      typeof (isV2 ? companion.enabled : companion.companionEnabled) === "boolean"
+        ? Boolean(isV2 ? companion.enabled : companion.companionEnabled)
         : DEFAULT_SETTINGS.companionEnabled,
     proactiveFrequency:
-      candidate.proactiveFrequency === "rare" ||
-      candidate.proactiveFrequency === "balanced" ||
-      candidate.proactiveFrequency === "often"
-        ? candidate.proactiveFrequency
+      frequencyValue === "rare" || frequencyValue === "balanced" || frequencyValue === "often"
+        ? frequencyValue
         : DEFAULT_SETTINGS.proactiveFrequency,
     quietStart:
-      typeof candidate.quietStart === "string" && /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietStart)
-        ? candidate.quietStart
+      typeof quietStartValue === "string" && TIME_PATTERN.test(quietStartValue)
+        ? quietStartValue
         : DEFAULT_SETTINGS.quietStart,
     quietEnd:
-      typeof candidate.quietEnd === "string" && /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietEnd)
-        ? candidate.quietEnd
+      typeof quietEndValue === "string" && TIME_PATTERN.test(quietEndValue)
+        ? quietEndValue
         : DEFAULT_SETTINGS.quietEnd,
-    maxProactivePerDay:
-      typeof candidate.maxProactivePerDay === "number" &&
-      Number.isInteger(candidate.maxProactivePerDay) &&
-      candidate.maxProactivePerDay >= 0 &&
-      candidate.maxProactivePerDay <= 20
-        ? candidate.maxProactivePerDay
-        : DEFAULT_SETTINGS.maxProactivePerDay,
+    maxProactivePerDay: boundedInteger(
+      isV2 ? companion.max_proactive_per_day : companion.maxProactivePerDay,
+      0,
+      20,
+      DEFAULT_SETTINGS.maxProactivePerDay
+    ),
+    minGapMinutes: boundedInteger(
+      isV2 ? companion.min_gap_minutes : companion.minGapMinutes,
+      0,
+      1440,
+      DEFAULT_SETTINGS.minGapMinutes
+    ),
+    suppressWhenActive:
+      typeof (isV2 ? companion.suppress_when_active : companion.suppressWhenActive) === "boolean"
+        ? Boolean(isV2 ? companion.suppress_when_active : companion.suppressWhenActive)
+        : DEFAULT_SETTINGS.suppressWhenActive,
+    backoffAfterUnanswered: boundedInteger(
+      isV2 ? companion.backoff_after_unanswered : companion.backoffAfterUnanswered,
+      0,
+      10,
+      DEFAULT_SETTINGS.backoffAfterUnanswered
+    ),
+    allowPush:
+      typeof (isV2 ? companion.allow_push : companion.allowPush) === "boolean"
+        ? Boolean(isV2 ? companion.allow_push : companion.allowPush)
+        : DEFAULT_SETTINGS.allowPush,
+    allowTelegram:
+      typeof (isV2 ? companion.allow_telegram : companion.allowTelegram) === "boolean"
+        ? Boolean(isV2 ? companion.allow_telegram : companion.allowTelegram)
+        : DEFAULT_SETTINGS.allowTelegram,
     tone:
-      candidate.tone === "natural" ||
-      candidate.tone === "warm" ||
-      candidate.tone === "direct" ||
-      candidate.tone === "professional"
-        ? candidate.tone
+      toneValue === "natural" ||
+      toneValue === "warm" ||
+      toneValue === "direct" ||
+      toneValue === "professional"
+        ? toneValue
         : DEFAULT_SETTINGS.tone,
     verbosity:
-      candidate.verbosity === "short" ||
-      candidate.verbosity === "balanced" ||
-      candidate.verbosity === "detailed"
-        ? candidate.verbosity
+      verbosityValue === "short" || verbosityValue === "balanced" || verbosityValue === "detailed"
+        ? verbosityValue
         : DEFAULT_SETTINGS.verbosity,
     initiative:
-      candidate.initiative === "reactive" ||
-      candidate.initiative === "balanced" ||
-      candidate.initiative === "proactive"
-        ? candidate.initiative
+      initiativeValue === "reactive" ||
+      initiativeValue === "balanced" ||
+      initiativeValue === "proactive"
+        ? initiativeValue
         : DEFAULT_SETTINGS.initiative,
     naturalCommunicationGuardrail:
-      typeof candidate.naturalCommunicationGuardrail === "boolean"
-        ? candidate.naturalCommunicationGuardrail
+      typeof (isV2
+        ? communication.natural_guardrail_enabled
+        : communication.naturalCommunicationGuardrail) === "boolean"
+        ? Boolean(
+            isV2
+              ? communication.natural_guardrail_enabled
+              : communication.naturalCommunicationGuardrail
+          )
         : DEFAULT_SETTINGS.naturalCommunicationGuardrail,
+    avoidCannedFraming:
+      typeof (isV2 ? communication.avoid_canned_framing : communication.avoidCannedFraming) ===
+      "boolean"
+        ? Boolean(isV2 ? communication.avoid_canned_framing : communication.avoidCannedFraming)
+        : DEFAULT_SETTINGS.avoidCannedFraming,
+    preferConcreteExamples:
+      typeof (isV2
+        ? communication.prefer_concrete_examples
+        : communication.preferConcreteExamples) === "boolean"
+        ? Boolean(
+            isV2 ? communication.prefer_concrete_examples : communication.preferConcreteExamples
+          )
+        : DEFAULT_SETTINGS.preferConcreteExamples,
+    preserveUserRegister:
+      typeof (isV2 ? communication.preserve_user_register : communication.preserveUserRegister) ===
+      "boolean"
+        ? Boolean(isV2 ? communication.preserve_user_register : communication.preserveUserRegister)
+        : DEFAULT_SETTINGS.preserveUserRegister,
     notificationsEnabled:
-      typeof candidate.notificationsEnabled === "boolean"
-        ? candidate.notificationsEnabled
+      typeof (isV2 ? value.notifications_enabled : value.notificationsEnabled) === "boolean"
+        ? Boolean(isV2 ? value.notifications_enabled : value.notificationsEnabled)
         : DEFAULT_SETTINGS.notificationsEnabled
   };
 };
+
+const browserTimezone = (): string => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+};
+
+const toStoredEnvelope = (settings: SettingsState): SettingsEnvelopeV2 => ({
+  version: 2,
+  companion: {
+    enabled: settings.companionEnabled,
+    frequency: settings.proactiveFrequency,
+    max_proactive_per_day: settings.maxProactivePerDay,
+    min_gap_minutes: settings.minGapMinutes,
+    quiet_hours: {
+      start: settings.quietStart,
+      end: settings.quietEnd,
+      timezone: browserTimezone()
+    },
+    suppress_when_active: settings.suppressWhenActive,
+    backoff_after_unanswered: settings.backoffAfterUnanswered,
+    allow_push: settings.allowPush,
+    allow_telegram: settings.allowTelegram
+  },
+  communication: {
+    tone: settings.tone,
+    verbosity: settings.verbosity,
+    initiative: settings.initiative,
+    natural_guardrail_enabled: settings.naturalCommunicationGuardrail,
+    avoid_canned_framing: settings.avoidCannedFraming,
+    prefer_concrete_examples: settings.preferConcreteExamples,
+    preserve_user_register: settings.preserveUserRegister
+  },
+  notifications_enabled: settings.notificationsEnabled
+});
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
   const [hydrated, setHydrated] = useState(false);
   const [savedNotice, setSavedNotice] = useState("Настройки сохраняются только в этом браузере.");
+  const hydrationNoticeRef = useRef<string | null>(null);
   const [preview, setPreview] = useState(PROACTIVE_PREVIEW.balanced);
   const [notificationPermission, setNotificationPermission] = useState<
     "unsupported" | "default" | "granted" | "denied"
@@ -114,9 +264,18 @@ export default function SettingsPage() {
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) setSettings(normalizeSettings(JSON.parse(stored)));
+      const legacyStored = stored ? null : window.localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (stored || legacyStored) {
+        setSettings(normalizeSettings(JSON.parse(stored ?? legacyStored ?? "{}")));
+        if (legacyStored) {
+          hydrationNoticeRef.current = "Старые настройки безопасно обновлены.";
+          setSavedNotice(hydrationNoticeRef.current);
+        }
+      }
     } catch {
-      setSavedNotice("Не удалось прочитать локальные настройки. Используются безопасные значения.");
+      hydrationNoticeRef.current =
+        "Не удалось прочитать локальные настройки. Используются безопасные значения.";
+      setSavedNotice(hydrationNoticeRef.current);
     }
     if ("Notification" in window) {
       setNotificationPermission(window.Notification.permission);
@@ -127,8 +286,13 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-      setSavedNotice("Сохранено локально");
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(toStoredEnvelope(settings)));
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+      if (hydrationNoticeRef.current) {
+        hydrationNoticeRef.current = null;
+      } else {
+        setSavedNotice("Сохранено локально");
+      }
     } catch {
       setSavedNotice("Браузер не разрешил сохранить настройки.");
     }
