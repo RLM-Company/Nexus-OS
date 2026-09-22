@@ -47,7 +47,7 @@ const baseEntry = {
   }
 } as const;
 
-const baseRouteRequest = {
+const baseRoute = {
   role: "manager",
   task_type: "chat_response",
   preferred_provider: null,
@@ -59,6 +59,9 @@ const baseRouteRequest = {
   max_cost: null,
   optimize_for: "balanced"
 } as const;
+
+const isEntry = (candidate: unknown) => Value.Check(ModelRegistryEntrySchema, candidate);
+const isRoute = (candidate: unknown) => Value.Check(ModelRouteRequestSchema, candidate);
 
 describe("primitive contract boundaries", () => {
   it("enforces entity id length and whitespace rules", () => {
@@ -72,265 +75,261 @@ describe("primitive contract boundaries", () => {
     }
   });
 
-  it.each([
-    "2026-09-22T20:00:00Z",
-    "2026-09-22T20:00:00.000Z"
-  ] as const)("accepts canonical ISO datetime shape %s", (value) => {
-    expect(Value.Check(IsoDateTimeSchema, value)).toBe(true);
+  it("accepts canonical ISO datetime text shapes", () => {
+    const values = ["2026-09-22T20:00:00Z", "2026-09-22T20:00:00.000Z"];
+
+    for (const value of values) {
+      expect(Value.Check(IsoDateTimeSchema, value)).toBe(true);
+    }
   });
 
-  it.each([
-    "",
-    "2026-09-22",
-    "2026-09-22T20:00:00",
-    "2026-09-22 20:00:00Z",
-    "2026-09-22T20:00:00+03:00",
-    "2026-09-22T20:00:00.0Z",
-    "2026-09-22T20:00:00.00Z",
-    "2026-09-22T20:00:00.0000Z"
-  ] as const)("rejects non-canonical ISO datetime shape %s", (value) => {
-    expect(Value.Check(IsoDateTimeSchema, value)).toBe(false);
+  it("rejects non-canonical ISO datetime text shapes", () => {
+    const values = [
+      "",
+      "2026-09-22",
+      "2026-09-22T20:00:00",
+      "2026-09-22 20:00:00Z",
+      "2026-09-22T20:00:00+03:00",
+      "2026-09-22T20:00:00.0Z",
+      "2026-09-22T20:00:00.00Z",
+      "2026-09-22T20:00:00.0000Z"
+    ];
+
+    for (const value of values) {
+      expect(Value.Check(IsoDateTimeSchema, value)).toBe(false);
+    }
   });
 
-  it.each(["USD", "RUB"] as const)("accepts currency %s", (currency) => {
-    expect(Value.Check(CurrencySchema, currency)).toBe(true);
-  });
+  it("accepts only supported currencies", () => {
+    for (const currency of ["USD", "RUB"]) {
+      expect(Value.Check(CurrencySchema, currency)).toBe(true);
+    }
 
-  it.each(["", "EUR", "usd", " RUB ", null, 1] as const)(
-    "rejects unsupported currency %j",
-    (currency) => {
+    for (const currency of ["", "EUR", "usd", " RUB ", null, 1]) {
       expect(Value.Check(CurrencySchema, currency)).toBe(false);
     }
-  );
+  });
 });
 
 describe("model registry entry boundaries", () => {
-  it.each(["mock", "openai-compatible", "anthropic-compatible"] as const)(
-    "accepts protocol %s",
-    (protocol) => {
+  it("accepts every supported protocol", () => {
+    const protocols = ["mock", "openai-compatible", "anthropic-compatible"] as const;
+
+    for (const protocol of protocols) {
       expect(Value.Check(ModelProtocolSchema, protocol)).toBe(true);
-      expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, protocol })).toBe(true);
+      expect(isEntry({ ...baseEntry, protocol })).toBe(true);
     }
-  );
+  });
 
-  it.each(["", "openai", "anthropic", "Mock", " mock ", null, 1] as const)(
-    "rejects invalid protocol %j",
-    (protocol) => {
+  it("rejects invalid protocols", () => {
+    const protocols = ["", "openai", "anthropic", "Mock", " mock ", null, 1];
+
+    for (const protocol of protocols) {
       expect(Value.Check(ModelProtocolSchema, protocol)).toBe(false);
-      expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, protocol })).toBe(false);
+      expect(isEntry({ ...baseEntry, protocol })).toBe(false);
     }
-  );
+  });
 
-  it.each(["streaming", "structured_output", "tool_calling", "vision"] as const)(
-    "accepts feature %s",
-    (feature) => {
+  it("accepts every supported model feature", () => {
+    const features = ["streaming", "structured_output", "tool_calling", "vision"] as const;
+
+    for (const feature of features) {
       expect(Value.Check(ModelFeatureSchema, feature)).toBe(true);
     }
-  );
+  });
 
-  it.each(["", "audio", "tools", "Streaming", " streaming ", null, 1] as const)(
-    "rejects invalid feature %j",
-    (feature) => {
+  it("rejects invalid model features", () => {
+    const features = ["", "audio", "tools", "Streaming", " streaming ", null, 1];
+
+    for (const feature of features) {
       expect(Value.Check(ModelFeatureSchema, feature)).toBe(false);
     }
-  );
-
-  it.each([
-    ["provider_id", 1, true],
-    ["provider_id", 128, true],
-    ["provider_id", 129, false],
-    ["model_id", 1, true],
-    ["model_id", 256, true],
-    ["model_id", 257, false]
-  ] as const)("checks %s length %d", (field, length, expected) => {
-    expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, [field]: "a".repeat(length) })).toBe(
-      expected
-    );
   });
 
-  it("requires at least one alias and bounds alias length", () => {
-    expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, aliases: [] })).toBe(false);
-    expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, aliases: ["a"] })).toBe(true);
-    expect(
-      Value.Check(ModelRegistryEntrySchema, { ...baseEntry, aliases: ["a".repeat(128)] })
-    ).toBe(true);
-    expect(
-      Value.Check(ModelRegistryEntrySchema, { ...baseEntry, aliases: ["a".repeat(129)] })
-    ).toBe(false);
-    expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, aliases: [""] })).toBe(false);
+  it("enforces provider and model id lengths", () => {
+    const cases = [
+      ["provider_id", 1, true],
+      ["provider_id", 128, true],
+      ["provider_id", 129, false],
+      ["model_id", 1, true],
+      ["model_id", 256, true],
+      ["model_id", 257, false]
+    ] as const;
+
+    for (const [field, length, expected] of cases) {
+      const candidate = { ...baseEntry, [field]: "a".repeat(length) };
+      expect(isEntry(candidate)).toBe(expected);
+    }
   });
 
-  it.each(["active", "disabled"] as const)("accepts status %s", (status) => {
-    expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, status })).toBe(true);
+  it("requires at least one bounded alias", () => {
+    expect(isEntry({ ...baseEntry, aliases: [] })).toBe(false);
+    expect(isEntry({ ...baseEntry, aliases: ["a"] })).toBe(true);
+    expect(isEntry({ ...baseEntry, aliases: ["a".repeat(128)] })).toBe(true);
+    expect(isEntry({ ...baseEntry, aliases: ["a".repeat(129)] })).toBe(false);
+    expect(isEntry({ ...baseEntry, aliases: [""] })).toBe(false);
   });
 
-  it.each(["", "inactive", "Active", null, 1] as const)("rejects invalid status %j", (status) => {
-    expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, status })).toBe(false);
+  it("accepts only active or disabled status", () => {
+    for (const status of ["active", "disabled"] as const) {
+      expect(isEntry({ ...baseEntry, status })).toBe(true);
+    }
+
+    for (const status of ["", "inactive", "Active", null, 1]) {
+      expect(isEntry({ ...baseEntry, status })).toBe(false);
+    }
   });
 
-  it.each([
-    ["context_window_tokens", 1, true],
-    ["context_window_tokens", 0, false],
-    ["context_window_tokens", -1, false],
-    ["context_window_tokens", 1.5, false],
-    ["max_output_tokens", 1, true],
-    ["max_output_tokens", 0, false],
-    ["max_output_tokens", -1, false],
-    ["max_output_tokens", 1.5, false],
-    ["quality_tier", 1, true],
-    ["quality_tier", 5, true],
-    ["quality_tier", 0, false],
-    ["quality_tier", 6, false],
-    ["quality_tier", 1.5, false],
-    ["latency_tier", 1, true],
-    ["latency_tier", 5, true],
-    ["latency_tier", 0, false],
-    ["latency_tier", 6, false],
-    ["latency_tier", 1.5, false]
-  ] as const)("checks numeric %s value %s", (field, value, expected) => {
-    expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, [field]: value })).toBe(expected);
+  it("enforces registry numeric boundaries", () => {
+    const cases = [
+      ["context_window_tokens", 1, true],
+      ["context_window_tokens", 0, false],
+      ["context_window_tokens", -1, false],
+      ["context_window_tokens", 1.5, false],
+      ["max_output_tokens", 1, true],
+      ["max_output_tokens", 0, false],
+      ["max_output_tokens", -1, false],
+      ["max_output_tokens", 1.5, false],
+      ["quality_tier", 1, true],
+      ["quality_tier", 5, true],
+      ["quality_tier", 0, false],
+      ["quality_tier", 6, false],
+      ["quality_tier", 1.5, false],
+      ["latency_tier", 1, true],
+      ["latency_tier", 5, true],
+      ["latency_tier", 0, false],
+      ["latency_tier", 6, false],
+      ["latency_tier", 1.5, false]
+    ] as const;
+
+    for (const [field, value, expected] of cases) {
+      expect(isEntry({ ...baseEntry, [field]: value })).toBe(expected);
+    }
   });
 
-  it.each([
-    "streaming",
-    "structured_output",
-    "tool_calling",
-    "vision"
-  ] as const)("requires boolean capability %s", (field) => {
-    expect(
-      Value.Check(ModelRegistryEntrySchema, {
-        ...baseEntry,
-        capabilities: { ...baseEntry.capabilities, [field]: true }
-      })
-    ).toBe(true);
-    expect(
-      Value.Check(ModelRegistryEntrySchema, {
-        ...baseEntry,
-        capabilities: { ...baseEntry.capabilities, [field]: false }
-      })
-    ).toBe(true);
+  it("requires strict boolean capability values", () => {
+    const fields = ["streaming", "structured_output", "tool_calling", "vision"] as const;
 
-    for (const value of [0, 1, "true", null]) {
-      expect(
-        Value.Check(ModelRegistryEntrySchema, {
-          ...baseEntry,
-          capabilities: { ...baseEntry.capabilities, [field]: value }
-        })
-      ).toBe(false);
+    for (const field of fields) {
+      let capabilities = { ...baseEntry.capabilities, [field]: true };
+      expect(isEntry({ ...baseEntry, capabilities })).toBe(true);
+
+      capabilities = { ...baseEntry.capabilities, [field]: false };
+      expect(isEntry({ ...baseEntry, capabilities })).toBe(true);
+
+      for (const value of [0, 1, "true", null]) {
+        const invalidCapabilities = {
+          ...baseEntry.capabilities,
+          [field]: value
+        };
+        expect(isEntry({ ...baseEntry, capabilities: invalidCapabilities })).toBe(false);
+      }
     }
   });
 
   it("rejects extra capability properties", () => {
-    expect(
-      Value.Check(ModelRegistryEntrySchema, {
-        ...baseEntry,
-        capabilities: { ...baseEntry.capabilities, audio: true }
-      })
-    ).toBe(false);
+    const capabilities = {
+      ...baseEntry.capabilities,
+      audio: true
+    };
+    expect(isEntry({ ...baseEntry, capabilities })).toBe(false);
   });
 
   it("accepts null or non-negative pricing", () => {
-    expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, pricing: null })).toBe(true);
-    expect(
-      Value.Check(ModelRegistryEntrySchema, {
-        ...baseEntry,
-        pricing: {
-          currency: "RUB",
-          input_per_million_tokens: 0,
-          output_per_million_tokens: 0
-        }
-      })
-    ).toBe(true);
+    expect(isEntry({ ...baseEntry, pricing: null })).toBe(true);
 
-    for (const pricing of [
+    const pricing = {
+      currency: "RUB",
+      input_per_million_tokens: 0,
+      output_per_million_tokens: 0
+    };
+    expect(isEntry({ ...baseEntry, pricing })).toBe(true);
+  });
+
+  it("rejects malformed pricing", () => {
+    const cases = [
       { ...baseEntry.pricing, input_per_million_tokens: -0.01 },
       { ...baseEntry.pricing, output_per_million_tokens: -0.01 },
       { ...baseEntry.pricing, currency: "EUR" },
       { ...baseEntry.pricing, unexpected: true }
-    ]) {
-      expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, pricing })).toBe(false);
+    ];
+
+    for (const pricing of cases) {
+      expect(isEntry({ ...baseEntry, pricing })).toBe(false);
     }
   });
 
-  it.each(["none", "opt_out", "unknown"] as const)(
-    "accepts training usage %s",
-    (trainingUsage) => {
-      expect(
-        Value.Check(ModelRegistryEntrySchema, {
-          ...baseEntry,
-          privacy: { ...baseEntry.privacy, training_usage: trainingUsage }
-        })
-      ).toBe(true);
+  it("accepts every privacy vocabulary value", () => {
+    for (const trainingUsage of ["none", "opt_out", "unknown"] as const) {
+      const privacy = {
+        ...baseEntry.privacy,
+        training_usage: trainingUsage
+      };
+      expect(isEntry({ ...baseEntry, privacy })).toBe(true);
     }
-  );
 
-  it.each(["zero", "limited", "unknown"] as const)("accepts retention %s", (retention) => {
-    expect(
-      Value.Check(ModelRegistryEntrySchema, {
-        ...baseEntry,
-        privacy: { ...baseEntry.privacy, retention }
-      })
-    ).toBe(true);
+    for (const retention of ["zero", "limited", "unknown"] as const) {
+      const privacy = {
+        ...baseEntry.privacy,
+        retention
+      };
+      expect(isEntry({ ...baseEntry, privacy })).toBe(true);
+    }
   });
 
   it("rejects invalid privacy vocabulary and extra properties", () => {
-    expect(
-      Value.Check(ModelRegistryEntrySchema, {
-        ...baseEntry,
-        privacy: { ...baseEntry.privacy, training_usage: "yes" }
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelRegistryEntrySchema, {
-        ...baseEntry,
-        privacy: { ...baseEntry.privacy, retention: "forever" }
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelRegistryEntrySchema, {
-        ...baseEntry,
-        privacy: { ...baseEntry.privacy, unexpected: true }
-      })
-    ).toBe(false);
+    let privacy = {
+      ...baseEntry.privacy,
+      training_usage: "yes"
+    };
+    expect(isEntry({ ...baseEntry, privacy })).toBe(false);
+
+    privacy = {
+      ...baseEntry.privacy,
+      retention: "forever"
+    };
+    expect(isEntry({ ...baseEntry, privacy })).toBe(false);
+
+    const extraPrivacy = {
+      ...baseEntry.privacy,
+      unexpected: true
+    };
+    expect(isEntry({ ...baseEntry, privacy: extraPrivacy })).toBe(false);
   });
 
-  it.each(["static", "authorized_discovery"] as const)("accepts source kind %s", (kind) => {
-    expect(
-      Value.Check(ModelRegistryEntrySchema, {
-        ...baseEntry,
-        source: { ...baseEntry.source, kind }
-      })
-    ).toBe(true);
+  it("accepts every source kind", () => {
+    for (const kind of ["static", "authorized_discovery"] as const) {
+      const source = { ...baseEntry.source, kind };
+      expect(isEntry({ ...baseEntry, source })).toBe(true);
+    }
   });
 
   it("accepts nullable source evidence metadata", () => {
-    expect(
-      Value.Check(ModelRegistryEntrySchema, {
-        ...baseEntry,
-        source: {
-          kind: "static",
-          verified_at: null,
-          valid_until: null,
-          reference: null
-        }
-      })
-    ).toBe(true);
+    const source = {
+      kind: "static",
+      verified_at: null,
+      valid_until: null,
+      reference: null
+    };
+    expect(isEntry({ ...baseEntry, source })).toBe(true);
   });
 
   it("rejects malformed source evidence metadata", () => {
-    for (const source of [
+    const cases = [
       { ...baseEntry.source, kind: "manual" },
       { ...baseEntry.source, verified_at: "2026-09-22" },
       { ...baseEntry.source, valid_until: "2026-10-22" },
       { ...baseEntry.source, reference: "" },
       { ...baseEntry.source, unexpected: true }
-    ]) {
-      expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, source })).toBe(false);
+    ];
+
+    for (const source of cases) {
+      expect(isEntry({ ...baseEntry, source })).toBe(false);
     }
   });
 
   it("rejects unexpected top-level entry properties", () => {
-    expect(Value.Check(ModelRegistryEntrySchema, { ...baseEntry, api_key: "secret" })).toBe(false);
+    expect(isEntry({ ...baseEntry, api_key: "secret" })).toBe(false);
   });
 });
 
@@ -342,184 +341,141 @@ describe("model registry document boundaries", () => {
     entries: [baseEntry]
   } as const;
 
+  const isDocument = (candidate: unknown) => Value.Check(ModelRegistryDocumentSchema, candidate);
+
   it("accepts the canonical document", () => {
-    expect(Value.Check(ModelRegistryDocumentSchema, baseDocument)).toBe(true);
+    expect(isDocument(baseDocument)).toBe(true);
   });
 
-  it.each([0, 2, "1", null] as const)("rejects schema version %j", (schemaVersion) => {
-    expect(
-      Value.Check(ModelRegistryDocumentSchema, {
+  it("accepts only schema version one", () => {
+    for (const schemaVersion of [0, 2, "1", null]) {
+      const candidate = {
         ...baseDocument,
         schema_version: schemaVersion
-      })
-    ).toBe(false);
+      };
+      expect(isDocument(candidate)).toBe(false);
+    }
   });
 
-  it.each([
-    ["", false],
-    ["a", true],
-    ["a".repeat(64), true],
-    ["a".repeat(65), false]
-  ] as const)("checks registry version length for %s", (registryVersion, expected) => {
-    expect(
-      Value.Check(ModelRegistryDocumentSchema, {
+  it("enforces registry version length", () => {
+    const cases = [
+      ["", false],
+      ["a", true],
+      ["a".repeat(64), true],
+      ["a".repeat(65), false]
+    ] as const;
+
+    for (const [registryVersion, expected] of cases) {
+      const candidate = {
         ...baseDocument,
         registry_version: registryVersion
-      })
-    ).toBe(expected);
+      };
+      expect(isDocument(candidate)).toBe(expected);
+    }
   });
 
-  it("accepts an empty registry and rejects malformed generated time", () => {
-    expect(Value.Check(ModelRegistryDocumentSchema, { ...baseDocument, entries: [] })).toBe(true);
-    expect(
-      Value.Check(ModelRegistryDocumentSchema, {
-        ...baseDocument,
-        generated_at: "2026-09-22"
-      })
-    ).toBe(false);
+  it("accepts an empty registry", () => {
+    expect(isDocument({ ...baseDocument, entries: [] })).toBe(true);
   });
 
-  it("rejects extra document properties", () => {
-    expect(
-      Value.Check(ModelRegistryDocumentSchema, {
-        ...baseDocument,
-        secret: "unexpected"
-      })
-    ).toBe(false);
+  it("rejects malformed generated time and extra properties", () => {
+    expect(isDocument({ ...baseDocument, generated_at: "2026-09-22" })).toBe(false);
+    expect(isDocument({ ...baseDocument, secret: "unexpected" })).toBe(false);
   });
 });
 
 describe("model route request boundaries", () => {
-  it.each(["balanced", "quality", "latency", "cost"] as const)(
-    "accepts optimization mode %s",
-    (optimizeFor) => {
-      expect(
-        Value.Check(ModelRouteRequestSchema, {
-          ...baseRouteRequest,
-          optimize_for: optimizeFor
-        })
-      ).toBe(true);
+  it("accepts every optimization mode", () => {
+    for (const optimizeFor of ["balanced", "quality", "latency", "cost"] as const) {
+      expect(isRoute({ ...baseRoute, optimize_for: optimizeFor })).toBe(true);
     }
-  );
+  });
 
-  it("accepts nullable preferred routing targets", () => {
-    expect(Value.Check(ModelRouteRequestSchema, baseRouteRequest)).toBe(true);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        preferred_provider: "provider-1",
-        preferred_model_alias: "manager"
-      })
-    ).toBe(true);
+  it("accepts nullable and non-null preferred routing targets", () => {
+    expect(isRoute(baseRoute)).toBe(true);
+
+    const candidate = {
+      ...baseRoute,
+      preferred_provider: "provider-1",
+      preferred_model_alias: "manager"
+    };
+    expect(isRoute(candidate)).toBe(true);
   });
 
   it("rejects empty non-null preferred routing targets", () => {
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        preferred_provider: ""
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        preferred_model_alias: ""
-      })
-    ).toBe(false);
+    expect(isRoute({ ...baseRoute, preferred_provider: "" })).toBe(false);
+    expect(isRoute({ ...baseRoute, preferred_model_alias: "" })).toBe(false);
   });
 
   it("enforces unique known required features", () => {
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        required_features: ["streaming", "vision"]
-      })
-    ).toBe(true);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        required_features: ["streaming", "streaming"]
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        required_features: ["audio"]
-      })
-    ).toBe(false);
+    const valid = {
+      ...baseRoute,
+      required_features: ["streaming", "vision"]
+    };
+    expect(isRoute(valid)).toBe(true);
+
+    const duplicate = {
+      ...baseRoute,
+      required_features: ["streaming", "streaming"]
+    };
+    expect(isRoute(duplicate)).toBe(false);
+
+    const unknown = {
+      ...baseRoute,
+      required_features: ["audio"]
+    };
+    expect(isRoute(unknown)).toBe(false);
   });
 
   it("enforces route numeric boundaries", () => {
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        estimated_input_tokens: 0,
-        max_output_tokens: 1
-      })
-    ).toBe(true);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        estimated_input_tokens: -1
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        estimated_input_tokens: 1.5
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        max_output_tokens: 0
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        max_output_tokens: 1.5
-      })
-    ).toBe(false);
+    const zeroTokens = {
+      ...baseRoute,
+      estimated_input_tokens: 0,
+      max_output_tokens: 1
+    };
+    expect(isRoute(zeroTokens)).toBe(true);
+
+    expect(isRoute({ ...baseRoute, estimated_input_tokens: -1 })).toBe(false);
+    expect(isRoute({ ...baseRoute, estimated_input_tokens: 1.5 })).toBe(false);
+    expect(isRoute({ ...baseRoute, max_output_tokens: 0 })).toBe(false);
+    expect(isRoute({ ...baseRoute, max_output_tokens: 1.5 })).toBe(false);
   });
 
-  it("enforces route max cost shape", () => {
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        max_cost: { amount: 0, currency: "USD" }
-      })
-    ).toBe(true);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        max_cost: { amount: -0.01, currency: "USD" }
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        max_cost: { amount: 1, currency: "EUR" }
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        max_cost: { amount: 1, currency: "USD", unexpected: true }
-      })
-    ).toBe(false);
+  it("enforces route max-cost shape", () => {
+    const zeroCost = {
+      ...baseRoute,
+      max_cost: { amount: 0, currency: "USD" }
+    };
+    expect(isRoute(zeroCost)).toBe(true);
+
+    const negativeCost = {
+      ...baseRoute,
+      max_cost: { amount: -0.01, currency: "USD" }
+    };
+    expect(isRoute(negativeCost)).toBe(false);
+
+    const invalidCurrency = {
+      ...baseRoute,
+      max_cost: { amount: 1, currency: "EUR" }
+    };
+    expect(isRoute(invalidCurrency)).toBe(false);
+
+    const extraProperty = {
+      ...baseRoute,
+      max_cost: {
+        amount: 1,
+        currency: "USD",
+        unexpected: true
+      }
+    };
+    expect(isRoute(extraProperty)).toBe(false);
   });
 
   it("rejects missing or additional route properties", () => {
-    expect(
-      Value.Check(ModelRouteRequestSchema, {
-        ...baseRouteRequest,
-        unexpected: true
-      })
-    ).toBe(false);
+    expect(isRoute({ ...baseRoute, unexpected: true })).toBe(false);
 
-    const candidate: Record<string, unknown> = { ...baseRouteRequest };
+    const candidate: Record<string, unknown> = { ...baseRoute };
     delete candidate.role;
-    expect(Value.Check(ModelRouteRequestSchema, candidate)).toBe(false);
+    expect(isRoute(candidate)).toBe(false);
   });
 });
