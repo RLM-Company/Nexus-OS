@@ -1,5 +1,6 @@
 export * from "./agent-studio.js";
 export * from "./auth.js";
+export * from "./communication.js";
 export * from "./domain.js";
 export * from "./companion.js";
 export * from "./demo-manager.js";
