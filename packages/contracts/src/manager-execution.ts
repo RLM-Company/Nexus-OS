@@ -267,10 +267,16 @@ export const validateManagerExecutionSnapshot = (input: {
     if (snapshot.result.status !== snapshot.phase) {
       issues.push("Execution result status must match the terminal phase");
     }
+    const unresolvedTaskIds = new Set(snapshot.result.unresolved_task_ids);
     for (const taskId of snapshot.result.unresolved_task_ids) {
       const state = snapshot.task_states.find((candidate) => candidate.task_id === taskId);
       if (state === undefined || state.status === "completed") {
         issues.push(`Execution result has invalid unresolved task ${taskId}`);
+      }
+    }
+    for (const taskState of snapshot.task_states) {
+      if (taskState.status !== "completed" && !unresolvedTaskIds.has(taskState.task_id)) {
+        issues.push(`Execution result omits unresolved task ${taskState.task_id}`);
       }
     }
 
