@@ -309,7 +309,13 @@ export default function SettingsPage() {
       );
     }
     if ("Notification" in window) {
-      setNotificationPermission(window.Notification.permission);
+      const permission = window.Notification.permission;
+      setNotificationPermission(permission);
+      if (permission !== "granted") {
+        setSettings((current) =>
+          current.notificationsEnabled ? { ...current, notificationsEnabled: false } : current
+        );
+      }
     }
     setHydrated(true);
   }, []);
