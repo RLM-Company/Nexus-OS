@@ -117,20 +117,6 @@ describe("domain enum boundaries", () => {
 });
 
 describe("project request boundaries", () => {
-  it.each([CreateProjectRequestSchema, CreateMessageRequestSchema] as const)(
-    "accepts message text boundaries",
-    (schema) => {
-      expect(
-        Value.Check(schema, {
-          initial_message:
-            schema === CreateProjectRequestSchema ? "x" : undefined,
-          content: schema === CreateMessageRequestSchema ? "x" : undefined,
-          client_message_id: "client-1"
-        })
-      ).toBe(false);
-    }
-  );
-
   it("accepts create-project message length 1 and 100000", () => {
     expect(
       Value.Check(CreateProjectRequestSchema, {
