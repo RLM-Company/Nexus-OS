@@ -274,6 +274,70 @@ describe("Manager execution contracts", () => {
     );
   });
 
+  it("rejects execution snapshots and results with impossible time ordering", () => {
+    const snapshotBeforeGraph = completedSnapshot();
+    snapshotBeforeGraph.updated_at = "2026-09-22T11:59:00.000Z";
+
+    expect(
+      validateManagerExecutionSnapshot({
+        snapshot: snapshotBeforeGraph,
+        graph,
+        artifacts
+      })
+    ).toContain("Execution snapshot cannot predate its task graph");
+
+    const resultAfterSnapshot = completedSnapshot();
+    resultAfterSnapshot.result = {
+      ...resultAfterSnapshot.result!,
+      created_at: "2026-09-22T12:01:00.000Z"
+    };
+
+    expect(
+      validateManagerExecutionSnapshot({
+        snapshot: resultAfterSnapshot,
+        graph,
+        artifacts
+      })
+    ).toContain("Execution result postdates execution snapshot");
+
+    const resultBeforeVerification = completedSnapshot();
+    resultBeforeVerification.updated_at = "2026-09-22T12:02:00.000Z";
+    resultBeforeVerification.verifications = resultBeforeVerification.verifications.map(
+      (verification) => ({
+        ...verification,
+        created_at: "2026-09-22T12:01:00.000Z"
+      })
+    );
+
+    expect(
+      validateManagerExecutionSnapshot({
+        snapshot: resultBeforeVerification,
+        graph,
+        artifacts
+      })
+    ).toContain("Execution result predates verification verification-result");
+
+    const artifactsWithLateDeliverable = artifacts.map((candidate) =>
+      candidate.artifact_id === "result-artifact"
+        ? { ...candidate, created_at: "2026-09-22T12:01:00.000Z" }
+        : candidate
+    );
+    const resultBeforeArtifact = completedSnapshot();
+    resultBeforeArtifact.updated_at = "2026-09-22T12:02:00.000Z";
+    resultBeforeArtifact.verifications = resultBeforeArtifact.verifications.map((verification) => ({
+      ...verification,
+      created_at: "2026-09-22T12:01:00.000Z"
+    }));
+
+    expect(
+      validateManagerExecutionSnapshot({
+        snapshot: resultBeforeArtifact,
+        graph,
+        artifacts: artifactsWithLateDeliverable
+      })
+    ).toContain("Execution result predates referenced artifact result-artifact");
+  });
+
   it("requires terminal results and forbids premature final results", () => {
     const withoutResult = { ...completedSnapshot(), result: null };
     expect(
