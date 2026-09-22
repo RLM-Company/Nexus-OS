@@ -582,6 +582,42 @@ export default function SettingsPage() {
               </small>
             </span>
           </label>
+
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={settings.avoidCannedFraming}
+              onChange={(event) => update("avoidCannedFraming", event.target.checked)}
+            />
+            <span>
+              <strong>Без шаблонных вступлений</strong>
+              <small>Не добавлять формальные вводные и повтор вопроса без необходимости.</small>
+            </span>
+          </label>
+
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={settings.preferConcreteExamples}
+              onChange={(event) => update("preferConcreteExamples", event.target.checked)}
+            />
+            <span>
+              <strong>Предпочитать конкретные примеры</strong>
+              <small>Ставить практические примеры и конкретику выше общих формулировок.</small>
+            </span>
+          </label>
+
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={settings.preserveUserRegister}
+              onChange={(event) => update("preserveUserRegister", event.target.checked)}
+            />
+            <span>
+              <strong>Сохранять мой стиль общения</strong>
+              <small>Учитывать язык, формальность и привычный регистр пользователя.</small>
+            </span>
+          </label>
         </section>
 
         <section className={styles.card} aria-labelledby="notifications-title">
