@@ -246,6 +246,10 @@ export const validateManagerExecutionSnapshot = (input: {
         verdictArtifact.project_id !== snapshot.project_id
       ) {
         issues.push(`Critic verification ${verification.verification_id} has an invalid verdict`);
+      } else if (!verdictArtifact.source_artifact_ids.includes(verification.artifact_id)) {
+        issues.push(
+          `Critic verification ${verification.verification_id} verdict does not reference verified artifact`
+        );
       }
     }
     if (verification.verifier === "contract_gate" && verification.critic_verdict_id !== null) {
