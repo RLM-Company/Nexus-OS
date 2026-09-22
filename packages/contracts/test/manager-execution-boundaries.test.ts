@@ -135,9 +135,9 @@ describe("Manager execution schema boundaries", () => {
   });
 
   it.each([
-    ["manager"],
-    ["manager", "architect", "researcher", "analyst", "critic"]
-  ])("accepts bounded allowed_roles %j", (allowedRoles) => {
+    { allowedRoles: ["manager"] },
+    { allowedRoles: ["manager", "architect", "researcher", "analyst", "critic"] }
+  ])("accepts bounded allowed_roles $allowedRoles", ({ allowedRoles }) => {
     expect(
       Value.Check(ManagerExecutionRequestSchema, {
         ...validRequest,
@@ -147,11 +147,11 @@ describe("Manager execution schema boundaries", () => {
   });
 
   it.each([
-    [],
-    ["manager", "manager"],
-    ["manager", "unknown"],
-    ["manager", "architect", "researcher", "analyst", "critic", "manager"]
-  ])("rejects invalid allowed_roles %j", (allowedRoles) => {
+    { allowedRoles: [] },
+    { allowedRoles: ["manager", "manager"] },
+    { allowedRoles: ["manager", "unknown"] },
+    { allowedRoles: ["manager", "architect", "researcher", "analyst", "critic", "manager"] }
+  ])("rejects invalid allowed_roles $allowedRoles", ({ allowedRoles }) => {
     expect(
       Value.Check(ManagerExecutionRequestSchema, {
         ...validRequest,
