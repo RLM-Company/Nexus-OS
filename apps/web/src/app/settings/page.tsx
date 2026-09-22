@@ -216,7 +216,10 @@ const normalizeSettings = (value: unknown): SettingsState => {
 
 const browserTimezone = (): string => {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const timezone: unknown = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof timezone === "string" && timezone.length >= 1 && timezone.length <= 64
+      ? timezone
+      : "UTC";
   } catch {
     return "UTC";
   }
