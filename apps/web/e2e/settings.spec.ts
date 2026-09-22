@@ -85,6 +85,26 @@ test("keeps auth preview explicit and does not expose credential inputs", async 
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
 });
 
+test("keeps settings usable when localStorage is unavailable", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get: () => {
+        throw new DOMException("local storage blocked", "SecurityError");
+      }
+    });
+  });
+
+  await page.goto("/settings");
+
+  await expect(page.getByRole("heading", { name: "Настройки" })).toBeVisible();
+  const companionToggle = page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" });
+  await companionToggle.check();
+  await expect(companionToggle).toBeChecked();
+  await expect(page.getByLabel("Частота")).toBeEnabled();
+  await expect(page.getByText("Браузер не разрешил сохранить настройки.")).toBeVisible();
+});
+
 test("keeps settings usable at 390x844", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/settings");
