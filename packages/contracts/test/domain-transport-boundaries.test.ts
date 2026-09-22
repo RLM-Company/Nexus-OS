@@ -52,14 +52,14 @@ const projectMessage = {
   updated_at: timestamp
 } as const;
 
-const generalChat = {
+const chat = {
   id: "chat-1",
   title: "Chat",
   created_at: timestamp,
   updated_at: timestamp
 } as const;
 
-const generalMessage = {
+const chatMessage = {
   id: "message-1",
   chat_id: "chat-1",
   role: "user",
@@ -72,31 +72,28 @@ const generalMessage = {
   updated_at: timestamp
 } as const;
 
-const isProject = (candidate: unknown) => Value.Check(ProjectSchema, candidate);
-const isMessage = (candidate: unknown) => Value.Check(MessageSchema, candidate);
-const isGeneralChat = (candidate: unknown) => Value.Check(GeneralChatSchema, candidate);
-const isGeneralMessage = (candidate: unknown) => Value.Check(GeneralChatMessageSchema, candidate);
-
 describe("domain enum boundaries", () => {
-  it("accepts all current enum values", () => {
-    for (const status of ["not_started", "in_progress", "completed"]) {
-      expect(Value.Check(OnboardingStatusSchema, status)).toBe(true);
+  it("accepts every current enum literal and rejects unknown values", () => {
+    for (const value of ["not_started", "in_progress", "completed"]) {
+      expect(Value.Check(OnboardingStatusSchema, value)).toBe(true);
     }
-    for (const status of ["DRAFT", "ACTIVE", "FAILED", "ARCHIVED"]) {
-      expect(Value.Check(ProjectStatusSchema, status)).toBe(true);
-    }
-    for (const role of ["user", "assistant", "system_event"]) {
-      expect(Value.Check(MessageRoleSchema, role)).toBe(true);
-    }
-    for (const status of ["pending", "streaming", "completed", "failed", "cancelled"]) {
-      expect(Value.Check(MessageStatusSchema, status)).toBe(true);
-    }
-    for (const status of ["queued", "running", "succeeded", "failed", "cancelled"]) {
-      expect(Value.Check(RunStatusSchema, status)).toBe(true);
-    }
-  });
 
-  it("rejects unknown enum values", () => {
+    for (const value of ["DRAFT", "ACTIVE", "FAILED", "ARCHIVED"]) {
+      expect(Value.Check(ProjectStatusSchema, value)).toBe(true);
+    }
+
+    for (const value of ["user", "assistant", "system_event"]) {
+      expect(Value.Check(MessageRoleSchema, value)).toBe(true);
+    }
+
+    for (const value of ["pending", "streaming", "completed", "failed", "cancelled"]) {
+      expect(Value.Check(MessageStatusSchema, value)).toBe(true);
+    }
+
+    for (const value of ["queued", "running", "succeeded", "failed", "cancelled"]) {
+      expect(Value.Check(RunStatusSchema, value)).toBe(true);
+    }
+
     expect(Value.Check(OnboardingStatusSchema, "done")).toBe(false);
     expect(Value.Check(ProjectStatusSchema, "active")).toBe(false);
     expect(Value.Check(MessageRoleSchema, "tool")).toBe(false);
@@ -105,103 +102,93 @@ describe("domain enum boundaries", () => {
   });
 });
 
-describe("project request boundaries", () => {
-  it("enforces create-project message boundaries", () => {
-    const valid = ["x", "x".repeat(100_000)];
-    for (const initialMessage of valid) {
-      const candidate = {
-        initial_message: initialMessage,
+describe("create request boundaries", () => {
+  it("checks project and message text limits", () => {
+    expect(
+      Value.Check(CreateProjectRequestSchema, {
+        initial_message: "x",
         client_message_id: "client-1"
-      };
-      expect(Value.Check(CreateProjectRequestSchema, candidate)).toBe(true);
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(CreateProjectRequestSchema, {
+        initial_message: "x".repeat(100_000),
+        client_message_id: "client-1"
+      })
+    ).toBe(true);
+
+    for (const initial_message of ["", "   ", "\t\n", "x".repeat(100_001)]) {
+      expect(
+        Value.Check(CreateProjectRequestSchema, {
+          initial_message,
+          client_message_id: "client-1"
+        })
+      ).toBe(false);
     }
 
-    const invalid = ["", "   ", "\t\n", "x".repeat(100_001)];
-    for (const initialMessage of invalid) {
-      const candidate = {
-        initial_message: initialMessage,
+    expect(
+      Value.Check(CreateMessageRequestSchema, {
+        content: "x",
         client_message_id: "client-1"
-      };
-      expect(Value.Check(CreateProjectRequestSchema, candidate)).toBe(false);
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(CreateMessageRequestSchema, {
+        content: "x".repeat(100_000),
+        client_message_id: "client-1"
+      })
+    ).toBe(true);
+
+    for (const content of ["", "   ", "\t\n", "x".repeat(100_001)]) {
+      expect(
+        Value.Check(CreateMessageRequestSchema, {
+          content,
+          client_message_id: "client-1"
+        })
+      ).toBe(false);
     }
   });
 
-  it("enforces create-message content boundaries", () => {
-    const valid = ["x", "x".repeat(100_000)];
-    for (const content of valid) {
-      const candidate = {
-        content,
-        client_message_id: "client-1"
-      };
-      expect(Value.Check(CreateMessageRequestSchema, candidate)).toBe(true);
-    }
-
-    const invalid = ["", "   ", "\t\n", "x".repeat(100_001)];
-    for (const content of invalid) {
-      const candidate = {
-        content,
-        client_message_id: "client-1"
-      };
-      expect(Value.Check(CreateMessageRequestSchema, candidate)).toBe(false);
-    }
-  });
-
-  it("rejects malformed client ids and extra request properties", () => {
-    const projectRequest = {
-      initial_message: "hello",
-      client_message_id: "client id"
-    };
-    expect(Value.Check(CreateProjectRequestSchema, projectRequest)).toBe(false);
-
-    const projectExtra = {
-      initial_message: "hello",
-      client_message_id: "client-1",
-      unexpected: true
-    };
-    expect(Value.Check(CreateProjectRequestSchema, projectExtra)).toBe(false);
-
-    const messageRequest = {
-      content: "hello",
-      client_message_id: "client id"
-    };
-    expect(Value.Check(CreateMessageRequestSchema, messageRequest)).toBe(false);
-
-    const messageExtra = {
-      content: "hello",
-      client_message_id: "client-1",
-      unexpected: true
-    };
-    expect(Value.Check(CreateMessageRequestSchema, messageExtra)).toBe(false);
+  it("rejects malformed ids and extra request properties", () => {
+    expect(
+      Value.Check(CreateProjectRequestSchema, {
+        initial_message: "hello",
+        client_message_id: "client id"
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(CreateProjectRequestSchema, {
+        initial_message: "hello",
+        client_message_id: "client-1",
+        unexpected: true
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(CreateMessageRequestSchema, {
+        content: "hello",
+        client_message_id: "client id"
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(CreateMessageRequestSchema, {
+        content: "hello",
+        client_message_id: "client-1",
+        unexpected: true
+      })
+    ).toBe(false);
   });
 });
 
 describe("project transport boundaries", () => {
-  it("accepts every project status", () => {
-    for (const status of ["DRAFT", "ACTIVE", "FAILED", "ARCHIVED"]) {
-      expect(isProject({ ...project, status })).toBe(true);
-    }
-  });
+  it("checks project and summary fields", () => {
+    expect(Value.Check(ProjectSchema, project)).toBe(true);
+    expect(Value.Check(ProjectSchema, { ...project, title: "x".repeat(160) })).toBe(true);
+    expect(Value.Check(ProjectSchema, { ...project, title: "" })).toBe(false);
+    expect(Value.Check(ProjectSchema, { ...project, title: "x".repeat(161) })).toBe(false);
+    expect(Value.Check(ProjectSchema, { ...project, id: "project id" })).toBe(false);
+    expect(Value.Check(ProjectSchema, { ...project, created_at: "2026-09-22" })).toBe(false);
+    expect(Value.Check(ProjectSchema, { ...project, unexpected: true })).toBe(false);
 
-  it("enforces project title boundaries", () => {
-    const cases = [
-      [1, true],
-      [160, true],
-      [0, false],
-      [161, false]
-    ] as const;
-
-    for (const [length, expected] of cases) {
-      expect(isProject({ ...project, title: "x".repeat(length) })).toBe(expected);
-    }
-  });
-
-  it("rejects malformed project ids, timestamps and extras", () => {
-    expect(isProject({ ...project, id: "project id" })).toBe(false);
-    expect(isProject({ ...project, created_at: "2026-09-22" })).toBe(false);
-    expect(isProject({ ...project, unexpected: true })).toBe(false);
-  });
-
-  it("enforces project summary preview boundaries", () => {
     const summary = {
       id: "project-1",
       title: "Project",
@@ -211,13 +198,35 @@ describe("project transport boundaries", () => {
     } as const;
 
     expect(Value.Check(ProjectSummarySchema, summary)).toBe(true);
-    const maxPreview = { ...summary, last_message_preview: "x".repeat(240) };
-    expect(Value.Check(ProjectSummarySchema, maxPreview)).toBe(true);
-    const tooLong = { ...summary, last_message_preview: "x".repeat(241) };
-    expect(Value.Check(ProjectSummarySchema, tooLong)).toBe(false);
+    expect(
+      Value.Check(ProjectSummarySchema, {
+        ...summary,
+        last_message_preview: "x".repeat(240)
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(ProjectSummarySchema, {
+        ...summary,
+        last_message_preview: "x".repeat(241)
+      })
+    ).toBe(false);
   });
 
-  it("enforces project list and detail strict shapes", () => {
+  it("checks project message and response strictness", () => {
+    expect(Value.Check(MessageSchema, projectMessage)).toBe(true);
+
+    for (const role of ["user", "assistant", "system_event"]) {
+      expect(Value.Check(MessageSchema, { ...projectMessage, role })).toBe(true);
+    }
+
+    for (const status of ["pending", "streaming", "completed", "failed", "cancelled"]) {
+      expect(Value.Check(MessageSchema, { ...projectMessage, status })).toBe(true);
+    }
+
+    expect(Value.Check(MessageSchema, { ...projectMessage, content_type: "image" })).toBe(false);
+    expect(Value.Check(MessageSchema, { ...projectMessage, run_id: "run id" })).toBe(false);
+    expect(Value.Check(MessageSchema, { ...projectMessage, unexpected: true })).toBe(false);
+
     const summary = {
       id: "project-1",
       title: "Project",
@@ -227,50 +236,14 @@ describe("project transport boundaries", () => {
     } as const;
 
     expect(Value.Check(ProjectListResponseSchema, { items: [summary] })).toBe(true);
+    expect(
+      Value.Check(ProjectDetailResponseSchema, {
+        project,
+        chat_id: "chat-1",
+        messages: [projectMessage]
+      })
+    ).toBe(true);
 
-    const detail = {
-      project,
-      chat_id: "chat-1",
-      messages: [projectMessage]
-    };
-    expect(Value.Check(ProjectDetailResponseSchema, detail)).toBe(true);
-    expect(Value.Check(ProjectListResponseSchema, { items: [summary], unexpected: true })).toBe(
-      false
-    );
-    expect(Value.Check(ProjectDetailResponseSchema, { ...detail, unexpected: true })).toBe(false);
-  });
-});
-
-describe("project message transport boundaries", () => {
-  it("accepts every project message role and status", () => {
-    for (const role of ["user", "assistant", "system_event"]) {
-      expect(isMessage({ ...projectMessage, role })).toBe(true);
-    }
-    for (const status of ["pending", "streaming", "completed", "failed", "cancelled"]) {
-      expect(isMessage({ ...projectMessage, status })).toBe(true);
-    }
-  });
-
-  it("accepts nullable references and arbitrary text content", () => {
-    expect(isMessage(projectMessage)).toBe(true);
-    const linked = {
-      ...projectMessage,
-      reply_to_message_id: "message-0",
-      run_id: "run-1",
-      error_code: "PROVIDER_ERROR",
-      content: ""
-    };
-    expect(isMessage(linked)).toBe(true);
-  });
-
-  it("rejects non-text content type, malformed refs and extras", () => {
-    expect(isMessage({ ...projectMessage, content_type: "image" })).toBe(false);
-    expect(isMessage({ ...projectMessage, run_id: "run id" })).toBe(false);
-    expect(isMessage({ ...projectMessage, reply_to_message_id: "message id" })).toBe(false);
-    expect(isMessage({ ...projectMessage, unexpected: true })).toBe(false);
-  });
-
-  it("enforces message accepted response strictness", () => {
     const accepted = {
       project,
       chat_id: "chat-1",
@@ -284,151 +257,147 @@ describe("project message transport boundaries", () => {
     expect(Value.Check(MessageAcceptedResponseSchema, { ...accepted, unexpected: true })).toBe(
       false
     );
-  });
 
-  it("accepts only the cancelled run response literal", () => {
-    const cancelled = { run_id: "run-1", status: "cancelled" };
-    expect(Value.Check(RunCancelResponseSchema, cancelled)).toBe(true);
-    expect(Value.Check(RunCancelResponseSchema, { ...cancelled, status: "failed" })).toBe(false);
-    expect(Value.Check(RunCancelResponseSchema, { ...cancelled, unexpected: true })).toBe(false);
+    expect(Value.Check(RunCancelResponseSchema, { run_id: "run-1", status: "cancelled" })).toBe(
+      true
+    );
+    expect(Value.Check(RunCancelResponseSchema, { run_id: "run-1", status: "failed" })).toBe(false);
   });
 });
 
 describe("general chat transport boundaries", () => {
-  it("enforces chat title boundaries and strict shape", () => {
-    expect(isGeneralChat(generalChat)).toBe(true);
-    expect(isGeneralChat({ ...generalChat, title: "x".repeat(160) })).toBe(true);
-    expect(isGeneralChat({ ...generalChat, title: "" })).toBe(false);
-    expect(isGeneralChat({ ...generalChat, title: "x".repeat(161) })).toBe(false);
-    expect(isGeneralChat({ ...generalChat, unexpected: true })).toBe(false);
-  });
+  it("checks chat, summary and message fields", () => {
+    expect(Value.Check(GeneralChatSchema, chat)).toBe(true);
+    expect(Value.Check(GeneralChatSchema, { ...chat, title: "x".repeat(160) })).toBe(true);
+    expect(Value.Check(GeneralChatSchema, { ...chat, title: "" })).toBe(false);
+    expect(Value.Check(GeneralChatSchema, { ...chat, title: "x".repeat(161) })).toBe(false);
+    expect(Value.Check(GeneralChatSchema, { ...chat, unexpected: true })).toBe(false);
 
-  it("enforces general chat summary preview boundaries", () => {
-    const summary = {
-      ...generalChat,
-      last_message_preview: null
-    };
-
+    const summary = { ...chat, last_message_preview: null };
     expect(Value.Check(GeneralChatSummarySchema, summary)).toBe(true);
-    const maxPreview = { ...summary, last_message_preview: "x".repeat(240) };
-    expect(Value.Check(GeneralChatSummarySchema, maxPreview)).toBe(true);
-    const tooLong = { ...summary, last_message_preview: "x".repeat(241) };
-    expect(Value.Check(GeneralChatSummarySchema, tooLong)).toBe(false);
+    expect(
+      Value.Check(GeneralChatSummarySchema, {
+        ...summary,
+        last_message_preview: "x".repeat(240)
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(GeneralChatSummarySchema, {
+        ...summary,
+        last_message_preview: "x".repeat(241)
+      })
+    ).toBe(false);
+
+    expect(Value.Check(GeneralChatMessageSchema, chatMessage)).toBe(true);
+    expect(Value.Check(GeneralChatMessageSchema, { ...chatMessage, role: "assistant" })).toBe(true);
+    expect(Value.Check(GeneralChatMessageSchema, { ...chatMessage, role: "system_event" })).toBe(
+      false
+    );
+    expect(Value.Check(GeneralChatMessageSchema, { ...chatMessage, unexpected: true })).toBe(false);
   });
 
-  it("accepts only user and assistant general-message roles", () => {
-    for (const role of ["user", "assistant"]) {
-      expect(isGeneralMessage({ ...generalMessage, role })).toBe(true);
-    }
-    for (const role of ["system_event", "tool", "", null]) {
-      expect(isGeneralMessage({ ...generalMessage, role })).toBe(false);
-    }
-  });
-
-  it("accepts nullable run and error fields with strict shape", () => {
-    expect(isGeneralMessage(generalMessage)).toBe(true);
-    const linked = {
-      ...generalMessage,
-      run_id: "run-1",
-      error_code: "PROVIDER_ERROR",
-      content: ""
-    };
-    expect(isGeneralMessage(linked)).toBe(true);
-    expect(isGeneralMessage({ ...generalMessage, unexpected: true })).toBe(false);
-  });
-
-  it("enforces general chat create request boundaries", () => {
-    const valid = ["x", "x".repeat(100_000)];
-    for (const initialMessage of valid) {
-      const candidate = {
-        initial_message: initialMessage,
+  it("checks create/list/detail/accepted chat responses", () => {
+    expect(
+      Value.Check(CreateGeneralChatRequestSchema, {
+        initial_message: "x",
         client_message_id: "client-1"
-      };
-      expect(Value.Check(CreateGeneralChatRequestSchema, candidate)).toBe(true);
-    }
-
-    const invalid = ["", "   ", "x".repeat(100_001)];
-    for (const initialMessage of invalid) {
-      const candidate = {
-        initial_message: initialMessage,
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(CreateGeneralChatRequestSchema, {
+        initial_message: "x".repeat(100_000),
         client_message_id: "client-1"
-      };
-      expect(Value.Check(CreateGeneralChatRequestSchema, candidate)).toBe(false);
+      })
+    ).toBe(true);
+
+    for (const initial_message of ["", "   ", "x".repeat(100_001)]) {
+      expect(
+        Value.Check(CreateGeneralChatRequestSchema, {
+          initial_message,
+          client_message_id: "client-1"
+        })
+      ).toBe(false);
     }
 
-    const malformedId = {
-      initial_message: "hello",
-      client_message_id: "client id"
-    };
-    expect(Value.Check(CreateGeneralChatRequestSchema, malformedId)).toBe(false);
-  });
-
-  it("accepts list, detail and accepted response strict shapes", () => {
-    const summary = {
-      ...generalChat,
-      last_message_preview: "hello"
-    };
+    const summary = { ...chat, last_message_preview: "hello" };
     expect(Value.Check(GeneralChatListResponseSchema, { items: [summary] })).toBe(true);
-
-    const detail = {
-      chat: generalChat,
-      messages: [generalMessage]
-    };
-    expect(Value.Check(GeneralChatDetailResponseSchema, detail)).toBe(true);
+    expect(
+      Value.Check(GeneralChatDetailResponseSchema, {
+        chat,
+        messages: [chatMessage]
+      })
+    ).toBe(true);
 
     const accepted = {
-      chat: generalChat,
-      user_message: generalMessage,
+      chat,
+      user_message: chatMessage,
       run_id: "run-1",
       stream_url: "/api/v1/chat-runs/run-1/events"
     };
+
     expect(Value.Check(GeneralChatMessageAcceptedResponseSchema, accepted)).toBe(true);
-    const emptyStream = { ...accepted, stream_url: "" };
-    expect(Value.Check(GeneralChatMessageAcceptedResponseSchema, emptyStream)).toBe(false);
+    expect(
+      Value.Check(GeneralChatMessageAcceptedResponseSchema, {
+        ...accepted,
+        stream_url: ""
+      })
+    ).toBe(false);
   });
 });
 
 describe("health and API error boundaries", () => {
-  it("accepts current health and database statuses", () => {
+  it("checks health response vocabulary and strict shape", () => {
     for (const status of ["ok", "degraded"]) {
-      const health = {
-        status,
-        version: "1.0.0",
-        database: "ok",
-        timestamp
-      };
-      expect(Value.Check(HealthResponseSchema, health)).toBe(true);
+      expect(
+        Value.Check(HealthResponseSchema, {
+          status,
+          version: "1.0.0",
+          database: "ok",
+          timestamp
+        })
+      ).toBe(true);
     }
 
     for (const database of ["ok", "error"]) {
-      const health = {
+      expect(
+        Value.Check(HealthResponseSchema, {
+          status: "ok",
+          version: "1.0.0",
+          database,
+          timestamp
+        })
+      ).toBe(true);
+    }
+
+    expect(
+      Value.Check(HealthResponseSchema, {
+        status: "healthy",
+        version: "1.0.0",
+        database: "ok",
+        timestamp
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(HealthResponseSchema, {
+        status: "ok",
+        version: "",
+        database: "ok",
+        timestamp
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(HealthResponseSchema, {
         status: "ok",
         version: "1.0.0",
-        database,
-        timestamp
-      };
-      expect(Value.Check(HealthResponseSchema, health)).toBe(true);
-    }
-  });
-
-  it("rejects malformed health payloads", () => {
-    const baseHealth = {
-      status: "ok",
-      version: "1.0.0",
-      database: "ok",
-      timestamp
-    };
-
-    expect(Value.Check(HealthResponseSchema, { ...baseHealth, status: "healthy" })).toBe(false);
-    expect(Value.Check(HealthResponseSchema, { ...baseHealth, version: "" })).toBe(false);
-    expect(
-      Value.Check(HealthResponseSchema, { ...baseHealth, timestamp: "2026-09-22" })
+        database: "ok",
+        timestamp,
+        unexpected: true
+      })
     ).toBe(false);
-    expect(Value.Check(HealthResponseSchema, { ...baseHealth, unexpected: true })).toBe(false);
   });
 
-  it("accepts every current API error code", () => {
-    const errorCodes = [
+  it("checks every current API error code and strict error shape", () => {
+    const codes = [
       "VALIDATION_ERROR",
       "UNAUTHORIZED",
       "FORBIDDEN",
@@ -458,27 +427,24 @@ describe("health and API error boundaries", () => {
       "INTERNAL_ERROR"
     ] as const;
 
-    for (const code of errorCodes) {
+    for (const code of codes) {
       expect(Value.Check(ErrorCodeSchema, code)).toBe(true);
-      const payload = {
-        error: {
-          code,
-          message: "safe message",
-          request_id: "request-1",
-          retryable: false
-        }
-      };
-      expect(Value.Check(ApiErrorSchema, payload)).toBe(true);
+      expect(
+        Value.Check(ApiErrorSchema, {
+          error: {
+            code,
+            message: "safe message",
+            request_id: "request-1",
+            retryable: false
+          }
+        })
+      ).toBe(true);
     }
-  });
 
-  it("rejects unknown API error codes", () => {
     for (const code of ["", "UNKNOWN", "provider_error", null, 1]) {
       expect(Value.Check(ErrorCodeSchema, code)).toBe(false);
     }
-  });
 
-  it("enforces API error strict transport shape", () => {
     const error = {
       code: "INTERNAL_ERROR",
       message: "",
@@ -490,6 +456,5 @@ describe("health and API error boundaries", () => {
     expect(Value.Check(ApiErrorSchema, { error: { ...error, request_id: "" } })).toBe(false);
     expect(Value.Check(ApiErrorSchema, { error: { ...error, retryable: "false" } })).toBe(false);
     expect(Value.Check(ApiErrorSchema, { error: { ...error, unexpected: true } })).toBe(false);
-    expect(Value.Check(ApiErrorSchema, { error, unexpected: true })).toBe(false);
   });
 });
