@@ -314,6 +314,9 @@ export const validateManagerExecutionSnapshot = (input: {
         if (!passedArtifactIds.has(artifactId)) {
           issues.push(`Execution result claims unverified artifact ${artifactId}`);
         }
+        if (failedArtifactIds.has(artifactId)) {
+          issues.push(`Execution result claims failed artifact ${artifactId} as verified`);
+        }
       }
       if (
         snapshot.result.summary_artifact_id !== null &&
