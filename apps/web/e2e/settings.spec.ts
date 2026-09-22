@@ -170,6 +170,21 @@ test("keeps settings usable at 390x844", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Вход и верификация" })).toBeVisible();
 });
 
+test("keeps persistence warnings visible and announced at 390x844", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cosmora:settings:v2", "{broken-json");
+  });
+
+  await page.goto("/settings");
+
+  const status = page.getByRole("status");
+  await expect(status).toBeVisible();
+  await expect(status).toContainText(
+    "Не удалось прочитать локальные настройки. Используются безопасные значения."
+  );
+});
+
 test("migrates legacy settings to the bounded v2 contract", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem(
