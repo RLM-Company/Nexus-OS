@@ -89,6 +89,12 @@ const PROACTIVE_PREVIEW: Record<Frequency, string> = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
+const isSettingsEnvelopeV2 = (value: unknown): value is SettingsEnvelopeV2 =>
+  isRecord(value) &&
+  value.version === 2 &&
+  isRecord(value.companion) &&
+  isRecord(value.communication);
+
 const boundedInteger = (
   value: unknown,
   minimum: number,
@@ -102,7 +108,7 @@ const boundedInteger = (
 const normalizeSettings = (value: unknown): SettingsState => {
   if (!isRecord(value)) return DEFAULT_SETTINGS;
 
-  const isV2 = value.version === 2 && isRecord(value.companion) && isRecord(value.communication);
+  const isV2 = isSettingsEnvelopeV2(value);
   const companion = isV2 ? (value.companion as Record<string, unknown>) : value;
   const communication = isV2 ? (value.communication as Record<string, unknown>) : value;
 
@@ -216,7 +222,10 @@ const normalizeSettings = (value: unknown): SettingsState => {
 
 const browserTimezone = (): string => {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const timezone: unknown = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof timezone === "string" && timezone.length >= 1 && timezone.length <= 64
+      ? timezone
+      : "UTC";
   } catch {
     return "UTC";
   }
@@ -256,6 +265,7 @@ export default function SettingsPage() {
   const [hydrated, setHydrated] = useState(false);
   const [savedNotice, setSavedNotice] = useState("Настройки сохраняются только в этом браузере.");
   const hydrationNoticeRef = useRef<string | null>(null);
+  const storageWriteBlockedRef = useRef(false);
   const [preview, setPreview] = useState(PROACTIVE_PREVIEW.balanced);
   const [notificationPermission, setNotificationPermission] = useState<
     "unsupported" | "default" | "granted" | "denied"
@@ -268,7 +278,9 @@ export default function SettingsPage() {
     };
     const restoreStoredSettings = (stored: string, notice: string): boolean => {
       try {
-        setSettings(normalizeSettings(JSON.parse(stored)));
+        const parsedLegacy: unknown = JSON.parse(stored);
+        if (!isRecord(parsedLegacy) || parsedLegacy.version !== undefined) return false;
+        setSettings(normalizeSettings(parsedLegacy));
         announceHydration(notice);
         return true;
       } catch {
@@ -282,7 +294,31 @@ export default function SettingsPage() {
 
       if (stored) {
         try {
-          setSettings(normalizeSettings(JSON.parse(stored)));
+          const parsedStored: unknown = JSON.parse(stored);
+          if (
+            isRecord(parsedStored) &&
+            typeof parsedStored.version === "number" &&
+            parsedStored.version > 2
+          ) {
+            storageWriteBlockedRef.current = true;
+            announceHydration(
+              "Настройки созданы более новой версией Cosmora. Автоматическая перезапись отключена."
+            );
+          } else if (!isSettingsEnvelopeV2(parsedStored)) {
+            if (
+              !legacyStored ||
+              !restoreStoredSettings(
+                legacyStored,
+                "Текущие настройки повреждены. Восстановлена предыдущая версия."
+              )
+            ) {
+              announceHydration(
+                "Не удалось прочитать локальные настройки. Используются безопасные значения."
+              );
+            }
+          } else {
+            setSettings(normalizeSettings(parsedStored));
+          }
         } catch {
           if (
             !legacyStored ||
@@ -309,13 +345,19 @@ export default function SettingsPage() {
       );
     }
     if ("Notification" in window) {
-      setNotificationPermission(window.Notification.permission);
+      const permission = window.Notification.permission;
+      setNotificationPermission(permission);
+      if (permission !== "granted") {
+        setSettings((current) =>
+          current.notificationsEnabled ? { ...current, notificationsEnabled: false } : current
+        );
+      }
     }
     setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || storageWriteBlockedRef.current) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(toStoredEnvelope(settings)));
       window.localStorage.removeItem(LEGACY_STORAGE_KEY);
@@ -361,7 +403,8 @@ export default function SettingsPage() {
   };
 
   const resetSettings = (): void => {
-    setSettings(DEFAULT_SETTINGS);
+    storageWriteBlockedRef.current = false;
+    setSettings({ ...DEFAULT_SETTINGS });
     setPreview(PROACTIVE_PREVIEW.balanced);
     setSavedNotice("Настройки возвращены к безопасным значениям.");
   };
@@ -493,7 +536,54 @@ export default function SettingsPage() {
                 disabled={!settings.companionEnabled}
               />
             </label>
+            <label>
+              Минимальный интервал, мин
+              <input
+                type="number"
+                min={0}
+                max={1440}
+                step={1}
+                value={settings.minGapMinutes}
+                onChange={(event) => {
+                  const value = event.currentTarget.valueAsNumber;
+                  if (!Number.isInteger(value)) return;
+                  update("minGapMinutes", Math.max(0, Math.min(1440, value)));
+                }}
+                disabled={!settings.companionEnabled}
+              />
+            </label>
+            <label>
+              Backoff после молчания
+              <input
+                type="number"
+                min={0}
+                max={10}
+                step={1}
+                value={settings.backoffAfterUnanswered}
+                onChange={(event) => {
+                  const value = event.currentTarget.valueAsNumber;
+                  if (!Number.isInteger(value)) return;
+                  update("backoffAfterUnanswered", Math.max(0, Math.min(10, value)));
+                }}
+                disabled={!settings.companionEnabled}
+              />
+            </label>
           </div>
+
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={settings.suppressWhenActive}
+              onChange={(event) => update("suppressWhenActive", event.target.checked)}
+              disabled={!settings.companionEnabled}
+            />
+            <span>
+              <strong>Не писать при активном диалоге</strong>
+              <small>
+                Подавляет proactive-сообщение, если пользователь уже разговаривает с Cosmora.
+              </small>
+            </span>
+          </label>
 
           <div className={styles.previewBox} aria-label="Предпросмотр инициативного сообщения">
             <div>
