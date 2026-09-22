@@ -252,6 +252,28 @@ describe("Manager execution contracts", () => {
     expect(validateManagerExecutionSnapshot({ snapshot, graph, artifacts })).toEqual([]);
   });
 
+  it("rejects invented artifact references in non-completed terminal results", () => {
+    const snapshot = completedSnapshot();
+    snapshot.phase = "blocked";
+    snapshot.result = {
+      ...snapshot.result!,
+      status: "blocked",
+      summary_artifact_id: "invented-summary",
+      deliverable_artifact_ids: ["invented-deliverable"],
+      verified_artifact_ids: ["invented-verified"],
+      unresolved_task_ids: []
+    };
+
+    expect(validateManagerExecutionSnapshot({ snapshot, graph, artifacts })).toEqual(
+      expect.arrayContaining([
+        "Execution result references unknown summary artifact invented-summary",
+        "Execution result references unknown deliverable artifact invented-deliverable",
+        "Execution result references unknown verified artifact invented-verified",
+        "Execution result claims unverified artifact invented-verified"
+      ])
+    );
+  });
+
   it("requires terminal results and forbids premature final results", () => {
     const withoutResult = { ...completedSnapshot(), result: null };
     expect(
