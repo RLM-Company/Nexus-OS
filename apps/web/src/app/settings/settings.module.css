@@ -20,6 +20,7 @@
 }
 
 .status {
+  margin: 0;
   color: #6e6e80;
   font-size: 0.75rem;
 }
@@ -379,8 +380,18 @@
     grid-template-columns: 1fr;
   }
 
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
   .status {
-    display: none;
+    display: block;
+    max-width: 100%;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    text-align: left;
   }
 }
 
