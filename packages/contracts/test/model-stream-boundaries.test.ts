@@ -454,19 +454,21 @@ describe("stream event boundaries", () => {
     }
   });
 
-  it("rejects unknown event types and extra top-level properties", () => {
+  it("rejects unknown event types", () => {
     const unknown = {
       type: "run.paused",
       data: { run_id: "run-1" }
     };
     expect(isEvent(unknown)).toBe(false);
+  });
 
+  it("documents current outer event additional-property behavior", () => {
     const extra = {
       type: "run.cancelled",
       data: { run_id: "run-1" },
       unexpected: true
     };
-    expect(isEvent(extra)).toBe(false);
+    expect(isEvent(extra)).toBe(true);
   });
 
   it("enforces non-negative integer delta sequence", () => {
