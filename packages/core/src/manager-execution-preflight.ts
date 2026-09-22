@@ -1,6 +1,8 @@
 import {
   validateManagerExecutionRequest,
+  validateManagerExecutionSnapshot,
   type ManagerExecutionRequest,
+  type ManagerExecutionSnapshot,
   type RuntimeTaskGraph
 } from "@cosmora/contracts";
 import { deriveRuntimeTaskReadiness } from "./manager-runtime-task-readiness.js";
@@ -73,4 +75,55 @@ export const preflightManagerExecution = (input: {
     terminalTaskIds: terminalTaskIds.sort(),
     evaluatedAt: input.evaluatedAt
   };
+};
+
+export interface PreparedManagerExecution {
+  preflight: ManagerExecutionPreflightResult;
+  snapshot: ManagerExecutionSnapshot | null;
+}
+
+export const prepareManagerExecution = (input: {
+  request: ManagerExecutionRequest;
+  graph: RuntimeTaskGraph;
+  evaluatedAt: string;
+}): PreparedManagerExecution => {
+  const preflight = preflightManagerExecution(input);
+  if (!preflight.accepted) {
+    return { preflight, snapshot: null };
+  }
+
+  const snapshot: ManagerExecutionSnapshot = {
+    contract_version: input.request.contract_version,
+    execution_id: input.request.execution_id,
+    project_id: input.request.project_id,
+    graph_id: input.graph.graph_id,
+    phase: "accepted",
+    task_states: input.graph.nodes.map((node) => ({
+      task_id: node.task_id,
+      status: node.status
+    })),
+    artifact_ids: [],
+    verifications: [],
+    checkpoint_id: null,
+    result: null,
+    updated_at: input.evaluatedAt
+  };
+
+  const snapshotIssues = validateManagerExecutionSnapshot({
+    snapshot,
+    graph: input.graph,
+    artifacts: []
+  });
+  if (snapshotIssues.length > 0) {
+    return {
+      preflight: {
+        ...preflight,
+        accepted: false,
+        issues: [...new Set([...preflight.issues, ...snapshotIssues])]
+      },
+      snapshot: null
+    };
+  }
+
+  return { preflight, snapshot };
 };
