@@ -12,7 +12,7 @@ test("keeps the Manager Console usable when localStorage is unavailable", async 
 
   await page.goto("/");
 
-  await expect(page.locator(".topbar h1")).toHaveText("Cosmora Manager");
+  await expect(page.locator(".topbar h1")).toHaveText("Новый чат");
   await expect(page.getByLabel("Сообщение Cosmora")).toBeVisible();
 
   const sidebar = page.locator(".sidebar-tools");
