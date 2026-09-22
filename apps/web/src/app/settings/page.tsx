@@ -372,7 +372,7 @@ export default function SettingsPage() {
         <Link className={styles.back} href="/">
           ← Cosmora
         </Link>
-        <span className={styles.status}>{savedNotice}</span>
+        <span className={styles.status} role="status" aria-live="polite">\n          {savedNotice}\n        </span>
       </div>
 
       <header className={styles.hero}>
