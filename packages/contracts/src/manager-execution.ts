@@ -329,3 +329,28 @@ export const validateManagerExecutionSnapshot = (input: {
 
   return [...new Set(issues)];
 };
+
+export const validateManagerExecutionTrace = (input: {
+  request: ManagerExecutionRequest;
+  snapshot: ManagerExecutionSnapshot;
+  graph: RuntimeTaskGraph;
+  artifacts: readonly RuntimeArtifact[];
+}): string[] => {
+  const issues = [
+    ...validateManagerExecutionRequest({ request: input.request, graph: input.graph }),
+    ...validateManagerExecutionSnapshot({
+      snapshot: input.snapshot,
+      graph: input.graph,
+      artifacts: input.artifacts
+    })
+  ];
+
+  if (input.request.execution_id !== input.snapshot.execution_id) {
+    issues.push("Execution snapshot belongs to another execution request");
+  }
+  if (input.request.project_id !== input.snapshot.project_id) {
+    issues.push("Execution request and snapshot belong to different projects");
+  }
+
+  return [...new Set(issues)];
+};
