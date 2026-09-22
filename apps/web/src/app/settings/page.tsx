@@ -89,7 +89,7 @@ const PROACTIVE_PREVIEW: Record<Frequency, string> = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-const isSettingsEnvelopeV2 = (value: unknown): value is Record<string, unknown> =>
+const isSettingsEnvelopeV2 = (value: unknown): value is SettingsEnvelopeV2 =>
   isRecord(value) &&
   value.version === 2 &&
   isRecord(value.companion) &&
