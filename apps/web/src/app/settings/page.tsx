@@ -34,15 +34,13 @@ const DEFAULT_SETTINGS: SettingsState = {
   verbosity: "balanced",
   initiative: "balanced",
   naturalCommunicationGuardrail: true,
-  notificationsEnabled: false,
+  notificationsEnabled: false
 };
 
 const PROACTIVE_PREVIEW: Record<Frequency, string> = {
   rare: "Напишу только когда есть понятный повод и новая ценность.",
-  balanced:
-    "Если появится уместный повод, могу первой начать короткий разговор.",
-  often:
-    "Могу чаще предлагать тему или возвращаться к незавершённому разговору.",
+  balanced: "Если появится уместный повод, могу первой начать короткий разговор.",
+  often: "Могу чаще предлагать тему или возвращаться к незавершённому разговору."
 };
 
 const normalizeSettings = (value: unknown): SettingsState => {
@@ -60,13 +58,11 @@ const normalizeSettings = (value: unknown): SettingsState => {
         ? candidate.proactiveFrequency
         : DEFAULT_SETTINGS.proactiveFrequency,
     quietStart:
-      typeof candidate.quietStart === "string" &&
-      /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietStart)
+      typeof candidate.quietStart === "string" && /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietStart)
         ? candidate.quietStart
         : DEFAULT_SETTINGS.quietStart,
     quietEnd:
-      typeof candidate.quietEnd === "string" &&
-      /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietEnd)
+      typeof candidate.quietEnd === "string" && /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietEnd)
         ? candidate.quietEnd
         : DEFAULT_SETTINGS.quietEnd,
     maxProactivePerDay:
@@ -102,16 +98,14 @@ const normalizeSettings = (value: unknown): SettingsState => {
     notificationsEnabled:
       typeof candidate.notificationsEnabled === "boolean"
         ? candidate.notificationsEnabled
-        : DEFAULT_SETTINGS.notificationsEnabled,
+        : DEFAULT_SETTINGS.notificationsEnabled
   };
 };
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
   const [hydrated, setHydrated] = useState(false);
-  const [savedNotice, setSavedNotice] = useState(
-    "Настройки сохраняются только в этом браузере.",
-  );
+  const [savedNotice, setSavedNotice] = useState("Настройки сохраняются только в этом браузере.");
   const [preview, setPreview] = useState(PROACTIVE_PREVIEW.balanced);
   const [notificationPermission, setNotificationPermission] = useState<
     "unsupported" | "default" | "granted" | "denied"
@@ -122,9 +116,7 @@ export default function SettingsPage() {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored) setSettings(normalizeSettings(JSON.parse(stored)));
     } catch {
-      setSavedNotice(
-        "Не удалось прочитать локальные настройки. Используются безопасные значения.",
-      );
+      setSavedNotice("Не удалось прочитать локальные настройки. Используются безопасные значения.");
     }
     if ("Notification" in window) {
       setNotificationPermission(window.Notification.permission);
@@ -142,10 +134,7 @@ export default function SettingsPage() {
     }
   }, [hydrated, settings]);
 
-  const update = <K extends keyof SettingsState>(
-    key: K,
-    value: SettingsState[K],
-  ): void => {
+  const update = <K extends keyof SettingsState>(key: K, value: SettingsState[K]): void => {
     setSettings((current) => ({ ...current, [key]: value }));
   };
 
@@ -154,7 +143,7 @@ export default function SettingsPage() {
       settings.companionEnabled
         ? `Включено · до ${settings.maxProactivePerDay} сообщений/день · тихие часы ${settings.quietStart}–${settings.quietEnd}`
         : "Выключено · ИИ не инициирует сообщения",
-    [settings],
+    [settings]
   );
 
   const requestNotifications = async (): Promise<void> => {
@@ -169,7 +158,7 @@ export default function SettingsPage() {
       setSavedNotice(
         permission === "granted"
           ? "Уведомления разрешены в браузере."
-          : "Уведомления не разрешены. Это можно изменить в настройках браузера.",
+          : "Уведомления не разрешены. Это можно изменить в настройках браузера."
       );
     } catch {
       setSavedNotice("Не удалось запросить разрешение на уведомления.");
@@ -196,9 +185,8 @@ export default function SettingsPage() {
           <span className={styles.eyebrow}>Cosmora / Settings</span>
           <h1>Настройки</h1>
           <p>
-            Здесь задаётся то, как Cosmora общается, когда она может проявлять
-            инициативу и какие способы входа будут доступны после подключения
-            серверной авторизации.
+            Здесь задаётся то, как Cosmora общается, когда она может проявлять инициативу и какие
+            способы входа будут доступны после подключения серверной авторизации.
           </p>
         </div>
         <Link className={styles.primary} href="/login">
@@ -216,9 +204,8 @@ export default function SettingsPage() {
             <span className={styles.badgeMuted}>Локальный alpha</span>
           </div>
           <p className={styles.lead}>
-            Сейчас консоль работает в локальном контуре. Реальный
-            Google/Telegram login не подключён в этой ветке, поэтому браузер не
-            получает и не хранит OAuth-токены.
+            Сейчас консоль работает в локальном контуре. Реальный Google/Telegram login не подключён
+            в этой ветке, поэтому браузер не получает и не хранит OAuth-токены.
           </p>
           <div className={styles.accountRow}>
             <div>
@@ -248,9 +235,7 @@ export default function SettingsPage() {
               <input
                 type="checkbox"
                 checked={settings.companionEnabled}
-                onChange={(event) =>
-                  update("companionEnabled", event.target.checked)
-                }
+                onChange={(event) => update("companionEnabled", event.target.checked)}
                 aria-label="Разрешить ИИ писать первой"
               />
               <span />
@@ -260,10 +245,9 @@ export default function SettingsPage() {
           <div className={styles.notice}>
             <strong>Сейчас это безопасный preview.</strong>
             <span>
-              Настройка уже сохраняется, но реальный scheduler/delivery backend
-              ещё не подключён. Он должен проверять согласие, тихие часы,
-              лимиты, отсутствие активного диалога и emergency-stop до отправки
-              любого proactive-сообщения.
+              Настройка уже сохраняется, но реальный scheduler/delivery backend ещё не подключён. Он
+              должен проверять согласие, тихие часы, лимиты, отсутствие активного диалога и
+              emergency-stop до отправки любого proactive-сообщения.
             </span>
           </div>
 
@@ -272,9 +256,7 @@ export default function SettingsPage() {
               Частота
               <select
                 value={settings.proactiveFrequency}
-                onChange={(event) =>
-                  update("proactiveFrequency", event.target.value as Frequency)
-                }
+                onChange={(event) => update("proactiveFrequency", event.target.value as Frequency)}
                 disabled={!settings.companionEnabled}
               >
                 <option value="rare">Редко</option>
@@ -292,7 +274,7 @@ export default function SettingsPage() {
                 onChange={(event) =>
                   update(
                     "maxProactivePerDay",
-                    Math.max(0, Math.min(20, Number(event.target.value))),
+                    Math.max(0, Math.min(20, Number(event.target.value)))
                   )
                 }
                 disabled={!settings.companionEnabled}
@@ -318,22 +300,15 @@ export default function SettingsPage() {
             </label>
           </div>
 
-          <div
-            className={styles.previewBox}
-            aria-label="Предпросмотр инициативного сообщения"
-          >
+          <div className={styles.previewBox} aria-label="Предпросмотр инициативного сообщения">
             <div>
-              <span className={styles.previewLabel}>
-                Как это должно ощущаться
-              </span>
+              <span className={styles.previewLabel}>Как это должно ощущаться</span>
               <strong>{preview}</strong>
             </div>
             <button
               type="button"
               className={styles.secondary}
-              onClick={() =>
-                setPreview(PROACTIVE_PREVIEW[settings.proactiveFrequency])
-              }
+              onClick={() => setPreview(PROACTIVE_PREVIEW[settings.proactiveFrequency])}
               disabled={!settings.companionEnabled}
             >
               Проверить preview
@@ -357,9 +332,8 @@ export default function SettingsPage() {
             <span className={styles.badge}>Natural v1</span>
           </div>
           <p className={styles.lead}>
-            Эти настройки описывают стиль общения. Они не обещают
-            «неопределяемый AI» — цель в естественной, конкретной и живой речи
-            без шаблонных AI-манер.
+            Эти настройки описывают стиль общения. Они не обещают «неопределяемый AI» — цель в
+            естественной, конкретной и живой речи без шаблонных AI-манер.
           </p>
 
           <div className={styles.formGrid}>
@@ -379,9 +353,7 @@ export default function SettingsPage() {
               Подробность
               <select
                 value={settings.verbosity}
-                onChange={(event) =>
-                  update("verbosity", event.target.value as Verbosity)
-                }
+                onChange={(event) => update("verbosity", event.target.value as Verbosity)}
               >
                 <option value="short">Кратко</option>
                 <option value="balanced">Сбалансированно</option>
@@ -392,9 +364,7 @@ export default function SettingsPage() {
               Инициативность
               <select
                 value={settings.initiative}
-                onChange={(event) =>
-                  update("initiative", event.target.value as Initiative)
-                }
+                onChange={(event) => update("initiative", event.target.value as Initiative)}
               >
                 <option value="reactive">Только по запросу</option>
                 <option value="balanced">Сама иногда предлагает</option>
@@ -407,16 +377,13 @@ export default function SettingsPage() {
             <input
               type="checkbox"
               checked={settings.naturalCommunicationGuardrail}
-              onChange={(event) =>
-                update("naturalCommunicationGuardrail", event.target.checked)
-              }
+              onChange={(event) => update("naturalCommunicationGuardrail", event.target.checked)}
             />
             <span>
               <strong>Natural Communication Guardrail</strong>
               <small>
-                Меньше формальных шаблонов, повторов и искусственных связок;
-                больше конкретики, вариативности длины фраз и нормальной
-                человеческой пунктуации.
+                Меньше формальных шаблонов, повторов и искусственных связок; больше конкретики,
+                вариативности длины фраз и нормальной человеческой пунктуации.
               </small>
             </span>
           </label>
@@ -439,9 +406,8 @@ export default function SettingsPage() {
             </span>
           </div>
           <p className={styles.lead}>
-            Для настоящих сообщений вне открытого чата понадобится server-side
-            delivery и Web Push. Разрешение браузера запрашивается только по
-            вашему нажатию.
+            Для настоящих сообщений вне открытого чата понадобится server-side delivery и Web Push.
+            Разрешение браузера запрашивается только по вашему нажатию.
           </p>
           <button
             type="button"
@@ -463,25 +429,15 @@ export default function SettingsPage() {
             </div>
           </div>
           <ul className={styles.list}>
-            <li>
-              Настройки этой страницы хранятся только в localStorage текущего
-              браузера.
-            </li>
+            <li>Настройки этой страницы хранятся только в localStorage текущего браузера.</li>
             <li>OAuth credentials, токены и секреты сюда не записываются.</li>
             <li>
-              Реальный companion не должен использовать чувствительный контекст
-              без отдельного разрешения.
+              Реальный companion не должен использовать чувствительный контекст без отдельного
+              разрешения.
             </li>
-            <li>
-              Любая будущая отправка proactive-сообщения должна быть отменяема
-              до delivery.
-            </li>
+            <li>Любая будущая отправка proactive-сообщения должна быть отменяема до delivery.</li>
           </ul>
-          <button
-            type="button"
-            className={styles.danger}
-            onClick={resetSettings}
-          >
+          <button type="button" className={styles.danger} onClick={resetSettings}>
             Сбросить настройки
           </button>
         </section>
