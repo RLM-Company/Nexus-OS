@@ -257,6 +257,7 @@ export default function SettingsPage() {
   const [savedNotice, setSavedNotice] = useState("Настройки сохраняются только в этом браузере.");
   const hydrationNoticeRef = useRef<string | null>(null);
   const [preview, setPreview] = useState(PROACTIVE_PREVIEW.balanced);
+  const [resetPending, setResetPending] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<
     "unsupported" | "default" | "granted" | "denied"
   >("unsupported");
@@ -363,6 +364,7 @@ export default function SettingsPage() {
   const resetSettings = (): void => {
     setSettings(DEFAULT_SETTINGS);
     setPreview(PROACTIVE_PREVIEW.balanced);
+    setResetPending(false);
     setSavedNotice("Настройки возвращены к безопасным значениям.");
   };
 
@@ -632,9 +634,28 @@ export default function SettingsPage() {
             </li>
             <li>Любая будущая отправка proactive-сообщения должна быть отменяема до delivery.</li>
           </ul>
-          <button type="button" className={styles.danger} onClick={resetSettings}>
-            Сбросить настройки
-          </button>
+          {resetPending ? (
+            <div className={styles.resetActions} role="group" aria-label="Подтверждение сброса">
+              <button type="button" className={styles.danger} onClick={resetSettings}>
+                Подтвердить сброс
+              </button>
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={() => setResetPending(false)}
+              >
+                Отмена
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className={styles.danger}
+              onClick={() => setResetPending(true)}
+            >
+              Сбросить настройки
+            </button>
+          )}
         </section>
       </div>
     </main>
