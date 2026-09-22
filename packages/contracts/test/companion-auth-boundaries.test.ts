@@ -162,11 +162,11 @@ describe("Live Companion contract boundaries", () => {
   });
 
   it.each([
-    ["0", "x", true],
-    ["64", "x".repeat(64), true],
-    ["empty", "", false],
-    ["65", "x".repeat(65), false]
-  ] as const)("checks quiet-hours timezone length %s", (_label, timezone, expected) => {
+    ["minimum", "x", true],
+    ["maximum", "x".repeat(64), true],
+    ["below minimum", "", false],
+    ["above maximum", "x".repeat(65), false]
+  ] as const)("checks quiet-hours timezone length: %s", (_label, timezone, expected) => {
     expect(
       Value.Check(CompanionPreferencesSchema, {
         ...validPreferences,
@@ -190,7 +190,7 @@ describe("Live Companion contract boundaries", () => {
     ["minimum", "x", true],
     ["maximum", "x".repeat(4000), true],
     ["empty", "", false],
-    ["over maximum", "x".repeat(4001), false]
+    ["above maximum", "x".repeat(4001), false]
   ] as const)("checks proposal message length: %s", (_label, message, expected) => {
     expect(Value.Check(CompanionMessageProposalSchema, { ...validProposal, message })).toBe(expected);
   });
@@ -205,15 +205,13 @@ describe("Live Companion contract boundaries", () => {
     ).toBe(false);
   });
 
-  it("accepts nullable gate reason and surface", () => {
-    expect(
-      Value.Check(CompanionGateDecisionSchema, {
-        ...validGateDecision,
-        decision: "allow",
-        reason: null,
-        surface: null
-      })
-    ).toBe(true);
+  it.each([
+    ["null reason", { decision: "allow", reason: null, surface: "in_app" }],
+    ["null surface", { decision: "suppress", reason: "quiet_hours", surface: null }]
+  ] as const)("accepts %s where the schema permits it", (_label, overrides) => {
+    expect(Value.Check(CompanionGateDecisionSchema, { ...validGateDecision, ...overrides })).toBe(
+      true
+    );
   });
 });
 
@@ -224,7 +222,7 @@ describe("shared primitive boundaries used by Companion and auth", () => {
     ["empty", "", false],
     ["space only", " ", false],
     ["embedded whitespace", "entity id", false],
-    ["over maximum", "a".repeat(129), false]
+    ["above maximum", "a".repeat(129), false]
   ] as const)("checks entity id boundary: %s", (_label, value, expected) => {
     expect(Value.Check(EntityIdSchema, value)).toBe(expected);
   });
@@ -240,28 +238,20 @@ describe("shared primitive boundaries used by Companion and auth", () => {
     expect(Value.Check(IsoDateTimeSchema, value)).toBe(expected);
   });
 
-  it("rejects invalid identifiers inside companion objects", () => {
-    expect(
-      Value.Check(CompanionMessageProposalSchema, { ...validProposal, proposal_id: "proposal 1" })
-    ).toBe(false);
-    expect(
-      Value.Check(CompanionMessageProposalSchema, { ...validProposal, conversation_id: "" })
-    ).toBe(false);
+  it.each([
+    ["proposal_id", "proposal 1"],
+    ["conversation_id", ""]
+  ] as const)("rejects invalid companion identifier %s", (field, value) => {
+    expect(Value.Check(CompanionMessageProposalSchema, { ...validProposal, [field]: value })).toBe(
+      false
+    );
   });
 
-  it("rejects malformed timestamps inside companion objects", () => {
-    expect(
-      Value.Check(CompanionMessageProposalSchema, {
-        ...validProposal,
-        created_at: "2026-09-19T18:00:00+00:00"
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(CompanionGateDecisionSchema, {
-        ...validGateDecision,
-        decided_at: "2026-09-19 18:00:00Z"
-      })
-    ).toBe(false);
+  it.each([
+    ["proposal created_at", CompanionMessageProposalSchema, validProposal, "created_at", "2026-09-19T18:00:00+00:00"],
+    ["gate decided_at", CompanionGateDecisionSchema, validGateDecision, "decided_at", "2026-09-19 18:00:00Z"]
+  ] as const)("rejects malformed timestamp in %s", (_label, schema, value, field, timestamp) => {
+    expect(Value.Check(schema, { ...value, [field]: timestamp })).toBe(false);
   });
 });
 
@@ -297,9 +287,9 @@ describe("Google/Telegram auth contract boundaries", () => {
     ["maximum", "c".repeat(128), true],
     ["below minimum", "c".repeat(42), false],
     ["above maximum", "c".repeat(129), false]
-  ] as const)("checks code_challenge length: %s", (_label, code_challenge, expected) => {
+  ] as const)("checks code_challenge length: %s", (_label, codeChallenge, expected) => {
     expect(
-      Value.Check(AuthStartRequestSchema, { ...validAuthStart, code_challenge })
+      Value.Check(AuthStartRequestSchema, { ...validAuthStart, code_challenge: codeChallenge })
     ).toBe(expected);
   });
 
@@ -321,18 +311,17 @@ describe("Google/Telegram auth contract boundaries", () => {
     expect(Value.Check(ExternalIdentitySchema, { ...validExternalIdentity, subject })).toBe(expected);
   });
 
-  it("accepts only S256 as the code challenge method", () => {
-    expect(Value.Check(AuthCodeChallengeMethodSchema, "S256")).toBe(true);
-    expect(Value.Check(AuthCodeChallengeMethodSchema, "plain")).toBe(false);
+  it.each([
+    ["S256", true],
+    ["plain", false]
+  ] as const)("checks code challenge method %s", (method, expected) => {
+    expect(Value.Check(AuthCodeChallengeMethodSchema, method)).toBe(expected);
   });
 
   it.each(["pending", "verified", "failed", "revoked"])(
     "accepts verification status %s",
-    (verification_status) => {
-      expect(Value.Check(AuthVerificationStatusSchema, verification_status)).toBe(true);
-      expect(
-        Value.Check(ExternalIdentitySchema, { ...validExternalIdentity, verification_status })
-      ).toBe(true);
+    (verificationStatus) => {
+      expect(Value.Check(AuthVerificationStatusSchema, verificationStatus)).toBe(true);
     }
   );
 
@@ -352,43 +341,43 @@ describe("Google/Telegram auth contract boundaries", () => {
     ).toBe(false);
   });
 
-  it("rejects invalid session entity ids", () => {
+  it.each([
+    ["embedded whitespace", "session 1"],
+    ["empty", ""]
+  ] as const)("rejects invalid session entity id: %s", (_label, sessionId) => {
     expect(
-      Value.Check(AuthSessionBootstrapSchema, { ...validSessionBootstrap, session_id: "session 1" })
-    ).toBe(false);
-    expect(
-      Value.Check(AuthSessionBootstrapSchema, { ...validSessionBootstrap, session_id: "" })
-    ).toBe(false);
-  });
-
-  it("rejects malformed auth timestamps", () => {
-    expect(
-      Value.Check(ExternalIdentitySchema, {
-        ...validExternalIdentity,
-        linked_at: "2026-09-19T18:00:00+00:00"
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ExternalIdentitySchema, {
-        ...validExternalIdentity,
-        last_verified_at: "2026-09-19 18:00:00Z"
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(AuthSessionBootstrapSchema, {
-        ...validSessionBootstrap,
-        issued_at: "2026-09-19T18:00Z"
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(AuthSessionBootstrapSchema, {
-        ...validSessionBootstrap,
-        expires_at: ""
-      })
+      Value.Check(AuthSessionBootstrapSchema, { ...validSessionBootstrap, session_id: sessionId })
     ).toBe(false);
   });
 
-  it("accepts null for optional identity timestamps and display data", () => {
+  it.each([
+    [
+      "identity linked_at",
+      ExternalIdentitySchema,
+      validExternalIdentity,
+      "linked_at",
+      "2026-09-19T18:00:00+00:00"
+    ],
+    [
+      "identity last_verified_at",
+      ExternalIdentitySchema,
+      validExternalIdentity,
+      "last_verified_at",
+      "2026-09-19 18:00:00Z"
+    ],
+    [
+      "session issued_at",
+      AuthSessionBootstrapSchema,
+      validSessionBootstrap,
+      "issued_at",
+      "2026-09-19T18:00Z"
+    ],
+    ["session expires_at", AuthSessionBootstrapSchema, validSessionBootstrap, "expires_at", ""]
+  ] as const)("rejects malformed timestamp in %s", (_label, schema, value, field, timestamp) => {
+    expect(Value.Check(schema, { ...value, [field]: timestamp })).toBe(false);
+  });
+
+  it("accepts null for nullable identity fields", () => {
     expect(
       Value.Check(ExternalIdentitySchema, {
         ...validExternalIdentity,
@@ -417,16 +406,58 @@ describe("strict object shapes", () => {
 
 describe("auth secret-material exclusion", () => {
   it.each([
-    ["AuthStartRequestSchema", AuthStartRequestSchema, validAuthStart],
-    ["AuthCallbackSchema", AuthCallbackSchema, validAuthCallback],
-    ["ExternalIdentitySchema", ExternalIdentitySchema, validExternalIdentity],
-    ["AuthSessionBootstrapSchema", AuthSessionBootstrapSchema, validSessionBootstrap]
-  ] as const)(
-    "rejects raw credential fields in %s",
-    (_name, schema, value) => {
-      for (const field of ["access_token", "refresh_token", "client_secret", "password"]) {
-        expect(Value.Check(schema, { ...value, [field]: "raw-secret" })).toBe(false);
-      }
-    }
-  );
+    ["AuthStartRequestSchema access_token", AuthStartRequestSchema, validAuthStart, "access_token"],
+    ["AuthStartRequestSchema refresh_token", AuthStartRequestSchema, validAuthStart, "refresh_token"],
+    ["AuthStartRequestSchema client_secret", AuthStartRequestSchema, validAuthStart, "client_secret"],
+    ["AuthStartRequestSchema password", AuthStartRequestSchema, validAuthStart, "password"],
+    ["AuthCallbackSchema access_token", AuthCallbackSchema, validAuthCallback, "access_token"],
+    ["AuthCallbackSchema refresh_token", AuthCallbackSchema, validAuthCallback, "refresh_token"],
+    ["AuthCallbackSchema client_secret", AuthCallbackSchema, validAuthCallback, "client_secret"],
+    ["AuthCallbackSchema password", AuthCallbackSchema, validAuthCallback, "password"],
+    [
+      "ExternalIdentitySchema access_token",
+      ExternalIdentitySchema,
+      validExternalIdentity,
+      "access_token"
+    ],
+    [
+      "ExternalIdentitySchema refresh_token",
+      ExternalIdentitySchema,
+      validExternalIdentity,
+      "refresh_token"
+    ],
+    [
+      "ExternalIdentitySchema client_secret",
+      ExternalIdentitySchema,
+      validExternalIdentity,
+      "client_secret"
+    ],
+    ["ExternalIdentitySchema password", ExternalIdentitySchema, validExternalIdentity, "password"],
+    [
+      "AuthSessionBootstrapSchema access_token",
+      AuthSessionBootstrapSchema,
+      validSessionBootstrap,
+      "access_token"
+    ],
+    [
+      "AuthSessionBootstrapSchema refresh_token",
+      AuthSessionBootstrapSchema,
+      validSessionBootstrap,
+      "refresh_token"
+    ],
+    [
+      "AuthSessionBootstrapSchema client_secret",
+      AuthSessionBootstrapSchema,
+      validSessionBootstrap,
+      "client_secret"
+    ],
+    [
+      "AuthSessionBootstrapSchema password",
+      AuthSessionBootstrapSchema,
+      validSessionBootstrap,
+      "password"
+    ]
+  ] as const)("rejects raw credential field: %s", (_label, schema, value, field) => {
+    expect(Value.Check(schema, { ...value, [field]: "raw-secret" })).toBe(false);
+  });
 });
