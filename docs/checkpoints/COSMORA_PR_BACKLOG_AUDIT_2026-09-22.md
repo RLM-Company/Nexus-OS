@@ -27,47 +27,47 @@ This audit was performed directly against GitHub's current remote refs and commi
 
 ## 2. Open PR audit
 
-| PR | назначение | актуальность | уникальные изменения | риск | зависимость | рекомендуемое действие |
-| --- | --- | --- | --- | --- | --- | --- |
-| #146 | E2E user-audit coverage | Поглощён #191 | Нет: `user-audit.spec.ts` присутствует в merged #191 | Средний: старый base/дублирование | Исторический компонент #191 | закрыть как устаревший |
-| #147 | Model Status retry/error UX | Поглощён #191 | Нет: соответствующие Model Status файлы интегрированы #191 | Средний: старый base/повторный патч | #191 | закрыть как устаревший |
-| #148 | Local user guide | Поглощён #191; текущий PR non-mergeable | Нет: `docs/USER_GUIDE.md` интегрирован #191 | Высокий: конфликтный устаревший PR | #191 | закрыть как устаревший |
-| #153 | Console workspace persistence | Поглощён #191; текущий PR non-mergeable | Нет | Высокий: старый stacked base и конфликт `page.tsx` | #191 | закрыть как устаревший |
-| #157 | Console security boundaries | Поглощён #191 | Нет | Средний: overlapping `page.tsx` / E2E | #153 → #191 | закрыть как устаревший |
-| #160 | Safe Skills preview | Поглощён #191 | Нет | Средний: stacked component already integrated | #157 → #191 | закрыть как устаревший |
-| #161 | Mock/read-only GitHub preview | Поглощён #191 | Нет | Средний: old preview duplicated in main | #160 → #191 | закрыть как устаревший |
-| #162 | Browser-local Project Context | Поглощён #191 | Нет | Средний: large overlapping web stack | #161 → #191 | закрыть как устаревший |
-| #163 | 2026-09-18 local-alpha checkpoint | Поглощён #191 | Нет: checkpoint file landed in #191 | Низкий/средний: duplicate docs commit | #191 | закрыть как устаревший |
-| #164 | Mobile owner-surface E2E | Поглощён #191 | Нет | Низкий/средний | #191 | закрыть как устаревший |
-| #165 | Owner-surface error redaction | Поглощён #191; текущий PR non-mergeable | Нет | Высокий: conflict plus overlapping current owner surfaces | #191 | закрыть как устаревший |
-| #166 | Agent Studio accessible feedback | Поглощён #191 | Нет | Средний: stacked on #165 | #165 → #191 | закрыть как устаревший |
-| #167 | Corrupted Project Context recovery coverage | Поглощён #191 | Нет: integrity coverage carried into aggregate | Средний: stale stack | #162/#173 → #191 | закрыть как устаревший |
-| #168 | Project Context dialog accessibility | Поглощён #191 | Нет | Средний: stale stack | #162/#173 → #191 | закрыть как устаревший |
-| #169 | Invalid persisted workspace fallback | Поглощён #191 | Нет | Средний: stale stack | #162 → #191 | закрыть как устаревший |
-| #171 | iOS install-dialog accessibility | Поглощён #191; текущий PR non-mergeable | Нет | Высокий: obsolete conflicting branch | #191 | закрыть как устаревший |
-| #172 | sessionStorage-safe greeting | Поглощён #191 | Нет | Средний | #162/#191 | закрыть как устаревший |
-| #173 | Integrated Project Context hardening | Поглощён #191 | Нет | Средний: aggregate predecessor already merged | #168 → #191 | закрыть как устаревший |
-| #174 | Agent Studio duplicate-submit lock | Поглощён #191 | Нет | Средний | #166 → #191 | закрыть как устаревший |
-| #175 | Cross-project Project Context isolation | Поглощён #191 | Нет | Низкий/средний | #173 → #191 | закрыть как устаревший |
-| #176 | Safe install-prompt failure handling | Поглощён #191 | Нет | Средний | #171 → #191 | закрыть как устаревший |
-| #177 | GitHub preview URL sanitization | Поглощён #191 | Нет | Средний | #161 → #191 | закрыть как устаревший |
-| #178 | Skills manifest isolation | Поглощён #191 | Нет | Низкий/средний | #160 → #191 | закрыть как устаревший |
-| #179 | Project-tab keyboard navigation | Поглощён #191 | Нет | Средний | #173 → #191 | закрыть как устаревший |
-| #180 | Media prompts remain local | Поглощён #191 | Нет | Низкий/средний | #162/#191 | закрыть как устаревший |
-| #181 | Mobile coverage for all main workspaces | Поглощён #191 | Нет | Низкий/средний | #191 | закрыть как устаревший |
-| #182 | Active mobile navigation semantics | Поглощён #191 | Нет | Низкий/средний | #191 | закрыть как устаревший |
-| #183 | Duplicate browser install prompt lock | Поглощён #191 | Нет | Средний | #176 → #191 | закрыть как устаревший |
-| #184 | Extended local-alpha preflight | Поглощён #191 | Нет: preflight scripts are present in #191 | Средний | #173/#191 | закрыть как устаревший |
-| #185 | Light viewport color scheme | Поглощён #191 | Нет | Низкий | #191 | закрыть как устаревший |
-| #186 | Accurate transient media copy | Поглощён #191 | Нет | Низкий | #180 → #191 | закрыть как устаревший |
-| #187 | Reduced-motion handling | Поглощён #191 | Нет | Низкий | #191 | закрыть как устаревший |
-| #188 | Visible focus for media fields | Поглощён #191 | Нет | Низкий | #191 | закрыть как устаревший |
-| #189 | Invalid project-view route fallback | Поглощён #191 | Нет | Низкий | #173/#191 | закрыть как устаревший |
-| #190 | Quoted Project Context secret redaction | Поглощён #191 | Нет | Средний: security-sensitive duplicate patch | #173/#191 | закрыть как устаревший |
-| #203 | Aggregate extended non-API hardening (#191 + #192–#202 lineage) | Полностью устарел; draft и non-mergeable | Нет: its stated component work is already in current `main` through #191 and merged #192–#202 | Очень высокий: 53-commit stale aggregate, 76 files, conflicts/current-main drift | Old #191 stack plus now-merged #192–#202 | закрыть как устаревший |
-| #211 | Server-side read-only GitHub connection | Уникален, но запрещён текущей release-аудит границей | Да: server adapter/routes, GitHub contracts, secret/config support, web wiring | Высокий: затрагивает `apps/api`; also config/secrets; branch is 11 commits behind main | Требуется явное решение владельца по backend/API scope | заблокировать до решения владельца |
-| #212 | Web Settings + Login preview + Live Companion preview/docs | Актуален; mergeable; CI green; 3 commits behind current main | Да: 8 web/docs files, no `apps/api` | Средний: Settings/Login/Live Companion explicitly out of edit scope for this audit; must be refreshed against current main before any future merge | Current main already includes #213/#214; semantic review after #215 is safest | оставить |
-| #215 | Provider-neutral communication profile contract | Актуален; exactly 1 commit ahead of current main; CI green | Да: communication contract/export/tests | Низкий/средний: communication contracts are out of edit scope for this audit, so no modification is permitted here | No code dependency; should be evaluated before #212 semantic refresh | оставить |
+| PR   | назначение                  | актуальность           | уникальные изменения | риск                  | зависимость                     | рекомендуемое действие             |
+| ---- | --------------------------- | ---------------------- | -------------------- | --------------------- | ------------------------------- | ---------------------------------- |
+| #146 | E2E user audit              | в main через #191      | нет                  | stale stack           | #191                            | закрыть как устаревший             |
+| #147 | Model Status retry UX       | в main через #191      | нет                  | stale stack           | #191                            | закрыть как устаревший             |
+| #148 | Local user guide            | в main через #191      | нет                  | conflict              | #191                            | закрыть как устаревший             |
+| #153 | Console persistence         | в main через #191      | нет                  | conflict              | #191                            | закрыть как устаревший             |
+| #157 | Console security            | в main через #191      | нет                  | overlap               | #153 → #191                     | закрыть как устаревший             |
+| #160 | Skills preview              | в main через #191      | нет                  | stale stack           | #157 → #191                     | закрыть как устаревший             |
+| #161 | GitHub mock preview         | в main через #191      | нет                  | stale stack           | #160 → #191                     | закрыть как устаревший             |
+| #162 | Project Context             | в main через #191      | нет                  | large overlap         | #161 → #191                     | закрыть как устаревший             |
+| #163 | Release checkpoint          | в main через #191      | нет                  | duplicate docs        | #191                            | закрыть как устаревший             |
+| #164 | Mobile owner E2E            | в main через #191      | нет                  | stale test            | #191                            | закрыть как устаревший             |
+| #165 | Owner error redaction       | в main через #191      | нет                  | conflict              | #191                            | закрыть как устаревший             |
+| #166 | Agent Studio a11y           | в main через #191      | нет                  | stale stack           | #165 → #191                     | закрыть как устаревший             |
+| #167 | Context recovery test       | в main через #191      | нет                  | stale stack           | #162/#173 → #191                | закрыть как устаревший             |
+| #168 | Context dialog a11y         | в main через #191      | нет                  | stale stack           | #162/#173 → #191                | закрыть как устаревший             |
+| #169 | Workspace fallback test     | в main через #191      | нет                  | stale stack           | #162 → #191                     | закрыть как устаревший             |
+| #171 | iOS install a11y            | в main через #191      | нет                  | conflict              | #191                            | закрыть как устаревший             |
+| #172 | sessionStorage failsafe     | в main через #191      | нет                  | stale stack           | #162 → #191                     | закрыть как устаревший             |
+| #173 | Context hardening aggregate | в main через #191      | нет                  | obsolete aggregate    | #168 → #191                     | закрыть как устаревший             |
+| #174 | Agent Studio submit lock    | в main через #191      | нет                  | stale stack           | #166 → #191                     | закрыть как устаревший             |
+| #175 | Cross-project context test  | в main через #191      | нет                  | stale test            | #173 → #191                     | закрыть как устаревший             |
+| #176 | Install failure handling    | в main через #191      | нет                  | stale stack           | #171 → #191                     | закрыть как устаревший             |
+| #177 | GitHub URL sanitization     | в main через #191      | нет                  | stale stack           | #161 → #191                     | закрыть как устаревший             |
+| #178 | Skills manifest isolation   | в main через #191      | нет                  | stale stack           | #160 → #191                     | закрыть как устаревший             |
+| #179 | Project tab keyboard        | в main через #191      | нет                  | stale stack           | #173 → #191                     | закрыть как устаревший             |
+| #180 | Local media prompts         | в main через #191      | нет                  | stale test            | #191                            | закрыть как устаревший             |
+| #181 | Mobile workspace E2E        | в main через #191      | нет                  | stale test            | #191                            | закрыть как устаревший             |
+| #182 | Mobile nav semantics        | в main через #191      | нет                  | stale stack           | #191                            | закрыть как устаревший             |
+| #183 | Install prompt lock         | в main через #191      | нет                  | stale stack           | #176 → #191                     | закрыть как устаревший             |
+| #184 | Extended preflight          | в main через #191      | нет                  | stale scripts         | #191                            | закрыть как устаревший             |
+| #185 | Viewport color scheme       | в main через #191      | нет                  | stale UI              | #191                            | закрыть как устаревший             |
+| #186 | Transient media copy        | в main через #191      | нет                  | stale UI              | #180 → #191                     | закрыть как устаревший             |
+| #187 | Reduced motion              | в main через #191      | нет                  | stale UI              | #191                            | закрыть как устаревший             |
+| #188 | Media focus ring            | в main через #191      | нет                  | stale UI              | #191                            | закрыть как устаревший             |
+| #189 | Invalid project route       | в main через #191      | нет                  | stale test            | #173 → #191                     | закрыть как устаревший             |
+| #190 | Quoted secret redaction     | в main через #191      | нет                  | security overlap      | #173 → #191                     | закрыть как устаревший             |
+| #203 | Extended non-API aggregate  | устарел; non-mergeable | нет                  | 53 commits / conflict | #191 + #192–#202                | закрыть как устаревший             |
+| #211 | Server GitHub read-only     | уникален, но forbidden | да                   | apps/api; 11 behind   | owner backend decision          | заблокировать до решения владельца |
+| #212 | Settings/Login/Companion    | актуален; CI green     | да                   | 3 behind; scoped UI   | current main; review after #215 | оставить                           |
+| #215 | Communication profile       | актуален; CI green     | да                   | low; current main +1  | none                            | оставить                           |
 
 ## 3. Why #146–#190 should not be merged individually
 
