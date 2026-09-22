@@ -267,6 +267,31 @@ export const validateManagerExecutionSnapshot = (input: {
     if (snapshot.result.status !== snapshot.phase) {
       issues.push("Execution result status must match the terminal phase");
     }
+    if (
+      snapshot.result.summary_artifact_id !== null &&
+      !artifactsById.has(snapshot.result.summary_artifact_id)
+    ) {
+      issues.push(
+        `Execution result references unknown summary artifact ${snapshot.result.summary_artifact_id}`
+      );
+    }
+    for (const artifactId of snapshot.result.deliverable_artifact_ids) {
+      if (!artifactsById.has(artifactId)) {
+        issues.push(`Execution result references unknown deliverable artifact ${artifactId}`);
+      }
+    }
+    for (const artifactId of snapshot.result.verified_artifact_ids) {
+      if (!artifactsById.has(artifactId)) {
+        issues.push(`Execution result references unknown verified artifact ${artifactId}`);
+      }
+      if (!passedArtifactIds.has(artifactId)) {
+        issues.push(`Execution result claims unverified artifact ${artifactId}`);
+      }
+      if (failedArtifactIds.has(artifactId)) {
+        issues.push(`Execution result claims failed artifact ${artifactId} as verified`);
+      }
+    }
+
     const unresolvedTaskIds = new Set(snapshot.result.unresolved_task_ids);
     for (const taskId of snapshot.result.unresolved_task_ids) {
       const state = snapshot.task_states.find((candidate) => candidate.task_id === taskId);
