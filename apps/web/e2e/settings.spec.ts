@@ -266,6 +266,52 @@ test("falls back to valid legacy settings when v2 JSON is corrupted", async ({ p
   });
 });
 
+test("preserves unsupported future settings until explicit reset", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "cosmora:settings:v2",
+      JSON.stringify({
+        version: 3,
+        future_only: "preserve-me"
+      })
+    );
+  });
+
+  await page.goto("/settings");
+
+  await expect(
+    page.getByText(
+      "Настройки созданы более новой версией Cosmora. Автоматическая перезапись отключена."
+    )
+  ).toBeVisible();
+  await expect(page.getByLabel("Тон")).toHaveValue("natural");
+
+  await page.getByLabel("Тон").selectOption("direct");
+
+  const preserved = await page.evaluate(
+    () => window.localStorage.getItem("cosmora:settings:v2") ?? ""
+  );
+  expect(preserved).toContain('"version":3');
+  expect(preserved).toContain("preserve-me");
+
+  await page.getByRole("button", { name: "Сбросить настройки" }).click();
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const stored = JSON.parse(window.localStorage.getItem("cosmora:settings:v2") ?? "{}") as {
+          version?: unknown;
+          future_only?: unknown;
+        };
+        return {
+          version: stored.version,
+          futureOnly: stored.future_only
+        };
+      })
+    )
+    .toEqual({ version: 2, futureOnly: undefined });
+});
+
 test("recovers corrupted settings without exposing or preserving unsafe fields", async ({
   page
 }) => {
