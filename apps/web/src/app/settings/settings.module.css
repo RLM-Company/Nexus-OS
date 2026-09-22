@@ -354,6 +354,12 @@
   line-height: 1.5;
 }
 
+.resetActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
 .list {
   display: grid;
   gap: 0.55rem;
