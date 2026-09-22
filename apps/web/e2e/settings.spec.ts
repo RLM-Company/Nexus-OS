@@ -136,6 +136,64 @@ test("migrates legacy settings to the bounded v2 contract", async ({ page }) => 
   expect(storage.current.communication.avoid_canned_framing).toBe(true);
 });
 
+test("falls back to valid legacy settings when v2 JSON is corrupted", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cosmora:settings:v2", "{broken-json");
+    window.localStorage.setItem(
+      "cosmora:settings:v1",
+      JSON.stringify({
+        companionEnabled: true,
+        proactiveFrequency: "often",
+        quietStart: "21:30",
+        quietEnd: "07:00",
+        maxProactivePerDay: 4,
+        tone: "warm",
+        verbosity: "detailed",
+        initiative: "proactive",
+        naturalCommunicationGuardrail: false,
+        notificationsEnabled: false,
+        api_key: "must-not-survive"
+      })
+    );
+  });
+
+  await page.goto("/settings");
+
+  await expect(
+    page.getByText("Текущие настройки повреждены. Восстановлена предыдущая версия.")
+  ).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" })).toBeChecked();
+  await expect(page.getByLabel("Частота")).toHaveValue("often");
+  await expect(page.getByLabel("Максимум в день")).toHaveValue("4");
+  await expect(page.getByLabel("Тон")).toHaveValue("warm");
+  await expect(page.getByLabel("Подробность")).toHaveValue("detailed");
+  await expect(page.getByLabel("Инициативность")).toHaveValue("proactive");
+
+  const storage = await page.evaluate(() => ({
+    legacy: window.localStorage.getItem("cosmora:settings:v1"),
+    current: window.localStorage.getItem("cosmora:settings:v2") ?? ""
+  }));
+  expect(storage.legacy).toBeNull();
+  expect(storage.current).not.toContain("must-not-survive");
+
+  const recovered = JSON.parse(storage.current);
+  expect(recovered).toMatchObject({
+    version: 2,
+    companion: {
+      enabled: true,
+      frequency: "often",
+      max_proactive_per_day: 4,
+      quiet_hours: { start: "21:30", end: "07:00" }
+    },
+    communication: {
+      tone: "warm",
+      verbosity: "detailed",
+      initiative: "proactive",
+      natural_guardrail_enabled: false
+    }
+  });
+});
+
 test("recovers corrupted settings without exposing or preserving unsafe fields", async ({
   page
 }) => {
