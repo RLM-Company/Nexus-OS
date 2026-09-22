@@ -159,6 +159,32 @@ describe("Manager execution schema boundaries", () => {
     ).toBe(false);
   });
 
+  it.each([
+    ["execution_id", ""],
+    ["execution_id", "execution 1"],
+    ["execution_id", "x".repeat(129)],
+    ["project_id", ""],
+    ["project_id", "project 1"],
+    ["owner_task_ref", ""],
+    ["owner_task_ref", "owner task"]
+  ] as const)("rejects invalid request identifier %s=%j", (field, value) => {
+    expect(Value.Check(ManagerExecutionRequestSchema, { ...validRequest, [field]: value })).toBe(
+      false
+    );
+  });
+
+  it.each([
+    ["2026-09-22T12:00:00Z", true],
+    ["2026-09-22T12:00:00.000Z", true],
+    ["2026-09-22 12:00:00Z", false],
+    ["2026-09-22T12:00:00+00:00", false],
+    ["", false]
+  ] as const)("checks request timestamp shape %j", (createdAt, expected) => {
+    expect(Value.Check(ManagerExecutionRequestSchema, { ...validRequest, created_at: createdAt })).toBe(
+      expected
+    );
+  });
+
   it("rejects wrong contract version and additional request fields", () => {
     expect(
       Value.Check(ManagerExecutionRequestSchema, { ...validRequest, contract_version: 2 })
@@ -177,6 +203,27 @@ describe("Manager execution schema boundaries", () => {
   it.each(["manager", "policy", "", null])("rejects verifier %j", (verifier) => {
     expect(
       Value.Check(RuntimeArtifactVerificationSchema, { ...validVerification, verifier })
+    ).toBe(false);
+  });
+
+  it.each([
+    ["verification_id", ""],
+    ["verification_id", "verification 1"],
+    ["project_id", ""],
+    ["task_id", "task 1"],
+    ["artifact_id", ""]
+  ] as const)("rejects invalid verification identifier %s=%j", (field, value) => {
+    expect(
+      Value.Check(RuntimeArtifactVerificationSchema, { ...validVerification, [field]: value })
+    ).toBe(false);
+  });
+
+  it("rejects malformed verification timestamps", () => {
+    expect(
+      Value.Check(RuntimeArtifactVerificationSchema, {
+        ...validVerification,
+        created_at: "2026-09-22 12:00:00Z"
+      })
     ).toBe(false);
   });
 
@@ -238,6 +285,24 @@ describe("Manager execution schema boundaries", () => {
     );
   });
 
+  it.each([
+    ["summary_artifact_id", "artifact 1"],
+    ["summary_artifact_id", "x".repeat(129)]
+  ] as const)("rejects invalid result identifier %s=%j", (field, value) => {
+    expect(Value.Check(ManagerExecutionResultSchema, { ...validResult, [field]: value })).toBe(
+      false
+    );
+  });
+
+  it("rejects malformed result timestamps", () => {
+    expect(
+      Value.Check(ManagerExecutionResultSchema, {
+        ...validResult,
+        created_at: "2026-09-22T12:00:00+00:00"
+      })
+    ).toBe(false);
+  });
+
   it("accepts nullable summary artifact and strict result shape", () => {
     expect(
       Value.Check(ManagerExecutionResultSchema, {
@@ -248,6 +313,27 @@ describe("Manager execution schema boundaries", () => {
     expect(Value.Check(ManagerExecutionResultSchema, validResult)).toBe(true);
     expect(
       Value.Check(ManagerExecutionResultSchema, { ...validResult, unexpected: true })
+    ).toBe(false);
+  });
+
+  it.each([
+    ["execution_id", ""],
+    ["execution_id", "execution 1"],
+    ["project_id", "project 1"],
+    ["graph_id", ""],
+    ["checkpoint_id", "checkpoint 1"]
+  ] as const)("rejects invalid snapshot identifier %s=%j", (field, value) => {
+    expect(Value.Check(ManagerExecutionSnapshotSchema, { ...validSnapshot, [field]: value })).toBe(
+      false
+    );
+  });
+
+  it("rejects malformed snapshot timestamps", () => {
+    expect(
+      Value.Check(ManagerExecutionSnapshotSchema, {
+        ...validSnapshot,
+        updated_at: "2026-09-22T12:00Z"
+      })
     ).toBe(false);
   });
 
