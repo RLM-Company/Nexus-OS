@@ -144,7 +144,7 @@ test("requests notification permission only after explicit user action", async (
           .__notificationPermissionCalls
     )
   ).toBe(1);
-  await expect(page.getByText("Разрешены", { exact: true })).toBeVisible();
+  await expect(page.getByText("Включены", { exact: true })).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(() => {
