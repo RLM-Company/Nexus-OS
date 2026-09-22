@@ -40,26 +40,27 @@ describe("direct model option length boundaries", () => {
       "Invalid model request option: preferredModelAlias"
     );
   });
-  it.each(services)("rejects non-strict maxCost objects", (_name, createService) => {
-    const createWithExtraMaxCost = () => {
-      if (_name === "ManagerService") {
-        return new ManagerService({
+  it("rejects non-strict maxCost objects", () => {
+    const extraMaxCost = { amount: 1, currency: "USD", unexpected: true } as never;
+
+    expect(
+      () =>
+        new ManagerService({
           preferredProvider: "mock",
           preferredModelAlias: "manager",
           fallbackAllowed: false,
-          maxCost: { amount: 1, currency: "USD", unexpected: true } as never
-        });
-      }
+          maxCost: extraMaxCost
+        })
+    ).toThrow("Invalid model request option: maxCost");
 
-      return new ChatService({
-        preferredProvider: "mock",
-        preferredModelAlias: "chat",
-        fallbackAllowed: false,
-        maxCost: { amount: 1, currency: "USD", unexpected: true } as never
-      });
-    };
-
-    expect(createWithExtraMaxCost).toThrow("Invalid model request option: maxCost");
-    expect(createService).toBeTypeOf("function");
+    expect(
+      () =>
+        new ChatService({
+          preferredProvider: "mock",
+          preferredModelAlias: "chat",
+          fallbackAllowed: false,
+          maxCost: extraMaxCost
+        })
+    ).toThrow("Invalid model request option: maxCost");
   });
 });
