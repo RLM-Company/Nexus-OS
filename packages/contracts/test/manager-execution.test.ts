@@ -350,6 +350,46 @@ describe("Manager execution contracts", () => {
     );
   });
 
+  it("binds critic verification evidence to the artifact being verified", () => {
+    const valid = completedSnapshot();
+    valid.verifications = [
+      ...valid.verifications,
+      {
+        verification_id: "verification-analysis-critic",
+        project_id: "project-1",
+        task_id: "analysis-task",
+        artifact_id: "analysis-artifact",
+        verifier: "critic",
+        status: "PASS",
+        check_ids: ["critic-review"],
+        critic_verdict_id: "critic-artifact",
+        created_at: timestamp
+      }
+    ];
+
+    expect(validateManagerExecutionSnapshot({ snapshot: valid, graph, artifacts })).toEqual([]);
+
+    const wrongTarget = completedSnapshot();
+    wrongTarget.verifications = [
+      ...wrongTarget.verifications,
+      {
+        verification_id: "verification-evidence-critic",
+        project_id: "project-1",
+        task_id: "research-task",
+        artifact_id: "evidence-artifact",
+        verifier: "critic",
+        status: "PASS",
+        check_ids: ["critic-review"],
+        critic_verdict_id: "critic-artifact",
+        created_at: timestamp
+      }
+    ];
+
+    expect(validateManagerExecutionSnapshot({ snapshot: wrongTarget, graph, artifacts })).toContain(
+      "Critic verification verification-evidence-critic verdict does not reference verified artifact"
+    );
+  });
+
   it("requires critic evidence only for critic verification", () => {
     const criticWithoutVerdict = completedSnapshot();
     const verification = firstVerification(criticWithoutVerdict);
