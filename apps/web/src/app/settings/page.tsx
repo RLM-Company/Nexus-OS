@@ -313,7 +313,9 @@ export default function SettingsPage() {
       setNotificationPermission(permission);
       if (permission !== "granted") {
         setSettings((current) =>
-          current.notificationsEnabled ? { ...current, notificationsEnabled: false } : current
+          current.notificationsEnabled || current.allowPush
+            ? { ...current, notificationsEnabled: false, allowPush: false }
+            : current
         );
       }
     }
@@ -597,13 +599,15 @@ export default function SettingsPage() {
               <h2 id="notifications-title">Уведомления</h2>
             </div>
             <span className={styles.badgeMuted}>
-              {notificationPermission === "granted"
-                ? "Разрешены"
-                : notificationPermission === "denied"
-                  ? "Заблокированы"
-                  : notificationPermission === "unsupported"
-                    ? "Не поддерживаются"
-                    : "Не запрошены"}
+              {notificationPermission === "granted" && settings.notificationsEnabled
+                ? "Включены"
+                : notificationPermission === "granted"
+                  ? "Разрешены браузером"
+                  : notificationPermission === "denied"
+                    ? "Заблокированы"
+                    : notificationPermission === "unsupported"
+                      ? "Не поддерживаются"
+                      : "Не запрошены"}
             </span>
           </div>
           <p className={styles.lead}>
@@ -616,10 +620,28 @@ export default function SettingsPage() {
             onClick={() => void requestNotifications()}
             disabled={notificationPermission === "unsupported"}
           >
-            {notificationPermission === "granted"
-              ? "Уведомления разрешены"
-              : "Разрешить уведомления"}
+            {notificationPermission === "granted" && settings.notificationsEnabled
+              ? "Уведомления включены"
+              : notificationPermission === "granted"
+                ? "Включить уведомления"
+                : "Разрешить уведомления"}
           </button>
+
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={settings.allowPush}
+              onChange={(event) => update("allowPush", event.target.checked)}
+              disabled={notificationPermission !== "granted" || !settings.notificationsEnabled}
+            />
+            <span>
+              <strong>Разрешить proactive push</strong>
+              <small>
+                Это только согласие на будущую push-доставку. Server-side transport пока не
+                подключён.
+              </small>
+            </span>
+          </label>
         </section>
 
         <section className={styles.card} aria-labelledby="privacy-title">
