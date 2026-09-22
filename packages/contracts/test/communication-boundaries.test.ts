@@ -2,7 +2,7 @@ import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import { CommunicationProfileSchema } from "../src/index.js";
 
-const check = (candidate: unknown) => check(candidate);
+const check = (candidate: unknown) => Value.Check(CommunicationProfileSchema, candidate);
 
 const profile = {
   tone: "natural",
@@ -17,15 +17,15 @@ const profile = {
 describe("communication profile boundaries", () => {
   it("accepts every current enum value", () => {
     for (const tone of ["natural", "warm", "direct", "professional"]) {
-      expect(check({ ...profile, tone }).toBe(true);
+      expect(check({ ...profile, tone })).toBe(true);
     }
 
     for (const verbosity of ["short", "balanced", "detailed"]) {
-      expect(check({ ...profile, verbosity }).toBe(true);
+      expect(check({ ...profile, verbosity })).toBe(true);
     }
 
     for (const initiative of ["reactive", "balanced", "proactive"]) {
-      expect(check({ ...profile, initiative }).toBe(true);
+      expect(check({ ...profile, initiative })).toBe(true);
     }
   });
 
@@ -47,7 +47,7 @@ describe("communication profile boundaries", () => {
     ] as const;
 
     for (const [field, value] of cases) {
-      expect(check({ ...profile, [field]: value }).toBe(false);
+      expect(check({ ...profile, [field]: value })).toBe(false);
     }
   });
 
@@ -60,23 +60,19 @@ describe("communication profile boundaries", () => {
     ] as const;
 
     for (const field of booleanFields) {
-      expect(check({ ...profile, [field]: true }).toBe(true);
-      expect(check({ ...profile, [field]: false }).toBe(true);
+      expect(check({ ...profile, [field]: true })).toBe(true);
+      expect(check({ ...profile, [field]: false })).toBe(true);
 
       for (const value of [0, 1, "true", null]) {
-        expect(check({ ...profile, [field]: value }).toBe(false);
+        expect(check({ ...profile, [field]: value })).toBe(false);
       }
     }
 
-    for (const field of [
-      "tone",
-      "verbosity",
-      "initiative",
-      ...booleanFields
-    ] as const) {
+    const requiredFields = ["tone", "verbosity", "initiative", ...booleanFields] as const;
+    for (const field of requiredFields) {
       const candidate: Record<string, unknown> = { ...profile };
       delete candidate[field];
-      expect(check(candidate).toBe(false);
+      expect(check(candidate)).toBe(false);
     }
   });
 
@@ -96,9 +92,9 @@ describe("communication profile boundaries", () => {
     ).toBe(false);
 
     for (const candidate of [null, true, 1, "natural", []]) {
-      expect(check(candidate).toBe(false);
+      expect(check(candidate)).toBe(false);
     }
 
-    expect(check(profile).toBe(true);
+    expect(check(profile)).toBe(true);
   });
 });
