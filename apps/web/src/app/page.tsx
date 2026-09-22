@@ -2536,6 +2536,10 @@ export default function Home() {
             <span>{item.label}</span>
           </button>
         ))}
+        <Link href="/settings" aria-label="Настройки">
+          <span aria-hidden="true">⚙</span>
+          <span>Настройки</span>
+        </Link>
       </nav>
     </div>
   );
