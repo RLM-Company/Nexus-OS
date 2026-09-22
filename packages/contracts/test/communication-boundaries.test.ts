@@ -13,19 +13,13 @@ const baseProfile = {
 } as const;
 
 describe("communication profile boundaries", () => {
-  it.each(["natural", "warm", "direct", "professional"] as const)(
-    "accepts tone %s",
-    (tone) => {
-      expect(Value.Check(CommunicationProfileSchema, { ...baseProfile, tone })).toBe(true);
-    }
-  );
+  it.each(["natural", "warm", "direct", "professional"] as const)("accepts tone %s", (tone) => {
+    expect(Value.Check(CommunicationProfileSchema, { ...baseProfile, tone })).toBe(true);
+  });
 
-  it.each(["short", "balanced", "detailed"] as const)(
-    "accepts verbosity %s",
-    (verbosity) => {
-      expect(Value.Check(CommunicationProfileSchema, { ...baseProfile, verbosity })).toBe(true);
-    }
-  );
+  it.each(["short", "balanced", "detailed"] as const)("accepts verbosity %s", (verbosity) => {
+    expect(Value.Check(CommunicationProfileSchema, { ...baseProfile, verbosity })).toBe(true);
+  });
 
   it.each(["reactive", "balanced", "proactive"] as const)(
     "accepts initiative %s",
@@ -57,7 +51,9 @@ describe("communication profile boundaries", () => {
     ["initiative", null],
     ["initiative", 1]
   ] as const)("rejects non-canonical %s value %j", (field, value) => {
-    expect(Value.Check(CommunicationProfileSchema, { ...baseProfile, [field]: value })).toBe(false);
+    expect(Value.Check(CommunicationProfileSchema, { ...baseProfile, [field]: value })).toBe(
+      false
+    );
   });
 
   it.each([
