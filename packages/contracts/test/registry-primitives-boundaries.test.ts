@@ -278,17 +278,17 @@ describe("model registry entry boundaries", () => {
   });
 
   it("rejects invalid privacy vocabulary and extra properties", () => {
-    let privacy = {
+    const invalidTrainingUsage = {
       ...baseEntry.privacy,
       training_usage: "yes"
     };
-    expect(isEntry({ ...baseEntry, privacy })).toBe(false);
+    expect(isEntry({ ...baseEntry, privacy: invalidTrainingUsage })).toBe(false);
 
-    privacy = {
+    const invalidRetention = {
       ...baseEntry.privacy,
       retention: "forever"
     };
-    expect(isEntry({ ...baseEntry, privacy })).toBe(false);
+    expect(isEntry({ ...baseEntry, privacy: invalidRetention })).toBe(false);
 
     const extraPrivacy = {
       ...baseEntry.privacy,
