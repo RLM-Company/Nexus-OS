@@ -182,6 +182,22 @@ describe("Manager execution contracts", () => {
     );
   });
 
+  it("fails a complete execution trace when the task graph is structurally invalid", () => {
+    const invalidGraph: RuntimeTaskGraph = {
+      ...graph,
+      root_task_id: "missing-root"
+    };
+
+    expect(
+      validateManagerExecutionTrace({
+        request,
+        snapshot: completedSnapshot(),
+        graph: invalidGraph,
+        artifacts
+      })
+    ).toContain("Root task does not exist");
+  });
+
   it("rejects roles and graph size outside the owner-approved request", () => {
     expect(
       validateManagerExecutionRequest({
