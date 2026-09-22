@@ -55,6 +55,27 @@ test("persists companion and communication settings", async ({ page }) => {
   expect(JSON.stringify(persisted)).not.toContain("secret");
 });
 
+test("keeps proactive daily cap integral before persistence", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" }).check();
+
+  const dailyCap = page.getByLabel("Максимум в день");
+
+  await dailyCap.fill("1.5");
+  await expect(dailyCap).toHaveValue("3");
+
+  await dailyCap.fill("21");
+  await expect(dailyCap).toHaveValue("20");
+
+  await dailyCap.fill("-1");
+  await expect(dailyCap).toHaveValue("0");
+
+  const persisted = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("cosmora:settings:v2") ?? "{}")
+  );
+  expect(persisted.companion.max_proactive_per_day).toBe(0);
+});
+
 test("keeps auth preview explicit and does not expose credential inputs", async ({ page }) => {
   await page.goto("/login");
 
