@@ -3,6 +3,7 @@ import {
   MANAGER_RUNTIME_CONTRACT_VERSION,
   ManagerRuntimeRoleSchema,
   RuntimeTaskStatusSchema,
+  validateRuntimeTaskGraph,
   type RuntimeArtifact,
   type RuntimeTaskGraph
 } from "./manager-runtime.js";
@@ -337,6 +338,7 @@ export const validateManagerExecutionTrace = (input: {
   artifacts: readonly RuntimeArtifact[];
 }): string[] => {
   const issues = [
+    ...validateRuntimeTaskGraph(input.graph),
     ...validateManagerExecutionRequest({ request: input.request, graph: input.graph }),
     ...validateManagerExecutionSnapshot({
       snapshot: input.snapshot,
