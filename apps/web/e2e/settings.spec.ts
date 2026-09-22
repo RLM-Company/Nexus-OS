@@ -148,9 +148,9 @@ test("requests notification permission only after explicit user action", async (
   await expect
     .poll(() =>
       page.evaluate(() => {
-        const stored = JSON.parse(
-          window.localStorage.getItem("cosmora:settings:v2") ?? "{}"
-        ) as { notifications_enabled?: unknown };
+        const stored = JSON.parse(window.localStorage.getItem("cosmora:settings:v2") ?? "{}") as {
+          notifications_enabled?: unknown;
+        };
         return stored.notifications_enabled;
       })
     )
