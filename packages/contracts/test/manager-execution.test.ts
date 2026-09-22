@@ -232,6 +232,26 @@ describe("Manager execution contracts", () => {
     );
   });
 
+  it("requires terminal results to enumerate every unresolved task", () => {
+    const snapshot = completedSnapshot();
+    snapshot.phase = "blocked";
+    snapshot.task_states = snapshot.task_states.map((state) =>
+      state.task_id === "critic-task" ? { ...state, status: "blocked" } : state
+    );
+    snapshot.result = {
+      ...snapshot.result!,
+      status: "blocked",
+      unresolved_task_ids: []
+    };
+
+    expect(validateManagerExecutionSnapshot({ snapshot, graph, artifacts })).toContain(
+      "Execution result omits unresolved task critic-task"
+    );
+
+    snapshot.result.unresolved_task_ids = ["critic-task"];
+    expect(validateManagerExecutionSnapshot({ snapshot, graph, artifacts })).toEqual([]);
+  });
+
   it("requires terminal results and forbids premature final results", () => {
     const withoutResult = { ...completedSnapshot(), result: null };
     expect(
