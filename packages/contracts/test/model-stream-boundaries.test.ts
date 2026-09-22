@@ -277,12 +277,12 @@ describe("model response boundaries", () => {
 
     expect(Value.Check(ModelResponseSchema, { ...response, warnings: warnings50 })).toBe(true);
     expect(Value.Check(ModelResponseSchema, { ...response, warnings: warnings51 })).toBe(false);
-    expect(
-      Value.Check(ModelResponseSchema, { ...response, warnings: ["a".repeat(1_000)] })
-    ).toBe(true);
-    expect(
-      Value.Check(ModelResponseSchema, { ...response, warnings: ["a".repeat(1_001)] })
-    ).toBe(false);
+    expect(Value.Check(ModelResponseSchema, { ...response, warnings: ["a".repeat(1_000)] })).toBe(
+      true
+    );
+    expect(Value.Check(ModelResponseSchema, { ...response, warnings: ["a".repeat(1_001)] })).toBe(
+      false
+    );
     expect(Value.Check(ModelResponseSchema, { ...response, warnings: [""] })).toBe(false);
 
     expect(Value.Check(ModelResponseSchema, { ...response, unexpected: true })).toBe(false);
