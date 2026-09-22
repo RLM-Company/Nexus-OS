@@ -287,7 +287,7 @@ export default function SettingsPage() {
           if (
             isRecord(parsedStored) &&
             typeof parsedStored.version === "number" &&
-            parsedStored.version !== 2
+            parsedStored.version > 2
           ) {
             storageWriteBlockedRef.current = true;
             announceHydration(
