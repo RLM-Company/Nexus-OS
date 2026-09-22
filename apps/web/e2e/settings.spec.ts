@@ -105,6 +105,58 @@ test("keeps settings usable when localStorage is unavailable", async ({ page }) 
   await expect(page.getByText("Браузер не разрешил сохранить настройки.")).toBeVisible();
 });
 
+test("requests notification permission only after explicit user action", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__notificationPermissionCalls", {
+      configurable: true,
+      writable: true,
+      value: 0
+    });
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: {
+        permission: "default",
+        requestPermission: async () => {
+          const testWindow = window as typeof window & { __notificationPermissionCalls: number };
+          testWindow.__notificationPermissionCalls += 1;
+          return "granted";
+        }
+      }
+    });
+  });
+
+  await page.goto("/settings");
+
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { __notificationPermissionCalls: number })
+          .__notificationPermissionCalls
+    )
+  ).toBe(0);
+
+  await page.getByRole("button", { name: "Разрешить уведомления" }).click();
+
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { __notificationPermissionCalls: number })
+          .__notificationPermissionCalls
+    )
+  ).toBe(1);
+  await expect(page.getByText("Разрешены", { exact: true })).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const stored = JSON.parse(
+          window.localStorage.getItem("cosmora:settings:v2") ?? "{}"
+        ) as { notifications_enabled?: unknown };
+        return stored.notifications_enabled;
+      })
+    )
+    .toBe(true);
+});
+
 test("keeps settings usable at 390x844", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/settings");
