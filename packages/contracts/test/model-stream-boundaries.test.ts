@@ -48,195 +48,162 @@ const baseResponse = {
   warnings: []
 } as const;
 
+const isRequest = (candidate: unknown) => Value.Check(ModelRequestSchema, candidate);
+const isResponse = (candidate: unknown) => Value.Check(ModelResponseSchema, candidate);
+const isEvent = (candidate: unknown) => Value.Check(StreamEventSchema, candidate);
+
 describe("model request boundaries", () => {
-  it.each([
-    ["timeout_ms", 1],
-    ["timeout_ms", 600_000],
-    ["max_output_tokens", 1],
-    ["max_output_tokens", 100_000]
-  ] as const)("accepts %s boundary %d", (field, value) => {
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        constraints: { ...baseRequest.constraints, [field]: value }
-      })
-    ).toBe(true);
-  });
+  it("accepts request constraint boundaries", () => {
+    const cases = [
+      ["timeout_ms", 1],
+      ["timeout_ms", 600_000],
+      ["max_output_tokens", 1],
+      ["max_output_tokens", 100_000]
+    ] as const;
 
-  it.each([
-    ["timeout_ms", 0],
-    ["timeout_ms", 600_001],
-    ["timeout_ms", 1.5],
-    ["max_output_tokens", 0],
-    ["max_output_tokens", 100_001],
-    ["max_output_tokens", 1.5]
-  ] as const)("rejects invalid %s value %d", (field, value) => {
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        constraints: { ...baseRequest.constraints, [field]: value }
-      })
-    ).toBe(false);
-  });
-
-  it.each(["system", "user", "assistant", "tool"] as const)("accepts message role %s", (role) => {
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        messages: [{ role, content: "message" }]
-      })
-    ).toBe(true);
-  });
-
-  it.each(["", "developer", "User", " user ", null, 1] as const)(
-    "rejects invalid message role %j",
-    (role) => {
-      expect(
-        Value.Check(ModelRequestSchema, {
-          ...baseRequest,
-          messages: [{ role, content: "message" }]
-        })
-      ).toBe(false);
+    for (const [field, value] of cases) {
+      const constraints = { ...baseRequest.constraints, [field]: value };
+      expect(isRequest({ ...baseRequest, constraints })).toBe(true);
     }
-  );
-
-  it("requires at least one message and rejects message extras", () => {
-    expect(Value.Check(ModelRequestSchema, { ...baseRequest, messages: [] })).toBe(false);
-
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        messages: [{ role: "user", content: "message", name: "unexpected" }]
-      })
-    ).toBe(false);
   });
 
-  it.each([
-    "streaming",
-    "structured_output",
-    "tool_calling",
-    "vision"
-  ] as const)("accepts model feature %s", (feature) => {
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        routing: { ...baseRequest.routing, required_features: [feature] }
-      })
-    ).toBe(true);
-  });
+  it("rejects invalid request constraint values", () => {
+    const cases = [
+      ["timeout_ms", 0],
+      ["timeout_ms", 600_001],
+      ["timeout_ms", 1.5],
+      ["max_output_tokens", 0],
+      ["max_output_tokens", 100_001],
+      ["max_output_tokens", 1.5]
+    ] as const;
 
-  it("rejects duplicate and unknown model features", () => {
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        routing: {
-          ...baseRequest.routing,
-          required_features: ["streaming", "streaming"]
-        }
-      })
-    ).toBe(false);
-
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        routing: { ...baseRequest.routing, required_features: ["audio"] }
-      })
-    ).toBe(false);
-  });
-
-  it.each(["balanced", "quality", "latency", "cost"] as const)(
-    "accepts optimize_for %s",
-    (optimizeFor) => {
-      expect(
-        Value.Check(ModelRequestSchema, {
-          ...baseRequest,
-          routing: { ...baseRequest.routing, optimize_for: optimizeFor }
-        })
-      ).toBe(true);
+    for (const [field, value] of cases) {
+      const constraints = { ...baseRequest.constraints, [field]: value };
+      expect(isRequest({ ...baseRequest, constraints })).toBe(false);
     }
-  );
+  });
 
-  it.each(["", "speed", "Balanced", " balanced ", null, 1] as const)(
-    "rejects invalid optimize_for %j",
-    (optimizeFor) => {
-      expect(
-        Value.Check(ModelRequestSchema, {
-          ...baseRequest,
-          routing: { ...baseRequest.routing, optimize_for: optimizeFor }
-        })
-      ).toBe(false);
+  it("accepts every supported message role", () => {
+    const roles = ["system", "user", "assistant", "tool"] as const;
+
+    for (const role of roles) {
+      const messages = [{ role, content: "message" }];
+      expect(isRequest({ ...baseRequest, messages })).toBe(true);
     }
-  );
-
-  it("enforces estimated token and max-cost bounds", () => {
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        routing: { ...baseRequest.routing, estimated_input_tokens: 0 }
-      })
-    ).toBe(true);
-
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        routing: { ...baseRequest.routing, estimated_input_tokens: -1 }
-      })
-    ).toBe(false);
-
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        routing: {
-          ...baseRequest.routing,
-          max_cost: { amount: 0, currency: "USD" }
-        }
-      })
-    ).toBe(true);
-
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        routing: {
-          ...baseRequest.routing,
-          max_cost: { amount: -0.01, currency: "USD" }
-        }
-      })
-    ).toBe(false);
-
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        routing: {
-          ...baseRequest.routing,
-          max_cost: { amount: 1, currency: "EUR" }
-        }
-      })
-    ).toBe(false);
   });
 
-  it.each([
-    ["request_id", 128, true],
-    ["request_id", 129, false],
-    ["project_id", 128, true],
-    ["project_id", 129, false],
-    ["run_id", 128, true],
-    ["run_id", 129, false],
-    ["agent_id", 128, true],
-    ["agent_id", 129, false],
-    ["role", 128, true],
-    ["role", 129, false],
-    ["task_type", 128, true],
-    ["task_type", 129, false],
-    ["idempotency_key", 256, true],
-    ["idempotency_key", 257, false]
-  ] as const)("checks %s max length %d", (field, length, expected) => {
-    expect(Value.Check(ModelRequestSchema, { ...baseRequest, [field]: "a".repeat(length) })).toBe(
-      expected
-    );
+  it("rejects invalid message roles", () => {
+    const roles = ["", "developer", "User", " user ", null, 1];
+
+    for (const role of roles) {
+      const messages = [{ role, content: "message" }];
+      expect(isRequest({ ...baseRequest, messages })).toBe(false);
+    }
   });
 
-  it("rejects whitespace in canonical identifiers and routing names", () => {
-    for (const [field, value] of [
+  it("requires at least one strict-shape message", () => {
+    expect(isRequest({ ...baseRequest, messages: [] })).toBe(false);
+
+    const messages = [{ role: "user", content: "message", name: "unexpected" }];
+    expect(isRequest({ ...baseRequest, messages })).toBe(false);
+  });
+
+  it("accepts every supported required feature", () => {
+    const features = ["streaming", "structured_output", "tool_calling", "vision"] as const;
+
+    for (const feature of features) {
+      const routing = {
+        ...baseRequest.routing,
+        required_features: [feature]
+      };
+      expect(isRequest({ ...baseRequest, routing })).toBe(true);
+    }
+  });
+
+  it("rejects duplicate and unknown required features", () => {
+    const duplicateRouting = {
+      ...baseRequest.routing,
+      required_features: ["streaming", "streaming"]
+    };
+    const unknownRouting = {
+      ...baseRequest.routing,
+      required_features: ["audio"]
+    };
+
+    expect(isRequest({ ...baseRequest, routing: duplicateRouting })).toBe(false);
+    expect(isRequest({ ...baseRequest, routing: unknownRouting })).toBe(false);
+  });
+
+  it("accepts every routing optimization mode", () => {
+    const modes = ["balanced", "quality", "latency", "cost"] as const;
+
+    for (const optimizeFor of modes) {
+      const routing = { ...baseRequest.routing, optimize_for: optimizeFor };
+      expect(isRequest({ ...baseRequest, routing })).toBe(true);
+    }
+  });
+
+  it("rejects invalid routing optimization modes", () => {
+    const modes = ["", "speed", "Balanced", " balanced ", null, 1];
+
+    for (const optimizeFor of modes) {
+      const routing = { ...baseRequest.routing, optimize_for: optimizeFor };
+      expect(isRequest({ ...baseRequest, routing })).toBe(false);
+    }
+  });
+
+  it("enforces estimated-token and max-cost boundaries", () => {
+    let routing = { ...baseRequest.routing, estimated_input_tokens: 0 };
+    expect(isRequest({ ...baseRequest, routing })).toBe(true);
+
+    routing = { ...baseRequest.routing, estimated_input_tokens: -1 };
+    expect(isRequest({ ...baseRequest, routing })).toBe(false);
+
+    const zeroCostRouting = {
+      ...baseRequest.routing,
+      max_cost: { amount: 0, currency: "USD" }
+    };
+    expect(isRequest({ ...baseRequest, routing: zeroCostRouting })).toBe(true);
+
+    const negativeCostRouting = {
+      ...baseRequest.routing,
+      max_cost: { amount: -0.01, currency: "USD" }
+    };
+    expect(isRequest({ ...baseRequest, routing: negativeCostRouting })).toBe(false);
+
+    const invalidCurrencyRouting = {
+      ...baseRequest.routing,
+      max_cost: { amount: 1, currency: "EUR" }
+    };
+    expect(isRequest({ ...baseRequest, routing: invalidCurrencyRouting })).toBe(false);
+  });
+
+  it("enforces identifier and request metadata max lengths", () => {
+    const cases = [
+      ["request_id", 128, true],
+      ["request_id", 129, false],
+      ["project_id", 128, true],
+      ["project_id", 129, false],
+      ["run_id", 128, true],
+      ["run_id", 129, false],
+      ["agent_id", 128, true],
+      ["agent_id", 129, false],
+      ["role", 128, true],
+      ["role", 129, false],
+      ["task_type", 128, true],
+      ["task_type", 129, false],
+      ["idempotency_key", 256, true],
+      ["idempotency_key", 257, false]
+    ] as const;
+
+    for (const [field, length, expected] of cases) {
+      const candidate = { ...baseRequest, [field]: "a".repeat(length) };
+      expect(isRequest(candidate)).toBe(expected);
+    }
+  });
+
+  it("rejects whitespace in canonical identifiers", () => {
+    const cases = [
       ["request_id", "req 1"],
       ["project_id", "project\t1"],
       ["run_id", "run\n1"],
@@ -244,183 +211,176 @@ describe("model request boundaries", () => {
       ["role", " manager"],
       ["task_type", "chat response"],
       ["idempotency_key", "stable key"]
-    ] as const) {
-      expect(Value.Check(ModelRequestSchema, { ...baseRequest, [field]: value })).toBe(false);
-    }
+    ] as const;
 
-    for (const [field, value] of [
+    for (const [field, value] of cases) {
+      expect(isRequest({ ...baseRequest, [field]: value })).toBe(false);
+    }
+  });
+
+  it("rejects whitespace in canonical routing names", () => {
+    const cases = [
       ["preferred_provider", " mock"],
       ["preferred_provider", "mock "],
       ["preferred_model_alias", "manager model"]
-    ] as const) {
-      expect(
-        Value.Check(ModelRequestSchema, {
-          ...baseRequest,
-          routing: { ...baseRequest.routing, [field]: value }
-        })
-      ).toBe(false);
+    ] as const;
+
+    for (const [field, value] of cases) {
+      const routing = { ...baseRequest.routing, [field]: value };
+      expect(isRequest({ ...baseRequest, routing })).toBe(false);
     }
   });
 
   it("rejects unexpected properties at every request layer", () => {
-    expect(Value.Check(ModelRequestSchema, { ...baseRequest, unexpected: true })).toBe(false);
+    expect(isRequest({ ...baseRequest, unexpected: true })).toBe(false);
 
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        constraints: { ...baseRequest.constraints, unexpected: true }
-      })
-    ).toBe(false);
+    const constraints = {
+      ...baseRequest.constraints,
+      unexpected: true
+    };
+    expect(isRequest({ ...baseRequest, constraints })).toBe(false);
 
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        routing: { ...baseRequest.routing, unexpected: true }
-      })
-    ).toBe(false);
+    const routing = {
+      ...baseRequest.routing,
+      unexpected: true
+    };
+    expect(isRequest({ ...baseRequest, routing })).toBe(false);
 
-    expect(
-      Value.Check(ModelRequestSchema, {
-        ...baseRequest,
-        routing: {
-          ...baseRequest.routing,
-          max_cost: { amount: 1, currency: "USD", unexpected: true }
-        }
-      })
-    ).toBe(false);
+    const maxCostRouting = {
+      ...baseRequest.routing,
+      max_cost: {
+        amount: 1,
+        currency: "USD",
+        unexpected: true
+      }
+    };
+    expect(isRequest({ ...baseRequest, routing: maxCostRouting })).toBe(false);
   });
 });
 
 describe("model response boundaries", () => {
-  it.each(["succeeded", "failed"] as const)("accepts status %s", (status) => {
-    expect(Value.Check(ModelResponseSchema, { ...baseResponse, status })).toBe(true);
+  it("accepts both response statuses", () => {
+    for (const status of ["succeeded", "failed"] as const) {
+      expect(isResponse({ ...baseResponse, status })).toBe(true);
+    }
   });
 
-  it.each(["", "success", "Succeeded", null, 1] as const)("rejects invalid status %j", (status) => {
-    expect(Value.Check(ModelResponseSchema, { ...baseResponse, status })).toBe(false);
+  it("rejects invalid response statuses", () => {
+    for (const status of ["", "success", "Succeeded", null, 1]) {
+      expect(isResponse({ ...baseResponse, status })).toBe(false);
+    }
   });
 
   it("accepts zero-valued usage and timing boundaries", () => {
-    expect(
-      Value.Check(ModelResponseSchema, {
-        ...baseResponse,
-        usage: {
-          input_tokens: 0,
-          output_tokens: 0,
-          calculated_cost: 0,
-          currency: "RUB"
-        },
-        timing: {
-          first_token_ms: 0,
-          total_ms: 0
-        }
-      })
-    ).toBe(true);
+    const usage = {
+      input_tokens: 0,
+      output_tokens: 0,
+      calculated_cost: 0,
+      currency: "RUB"
+    };
+    const timing = {
+      first_token_ms: 0,
+      total_ms: 0
+    };
+
+    expect(isResponse({ ...baseResponse, usage, timing })).toBe(true);
   });
 
-  it("rejects negative or fractional integer counters", () => {
-    for (const usage of [
+  it("rejects negative or fractional token counters", () => {
+    const cases = [
       { ...baseResponse.usage, input_tokens: -1 },
       { ...baseResponse.usage, output_tokens: -1 },
       { ...baseResponse.usage, input_tokens: 1.5 },
       { ...baseResponse.usage, output_tokens: 1.5 }
-    ]) {
-      expect(Value.Check(ModelResponseSchema, { ...baseResponse, usage })).toBe(false);
-    }
+    ];
 
-    for (const timing of [
+    for (const usage of cases) {
+      expect(isResponse({ ...baseResponse, usage })).toBe(false);
+    }
+  });
+
+  it("rejects negative or fractional timing counters", () => {
+    const cases = [
       { ...baseResponse.timing, first_token_ms: -1 },
       { ...baseResponse.timing, total_ms: -1 },
       { ...baseResponse.timing, first_token_ms: 1.5 },
       { ...baseResponse.timing, total_ms: 1.5 }
-    ]) {
-      expect(Value.Check(ModelResponseSchema, { ...baseResponse, timing })).toBe(false);
+    ];
+
+    for (const timing of cases) {
+      expect(isResponse({ ...baseResponse, timing })).toBe(false);
     }
   });
 
-  it("rejects invalid usage cost and currency", () => {
-    expect(
-      Value.Check(ModelResponseSchema, {
-        ...baseResponse,
-        usage: { ...baseResponse.usage, calculated_cost: -0.01 }
-      })
-    ).toBe(false);
+  it("rejects invalid response cost and currency", () => {
+    const negativeCost = {
+      ...baseResponse.usage,
+      calculated_cost: -0.01
+    };
+    expect(isResponse({ ...baseResponse, usage: negativeCost })).toBe(false);
 
-    expect(
-      Value.Check(ModelResponseSchema, {
-        ...baseResponse,
-        usage: { ...baseResponse.usage, currency: "EUR" }
-      })
-    ).toBe(false);
+    const invalidCurrency = {
+      ...baseResponse.usage,
+      currency: "EUR"
+    };
+    expect(isResponse({ ...baseResponse, usage: invalidCurrency })).toBe(false);
   });
 
-  it.each([
-    ["provider", 128, true],
-    ["provider", 129, false],
-    ["model_requested", 256, true],
-    ["model_requested", 257, false],
-    ["model_resolved", 256, true],
-    ["model_resolved", 257, false],
-    ["finish_reason", 128, true],
-    ["finish_reason", 129, false]
-  ] as const)("checks response %s max length %d", (field, length, expected) => {
-    expect(Value.Check(ModelResponseSchema, { ...baseResponse, [field]: "a".repeat(length) })).toBe(
-      expected
-    );
+  it("enforces response metadata max lengths", () => {
+    const cases = [
+      ["provider", 128, true],
+      ["provider", 129, false],
+      ["model_requested", 256, true],
+      ["model_requested", 257, false],
+      ["model_resolved", 256, true],
+      ["model_resolved", 257, false],
+      ["finish_reason", 128, true],
+      ["finish_reason", 129, false]
+    ] as const;
+
+    for (const [field, length, expected] of cases) {
+      const candidate = { ...baseResponse, [field]: "a".repeat(length) };
+      expect(isResponse(candidate)).toBe(expected);
+    }
   });
 
-  it("enforces warning count and warning length", () => {
-    expect(
-      Value.Check(ModelResponseSchema, {
-        ...baseResponse,
-        warnings: Array.from({ length: 50 }, (_, index) => `warning-${index}`)
-      })
-    ).toBe(true);
+  it("enforces warning count boundaries", () => {
+    const fiftyWarnings = Array.from({ length: 50 }, (_, index) => `warning-${index}`);
+    const fiftyOneWarnings = Array.from({ length: 51 }, (_, index) => `warning-${index}`);
 
-    expect(
-      Value.Check(ModelResponseSchema, {
-        ...baseResponse,
-        warnings: Array.from({ length: 51 }, (_, index) => `warning-${index}`)
-      })
-    ).toBe(false);
-
-    expect(Value.Check(ModelResponseSchema, { ...baseResponse, warnings: ["a".repeat(1_000)] })).toBe(
-      true
-    );
-    expect(Value.Check(ModelResponseSchema, { ...baseResponse, warnings: ["a".repeat(1_001)] })).toBe(
-      false
-    );
-    expect(Value.Check(ModelResponseSchema, { ...baseResponse, warnings: [""] })).toBe(false);
+    expect(isResponse({ ...baseResponse, warnings: fiftyWarnings })).toBe(true);
+    expect(isResponse({ ...baseResponse, warnings: fiftyOneWarnings })).toBe(false);
   });
 
-  it("rejects response metadata whitespace and unexpected properties", () => {
-    for (const [field, value] of [
+  it("enforces warning length boundaries", () => {
+    expect(isResponse({ ...baseResponse, warnings: ["a".repeat(1_000)] })).toBe(true);
+    expect(isResponse({ ...baseResponse, warnings: ["a".repeat(1_001)] })).toBe(false);
+    expect(isResponse({ ...baseResponse, warnings: [""] })).toBe(false);
+  });
+
+  it("rejects response metadata whitespace", () => {
+    const cases = [
       ["provider", "mock provider"],
       ["model_requested", "manager model"],
       ["model_resolved", "resolved model"]
-    ] as const) {
-      expect(Value.Check(ModelResponseSchema, { ...baseResponse, [field]: value })).toBe(false);
-    }
+    ] as const;
 
-    expect(Value.Check(ModelResponseSchema, { ...baseResponse, unexpected: true })).toBe(false);
-    expect(
-      Value.Check(ModelResponseSchema, {
-        ...baseResponse,
-        usage: { ...baseResponse.usage, unexpected: true }
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelResponseSchema, {
-        ...baseResponse,
-        timing: { ...baseResponse.timing, unexpected: true }
-      })
-    ).toBe(false);
-    expect(
-      Value.Check(ModelResponseSchema, {
-        ...baseResponse,
-        content: [{ type: "text", text: "done", unexpected: true }]
-      })
-    ).toBe(false);
+    for (const [field, value] of cases) {
+      expect(isResponse({ ...baseResponse, [field]: value })).toBe(false);
+    }
+  });
+
+  it("rejects unexpected response properties", () => {
+    expect(isResponse({ ...baseResponse, unexpected: true })).toBe(false);
+
+    const usage = { ...baseResponse.usage, unexpected: true };
+    expect(isResponse({ ...baseResponse, usage })).toBe(false);
+
+    const timing = { ...baseResponse.timing, unexpected: true };
+    expect(isResponse({ ...baseResponse, timing })).toBe(false);
+
+    const content = [{ type: "text", text: "done", unexpected: true }];
+    expect(isResponse({ ...baseResponse, content })).toBe(false);
   });
 });
 
@@ -428,153 +388,200 @@ describe("stream event boundaries", () => {
   const validEvents = [
     {
       type: "run.started",
-      data: { run_id: "run-1", timestamp: "2026-09-22T20:00:00.000Z" }
+      data: {
+        run_id: "run-1",
+        timestamp: "2026-09-22T20:00:00.000Z"
+      }
     },
     {
       type: "message.started",
-      data: { run_id: "run-1", message_id: "message-1" }
+      data: {
+        run_id: "run-1",
+        message_id: "message-1"
+      }
     },
     {
       type: "message.delta",
-      data: { run_id: "run-1", message_id: "message-1", seq: 0, delta: "" }
+      data: {
+        run_id: "run-1",
+        message_id: "message-1",
+        seq: 0,
+        delta: ""
+      }
     },
     {
       type: "message.completed",
-      data: { run_id: "run-1", message_id: "message-1", size: 0, finish_reason: "stop" }
+      data: {
+        run_id: "run-1",
+        message_id: "message-1",
+        size: 0,
+        finish_reason: "stop"
+      }
     },
     {
       type: "run.completed",
-      data: { run_id: "run-1", provider: "mock", model_resolved: "manager" }
+      data: {
+        run_id: "run-1",
+        provider: "mock",
+        model_resolved: "manager"
+      }
     },
     {
       type: "run.failed",
-      data: { run_id: "run-1", error_code: "PROVIDER_ERROR", retryable: false }
+      data: {
+        run_id: "run-1",
+        error_code: "PROVIDER_ERROR",
+        retryable: false
+      }
     },
     {
       type: "run.cancelled",
-      data: { run_id: "run-1" }
+      data: {
+        run_id: "run-1"
+      }
     },
     {
       type: "heartbeat",
-      data: { timestamp: "2026-09-22T20:00:00Z" }
+      data: {
+        timestamp: "2026-09-22T20:00:00Z"
+      }
     }
   ] as const;
 
-  it.each(validEvents)("accepts event $type", (event) => {
-    expect(Value.Check(StreamEventSchema, event)).toBe(true);
+  it("accepts every current stream event variant", () => {
+    for (const event of validEvents) {
+      expect(isEvent(event)).toBe(true);
+    }
   });
 
-  it("rejects unknown event type and extra top-level properties", () => {
-    expect(
-      Value.Check(StreamEventSchema, {
-        type: "run.paused",
-        data: { run_id: "run-1" }
-      })
-    ).toBe(false);
+  it("rejects unknown event types and extra top-level properties", () => {
+    const unknown = {
+      type: "run.paused",
+      data: { run_id: "run-1" }
+    };
+    expect(isEvent(unknown)).toBe(false);
 
-    expect(
-      Value.Check(StreamEventSchema, {
-        type: "run.cancelled",
-        data: { run_id: "run-1" },
-        unexpected: true
-      })
-    ).toBe(false);
+    const extra = {
+      type: "run.cancelled",
+      data: { run_id: "run-1" },
+      unexpected: true
+    };
+    expect(isEvent(extra)).toBe(false);
   });
 
-  it("enforces non-negative integer sequence and size", () => {
+  it("enforces non-negative integer delta sequence", () => {
     for (const seq of [-1, 0.5]) {
-      expect(
-        Value.Check(StreamEventSchema, {
-          type: "message.delta",
-          data: { run_id: "run-1", message_id: "message-1", seq, delta: "x" }
-        })
-      ).toBe(false);
+      const event = {
+        type: "message.delta",
+        data: {
+          run_id: "run-1",
+          message_id: "message-1",
+          seq,
+          delta: "x"
+        }
+      };
+      expect(isEvent(event)).toBe(false);
     }
+  });
 
+  it("enforces non-negative integer completed size", () => {
     for (const size of [-1, 0.5]) {
-      expect(
-        Value.Check(StreamEventSchema, {
-          type: "message.completed",
-          data: { run_id: "run-1", message_id: "message-1", size, finish_reason: "stop" }
-        })
-      ).toBe(false);
+      const event = {
+        type: "message.completed",
+        data: {
+          run_id: "run-1",
+          message_id: "message-1",
+          size,
+          finish_reason: "stop"
+        }
+      };
+      expect(isEvent(event)).toBe(false);
     }
   });
 
-  it.each([
-    ["provider", 128, true],
-    ["provider", 129, false],
-    ["model_resolved", 256, true],
-    ["model_resolved", 257, false]
-  ] as const)("checks run.completed %s max length %d", (field, length, expected) => {
-    expect(
-      Value.Check(StreamEventSchema, {
-        type: "run.completed",
-        data: { run_id: "run-1", provider: "mock", model_resolved: "manager", [field]: "a".repeat(length) }
-      })
-    ).toBe(expected);
+  it("enforces run completion metadata max lengths", () => {
+    const cases = [
+      ["provider", 128, true],
+      ["provider", 129, false],
+      ["model_resolved", 256, true],
+      ["model_resolved", 257, false]
+    ] as const;
+
+    for (const [field, length, expected] of cases) {
+      const data = {
+        run_id: "run-1",
+        provider: "mock",
+        model_resolved: "manager",
+        [field]: "a".repeat(length)
+      };
+      expect(isEvent({ type: "run.completed", data })).toBe(expected);
+    }
   });
 
-  it.each([
-    ["finish_reason", "", false],
-    ["finish_reason", "a", true],
-    ["finish_reason", "a".repeat(128), true],
-    ["finish_reason", "a".repeat(129), false],
-    ["error_code", "", false],
-    ["error_code", "ERROR", true],
-    ["error_code", "a".repeat(128), true],
-    ["error_code", "a".repeat(129), false]
-  ] as const)("checks %s boundary", (field, value, expected) => {
-    const event =
-      field === "finish_reason"
-        ? {
-            type: "message.completed",
-            data: {
-              run_id: "run-1",
-              message_id: "message-1",
-              size: 1,
-              finish_reason: value
-            }
-          }
-        : {
-            type: "run.failed",
-            data: { run_id: "run-1", error_code: value, retryable: false }
-          };
+  it("enforces finish reason boundaries", () => {
+    const cases = [
+      ["", false],
+      ["a", true],
+      ["a".repeat(128), true],
+      ["a".repeat(129), false]
+    ] as const;
 
-    expect(Value.Check(StreamEventSchema, event)).toBe(expected);
+    for (const [finishReason, expected] of cases) {
+      const data = {
+        run_id: "run-1",
+        message_id: "message-1",
+        size: 1,
+        finish_reason: finishReason
+      };
+      expect(isEvent({ type: "message.completed", data })).toBe(expected);
+    }
+  });
+
+  it("enforces error code boundaries", () => {
+    const cases = [
+      ["", false],
+      ["ERROR", true],
+      ["a".repeat(128), true],
+      ["a".repeat(129), false]
+    ] as const;
+
+    for (const [errorCode, expected] of cases) {
+      const data = {
+        run_id: "run-1",
+        error_code: errorCode,
+        retryable: false
+      };
+      expect(isEvent({ type: "run.failed", data })).toBe(expected);
+    }
   });
 
   it("rejects whitespace in canonical completion metadata", () => {
-    expect(
-      Value.Check(StreamEventSchema, {
-        type: "run.completed",
-        data: { run_id: "run-1", provider: "mock provider", model_resolved: "manager" }
-      })
-    ).toBe(false);
+    const providerData = {
+      run_id: "run-1",
+      provider: "mock provider",
+      model_resolved: "manager"
+    };
+    expect(isEvent({ type: "run.completed", data: providerData })).toBe(false);
 
-    expect(
-      Value.Check(StreamEventSchema, {
-        type: "run.completed",
-        data: { run_id: "run-1", provider: "mock", model_resolved: "manager model" }
-      })
-    ).toBe(false);
+    const modelData = {
+      run_id: "run-1",
+      provider: "mock",
+      model_resolved: "manager model"
+    };
+    expect(isEvent({ type: "run.completed", data: modelData })).toBe(false);
 
-    expect(
-      Value.Check(StreamEventSchema, {
-        type: "run.failed",
-        data: { run_id: "run-1", error_code: "PROVIDER ERROR", retryable: false }
-      })
-    ).toBe(false);
+    const failureData = {
+      run_id: "run-1",
+      error_code: "PROVIDER ERROR",
+      retryable: false
+    };
+    expect(isEvent({ type: "run.failed", data: failureData })).toBe(false);
   });
 
-  it("rejects extra properties inside event data", () => {
+  it("rejects extra properties inside every event data shape", () => {
     for (const event of validEvents) {
-      expect(
-        Value.Check(StreamEventSchema, {
-          ...event,
-          data: { ...event.data, unexpected: true }
-        })
-      ).toBe(false);
+      const data = { ...event.data, unexpected: true };
+      expect(isEvent({ ...event, data })).toBe(false);
     }
   });
 });
