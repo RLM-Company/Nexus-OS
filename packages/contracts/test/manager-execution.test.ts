@@ -129,6 +129,12 @@ const completedSnapshot = (): ManagerExecutionSnapshot => ({
   updated_at: timestamp
 });
 
+const firstVerification = (snapshot: ManagerExecutionSnapshot) => {
+  const verification = snapshot.verifications[0];
+  if (verification === undefined) throw new Error("Fixture requires one verification");
+  return verification;
+};
+
 describe("Manager execution contracts", () => {
   it("accepts a bounded request and complete task-to-result mock trace", () => {
     const snapshot = completedSnapshot();
@@ -214,9 +220,10 @@ describe("Manager execution contracts", () => {
 
   it("requires critic evidence only for critic verification", () => {
     const criticWithoutVerdict = completedSnapshot();
+    const verification = firstVerification(criticWithoutVerdict);
     criticWithoutVerdict.verifications = [
       {
-        ...criticWithoutVerdict.verifications[0],
+        ...verification,
         verifier: "critic",
         critic_verdict_id: null
       }
@@ -230,7 +237,7 @@ describe("Manager execution contracts", () => {
     ).toContain("Critic verification verification-result requires a verdict");
 
     const gateWithVerdict = completedSnapshot();
-    gateWithVerdict.verifications[0].critic_verdict_id = "critic-artifact";
+    firstVerification(gateWithVerdict).critic_verdict_id = "critic-artifact";
     expect(
       validateManagerExecutionSnapshot({
         snapshot: gateWithVerdict,
