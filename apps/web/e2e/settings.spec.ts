@@ -196,4 +196,3 @@ test("normalizes invalid persisted values and removes unknown secret-like fields
   expect(normalized).not.toContain("access_token");
   expect(normalized).not.toContain("client_secret");
 });
-
