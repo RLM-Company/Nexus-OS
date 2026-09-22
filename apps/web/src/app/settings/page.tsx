@@ -262,20 +262,51 @@ export default function SettingsPage() {
   >("unsupported");
 
   useEffect(() => {
+    const announceHydration = (message: string): void => {
+      hydrationNoticeRef.current = message;
+      setSavedNotice(message);
+    };
+    const restoreStoredSettings = (stored: string, notice: string): boolean => {
+      try {
+        setSettings(normalizeSettings(JSON.parse(stored)));
+        announceHydration(notice);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
-      const legacyStored = stored ? null : window.localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (stored || legacyStored) {
-        setSettings(normalizeSettings(JSON.parse(stored ?? legacyStored ?? "{}")));
-        if (legacyStored) {
-          hydrationNoticeRef.current = "Старые настройки безопасно обновлены.";
-          setSavedNotice(hydrationNoticeRef.current);
+      const legacyStored = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+
+      if (stored) {
+        try {
+          setSettings(normalizeSettings(JSON.parse(stored)));
+        } catch {
+          if (
+            !legacyStored ||
+            !restoreStoredSettings(
+              legacyStored,
+              "Текущие настройки повреждены. Восстановлена предыдущая версия."
+            )
+          ) {
+            announceHydration(
+              "Не удалось прочитать локальные настройки. Используются безопасные значения."
+            );
+          }
+        }
+      } else if (legacyStored) {
+        if (!restoreStoredSettings(legacyStored, "Старые настройки безопасно обновлены.")) {
+          announceHydration(
+            "Не удалось прочитать локальные настройки. Используются безопасные значения."
+          );
         }
       }
     } catch {
-      hydrationNoticeRef.current =
-        "Не удалось прочитать локальные настройки. Используются безопасные значения.";
-      setSavedNotice(hydrationNoticeRef.current);
+      announceHydration(
+        "Не удалось прочитать локальные настройки. Используются безопасные значения."
+      );
     }
     if ("Notification" in window) {
       setNotificationPermission(window.Notification.permission);
