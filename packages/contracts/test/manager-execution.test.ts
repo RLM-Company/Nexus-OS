@@ -5,6 +5,7 @@ import {
   ManagerExecutionSnapshotSchema,
   validateManagerExecutionRequest,
   validateManagerExecutionSnapshot,
+  validateManagerExecutionTrace,
   type ManagerExecutionRequest,
   type ManagerExecutionSnapshot,
   type RuntimeArtifact,
@@ -143,6 +144,58 @@ describe("Manager execution contracts", () => {
     expect(Value.Check(ManagerExecutionSnapshotSchema, snapshot)).toBe(true);
     expect(validateManagerExecutionRequest({ request, graph })).toEqual([]);
     expect(validateManagerExecutionSnapshot({ snapshot, graph, artifacts })).toEqual([]);
+  });
+
+  it("correlates the owner-approved request with the execution snapshot", () => {
+    const snapshot = completedSnapshot();
+
+    expect(
+      validateManagerExecutionTrace({
+        request,
+        snapshot,
+        graph,
+        artifacts
+      })
+    ).toEqual([]);
+
+    expect(
+      validateManagerExecutionTrace({
+        request,
+        snapshot: { ...snapshot, execution_id: "execution-2" },
+        graph,
+        artifacts
+      })
+    ).toContain("Execution snapshot belongs to another execution request");
+
+    expect(
+      validateManagerExecutionTrace({
+        request: { ...request, project_id: "project-2" },
+        snapshot,
+        graph,
+        artifacts
+      })
+    ).toEqual(
+      expect.arrayContaining([
+        "Execution request belongs to another task graph project",
+        "Execution request and snapshot belong to different projects"
+      ])
+    );
+  });
+
+  it("fails a complete execution trace when the task graph is structurally invalid", () => {
+    const invalidGraph: RuntimeTaskGraph = {
+      ...graph,
+      root_task_id: "missing-root"
+    };
+
+    expect(
+      validateManagerExecutionTrace({
+        request,
+        snapshot: completedSnapshot(),
+        graph: invalidGraph,
+        artifacts
+      })
+    ).toContain("Root task does not exist");
   });
 
   it("rejects roles and graph size outside the owner-approved request", () => {

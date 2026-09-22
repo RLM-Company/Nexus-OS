@@ -3,6 +3,7 @@ import {
   MANAGER_RUNTIME_CONTRACT_VERSION,
   ManagerRuntimeRoleSchema,
   RuntimeTaskStatusSchema,
+  validateRuntimeTaskGraph,
   type RuntimeArtifact,
   type RuntimeTaskGraph
 } from "./manager-runtime.js";
@@ -325,6 +326,32 @@ export const validateManagerExecutionSnapshot = (input: {
         issues.push("Completed execution summary must be one of the deliverables");
       }
     }
+  }
+
+  return [...new Set(issues)];
+};
+
+export const validateManagerExecutionTrace = (input: {
+  request: ManagerExecutionRequest;
+  snapshot: ManagerExecutionSnapshot;
+  graph: RuntimeTaskGraph;
+  artifacts: readonly RuntimeArtifact[];
+}): string[] => {
+  const issues = [
+    ...validateRuntimeTaskGraph(input.graph),
+    ...validateManagerExecutionRequest({ request: input.request, graph: input.graph }),
+    ...validateManagerExecutionSnapshot({
+      snapshot: input.snapshot,
+      graph: input.graph,
+      artifacts: input.artifacts
+    })
+  ];
+
+  if (input.request.execution_id !== input.snapshot.execution_id) {
+    issues.push("Execution snapshot belongs to another execution request");
+  }
+  if (input.request.project_id !== input.snapshot.project_id) {
+    issues.push("Execution request and snapshot belong to different projects");
   }
 
   return [...new Set(issues)];
