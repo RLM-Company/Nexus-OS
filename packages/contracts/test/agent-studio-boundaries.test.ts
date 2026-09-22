@@ -124,7 +124,9 @@ describe("agent studio reference and function request boundaries", () => {
     expect(Value.Check(VersionedAgentReferenceSchema, reference)).toBe(true);
     expect(Value.Check(VersionedAgentReferenceSchema, { ...reference, version: 0 })).toBe(false);
     expect(Value.Check(VersionedAgentReferenceSchema, { ...reference, version: 1.5 })).toBe(false);
-    expect(Value.Check(VersionedAgentReferenceSchema, { ...reference, id: "object id" })).toBe(false);
+    expect(Value.Check(VersionedAgentReferenceSchema, { ...reference, id: "object id" })).toBe(
+      false
+    );
     expect(
       Value.Check(VersionedAgentReferenceSchema, {
         ...reference,
