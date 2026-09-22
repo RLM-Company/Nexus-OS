@@ -192,7 +192,9 @@ describe("Live Companion contract boundaries", () => {
     ["empty", "", false],
     ["above maximum", "x".repeat(4001), false]
   ] as const)("checks proposal message length: %s", (_label, message, expected) => {
-    expect(Value.Check(CompanionMessageProposalSchema, { ...validProposal, message })).toBe(expected);
+    expect(
+      Value.Check(CompanionMessageProposalSchema, { ...validProposal, message })
+    ).toBe(expected);
   });
 
   it.each(["allow", "suppress"])("accepts gate decision %s", (decision) => {
@@ -248,8 +250,20 @@ describe("shared primitive boundaries used by Companion and auth", () => {
   });
 
   it.each([
-    ["proposal created_at", CompanionMessageProposalSchema, validProposal, "created_at", "2026-09-19T18:00:00+00:00"],
-    ["gate decided_at", CompanionGateDecisionSchema, validGateDecision, "decided_at", "2026-09-19 18:00:00Z"]
+    [
+      "proposal created_at",
+      CompanionMessageProposalSchema,
+      validProposal,
+      "created_at",
+      "2026-09-19T18:00:00+00:00"
+    ],
+    [
+      "gate decided_at",
+      CompanionGateDecisionSchema,
+      validGateDecision,
+      "decided_at",
+      "2026-09-19 18:00:00Z"
+    ]
   ] as const)("rejects malformed timestamp in %s", (_label, schema, value, field, timestamp) => {
     expect(Value.Check(schema, { ...value, [field]: timestamp })).toBe(false);
   });
@@ -308,7 +322,9 @@ describe("Google/Telegram auth contract boundaries", () => {
     ["below minimum", "", false],
     ["above maximum", "u".repeat(257), false]
   ] as const)("checks subject length: %s", (_label, subject, expected) => {
-    expect(Value.Check(ExternalIdentitySchema, { ...validExternalIdentity, subject })).toBe(expected);
+    expect(
+      Value.Check(ExternalIdentitySchema, { ...validExternalIdentity, subject })
+    ).toBe(expected);
   });
 
   it.each([
@@ -337,7 +353,10 @@ describe("Google/Telegram auth contract boundaries", () => {
 
   it("rejects an unknown assurance level", () => {
     expect(
-      Value.Check(AuthSessionBootstrapSchema, { ...validSessionBootstrap, assurance: "passwordless" })
+      Value.Check(AuthSessionBootstrapSchema, {
+        ...validSessionBootstrap,
+        assurance: "passwordless"
+      })
     ).toBe(false);
   });
 
@@ -407,8 +426,18 @@ describe("strict object shapes", () => {
 describe("auth secret-material exclusion", () => {
   it.each([
     ["AuthStartRequestSchema access_token", AuthStartRequestSchema, validAuthStart, "access_token"],
-    ["AuthStartRequestSchema refresh_token", AuthStartRequestSchema, validAuthStart, "refresh_token"],
-    ["AuthStartRequestSchema client_secret", AuthStartRequestSchema, validAuthStart, "client_secret"],
+    [
+      "AuthStartRequestSchema refresh_token",
+      AuthStartRequestSchema,
+      validAuthStart,
+      "refresh_token"
+    ],
+    [
+      "AuthStartRequestSchema client_secret",
+      AuthStartRequestSchema,
+      validAuthStart,
+      "client_secret"
+    ],
     ["AuthStartRequestSchema password", AuthStartRequestSchema, validAuthStart, "password"],
     ["AuthCallbackSchema access_token", AuthCallbackSchema, validAuthCallback, "access_token"],
     ["AuthCallbackSchema refresh_token", AuthCallbackSchema, validAuthCallback, "refresh_token"],
