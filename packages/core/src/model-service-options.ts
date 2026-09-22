@@ -15,8 +15,9 @@ export interface CommonModelServiceOptions {
 
 const invalidOption = (field: string): Error => new Error(`Invalid model request option: ${field}`);
 
-const isCanonicalIdentifier = (value: unknown): value is string =>
+const isCanonicalIdentifier = (value: unknown, maximum: number): value is string =>
   typeof value === "string" &&
+  value.length <= maximum &&
   value.trim().length > 0 &&
   value === value.trim() &&
   !/\s/u.test(value);
@@ -40,8 +41,10 @@ const MODEL_FEATURES = new Set<ModelFeature>([
 export const normalizeCommonModelServiceOptions = <T extends CommonModelServiceOptions>(
   options: T
 ): Omit<T, "requiredFeatures"> & { requiredFeatures: ModelFeature[] } => {
-  if (!isCanonicalIdentifier(options.preferredProvider)) throw invalidOption("preferredProvider");
-  if (!isCanonicalIdentifier(options.preferredModelAlias)) {
+  if (!isCanonicalIdentifier(options.preferredProvider, 128)) {
+    throw invalidOption("preferredProvider");
+  }
+  if (!isCanonicalIdentifier(options.preferredModelAlias, 256)) {
     throw invalidOption("preferredModelAlias");
   }
   if (typeof options.fallbackAllowed !== "boolean") throw invalidOption("fallbackAllowed");
