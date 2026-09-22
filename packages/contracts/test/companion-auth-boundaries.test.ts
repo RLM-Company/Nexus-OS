@@ -92,6 +92,7 @@ const validSessionBootstrap = {
   expires_at: "2026-09-19T19:00:00.000Z"
 };
 
+// prettier-ignore
 describe("Live Companion contract boundaries", () => {
   it.each(["rare", "balanced", "often"])("accepts frequency %s", (frequency) => {
     expect(Value.Check(CompanionFrequencySchema, frequency)).toBe(true);
@@ -217,6 +218,7 @@ describe("Live Companion contract boundaries", () => {
   });
 });
 
+// prettier-ignore
 describe("shared primitive boundaries used by Companion and auth", () => {
   it.each([
     ["minimum", "a", true],
@@ -269,6 +271,7 @@ describe("shared primitive boundaries used by Companion and auth", () => {
   });
 });
 
+// prettier-ignore
 describe("Google/Telegram auth contract boundaries", () => {
   it.each(["google", "telegram"])("accepts provider %s", (provider) => {
     expect(Value.Check(AuthProviderSchema, provider)).toBe(true);
@@ -408,6 +411,7 @@ describe("Google/Telegram auth contract boundaries", () => {
   });
 });
 
+// prettier-ignore
 describe("strict object shapes", () => {
   it.each([
     ["CompanionQuietHoursSchema", CompanionQuietHoursSchema, validQuietHours],
@@ -423,6 +427,7 @@ describe("strict object shapes", () => {
   });
 });
 
+// prettier-ignore
 describe("auth secret-material exclusion", () => {
   it.each([
     ["AuthStartRequestSchema access_token", AuthStartRequestSchema, validAuthStart, "access_token"],
