@@ -2,15 +2,21 @@ import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import {
   AgentDefinitionScopeSchema,
+  AgentGrantInputSchema,
   AgentHandoffSchema,
   AgentInstanceStatusSchema,
+  AgentInstructionPrecedenceSchema,
   AgentMemoryScopeSchema,
+  AgentStudioDecisionEventSchema,
   AgentStudioDecisionObjectTypeSchema,
   AgentStudioDecisionOperationSchema,
   BehaviorPatternTestStatusSchema,
   CreateAgentBlueprintRequestSchema,
+  CreateAgentBlueprintVersionRequestSchema,
   CreateAgentFunctionRequestSchema,
+  CreateAgentFunctionVersionRequestSchema,
   CreateBehaviorPatternRequestSchema,
+  CreateBehaviorPatternVersionRequestSchema,
   ProposeDelegatedAgentRequestSchema,
   ProposeRootAgentRequestSchema,
   VersionedAgentReferenceSchema
@@ -350,6 +356,182 @@ describe("agent memory and blueprint input boundaries", () => {
     ]) {
       expect(Value.Check(CreateAgentBlueprintRequestSchema, candidate)).toBe(false);
     }
+  });
+});
+
+describe("agent studio versioned and decision boundaries", () => {
+  it("checks direct grant input strictness and collection uniqueness", () => {
+    expect(Value.Check(AgentGrantInputSchema, grant)).toBe(true);
+
+    expect(
+      Value.Check(AgentGrantInputSchema, {
+        ...grant,
+        capability_ids: ["context.project.read", "context.project.read"]
+      })
+    ).toBe(false);
+
+    expect(
+      Value.Check(AgentGrantInputSchema, {
+        ...grant,
+        capability_ids: ["unknown.capability"]
+      })
+    ).toBe(false);
+
+    expect(
+      Value.Check(AgentGrantInputSchema, {
+        ...grant,
+        tool_ids: Array.from({ length: 101 }, (_, index) => `tool-${index}`)
+      })
+    ).toBe(false);
+
+    expect(
+      Value.Check(AgentGrantInputSchema, {
+        ...grant,
+        data_scope_ids: Array.from({ length: 1_001 }, (_, index) => `scope-${index}`)
+      })
+    ).toBe(false);
+
+    expect(
+      Value.Check(AgentGrantInputSchema, {
+        ...grant,
+        object_ids: Array.from({ length: 1_001 }, (_, index) => `object-${index}`)
+      })
+    ).toBe(false);
+
+    expect(
+      Value.Check(AgentGrantInputSchema, {
+        ...grant,
+        valid_until: "2026-09-22"
+      })
+    ).toBe(false);
+
+    expect(Value.Check(AgentGrantInputSchema, { ...grant, unexpected: true })).toBe(false);
+  });
+
+  it("requires positive integer expected versions", () => {
+    const functionVersion = {
+      expected_version: 1,
+      name: "Function",
+      description: "Description",
+      result_contract: "Result"
+    };
+
+    expect(Value.Check(CreateAgentFunctionVersionRequestSchema, functionVersion)).toBe(true);
+    expect(
+      Value.Check(CreateAgentFunctionVersionRequestSchema, {
+        ...functionVersion,
+        expected_version: 0
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(CreateAgentFunctionVersionRequestSchema, {
+        ...functionVersion,
+        expected_version: 1.5
+      })
+    ).toBe(false);
+
+    const patternVersion = {
+      expected_version: 1,
+      name: "Pattern",
+      description: "Description",
+      instructions: "Instructions",
+      allowed_function_ids: ["function-1"],
+      known_limitations: [],
+      test_status: "verified"
+    };
+
+    expect(Value.Check(CreateBehaviorPatternVersionRequestSchema, patternVersion)).toBe(true);
+    expect(
+      Value.Check(CreateBehaviorPatternVersionRequestSchema, {
+        ...patternVersion,
+        expected_version: 0
+      })
+    ).toBe(false);
+
+    expect(
+      Value.Check(CreateAgentBlueprintVersionRequestSchema, {
+        expected_version: 1,
+        ...blueprintRequest
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(CreateAgentBlueprintVersionRequestSchema, {
+        expected_version: 0,
+        ...blueprintRequest
+      })
+    ).toBe(false);
+  });
+
+  it("requires the exact instruction precedence tuple", () => {
+    const precedence = ["constitution", "policy", "function", "behavior", "task"];
+    expect(Value.Check(AgentInstructionPrecedenceSchema, precedence)).toBe(true);
+
+    expect(
+      Value.Check(AgentInstructionPrecedenceSchema, [
+        "policy",
+        "constitution",
+        "function",
+        "behavior",
+        "task"
+      ])
+    ).toBe(false);
+
+    expect(
+      Value.Check(AgentInstructionPrecedenceSchema, [
+        "constitution",
+        "policy",
+        "function",
+        "behavior"
+      ])
+    ).toBe(false);
+
+    expect(
+      Value.Check(AgentInstructionPrecedenceSchema, [
+        "constitution",
+        "policy",
+        "function",
+        "behavior",
+        "task",
+        "extra"
+      ])
+    ).toBe(false);
+  });
+
+  it("checks Agent Studio decision event strict transport shape", () => {
+    const event = {
+      event_id: "event-1",
+      owner_id: "owner-1",
+      project_id: "project-1",
+      actor_id: "actor-1",
+      operation: "blueprint.create",
+      object_type: "blueprint",
+      object_ref: {
+        id: "blueprint-1",
+        version: 1
+      },
+      created_at: timestamp
+    };
+
+    expect(Value.Check(AgentStudioDecisionEventSchema, event)).toBe(true);
+    expect(
+      Value.Check(AgentStudioDecisionEventSchema, {
+        ...event,
+        operation: "blueprint.delete"
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(AgentStudioDecisionEventSchema, {
+        ...event,
+        object_type: "instance"
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(AgentStudioDecisionEventSchema, {
+        ...event,
+        object_ref: { id: "blueprint-1", version: 0 }
+      })
+    ).toBe(false);
+    expect(Value.Check(AgentStudioDecisionEventSchema, { ...event, unexpected: true })).toBe(false);
   });
 });
 
