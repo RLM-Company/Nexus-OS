@@ -42,13 +42,7 @@ const graph: RuntimeTaskGraph = {
   nodes: [
     task("plan-task", "manager", "plan"),
     task("research-task", "researcher", "evidence", ["plan-task"], ["plan-artifact"]),
-    task(
-      "analysis-task",
-      "analyst",
-      "analysis",
-      ["research-task"],
-      ["evidence-artifact"]
-    ),
+    task("analysis-task", "analyst", "analysis", ["research-task"], ["evidence-artifact"]),
     task("critic-task", "critic", "critic_verdict", ["analysis-task"], ["analysis-artifact"]),
     task("result-task", "manager", "decision", ["critic-task"], ["critic-artifact"])
   ],
@@ -105,7 +99,10 @@ const completedSnapshot = (): ManagerExecutionSnapshot => ({
   project_id: "project-1",
   graph_id: "graph-1",
   phase: "completed",
-  task_states: graph.nodes.map((node) => ({ task_id: node.task_id, status: "completed" })),
+  task_states: graph.nodes.map((node) => ({
+    task_id: node.task_id,
+    status: "completed"
+  })),
   artifact_ids: artifacts.map((candidate) => candidate.artifact_id),
   verifications: [
     {
@@ -179,13 +176,21 @@ describe("Manager execution contracts", () => {
   it("requires terminal results and forbids premature final results", () => {
     const withoutResult = { ...completedSnapshot(), result: null };
     expect(
-      validateManagerExecutionSnapshot({ snapshot: withoutResult, graph, artifacts })
+      validateManagerExecutionSnapshot({
+        snapshot: withoutResult,
+        graph,
+        artifacts
+      })
     ).toContain("Terminal execution snapshot requires a result");
 
     const premature = { ...completedSnapshot(), phase: "executing" as const };
-    expect(validateManagerExecutionSnapshot({ snapshot: premature, graph, artifacts })).toContain(
-      "Non-terminal execution snapshot cannot contain a final result"
-    );
+    expect(
+      validateManagerExecutionSnapshot({
+        snapshot: premature,
+        graph,
+        artifacts
+      })
+    ).toContain("Non-terminal execution snapshot cannot contain a final result");
   });
 
   it("fails closed on cross-project verification and invented artifacts", () => {
@@ -217,13 +222,21 @@ describe("Manager execution contracts", () => {
       }
     ];
     expect(
-      validateManagerExecutionSnapshot({ snapshot: criticWithoutVerdict, graph, artifacts })
+      validateManagerExecutionSnapshot({
+        snapshot: criticWithoutVerdict,
+        graph,
+        artifacts
+      })
     ).toContain("Critic verification verification-result requires a verdict");
 
     const gateWithVerdict = completedSnapshot();
     gateWithVerdict.verifications[0].critic_verdict_id = "critic-artifact";
     expect(
-      validateManagerExecutionSnapshot({ snapshot: gateWithVerdict, graph, artifacts })
+      validateManagerExecutionSnapshot({
+        snapshot: gateWithVerdict,
+        graph,
+        artifacts
+      })
     ).toContain("Contract verification verification-result cannot claim a verdict");
   });
 });
