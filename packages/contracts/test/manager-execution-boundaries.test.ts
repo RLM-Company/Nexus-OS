@@ -61,6 +61,7 @@ const validSnapshot = {
   updated_at: timestamp
 };
 
+// prettier-ignore
 describe("Manager execution schema boundaries", () => {
   it.each([
     "accepted",
