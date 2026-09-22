@@ -29,6 +29,30 @@ test("persists companion and communication settings", async ({ page }) => {
   await expect(page.getByLabel("Тон")).toHaveValue("direct");
   await expect(page.getByLabel("Подробность")).toHaveValue("short");
   await expect(page.getByLabel("Инициативность")).toHaveValue("proactive");
+
+  const persisted = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("cosmora:settings:v2") ?? "{}")
+  );
+  expect(persisted).toMatchObject({
+    version: 2,
+    companion: {
+      enabled: true,
+      frequency: "rare",
+      max_proactive_per_day: 2,
+      quiet_hours: { start: "23:00", end: "07:30" }
+    },
+    communication: {
+      tone: "direct",
+      verbosity: "short",
+      initiative: "proactive",
+      natural_guardrail_enabled: true,
+      avoid_canned_framing: true,
+      prefer_concrete_examples: true,
+      preserve_user_register: true
+    }
+  });
+  expect(JSON.stringify(persisted)).not.toContain("token");
+  expect(JSON.stringify(persisted)).not.toContain("secret");
 });
 
 test("keeps auth preview explicit and does not expose credential inputs", async ({ page }) => {
@@ -52,3 +76,124 @@ test("keeps settings usable at 390x844", async ({ page }) => {
   expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth);
   await expect(page.getByRole("link", { name: "Вход и верификация" })).toBeVisible();
 });
+
+test("migrates legacy settings to the bounded v2 contract", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "cosmora:settings:v1",
+      JSON.stringify({
+        companionEnabled: true,
+        proactiveFrequency: "often",
+        quietStart: "21:30",
+        quietEnd: "07:00",
+        maxProactivePerDay: 4,
+        tone: "warm",
+        verbosity: "detailed",
+        initiative: "proactive",
+        naturalCommunicationGuardrail: false,
+        notificationsEnabled: false
+      })
+    );
+  });
+
+  await page.goto("/settings");
+
+  await expect(page.getByText("Старые настройки безопасно обновлены.")).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" })).toBeChecked();
+  await expect(page.getByLabel("Частота")).toHaveValue("often");
+  await expect(page.getByLabel("Максимум в день")).toHaveValue("4");
+  await expect(page.getByLabel("Тон")).toHaveValue("warm");
+  await expect(page.getByLabel("Подробность")).toHaveValue("detailed");
+
+  const storage = await page.evaluate(() => ({
+    legacy: window.localStorage.getItem("cosmora:settings:v1"),
+    current: JSON.parse(window.localStorage.getItem("cosmora:settings:v2") ?? "{}")
+  }));
+  expect(storage.legacy).toBeNull();
+  expect(storage.current.version).toBe(2);
+  expect(storage.current.companion.min_gap_minutes).toBe(120);
+  expect(storage.current.communication.avoid_canned_framing).toBe(true);
+});
+
+test("recovers corrupted settings without exposing or preserving unsafe fields", async ({
+  page
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cosmora:settings:v2", "{broken-json");
+  });
+
+  await page.goto("/settings");
+
+  await expect(
+    page.getByText("Не удалось прочитать локальные настройки. Используются безопасные значения.")
+  ).toBeVisible();
+  await expect(
+    page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" })
+  ).not.toBeChecked();
+  await expect(page.getByLabel("Частота")).toHaveValue("balanced");
+  await expect(page.getByLabel("Максимум в день")).toHaveValue("3");
+
+  const recovered = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("cosmora:settings:v2") ?? "{}")
+  );
+  expect(recovered).toMatchObject({
+    version: 2,
+    companion: { enabled: false, max_proactive_per_day: 3 },
+    communication: { tone: "natural", verbosity: "balanced", initiative: "balanced" }
+  });
+});
+
+test("normalizes invalid persisted values and removes unknown secret-like fields", async ({
+  page
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "cosmora:settings:v2",
+      JSON.stringify({
+        version: 2,
+        companion: {
+          enabled: true,
+          frequency: "always",
+          max_proactive_per_day: 999,
+          min_gap_minutes: -1,
+          quiet_hours: { start: "99:00", end: "08:00", timezone: "UTC" },
+          suppress_when_active: true,
+          backoff_after_unanswered: 999,
+          allow_push: false,
+          allow_telegram: false,
+          api_key: "must-not-survive"
+        },
+        communication: {
+          tone: "robot",
+          verbosity: "endless",
+          initiative: "unbounded",
+          natural_guardrail_enabled: true,
+          avoid_canned_framing: true,
+          prefer_concrete_examples: true,
+          preserve_user_register: true,
+          access_token: "must-not-survive"
+        },
+        notifications_enabled: false,
+        client_secret: "must-not-survive"
+      })
+    );
+  });
+
+  await page.goto("/settings");
+
+  await expect(page.getByLabel("Частота")).toHaveValue("balanced");
+  await expect(page.getByLabel("Максимум в день")).toHaveValue("3");
+  await expect(page.getByLabel("Тихие часы с")).toHaveValue("22:00");
+  await expect(page.getByLabel("Тон")).toHaveValue("natural");
+  await expect(page.getByLabel("Подробность")).toHaveValue("balanced");
+  await expect(page.getByLabel("Инициативность")).toHaveValue("balanced");
+
+  const normalized = await page.evaluate(
+    () => window.localStorage.getItem("cosmora:settings:v2") ?? ""
+  );
+  expect(normalized).not.toContain("must-not-survive");
+  expect(normalized).not.toContain("api_key");
+  expect(normalized).not.toContain("access_token");
+  expect(normalized).not.toContain("client_secret");
+});
+
