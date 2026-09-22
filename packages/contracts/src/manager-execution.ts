@@ -289,9 +289,7 @@ export const validateManagerExecutionSnapshot = (input: {
     }
     for (const verification of snapshot.verifications) {
       if (Date.parse(snapshot.result.created_at) < Date.parse(verification.created_at)) {
-        issues.push(
-          `Execution result predates verification ${verification.verification_id}`
-        );
+        issues.push(`Execution result predates verification ${verification.verification_id}`);
       }
     }
     const resultArtifactIds = new Set([
