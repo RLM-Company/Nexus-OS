@@ -256,6 +256,7 @@ export default function SettingsPage() {
   const [hydrated, setHydrated] = useState(false);
   const [savedNotice, setSavedNotice] = useState("Настройки сохраняются только в этом браузере.");
   const hydrationNoticeRef = useRef<string | null>(null);
+  const storageWriteBlockedRef = useRef(false);
   const [preview, setPreview] = useState(PROACTIVE_PREVIEW.balanced);
   const [notificationPermission, setNotificationPermission] = useState<
     "unsupported" | "default" | "granted" | "denied"
@@ -282,7 +283,19 @@ export default function SettingsPage() {
 
       if (stored) {
         try {
-          setSettings(normalizeSettings(JSON.parse(stored)));
+          const parsedStored: unknown = JSON.parse(stored);
+          if (
+            isRecord(parsedStored) &&
+            typeof parsedStored.version === "number" &&
+            parsedStored.version > 2
+          ) {
+            storageWriteBlockedRef.current = true;
+            announceHydration(
+              "Настройки созданы более новой версией Cosmora. Автоматическая перезапись отключена."
+            );
+          } else {
+            setSettings(normalizeSettings(parsedStored));
+          }
         } catch {
           if (
             !legacyStored ||
@@ -315,7 +328,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || storageWriteBlockedRef.current) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(toStoredEnvelope(settings)));
       window.localStorage.removeItem(LEGACY_STORAGE_KEY);
@@ -361,7 +374,8 @@ export default function SettingsPage() {
   };
 
   const resetSettings = (): void => {
-    setSettings(DEFAULT_SETTINGS);
+    storageWriteBlockedRef.current = false;
+    setSettings({ ...DEFAULT_SETTINGS });
     setPreview(PROACTIVE_PREVIEW.balanced);
     setSavedNotice("Настройки возвращены к безопасным значениям.");
   };
