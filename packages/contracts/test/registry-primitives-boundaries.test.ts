@@ -139,12 +139,12 @@ describe("model registry entry boundaries", () => {
 
     expect(Value.Check(ModelRegistryEntrySchema, { ...entry, aliases: [] })).toBe(false);
     expect(Value.Check(ModelRegistryEntrySchema, { ...entry, aliases: ["a"] })).toBe(true);
-    expect(
-      Value.Check(ModelRegistryEntrySchema, { ...entry, aliases: ["a".repeat(128)] })
-    ).toBe(true);
-    expect(
-      Value.Check(ModelRegistryEntrySchema, { ...entry, aliases: ["a".repeat(129)] })
-    ).toBe(false);
+    expect(Value.Check(ModelRegistryEntrySchema, { ...entry, aliases: ["a".repeat(128)] })).toBe(
+      true
+    );
+    expect(Value.Check(ModelRegistryEntrySchema, { ...entry, aliases: ["a".repeat(129)] })).toBe(
+      false
+    );
 
     for (const [field, value, expected] of [
       ["context_window_tokens", 1, true],
@@ -167,12 +167,7 @@ describe("model registry entry boundaries", () => {
   });
 
   it("checks capabilities, pricing and privacy", () => {
-    const capabilityFields = [
-      "streaming",
-      "structured_output",
-      "tool_calling",
-      "vision"
-    ] as const;
+    const capabilityFields = ["streaming", "structured_output", "tool_calling", "vision"] as const;
 
     for (const field of capabilityFields) {
       for (const value of [true, false]) {
@@ -263,9 +258,7 @@ describe("registry document and route boundaries", () => {
     expect(Value.Check(ModelRegistryDocumentSchema, { ...document, entries: [] })).toBe(true);
 
     for (const schema_version of [0, 2, "1", null]) {
-      expect(
-        Value.Check(ModelRegistryDocumentSchema, { ...document, schema_version })
-      ).toBe(false);
+      expect(Value.Check(ModelRegistryDocumentSchema, { ...document, schema_version })).toBe(false);
     }
 
     for (const [registry_version, expected] of [
@@ -274,9 +267,9 @@ describe("registry document and route boundaries", () => {
       ["a".repeat(64), true],
       ["a".repeat(65), false]
     ] as const) {
-      expect(
-        Value.Check(ModelRegistryDocumentSchema, { ...document, registry_version })
-      ).toBe(expected);
+      expect(Value.Check(ModelRegistryDocumentSchema, { ...document, registry_version })).toBe(
+        expected
+      );
     }
 
     expect(
