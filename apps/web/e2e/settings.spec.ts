@@ -266,6 +266,94 @@ test("falls back to valid legacy settings when v2 JSON is corrupted", async ({ p
   });
 });
 
+test("falls back to legacy settings when v2 structure is incomplete", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "cosmora:settings:v2",
+      JSON.stringify({
+        version: 2,
+        companion: { enabled: false }
+      })
+    );
+    window.localStorage.setItem(
+      "cosmora:settings:v1",
+      JSON.stringify({
+        companionEnabled: true,
+        proactiveFrequency: "rare",
+        quietStart: "23:00",
+        quietEnd: "06:30",
+        maxProactivePerDay: 2,
+        tone: "direct",
+        verbosity: "short",
+        initiative: "proactive",
+        naturalCommunicationGuardrail: false,
+        notificationsEnabled: false
+      })
+    );
+  });
+
+  await page.goto("/settings");
+
+  await expect(
+    page.getByText("Текущие настройки повреждены. Восстановлена предыдущая версия.")
+  ).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" })).toBeChecked();
+  await expect(page.getByLabel("Частота")).toHaveValue("rare");
+  await expect(page.getByLabel("Максимум в день")).toHaveValue("2");
+  await expect(page.getByLabel("Тон")).toHaveValue("direct");
+
+  const stored = await page.evaluate(() => ({
+    legacy: window.localStorage.getItem("cosmora:settings:v1"),
+    current: JSON.parse(window.localStorage.getItem("cosmora:settings:v2") ?? "{}")
+  }));
+  expect(stored.legacy).toBeNull();
+  expect(stored.current).toMatchObject({
+    version: 2,
+    companion: {
+      enabled: true,
+      frequency: "rare",
+      max_proactive_per_day: 2
+    },
+    communication: {
+      tone: "direct",
+      verbosity: "short",
+      initiative: "proactive"
+    }
+  });
+});
+
+test("does not report invalid legacy primitives as recovered settings", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "cosmora:settings:v2",
+      JSON.stringify({
+        version: 2,
+        communication: { tone: "warm" }
+      })
+    );
+    window.localStorage.setItem("cosmora:settings:v1", JSON.stringify("not-a-settings-object"));
+  });
+
+  await page.goto("/settings");
+
+  await expect(
+    page.getByText("Не удалось прочитать локальные настройки. Используются безопасные значения.")
+  ).toBeVisible();
+  await expect(
+    page.getByText("Текущие настройки повреждены. Восстановлена предыдущая версия.")
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Тон")).toHaveValue("natural");
+
+  const recovered = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("cosmora:settings:v2") ?? "{}")
+  );
+  expect(recovered).toMatchObject({
+    version: 2,
+    companion: { enabled: false, max_proactive_per_day: 3 },
+    communication: { tone: "natural", verbosity: "balanced", initiative: "balanced" }
+  });
+});
+
 test("preserves unsupported future settings until explicit reset", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem(

@@ -89,6 +89,12 @@ const PROACTIVE_PREVIEW: Record<Frequency, string> = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
+const isSettingsEnvelopeV2 = (value: unknown): value is SettingsEnvelopeV2 =>
+  isRecord(value) &&
+  value.version === 2 &&
+  isRecord(value.companion) &&
+  isRecord(value.communication);
+
 const boundedInteger = (
   value: unknown,
   minimum: number,
@@ -102,7 +108,7 @@ const boundedInteger = (
 const normalizeSettings = (value: unknown): SettingsState => {
   if (!isRecord(value)) return DEFAULT_SETTINGS;
 
-  const isV2 = value.version === 2 && isRecord(value.companion) && isRecord(value.communication);
+  const isV2 = isSettingsEnvelopeV2(value);
   const companion = isV2 ? (value.companion as Record<string, unknown>) : value;
   const communication = isV2 ? (value.communication as Record<string, unknown>) : value;
 
@@ -269,7 +275,9 @@ export default function SettingsPage() {
     };
     const restoreStoredSettings = (stored: string, notice: string): boolean => {
       try {
-        setSettings(normalizeSettings(JSON.parse(stored)));
+        const parsedLegacy: unknown = JSON.parse(stored);
+        if (!isRecord(parsedLegacy) || parsedLegacy.version !== undefined) return false;
+        setSettings(normalizeSettings(parsedLegacy));
         announceHydration(notice);
         return true;
       } catch {
@@ -293,6 +301,18 @@ export default function SettingsPage() {
             announceHydration(
               "Настройки созданы более новой версией Cosmora. Автоматическая перезапись отключена."
             );
+          } else if (!isSettingsEnvelopeV2(parsedStored)) {
+            if (
+              !legacyStored ||
+              !restoreStoredSettings(
+                legacyStored,
+                "Текущие настройки повреждены. Восстановлена предыдущая версия."
+              )
+            ) {
+              announceHydration(
+                "Не удалось прочитать локальные настройки. Используются безопасные значения."
+              );
+            }
           } else {
             setSettings(normalizeSettings(parsedStored));
           }
