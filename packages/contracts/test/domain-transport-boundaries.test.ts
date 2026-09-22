@@ -96,24 +96,12 @@ describe("domain enum boundaries", () => {
       expect(Value.Check(MessageRoleSchema, value)).toBe(true);
     }
 
-    const messages = [
-      "pending",
-      "streaming",
-      "completed",
-      "failed",
-      "cancelled"
-    ];
+    const messages = ["pending", "streaming", "completed", "failed", "cancelled"];
     for (const value of messages) {
       expect(Value.Check(MessageStatusSchema, value)).toBe(true);
     }
 
-    const runs = [
-      "queued",
-      "running",
-      "succeeded",
-      "failed",
-      "cancelled"
-    ];
+    const runs = ["queued", "running", "succeeded", "failed", "cancelled"];
     for (const value of runs) {
       expect(Value.Check(RunStatusSchema, value)).toBe(true);
     }
@@ -276,13 +264,7 @@ describe("project message transport boundaries", () => {
       expect(messageValid({ ...projectMessage, role })).toBe(true);
     }
 
-    const statuses = [
-      "pending",
-      "streaming",
-      "completed",
-      "failed",
-      "cancelled"
-    ];
+    const statuses = ["pending", "streaming", "completed", "failed", "cancelled"];
     for (const status of statuses) {
       expect(messageValid({ ...projectMessage, status })).toBe(true);
     }
@@ -446,14 +428,10 @@ describe("general chat transport boundaries", () => {
       run_id: "run-1",
       stream_url: "/api/v1/chat-runs/run-1/events"
     };
-    expect(Value.Check(GeneralChatMessageAcceptedResponseSchema, accepted)).toBe(
-      true
-    );
+    expect(Value.Check(GeneralChatMessageAcceptedResponseSchema, accepted)).toBe(true);
 
     const emptyStream = { ...accepted, stream_url: "" };
-    expect(
-      Value.Check(GeneralChatMessageAcceptedResponseSchema, emptyStream)
-    ).toBe(false);
+    expect(Value.Check(GeneralChatMessageAcceptedResponseSchema, emptyStream)).toBe(false);
   });
 });
 
@@ -490,9 +468,7 @@ describe("health and API error boundaries", () => {
 
     const badStatus = { ...response, status: "healthy" };
     expect(Value.Check(HealthResponseSchema, badStatus)).toBe(false);
-    expect(Value.Check(HealthResponseSchema, { ...response, version: "" })).toBe(
-      false
-    );
+    expect(Value.Check(HealthResponseSchema, { ...response, version: "" })).toBe(false);
 
     const badTime = { ...response, timestamp: "2026-09-22" };
     expect(Value.Check(HealthResponseSchema, badTime)).toBe(false);
