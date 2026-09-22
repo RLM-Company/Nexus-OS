@@ -218,6 +218,43 @@ describe("Manager execution contracts", () => {
     );
   });
 
+  it("does not claim a failed artifact as verified even when another check passes", () => {
+    const snapshot = completedSnapshot();
+    snapshot.result = {
+      ...snapshot.result!,
+      verified_artifact_ids: ["result-artifact", "analysis-artifact"]
+    };
+    snapshot.verifications = [
+      ...snapshot.verifications,
+      {
+        verification_id: "verification-analysis-pass",
+        project_id: "project-1",
+        task_id: "analysis-task",
+        artifact_id: "analysis-artifact",
+        verifier: "contract_gate",
+        status: "PASS",
+        check_ids: ["analysis-shape"],
+        critic_verdict_id: null,
+        created_at: timestamp
+      },
+      {
+        verification_id: "verification-analysis-fail",
+        project_id: "project-1",
+        task_id: "analysis-task",
+        artifact_id: "analysis-artifact",
+        verifier: "contract_gate",
+        status: "FAIL",
+        check_ids: ["analysis-safety"],
+        critic_verdict_id: null,
+        created_at: timestamp
+      }
+    ];
+
+    expect(validateManagerExecutionSnapshot({ snapshot, graph, artifacts })).toContain(
+      "Execution result claims failed artifact analysis-artifact as verified"
+    );
+  });
+
   it("requires critic evidence only for critic verification", () => {
     const criticWithoutVerdict = completedSnapshot();
     const verification = firstVerification(criticWithoutVerdict);
