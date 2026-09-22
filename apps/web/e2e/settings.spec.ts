@@ -85,6 +85,78 @@ test("keeps auth preview explicit and does not expose credential inputs", async 
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
 });
 
+test("keeps settings usable when localStorage is unavailable", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get: () => {
+        throw new DOMException("local storage blocked", "SecurityError");
+      }
+    });
+  });
+
+  await page.goto("/settings");
+
+  await expect(page.getByRole("heading", { name: "Настройки" })).toBeVisible();
+  const companionToggle = page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" });
+  await companionToggle.check();
+  await expect(companionToggle).toBeChecked();
+  await expect(page.getByLabel("Частота")).toBeEnabled();
+  await expect(page.getByText("Браузер не разрешил сохранить настройки.")).toBeVisible();
+});
+
+test("requests notification permission only after explicit user action", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__notificationPermissionCalls", {
+      configurable: true,
+      writable: true,
+      value: 0
+    });
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: {
+        permission: "default",
+        requestPermission: async () => {
+          const testWindow = window as typeof window & { __notificationPermissionCalls: number };
+          testWindow.__notificationPermissionCalls += 1;
+          return "granted";
+        }
+      }
+    });
+  });
+
+  await page.goto("/settings");
+
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { __notificationPermissionCalls: number })
+          .__notificationPermissionCalls
+    )
+  ).toBe(0);
+
+  await page.getByRole("button", { name: "Разрешить уведомления" }).click();
+
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { __notificationPermissionCalls: number })
+          .__notificationPermissionCalls
+    )
+  ).toBe(1);
+  await expect(page.getByText("Разрешены", { exact: true })).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const stored = JSON.parse(
+          window.localStorage.getItem("cosmora:settings:v2") ?? "{}"
+        ) as { notifications_enabled?: unknown };
+        return stored.notifications_enabled;
+      })
+    )
+    .toBe(true);
+});
+
 test("keeps settings usable at 390x844", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/settings");
@@ -134,6 +206,64 @@ test("migrates legacy settings to the bounded v2 contract", async ({ page }) => 
   expect(storage.current.version).toBe(2);
   expect(storage.current.companion.min_gap_minutes).toBe(120);
   expect(storage.current.communication.avoid_canned_framing).toBe(true);
+});
+
+test("falls back to valid legacy settings when v2 JSON is corrupted", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cosmora:settings:v2", "{broken-json");
+    window.localStorage.setItem(
+      "cosmora:settings:v1",
+      JSON.stringify({
+        companionEnabled: true,
+        proactiveFrequency: "often",
+        quietStart: "21:30",
+        quietEnd: "07:00",
+        maxProactivePerDay: 4,
+        tone: "warm",
+        verbosity: "detailed",
+        initiative: "proactive",
+        naturalCommunicationGuardrail: false,
+        notificationsEnabled: false,
+        api_key: "must-not-survive"
+      })
+    );
+  });
+
+  await page.goto("/settings");
+
+  await expect(
+    page.getByText("Текущие настройки повреждены. Восстановлена предыдущая версия.")
+  ).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" })).toBeChecked();
+  await expect(page.getByLabel("Частота")).toHaveValue("often");
+  await expect(page.getByLabel("Максимум в день")).toHaveValue("4");
+  await expect(page.getByLabel("Тон")).toHaveValue("warm");
+  await expect(page.getByLabel("Подробность")).toHaveValue("detailed");
+  await expect(page.getByLabel("Инициативность")).toHaveValue("proactive");
+
+  const storage = await page.evaluate(() => ({
+    legacy: window.localStorage.getItem("cosmora:settings:v1"),
+    current: window.localStorage.getItem("cosmora:settings:v2") ?? ""
+  }));
+  expect(storage.legacy).toBeNull();
+  expect(storage.current).not.toContain("must-not-survive");
+
+  const recovered = JSON.parse(storage.current);
+  expect(recovered).toMatchObject({
+    version: 2,
+    companion: {
+      enabled: true,
+      frequency: "often",
+      max_proactive_per_day: 4,
+      quiet_hours: { start: "21:30", end: "07:00" }
+    },
+    communication: {
+      tone: "warm",
+      verbosity: "detailed",
+      initiative: "proactive",
+      natural_guardrail_enabled: false
+    }
+  });
 });
 
 test("recovers corrupted settings without exposing or preserving unsafe fields", async ({
