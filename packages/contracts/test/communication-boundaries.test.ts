@@ -21,12 +21,9 @@ describe("communication profile boundaries", () => {
     expect(Value.Check(CommunicationProfileSchema, { ...baseProfile, verbosity })).toBe(true);
   });
 
-  it.each(["reactive", "balanced", "proactive"] as const)(
-    "accepts initiative %s",
-    (initiative) => {
-      expect(Value.Check(CommunicationProfileSchema, { ...baseProfile, initiative })).toBe(true);
-    }
-  );
+  it.each(["reactive", "balanced", "proactive"] as const)("accepts initiative %s", (initiative) => {
+    expect(Value.Check(CommunicationProfileSchema, { ...baseProfile, initiative })).toBe(true);
+  });
 
   it.each([
     ["tone", ""],
