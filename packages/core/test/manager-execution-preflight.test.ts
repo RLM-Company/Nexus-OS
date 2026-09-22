@@ -4,7 +4,7 @@ import type {
   RuntimeTaskGraph,
   RuntimeTaskNode
 } from "@cosmora/contracts";
-import { preflightManagerExecution } from "../src/index.js";
+import { preflightManagerExecution, prepareManagerExecution } from "../src/index.js";
 
 const timestamp = "2026-09-22T12:00:00.000Z";
 
@@ -131,6 +131,53 @@ describe("Manager execution preflight", () => {
     expect(result.issues).toContain("Task analysis depends on missing task missing-task");
     expect(result.readyTaskIds).toEqual([]);
     expect(result.blockedTaskIds).toEqual(["analysis", "root"]);
+  });
+
+  it("prepares a canonical accepted snapshot only after a successful preflight", () => {
+    const targetRequest = request();
+    const targetGraph = graph();
+    const requestBefore = structuredClone(targetRequest);
+    const graphBefore = structuredClone(targetGraph);
+
+    const prepared = prepareManagerExecution({
+      request: targetRequest,
+      graph: targetGraph,
+      evaluatedAt: timestamp
+    });
+
+    expect(prepared.preflight.accepted).toBe(true);
+    expect(prepared.snapshot).toEqual({
+      contract_version: 1,
+      execution_id: "execution-1",
+      project_id: "project-1",
+      graph_id: "graph-1",
+      phase: "accepted",
+      task_states: [
+        { task_id: "root", status: "pending" },
+        { task_id: "analysis", status: "pending" }
+      ],
+      artifact_ids: [],
+      verifications: [],
+      checkpoint_id: null,
+      result: null,
+      updated_at: timestamp
+    });
+    expect(targetRequest).toEqual(requestBefore);
+    expect(targetGraph).toEqual(graphBefore);
+  });
+
+  it("does not create an execution snapshot when preflight rejects the request", () => {
+    const prepared = prepareManagerExecution({
+      request: request({ allowed_roles: ["manager"] }),
+      graph: graph(),
+      evaluatedAt: timestamp
+    });
+
+    expect(prepared.preflight.accepted).toBe(false);
+    expect(prepared.preflight.issues).toContain(
+      "Task analysis uses role outside the execution request allowlist"
+    );
+    expect(prepared.snapshot).toBeNull();
   });
 
   it("classifies already-running, blocked and terminal tasks without executing them", () => {
