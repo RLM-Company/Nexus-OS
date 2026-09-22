@@ -232,8 +232,16 @@ export const validateManagerExecutionSnapshot = (input: {
     }
     if (artifact === undefined) {
       issues.push(`Verification ${verification.verification_id} references unknown artifact`);
-    } else if (artifact.task_id !== verification.task_id) {
-      issues.push(`Verification ${verification.verification_id} references the wrong task`);
+    } else {
+      if (artifact.task_id !== verification.task_id) {
+        issues.push(`Verification ${verification.verification_id} references the wrong task`);
+      }
+      if (Date.parse(verification.created_at) < Date.parse(artifact.created_at)) {
+        issues.push(`Verification ${verification.verification_id} predates verified artifact`);
+      }
+    }
+    if (Date.parse(verification.created_at) > Date.parse(snapshot.updated_at)) {
+      issues.push(`Verification ${verification.verification_id} postdates execution snapshot`);
     }
     if (verification.verifier === "critic" && verification.critic_verdict_id === null) {
       issues.push(`Critic verification ${verification.verification_id} requires a verdict`);
@@ -246,10 +254,15 @@ export const validateManagerExecutionSnapshot = (input: {
         verdictArtifact.project_id !== snapshot.project_id
       ) {
         issues.push(`Critic verification ${verification.verification_id} has an invalid verdict`);
-      } else if (!verdictArtifact.source_artifact_ids.includes(verification.artifact_id)) {
-        issues.push(
-          `Critic verification ${verification.verification_id} verdict does not reference verified artifact`
-        );
+      } else {
+        if (!verdictArtifact.source_artifact_ids.includes(verification.artifact_id)) {
+          issues.push(
+            `Critic verification ${verification.verification_id} verdict does not reference verified artifact`
+          );
+        }
+        if (Date.parse(verification.created_at) < Date.parse(verdictArtifact.created_at)) {
+          issues.push(`Critic verification ${verification.verification_id} predates its verdict`);
+        }
       }
     }
     if (verification.verifier === "contract_gate" && verification.critic_verdict_id !== null) {
