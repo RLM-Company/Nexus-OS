@@ -493,7 +493,54 @@ export default function SettingsPage() {
                 disabled={!settings.companionEnabled}
               />
             </label>
+            <label>
+              Минимальный интервал, мин
+              <input
+                type="number"
+                min={0}
+                max={1440}
+                step={1}
+                value={settings.minGapMinutes}
+                onChange={(event) => {
+                  const value = event.currentTarget.valueAsNumber;
+                  if (!Number.isInteger(value)) return;
+                  update("minGapMinutes", Math.max(0, Math.min(1440, value)));
+                }}
+                disabled={!settings.companionEnabled}
+              />
+            </label>
+            <label>
+              Backoff после молчания
+              <input
+                type="number"
+                min={0}
+                max={10}
+                step={1}
+                value={settings.backoffAfterUnanswered}
+                onChange={(event) => {
+                  const value = event.currentTarget.valueAsNumber;
+                  if (!Number.isInteger(value)) return;
+                  update("backoffAfterUnanswered", Math.max(0, Math.min(10, value)));
+                }}
+                disabled={!settings.companionEnabled}
+              />
+            </label>
           </div>
+
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={settings.suppressWhenActive}
+              onChange={(event) => update("suppressWhenActive", event.target.checked)}
+              disabled={!settings.companionEnabled}
+            />
+            <span>
+              <strong>Не писать при активном диалоге</strong>
+              <small>
+                Подавляет proactive-сообщение, если пользователь уже разговаривает с Cosmora.
+              </small>
+            </span>
+          </label>
 
           <div className={styles.previewBox} aria-label="Предпросмотр инициативного сообщения">
             <div>
