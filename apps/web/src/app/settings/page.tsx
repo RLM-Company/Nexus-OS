@@ -23,6 +23,7 @@ type SettingsState = {
 };
 
 const STORAGE_KEY = "cosmora:settings:v1";
+const TIME_OF_DAY_PATTERN = /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/;
 
 const DEFAULT_SETTINGS: SettingsState = {
   companionEnabled: false,
@@ -58,11 +59,11 @@ const normalizeSettings = (value: unknown): SettingsState => {
         ? candidate.proactiveFrequency
         : DEFAULT_SETTINGS.proactiveFrequency,
     quietStart:
-      typeof candidate.quietStart === "string" && /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietStart)
+      typeof candidate.quietStart === "string" && TIME_OF_DAY_PATTERN.test(candidate.quietStart)
         ? candidate.quietStart
         : DEFAULT_SETTINGS.quietStart,
     quietEnd:
-      typeof candidate.quietEnd === "string" && /^[0-9]{2}:[0-9]{2}$/.test(candidate.quietEnd)
+      typeof candidate.quietEnd === "string" && TIME_OF_DAY_PATTERN.test(candidate.quietEnd)
         ? candidate.quietEnd
         : DEFAULT_SETTINGS.quietEnd,
     maxProactivePerDay:
