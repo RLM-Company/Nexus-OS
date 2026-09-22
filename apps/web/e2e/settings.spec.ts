@@ -31,6 +31,32 @@ test("persists companion and communication settings", async ({ page }) => {
   await expect(page.getByLabel("Инициативность")).toHaveValue("proactive");
 });
 
+test("keeps the proactive daily cap integral and bounded", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" }).check();
+
+  const dailyCap = page.getByLabel("Максимум в день");
+
+  await dailyCap.fill("1.5");
+  await expect(dailyCap).toHaveValue("3");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const stored = JSON.parse(
+          window.localStorage.getItem("cosmora:settings:v1") ?? "{}"
+        ) as { maxProactivePerDay?: unknown };
+        return stored.maxProactivePerDay;
+      })
+    )
+    .toBe(3);
+
+  await dailyCap.fill("21");
+  await expect(dailyCap).toHaveValue("20");
+
+  await dailyCap.fill("-1");
+  await expect(dailyCap).toHaveValue("0");
+});
+
 test("repairs invalid persisted quiet-hour values", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem(
