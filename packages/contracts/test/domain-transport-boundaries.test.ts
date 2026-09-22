@@ -421,7 +421,9 @@ describe("health and API error boundaries", () => {
 
     expect(Value.Check(HealthResponseSchema, { ...baseHealth, status: "healthy" })).toBe(false);
     expect(Value.Check(HealthResponseSchema, { ...baseHealth, version: "" })).toBe(false);
-    expect(Value.Check(HealthResponseSchema, { ...baseHealth, timestamp: "2026-09-22" })).toBe(false);
+    expect(
+      Value.Check(HealthResponseSchema, { ...baseHealth, timestamp: "2026-09-22" })
+    ).toBe(false);
     expect(Value.Check(HealthResponseSchema, { ...baseHealth, unexpected: true })).toBe(false);
   });
 
