@@ -31,6 +31,70 @@ test("persists companion and communication settings", async ({ page }) => {
   await expect(page.getByLabel("Инициативность")).toHaveValue("proactive");
 });
 
+test("repairs invalid persisted quiet-hour values", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "cosmora:settings:v1",
+      JSON.stringify({
+        companionEnabled: true,
+        proactiveFrequency: "balanced",
+        quietStart: "24:00",
+        quietEnd: "12:60",
+        maxProactivePerDay: 3,
+        tone: "natural",
+        verbosity: "balanced",
+        initiative: "balanced",
+        naturalCommunicationGuardrail: true,
+        notificationsEnabled: false
+      })
+    );
+  });
+
+  await page.goto("/settings");
+
+  await expect(page.getByRole("checkbox", { name: "Разрешить ИИ писать первой" })).toBeChecked();
+  await expect(page.getByLabel("Тихие часы с")).toHaveValue("22:00");
+  await expect(page.getByLabel("Тихие часы до")).toHaveValue("08:00");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const restored = JSON.parse(
+          window.localStorage.getItem("cosmora:settings:v1") ?? "{}"
+        ) as {
+          quietStart?: unknown;
+          quietEnd?: unknown;
+        };
+        return [restored.quietStart, restored.quietEnd];
+      })
+    )
+    .toEqual(["22:00", "08:00"]);
+});
+
+test("keeps valid quiet-hour boundary values", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "cosmora:settings:v1",
+      JSON.stringify({
+        companionEnabled: true,
+        proactiveFrequency: "balanced",
+        quietStart: "00:00",
+        quietEnd: "23:59",
+        maxProactivePerDay: 3,
+        tone: "natural",
+        verbosity: "balanced",
+        initiative: "balanced",
+        naturalCommunicationGuardrail: true,
+        notificationsEnabled: false
+      })
+    );
+  });
+
+  await page.goto("/settings");
+
+  await expect(page.getByLabel("Тихие часы с")).toHaveValue("00:00");
+  await expect(page.getByLabel("Тихие часы до")).toHaveValue("23:59");
+});
+
 test("keeps auth preview explicit and does not expose credential inputs", async ({ page }) => {
   await page.goto("/login");
 
