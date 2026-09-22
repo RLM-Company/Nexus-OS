@@ -66,13 +66,18 @@ export const normalizeCommonModelServiceOptions = <T extends CommonModelServiceO
     throw invalidOption("requiredFeatures");
   }
 
-  if (
-    options.maxCost !== null &&
-    (!Number.isFinite(options.maxCost.amount) ||
+  if (options.maxCost !== null) {
+    const maxCostKeys = Object.keys(options.maxCost);
+    if (
+      maxCostKeys.length !== 2 ||
+      !maxCostKeys.includes("amount") ||
+      !maxCostKeys.includes("currency") ||
+      !Number.isFinite(options.maxCost.amount) ||
       options.maxCost.amount < 0 ||
-      (options.maxCost.currency !== "USD" && options.maxCost.currency !== "RUB"))
-  ) {
-    throw invalidOption("maxCost");
+      (options.maxCost.currency !== "USD" && options.maxCost.currency !== "RUB")
+    ) {
+      throw invalidOption("maxCost");
+    }
   }
 
   return {
