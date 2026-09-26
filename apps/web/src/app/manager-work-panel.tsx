@@ -148,23 +148,28 @@ export function ManagerWorkPanel({
   };
   const active = work && !["completed", "failed", "cancelled"].includes(work.status);
   return (
-    <section className="manager-demo" aria-label="Выполнение задачи Manager">
-      <header>
-        <strong>Создать результат с Manager</strong>
-        <span role="status">{work ? labels[work.status] : "Новая задача"}</span>
+    <section className="manager-demo manager-work-panel" aria-label="Выполнение задачи Manager">
+      <header className="manager-work-header">
+        <div>
+          <small className="manager-work-kicker">Выполнение в рамках проекта</small>
+          <strong>Создать результат с Manager</strong>
+        </div>
+        <span className={`manager-work-status ${work?.status ?? "new"}`} role="status">
+          {work ? labels[work.status] : "Новая задача"}
+        </span>
       </header>
-      <p>
+      <p className="manager-work-runtime">
         {runtime?.mode === "mock"
           ? "Демонстрационный режим: модели не вызываются, файлы помечены mock."
           : runtime
             ? "Модель: " + runtime.model
             : "Проверка подключения…"}
       </p>
-      <p>
+      <p className="manager-work-boundary">
         Manager → выбранный исполнитель → Критик по риску. Роли используют настроенную модель.
         Результат — файлы для скачивания; запуск кода и публикация пока недоступны.
       </p>
-      <label>
+      <label className="manager-work-field">
         Задача
         <textarea
           aria-label="Задача для выполнения"
@@ -175,7 +180,7 @@ export function ManagerWorkPanel({
           disabled={Boolean(active) || busy}
         />
       </label>
-      <label>
+      <label className="manager-work-field">
         Исполнитель{" "}
         <select
           aria-label="Исполнитель задачи"
@@ -187,12 +192,13 @@ export function ManagerWorkPanel({
           <option value="architect">Архитектор</option>
         </select>
       </label>
-      <p>
+      <p className="manager-work-limits">
         Предел на задачу: 3 обращения к модели, 32 000 входных и 6 000 выходных токенов. Повторы
         тоже входят в предел. Автономность наследуется от проекта.
       </p>
       <button
         type="button"
+        className="manager-work-submit"
         disabled={busy || Boolean(active) || !goal.trim() || !runtime}
         onClick={() => void act()}
       >
@@ -201,9 +207,9 @@ export function ManagerWorkPanel({
       {error && <p role="alert">{error}</p>}
       {work && (
         <>
-          <p>Обращений к модели: {work.model_requests} / 3</p>
+          <p className="manager-work-usage">Обращений к модели: {work.model_requests} / 3</p>
           {work.plan && (
-            <div>
+            <div className="manager-work-plan">
               <strong>{work.plan.summary}</strong>
               <p>{work.plan.instructions}</p>
               <p>
@@ -212,49 +218,68 @@ export function ManagerWorkPanel({
               </p>
             </div>
           )}
-          <ol aria-label="Шаги выполнения">
+          <ol className="manager-work-events" aria-label="Шаги выполнения">
             {work.events.map((e) => (
               <li key={e.sequence}>{e.message}</li>
             ))}
           </ol>
           {work.review && (
-            <p>
+            <p className={`manager-work-review ${work.review.verdict.toLowerCase()}`}>
               Критик: {work.review.verdict}. {work.review.reason}
             </p>
           )}
           {work.error_code && (
-            <p role="alert">
+            <p className="manager-work-error" role="alert">
               {errors[work.error_code] ??
                 "Работа остановлена. Сохранённые этапы доступны; автоматического повтора нет."}
             </p>
           )}
           {work.status === "awaiting_approval" && (
-            <button disabled={busy} onClick={() => void act("approve")}>
+            <button
+              className="manager-work-action primary"
+              disabled={busy}
+              onClick={() => void act("approve")}
+            >
               Подтвердить план
             </button>
           )}
           {["running", "queued"].includes(work.status) && (
-            <button disabled={busy || work.pause_requested} onClick={() => void act("pause")}>
+            <button
+              className="manager-work-action"
+              disabled={busy || work.pause_requested}
+              onClick={() => void act("pause")}
+            >
               {work.pause_requested ? "Ожидается пауза" : "Пауза"}
             </button>
           )}
           {["paused", "blocked"].includes(work.status) && (
-            <button disabled={busy} onClick={() => void act("resume")}>
+            <button
+              className="manager-work-action primary"
+              disabled={busy}
+              onClick={() => void act("resume")}
+            >
               Продолжить
             </button>
           )}
           {active && (
-            <button disabled={busy} onClick={() => void act("cancel")}>
+            <button
+              className="manager-work-action"
+              disabled={busy}
+              onClick={() => void act("cancel")}
+            >
               Остановить задачу
             </button>
           )}
           {work.status === "blocked" && (
-            <Link href={"/control-center?project=" + encodeURIComponent(projectId)}>
+            <Link
+              className="manager-work-permissions"
+              href={"/control-center?project=" + encodeURIComponent(projectId)}
+            >
               Разрешения проекта
             </Link>
           )}
           {work.status === "completed" && (
-            <ul aria-label="Готовые файлы">
+            <ul className="manager-work-files" aria-label="Готовые файлы">
               {work.draft?.files.map((file) => (
                 <li key={file.name}>
                   <a
