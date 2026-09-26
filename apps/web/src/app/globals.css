@@ -3196,3 +3196,291 @@ textarea:focus-visible {
     justify-content: center;
   }
 }
+
+
+/* Manager Work is the hands-on demo surface; keep its safety state easy to scan. */
+.manager-work-panel {
+  width: min(56rem, 100%);
+  margin: 1rem auto;
+  padding: 1.1rem;
+  border-color: #e6e2f2;
+  border-radius: 1.05rem;
+  background: linear-gradient(135deg, #fff 0%, #fbfaff 58%, #f7f8ff 100%);
+  box-shadow: 0 1rem 2.8rem rgba(32, 33, 35, 0.07);
+}
+.manager-work-panel .manager-work-header {
+  align-items: center;
+  padding: 0 0 0.9rem;
+  border-bottom: 1px solid #eceaf2;
+}
+.manager-work-header > div {
+  display: grid;
+  gap: 0.25rem;
+}
+.manager-work-panel .manager-work-kicker {
+  color: #7869bb;
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.manager-work-panel .manager-work-header strong {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+}
+.manager-work-status {
+  flex: 0 0 auto;
+  padding: 0.38rem 0.6rem;
+  border: 1px solid #e5e3eb;
+  border-radius: 999px;
+  color: #626274;
+  background: #f4f4f7;
+  font-size: 0.65rem;
+  font-weight: 680;
+}
+.manager-work-status.running,
+.manager-work-status.queued {
+  border-color: #e0daf8;
+  color: #6654b4;
+  background: #f2efff;
+}
+.manager-work-status.completed {
+  border-color: #ccebe0;
+  color: #14765f;
+  background: #edf9f4;
+}
+.manager-work-status.failed,
+.manager-work-status.blocked,
+.manager-work-status.cancelled {
+  border-color: #f1d7d7;
+  color: #a34545;
+  background: #fff4f3;
+}
+.manager-work-panel .manager-work-runtime {
+  margin-top: 0.9rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #e6e0fb;
+  border-radius: 0.7rem;
+  color: #594b9c;
+  background: #f6f3ff;
+  font-size: 0.72rem;
+}
+.manager-work-panel .manager-work-boundary,
+.manager-work-panel .manager-work-limits {
+  margin-top: 0.65rem;
+  color: #686879;
+  font-size: 0.7rem;
+  line-height: 1.55;
+}
+.manager-work-field {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+  color: #343541;
+  font-size: 0.72rem;
+  font-weight: 680;
+}
+.manager-work-panel .manager-work-field textarea,
+.manager-work-panel .manager-work-field select {
+  width: 100%;
+  border: 1px solid #dedee7;
+  border-radius: 0.72rem;
+  color: #202123;
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 0.78rem;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+.manager-work-panel .manager-work-field textarea {
+  min-height: 6rem;
+  padding: 0.75rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+.manager-work-panel .manager-work-field select {
+  min-height: 2.65rem;
+  padding: 0 0.7rem;
+}
+.manager-work-panel .manager-work-field textarea:focus-visible,
+.manager-work-panel .manager-work-field select:focus-visible {
+  outline: none;
+  border-color: #8c7add;
+  box-shadow: 0 0 0 3px rgba(109, 91, 208, 0.14);
+}
+.manager-work-panel .manager-work-limits {
+  padding: 0.65rem 0.75rem;
+  border: 1px dashed #ddd9eb;
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.64);
+}
+.manager-work-panel .manager-work-submit {
+  min-height: 2.65rem;
+  margin-top: 0.8rem;
+  padding: 0.55rem 0.9rem;
+  border: 0;
+  border-radius: 0.7rem;
+  color: #fff;
+  background: #6d5bd0;
+  font-size: 0.74rem;
+  font-weight: 720;
+  box-shadow: 0 0.35rem 1rem rgba(109, 91, 208, 0.18);
+}
+.manager-work-panel .manager-work-submit:hover:not(:disabled) {
+  background: #5e4bc4;
+  transform: translateY(-1px);
+}
+.manager-work-panel .manager-work-submit:disabled {
+  color: #777383;
+  background: #e8e6ed;
+  box-shadow: none;
+}
+.manager-work-usage {
+  display: inline-flex;
+  margin: 0.9rem 0 0;
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  color: #4f4c61;
+  background: #eeedf4;
+  font-size: 0.65rem;
+  font-weight: 680;
+}
+.manager-work-plan,
+.manager-work-review,
+.manager-work-error {
+  margin-top: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid #e5e3ed;
+  border-radius: 0.78rem;
+  color: #343541;
+  background: #fff;
+}
+.manager-work-plan > strong {
+  display: block;
+  font-size: 0.8rem;
+}
+.manager-work-plan > p {
+  margin: 0.45rem 0 0;
+  color: #656577;
+  font-size: 0.7rem;
+  line-height: 1.55;
+}
+.manager-work-events {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0;
+  margin: 0.7rem 0 0;
+  counter-reset: manager-work-step;
+  list-style: none;
+}
+.manager-work-events li {
+  display: grid;
+  grid-template-columns: 1.65rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.45rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #e8e6ee;
+  border-radius: 0.7rem;
+  color: #454557;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  counter-increment: manager-work-step;
+}
+.manager-work-events li::before {
+  display: grid;
+  width: 1.55rem;
+  height: 1.55rem;
+  place-items: center;
+  border-radius: 50%;
+  color: #6654b4;
+  background: #f0edff;
+  content: counter(manager-work-step);
+  font-size: 0.62rem;
+  font-weight: 750;
+}
+.manager-work-review.pass {
+  border-color: #ccebe0;
+  color: #176d59;
+  background: #f0faf6;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+.manager-work-review.fail,
+.manager-work-error {
+  border-color: #f0d6d6;
+  color: #9e3f3f;
+  background: #fff5f4;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+.manager-work-panel .manager-work-action,
+.manager-work-panel .manager-work-permissions {
+  min-height: 2.4rem;
+  margin: 0.65rem 0.45rem 0 0;
+  padding: 0.52rem 0.75rem;
+  border: 1px solid #dedce7;
+  border-radius: 0.65rem;
+  color: #454557;
+  background: #fff;
+  font-size: 0.68rem;
+  font-weight: 680;
+}
+.manager-work-panel .manager-work-action.primary {
+  border-color: #6d5bd0;
+  color: #fff;
+  background: #6d5bd0;
+}
+.manager-work-panel .manager-work-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+.manager-work-panel .manager-work-permissions {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.manager-work-files {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.55rem;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  list-style: none;
+}
+.manager-work-files a {
+  display: flex;
+  min-height: 2.65rem;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #dcd8ee;
+  border-radius: 0.7rem;
+  color: #5d4ab7;
+  background: #fff;
+  font-size: 0.7rem;
+  font-weight: 680;
+}
+.manager-work-files a:hover {
+  border-color: #bcb1e8;
+  background: #f8f6ff;
+}
+
+@media (max-width: 620px) {
+  .manager-work-panel {
+    padding: 0.8rem;
+    border-radius: 0.9rem;
+  }
+  .manager-work-panel .manager-work-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .manager-work-panel .manager-work-submit,
+  .manager-work-panel .manager-work-action,
+  .manager-work-panel .manager-work-permissions {
+    width: 100%;
+    justify-content: center;
+    margin-right: 0;
+  }
+}
