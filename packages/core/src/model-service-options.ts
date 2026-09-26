@@ -15,8 +15,9 @@ export interface CommonModelServiceOptions {
 
 const invalidOption = (field: string): Error => new Error(`Invalid model request option: ${field}`);
 
-const isCanonicalIdentifier = (value: unknown): value is string =>
+const isCanonicalIdentifier = (value: unknown, maximum: number): value is string =>
   typeof value === "string" &&
+  value.length <= maximum &&
   value.trim().length > 0 &&
   value === value.trim() &&
   !/\s/u.test(value);
@@ -40,8 +41,10 @@ const MODEL_FEATURES = new Set<ModelFeature>([
 export const normalizeCommonModelServiceOptions = <T extends CommonModelServiceOptions>(
   options: T
 ): Omit<T, "requiredFeatures"> & { requiredFeatures: ModelFeature[] } => {
-  if (!isCanonicalIdentifier(options.preferredProvider)) throw invalidOption("preferredProvider");
-  if (!isCanonicalIdentifier(options.preferredModelAlias)) {
+  if (!isCanonicalIdentifier(options.preferredProvider, 128)) {
+    throw invalidOption("preferredProvider");
+  }
+  if (!isCanonicalIdentifier(options.preferredModelAlias, 256)) {
     throw invalidOption("preferredModelAlias");
   }
   if (typeof options.fallbackAllowed !== "boolean") throw invalidOption("fallbackAllowed");
@@ -63,13 +66,18 @@ export const normalizeCommonModelServiceOptions = <T extends CommonModelServiceO
     throw invalidOption("requiredFeatures");
   }
 
-  if (
-    options.maxCost !== null &&
-    (!Number.isFinite(options.maxCost.amount) ||
+  if (options.maxCost !== null) {
+    const maxCostKeys = Object.keys(options.maxCost);
+    if (
+      maxCostKeys.length !== 2 ||
+      !maxCostKeys.includes("amount") ||
+      !maxCostKeys.includes("currency") ||
+      !Number.isFinite(options.maxCost.amount) ||
       options.maxCost.amount < 0 ||
-      (options.maxCost.currency !== "USD" && options.maxCost.currency !== "RUB"))
-  ) {
-    throw invalidOption("maxCost");
+      (options.maxCost.currency !== "USD" && options.maxCost.currency !== "RUB")
+    ) {
+      throw invalidOption("maxCost");
+    }
   }
 
   return {
