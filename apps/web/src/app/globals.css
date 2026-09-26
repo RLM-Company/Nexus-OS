@@ -3077,6 +3077,243 @@ textarea:focus-visible {
   }
 }
 
+/* Cosmora navigation, account menu, and icon alignment. */
+.brand-mark {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.62rem;
+  background: linear-gradient(145deg, #7464d9, #463c9c);
+}
+.brand-mark svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
+}
+.brand-mark svg circle:last-child {
+  fill: currentColor;
+  stroke: none;
+}
+.brand {
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-weight: 680;
+  letter-spacing: -0.025em;
+}
+.new-project {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.65rem;
+  min-height: 2.5rem;
+  line-height: 1.2;
+}
+.new-project > span {
+  flex: 0 0 auto;
+}
+.new-chat-label {
+  display: block;
+}
+.new-project svg,
+.projects-heading svg,
+.sidebar-tool svg {
+  display: block;
+  flex: 0 0 1rem;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+.studio-toggle {
+  color: #343541;
+  font-size: 0.76rem;
+  font-weight: 550;
+}
+.studio-tools {
+  padding-left: 0.45rem;
+}
+.account-area {
+  position: relative;
+  flex: 0 0 auto;
+  padding-top: 0.45rem;
+  border-top: 1px solid #e5e5e9;
+}
+.account-trigger {
+  display: grid;
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  border: 0;
+  color: #343541;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.account-trigger:focus-visible,
+.account-menu button:focus-visible,
+.account-menu a:focus-visible {
+  outline: 2px solid #7968db;
+  outline-offset: 2px;
+}
+.avatar svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.7;
+}
+.avatar {
+  background: linear-gradient(145deg, #6d5bd0, #4e4499);
+}
+.account-menu {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 0.55rem);
+  left: 0;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.45rem;
+  border: 1px solid #e3e2e8;
+  border-radius: 0.8rem;
+  background: #fff;
+  box-shadow: 0 12px 35px rgba(27, 26, 39, 0.14);
+}
+.account-menu-heading {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem 0.6rem;
+  border-bottom: 1px solid #eeeef1;
+  font-size: 0.75rem;
+}
+.account-menu-heading small {
+  color: #8e8e9f;
+  font-size: 0.65rem;
+}
+.account-menu button,
+.account-menu a {
+  display: flex;
+  min-height: 2.25rem;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border: 0;
+  border-radius: 0.5rem;
+  color: #343541;
+  background: transparent;
+  font: inherit;
+  font-size: 0.68rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.account-menu button:hover,
+.account-menu a:hover {
+  background: #f3f3f6;
+}
+.account-menu svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+.account-menu-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  margin: 0 0.28rem;
+  border-radius: 50%;
+  background: #777;
+}
+.composer-actions > button:not(.restore-run) {
+  display: flex;
+  width: 2.35rem;
+  min-width: 2.35rem;
+  height: 2.35rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 0;
+  transform: none;
+}
+.composer-actions > button:not(.restore-run) svg {
+  display: block;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.apps-grid .github-app-mark {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #24242b;
+  font-size: 0.62rem;
+  font-weight: 750;
+}
+.app-unavailable {
+  opacity: 0.78;
+}
+.settings-groups {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1.5rem;
+}
+.settings-card {
+  display: flex;
+  min-height: 4.3rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #e5e5e9;
+  border-radius: 0.8rem;
+  color: #343541;
+  background: #fff;
+  text-decoration: none;
+}
+.settings-card strong {
+  font-size: 0.78rem;
+}
+.settings-card p {
+  margin: 0.28rem 0 0;
+  color: #777783;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+.settings-card i,
+.settings-state {
+  flex: 0 0 auto;
+  color: #6d5bd0;
+  font-size: 0.65rem;
+  font-style: normal;
+  font-weight: 650;
+}
+.settings-link:hover {
+  border-color: #c9c2e8;
+  background: #faf9ff;
+}
+
 /* Ordinary chat stays separate from project orchestration. */
 .composer > label {
   position: absolute;
@@ -3196,7 +3433,6 @@ textarea:focus-visible {
     justify-content: center;
   }
 }
-
 
 /* Manager Work is the hands-on demo surface; keep its safety state easy to scan. */
 .manager-work-panel {
