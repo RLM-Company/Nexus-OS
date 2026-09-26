@@ -27,6 +27,8 @@ export const ErrorCodeSchema = Type.Union([
   Type.Literal("EMERGENCY_STOP_CONFLICT"),
   Type.Literal("ENVIRONMENT_EMERGENCY_STOP_LOCKED"),
   Type.Literal("INTERRUPTED"),
+  Type.Literal("GITHUB_NOT_CONFIGURED"),
+  Type.Literal("GITHUB_UNAVAILABLE"),
   Type.Literal("INTERNAL_ERROR")
 ]);
 export type ErrorCode = Static<typeof ErrorCodeSchema>;

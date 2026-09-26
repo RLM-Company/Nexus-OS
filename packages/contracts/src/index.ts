@@ -5,6 +5,7 @@ export * from "./companion.js";
 export * from "./demo-manager.js";
 export * from "./errors.js";
 export * from "./events.js";
+export * from "./github.js";
 export * from "./health.js";
 export * from "./identity.js";
 export * from "./manager-runtime.js";

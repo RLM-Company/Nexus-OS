@@ -12,8 +12,9 @@ agent runtime.
   server-side streaming, cancellation and restart recovery;
 - browser-local Project Context preview with bounded source metadata, explicit preview before
   connecting a source, per-project local isolation, safe redaction and explicit clear confirmation;
-- mock-only Skills preview with read/preview permissions and disabled arbitrary execution, plus a
-  mock/read-only GitHub preview with strict `github.com` URL allowlisting and disabled write actions;
+- mock-only Skills preview with read/preview permissions and disabled arbitrary execution, plus an
+  optional server-side read-only GitHub connection with strict `github.com` URL allowlisting and
+  disabled write actions;
 - local Image, Video and Sound prompt workspaces that do not send prompts to an external model while
   that model surface is disconnected;
 - Agent Studio catalogs, blueprints and owner/delegated proposal flows with idempotent writes and
@@ -47,8 +48,9 @@ agent runtime.
 
 - Manager and worker agents do not execute task graphs or make model calls as agents yet.
 - Project Context source selection is browser-local preview state, not authoritative runtime context.
-- Skills preview does not execute packages or arbitrary code, and GitHub preview does not authenticate
-  to GitHub or perform repository writes.
+- Skills preview does not execute packages or arbitrary code. GitHub is unavailable until a local
+  fine-grained token is configured; when enabled, it performs only server-side read requests and never
+  performs repository writes.
 - External tool effects and the local daemon are not connected to an autonomous agent loop.
 - Manager Runtime Step 6 is accepted as `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`.
 - Roadmap Step 5 owner-facing control slices are implemented. Finite-use override counters are
@@ -174,6 +176,21 @@ At handoff, the only secret-dependent steps are: copy `.env.example` to a local 
 external-provider block and `MODEL_API_KEY`, start `pnpm demo`, then run the preflight above. Do not
 commit `.env`. With `MODEL_FALLBACK_TO_MOCK=false`, an unavailable live provider fails visibly
 instead of returning a synthetic answer.
+
+## Connect GitHub read-only
+
+For a local read-only GitHub connection, create a **fine-grained personal access token** restricted to
+only the repositories you want Cosmora to inspect. Grant only read access to repository metadata,
+contents, issues, pull requests and checks, then keep it in the local `.env` file:
+
+```dotenv
+GITHUB_TOKEN=your-local-fine-grained-token
+```
+
+Restart the API and open `/github`. Cosmora sends the token only from the local API process to the
+fixed `https://api.github.com` origin. The browser never receives the token. The current integration
+lists repositories, branches, commits, issues, pull requests and check status only; creating branches,
+writing comments, merging and deployments remain disabled.
 
 The checked-in owner-preview registry also permits `claude-sonnet-5` through the
 `anthropic-compatible` protocol. Its dated provider evidence expires on 2026-10-13 and must be
