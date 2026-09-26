@@ -196,20 +196,6 @@ const resolveCapability = (
     reasons.push(`Condition ${expansion.condition_id} expanded the mode to ${mode}.`);
   }
 
-  for (const { contract, grant } of activePermissionGrants(
-    input.permissionContracts,
-    input.intent,
-    capabilityId,
-    now
-  )) {
-    const expandedMode = maxMode(mode, grant.mode);
-    if (expandedMode !== mode) {
-      mode = expandedMode;
-      permissionIds.push(contract.permission_id);
-      reasons.push(`Permission ${contract.permission_id} expanded the mode to ${mode}.`);
-    }
-  }
-
   const overrides = usableOverridesForCapability(
     input.profile,
     capabilityId,
@@ -229,6 +215,24 @@ const resolveCapability = (
   if (override !== undefined) {
     mode = override.mode;
     reasons.push(`Override ${override.override_id} set the final mode to ${mode}.`);
+  }
+
+  for (const { contract, grant } of activePermissionGrants(
+    input.permissionContracts,
+    input.intent,
+    capabilityId,
+    now
+  )) {
+    // An owner confirmation is the explicit one-operation escape from a
+    // CONFIRM point override. More restrictive overrides (especially DENY)
+    // remain authoritative and cannot be bypassed by a permission contract.
+    const canExpand = override === undefined || override.mode === "CONFIRM";
+    const expandedMode = canExpand ? maxMode(mode, grant.mode) : mode;
+    if (expandedMode !== mode) {
+      mode = expandedMode;
+      permissionIds.push(contract.permission_id);
+      reasons.push(`Permission ${contract.permission_id} expanded the mode to ${mode}.`);
+    }
   }
 
   return {

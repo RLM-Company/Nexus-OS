@@ -89,7 +89,10 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
     }
 
     let resolvedModel = this.#model;
-    let finishReason = "stop";
+    let finishReason: string | null = null;
+    let ended = false;
+    let started = false;
+    let hasText = false;
     let usage = { inputTokens: null as number | null, outputTokens: null as number | null };
 
     for await (const payload of this.#readDataPayloads(response.body)) {
@@ -101,20 +104,31 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
           "PROVIDER_ERROR",
           this.id,
           "Provider returned invalid streaming JSON",
-          true,
+          false,
           { cause: error }
         );
       }
 
+      if (!event || typeof event !== "object") {
+        throw new GatewayRunError(
+          "PROVIDER_ERROR",
+          this.id,
+          "Invalid provider stream event",
+          false
+        );
+      }
       if (event.type === "error") {
         throw new GatewayRunError(
           "PROVIDER_ERROR",
           this.id,
-          event.error?.message ?? "Provider returned a streaming error",
-          true
+          "Provider returned a streaming error",
+          false
         );
       }
       if (event.type === "message_start") {
+        if (started)
+          throw new GatewayRunError("PROVIDER_ERROR", this.id, "Duplicate message start", false);
+        started = true;
         resolvedModel = event.message?.model ?? resolvedModel;
         usage = {
           inputTokens: event.message?.usage?.input_tokens ?? usage.inputTokens,
@@ -123,7 +137,13 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
       }
       if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
         const delta = event.delta.text;
-        if (delta) yield { type: "text.delta", delta };
+        if (typeof delta !== "string" || !started || finishReason !== null) {
+          throw new GatewayRunError("PROVIDER_ERROR", this.id, "Invalid text delta", false);
+        }
+        if (delta) {
+          hasText ||= delta.trim().length > 0;
+          yield { type: "text.delta", delta };
+        }
       }
       if (event.type === "message_delta") {
         finishReason = event.delta?.stop_reason ?? finishReason;
@@ -132,13 +152,30 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
           outputTokens: event.usage?.output_tokens ?? usage.outputTokens
         };
       }
+      if (event.type === "message_stop") {
+        ended = true;
+        break;
+      }
     }
 
+    if (
+      !started ||
+      !ended ||
+      !hasText ||
+      !["end_turn", "stop_sequence"].includes(finishReason ?? "")
+    ) {
+      throw new GatewayRunError(
+        "PROVIDER_ERROR",
+        this.id,
+        "Provider stream did not finish a non-empty text response",
+        false
+      );
+    }
     yield {
       type: "response.completed",
       provider: this.id,
       model: resolvedModel,
-      finishReason,
+      finishReason: finishReason!,
       usage
     };
   }
@@ -196,6 +233,7 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
       }
       if (buffer.startsWith("data:")) yield buffer.slice(5).trim();
     } finally {
+      await reader.cancel().catch(() => undefined);
       reader.releaseLock();
     }
   }

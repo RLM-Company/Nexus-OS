@@ -55,6 +55,9 @@ importers:
       "@cosmora/policy-engine":
         specifier: workspace:*
         version: link:../../packages/policy-engine
+      "@cosmora/tool-runtime":
+        specifier: workspace:*
+        version: link:../../packages/tool-runtime
       fastify:
         specifier: 5.12.1
         version: 5.12.1

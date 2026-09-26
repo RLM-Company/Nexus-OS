@@ -173,8 +173,11 @@ export class GuardedToolRuntime {
         const confirmation = existing.confirmation_id
           ? this.#policyStore.getConfirmation(existing.confirmation_id)
           : null;
-        if (confirmation) {
+        if (confirmation?.status === "PENDING") {
           return { status: "WAITING_CONFIRMATION", verdict: existing.verdict, confirmation };
+        }
+        if (confirmation?.status === "REJECTED" || confirmation?.status === "EXPIRED") {
+          return { status: "PAUSED", verdict: existing.verdict };
         }
       }
       if (existing.status === "RESERVED") {

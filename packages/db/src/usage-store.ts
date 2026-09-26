@@ -226,7 +226,9 @@ export class UsageStore {
     for (const row of rows) {
       const status = usageStatus(row.status);
       attempts[status] += 1;
-      if (status === "reserved") {
+      // Failed/cancelled requests may already have been billed. Keep their upper
+      // bounds until authoritative usage can be reconciled; failure is not a refund.
+      if (status !== "committed") {
         tokens.reserved_upper_bound +=
           nonNegativeNumber(row.estimated_input_tokens, "estimated_input_tokens") +
           nonNegativeNumber(row.max_output_tokens, "max_output_tokens");

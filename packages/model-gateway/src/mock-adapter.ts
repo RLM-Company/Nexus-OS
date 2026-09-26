@@ -55,8 +55,34 @@ export class MockProviderAdapter implements ModelProviderAdapter {
 
     const prompt = lastUserMessage(request);
     const pause = this.#mode === "slow_stream" ? 260 : 35;
-    const parts =
-      request.task_type === "chat_response"
+    const workResponse =
+      request.task_type === "manager_work_plan"
+        ? JSON.stringify({
+            summary: "Подготовить демонстрационный файл",
+            instructions: "Создать result.md с явной пометкой mock",
+            complexity: "simple",
+            needs_critic: true,
+            requires_external_actions: false
+          })
+        : request.task_type === "manager_work_draft"
+          ? JSON.stringify({
+              files: [
+                {
+                  name: "result.md",
+                  content:
+                    "# Cosmora mock\n\nЭто демонстрационный файл. Живая модель не вызывалась."
+                }
+              ]
+            })
+          : request.task_type === "manager_work_review"
+            ? JSON.stringify({
+                verdict: "PASS",
+                reason: "Демонстрационная проверка mock-результата; не оценка живой модели."
+              })
+            : null;
+    const parts = workResponse
+      ? [workResponse]
+      : request.task_type === "chat_response"
         ? [
             "Принял сообщение. ",
             `Запрос обычного чата: «${summarize(prompt)}». `,

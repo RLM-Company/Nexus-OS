@@ -100,6 +100,12 @@ export class ModelGateway {
     return this.#adapters.has(providerId);
   }
 
+  /** Validate the primary registry route without dispatching or touching circuits. */
+  assertRoute(request: ModelRequest): void {
+    const resolved = this.#resolveAttempt(request, request.routing.preferred_provider, 0, true);
+    if (resolved instanceof GatewayRunError) throw resolved;
+  }
+
   async *stream(
     request: ModelRequest,
     externalSignal?: AbortSignal

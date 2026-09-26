@@ -113,6 +113,16 @@ const main = async () => {
   assert(runtime.provider !== "mock", "Live smoke requires an external provider");
   assert(runtime.credential_configured === true, "Live model credential is not configured");
   assert(runtime.fallback_to_mock === false, "Disable mock fallback before live smoke");
+  assert(
+    runtime.max_attempts_per_route === 1,
+    "Restart API with MODEL_MAX_ATTEMPTS_PER_ROUTE=1 before live smoke"
+  );
+  assert(
+    Number.isInteger(runtime.max_output_tokens) &&
+      runtime.max_output_tokens >= 1 &&
+      runtime.max_output_tokens <= 128,
+    "Restart API with MANAGER_MAX_OUTPUT_TOKENS=128 before live smoke"
+  );
 
   const operations = await fetchJson("/api/v1/operations/status", "Operations status");
   assert(operations.process_stop === null, "A process emergency stop is active");
@@ -153,7 +163,7 @@ const main = async () => {
       `- Model route: ${runtime.provider}:${runtime.model} (${runtime.mode})`,
       "- Ordinary chat: completed with a non-empty answer",
       "- Manager project: completed with a non-empty answer",
-      "- Paid model requests sent: 2",
+      "- Completed model runs: 2; retries and fallback disabled; output cap: 128 tokens per run",
       "- Response content and credentials were not printed"
     ].join("\n") + "\n"
   );

@@ -12,7 +12,9 @@ export const ModelRuntimeStatusSchema = Type.Object(
     model: Type.String({ minLength: 1 }),
     registry_version: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
     credential_configured: Type.Boolean(),
-    fallback_to_mock: Type.Boolean()
+    fallback_to_mock: Type.Boolean(),
+    max_attempts_per_route: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
+    max_output_tokens: Type.Optional(Type.Integer({ minimum: 1, maximum: 100_000 }))
   },
   { additionalProperties: false }
 );

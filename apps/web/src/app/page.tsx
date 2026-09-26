@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
 import { InstallApp } from "./install-app";
 import { ProjectContextPanel } from "./project-context-panel";
+import { ManagerWorkPanel } from "./manager-work-panel";
 
 type Project = {
   id: string;
@@ -2187,6 +2188,13 @@ export default function Home() {
 
         {activeProject && projectView === "plan" && (
           <div className="project-context view-panel" role="tabpanel" aria-label="План">
+            <ManagerWorkPanel
+              key={activeProject.id}
+              projectId={activeProject.id}
+              initialGoal={
+                [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
+              }
+            />
             <section className="manager-demo" aria-label="Manager demo workflow">
               <header>
                 <div>
