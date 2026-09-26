@@ -68,10 +68,13 @@ describe("UsageStore", () => {
         tokens: {
           committed_input: 12,
           committed_output: 4,
-          reserved_upper_bound: 120,
+          reserved_upper_bound: 150,
           unknown_committed_attempts: 0
         },
-        costs: [{ currency: "USD", committed_amount: 0.25, reserved_amount: 0 }],
+        costs: [
+          { currency: "RUB", committed_amount: 0, reserved_amount: 1 },
+          { currency: "USD", committed_amount: 0.25, reserved_amount: 0 }
+        ],
         unknown_committed_cost_attempts: 0,
         unknown_reserved_cost_attempts: 1
       });

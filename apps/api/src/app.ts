@@ -143,6 +143,9 @@ import {
 } from "./identity.js";
 import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 import type { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
+import type { ManagerWorkStore } from "@cosmora/db";
+import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
+import { registerManagerWorkRoutes } from "./manager-work-routes.js";
 import {
   autonomyProfileStepUpChallenge,
   projectUsageLimitStepUpChallenge
@@ -157,6 +160,8 @@ export interface AppDependencies {
   projectStore?: ProjectStore;
   demoManagerStore?: DemoManagerStore;
   demoManagerCoordinator?: DemoManagerCoordinator;
+  managerWorkStore?: ManagerWorkStore;
+  managerWorkCoordinator?: ManagerWorkCoordinator;
   usageStore?: UsageStore;
   emergencyStopStore?: EmergencyStopStore;
   policyStore?: PolicyStore;
@@ -960,11 +965,27 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         registry_version: dependencies.modelRegistryVersion ?? null,
         credential_configured:
           dependencies.config.modelProvider !== "mock" && dependencies.config.modelApiKeyConfigured,
-        fallback_to_mock: dependencies.config.modelFallbackToMock
+        fallback_to_mock: dependencies.config.modelFallbackToMock,
+        max_attempts_per_route: dependencies.config.modelMaxAttemptsPerRoute,
+        max_output_tokens: dependencies.config.managerMaxOutputTokens
       };
       return response;
     }
   );
+
+  if (
+    dependencies.managerWorkStore &&
+    dependencies.managerWorkCoordinator &&
+    dependencies.projectStore
+  ) {
+    registerManagerWorkRoutes({
+      app,
+      store: dependencies.managerWorkStore,
+      coordinator: dependencies.managerWorkCoordinator,
+      projects: dependencies.projectStore,
+      identityFor
+    });
+  }
 
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerGeneralChatRoutes({

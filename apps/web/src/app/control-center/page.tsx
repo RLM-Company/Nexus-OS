@@ -1838,7 +1838,7 @@ export default function ControlCenterPage() {
                 </small>
               </article>
               <article>
-                <span>Активный резерв</span>
+                <span>Удержанный резерв</span>
                 <strong>{integer(data.usage.tokens.reserved_upper_bound)}</strong>
                 <small>верхняя граница токенов · {data.usage.attempts.reserved} попыток</small>
               </article>
@@ -1882,7 +1882,7 @@ export default function ControlCenterPage() {
                 <article key={cost.currency}>
                   <span>{cost.currency}</span>
                   <strong>{money(cost.committed_amount, cost.currency)}</strong>
-                  <small>активный резерв {money(cost.reserved_amount, cost.currency)}</small>
+                  <small>удержанный резерв {money(cost.reserved_amount, cost.currency)}</small>
                 </article>
               ))}
               {data.usage.costs.length === 0 && (
@@ -2034,16 +2034,17 @@ export default function ControlCenterPage() {
             </form>
 
             <p className={styles.usageBoundary}>
-              Hard limit проверяется атомарно по накопленным committed и активным reserved значениям
-              до создания нового резерва. При включённом потолке неизвестные токены, цена или другая
-              валюта закрывают маршрут без вызова провайдера. Автопополнения нет. Показаны только
+              Hard limit проверяется атомарно по подтверждённым расходам и удержанным резервам до
+              создания нового резерва. При включённом потолке неизвестные токены, цена или другая
+              валюта закрывают маршрут без вызова провайдера. Автопополнения нет. После ошибки,
+              отмены или перезапуска возможный расход остаётся в резерве до сверки. Показаны только
               суммарные токены, статусы и стоимость в исходной валюте журнала. Провайдер, модель,
               Registry route, запросы и содержимое сообщений не выдаются.
               {data.usage.unknown_committed_cost_attempts > 0
                 ? ` Стоимость не подтверждена для ${data.usage.unknown_committed_cost_attempts} завершённых попыток.`
                 : ""}
               {data.usage.unknown_reserved_cost_attempts > 0
-                ? ` Ещё ${data.usage.unknown_reserved_cost_attempts} активных резервов не имеют подтверждённой цены.`
+                ? ` Ещё ${data.usage.unknown_reserved_cost_attempts} удержанных резервов не имеют подтверждённой цены.`
                 : ""}
               {data.usage.tokens.unknown_committed_attempts > 0
                 ? ` Токены не подтверждены для ${data.usage.tokens.unknown_committed_attempts} завершённых попыток.`

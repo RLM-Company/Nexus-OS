@@ -4,6 +4,7 @@ import {
   AgentInstanceStore,
   AgentStudioMutationStore,
   DemoManagerStore,
+  ManagerWorkStore,
   EmergencyStopStore,
   IdentityStore,
   openDatabase,
@@ -25,6 +26,7 @@ import { GeneralChatBackgroundRunCoordinator } from "./general-chat-background-r
 import { GeneralChatRuntimeStore } from "./general-chat-runtime-store.js";
 import { ManagerBackgroundRunCoordinator } from "./manager-background-run-coordinator.js";
 import { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
+import { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { ManagerRuntimeProjectStore } from "./manager-runtime-project-store.js";
 import { buildModelRuntime } from "./model-runtime.js";
 import { RuntimeMetrics } from "./operations.js";
@@ -34,6 +36,7 @@ const database = openDatabase(config.databaseUrl);
 let app: ReturnType<typeof buildApp> | undefined;
 let managerBackgroundCoordinator: ManagerBackgroundRunCoordinator | undefined;
 let generalChatBackgroundCoordinator: GeneralChatBackgroundRunCoordinator | undefined;
+let managerWorkCoordinator: ManagerWorkCoordinator | undefined;
 let shuttingDown = false;
 
 const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
@@ -48,7 +51,8 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   app.log.info({ signal }, "Shutting down Cosmora API");
   await Promise.all([
     managerBackgroundCoordinator?.stop(),
-    generalChatBackgroundCoordinator?.stop()
+    generalChatBackgroundCoordinator?.stop(),
+    managerWorkCoordinator?.stop()
   ]);
   await app.close();
   process.exitCode = 0;
@@ -81,6 +85,16 @@ try {
   }
   const recoveredRuns = projectStore.recoverInterruptedRuns();
   const recoveredChatRuns = generalChatStore.recoverInterruptedRuns();
+  const managerWorkStore = new ManagerWorkStore(database.sqlite);
+  const policyStore = new PolicyStore(database.sqlite);
+  managerWorkCoordinator = new ManagerWorkCoordinator({
+    store: managerWorkStore,
+    projects: projectStore,
+    policy: policyStore,
+    emergency: emergencyStopStore,
+    gateway: modelRuntime.gateway,
+    manager: modelRuntime.manager
+  });
   app = buildApp({
     config,
     database,
@@ -88,10 +102,12 @@ try {
     generalChatStore,
     projectStore,
     demoManagerStore,
+    managerWorkStore,
+    managerWorkCoordinator,
     demoManagerCoordinator: new DemoManagerCoordinator(demoManagerStore),
     usageStore: new UsageStore(database.sqlite),
     emergencyStopStore,
-    policyStore: new PolicyStore(database.sqlite),
+    policyStore,
     patternLibraryStore: new PatternLibraryStore(database.sqlite),
     agentBlueprintStore: new AgentBlueprintStore(database.sqlite),
     agentInstanceStore: new AgentInstanceStore(database.sqlite, {
@@ -132,12 +148,14 @@ try {
     app.log.warn({ recoveredChatRuns }, "Recovered interrupted ordinary-chat runs after restart");
   }
   await app.listen({ host: config.apiHost, port: config.apiPort });
+  managerWorkCoordinator.start();
   managerBackgroundCoordinator.start();
   generalChatBackgroundCoordinator.start();
 } catch (error) {
   await Promise.all([
     managerBackgroundCoordinator?.stop(),
-    generalChatBackgroundCoordinator?.stop()
+    generalChatBackgroundCoordinator?.stop(),
+    managerWorkCoordinator?.stop()
   ]);
   if (app) {
     app.log.error(error, "Failed to start Cosmora API");

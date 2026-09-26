@@ -31,7 +31,9 @@ describe("GET /api/v1/health", () => {
       model: "manager",
       registry_version: null,
       credential_configured: false,
-      fallback_to_mock: true
+      fallback_to_mock: true,
+      max_attempts_per_route: 2,
+      max_output_tokens: 1200
     });
     expect(response.body).not.toContain("API_KEY");
 

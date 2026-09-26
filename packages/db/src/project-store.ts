@@ -415,7 +415,7 @@ export class ProjectStore {
               estimated_cost_amount, actual_input_tokens, actual_output_tokens,
               calculated_cost_amount, currency, error_code, created_at, updated_at
              FROM model_usage_ledger
-             WHERE project_id = ? AND status IN ('reserved', 'committed')`
+             WHERE project_id = ?`
           )
           .all(run.project_id) as unknown as StoredModelUsage[];
 

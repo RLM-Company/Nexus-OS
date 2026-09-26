@@ -722,3 +722,36 @@ export const policyDecisions = sqliteTable(
   },
   (table) => [index("policy_decisions_operation_idx").on(table.operationId, table.createdAt)]
 );
+
+export const managerWork = sqliteTable(
+  "manager_work",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    ownerId: text("owner_id").notNull(),
+    clientRequestId: text("client_request_id").notNull(),
+    version: integer("version").notNull(),
+    stateJson: text("state_json").notNull()
+  },
+  (table) => [
+    uniqueIndex("manager_work_request_unique").on(
+      table.projectId,
+      table.ownerId,
+      table.clientRequestId
+    )
+  ]
+);
+
+export const managerWorkFiles = sqliteTable(
+  "manager_work_files",
+  {
+    executionId: text("execution_id")
+      .notNull()
+      .references(() => managerWork.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    content: text("content").notNull()
+  },
+  (table) => [primaryKey({ columns: [table.executionId, table.name] })]
+);

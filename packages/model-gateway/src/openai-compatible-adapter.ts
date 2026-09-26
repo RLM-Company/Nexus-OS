@@ -10,6 +10,7 @@ export interface OpenAICompatibleAdapterOptions {
 }
 
 interface CompletionChunk {
+  error?: unknown;
   model?: string;
   choices?: Array<{
     delta?: { content?: string | null };
@@ -68,11 +69,16 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
     }
 
     let resolvedModel = this.#model;
-    let finishReason = "stop";
+    let finishReason: string | null = null;
+    let ended = false;
+    let hasText = false;
     let usage = { inputTokens: null as number | null, outputTokens: null as number | null };
 
     for await (const payload of this.#readDataPayloads(response.body)) {
-      if (payload === "[DONE]") break;
+      if (payload === "[DONE]") {
+        ended = true;
+        break;
+      }
       let chunk: CompletionChunk;
       try {
         chunk = JSON.parse(payload) as CompletionChunk;
@@ -81,15 +87,32 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
           "PROVIDER_ERROR",
           this.id,
           "Provider returned invalid streaming JSON",
-          true,
+          false,
           { cause: error }
         );
       }
 
+      if (!chunk || typeof chunk !== "object" || chunk.error !== undefined) {
+        throw new GatewayRunError(
+          "PROVIDER_ERROR",
+          this.id,
+          "Invalid provider stream event",
+          false
+        );
+      }
       if (chunk.model) resolvedModel = chunk.model;
       const choice = chunk.choices?.[0];
       const delta = choice?.delta?.content;
-      if (delta) yield { type: "text.delta", delta };
+      if (delta !== undefined && delta !== null && typeof delta !== "string") {
+        throw new GatewayRunError("PROVIDER_ERROR", this.id, "Invalid text delta", false);
+      }
+      if (delta) {
+        if (finishReason !== null) {
+          throw new GatewayRunError("PROVIDER_ERROR", this.id, "Text after finish reason", false);
+        }
+        hasText ||= delta.trim().length > 0;
+        yield { type: "text.delta", delta };
+      }
       if (choice?.finish_reason) finishReason = choice.finish_reason;
       if (chunk.usage) {
         usage = {
@@ -99,6 +122,14 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       }
     }
 
+    if (!ended || finishReason !== "stop" || !hasText) {
+      throw new GatewayRunError(
+        "PROVIDER_ERROR",
+        this.id,
+        "Provider stream did not finish a non-empty text response",
+        false
+      );
+    }
     yield {
       type: "response.completed",
       provider: this.id,
@@ -126,6 +157,7 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       }
       if (buffer.startsWith("data:")) yield buffer.slice(5).trim();
     } finally {
+      await reader.cancel().catch(() => undefined);
       reader.releaseLock();
     }
   }

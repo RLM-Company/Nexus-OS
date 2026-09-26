@@ -867,13 +867,19 @@ export class PolicyStore {
         profile.overrides.find((override) => override.override_id === overrideId)
       );
       if (
-        appliedOverrides.some(
-          (override) =>
-            !override ||
-            verdict.evaluated_capabilities.find(
-              (grant) => grant.capability_id === override.capability_id
-            )?.mode !== override.mode
-        )
+        appliedOverrides.some((override) => {
+          if (!override) return true;
+          const evaluatedMode = verdict.evaluated_capabilities.find(
+            (grant) => grant.capability_id === override.capability_id
+          )?.mode;
+          return !(
+            evaluatedMode === override.mode ||
+            (override.mode === "CONFIRM" &&
+              (evaluatedMode === "SCOPED" ||
+                evaluatedMode === "AUTONOMOUS" ||
+                evaluatedMode === "FULL"))
+          );
+        })
       ) {
         return { status: "AUTHORITY_CHANGED" };
       }
