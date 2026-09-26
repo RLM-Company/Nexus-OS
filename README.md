@@ -124,6 +124,18 @@ terminal:
 pnpm demo:preflight
 ```
 
+To verify the complete Manager path without a model key or paid requests, run this once while
+`pnpm demo` is open:
+
+```bash
+pnpm manager:demo-smoke
+```
+
+It creates an A2 test project, completes the mock plan, draft and Critic stages, downloads the
+result through the web proxy, then checks saved state and idempotency. It refuses a non-local
+origin, a non-mock model route or a configured model credential before creating anything. The
+test project remains in the local SQLite history so its result can be inspected in the Console.
+
 LAN mode is for a temporary internal walkthrough only. Do not use it on a public or untrusted
 network, and stop both processes after the demo. The exact owner walkthrough and recovery notes are
 in `docs/handoff/SUNDAY_MANAGER_DEMO_RUNBOOK_2026-09-11.md`.
