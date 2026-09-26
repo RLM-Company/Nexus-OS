@@ -180,6 +180,13 @@ The checked-in owner-preview registry also permits `claude-sonnet-5` through the
 reverified rather than silently reused. The default registry remains mock-only, so removing the
 local `.env` returns the repository to its safe local mode.
 
+For a controlled local Manager work trial, `config/model-registry.vibecode.manager-work-preview.v1.json`
+is a separate opt-in candidate. It adds the `manager`, `analyst` and `critic` work stages to the
+existing `vibecode:gpt-5.5` streaming preview route; the ordinary preview and default mock routes
+are unchanged. Select it with `MODEL_REGISTRY_PATH` only for a reviewed, non-confidential task.
+This metadata does not prove that the provider follows the requested JSON format. Pricing and
+privacy terms remain unknown, so it is not a production route or a guaranteed monetary cap.
+
 An OpenAI-compatible provider must expose streaming `POST /chat/completions`; an
 Anthropic-compatible provider must expose streaming `POST /messages`. Cosmora does not expose the
 key through its health or runtime-status APIs. If the provider fails before the first response
