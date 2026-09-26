@@ -10,6 +10,7 @@ test("keeps every media prompt local until a model is connected", async ({ page 
 
   await page.goto("/");
   const sidebar = page.locator(".sidebar-tools");
+  await sidebar.getByRole("button", { name: /Cosmora Studio/ }).click();
   const media = [
     ["Изображения", "изображения"],
     ["Видео", "видео"],

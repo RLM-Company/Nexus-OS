@@ -2,6 +2,10 @@ import { expect, test } from "@playwright/test";
 
 test("shows a visible keyboard focus ring on media prompt textareas", async ({ page }) => {
   await page.goto("/");
+  await page
+    .locator(".sidebar-tools")
+    .getByRole("button", { name: /Cosmora Studio/ })
+    .click();
   await page.getByRole("button", { name: "Изображения", exact: true }).click();
 
   const prompt = page.getByLabel("Промпт для изображения");

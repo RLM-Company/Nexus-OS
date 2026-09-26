@@ -150,15 +150,17 @@ test("opens the image workspace and keeps generation local until a model is conn
 }) => {
   await page.goto("/");
 
-  await expect(page.locator(".sidebar-tools").getByRole("button")).toHaveText([
-    "Skills",
-    "Code",
-    "Work",
-    "Изображения",
-    "Видео",
-    "Sound",
-    "Мультиагент"
-  ]);
+  const tools = page.locator(".sidebar-tools");
+  for (const name of ["Work", "Code", "Мультиагент", "Skills", "Приложения"]) {
+    await expect(tools.getByRole("button", { name, exact: true })).toBeVisible();
+  }
+  const studio = tools.getByRole("button", { name: /Cosmora Studio/ });
+  await expect(studio).toHaveAttribute("aria-expanded", "false");
+  await studio.click();
+  await expect(studio).toHaveAttribute("aria-expanded", "true");
+  for (const name of ["Обзор Studio", "Изображения", "Видео", "Sound"]) {
+    await expect(tools.getByRole("button", { name, exact: true })).toBeVisible();
+  }
   await page.getByRole("button", { name: "Изображения", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Создание изображений" })).toBeVisible();
   expect(

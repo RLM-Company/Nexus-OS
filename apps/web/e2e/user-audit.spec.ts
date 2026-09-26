@@ -97,11 +97,19 @@ test("reaches every primary workspace from the phone navigation", async ({ page 
   const mobileNav = page.getByRole("navigation", { name: "Мобильная навигация" });
   await expect(mobileNav).toBeVisible();
 
-  await mobileNav.getByRole("button", { name: "Проекты", exact: true }).click();
+  await mobileNav.getByRole("button", { name: "Все разделы" }).click();
+  await page
+    .getByRole("dialog", { name: "Ваше пространство" })
+    .getByRole("button", { name: auditProject.title, exact: true })
+    .click();
   await expect(page.locator(".topbar h1")).toHaveText("Audit Project");
 
   for (const label of ["Skills", "Code", "Work", "Изображения", "Видео", "Sound", "Мультиагент"]) {
-    await mobileNav.getByRole("button", { name: label, exact: true }).click();
+    await mobileNav.getByRole("button", { name: "Все разделы" }).click();
+    await page
+      .getByRole("dialog", { name: "Ваше пространство" })
+      .getByRole("button", { name: new RegExp(`^${label}(?:\\s|$)`) })
+      .click();
     await expect(page.locator(".topbar h1")).toHaveText(label);
   }
 
@@ -119,7 +127,11 @@ test("keeps mobile navigation, composer and long-chat scrolling usable", async (
   await waitForProjectList(page);
 
   const mobileNav = page.getByRole("navigation", { name: "Мобильная навигация" });
-  await mobileNav.getByRole("button", { name: "Проекты", exact: true }).click();
+  await mobileNav.getByRole("button", { name: "Все разделы" }).click();
+  await page
+    .getByRole("dialog", { name: "Ваше пространство" })
+    .getByRole("button", { name: auditProject.title, exact: true })
+    .click();
 
   const composer = page.getByLabel("Сообщение менеджеру");
   const messages = page.locator(".messages");
@@ -203,12 +215,10 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   const newChat = sidebar.getByRole("button", { name: "Новый чат" });
   const chats = sidebar.getByRole("button", { name: /Чаты/ });
   const projects = sidebar.getByRole("button", { name: /Проекты/ });
-  const skills = page.locator(".sidebar-tools").getByRole("button", {
-    name: "Skills",
-    exact: true
-  });
 
   await newChat.focus();
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Поиск чатов и проектов")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(chats).toBeFocused();
   await page.keyboard.press("Enter");
@@ -221,9 +231,12 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   await expect(projects).toBeFocused();
   await expect(projects).toHaveAttribute("aria-expanded", "false");
 
-  await page.keyboard.press("Tab");
-  await expect(skills).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(skills).toBeFocused();
-  await expect(page.locator(".topbar h1")).toHaveText("Skills");
+  for (const name of ["Work", "Code", "Мультиагент", "Skills"]) {
+    const destination = page.locator(".sidebar-tools").getByRole("button", { name, exact: true });
+    await page.keyboard.press("Tab");
+    await expect(destination).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(destination).toBeFocused();
+    await expect(page.locator(".topbar h1")).toHaveText(name);
+  }
 });
