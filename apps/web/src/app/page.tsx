@@ -111,7 +111,16 @@ type ProjectTabKeyEvent = {
 
 const PROJECT_VIEW_ORDER: ProjectView[] = ["chat", "plan", "project", "context"];
 type WorkspaceSurface =
-  "manager" | "skills" | "code" | "work" | "images" | "video" | "sound" | "multi-agent";
+  | "manager"
+  | "skills"
+  | "code"
+  | "work"
+  | "images"
+  | "video"
+  | "sound"
+  | "multi-agent"
+  | "apps"
+  | "settings";
 
 type ToolSurface = Exclude<WorkspaceSurface, "manager">;
 
@@ -123,11 +132,15 @@ const TOOL_ITEMS: Array<{
   { id: "skills", label: "Skills", description: "Инструменты и специализации" },
   { id: "code", label: "Code", description: "Работа с кодом" },
   { id: "work", label: "Work", description: "Рабочие материалы" },
+  { id: "multi-agent", label: "Мультиагент", description: "Команда ИИ-агентов" },
+  { id: "apps", label: "Приложения", description: "Подключённые сервисы" },
   { id: "images", label: "Изображения", description: "Создание и редактирование" },
   { id: "video", label: "Видео", description: "Сценарии и генерация" },
   { id: "sound", label: "Sound", description: "Голос, музыка и аудио" },
-  { id: "multi-agent", label: "Мультиагент", description: "Команда ИИ-агентов" }
+  { id: "settings", label: "Настройки", description: "Параметры Cosmora" }
 ];
+
+const STUDIO_ITEMS = TOOL_ITEMS.filter((item) => ["images", "video", "sound"].includes(item.id));
 
 const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
   manager: "Cosmora Manager",
@@ -137,7 +150,9 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
   images: "Изображения",
   video: "Видео",
   sound: "Sound",
-  "multi-agent": "Мультиагент"
+  "multi-agent": "Мультиагент",
+  apps: "Приложения",
+  settings: "Настройки"
 };
 
 const isProjectView = (value: string | null): value is ProjectView =>
@@ -225,8 +240,16 @@ const PROJECT_STATUS_LABEL: Record<Project["status"], string> = {
 
 const SparkIcon = () => (
   <svg aria-hidden="true" viewBox="0 0 24 24">
-    <path d="M12 2l1.55 5.3L19 9l-5.45 1.7L12 16l-1.55-5.3L5 9l5.45-1.7L12 2Z" />
-    <path d="m19 15 .75 2.25L22 18l-2.25.75L19 21l-.75-2.25L16 18l2.25-.75L19 15Z" />
+    <circle cx="12" cy="12" r="8.2" />
+    <path d="M4.8 9.2c2.5 1.9 11.9 1.9 14.4 0M4.8 14.8c2.5-1.9 11.9-1.9 14.4 0M12 3.8c-2.2 2.2-2.2 14.2 0 16.4M12 3.8c2.2 2.2 2.2 14.2 0 16.4" />
+    <circle cx="12" cy="12" r="2.1" />
+  </svg>
+);
+
+const ChatIcon = ({ plus = false }: { plus?: boolean }) => (
+  <svg aria-hidden="true" viewBox="0 0 24 24">
+    <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5A7.5 7.5 0 1 1 20 11.5Z" />
+    {plus && <path d="M12 7.5v7M8.5 11h7" />}
   </svg>
 );
 
@@ -253,12 +276,20 @@ const SendIcon = () => (
   </svg>
 );
 
-const ToolIcon = ({ kind }: { kind: ToolSurface | "projects" | "new-chat" }) => {
+const ToolIcon = ({
+  kind
+}: {
+  kind: ToolSurface | "projects" | "new-chat" | "chats" | "studio";
+}) => {
+  if (kind === "chats") return <ChatIcon />;
   if (kind === "new-chat") {
+    return <ChatIcon plus />;
+  }
+  if (kind === "studio") {
     return (
       <svg aria-hidden="true" viewBox="0 0 24 24">
-        <path d="M12 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9" />
-        <path d="m17 3 4 4-9 9-4 1 1-4 8-10Z" />
+        <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-10Z" />
+        <path d="m12 10 .7 1.8 1.8.7-1.8.7L12 15l-.7-1.8-1.8-.7 1.8-.7L12 10Z" />
       </svg>
     );
   }
@@ -317,6 +348,24 @@ const ToolIcon = ({ kind }: { kind: ToolSurface | "projects" | "new-chat" }) => 
       </svg>
     );
   }
+  if (kind === "apps") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="8" height="8" rx="2" />
+        <rect x="13" y="3" width="8" height="5" rx="2" />
+        <rect x="13" y="10" width="8" height="11" rx="2" />
+        <rect x="3" y="13" width="8" height="8" rx="2" />
+      </svg>
+    );
+  }
+  if (kind === "settings") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" />
+        <path d="m19.4 15 .1.1 1.2 1-1.4 2.4-1.5-.5a8 8 0 0 1-1.7 1l-.3 1.6h-2.8l-.3-1.6a8 8 0 0 1-1.7-1l-1.5.5-1.4-2.4 1.2-1a7 7 0 0 1 0-2l-1.2-1 1.4-2.4 1.5.5a8 8 0 0 1 1.7-1l.3-1.6h2.8l.3 1.6a8 8 0 0 1 1.7 1l1.5-.5 1.4 2.4-1.2 1a7 7 0 0 1 0 2Z" />
+      </svg>
+    );
+  }
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
       <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
@@ -343,6 +392,106 @@ const CapabilityWorkspace = ({
 
   const mediaPromptLabel =
     surface === "images" ? "изображения" : surface === "video" ? "видео" : "аудио";
+
+  if (surface === "apps") {
+    return (
+      <section className="capability-workspace" aria-labelledby="apps-title">
+        <header className="capability-hero">
+          <span className="capability-icon">
+            <ToolIcon kind="apps" />
+          </span>
+          <div>
+            <small>Подключения Cosmora</small>
+            <h2 id="apps-title">Приложения</h2>
+          </div>
+        </header>
+        <p className="capability-lead">
+          Управляйте интеграциями в одном месте. Статус подключения всегда указан на карточке.
+        </p>
+        <div className="capability-grid apps-grid">
+          <Link className="capability-card" href="/github">
+            <span className="github-app-mark" aria-hidden="true">
+              GH
+            </span>
+            <div>
+              <strong>GitHub</strong>
+              <p>Безопасный read-only preview репозитория и pull request.</p>
+            </div>
+            <i>Preview</i>
+          </Link>
+          <article className="capability-card app-unavailable">
+            <span>
+              <ToolIcon kind="work" />
+            </span>
+            <div>
+              <strong>Google Drive</strong>
+              <p>Файлы проекта и общие материалы.</p>
+            </div>
+            <i>Скоро</i>
+          </article>
+          <article className="capability-card app-unavailable">
+            <span>
+              <ToolIcon kind="multi-agent" />
+            </span>
+            <div>
+              <strong>Telegram</strong>
+              <p>Импорт материалов и работа с ботом проекта.</p>
+            </div>
+            <i>Скоро</i>
+          </article>
+        </div>
+        <p className="connection-note">
+          <ShieldIcon /> GitHub пока работает в режиме preview; запись в репозиторий отключена.
+        </p>
+      </section>
+    );
+  }
+
+  if (surface === "settings") {
+    return (
+      <section className="capability-workspace" aria-labelledby="settings-title">
+        <header className="capability-hero">
+          <span className="capability-icon">
+            <ToolIcon kind="settings" />
+          </span>
+          <div>
+            <small>Параметры аккаунта и проекта</small>
+            <h2 id="settings-title">Настройки</h2>
+          </div>
+        </header>
+        <div className="settings-groups">
+          <article className="settings-card">
+            <div>
+              <strong>Профиль владельца</strong>
+              <p>Локальный профиль Cosmora. Вход и совместные аккаунты ещё не подключены.</p>
+            </div>
+            <span className="settings-state">Локально</span>
+          </article>
+          <Link className="settings-card settings-link" href="/model-status">
+            <div>
+              <strong>Модель и API</strong>
+              <p>Проверьте подключение провайдера и конфигурацию модели.</p>
+            </div>
+            <i>Открыть →</i>
+          </Link>
+          <Link className="settings-card settings-link" href={controlCenterHref}>
+            <div>
+              <strong>Автономность и безопасность</strong>
+              <p>Уровень автономности, подтверждения и восстановление операций.</p>
+            </div>
+            <i>Открыть →</i>
+          </Link>
+          <Link className="settings-card settings-link" href={agentStudioHref}>
+            <div>
+              <strong>Команда и роли</strong>
+              <p>Настройка агентов и доступных им специализаций.</p>
+            </div>
+            <i>Открыть →</i>
+          </Link>
+        </div>
+      </section>
+    );
+  }
 
   if (surface === "skills") {
     return (
@@ -787,6 +936,8 @@ export default function Home() {
   const [localChatsHydrated, setLocalChatsHydrated] = useState(false);
   const [chatsExpanded, setChatsExpanded] = useState(true);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [studioExpanded, setStudioExpanded] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [sidebarSectionsHydrated, setSidebarSectionsHydrated] = useState(false);
   const [workspaceSurfaceHydrated, setWorkspaceSurfaceHydrated] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
@@ -1801,14 +1952,13 @@ export default function Home() {
             <SparkIcon />
           </span>
           <span>Cosmora</span>
-          <span className="version">AI</span>
         </div>
 
         <button className="new-project" onClick={newChat}>
           <span>
             <ToolIcon kind="new-chat" />
-          </span>{" "}
-          Новый чат
+          </span>
+          <span className="new-chat-label">Новый чат</span>
         </button>
 
         <nav className="navigation" aria-label="Основная навигация">
@@ -1820,7 +1970,7 @@ export default function Home() {
               aria-controls="sidebar-chat-list"
               onClick={() => setChatsExpanded((current) => !current)}
             >
-              <ToolIcon kind="new-chat" />
+              <ToolIcon kind="chats" />
               <span>Чаты</span>
               <small>{localChats.length}</small>
               <span className="section-chevron" aria-hidden="true">
@@ -1898,7 +2048,9 @@ export default function Home() {
             )}
           </section>
           <div className="sidebar-tools" aria-label="Рабочие области">
-            {TOOL_ITEMS.map((item) => (
+            {TOOL_ITEMS.filter(
+              (item) => !["images", "video", "sound", "settings"].includes(item.id)
+            ).map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -1910,24 +2062,88 @@ export default function Home() {
                 <span>{item.label}</span>
               </button>
             ))}
+            <section className="sidebar-section studio-section">
+              <button
+                type="button"
+                className="projects-heading sidebar-section-toggle studio-toggle"
+                aria-expanded={studioExpanded}
+                aria-controls="studio-tools"
+                onClick={() => setStudioExpanded((current) => !current)}
+              >
+                <ToolIcon kind="studio" />
+                <span>Cosmora Studio</span>
+                <span className="section-chevron" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+              {studioExpanded && (
+                <div className="studio-tools" id="studio-tools">
+                  {STUDIO_ITEMS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={surface === item.id ? "sidebar-tool active" : "sidebar-tool"}
+                      aria-current={surface === item.id ? "page" : undefined}
+                      onClick={() => selectSurface(item.id)}
+                    >
+                      <ToolIcon kind={item.id} />
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         </nav>
 
-        <div className="profile">
-          <span className="avatar">M</span>
-          <span>
-            <strong>Владелец</strong>
-            <small>Локальный контур</small>
-          </span>
-          <span className="profile-dot" />
-        </div>
-        <div className="profile-actions" aria-label="Служебные разделы">
-          <Link href={agentStudioHref} aria-label="Agent Studio" title="Agent Studio">
-            <ToolIcon kind="multi-agent" />
-          </Link>
-          <Link href={controlCenterHref} aria-label="Control Center" title="Control Center">
-            <ShieldIcon />
-          </Link>
+        <div className="account-area">
+          {accountMenuOpen && (
+            <div className="account-menu" role="menu" aria-label="Меню аккаунта">
+              <div className="account-menu-heading">
+                <strong>Владелец</strong>
+                <small>Локальный профиль</small>
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setSurface("settings");
+                  setAccountMenuOpen(false);
+                }}
+              >
+                <ToolIcon kind="settings" /> Аккаунт и настройки
+              </button>
+              <Link role="menuitem" href="/model-status" onClick={() => setAccountMenuOpen(false)}>
+                <span className="account-menu-dot" /> Модель и API
+              </Link>
+              <Link
+                role="menuitem"
+                href={controlCenterHref}
+                onClick={() => setAccountMenuOpen(false)}
+              >
+                <ShieldIcon /> Безопасность и автономность
+              </Link>
+            </div>
+          )}
+          <button
+            type="button"
+            className="profile account-trigger"
+            aria-haspopup="menu"
+            aria-expanded={accountMenuOpen}
+            onClick={() => setAccountMenuOpen((current) => !current)}
+          >
+            <span className="avatar" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="8" r="3.2" />
+                <path d="M5.5 20a6.5 6.5 0 0 1 13 0" />
+              </svg>
+            </span>
+            <span>
+              <strong>Владелец</strong>
+              <small>Локальный контур</small>
+            </span>
+            <span className="profile-dot" />
+          </button>
         </div>
       </aside>
 
@@ -1957,13 +2173,6 @@ export default function Home() {
             </h1>
           </div>
           <div className="system-status" aria-label="Статус системы">
-            <Link
-              className="runtime-status-link"
-              href="/github"
-              title="Открыть безопасный GitHub read-only preview"
-            >
-              GitHub preview
-            </Link>
             <Link
               className="runtime-status-link"
               href="/model-status"
@@ -2456,7 +2665,7 @@ export default function Home() {
                   ? "Cosmora выполняет запуск…"
                   : chatId
                     ? "Enter — отправить · Shift+Enter — новая строка"
-                    : "Обычный чат · проект создаётся только с вашего согласия")}
+                    : "Enter — отправить · Shift+Enter — новая строка")}
             </span>
             {sending ? (
               <button
@@ -2528,7 +2737,7 @@ export default function Home() {
           <ToolIcon kind="projects" />
           <span>Проекты</span>
         </button>
-        {TOOL_ITEMS.map((item) => (
+        {TOOL_ITEMS.filter((item) => item.id !== "settings").map((item) => (
           <button
             key={item.id}
             type="button"
