@@ -192,6 +192,12 @@ The checked-in owner-preview registry also permits `claude-sonnet-5` through the
 reverified rather than silently reused. The default registry remains mock-only, so removing the
 local `.env` returns the repository to its safe local mode.
 
+The checked-in VibeCode preview entries currently allow ordinary/project chat only. They do not
+allow the `analyst` and `critic` roles or `manager_work_*` tasks, so adding a key alone does not
+enable real Manager work. `pnpm manager:preflight` checks these route permissions before any paid
+request and fails with the missing role/task. Expanding the external route requires reviewed
+registry evidence and an explicit owner decision; mock Manager work remains available meanwhile.
+
 An OpenAI-compatible provider must expose streaming `POST /chat/completions`; an
 Anthropic-compatible provider must expose streaming `POST /messages`. Cosmora does not expose the
 key through its health or runtime-status APIs. If the provider fails before the first response
