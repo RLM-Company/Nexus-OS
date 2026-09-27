@@ -574,6 +574,13 @@ export default function Home() {
 
   useEffect(() => {
     try {
+      const requestedSurface = new URLSearchParams(window.location.search).get("surface");
+      if (requestedSurface === "studio") {
+        setSurface("studio");
+        setStudioExpanded(true);
+        setWorkspaceSurfaceHydrated(true);
+        return;
+      }
       const savedSurface = window.localStorage.getItem(WORKSPACE_SURFACE_STORAGE_KEY);
       if (isToolSurface(savedSurface)) {
         setSurface(savedSurface);

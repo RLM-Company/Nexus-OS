@@ -1,5 +1,17 @@
 import { expect, test } from "@playwright/test";
 
+test("opens the Studio overview directly from a shared preview link", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("cosmora:workspace-surface", "code"));
+  await page.goto("/?surface=studio");
+  await expect(
+    page.locator(".capability-workspace").getByRole("heading", { name: "Cosmora Studio" })
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Изображения" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Видео" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sound" })).toBeVisible();
+  await expect(page.locator(".studio-section")).toContainText("Обзор Studio");
+});
+
 test("exports the selected Studio parameters and restores isolated drafts", async ({ page }) => {
   const writes: string[] = [];
   page.on("request", (request) => {
