@@ -132,6 +132,7 @@ const main = async () => {
   assert(runtime.mode !== "mock", "Manager requires an external model mode");
   assert(runtime.provider !== "mock", "Manager requires an external provider");
   assert(runtime.credential_configured === true, "Manager credential is not configured");
+  assert(runtime.fallback_to_mock === false, "Disable mock fallback before live smoke");
   assert(typeof runtime.registry_version === "string", "Manager registry is unavailable");
   if (process.env.MODEL_PROVIDER) {
     assert(
@@ -187,7 +188,7 @@ const main = async () => {
       "- Ordinary chat API: ready (no model request sent)",
       "- Web surfaces: Manager, Model Status, Skills, GitHub preview, Agent Studio, Control Center",
       "- PWA manifest/icons: ready",
-      `- Mock fallback: ${runtime.fallback_to_mock ? "enabled" : "disabled"}`,
+      "- Mock fallback: disabled",
       "- Emergency stops: clear",
       "- No paid model request was sent by this check"
     ].join("\n") + "\n"
