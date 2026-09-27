@@ -3271,6 +3271,26 @@ textarea:focus-visible {
 .navigation-search input::placeholder {
   color: var(--muted);
 }
+.navigation-search > button {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0.4rem;
+  color: var(--muted);
+  background: transparent;
+}
+.navigation-search > button:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+.navigation-search > button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
 .product-shell .account-area {
   position: relative;
   flex-shrink: 0;
@@ -3434,6 +3454,8 @@ textarea:focus-visible {
   width: min(100%, 34rem);
   max-width: 100%;
   max-height: 88dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   inset: auto 0 0;
   padding: 0;
   margin: auto auto 0;
@@ -3484,6 +3506,40 @@ body:has(.workspace-drawer[open]) {
   border-radius: 50%;
   color: var(--muted);
   background: var(--surface);
+}
+.drawer-search {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 2.75rem;
+  padding: 0 0.8rem;
+  margin-bottom: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  color: var(--muted);
+  background: var(--surface);
+}
+.drawer-search:focus-within {
+  border-color: var(--accent-strong);
+  background: #fff;
+}
+.drawer-search svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+.drawer-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+}
+.drawer-search input::placeholder {
+  color: var(--muted);
 }
 .drawer-links {
   display: grid;

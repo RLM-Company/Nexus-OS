@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { WorkspaceIcon as Icon } from "./workspace-icons";
 import {
   TOOL_ITEMS,
@@ -105,6 +105,14 @@ export function MobileNavigation({
   const dialog = useRef<HTMLDialogElement>(null);
   const menuId = useId();
   const titleId = useId();
+  const [query, setQuery] = useState("");
+  const search = query.trim().toLocaleLowerCase("ru");
+  const matchingChats = search
+    ? chats.filter((chat) => chat.title.toLocaleLowerCase("ru").includes(search))
+    : chats.slice(0, 6);
+  const matchingProjects = search
+    ? projects.filter((project) => project.title.toLocaleLowerCase("ru").includes(search))
+    : projects.slice(0, 6);
   const close = () => dialog.current?.close();
   const navigate = (id: ToolSurface) => {
     close();
@@ -154,6 +162,7 @@ export function MobileNavigation({
         id={menuId}
         ref={dialog}
         aria-labelledby={titleId}
+        onClose={() => setQuery("")}
         onClick={(event) => {
           if (event.target === event.currentTarget) close();
         }}
@@ -168,6 +177,22 @@ export function MobileNavigation({
               <Icon name="close" />
             </button>
           </header>
+          <label className="drawer-search">
+            <Icon name="search" />
+            <input
+              aria-label="Поиск чатов и проектов"
+              placeholder="Найти чат или проект…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && query) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setQuery("");
+                }
+              }}
+            />
+          </label>
           <div className="drawer-links">
             {TOOL_ITEMS.filter((item) => !["images", "video", "sound"].includes(item.id)).map(
               (item) => (
@@ -198,9 +223,9 @@ export function MobileNavigation({
             </div>
           </section>
           <section>
-            <h3>Последние чаты</h3>
-            {chats.length ? (
-              chats.slice(0, 6).map((chat) => (
+            <h3>{search ? "Чаты" : "Последние чаты"}</h3>
+            {matchingChats.length ? (
+              matchingChats.map((chat) => (
                 <button
                   type="button"
                   className="drawer-history"
@@ -215,26 +240,30 @@ export function MobileNavigation({
                 </button>
               ))
             ) : (
-              <p>Здесь появится история ваших диалогов.</p>
+              <p>{search ? "Чаты не найдены." : "Здесь появится история ваших диалогов."}</p>
             )}
           </section>
-          {projects.length > 0 && (
+          {(projects.length > 0 || search) && (
             <section>
               <h3>Проекты</h3>
-              {projects.slice(0, 6).map((project) => (
-                <button
-                  type="button"
-                  className="drawer-history"
-                  key={project.id}
-                  onClick={() => {
-                    close();
-                    onOpenProject(project.id);
-                  }}
-                >
-                  <Icon name="projects" />
-                  {project.title}
-                </button>
-              ))}
+              {matchingProjects.length ? (
+                matchingProjects.map((project) => (
+                  <button
+                    type="button"
+                    className="drawer-history"
+                    key={project.id}
+                    onClick={() => {
+                      close();
+                      onOpenProject(project.id);
+                    }}
+                  >
+                    <Icon name="projects" />
+                    {project.title}
+                  </button>
+                ))
+              ) : (
+                <p>Проекты не найдены.</p>
+              )}
             </section>
           )}
         </div>

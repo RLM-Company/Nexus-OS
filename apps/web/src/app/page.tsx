@@ -443,6 +443,7 @@ export default function Home() {
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const navigationSearchRef = useRef<HTMLInputElement | null>(null);
   const viewEpochRef = useRef(0);
   const selectedProjectRef = useRef<string | null>(null);
   const viewRequestRef = useRef(0);
@@ -452,6 +453,13 @@ export default function Home() {
   const submitPendingRef = useRef(false);
   const projectPromotionPendingRef = useRef(false);
   const activeLocalChat = localChats.find((chat) => chat.id === activeLocalChatId) ?? null;
+  const navigationSearch = navigationQuery.trim().toLocaleLowerCase("ru");
+  const matchingChats = navigationSearch
+    ? localChats.filter((chat) => chat.title.toLocaleLowerCase("ru").includes(navigationSearch))
+    : localChats;
+  const matchingProjects = navigationSearch
+    ? projects.filter((project) => project.title.toLocaleLowerCase("ru").includes(navigationSearch))
+    : projects;
   const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
   const projectProposal = activeLocalChat?.projectProposal ?? null;
 
@@ -1508,15 +1516,37 @@ export default function Home() {
           <span className="new-chat-label">Новый чат</span>
         </button>
 
-        <label className="navigation-search">
+        <div className="navigation-search">
           <WorkspaceIcon name="search" />
           <input
+            ref={navigationSearchRef}
             aria-label="Поиск чатов и проектов"
             placeholder="Поиск чатов и проектов"
             value={navigationQuery}
-            onChange={(event) => setNavigationQuery(event.target.value)}
+            onChange={(event) => {
+              setNavigationQuery(event.target.value);
+              if (event.target.value.trim()) {
+                setChatsExpanded(true);
+                setProjectsExpanded(true);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setNavigationQuery("");
+            }}
           />
-        </label>
+          {navigationQuery && (
+            <button
+              type="button"
+              aria-label="Очистить поиск"
+              onClick={() => {
+                setNavigationQuery("");
+                navigationSearchRef.current?.focus();
+              }}
+            >
+              <WorkspaceIcon name="close" />
+            </button>
+          )}
+        </div>
         <nav className="navigation" aria-label="Основная навигация">
           <section className="sidebar-section">
             <button
@@ -1538,37 +1568,27 @@ export default function Home() {
                 className={`project-list chat-list${localChats.length === 0 ? " empty-list" : ""}`}
                 id="sidebar-chat-list"
               >
-                {localChats
-                  .filter((chat) =>
-                    chat.title
-                      .toLocaleLowerCase("ru")
-                      .includes(navigationQuery.toLocaleLowerCase("ru"))
-                  )
-                  .map((chat) => (
-                    <button
-                      key={chat.id}
-                      type="button"
-                      className={
-                        surface === "manager" && activeLocalChatId === chat.id
-                          ? "project-item chat-item active"
-                          : "project-item chat-item"
-                      }
-                      onClick={() => void openLocalChat(chat.id)}
-                    >
-                      <span>
-                        <strong>{chat.title}</strong>
-                        <small>{chat.last_message_preview ?? "Обычный чат"}</small>
-                      </span>
-                    </button>
-                  ))}
-                {navigationQuery &&
-                  localChats.length > 0 &&
-                  !localChats.some((chat) =>
-                    chat.title
-                      .toLocaleLowerCase("ru")
-                      .includes(navigationQuery.toLocaleLowerCase("ru"))
-                  ) && <p className="empty-projects">Чаты не найдены.</p>}
-                {localChatsHydrated && localChats.length === 0 && (
+                {matchingChats.map((chat) => (
+                  <button
+                    key={chat.id}
+                    type="button"
+                    className={
+                      surface === "manager" && activeLocalChatId === chat.id
+                        ? "project-item chat-item active"
+                        : "project-item chat-item"
+                    }
+                    onClick={() => void openLocalChat(chat.id)}
+                  >
+                    <span>
+                      <strong>{chat.title}</strong>
+                      <small>{chat.last_message_preview ?? "Обычный чат"}</small>
+                    </span>
+                  </button>
+                ))}
+                {navigationSearch && matchingChats.length === 0 && (
+                  <p className="empty-projects">Чаты не найдены.</p>
+                )}
+                {localChatsHydrated && localChats.length === 0 && !navigationSearch && (
                   <p className="empty-projects">Пока нет чатов</p>
                 )}
               </div>
@@ -1591,39 +1611,27 @@ export default function Home() {
             </button>
             {projectsExpanded && (
               <div className="project-list" id="sidebar-project-list">
-                {projects
-                  .filter((project) =>
-                    project.title
-                      .toLocaleLowerCase("ru")
-                      .includes(navigationQuery.toLocaleLowerCase("ru"))
-                  )
-                  .map((project) => (
-                    <button
-                      key={project.id}
-                      className={
-                        surface === "manager" && activeProject?.id === project.id
-                          ? "project-item active"
-                          : "project-item"
-                      }
-                      onClick={() => void openProject(project.id)}
-                    >
-                      <span className="project-glyph">
-                        {project.title.slice(0, 1).toUpperCase()}
-                      </span>
-                      <span>
-                        <strong>{project.title}</strong>
-                        <small>{project.last_message_preview ?? "Новый проект"}</small>
-                      </span>
-                    </button>
-                  ))}
-                {navigationQuery &&
-                  projects.length > 0 &&
-                  !projects.some((project) =>
-                    project.title
-                      .toLocaleLowerCase("ru")
-                      .includes(navigationQuery.toLocaleLowerCase("ru"))
-                  ) && <p className="empty-projects">Проекты не найдены.</p>}
-                {!loading && projects.length === 0 && (
+                {matchingProjects.map((project) => (
+                  <button
+                    key={project.id}
+                    className={
+                      surface === "manager" && activeProject?.id === project.id
+                        ? "project-item active"
+                        : "project-item"
+                    }
+                    onClick={() => void openProject(project.id)}
+                  >
+                    <span className="project-glyph">{project.title.slice(0, 1).toUpperCase()}</span>
+                    <span>
+                      <strong>{project.title}</strong>
+                      <small>{project.last_message_preview ?? "Новый проект"}</small>
+                    </span>
+                  </button>
+                ))}
+                {navigationSearch && matchingProjects.length === 0 && (
+                  <p className="empty-projects">Проекты не найдены.</p>
+                )}
+                {!loading && projects.length === 0 && !navigationSearch && (
                   <p className="empty-projects">Пока нет проектов</p>
                 )}
               </div>

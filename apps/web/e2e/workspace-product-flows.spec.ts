@@ -1,5 +1,57 @@
 import { expect, test } from "@playwright/test";
 
+const installNavigationFixture = async (page: import("@playwright/test").Page) => {
+  const items = Array.from({ length: 9 }, (_, index) => ({
+    id: `search-chat-${index}`,
+    title: index === 8 ? "Особый девятый чат" : `Разговор ${index + 1}`,
+    created_at: "2026-09-27T12:00:00.000Z",
+    updated_at: "2026-09-27T12:00:00.000Z",
+    last_message_preview: null
+  }));
+  await page.route("**/api/v1/chats", async (route) => {
+    if (route.request().method() === "GET")
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ items })
+      });
+    else await route.continue();
+  });
+};
+
+test("search opens collapsed desktop history and can be cleared", async ({ page }) => {
+  await installNavigationFixture(page);
+  await page.goto("/");
+  const sidebar = page.locator(".sidebar");
+  await expect(sidebar.getByRole("button", { name: /Особый девятый чат/ })).toBeVisible();
+  await sidebar.getByRole("button", { name: /Чаты 9/ }).click();
+  await expect(sidebar.getByRole("button", { name: /Особый девятый чат/ })).toBeHidden();
+  const search = sidebar.getByRole("textbox", { name: "Поиск чатов и проектов" });
+  await search.fill("  ОСОБЫЙ  ");
+  await expect(sidebar.getByRole("button", { name: /Особый девятый чат/ })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: /Разговор 1/ })).toBeHidden();
+  await sidebar.getByRole("button", { name: "Очистить поиск" }).click();
+  await expect(search).toBeFocused();
+  await expect(sidebar.getByRole("button", { name: /Разговор 1/ })).toBeVisible();
+});
+
+test("mobile search reaches chats beyond the recent six", async ({ page }) => {
+  await installNavigationFixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Все разделы" }).click();
+  const drawer = page.getByRole("dialog", { name: "Ваше пространство" });
+  await expect(drawer.getByRole("button", { name: "Особый девятый чат" })).toHaveCount(0);
+  const search = drawer.getByRole("textbox", { name: "Поиск чатов и проектов" });
+  await search.fill("особый");
+  await expect(drawer.getByRole("button", { name: "Особый девятый чат" })).toBeVisible();
+  await search.press("Escape");
+  await expect(drawer).toBeVisible();
+  await expect(search).toHaveValue("");
+  await search.press("Escape");
+  await expect(drawer).toBeHidden();
+});
+
 test("opens the Studio overview directly from a shared preview link", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("cosmora:workspace-surface", "code"));
   await page.goto("/?surface=studio");
