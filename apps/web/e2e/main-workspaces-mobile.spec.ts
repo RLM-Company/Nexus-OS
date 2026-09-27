@@ -27,7 +27,9 @@ test("keeps every main workspace usable at 390x844", async ({ page }) => {
     await expect(menu).not.toBeVisible();
     await expect(page.locator(".topbar h1")).toHaveText(workspace.button);
     await expect(
-      page.locator(".capability-workspace").getByRole("heading", { name: workspace.heading })
+      page
+        .locator(".capability-workspace")
+        .getByRole("heading", { name: workspace.heading, exact: true })
     ).toBeVisible();
 
     const layout = await page.evaluate(() => ({

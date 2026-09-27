@@ -9,19 +9,19 @@
   gap: 1rem;
   margin-bottom: 0.7rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid rgba(179, 168, 255, 0.14);
+  border: 1px solid var(--accent-line);
   border-radius: 0.65rem;
-  background: rgba(179, 168, 255, 0.035);
+  background: var(--accent-soft);
 }
 .boundary strong {
-  color: #c8c0ff;
-  font-size: 0.64rem;
+  color: var(--accent-strong);
+  font-size: 0.75rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 .boundary span {
-  color: #778195;
-  font-size: 0.62rem;
+  color: var(--muted);
+  font-size: 0.75rem;
   text-align: right;
 }
 
@@ -36,9 +36,9 @@
   flex-direction: column;
   gap: 0.42rem;
   padding: 0.72rem;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
   border-radius: 0.7rem;
-  background: rgba(255, 255, 255, 0.018);
+  background: var(--panel);
 }
 .heading {
   display: flex;
@@ -48,19 +48,19 @@
   margin-bottom: 0.15rem;
 }
 .heading span {
-  color: #9a8dff;
-  font-size: 0.58rem;
-  font-weight: 750;
+  color: var(--accent-strong);
+  font-size: 0.75rem;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .heading strong {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
 }
 .forms label,
 .forms legend {
-  color: #727c8f;
-  font-size: 0.59rem;
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 .forms input,
 .forms textarea,
@@ -69,13 +69,13 @@
   width: 100%;
   min-width: 0;
   padding: 0.62rem 0.65rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
   border-radius: 0.58rem;
   outline: 0;
-  color: #e9ebf0;
-  background: #0a0e17;
+  color: var(--text);
+  background: var(--bg);
   font: inherit;
-  font-size: 0.63rem;
+  font-size: 0.75rem;
 }
 .forms textarea {
   resize: vertical;
@@ -84,7 +84,7 @@
 .forms textarea:focus,
 .forms select:focus,
 .archive select:focus {
-  border-color: rgba(179, 168, 255, 0.42);
+  border-color: var(--accent-strong);
 }
 .forms fieldset {
   display: flex;
@@ -92,7 +92,7 @@
   gap: 0.38rem;
   margin: 0;
   padding: 0.6rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--line);
   border-radius: 0.58rem;
 }
 .check {
@@ -105,8 +105,8 @@
   margin: 0;
 }
 .check span {
-  color: #a7adba;
-  font-size: 0.6rem;
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 .forms button,
 .archive button {
@@ -114,10 +114,10 @@
   padding: 0.62rem 0.7rem;
   border: 0;
   border-radius: 0.58rem;
-  color: #171421;
-  background: linear-gradient(135deg, #d2cbff, #9686ff);
-  font-size: 0.62rem;
-  font-weight: 740;
+  color: #fff;
+  background: var(--accent-strong);
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 .forms button:disabled,
 .forms input:disabled,
@@ -129,8 +129,8 @@
   opacity: 0.48;
 }
 .forms small {
-  color: #626b7d;
-  font-size: 0.56rem;
+  color: var(--muted);
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 
@@ -141,9 +141,9 @@
   gap: 0.65rem;
   margin-top: 0.65rem;
   padding: 0.72rem;
-  border: 1px solid rgba(255, 113, 129, 0.1);
+  border: 1px solid var(--danger-line);
   border-radius: 0.7rem;
-  background: rgba(255, 91, 110, 0.025);
+  background: var(--danger-soft);
 }
 .archive > div {
   display: flex;
@@ -152,18 +152,18 @@
   gap: 0.24rem;
 }
 .archive strong {
-  color: #ffc0c8;
-  font-size: 0.66rem;
+  color: var(--danger);
+  font-size: 0.75rem;
 }
 .archive span {
-  color: #727c8f;
-  font-size: 0.57rem;
+  color: var(--muted);
+  font-size: 0.75rem;
   line-height: 1.4;
 }
 .archive button {
-  color: #ffd7dc;
-  border: 1px solid rgba(255, 113, 129, 0.18);
-  background: rgba(255, 91, 110, 0.08);
+  color: var(--danger);
+  border: 1px solid var(--danger-line);
+  background: var(--danger-soft);
   white-space: nowrap;
 }
 
@@ -172,18 +172,18 @@
   margin: 0.65rem 0 0;
   padding: 0.62rem 0.7rem;
   border-radius: 0.6rem;
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 .notice {
-  border: 1px solid rgba(97, 214, 165, 0.14);
-  color: #91daba;
-  background: rgba(97, 214, 165, 0.035);
+  border: 1px solid var(--success-line);
+  color: var(--success);
+  background: var(--success-soft);
 }
 .error {
-  border: 1px solid rgba(255, 113, 129, 0.18);
-  color: #ffc0c8;
-  background: rgba(255, 91, 110, 0.05);
+  border: 1px solid var(--danger-line);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 @media (max-width: 700px) {

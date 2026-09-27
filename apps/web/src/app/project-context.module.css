@@ -32,7 +32,7 @@
 .boundary,
 .state p {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   line-height: 1.55;
 }
 
@@ -43,7 +43,7 @@
 .kind,
 .meter small {
   color: var(--muted);
-  font-size: 0.61rem;
+  font-size: 0.75rem;
 }
 
 .online,
@@ -51,7 +51,7 @@
   flex: 0 0 auto;
   padding: 0.4rem 0.6rem;
   border-radius: 999px;
-  font-size: 0.62rem;
+  font-size: 0.75rem;
 }
 
 .online {
@@ -91,7 +91,7 @@
 
 .meterHeader span,
 .meterHeader strong {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
 }
 
 .track {
@@ -149,7 +149,7 @@
   border-radius: 0.6rem;
   color: var(--text);
   background: var(--bg);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
 }
 
 .danger {
@@ -200,7 +200,7 @@
 .modal dd {
   margin: 0;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 
 .modalActions {

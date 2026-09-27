@@ -1551,7 +1551,7 @@ export default function Home() {
                       .includes(navigationQuery.toLocaleLowerCase("ru"))
                   ) && <p className="empty-projects">Чаты не найдены.</p>}
                 {localChatsHydrated && localChats.length === 0 && (
-                  <p className="empty-projects">Чаты появятся после первого сообщения.</p>
+                  <p className="empty-projects">Пока нет чатов</p>
                 )}
               </div>
             )}
@@ -1606,9 +1606,7 @@ export default function Home() {
                       .includes(navigationQuery.toLocaleLowerCase("ru"))
                   ) && <p className="empty-projects">Проекты не найдены.</p>}
                 {!loading && projects.length === 0 && (
-                  <p className="empty-projects">
-                    Проект появится только после вашего подтверждения.
-                  </p>
+                  <p className="empty-projects">Пока нет проектов</p>
                 )}
               </div>
             )}
@@ -1715,11 +1713,16 @@ export default function Home() {
           <div className="system-status" aria-label="Статус системы">
             <Link
               className="runtime-status-link"
+              data-connected={Boolean(
+                runtime && runtime.mode !== "mock" && runtime.credential_configured
+              )}
               href="/model-status"
               title="Открыть состояние подключения модели"
             >
               <i className="status-dot" />
-              {runtime && runtime.mode !== "mock" ? "Провайдер настроен" : "Модель не подключена"}
+              {runtime && runtime.mode !== "mock" && runtime.credential_configured
+                ? "Провайдер настроен"
+                : "Модель не подключена"}
             </Link>
             <span className="privacy-badge">
               <ShieldIcon />
@@ -2174,6 +2177,7 @@ export default function Home() {
         ) : null}
 
         <form
+          autoComplete="off"
           className={
             activeProject || localChatMessages.length > 0 ? "composer chat-composer" : "composer"
           }

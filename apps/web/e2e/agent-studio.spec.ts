@@ -106,7 +106,11 @@ test("saves proposal-only Agent Studio team changes without activation", async (
   request
 }) => {
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Agent Studio" })).toHaveAttribute(
+  await page
+    .locator(".sidebar-tools")
+    .getByRole("button", { name: "Мультиагент", exact: true })
+    .click();
+  await expect(page.getByRole("link", { name: "Agent Studio", exact: true })).toHaveAttribute(
     "href",
     "/agent-studio"
   );

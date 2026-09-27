@@ -25,17 +25,18 @@
 
 .eyebrow {
   margin: 0 0 0.45rem;
-  color: var(--accent-strong);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .header h1 {
   margin: 0;
-  font-size: clamp(2rem, 5vw, 3.4rem);
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
   letter-spacing: -0.04em;
+  font-weight: 500;
 }
 
 .lead {
@@ -104,8 +105,8 @@
   border-radius: 999px;
   background: var(--surface-hover);
   color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 800;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .summary {
@@ -139,8 +140,8 @@
 }
 
 .permission > span {
-  font-size: 0.72rem;
-  font-weight: 800;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .permission p {

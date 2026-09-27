@@ -2,8 +2,7 @@
   min-height: 100vh;
   min-height: 100dvh;
   padding: clamp(1.25rem, 3vw, 2.5rem);
-  background:
-    radial-gradient(circle at top right, rgba(109, 91, 208, 0.08), transparent 34rem), var(--bg);
+  background: var(--bg);
 }
 
 .shell {
@@ -30,18 +29,19 @@
 
 .eyebrow {
   margin: 0 0 0.45rem;
-  color: var(--accent-strong);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.11em;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .header h1 {
   margin: 0;
-  font-size: clamp(2rem, 5vw, 3.4rem);
-  letter-spacing: -0.045em;
-  line-height: 1;
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+  font-weight: 500;
 }
 
 .lead {
@@ -55,9 +55,9 @@
 .card {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 1.2rem 3rem rgba(31, 35, 48, 0.08);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  box-shadow: none;
 }
 
 .loading,
@@ -127,8 +127,8 @@
   border-radius: 999px;
   background: rgba(22, 134, 111, 0.12);
   color: var(--green);
-  font-size: 0.74rem;
-  font-weight: 800;
+  font-size: 0.75rem;
+  font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -164,7 +164,7 @@
 
 .section a {
   color: var(--accent-strong);
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .preview {

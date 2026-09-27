@@ -15,7 +15,7 @@ test("exports the selected Studio parameters and restores isolated drafts", asyn
   );
   await page.getByLabel("Промпт для аудио").fill("Спокойная музыка без вокала");
   await page.getByRole("button", { name: "Средний", exact: true }).click();
-  await page.getByLabel("Стиль", { exact: true }).selectOption("Музыка");
+  await page.getByRole("combobox", { name: "Стиль", exact: true }).selectOption("Музыка");
   await page.getByRole("button", { name: "Подготовить промпт" }).click();
   const output = page.locator(".capability-workspace pre");
   await expect(output).toContainText("Формат: Средний");
@@ -106,6 +106,6 @@ test("recovers from invalid Studio drafts and UI preferences", async ({ page }) 
     "aria-pressed",
     "true"
   );
-  await expect(page.getByLabel("Стиль", { exact: true })).toHaveValue("Авто");
+  await expect(page.getByRole("combobox", { name: "Стиль", exact: true })).toHaveValue("Авто");
   await expect(page.locator(".app-shell")).not.toHaveClass(/compact-navigation|large-text/);
 });
