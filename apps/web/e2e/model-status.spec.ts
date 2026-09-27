@@ -18,9 +18,11 @@ const readyRuntime = {
   fallback_to_mock: false
 } as const;
 
+const fallbackRuntime = { ...readyRuntime, fallback_to_mock: true } as const;
+
 const mockRuntimeRequest = async (
   page: Page,
-  runtime: typeof disconnectedRuntime | typeof readyRuntime
+  runtime: typeof disconnectedRuntime | typeof readyRuntime | typeof fallbackRuntime
 ): Promise<void> => {
   await page.route("**/api/v1/model-runtime", async (route) => {
     await route.fulfill({
@@ -44,6 +46,15 @@ test("shows the disconnected model state from model runtime", async ({ page }) =
   await expect(page.getByTestId("runtime-fallback")).toHaveText("Нет");
 });
 
+test("does not claim live readiness while mock fallback is enabled", async ({ page }) => {
+  await mockRuntimeRequest(page, fallbackRuntime);
+  await page.goto("/model-status");
+
+  await expect(page.getByTestId("runtime-readiness")).toContainText("Отключите mock fallback");
+  await expect(page.getByTestId("runtime-fallback")).toHaveText("Да");
+  await expect(page.getByTestId("runtime-readiness")).not.toContainText("Готово к запуску");
+});
+
 test("opens model connection details from the console status", async ({ page }) => {
   await mockRuntimeRequest(page, disconnectedRuntime);
   await page.goto("/");
@@ -64,6 +75,7 @@ test("shows the ready model state when an external credential is configured", as
   await expect(page.getByTestId("runtime-model")).toHaveText("demo-model");
   await expect(page.getByTestId("runtime-credential")).toHaveText("Да");
   await expect(page.getByTestId("runtime-fallback")).toHaveText("Нет");
+  await expect(page.getByText(/pnpm manager:preflight/)).toBeVisible();
 });
 
 test("retries a temporary runtime failure without leaking details", async ({ page }) => {

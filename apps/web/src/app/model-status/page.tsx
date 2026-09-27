@@ -61,15 +61,24 @@ export default function ModelStatusPage() {
 
   const readiness = useMemo(() => {
     if (state.kind !== "loaded") return null;
-    const ready = state.runtime.mode !== "mock" && state.runtime.credential_configured;
+    const ready =
+      state.runtime.mode !== "mock" &&
+      state.runtime.credential_configured &&
+      !state.runtime.fallback_to_mock;
     return {
       ready,
-      title: ready ? "Готово к запуску" : "Модель не подключена",
+      title: ready
+        ? "Готово к запуску"
+        : state.runtime.mode !== "mock" && state.runtime.credential_configured
+          ? "Отключите mock fallback"
+          : "Модель не подключена",
       description: ready
-        ? "Runtime настроен на внешний провайдер, и credential доступен серверу."
+        ? "Внешний провайдер и credential настроены. Успешный ответ модели пока не проверен."
         : state.runtime.mode === "mock"
           ? "Runtime работает в mock-режиме. Внешняя модель не подключена."
-          : "Провайдер выбран, но credential для запуска внешней модели не настроен."
+          : !state.runtime.credential_configured
+            ? "Провайдер выбран, но credential для запуска внешней модели не настроен."
+            : "Перед live smoke установите MODEL_FALLBACK_TO_MOCK=false и перезапустите API."
     };
   }, [state]);
 
@@ -163,6 +172,12 @@ export default function ModelStatusPage() {
                 <p className={styles.note} data-testid="runtime-fallback-note">
                   Mock fallback доступен как резервный режим, но не считается подключённой внешней
                   моделью.
+                </p>
+              )}
+              {readiness.ready && (
+                <p className={styles.note}>
+                  Перед первым платным запросом выполните <code>pnpm manager:preflight</code> в
+                  локальном проекте. Проверка не вызывает модель.
                 </p>
               )}
             </>
