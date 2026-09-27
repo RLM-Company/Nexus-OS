@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 const REQUEST_TIMEOUT_MS = 5_000;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
@@ -81,6 +84,40 @@ const assertWebSurfaces = async (origin) => {
   assert(appleIconType.includes("image/png"), "Apple PWA icon did not return PNG");
 };
 
+const assertManagerWorkRoute = (runtime) => {
+  const path = resolve(
+    process.cwd(),
+    process.env.MODEL_REGISTRY_PATH ?? "config/model-registry.v1.json"
+  );
+  let registry;
+  try {
+    registry = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    throw new Error("Local Model Registry cannot be read; Manager work route was not verified");
+  }
+  assert(
+    registry.registry_version === runtime.registry_version,
+    "Running Model Registry differs from local configuration"
+  );
+  const entry = registry.entries?.find(
+    (candidate) =>
+      candidate.provider_id === runtime.provider && candidate.model_id === runtime.model
+  );
+  assert(entry?.status === "active", "Configured Manager work model is not active in the registry");
+  const allowed = (items, name) =>
+    Array.isArray(items) && (items.length === 0 || items.includes(name));
+  for (const [role, task] of [
+    ["manager", "manager_work_plan"],
+    ["analyst", "manager_work_draft"],
+    ["critic", "manager_work_review"]
+  ]) {
+    assert(
+      allowed(entry.roles, role) && allowed(entry.task_types, task),
+      `Configured Model Registry does not allow ${role}:${task}; Manager work cannot run with only a key`
+    );
+  }
+};
+
 const main = async () => {
   const apiOrigin = parseOrigin("COSMORA_API_ORIGIN", "http://127.0.0.1:3100", "API origin");
   const webOrigin = parseOrigin("COSMORA_WEB_ORIGIN", "http://127.0.0.1:3000", "Web origin");
@@ -95,6 +132,7 @@ const main = async () => {
   assert(runtime.mode !== "mock", "Manager requires an external model mode");
   assert(runtime.provider !== "mock", "Manager requires an external provider");
   assert(runtime.credential_configured === true, "Manager credential is not configured");
+  assert(runtime.fallback_to_mock === false, "Disable mock fallback before live smoke");
   assert(typeof runtime.registry_version === "string", "Manager registry is unavailable");
   if (process.env.MODEL_PROVIDER) {
     assert(
@@ -111,6 +149,7 @@ const main = async () => {
   if (process.env.MODEL_NAME) {
     assert(runtime.model === process.env.MODEL_NAME, "Running model differs from .env");
   }
+  assertManagerWorkRoute(runtime);
 
   const operations = await fetchJson(apiOrigin, "/api/v1/operations/status", "Operations status");
   assert(operations.process_stop === null, "A process emergency stop is active");
@@ -145,10 +184,11 @@ const main = async () => {
       `- Web: ${webOrigin.origin} (API proxy ok)`,
       `- Model route: ${runtime.provider}:${runtime.model} (${runtime.mode})`,
       `- Registry: ${runtime.registry_version}`,
+      "- Manager work roles and stages: allowed by the configured route",
       "- Ordinary chat API: ready (no model request sent)",
       "- Web surfaces: Manager, Model Status, Skills, GitHub preview, Agent Studio, Control Center",
       "- PWA manifest/icons: ready",
-      `- Mock fallback: ${runtime.fallback_to_mock ? "enabled" : "disabled"}`,
+      "- Mock fallback: disabled",
       "- Emergency stops: clear",
       "- No paid model request was sent by this check"
     ].join("\n") + "\n"

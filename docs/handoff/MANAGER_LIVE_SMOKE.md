@@ -13,6 +13,10 @@ Run the secret-free preflight first:
 pnpm manager:preflight
 ```
 
+Preflight checks the Manager plan, draft and Critic route in the selected local Registry. It also
+requires mock fallback to be disabled, matching the live smoke gate. A PASS means the local route
+is configured and reachable; it does not verify that the external provider will answer.
+
 Then authorize the two paid requests only for the current shell and run the smoke:
 
 ```powershell
