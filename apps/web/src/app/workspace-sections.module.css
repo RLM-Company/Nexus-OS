@@ -723,6 +723,173 @@
   color: var(--muted);
   font-size: 0.75rem;
 }
+.futureHint {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.95rem 0;
+  margin-top: 1.3rem;
+  border-top: 1px solid var(--ui-line);
+  color: var(--ui-muted);
+  font-size: 0.8rem;
+}
+.futureHint > svg {
+  color: var(--ui-accent);
+}
+.futureHint p {
+  flex: 1;
+}
+.futureHint button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  padding: 0.45rem;
+  border: 0;
+  color: var(--ui-accent);
+  background: transparent;
+  font-size: 0.78rem;
+}
+.futureHint button:hover {
+  background: var(--accent-soft);
+}
+.futureHint button svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.featureQuickGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.featureQuick {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-md);
+  color: var(--ui-ink);
+  background: #fff;
+  text-align: left;
+}
+.featureQuick:hover {
+  border-color: var(--line-strong);
+  background: var(--ui-surface);
+}
+.featureQuick > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.featureQuick strong {
+  font-size: 0.82rem;
+}
+.featureQuick small {
+  color: var(--ui-muted);
+  font-size: 0.75rem;
+}
+.featureQuick > svg {
+  width: 0.95rem;
+  color: var(--ui-accent);
+}
+.featureHeading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 2.3rem 0 1rem;
+}
+.featureHeading p {
+  margin-top: 0.2rem;
+  color: var(--ui-muted);
+  font-size: 0.8rem;
+}
+.featureHeading .badge {
+  flex-shrink: 0;
+}
+.featureFilters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.featureFilters .search {
+  flex: 1 1 13rem;
+}
+.featureList {
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #fff;
+}
+.featureItem + .featureItem {
+  border-top: 1px solid var(--ui-line);
+}
+.featureItem summary {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem;
+  cursor: pointer;
+  list-style: none;
+}
+.featureItem summary::-webkit-details-marker {
+  display: none;
+}
+.featureItem summary:hover,
+.featureItem[open] summary {
+  background: var(--ui-surface);
+}
+.featureItem summary:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -3px;
+}
+.featureCopy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.featureCopy strong {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.featureCopy small {
+  color: var(--ui-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.featureArea {
+  color: var(--ui-muted);
+  font-size: 0.75rem;
+}
+.featureItem summary > svg {
+  width: 0.95rem;
+  color: var(--ui-muted);
+  transition: transform 150ms ease;
+  transform: rotate(90deg);
+}
+.featureItem[open] summary > svg {
+  transform: rotate(-90deg);
+}
+.featureDetails {
+  padding: 0 1.1rem 1.2rem 4.55rem;
+  color: var(--ui-muted);
+  font-size: 0.78rem;
+}
+.featureDetails > strong {
+  color: var(--ui-ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.featureDetails ul {
+  display: grid;
+  gap: 0.3rem;
+  padding-left: 1rem;
+  margin: 0.55rem 0 0.8rem;
+}
 .settingsLayout {
   display: grid;
   grid-template-columns: 11rem minmax(0, 1fr);
@@ -834,6 +1001,12 @@
   .threeColumns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .featureQuickGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .featureFilters .search {
+    max-width: none;
+  }
   .hero {
     margin-bottom: 1.5rem;
   }
@@ -896,8 +1069,32 @@
   .studioGrid,
   .threeColumns,
   .roleGrid,
-  .twoColumns {
+  .twoColumns,
+  .featureQuickGrid {
     grid-template-columns: 1fr;
+  }
+  .futureHint {
+    align-items: start;
+    flex-wrap: wrap;
+  }
+  .futureHint p {
+    flex-basis: calc(100% - 2.2rem);
+  }
+  .futureHint button {
+    margin-left: 1.7rem;
+  }
+  .featureHeading {
+    flex-wrap: wrap;
+  }
+  .featureItem summary {
+    gap: 0.6rem;
+    padding: 0.85rem;
+  }
+  .featureArea {
+    display: none;
+  }
+  .featureDetails {
+    padding-left: 0.9rem;
   }
   .studioCard {
     display: grid;
@@ -962,7 +1159,8 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .studioCard {
+  .studioCard,
+  .featureItem summary > svg {
     transition: none;
   }
 }

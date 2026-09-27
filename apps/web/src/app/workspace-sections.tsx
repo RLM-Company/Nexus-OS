@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { WorkspaceIcon as Icon, type IconName } from "./workspace-icons";
+import { PLANNED_CAPABILITIES, type CapabilityArea } from "./workspace-capabilities";
 import styles from "./workspace-sections.module.css";
 
 export type ToolSurface =
@@ -15,6 +16,7 @@ export type ToolSurface =
   | "video"
   | "sound"
   | "apps"
+  | "features"
   | "settings";
 export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }[] = [
   { id: "work", label: "Work", description: "Проекты и результаты" },
@@ -26,6 +28,7 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "video", label: "Видео", description: "Сцена и движение" },
   { id: "sound", label: "Sound", description: "Голос, музыка и атмосфера" },
   { id: "apps", label: "Приложения", description: "Внешние сервисы" },
+  { id: "features", label: "Возможности", description: "Что уже работает и что появится" },
   { id: "settings", label: "Настройки", description: "Ваше пространство" }
 ];
 export const STUDIO_ITEMS = TOOL_ITEMS.filter((item) =>
@@ -111,6 +114,23 @@ function Empty({ icon, title, children }: { icon: IconName; title: string; child
     </div>
   );
 }
+function FutureHint({
+  children,
+  onNavigate
+}: {
+  children: ReactNode;
+  onNavigate: (surface: ToolSurface) => void;
+}) {
+  return (
+    <div className={styles.futureHint}>
+      <Icon name="features" />
+      <p>{children}</p>
+      <button type="button" onClick={() => onNavigate("features")}>
+        Что дальше <Icon name="arrow" />
+      </button>
+    </div>
+  );
+}
 function ResourceCard({
   icon,
   title,
@@ -152,6 +172,7 @@ function Work({
   onRetry,
   onOpenProject,
   onCompose,
+  onNavigate,
   activeProjectId
 }: Props) {
   const [query, setQuery] = useState("");
@@ -280,6 +301,9 @@ function Work({
         Кнопка «Начать с идеи» открывает черновик сообщения. Проект создаётся после вашего
         подтверждения.
       </p>
+      <FutureHint onNavigate={onNavigate}>
+        Глубинное исследование и переход обычного чата в Work предусмотрены в следующих этапах.
+      </FutureHint>
     </>
   );
 }
@@ -673,11 +697,14 @@ function Studio({ onNavigate }: Props) {
         Сейчас доступны редакторы промптов и экспорт текста. Подключение генеративных моделей —
         отдельный этап.
       </p>
+      <FutureHint onNavigate={onNavigate}>
+        Презентации и генерация медиа находятся в планах Studio.
+      </FutureHint>
     </>
   );
 }
 
-function Team({ agentStudioHref, controlCenterHref, activeProjectId }: Props) {
+function Team({ agentStudioHref, controlCenterHref, activeProjectId, onNavigate }: Props) {
   return (
     <>
       <Header
@@ -756,6 +783,9 @@ function Team({ agentStudioHref, controlCenterHref, activeProjectId }: Props) {
           </div>
         </div>
       </div>
+      <FutureHint onNavigate={onNavigate}>
+        Коллективные чаты и личные диалоги с агентами получат отдельные права видимости.
+      </FutureHint>
     </>
   );
 }
@@ -801,7 +831,7 @@ function Skills({ agentStudioHref, controlCenterHref }: Props) {
   );
 }
 
-function Apps() {
+function Apps({ onNavigate }: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const applications = [
@@ -893,6 +923,126 @@ function Apps() {
           подключены.
         </p>
       </div>
+      <FutureHint onNavigate={onNavigate}>
+        Подключение аккаунтов появится после настройки входа и управления доступом.
+      </FutureHint>
+    </>
+  );
+}
+
+const CAPABILITY_AREAS: readonly ("Все" | CapabilityArea)[] = [
+  "Все",
+  "Работа",
+  "Творчество",
+  "Команда",
+  "Платформа"
+];
+
+function Features({ onNavigate }: Props) {
+  const [area, setArea] = useState<(typeof CAPABILITY_AREAS)[number]>("Все");
+  const [query, setQuery] = useState("");
+  const search = query.trim().toLocaleLowerCase("ru");
+  const items = PLANNED_CAPABILITIES.filter(
+    (item) =>
+      (area === "Все" || item.area === area) &&
+      (!search ||
+        `${item.title} ${item.description} ${item.area}`.toLocaleLowerCase("ru").includes(search))
+  );
+  const current = [
+    { id: "work", label: "Work", detail: "Проекты и ход работы", icon: "work" },
+    { id: "code", label: "Code", detail: "Черновик задачи разработки", icon: "code" },
+    { id: "studio", label: "Studio", detail: "Редакторы промптов", icon: "studio" }
+  ] as const;
+  return (
+    <>
+      <Header icon="features" eyebrow="Карта продукта" title="Возможности">
+        Что доступно для работы сейчас и какие интерфейсы появятся по мере подключения функций.
+      </Header>
+      <div className={styles.sectionHeading}>
+        <h3>Можно открыть сейчас</h3>
+        <span>Статус функций зависит от подключения API и модели</span>
+      </div>
+      <div className={styles.featureQuickGrid}>
+        {current.map((item) => (
+          <button
+            type="button"
+            className={styles.featureQuick}
+            key={item.id}
+            onClick={() => onNavigate(item.id)}
+          >
+            <span className={styles.cardIcon}>
+              <Icon name={item.icon} />
+            </span>
+            <span>
+              <strong>{item.label}</strong>
+              <small>{item.detail}</small>
+            </span>
+            <Icon name="arrow" />
+          </button>
+        ))}
+      </div>
+      <div className={styles.featureHeading}>
+        <div>
+          <h3>Следующие возможности</h3>
+          <p>Концепции интерфейса и условия запуска. Даты готовности пока не назначены.</p>
+        </div>
+        <span className={styles.badge}>{PLANNED_CAPABILITIES.length} в планах</span>
+      </div>
+      <div className={styles.featureFilters}>
+        <label className={styles.search}>
+          <Icon name="search" />
+          <input
+            aria-label="Поиск возможностей"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Найти функцию…"
+          />
+        </label>
+        <div className={styles.segments} aria-label="Категория возможностей">
+          {CAPABILITY_AREAS.map((option) => (
+            <button
+              type="button"
+              key={option}
+              aria-pressed={area === option}
+              onClick={() => setArea(option)}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
+      {items.length ? (
+        <div className={styles.featureList}>
+          {items.map((item) => (
+            <details key={item.id} className={styles.featureItem}>
+              <summary>
+                <span className={styles.cardIcon}>
+                  <Icon name={item.icon} />
+                </span>
+                <span className={styles.featureCopy}>
+                  <strong>{item.title}</strong>
+                  <small>{item.description}</small>
+                </span>
+                <span className={styles.featureArea}>{item.area}</span>
+                <Icon name="arrow" />
+              </summary>
+              <div className={styles.featureDetails}>
+                <strong>Для запуска потребуется</strong>
+                <ul>
+                  {item.requirements.map((requirement) => (
+                    <li key={requirement}>{requirement}</li>
+                  ))}
+                </ul>
+                <span className={styles.badge}>Ещё не подключено</span>
+              </div>
+            </details>
+          ))}
+        </div>
+      ) : (
+        <Empty icon="search" title="Ничего не найдено">
+          Попробуйте другой запрос или категорию.
+        </Empty>
+      )}
     </>
   );
 }
@@ -903,7 +1053,8 @@ function Settings({
   preferencesNotice,
   runtime,
   controlCenterHref,
-  agentStudioHref
+  agentStudioHref,
+  onNavigate
 }: Props) {
   const [tab, setTab] = useState("general");
   return (
@@ -968,6 +1119,13 @@ function Settings({
                 Настройки интерфейса сохраняются в этом браузере. Вход через Google и Telegram,
                 синхронизация профиля и совместные аккаунты пока недоступны.
               </p>
+              <button
+                type="button"
+                className={styles.textButton}
+                onClick={() => onNavigate("features")}
+              >
+                Посмотреть будущие возможности →
+              </button>
             </>
           ) : tab === "model" ? (
             <>
@@ -1045,7 +1203,10 @@ export function WorkspaceSections(props: Props) {
       content = <Studio {...props} />;
       break;
     case "apps":
-      content = <Apps />;
+      content = <Apps {...props} />;
+      break;
+    case "features":
+      content = <Features {...props} />;
       break;
     case "settings":
       content = <Settings {...props} />;

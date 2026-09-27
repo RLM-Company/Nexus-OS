@@ -12,6 +12,44 @@ test("opens the Studio overview directly from a shared preview link", async ({ p
   await expect(page.locator(".studio-section")).toContainText("Обзор Studio");
 });
 
+test("shows a searchable plan with real entry points and honest future requirements", async ({
+  page
+}) => {
+  await page.goto("/?surface=features");
+  await expect(page.getByRole("heading", { name: "Возможности" })).toBeVisible();
+  await expect(page.getByText("10 в планах")).toBeVisible();
+  await page.getByRole("button", { name: "Команда", exact: true }).click();
+  await expect(page.getByText("Коллективный Work")).toBeVisible();
+  await expect(page.getByText("Глубинное исследование")).toBeHidden();
+  await page.getByText("Коллективный Work").click();
+  await expect(page.getByText(/Главный владелец управляет ролями/)).toBeVisible();
+  await page.getByRole("button", { name: "Все", exact: true }).click();
+  await page.getByRole("textbox", { name: "Поиск возможностей" }).fill("автономность");
+  await expect(page.getByText("Custom автономность")).toBeVisible();
+  await page.getByRole("textbox", { name: "Поиск возможностей" }).fill("");
+  await page.getByRole("button", { name: /Studio.*Редакторы промптов/ }).click();
+  await expect(
+    page.locator(".capability-workspace").getByRole("heading", { name: "Cosmora Studio" })
+  ).toBeVisible();
+  await expect(page).toHaveURL(/surface=studio/);
+});
+
+test("opens Studio from its sidebar folder and keeps a shareable surface URL", async ({ page }) => {
+  await page.goto("/?surface=work");
+  await page
+    .locator(".sidebar-tools")
+    .getByRole("button", { name: /Cosmora Studio/ })
+    .click();
+  await expect(
+    page.locator(".capability-workspace").getByRole("heading", { name: "Cosmora Studio" })
+  ).toBeVisible();
+  await expect(page).toHaveURL(/surface=studio/);
+  await page.reload();
+  await expect(
+    page.locator(".capability-workspace").getByRole("heading", { name: "Cosmora Studio" })
+  ).toBeVisible();
+});
+
 test("exports the selected Studio parameters and restores isolated drafts", async ({ page }) => {
   const writes: string[] = [];
   page.on("request", (request) => {

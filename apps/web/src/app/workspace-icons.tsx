@@ -14,6 +14,7 @@ export type IconName =
   | "video"
   | "sound"
   | "apps"
+  | "features"
   | "settings"
   | "owner"
   | "shield"
@@ -91,6 +92,14 @@ const paths: Record<IconName, React.ReactNode> = {
       <rect x="14" y="3" width="7" height="7" rx="2" />
       <rect x="3" y="14" width="7" height="7" rx="2" />
       <path d="M14 17.5h7m-3.5-3.5v7" />
+    </>
+  ),
+  features: (
+    <>
+      <path d="M4 5h16M4 12h16M4 19h16" />
+      <circle cx="7" cy="5" r="1" fill="var(--icon-bg, white)" />
+      <circle cx="14" cy="12" r="1" fill="var(--icon-bg, white)" />
+      <circle cx="10" cy="19" r="1" fill="var(--icon-bg, white)" />
     </>
   ),
   settings: (

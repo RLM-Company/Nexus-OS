@@ -132,6 +132,7 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
   sound: "Sound",
   "multi-agent": "Мультиагент",
   apps: "Приложения",
+  features: "Возможности",
   settings: "Настройки"
 };
 
@@ -575,9 +576,10 @@ export default function Home() {
   useEffect(() => {
     try {
       const requestedSurface = new URLSearchParams(window.location.search).get("surface");
-      if (requestedSurface === "studio") {
-        setSurface("studio");
-        setStudioExpanded(true);
+      if (isToolSurface(requestedSurface)) {
+        setSurface(requestedSurface);
+        if (["studio", "images", "video", "sound"].includes(requestedSurface))
+          setStudioExpanded(true);
         setWorkspaceSurfaceHydrated(true);
         return;
       }
@@ -1476,6 +1478,15 @@ export default function Home() {
   const selectSurface = (nextSurface: ToolSurface): void => {
     setSurface(nextSurface);
     if (["studio", "images", "video", "sound"].includes(nextSurface)) setStudioExpanded(true);
+    const route = new URL(window.location.href);
+    route.searchParams.delete("project");
+    route.searchParams.delete("view");
+    route.searchParams.set("surface", nextSurface);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${route.pathname}${route.search}${route.hash}`
+    );
   };
 
   return (
@@ -1621,7 +1632,9 @@ export default function Home() {
           <div className="sidebar-tools" aria-label="Рабочие области">
             {TOOL_ITEMS.filter(
               (item) =>
-                !["studio", "images", "video", "sound", "settings", "apps"].includes(item.id)
+                !["studio", "images", "video", "sound", "settings", "apps", "features"].includes(
+                  item.id
+                )
             ).map((item) => (
               <button
                 key={item.id}
@@ -1640,7 +1653,10 @@ export default function Home() {
                 className="projects-heading sidebar-section-toggle studio-toggle"
                 aria-expanded={studioExpanded}
                 aria-controls="studio-tools"
-                onClick={() => setStudioExpanded((current) => !current)}
+                onClick={() => {
+                  if (!studioExpanded) selectSurface("studio");
+                  else setStudioExpanded(false);
+                }}
               >
                 <ToolIcon kind="studio" />
                 <span>Cosmora Studio</span>
@@ -1682,6 +1698,15 @@ export default function Home() {
             >
               <ToolIcon kind="apps" />
               <span>Приложения</span>
+            </button>
+            <button
+              type="button"
+              className={surface === "features" ? "sidebar-tool active" : "sidebar-tool"}
+              aria-current={surface === "features" ? "page" : undefined}
+              onClick={() => selectSurface("features")}
+            >
+              <ToolIcon kind="features" />
+              <span>Возможности</span>
             </button>
           </div>
         </nav>
