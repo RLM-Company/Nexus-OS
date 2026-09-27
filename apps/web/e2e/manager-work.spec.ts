@@ -35,4 +35,22 @@ test("creates guarded mock files, survives reload and downloads the result", asy
   const { items } = (await work.json()) as { items: { status: string; model_requests: number }[] };
   expect(items).toHaveLength(1);
   expect(items[0]).toMatchObject({ status: "completed", model_requests: 3 });
+
+  await panel.getByLabel("Задача для выполнения").fill("Создай второй документ для проекта");
+  await panel.getByRole("button", { name: "Создать файлы", exact: true }).click();
+  const history = panel.getByRole("group", { name: "История задач Manager" });
+  await expect(history.getByRole("button")).toHaveCount(2);
+  await expect(panel.getByRole("link", { name: "result.md", exact: true })).toBeVisible();
+  await history.getByRole("button", { name: /краткий документ с планом запуска/ }).click();
+  await expect(panel.getByRole("link", { name: "result.md", exact: true })).toHaveAttribute(
+    "href",
+    href!
+  );
+  await page.reload();
+  await expect(history.getByRole("button")).toHaveCount(2);
+  await history.getByRole("button", { name: /краткий документ с планом запуска/ }).click();
+  await expect(panel.getByRole("link", { name: "result.md", exact: true })).toHaveAttribute(
+    "href",
+    href!
+  );
 });

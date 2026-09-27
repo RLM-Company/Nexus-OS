@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 type Work = {
   id: string;
+  request?: { goal: string };
   version: number;
   status: string;
   stage: string;
@@ -17,6 +18,7 @@ type Work = {
   review: { verdict: string; reason: string } | null;
   events: { sequence: number; message: string; at: string }[];
 };
+const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
 const labels: Record<string, string> = {
   queued: "В очереди",
   running: "Выполняется",
@@ -66,6 +68,9 @@ export function ManagerWorkPanel({
   const [goal, setGoal] = useState(initialGoal);
   const [role, setRole] = useState("analyst");
   const [work, setWork] = useState<Work | null>(null);
+  const [works, setWorks] = useState<Work[]>([]);
+  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [runtime, setRuntime] = useState<{ mode: string; model: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -86,13 +91,24 @@ export function ManagerWorkPanel({
           })
         ]);
         if (!controller.signal.aborted && epoch === mutationEpoch.current && !lock.current) {
-          const latest = list.items[0] ?? null;
+          const latest = selectedWorkId
+            ? (list.items.find((item) => item.id === selectedWorkId) ?? list.items[0] ?? null)
+            : (list.items[0] ?? null);
+          if (selectedWorkId && !list.items.some((item) => item.id === selectedWorkId))
+            setSelectedWorkId(null);
+          setWorks((current) =>
+            list.items.map((item) => {
+              const previous = current.find((candidate) => candidate.id === item.id);
+              return previous && previous.version > item.version ? previous : item;
+            })
+          );
           setWork((previous) =>
             previous && latest && previous.id === latest.id && previous.version > latest.version
               ? previous
               : latest
           );
           setRuntime(model);
+          setHistoryLoaded(true);
         }
       } catch {
         if (!controller.signal.aborted)
@@ -106,7 +122,7 @@ export function ManagerWorkPanel({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [base]);
+  }, [base, selectedWorkId]);
   const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
     if (lock.current) return;
     mutationEpoch.current++;
@@ -131,12 +147,17 @@ export function ManagerWorkPanel({
           max_output_tokens: 6000
         };
       }
-      setWork(
-        await json<Work>(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body)
-        })
+      const updated = await json<Work>(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      setSelectedWorkId(updated.id);
+      setWork(updated);
+      setWorks((current) =>
+        current.some((item) => item.id === updated.id)
+          ? current.map((item) => (item.id === updated.id ? updated : item))
+          : [updated, ...current].slice(0, 30)
       );
       if (!action) pending.current = null;
     } catch (cause) {
@@ -146,7 +167,8 @@ export function ManagerWorkPanel({
       setBusy(false);
     }
   };
-  const active = work && !["completed", "failed", "cancelled"].includes(work.status);
+  const active = work && isActive(work);
+  const projectHasActiveWork = Boolean(active) || works.some(isActive);
   return (
     <section className="manager-demo manager-work-panel" aria-label="Выполнение задачи Manager">
       <header className="manager-work-header">
@@ -177,7 +199,7 @@ export function ManagerWorkPanel({
           maxLength={8000}
           rows={4}
           onChange={(e) => setGoal(e.target.value)}
-          disabled={Boolean(active) || busy}
+          disabled={projectHasActiveWork || busy || !historyLoaded}
         />
       </label>
       <label className="manager-work-field">
@@ -186,7 +208,7 @@ export function ManagerWorkPanel({
           aria-label="Исполнитель задачи"
           value={role}
           onChange={(e) => setRole(e.target.value)}
-          disabled={Boolean(active) || busy}
+          disabled={projectHasActiveWork || busy || !historyLoaded}
         >
           <option value="analyst">Аналитик</option>
           <option value="architect">Архитектор</option>
@@ -199,12 +221,42 @@ export function ManagerWorkPanel({
       <button
         type="button"
         className="manager-work-submit"
-        disabled={busy || Boolean(active) || !goal.trim() || !runtime}
+        disabled={busy || projectHasActiveWork || !goal.trim() || !runtime || !historyLoaded}
         onClick={() => void act()}
       >
         Создать файлы
       </button>
+      {!historyLoaded && <p className="manager-work-usage">Загружаем задачи проекта…</p>}
       {error && <p role="alert">{error}</p>}
+      {works.length > 0 && (
+        <div className="manager-work-history">
+          <strong>Задачи проекта</strong>
+          <div
+            className="manager-work-history-list"
+            role="group"
+            aria-label="История задач Manager"
+          >
+            {works.map((item, index) => (
+              <button
+                type="button"
+                key={item.id}
+                aria-pressed={item.id === (selectedWorkId ?? works[0]?.id)}
+                onClick={() => {
+                  setSelectedWorkId(item.id);
+                  setWork(item);
+                  setError("");
+                }}
+              >
+                <span>{item.request?.goal ?? `Задача ${index + 1}`}</span>
+                <small>{labels[item.status] ?? "Состояние неизвестно"}</small>
+              </button>
+            ))}
+          </div>
+          {projectHasActiveWork && !active && (
+            <p>Другая задача ещё выполняется. Откройте её в списке, чтобы увидеть шаги.</p>
+          )}
+        </div>
+      )}
       {work && (
         <>
           <p className="manager-work-usage">Обращений к модели: {work.model_requests} / 3</p>
@@ -218,7 +270,12 @@ export function ManagerWorkPanel({
               </p>
             </div>
           )}
-          <ol className="manager-work-events" aria-label="Шаги выполнения">
+          <ol
+            className="manager-work-events"
+            aria-label="Шаги выполнения"
+            aria-live="polite"
+            aria-relevant="additions"
+          >
             {work.events.map((e) => (
               <li key={e.sequence}>{e.message}</li>
             ))}
