@@ -36,6 +36,7 @@ services:
         format: raw
       - path: ./private/owner-session.env
         format: raw
+        required: false
     ports:
       - "80:80"
       - "443:443"

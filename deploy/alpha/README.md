@@ -8,7 +8,7 @@ use persistent volumes. This is an owner-only alpha, not a multi-user deployment
 
 ## Before starting
 
-- Use a VPS with Docker Compose and a domain with an A/AAAA record pointing to that VPS. Open
+- Use a VPS with Docker Compose 2.30+ and a domain with an A/AAAA record pointing to that VPS. Open
   inbound 80/443. Keep SSH access private. Do not run this stack on a shared public computer.
 - Review and integrate the live route and interface PRs. The source checkout must include both
   changes. No model key, session token or password belongs in Git or chat.
