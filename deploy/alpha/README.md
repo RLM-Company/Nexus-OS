@@ -59,8 +59,16 @@ rotation before it expires. Caddy credentials and the bearer session are separat
 does not silently grant access to the other.
 
 Check `https://<domain>/api/v1/health` and the Work screen after logging in. The health endpoint
-must also be password-protected at the edge. Before a paid trial, run the local no-cost
-`pnpm manager:preflight` against the intended route and check emergency stop and project limits.
+must also be password-protected at the edge. Before a paid trial, run the no-cost hosted preflight
+inside the API container:
+
+```sh
+docker compose -f compose.yaml exec api node deploy/alpha/preflight.mjs
+```
+
+It checks the configured live route, Manager stages, SQLite and emergency stops without a provider
+call. Check project limits separately in Control Center. If the route has no verified price, a
+monetary cap cannot be proven; keep the first task short and review provider billing before use.
 The existing `manager:smoke` command checks two chat responses, **not** the full Manager work
 loop. A real Manager task must be observed separately and capped. Never treat mock output as proof
 that a model answered.
