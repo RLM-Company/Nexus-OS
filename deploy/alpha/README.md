@@ -73,6 +73,13 @@ The existing `manager:smoke` command checks two chat responses, **not** the full
 loop. A real Manager task must be observed separately and capped. Never treat mock output as proof
 that a model answered.
 
+Run `node scripts/manager-compatible-fixture-smoke.mjs` after building the monorepo to exercise
+the external adapter with a local streaming fixture, without contacting the real provider. Creating
+a **new** project also starts one chat request. The first full Manager task therefore uses up to
+four model requests in this flow: the project chat, plan, draft and Critic. The task's three-request
+limit does not include the earlier project chat. Create a short project brief and check its usage
+before starting the task.
+
 This deployment is intentionally single-instance: SQLite is not shared across replicas. Back up
 `cosmora_data` securely before updates. Do not publish the current static Sites preview as a live
 AI demo; it does not include this API or its database.
