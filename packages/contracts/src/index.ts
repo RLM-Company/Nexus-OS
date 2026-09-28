@@ -7,6 +7,7 @@ export * from "./errors.js";
 export * from "./events.js";
 export * from "./health.js";
 export * from "./identity.js";
+export * from "./intelligence-graph.js";
 export * from "./manager-runtime.js";
 export * from "./manager-runtime-artifact-task-binding.js";
 export * from "./manager-runtime-artifact-provenance.js";
