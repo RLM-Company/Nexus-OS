@@ -1,9 +1,12 @@
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import {
+  IntelligenceGraphConflictSchema,
   IntelligenceGraphEdgeSchema,
   IntelligenceGraphNodeSchema,
+  validateIntelligenceGraphConflict,
   validateIntelligenceGraphSnapshot,
+  type IntelligenceGraphConflict,
   type IntelligenceGraphEdge,
   type IntelligenceGraphNode
 } from "../src/index.js";
@@ -291,6 +294,116 @@ describe("Intelligence Graph deterministic kernel", () => {
         "Node bad-active@1 not marked deleted cannot carry deleted_at",
         "Node inverted@1 has an inverted validity interval",
         "Node future-observed@1 was observed after its record was created"
+      ])
+    );
+  });
+
+  it("validates explicit conflicts without silently choosing a claim", () => {
+    const subject = node("entity-1", { kind: "Entity" });
+    const left = node("claim-left");
+    const right = node("claim-right");
+    const conflict: IntelligenceGraphConflict = {
+      contract_version: 1,
+      conflict_id: "conflict-1",
+      owner_id: "owner-1",
+      project_id: "project-1",
+      scope: "project",
+      subject_ref: { id: subject.node_id, version: subject.node_version },
+      position_refs: [
+        { id: left.node_id, version: left.node_version },
+        { id: right.node_id, version: right.node_version }
+      ],
+      status: "open",
+      resolution_ref: null,
+      created_at: t1,
+      resolved_at: null
+    };
+
+    expect(Value.Check(IntelligenceGraphConflictSchema, conflict)).toBe(true);
+    expect(
+      validateIntelligenceGraphConflict({
+        ownerId: "owner-1",
+        projectId: "project-1",
+        conflict,
+        nodes: [subject, left, right]
+      })
+    ).toEqual([]);
+  });
+
+  it("requires distinct conflict positions and an evidence-bearing Decision resolution", () => {
+    const subject = node("entity-1", { kind: "Entity" });
+    const position = node("claim-1");
+    const conflict: IntelligenceGraphConflict = {
+      contract_version: 1,
+      conflict_id: "conflict-1",
+      owner_id: "owner-1",
+      project_id: "project-1",
+      scope: "project",
+      subject_ref: { id: subject.node_id, version: subject.node_version },
+      position_refs: [
+        { id: position.node_id, version: position.node_version },
+        { id: position.node_id, version: position.node_version }
+      ],
+      status: "resolved",
+      resolution_ref: null,
+      created_at: t1,
+      resolved_at: null
+    };
+
+    expect(
+      validateIntelligenceGraphConflict({
+        ownerId: "owner-1",
+        projectId: "project-1",
+        conflict,
+        nodes: [subject, position]
+      })
+    ).toEqual(
+      expect.arrayContaining([
+        "Conflict conflict-1 requires at least two distinct positions",
+        "Resolved conflict conflict-1 requires resolution_ref",
+        "Resolved conflict conflict-1 requires resolved_at"
+      ])
+    );
+  });
+
+  it("rejects cross-project conflict evidence and impossible resolution chronology", () => {
+    const subject = node("entity-1", { kind: "Entity" });
+    const left = node("claim-left");
+    const foreign = node("claim-foreign", { project_id: "project-2" });
+    const decision = node("decision-1", {
+      kind: "Decision",
+      created_at: t2,
+      observed_at: t2
+    });
+    const conflict: IntelligenceGraphConflict = {
+      contract_version: 1,
+      conflict_id: "conflict-1",
+      owner_id: "owner-1",
+      project_id: "project-1",
+      scope: "project",
+      subject_ref: { id: subject.node_id, version: subject.node_version },
+      position_refs: [
+        { id: left.node_id, version: left.node_version },
+        { id: foreign.node_id, version: foreign.node_version }
+      ],
+      status: "resolved",
+      resolution_ref: { id: decision.node_id, version: decision.node_version },
+      created_at: t1,
+      resolved_at: t0
+    };
+
+    expect(
+      validateIntelligenceGraphConflict({
+        ownerId: "owner-1",
+        projectId: "project-1",
+        conflict,
+        nodes: [subject, left, foreign, decision]
+      })
+    ).toEqual(
+      expect.arrayContaining([
+        "Conflict conflict-1 position claim-foreign@1 crosses a scope boundary",
+        "Conflict conflict-1 cannot resolve before it was created",
+        "Conflict conflict-1 resolution was created after resolved_at"
       ])
     );
   });
