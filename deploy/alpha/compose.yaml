@@ -1,0 +1,54 @@
+services:
+  api:
+    image: cosmora-alpha-app:local
+    build:
+      context: ../..
+      dockerfile: deploy/alpha/Dockerfile
+    restart: unless-stopped
+    command: pnpm --filter @cosmora/api start
+    env_file:
+      - path: ./private/model.env
+        format: raw
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 3100
+      DATABASE_URL: file:/var/lib/cosmora/cosmora.db
+      WEB_ORIGIN: https://${COSMORA_DEMO_DOMAIN:?Set COSMORA_DEMO_DOMAIN}
+    volumes:
+      - cosmora_data:/var/lib/cosmora
+    networks: [internal]
+
+  web:
+    image: cosmora-alpha-app:local
+    restart: unless-stopped
+    command: pnpm --filter @cosmora/web exec next start -H 0.0.0.0 -p 3000
+    environment:
+      NODE_ENV: production
+    networks: [internal]
+
+  edge:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    depends_on: [api, web]
+    env_file:
+      - path: ./private/site.env
+        format: raw
+      - path: ./private/owner-session.env
+        format: raw
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+
+networks:
+  internal:
+
+volumes:
+  cosmora_data:
+  caddy_data:
+  caddy_config:

@@ -124,6 +124,18 @@ terminal:
 pnpm demo:preflight
 ```
 
+To verify the complete Manager path without a model key or paid requests, run this once while
+`pnpm demo` is open:
+
+```bash
+pnpm manager:demo-smoke
+```
+
+It creates an A2 test project, completes the mock plan, draft and Critic stages, downloads the
+result through the web proxy, then checks saved state and idempotency. It refuses a non-local
+origin, a non-mock model route or a configured model credential before creating anything. The
+test project remains in the local SQLite history so its result can be inspected in the Console.
+
 LAN mode is for a temporary internal walkthrough only. Do not use it on a public or untrusted
 network, and stop both processes after the demo. The exact owner walkthrough and recovery notes are
 in `docs/handoff/SUNDAY_MANAGER_DEMO_RUNBOOK_2026-09-11.md`.
@@ -179,6 +191,18 @@ The checked-in owner-preview registry also permits `claude-sonnet-5` through the
 `anthropic-compatible` protocol. Its dated provider evidence expires on 2026-10-13 and must be
 reverified rather than silently reused. The default registry remains mock-only, so removing the
 local `.env` returns the repository to its safe local mode.
+
+The checked-in VibeCode preview entries currently allow ordinary/project chat only. They do not
+allow the `analyst` and `critic` roles or `manager_work_*` tasks, so adding a key alone does not
+enable real Manager work. `pnpm manager:preflight` checks these route permissions before any paid
+request and fails with the missing role/task. Mock Manager work remains available meanwhile.
+
+For a controlled local Manager work trial, `config/model-registry.vibecode.manager-work-preview.v1.json`
+is a separate opt-in candidate. It adds the `manager`, `analyst` and `critic` work stages to the
+existing `vibecode:gpt-5.5` streaming preview route; the ordinary preview and default mock routes
+are unchanged. Select it with `MODEL_REGISTRY_PATH` only for a reviewed, non-confidential task.
+This metadata does not prove that the provider follows the requested JSON format. Pricing and
+privacy terms remain unknown, so it is not a production route or a guaranteed monetary cap.
 
 An OpenAI-compatible provider must expose streaming `POST /chat/completions`; an
 Anthropic-compatible provider must expose streaming `POST /messages`. Cosmora does not expose the
