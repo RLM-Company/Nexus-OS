@@ -147,6 +147,36 @@ export const IntelligenceGraphEdgeSchema = Type.Object(
 );
 export type IntelligenceGraphEdge = Static<typeof IntelligenceGraphEdgeSchema>;
 
+export const IntelligenceGraphConflictStatusSchema = Type.Union([
+  Type.Literal("open"),
+  Type.Literal("resolved")
+]);
+export type IntelligenceGraphConflictStatus = Static<
+  typeof IntelligenceGraphConflictStatusSchema
+>;
+
+export const IntelligenceGraphConflictSchema = Type.Object(
+  {
+    contract_version: Type.Literal(INTELLIGENCE_GRAPH_CONTRACT_VERSION),
+    conflict_id: EntityIdSchema,
+    owner_id: EntityIdSchema,
+    project_id: Type.Union([EntityIdSchema, Type.Null()]),
+    scope: IntelligenceGraphScopeSchema,
+    subject_ref: IntelligenceGraphVersionRefSchema,
+    position_refs: Type.Array(IntelligenceGraphVersionRefSchema, {
+      minItems: 2,
+      maxItems: 100,
+      uniqueItems: true
+    }),
+    status: IntelligenceGraphConflictStatusSchema,
+    resolution_ref: Type.Union([IntelligenceGraphVersionRefSchema, Type.Null()]),
+    created_at: IsoDateTimeSchema,
+    resolved_at: nullableTime
+  },
+  { additionalProperties: false }
+);
+export type IntelligenceGraphConflict = Static<typeof IntelligenceGraphConflictSchema>;
+
 export const IntelligenceGraphSnapshotSchema = Type.Object(
   {
     contract_version: Type.Literal(INTELLIGENCE_GRAPH_CONTRACT_VERSION),
@@ -439,6 +469,125 @@ export const validateIntelligenceGraphSnapshot = (input: {
       issues.push(`Superseded edge version ${key} has no replacement`);
     } else if (superseders.length > 1) {
       issues.push(`Superseded edge version ${key} has multiple replacements`);
+    }
+  }
+
+  return [...new Set(issues)];
+};
+
+
+export const validateIntelligenceGraphConflict = (input: {
+  ownerId: string;
+  projectId: string | null;
+  conflict: IntelligenceGraphConflict;
+  nodes: readonly IntelligenceGraphNode[];
+  allowOwnerGlobal?: boolean;
+}): string[] => {
+  const issues: string[] = [];
+  const allowOwnerGlobal = input.allowOwnerGlobal ?? false;
+  const conflict = input.conflict;
+  const nodeByVersion = new Map(input.nodes.map((node) => [nodeKey(node), node] as const));
+
+  if (conflict.owner_id !== input.ownerId) {
+    issues.push(`Conflict ${conflict.conflict_id} belongs to another owner`);
+  }
+  if (conflict.scope === "project") {
+    if (input.projectId === null || conflict.project_id !== input.projectId) {
+      issues.push(`Conflict ${conflict.conflict_id} belongs to another project`);
+    }
+  } else {
+    if (conflict.project_id !== null) {
+      issues.push(`Owner-global conflict ${conflict.conflict_id} must not carry project_id`);
+    }
+    if (!allowOwnerGlobal) {
+      issues.push(`Owner-global conflict ${conflict.conflict_id} is not authorized for this request`);
+    }
+  }
+
+  const subject = nodeByVersion.get(versionKey(conflict.subject_ref));
+  if (subject === undefined) {
+    issues.push(
+      `Conflict ${conflict.conflict_id} references unknown subject ${versionKey(conflict.subject_ref)}`
+    );
+  } else if (
+    subject.owner_id !== conflict.owner_id ||
+    subject.project_id !== conflict.project_id ||
+    subject.scope !== conflict.scope
+  ) {
+    issues.push(`Conflict ${conflict.conflict_id} subject crosses a scope boundary`);
+  }
+
+  const positions = conflict.position_refs.map(versionKey);
+  if (new Set(positions).size < 2) {
+    issues.push(`Conflict ${conflict.conflict_id} requires at least two distinct positions`);
+  }
+  for (const positionRef of conflict.position_refs) {
+    const key = versionKey(positionRef);
+    const position = nodeByVersion.get(key);
+    if (position === undefined) {
+      issues.push(`Conflict ${conflict.conflict_id} references unknown position ${key}`);
+      continue;
+    }
+    if (position.kind !== "Claim") {
+      issues.push(`Conflict ${conflict.conflict_id} position ${key} must be a Claim node`);
+    }
+    if (
+      position.owner_id !== conflict.owner_id ||
+      position.project_id !== conflict.project_id ||
+      position.scope !== conflict.scope
+    ) {
+      issues.push(`Conflict ${conflict.conflict_id} position ${key} crosses a scope boundary`);
+    }
+  }
+
+  if (conflict.status === "resolved") {
+    if (conflict.resolution_ref === null) {
+      issues.push(`Resolved conflict ${conflict.conflict_id} requires resolution_ref`);
+    }
+    if (conflict.resolved_at === null) {
+      issues.push(`Resolved conflict ${conflict.conflict_id} requires resolved_at`);
+    }
+  } else {
+    if (conflict.resolution_ref !== null) {
+      issues.push(`Open conflict ${conflict.conflict_id} cannot carry resolution_ref`);
+    }
+    if (conflict.resolved_at !== null) {
+      issues.push(`Open conflict ${conflict.conflict_id} cannot carry resolved_at`);
+    }
+  }
+
+  if (
+    conflict.resolved_at !== null &&
+    before(conflict.resolved_at, conflict.created_at)
+  ) {
+    issues.push(`Conflict ${conflict.conflict_id} cannot resolve before it was created`);
+  }
+
+  if (conflict.resolution_ref !== null) {
+    const key = versionKey(conflict.resolution_ref);
+    const resolution = nodeByVersion.get(key);
+    if (resolution === undefined) {
+      issues.push(`Conflict ${conflict.conflict_id} references unknown resolution ${key}`);
+    } else {
+      if (resolution.kind !== "Decision") {
+        issues.push(`Conflict ${conflict.conflict_id} resolution ${key} must be a Decision node`);
+      }
+      if (
+        resolution.owner_id !== conflict.owner_id ||
+        resolution.project_id !== conflict.project_id ||
+        resolution.scope !== conflict.scope
+      ) {
+        issues.push(`Conflict ${conflict.conflict_id} resolution ${key} crosses a scope boundary`);
+      }
+      if (before(resolution.created_at, conflict.created_at)) {
+        issues.push(`Conflict ${conflict.conflict_id} resolution predates the conflict`);
+      }
+      if (
+        conflict.resolved_at !== null &&
+        after(resolution.created_at, conflict.resolved_at)
+      ) {
+        issues.push(`Conflict ${conflict.conflict_id} resolution was created after resolved_at`);
+      }
     }
   }
 
