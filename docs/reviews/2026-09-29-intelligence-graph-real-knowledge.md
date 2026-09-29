@@ -16,10 +16,15 @@ No edge is added merely to increase graph density.
 
 ## Current graph
 
-The fixture compiles to:
+The semantic fixture compiles to:
 
 - **97 nodes** including the repository snapshot Source;
-- **140 typed edges**;
+- **140 typed semantic edges**;
+
+The unified semantic + repository-structure + work-experience graph now contains:
+
+- **286 nodes**;
+- **775 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -167,6 +172,36 @@ Current implementation chain includes:
 
 `PRECEDES`, `IMPLEMENTED_BY` and `PRODUCES` edges use those dates so historical retrieval can
 distinguish what existed at different points in repository history.
+
+## Repository structure and work-experience joins
+
+The semantic graph is joined to deterministic repository structure rather than kept as an isolated
+curated map.
+
+The unified graph records:
+
+- file → workspace-module membership;
+- source/test file → imported file/module;
+- workspace module → declared workspace dependency;
+- semantic concept → contract/implementation/store file;
+- implementation event → exact files changed by the corresponding Git commit;
+- chronological `PRECEDES` relationships between recent hardening and product events.
+
+For example, the durable Manager runtime event at `62bc523` is connected by `CHANGED_FILE`
+edges to its coordinator, routes, Manager contract, persistence store, usage store, Model Gateway,
+Policy Engine and Tool Runtime files. Google/Telegram auth and Live Companion events are similarly
+connected to the exact contract and regression-test files changed by their commits.
+
+Recent hardening events also preserve concrete history:
+
+- `f413dd2` — core direct model-request bounds;
+- `1a710aa` — shared model-request contract bounds;
+- `7acf996` — canonical stream-completion metadata;
+- `479c016` — Companion contracts;
+- `b2b5030` — Google/Telegram auth contracts;
+- `62bc523` — durable Manager work runtime.
+
+These are evidence-backed work-experience relationships, not semantic similarity guesses.
 
 ## Quality rules exercised by tests
 
