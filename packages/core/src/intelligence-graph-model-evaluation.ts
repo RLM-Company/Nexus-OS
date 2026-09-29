@@ -202,6 +202,9 @@ export const compileModelIntelligenceObservation = (input: {
     id: `evaluation:${observation.observation_id}`,
     version: 1
   };
+  const relationId = `edge:evaluates:${observation.observation_id}`;
+  ensureId(evaluationRef.id, "evaluation stable id");
+  ensureId(relationId, "evaluation edge id");
 
   const modelNode: IntelligenceGraphNode = {
     contract_version: 1,
@@ -257,7 +260,7 @@ export const compileModelIntelligenceObservation = (input: {
 
   const relation: IntelligenceGraphEdge = {
     contract_version: 1,
-    edge_id: `edge:evaluates:${observation.observation_id}`,
+    edge_id: relationId,
     edge_version: 1,
     type: "EVALUATES",
     from: evaluationRef,
