@@ -20,8 +20,8 @@ describe("evidence-grounded Cosmora knowledge graph", () => {
   it("compiles a connected repository graph with real evidence locations", () => {
     const compiled = compile();
 
-    expect(compiled.nodes).toHaveLength(61);
-    expect(compiled.edges).toHaveLength(74);
+    expect(compiled.nodes).toHaveLength(70);
+    expect(compiled.edges).toHaveLength(94);
 
     const degree = new Map<string, number>();
     for (const edge of compiled.edges) {
@@ -169,6 +169,49 @@ describe("evidence-grounded Cosmora knowledge graph", () => {
       ])
     );
     expect(packet.edges.some((edge) => edge.type === "DEPENDS_ON")).toBe(true);
+  });
+
+  it("connects architecture decisions to the commits that implemented them", () => {
+    const compiled = compile();
+    const pairs = new Set(
+      compiled.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "decision-registry-authority|IMPLEMENTED_BY|event-registry-foundation"
+    );
+    expect(pairs).toContain(
+      "decision-route-evidence-freshness|IMPLEMENTED_BY|event-registry-failclosed"
+    );
+    expect(pairs).toContain(
+      "decision-agent-six-parts|IMPLEMENTED_BY|event-agent-contracts"
+    );
+    expect(pairs).toContain(
+      "claim-auth-google-telegram|IMPLEMENTED_BY|event-auth-contract"
+    );
+    expect(pairs).toContain(
+      "claim-companion-preference-bounds|IMPLEMENTED_BY|event-companion-contract"
+    );
+    expect(pairs).toContain(
+      "event-manager-runtime|PRODUCES|artifact-manager-work-runtime"
+    );
+  });
+
+  it("uses implementation timestamps for historical graph queries", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "commit versioned model registry router",
+      mode: "temporal",
+      as_of: "2026-08-25T00:00:00.000Z",
+      verified_only: true,
+      budget: { max_depth: 2, max_nodes: 10, max_edges: 10, max_fan_out: 8 }
+    });
+
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+    expect(ids).toContain("event-registry-foundation");
+    expect(ids).not.toContain("event-registry-runtime");
+    expect(ids).not.toContain("event-registry-failclosed");
   });
 
   it("preserves explicit provenance and recovery constraints as graph structure", () => {
