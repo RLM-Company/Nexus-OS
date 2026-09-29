@@ -212,6 +212,36 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
   });
 
+  it("retrieves concrete files from a real hardening event", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "core direct model request limits manager chat hardening",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: {
+        max_depth: 1,
+        max_nodes: 12,
+        max_edges: 12,
+        max_fan_out: 8,
+        max_context_tokens: 2_000
+      }
+    });
+
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+    expect(ids).toContain("event-core-model-request-bounds");
+    expect(ids).toContain(
+      repositoryStructureFileId("packages/core/src/model-service-options.ts")
+    );
+    expect(
+      packet.edges.some(
+        (edge) =>
+          edge.type === "CHANGED_FILE" &&
+          edge.from.id === "event-core-model-request-bounds"
+      )
+    ).toBe(true);
+  });
+
   it("keeps every bridge evidence-grounded and specifically typed", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
     const bridgeEdges = graph.edges.filter((edge) =>
