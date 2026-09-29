@@ -865,6 +865,30 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
     { id: "r-companion-doc-surface", type: "DECLARES", from: { id: "doc-companion-contract", version: 1 }, to: { id: "claim-companion-surfaces", version: 1 }, location: "companion.ts", created_at: recordedAt, ...derived },
     { id: "r-companion-pref-gate", type: "CONSTRAINS", from: { id: "claim-companion-preference-bounds", version: 1 }, to: { id: "entity-companion-gate", version: 1 }, location: "companion.ts", created_at: recordedAt, ...derived },
     { id: "r-companion-reason-gate", type: "GOVERNS", from: { id: "claim-companion-gate-reasons", version: 1 }, to: { id: "entity-companion-gate", version: 1 }, location: "companion.ts", created_at: recordedAt, ...derived },
-    { id: "r-companion-auth", type: "DEPENDS_ON", from: { id: "entity-companion-gate", version: 1 }, to: { id: "entity-auth-flow", version: 1 }, location: "owner_not_authenticated gate reason", created_at: recordedAt, ...derived }
+    { id: "r-companion-auth", type: "DEPENDS_ON", from: { id: "entity-companion-gate", version: 1 }, to: { id: "entity-auth-flow", version: 1 }, location: "owner_not_authenticated gate reason", created_at: recordedAt, ...derived },
+    { id: "r-registry-decision-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-registry-authority", version: 1 }, to: { id: "event-registry-foundation", version: 1 }, location: "commit:e5e1195", created_at: recordedAt, ...derived },
+    { id: "r-registry-foundation-produces", type: "PRODUCES", from: { id: "event-registry-foundation", version: 1 }, to: { id: "entity-model-registry", version: 1 }, location: "commit:e5e1195", created_at: recordedAt, ...derived },
+    { id: "r-registry-foundation-precedes-runtime", type: "PRECEDES", from: { id: "event-registry-foundation", version: 1 }, to: { id: "event-registry-runtime", version: 1 }, location: "git history", created_at: recordedAt, ...derived },
+    { id: "r-route-trace-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-route-trace", version: 1 }, to: { id: "event-registry-runtime", version: 1 }, location: "commit:7be9f87", created_at: recordedAt, ...derived },
+    { id: "r-registry-runtime-precedes-failclosed", type: "PRECEDES", from: { id: "event-registry-runtime", version: 1 }, to: { id: "event-registry-failclosed", version: 1 }, location: "git history", created_at: recordedAt, ...derived },
+    { id: "r-freshness-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-route-evidence-freshness", version: 1 }, to: { id: "event-registry-failclosed", version: 1 }, location: "commit:cb802ac", created_at: recordedAt, ...derived },
+    { id: "r-failclosed-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-routing-fail-closed", version: 1 }, to: { id: "event-registry-failclosed", version: 1 }, location: "commit:cb802ac", created_at: recordedAt, ...derived },
+
+    { id: "r-agent-composition-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-agent-six-parts", version: 1 }, to: { id: "event-agent-contracts", version: 1 }, location: "commit:a70f88d", created_at: recordedAt, ...derived },
+    { id: "r-agent-delegation-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-delegation-no-expansion", version: 1 }, to: { id: "event-agent-contracts", version: 1 }, location: "commit:a70f88d", created_at: recordedAt, ...derived },
+    { id: "r-agent-contracts-precede-blueprints", type: "PRECEDES", from: { id: "event-agent-contracts", version: 1 }, to: { id: "event-agent-blueprints", version: 1 }, location: "git history", created_at: recordedAt, ...derived },
+    { id: "r-agent-blueprints-precede-proposal", type: "PRECEDES", from: { id: "event-agent-blueprints", version: 1 }, to: { id: "event-agent-root-proposal", version: 1 }, location: "git history", created_at: recordedAt, ...derived },
+    { id: "r-blueprints-materialize-instance", type: "MATERIALIZES", from: { id: "event-agent-blueprints", version: 1 }, to: { id: "entity-agent-instance", version: 1 }, location: "commit:617a6e8", created_at: recordedAt, ...derived },
+
+    { id: "r-companion-pref-implemented", type: "IMPLEMENTED_BY", from: { id: "claim-companion-preference-bounds", version: 1 }, to: { id: "event-companion-contract", version: 1 }, location: "commit:479c016", created_at: recordedAt, ...derived },
+    { id: "r-companion-gates-implemented", type: "IMPLEMENTED_BY", from: { id: "claim-companion-gate-reasons", version: 1 }, to: { id: "event-companion-contract", version: 1 }, location: "commit:479c016", created_at: recordedAt, ...derived },
+    { id: "r-companion-event-produces-doc", type: "PRODUCES", from: { id: "event-companion-contract", version: 1 }, to: { id: "doc-companion-contract", version: 1 }, location: "commit:479c016", created_at: recordedAt, ...derived },
+
+    { id: "r-auth-provider-implemented", type: "IMPLEMENTED_BY", from: { id: "claim-auth-google-telegram", version: 1 }, to: { id: "event-auth-contract", version: 1 }, location: "commit:b2b5030", created_at: recordedAt, ...derived },
+    { id: "r-auth-pkce-implemented", type: "IMPLEMENTED_BY", from: { id: "claim-auth-pkce-s256", version: 1 }, to: { id: "event-auth-contract", version: 1 }, location: "commit:b2b5030", created_at: recordedAt, ...derived },
+    { id: "r-auth-event-produces-doc", type: "PRODUCES", from: { id: "event-auth-contract", version: 1 }, to: { id: "doc-auth-contract", version: 1 }, location: "commit:b2b5030", created_at: recordedAt, ...derived },
+    { id: "r-companion-precedes-auth", type: "PRECEDES", from: { id: "event-companion-contract", version: 1 }, to: { id: "event-auth-contract", version: 1 }, location: "git history 2026-09-19", created_at: recordedAt, ...derived },
+
+    { id: "r-manager-event-produces-runtime", type: "PRODUCES", from: { id: "event-manager-runtime", version: 1 }, to: { id: "artifact-manager-work-runtime", version: 1 }, location: "commit:62bc523", created_at: recordedAt, ...derived }
   ]
 });
