@@ -46,7 +46,7 @@ const graphFixture = (): AuthorizedIntelligenceGraphFixture => ({
     {
       id: "artifact-manager",
       kind: "Artifact",
-      text: "manager runtime implementation artifact implementation artifact",
+      text: "manager runtime implementation artifact",
       excerpt: "The Manager artifact implements the storage decision.",
       location: "fixture:artifact",
       created_at: "2026-09-01T00:03:00.000Z",
@@ -109,7 +109,7 @@ describe("Intelligence Graph retrieval evaluation", () => {
       cases: [
         {
           case_id: "manager-storage-chain",
-          query: "manager runtime implementation artifact implementation",
+          query: "manager runtime implementation artifact",
           expected_nodes: [
             { id: "artifact-manager", version: 1 },
             { id: "decision-storage", version: 1 },
