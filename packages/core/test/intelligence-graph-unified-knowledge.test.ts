@@ -20,16 +20,16 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(283);
-    expect(graph.records).toHaveLength(283);
-    expect(graph.edges).toHaveLength(748);
+    expect(graph.nodes).toHaveLength(286);
+    expect(graph.records).toHaveLength(286);
+    expect(graph.edges).toHaveLength(775);
 
     expect(
       new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size
-    ).toBe(283);
+    ).toBe(286);
     expect(
       new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size
-    ).toBe(748);
+    ).toBe(775);
 
     expect(() => createIndex()).not.toThrow();
   });
@@ -154,6 +154,62 @@ describe("unified Cosmora Intelligence Graph", () => {
         )
       ).toBe(true);
     }
+  });
+
+  it("connects implementation history to the exact files changed by real commits", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const managerCoordinator = repositoryStructureFileId(
+      "apps/api/src/manager-work-coordinator.ts"
+    );
+    const authContract = repositoryStructureFileId("packages/contracts/src/auth.ts");
+    const modelOptions = repositoryStructureFileId(
+      "packages/core/src/model-service-options.ts"
+    );
+
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.type === "CHANGED_FILE" &&
+          edge.from.id === "event-manager-runtime" &&
+          edge.to.id === managerCoordinator
+      )
+    ).toBe(true);
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.type === "CHANGED_FILE" &&
+          edge.from.id === "event-auth-contract" &&
+          edge.to.id === authContract
+      )
+    ).toBe(true);
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.type === "CHANGED_FILE" &&
+          edge.from.id === "event-core-model-request-bounds" &&
+          edge.to.id === modelOptions
+      )
+    ).toBe(true);
+  });
+
+  it("preserves the recent hardening chronology as real work experience", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "event-core-model-request-bounds|PRECEDES|event-model-request-contract-bounds"
+    );
+    expect(pairs).toContain(
+      "event-model-request-contract-bounds|PRECEDES|event-stream-metadata-hardening"
+    );
+    expect(pairs).toContain(
+      "event-stream-metadata-hardening|PRECEDES|event-companion-contract"
+    );
+    expect(pairs).toContain(
+      "event-auth-contract|PRECEDES|event-manager-runtime"
+    );
   });
 
   it("keeps every bridge evidence-grounded and specifically typed", () => {
