@@ -42,67 +42,54 @@ const percentile = (sorted, p) => {
   return sorted[index];
 };
 
-const edgeFor = (globalIndex, projects, nodesPerProject) => {
+const edgeCoordinates = (globalIndex, projects, nodesPerProject) => {
   const projectIndex = globalIndex % projects;
   const localEdgeIndex = Math.floor(globalIndex / projects);
   const fromIndex = localEdgeIndex % nodesPerProject;
   let toIndex =
     (fromIndex * 17 + localEdgeIndex * 13 + projectIndex * 7 + 1) % nodesPerProject;
   if (toIndex === fromIndex) toIndex = (toIndex + 1) % nodesPerProject;
-  return {
-    edge_id: `synthetic:p${projectIndex}:e${localEdgeIndex}`,
-    edge_version: 1,
-    type: EDGE_TYPES[localEdgeIndex % EDGE_TYPES.length],
-    owner_id: "synthetic-owner",
-    project_id: `synthetic-project-${projectIndex}`,
-    from: { id: `synthetic:p${projectIndex}:n${fromIndex}`, version: 1 },
-    to: { id: `synthetic:p${projectIndex}:n${toIndex}`, version: 1 },
-    verification_status: "verified",
-    provenance_kind: "deterministic_derivation",
-    created_at: "2026-09-29T00:00:00.000Z"
-  };
+  return { projectIndex, localEdgeIndex, fromIndex, toIndex };
 };
 
-const validateEdge = (edge, projectIndex, localEdgeIndex, nodesPerProject) => {
-  if (edge.project_id !== `synthetic-project-${projectIndex}`) {
-    throw new Error(`Cross-project edge at local index ${localEdgeIndex}`);
-  }
-  const prefix = `synthetic:p${projectIndex}:n`;
-  if (!edge.from.id.startsWith(prefix) || !edge.to.id.startsWith(prefix)) {
-    throw new Error(`Cross-project endpoint at local index ${localEdgeIndex}`);
-  }
-  if (edge.from.id === edge.to.id) {
-    throw new Error(`Self edge at local index ${localEdgeIndex}`);
-  }
-  const from = Number(edge.from.id.slice(prefix.length));
-  const to = Number(edge.to.id.slice(prefix.length));
+const validateCoordinates = (coordinates, nodesPerProject) => {
+  const { localEdgeIndex, fromIndex, toIndex } = coordinates;
   if (
-    !Number.isInteger(from) ||
-    !Number.isInteger(to) ||
-    from < 0 ||
-    to < 0 ||
-    from >= nodesPerProject ||
-    to >= nodesPerProject
+    !Number.isInteger(fromIndex) ||
+    !Number.isInteger(toIndex) ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= nodesPerProject ||
+    toIndex >= nodesPerProject
   ) {
     throw new Error(`Endpoint out of range at local index ${localEdgeIndex}`);
   }
+  if (fromIndex === toIndex) {
+    throw new Error(`Self edge at local index ${localEdgeIndex}`);
+  }
+};
+
+const edgeLine = (coordinates) => {
+  const { projectIndex, localEdgeIndex, fromIndex, toIndex } = coordinates;
+  const type = EDGE_TYPES[localEdgeIndex % EDGE_TYPES.length];
+  return (
+    `{"edge_id":"synthetic:p${projectIndex}:e${localEdgeIndex}",` +
+    `"edge_version":1,"type":"${type}","owner_id":"synthetic-owner",` +
+    `"project_id":"synthetic-project-${projectIndex}",` +
+    `"from":{"id":"synthetic:p${projectIndex}:n${fromIndex}","version":1},` +
+    `"to":{"id":"synthetic:p${projectIndex}:n${toIndex}","version":1},` +
+    `"verification_status":"verified","provenance_kind":"deterministic_derivation",` +
+    `"created_at":"2026-09-29T00:00:00.000Z"}\n`
+  );
 };
 
 const buildProjectAdjacency = (projectIndex, edgeCount, projects, nodesPerProject) => {
   const adjacency = Array.from({ length: nodesPerProject }, () => []);
-  let localEdgeIndex = 0;
-  for (
-    let globalIndex = projectIndex;
-    globalIndex < edgeCount;
-    globalIndex += projects, localEdgeIndex += 1
-  ) {
-    const edge = edgeFor(globalIndex, projects, nodesPerProject);
-    validateEdge(edge, projectIndex, localEdgeIndex, nodesPerProject);
-    const prefix = `synthetic:p${projectIndex}:n`;
-    const from = Number(edge.from.id.slice(prefix.length));
-    const to = Number(edge.to.id.slice(prefix.length));
-    adjacency[from].push(to);
-    adjacency[to].push(from);
+  for (let globalIndex = projectIndex; globalIndex < edgeCount; globalIndex += projects) {
+    const coordinates = edgeCoordinates(globalIndex, projects, nodesPerProject);
+    validateCoordinates(coordinates, nodesPerProject);
+    adjacency[coordinates.fromIndex].push(coordinates.toIndex);
+    adjacency[coordinates.toIndex].push(coordinates.fromIndex);
   }
   return adjacency;
 };
@@ -110,10 +97,16 @@ const buildProjectAdjacency = (projectIndex, edgeCount, projects, nodesPerProjec
 const boundedTraversal = (adjacency, seed, limits) => {
   const visited = new Set([seed]);
   const queue = [{ node: seed, depth: 0 }];
+  let head = 0;
   let edgesVisited = 0;
 
-  while (queue.length > 0 && visited.size < limits.maxNodes && edgesVisited < limits.maxEdges) {
-    const current = queue.shift();
+  while (
+    head < queue.length &&
+    visited.size < limits.maxNodes &&
+    edgesVisited < limits.maxEdges
+  ) {
+    const current = queue[head];
+    head += 1;
     if (!current || current.depth >= limits.maxDepth) continue;
     const neighbors = adjacency[current.node] ?? [];
     const fanout = Math.min(neighbors.length, limits.maxFanout);
@@ -180,31 +173,35 @@ const main = async () => {
 
   const started = performance.now();
   const hash = createHash("sha256");
-  const gzip = createGzip({ level: 6 });
+  const gzip = createGzip({ level: 1 });
   const destination = createWriteStream(output, { flags: "w" });
   gzip.pipe(destination);
 
   let logicalBytes = 0;
   let peakRssBytes = process.memoryUsage().rss;
   const projectCounts = Array.from({ length: projects }, () => 0);
+  let batch = "";
+  const flushBatch = async () => {
+    if (!batch) return;
+    logicalBytes += Buffer.byteLength(batch);
+    hash.update(batch);
+    const chunk = batch;
+    batch = "";
+    if (!gzip.write(chunk)) await once(gzip, "drain");
+  };
 
   for (let globalIndex = 0; globalIndex < edgeCount; globalIndex += 1) {
-    const projectIndex = globalIndex % projects;
-    const localEdgeIndex = Math.floor(globalIndex / projects);
-    const edge = edgeFor(globalIndex, projects, nodesPerProject);
-    validateEdge(edge, projectIndex, localEdgeIndex, nodesPerProject);
-    projectCounts[projectIndex] += 1;
+    const coordinates = edgeCoordinates(globalIndex, projects, nodesPerProject);
+    validateCoordinates(coordinates, nodesPerProject);
+    projectCounts[coordinates.projectIndex] += 1;
+    batch += edgeLine(coordinates);
 
-    const line = `${JSON.stringify(edge)}\n`;
-    const bytes = Buffer.byteLength(line);
-    logicalBytes += bytes;
-    hash.update(line);
-    if (!gzip.write(line)) await once(gzip, "drain");
-
+    if ((globalIndex + 1) % 5_000 === 0) await flushBatch();
     if (globalIndex % 100_000 === 0) {
       peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
     }
   }
+  await flushBatch();
 
   gzip.end();
   await once(destination, "close");
