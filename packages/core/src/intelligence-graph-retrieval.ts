@@ -170,8 +170,9 @@ const edgeVisibleAt = (edge: IntelligenceGraphEdge, asOf: string | null): boolea
   return edge.verification_status !== "deleted";
 };
 
-const verifiedEnough = (node: IntelligenceGraphNode): boolean =>
-  node.verification_status === "verified";
+const verifiedEnough = (node: IntelligenceGraphNode, asOf: string | null): boolean =>
+  node.verification_status === "verified" ||
+  (asOf !== null && node.verification_status === "superseded");
 
 export class IntelligenceGraphIndex {
   readonly #ownerId: string;
@@ -255,7 +256,7 @@ export class IntelligenceGraphIndex {
       .map((record) => {
         const node = this.#nodes.get(versionKey(record.node));
         if (!node || !nodeVisibleAt(node, asOf)) return null;
-        if (query.verified_only && !verifiedEnough(node)) return null;
+        if (query.verified_only && !verifiedEnough(node, asOf)) return null;
         return { record, node, score: lexicalScore(query.text, record) };
       })
       .filter(
@@ -392,8 +393,8 @@ export class IntelligenceGraphIndex {
       .sort();
 
     const sufficientEvidence =
-      nodes.some(({ node }) => verifiedEnough(node)) &&
-      (!query.verified_only || nodes.every(({ node }) => verifiedEnough(node)));
+      nodes.some(({ node }) => verifiedEnough(node, asOf)) &&
+      (!query.verified_only || nodes.every(({ node }) => verifiedEnough(node, asOf)));
 
     return {
       owner_id: this.#ownerId,
