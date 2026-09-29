@@ -387,7 +387,7 @@ describe("Intelligence Graph retrieval", () => {
   it("rejects graph construction with cross-project data", () => {
     const data = fixture();
     const foreign = {
-      ...data.nodes[0],
+      ...data.nodes[0]!,
       node_id: "foreign-source",
       project_id: "project-2"
     };
