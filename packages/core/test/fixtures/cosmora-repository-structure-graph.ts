@@ -258,7 +258,7 @@ const stableHash = (value: string): string => {
   return `${first.toString(16).padStart(8, "0")}${second.toString(16).padStart(8, "0")}`;
 };
 
-const fileId = (path: string): string => `file:${stableHash(path)}`;
+export const repositoryStructureFileId = (path: string): string => `file:${stableHash(path)}`;
 const edgeId = (value: string): string => `edge:${stableHash(value)}`;
 
 const entry = (input: {
@@ -296,18 +296,43 @@ const relation = (input: {
 export const cosmoraRepositoryStructureGraphFixture = (): AuthorizedIntelligenceGraphFixture => {
   const moduleIdsByName = new Map(moduleRows.map(([id, , name]) => [name, id]));
   const entries: AuthorizedIntelligenceGraphFixtureEntry[] = [
-    ...moduleRows.map(([id, root, name, manifest]) => entry({ id, kind: "Entity", text: `${name} workspace module`, excerpt: `Workspace module rooted at ${root}.`, location: manifest })),
-    ...fileRows.map(([path, moduleId]) => entry({ id: fileId(path), kind: "Document", text: `repository TypeScript file ${path}`, excerpt: `TypeScript source or test file belonging to ${moduleId}.`, location: path }))
+    ...moduleRows.map(([id, root, name, manifest]) =>
+      entry({
+        id,
+        kind: "Entity",
+        text: `${name} workspace module`,
+        excerpt: `Workspace module rooted at ${root}.`,
+        location: manifest
+      })
+    ),
+    ...fileRows.map(([path, moduleId]) =>
+      entry({
+        id: repositoryStructureFileId(path),
+        kind: "Document",
+        text: `repository TypeScript file ${path}`,
+        excerpt: `TypeScript source or test file belonging to ${moduleId}.`,
+        location: path
+      })
+    )
   ];
 
   const relations: AuthorizedIntelligenceGraphFixtureRelation[] = [
-    ...fileRows.map(([path, moduleId]) => relation({ type: "BELONGS_TO_MODULE", from: fileId(path), to: moduleId, location: path })),
+    ...fileRows.map(([path, moduleId]) =>
+      relation({
+        type: "BELONGS_TO_MODULE",
+        from: repositoryStructureFileId(path),
+        to: moduleId,
+        location: path
+      })
+    ),
     ...importRows.flatMap(([fromPath, kind, target, location]) => {
-      const targetId = kind === "file" ? fileId(target) : moduleIdsByName.get(target);
+      const targetId = kind === "file" ? repositoryStructureFileId(target) : moduleIdsByName.get(target);
       if (targetId === undefined) return [];
       return [relation({ type: kind === "file" ? "IMPORTS_FILE" : "IMPORTS_MODULE", from: fileId(fromPath), to: targetId, location })];
     }),
-    ...moduleDependencyRows.map(([from, to, location]) => relation({ type: "DEPENDS_ON_MODULE", from, to, location }))
+    ...moduleDependencyRows.map(([from, to, location]) =>
+      relation({ type: "DEPENDS_ON_MODULE", from, to, location })
+    )
   ];
 
   return {
@@ -317,7 +342,8 @@ export const cosmoraRepositoryStructureGraphFixture = (): AuthorizedIntelligence
       id: "source-repository-structure-62bc523",
       version: 1,
       title: "Nexus-OS deterministic repository dependency graph at main 62bc523",
-      excerpt: "File membership, source imports and workspace module dependencies derived directly from repository code and manifests.",
+      excerpt:
+        "File membership, source imports and workspace module dependencies derived directly from repository code and manifests.",
       location: "RLM-Company/Nexus-OS@62bc5234b24e3b0c10262b043063fd31be9732bd",
       created_at: recordedAt,
       estimated_tokens: 20
