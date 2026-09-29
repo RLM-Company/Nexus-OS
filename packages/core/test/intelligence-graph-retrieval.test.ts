@@ -206,7 +206,7 @@ const fixture = () => {
     },
     {
       node: { id: artifact.node_id, version: artifact.node_version },
-      text: "manager runtime implementation artifact implementation artifact",
+      text: "manager runtime implementation artifact",
       excerpt: "The Manager runtime artifact implements the selected storage decision.",
       estimated_tokens: 22
     },
