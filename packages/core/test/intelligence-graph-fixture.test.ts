@@ -165,6 +165,29 @@ describe("authorized Intelligence Graph fixture compiler", () => {
     );
   });
 
+  it("rejects model-only inference when a fixture tries to mark it verified", () => {
+    const candidate = fixture();
+    candidate.entries = [
+      ...candidate.entries,
+      {
+        id: "claim-invalid-verified",
+        kind: "Claim",
+        text: "unsupported verified model inference",
+        excerpt: "A model-only inference must not be promoted to verified evidence.",
+        location: "fixture:invalid-verified",
+        created_at: "2026-09-01T00:04:00.000Z",
+        verification_status: "verified",
+        provenance_kind: "model_inference",
+        confidence_method: "model_only",
+        estimated_tokens: 12
+      }
+    ];
+
+    expect(() => compileAuthorizedIntelligenceGraphFixture(candidate)).toThrow(
+      "cannot be verified by model-only confidence"
+    );
+  });
+
   it("keeps model inference as hypothesis data instead of verified authority", () => {
     const candidate = fixture();
     candidate.entries = [
