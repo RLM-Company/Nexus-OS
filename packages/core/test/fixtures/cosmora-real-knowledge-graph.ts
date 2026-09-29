@@ -780,6 +780,281 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       provenance_kind: "runtime_record",
       confidence_method: "deterministic_check",
       estimated_tokens: 17
+    },
+    {
+      id: "doc-model-gateway",
+      kind: "Document",
+      text: "ADR 002 provider neutral Model Gateway streaming fallback secrets",
+      excerpt: "Accepted provider-neutral gateway boundary for all model access.",
+      location: "docs/decisions/ADR-002-model-gateway.md",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 18
+    },
+    {
+      id: "doc-runtime-state",
+      kind: "Document",
+      text: "runtime context envelope artifact exchange checkpoint recovery state",
+      excerpt: "Contracts for bounded runtime context, artifact exchange and recovery checkpoints.",
+      location: "packages/contracts/src/manager-runtime-state.ts",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 18
+    },
+    {
+      id: "doc-runtime-context-validation",
+      kind: "Document",
+      text: "runtime context materialization validation project role sources data classes",
+      excerpt: "Validation binds materialized context to task, project, role, inputs and declared sources.",
+      location: "packages/contracts/src/manager-runtime-context-validation.ts",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 19
+    },
+    {
+      id: "doc-identity-contract",
+      kind: "Document",
+      text: "identity actor session assurance revocation audit contract",
+      excerpt: "Identity contracts model actors, expiring sessions, assurance and audit events.",
+      location: "packages/contracts/src/identity.ts",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 17
+    },
+    {
+      id: "doc-step-up-contract",
+      kind: "Document",
+      text: "step up proof purpose challenge expiry consumption",
+      excerpt: "Step-up proof is scoped to owner, actor, session and a bounded high-risk purpose.",
+      location: "packages/contracts/src/step-up.ts",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 16
+    },
+    {
+      id: "doc-usage-contract",
+      kind: "Document",
+      text: "project usage summary token cost limits versioned",
+      excerpt: "Usage contracts track attempts, tokens, known/unknown costs and versioned project limits.",
+      location: "packages/contracts/src/usage.ts",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 17
+    },
+
+    {
+      id: "entity-model-gateway",
+      kind: "Entity",
+      text: "provider neutral Model Gateway streaming model access",
+      excerpt: "Server-side gateway normalizes provider requests, streaming, cancellation, failures and fallback.",
+      location: "docs/decisions/ADR-002-model-gateway.md:Decision",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 16
+    },
+    {
+      id: "entity-runtime-context",
+      kind: "Entity",
+      text: "Manager runtime context envelope bounded task memory artifacts",
+      excerpt: "Context envelope binds project, task, role, memory scope, artifacts, sources and data classes.",
+      location: "packages/contracts/src/manager-runtime-state.ts:RuntimeContextEnvelopeSchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 18
+    },
+    {
+      id: "entity-identity-session",
+      kind: "Entity",
+      text: "identity session owner actor assurance expiry revocation",
+      excerpt: "Identity session is bound to owner and actor with assurance, status and expiry.",
+      location: "packages/contracts/src/identity.ts:IdentitySessionSchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 15
+    },
+    {
+      id: "entity-step-up-proof",
+      kind: "Entity",
+      text: "step up proof bounded high risk authorization",
+      excerpt: "Short-lived proof scoped to owner, actor, session, purpose and challenge.",
+      location: "packages/contracts/src/step-up.ts:StepUpProofSchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 15
+    },
+    {
+      id: "entity-project-usage",
+      kind: "Entity",
+      text: "project model usage ledger summary limits tokens costs",
+      excerpt: "Project usage state tracks reservations, committed usage, token totals and cost limits.",
+      location: "packages/contracts/src/usage.ts",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 16
+    },
+
+    {
+      id: "decision-gateway-all-access",
+      kind: "Decision",
+      text: "all model access goes through provider neutral Model Gateway",
+      excerpt: "ADR-002 requires all model access to go through packages/model-gateway.",
+      location: "docs/decisions/ADR-002-model-gateway.md:Decision",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 15
+    },
+    {
+      id: "decision-gateway-fallback-boundary",
+      kind: "Decision",
+      text: "model fallback only before first text delta never mix providers after output",
+      excerpt: "Fallback is allowed only before output begins; streamed content from models is never combined.",
+      location: "docs/decisions/ADR-002-model-gateway.md:Decision",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 18
+    },
+    {
+      id: "decision-gateway-secrets-server-only",
+      kind: "Decision",
+      text: "provider credentials server side excluded logs API browser version control",
+      excerpt: "Credential values remain server-side and are excluded from logs, API responses, browser code and VCS.",
+      location: "docs/decisions/ADR-002-model-gateway.md:Decision",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 19
+    },
+    {
+      id: "decision-gateway-run-accounting",
+      kind: "Decision",
+      text: "completed model run persists provider model input output tokens",
+      excerpt: "Completed runs persist provider, resolved model and reported input/output token counts.",
+      location: "docs/decisions/ADR-002-model-gateway.md:Decision",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 17
+    },
+
+    {
+      id: "claim-context-private-chat-forbidden",
+      kind: "Claim",
+      text: "runtime context private chat persistence forbidden",
+      excerpt: "RuntimeContextEnvelope fixes private_chat_persistence to forbidden.",
+      location: "packages/contracts/src/manager-runtime-state.ts:RuntimeContextEnvelopeSchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 14
+    },
+    {
+      id: "claim-context-untrusted-data-only",
+      kind: "Claim",
+      text: "runtime context untrusted instructions treated as data only",
+      excerpt: "Runtime context fixes untrusted instruction treatment to data_only.",
+      location: "packages/contracts/src/manager-runtime-state.ts:RuntimeContextEnvelopeSchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 14
+    },
+    {
+      id: "claim-context-task-bound",
+      kind: "Claim",
+      text: "materialized context must match task project role memory mode",
+      excerpt: "Context materialization rejects mismatched project, task, role and memory read/write modes.",
+      location: "packages/contracts/src/manager-runtime-context-validation.ts",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 18
+    },
+    {
+      id: "claim-context-inputs-declared",
+      kind: "Claim",
+      text: "context artifacts and memory sources must be declared by task",
+      excerpt: "Materialized context cannot introduce artifacts or memory sources absent from the task contract.",
+      location: "packages/contracts/src/manager-runtime-context-validation.ts",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 18
+    },
+    {
+      id: "claim-context-data-class-bound",
+      kind: "Claim",
+      text: "context artifacts must use allowed data classes and declared sources",
+      excerpt: "Materialized artifacts are rejected when their data class or source is not allowed by the envelope.",
+      location: "packages/contracts/src/manager-runtime-context-validation.ts",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 18
+    },
+    {
+      id: "claim-checkpoint-no-authority-restore",
+      kind: "Claim",
+      text: "runtime checkpoint cannot restore permissions sessions autonomy escalation",
+      excerpt: "RuntimeCheckpoint fixes permission, session and autonomy-escalation restoration to false.",
+      location: "packages/contracts/src/manager-runtime-state.ts:RuntimeCheckpointSchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 17
+    },
+
+    {
+      id: "claim-identity-session-lifecycle",
+      kind: "Claim",
+      text: "identity session active revoked expired assurance issued expiry audit",
+      excerpt: "Identity sessions have explicit assurance, expiry and revocation lifecycle with audit events.",
+      location: "packages/contracts/src/identity.ts",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 17
+    },
+    {
+      id: "claim-step-up-purpose-bound",
+      kind: "Claim",
+      text: "step up proof purpose autonomy escalation critical tool emergency stop usage expansion",
+      excerpt: "Step-up proofs are purpose-specific for four explicitly enumerated sensitive operations.",
+      location: "packages/contracts/src/step-up.ts:StepUpPurposeSchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 18
+    },
+    {
+      id: "claim-step-up-single-lifecycle",
+      kind: "Claim",
+      text: "step up proof active consumed expired with challenge hash expiry",
+      excerpt: "Step-up proof has active/consumed/expired status, expiry and optional consumption timestamp.",
+      location: "packages/contracts/src/step-up.ts:StepUpProofSchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 16
+    },
+
+    {
+      id: "claim-usage-attempt-accounting",
+      kind: "Claim",
+      text: "project usage counts reserved committed failed cancelled attempts",
+      excerpt: "Usage summary separates total, reserved, committed, failed and cancelled attempts.",
+      location: "packages/contracts/src/usage.ts:ProjectUsageSummarySchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 16
+    },
+    {
+      id: "claim-usage-unknown-cost",
+      kind: "Claim",
+      text: "project usage explicitly tracks unknown committed reserved cost attempts",
+      excerpt: "Unknown model cost is represented explicitly instead of being invented.",
+      location: "packages/contracts/src/usage.ts:ProjectUsageSummarySchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 16
+    },
+    {
+      id: "claim-usage-limit-versioned",
+      kind: "Claim",
+      text: "project usage token cost limits versioned expected version update",
+      excerpt: "Project usage limits are versioned and updates require expected_version.",
+      location: "packages/contracts/src/usage.ts:ProjectUsageLimitSchema",
+      created_at: recordedAt,
+      ...verified,
+      estimated_tokens: 16
     }
   ],
   relations: [
