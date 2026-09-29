@@ -1,5 +1,6 @@
-import type {
-  IntelligenceGraphConfidenceMethod,
+import {
+  validateIntelligenceGraphSnapshot,
+  type IntelligenceGraphConfidenceMethod,
   IntelligenceGraphEdge,
   IntelligenceGraphNode,
   IntelligenceGraphNodeKind,
@@ -283,6 +284,16 @@ export const compileAuthorizedIntelligenceGraphFixture = (
       deleted_at: null
     });
     edgeRefs.add(key);
+  }
+
+  const issues = validateIntelligenceGraphSnapshot({
+    ownerId: fixture.owner_id,
+    projectId: fixture.project_id,
+    nodes,
+    edges
+  });
+  if (issues.length > 0) {
+    throw new Error(`Invalid compiled Intelligence Graph fixture: ${issues.join("; ")}`);
   }
 
   return { nodes, edges, records };
