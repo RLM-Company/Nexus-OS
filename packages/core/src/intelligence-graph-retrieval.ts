@@ -354,13 +354,13 @@ export class IntelligenceGraphIndex {
           if (query.verified_only && !verifiedEnough(nextNode)) continue;
 
           const nextPath = [...current.path, edgeRef(edge)];
-          if (!selectedEdges.has(versionKey(edgeRef(edge)))) {
-            selectedEdges.set(versionKey(edgeRef(edge)), structuredClone(edge));
-          }
-
           const record = this.#records.get(nextKey);
           const score = record ? lexicalScore(query.text, record) : 0;
           if (!addNode(nextNode, score, current.seed, nextPath)) continue;
+
+          if (!selectedEdges.has(versionKey(edgeRef(edge)))) {
+            selectedEdges.set(versionKey(edgeRef(edge)), structuredClone(edge));
+          }
 
           if (!seen.has(nextKey) && query.mode === "multi_hop") {
             seen.add(nextKey);
