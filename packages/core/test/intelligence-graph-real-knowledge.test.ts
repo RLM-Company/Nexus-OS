@@ -20,8 +20,8 @@ describe("evidence-grounded Cosmora knowledge graph", () => {
   it("compiles a connected repository graph with real evidence locations", () => {
     const compiled = compile();
 
-    expect(compiled.nodes).toHaveLength(70);
-    expect(compiled.edges).toHaveLength(94);
+    expect(compiled.nodes).toHaveLength(97);
+    expect(compiled.edges).toHaveLength(140);
 
     const degree = new Map<string, number>();
     for (const edge of compiled.edges) {
@@ -169,6 +169,91 @@ describe("evidence-grounded Cosmora knowledge graph", () => {
       ])
     );
     expect(packet.edges.some((edge) => edge.type === "DEPENDS_ON")).toBe(true);
+  });
+
+  it("models runtime context as bounded data rather than a prompt-authority channel", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "runtime context private chat persistence forbidden untrusted instructions data only",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: { max_depth: 2, max_nodes: 12, max_edges: 16, max_fan_out: 8 }
+    });
+
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "claim-context-private-chat-forbidden",
+        "claim-context-untrusted-data-only",
+        "entity-runtime-context"
+      ])
+    );
+    expect(packet.edges.some((edge) => edge.type === "CONSTRAINS")).toBe(true);
+  });
+
+  it("keeps model fallback bounded before streamed output begins", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "model fallback only before first text delta never mix providers after output",
+      mode: "local",
+      verified_only: true,
+      budget: { max_nodes: 8, max_edges: 8, max_fan_out: 8 }
+    });
+
+    expect(packet.nodes.map(({ node }) => node.node_id)).toEqual(
+      expect.arrayContaining([
+        "decision-gateway-fallback-boundary",
+        "entity-model-gateway",
+        "doc-model-gateway"
+      ])
+    );
+  });
+
+  it("connects step-up proof to its identity-session boundary", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "step up proof purpose emergency stop usage expansion",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: { max_depth: 2, max_nodes: 10, max_edges: 12, max_fan_out: 8 }
+    });
+
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "claim-step-up-purpose-bound",
+        "entity-step-up-proof",
+        "entity-identity-session"
+      ])
+    );
+    expect(packet.edges.some((edge) => edge.type === "BOUND_TO")).toBe(true);
+  });
+
+  it("represents unknown model cost explicitly instead of fabricating a price", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "project usage explicitly tracks unknown committed reserved cost attempts",
+      mode: "local",
+      verified_only: true,
+      budget: { max_nodes: 8, max_edges: 8, max_fan_out: 8 }
+    });
+
+    expect(packet.nodes.map(({ node }) => node.node_id)).toEqual(
+      expect.arrayContaining([
+        "claim-usage-unknown-cost",
+        "entity-project-usage",
+        "doc-usage-contract"
+      ])
+    );
+  });
+
+  it("does not use generic RELATES_TO edges in the curated real-knowledge graph", () => {
+    const compiled = compile();
+    expect(compiled.edges.some((edge) => edge.type === "RELATES_TO")).toBe(false);
   });
 
   it("connects architecture decisions to the commits that implemented them", () => {
