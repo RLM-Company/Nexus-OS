@@ -1,6 +1,6 @@
 import type { AuthorizedIntelligenceGraphFixture } from "../../src/index.js";
 
-const recordedAt = "2026-09-29T20:20:00.000Z";
+const recordedAt = "2026-09-29T20:00:00.000Z";
 
 const verified = {
   verification_status: "verified" as const,
