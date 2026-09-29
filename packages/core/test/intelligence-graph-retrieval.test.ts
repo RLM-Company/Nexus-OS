@@ -206,7 +206,7 @@ const fixture = () => {
     },
     {
       node: { id: artifact.node_id, version: artifact.node_version },
-      text: "durable manager runtime implementation artifact",
+      text: "manager runtime implementation artifact implementation artifact",
       excerpt: "The Manager runtime artifact implements the selected storage decision.",
       estimated_tokens: 22
     },
@@ -235,7 +235,7 @@ describe("Intelligence Graph retrieval", () => {
     const packet = createIndex().query({
       owner_id: "owner-1",
       project_id: "project-1",
-      text: "durable manager runtime",
+      text: "manager runtime implementation artifact",
       mode: "baseline",
       verified_only: true
     });
@@ -250,7 +250,7 @@ describe("Intelligence Graph retrieval", () => {
     const packet = createIndex().query({
       owner_id: "owner-1",
       project_id: "project-1",
-      text: "durable manager runtime",
+      text: "manager runtime implementation artifact",
       mode: "local",
       verified_only: true,
       budget: { max_depth: 4 }
@@ -266,7 +266,7 @@ describe("Intelligence Graph retrieval", () => {
     const packet = createIndex().query({
       owner_id: "owner-1",
       project_id: "project-1",
-      text: "durable manager runtime",
+      text: "manager runtime implementation artifact",
       mode: "multi_hop",
       verified_only: true,
       budget: { max_depth: 3, max_nodes: 8, max_edges: 8, max_fan_out: 4 }
@@ -378,7 +378,7 @@ describe("Intelligence Graph retrieval", () => {
       createIndex().query({
         owner_id: "owner-1",
         project_id: "project-2",
-        text: "durable manager runtime",
+        text: "manager runtime implementation artifact",
         mode: "baseline"
       })
     ).toThrow("query scope does not match");
@@ -411,7 +411,7 @@ describe("Intelligence Graph retrieval", () => {
       index.query({
         owner_id: "owner-1",
         project_id: "project-1",
-        text: "durable manager runtime",
+        text: "manager runtime implementation artifact",
         mode: "multi_hop",
         budget: { max_depth: 7 }
       })
@@ -420,7 +420,7 @@ describe("Intelligence Graph retrieval", () => {
     const packet = index.query({
       owner_id: "owner-1",
       project_id: "project-1",
-      text: "durable manager runtime",
+      text: "manager runtime implementation artifact",
       mode: "multi_hop",
       budget: { max_context_tokens: 22, max_depth: 3 }
     });
