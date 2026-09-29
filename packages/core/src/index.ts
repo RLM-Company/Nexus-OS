@@ -4,6 +4,7 @@ export * from "./manager-runtime-task-readiness.js";
 export * from "./intelligence-graph-retrieval.js";
 export * from "./intelligence-graph-fixture.js";
 export * from "./intelligence-graph-evaluation.js";
+export * from "./intelligence-graph-model-evaluation.js";
 export * from "./manager.js";
 export * from "./chat.js";
 export * from "./demo-manager-plan.js";
