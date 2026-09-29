@@ -8,6 +8,7 @@ import {
   cosmoraRepositoryStructureGraphFixture,
   repositoryStructureFileId
 } from "./cosmora-repository-structure-graph.js";
+import { cosmoraWorkExperienceGraph } from "./cosmora-work-experience-graph.js";
 
 const recordedAt = "2026-09-29T20:00:00.000Z";
 
@@ -273,10 +274,16 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
   const structural = compileAuthorizedIntelligenceGraphFixture(
     cosmoraRepositoryStructureGraphFixture()
   );
+  const workExperience = cosmoraWorkExperienceGraph();
 
-  const nodes = [...semantic.nodes, ...structural.nodes];
-  const records = [...semantic.records, ...structural.records];
-  const edges = [...semantic.edges, ...structural.edges, ...bridgeRows.map(bridgeEdge)];
+  const nodes = [...semantic.nodes, ...structural.nodes, ...workExperience.nodes];
+  const records = [...semantic.records, ...structural.records, ...workExperience.records];
+  const edges = [
+    ...semantic.edges,
+    ...structural.edges,
+    ...bridgeRows.map(bridgeEdge),
+    ...workExperience.edges
+  ];
 
   const nodeKeys = nodes.map((node) => versionKey(node.node_id, node.node_version));
   if (new Set(nodeKeys).size !== nodeKeys.length) {
