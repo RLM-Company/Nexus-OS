@@ -117,6 +117,25 @@ historical facts require explicit time-aware retrieval.
 
 - https://arxiv.org/abs/2501.13956
 
+## Repository-grounded fixture
+
+Package C now also includes a non-secret graph compiled from the current Cosmora repository evidence
+snapshot. It is not synthetic domain prose: its nodes represent current project architecture facts
+and one explicit documentation/runtime contradiction.
+
+The fixture currently links:
+
+- Cosmora OS project → owner-control goal;
+- owner-control goal → Model Registry routing decision;
+- Model Registry decision → Router hard-filter evidence;
+- project-memory isolation → Project Context preview boundary;
+- project-memory isolation → no-automatic-training decision;
+- current durable Manager runtime evidence ↔ disputed older README boundary via `CONTRADICTS`.
+
+Focused queries verify that retrieval can surface the Router evidence path, the memory/context/training
+boundaries, and the unresolved Manager documentation conflict instead of silently selecting whichever
+statement is more convenient.
+
 ## Deliberately not implemented
 
 Package C does not add:
