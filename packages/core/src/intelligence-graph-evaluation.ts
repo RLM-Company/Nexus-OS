@@ -85,8 +85,8 @@ export const evaluateIntelligenceGraphRetrieval = (input: {
         text: evaluationCase.query,
         mode,
         as_of: mode === "temporal" ? evaluationCase.as_of : null,
-        verified_only: evaluationCase.verified_only,
-        budget: evaluationCase.budget
+        verified_only: evaluationCase.verified_only ?? false,
+        budget: evaluationCase.budget ?? {}
       });
 
       const returned = new Set(
