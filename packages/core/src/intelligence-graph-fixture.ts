@@ -1,13 +1,13 @@
 import {
   validateIntelligenceGraphSnapshot,
   type IntelligenceGraphConfidenceMethod,
-  IntelligenceGraphEdge,
-  IntelligenceGraphNode,
-  IntelligenceGraphNodeKind,
-  IntelligenceGraphProvenanceKind,
-  IntelligenceGraphVerificationStatus,
-  IntelligenceGraphVersionRef,
-  RuntimeDataClass
+  type IntelligenceGraphEdge,
+  type IntelligenceGraphNode,
+  type IntelligenceGraphNodeKind,
+  type IntelligenceGraphProvenanceKind,
+  type IntelligenceGraphVerificationStatus,
+  type IntelligenceGraphVersionRef,
+  type RuntimeDataClass
 } from "@cosmora/contracts";
 import type { IntelligenceGraphSearchRecord } from "./intelligence-graph-retrieval.js";
 
