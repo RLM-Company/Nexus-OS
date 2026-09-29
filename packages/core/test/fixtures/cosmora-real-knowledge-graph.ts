@@ -1058,163 +1058,1323 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
     }
   ],
   relations: [
-    { id: "r-project-adr-routing", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-adr-model-routing", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
-    { id: "r-project-adr-agent", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-adr-agent-studio", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
-    { id: "r-project-manager-work", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-manager-work-contract", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
-    { id: "r-project-runtime", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-manager-runtime-contract", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
-    { id: "r-project-policy", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-policy-contract", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
-    { id: "r-project-context", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-project-context-boundary", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
+    {
+      id: "r-project-adr-routing",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-adr-model-routing", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-project-adr-agent",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-adr-agent-studio", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-project-manager-work",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-manager-work-contract", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-project-runtime",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-manager-runtime-contract", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-project-policy",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-policy-contract", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-project-context",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-project-context-boundary", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-adr-registry", type: "DECLARES", from: { id: "doc-adr-model-routing", version: 1 }, to: { id: "decision-registry-authority", version: 1 }, location: "ADR-003:Decision", created_at: recordedAt, ...derived },
-    { id: "r-adr-hardfilter", type: "DECLARES", from: { id: "doc-adr-model-routing", version: 1 }, to: { id: "decision-hard-filter-before-score", version: 1 }, location: "ADR-003:Decision", created_at: recordedAt, ...derived },
-    { id: "r-adr-failclosed", type: "DECLARES", from: { id: "doc-adr-model-routing", version: 1 }, to: { id: "decision-routing-fail-closed", version: 1 }, location: "ADR-003:Decision", created_at: recordedAt, ...derived },
-    { id: "r-adr-freshness", type: "DECLARES", from: { id: "doc-adr-model-routing", version: 1 }, to: { id: "decision-route-evidence-freshness", version: 1 }, location: "ADR-003:Security", created_at: recordedAt, ...derived },
-    { id: "r-adr-trace", type: "DECLARES", from: { id: "doc-adr-model-routing", version: 1 }, to: { id: "decision-route-trace", version: 1 }, location: "ADR-003:Security", created_at: recordedAt, ...derived },
-    { id: "r-registry-authority", type: "GOVERNS", from: { id: "decision-registry-authority", version: 1 }, to: { id: "entity-model-registry", version: 1 }, location: "ADR-003:Decision", created_at: recordedAt, ...derived },
-    { id: "r-registry-router", type: "SUPPLIES_METADATA_TO", from: { id: "entity-model-registry", version: 1 }, to: { id: "entity-router", version: 1 }, location: "ADR-003:Decision", created_at: recordedAt, ...derived },
-    { id: "r-hardfilter-router", type: "CONSTRAINS", from: { id: "decision-hard-filter-before-score", version: 1 }, to: { id: "entity-router", version: 1 }, location: "ADR-003:Decision", created_at: recordedAt, ...derived },
-    { id: "r-failclosed-router", type: "CONSTRAINS", from: { id: "decision-routing-fail-closed", version: 1 }, to: { id: "entity-router", version: 1 }, location: "ADR-003:Decision", created_at: recordedAt, ...derived },
-    { id: "r-freshness-registry", type: "CONSTRAINS", from: { id: "decision-route-evidence-freshness", version: 1 }, to: { id: "entity-model-registry", version: 1 }, location: "ADR-003:Security", created_at: recordedAt, ...derived },
-    { id: "r-trace-router", type: "REQUIRES_TRACE_FOR", from: { id: "decision-route-trace", version: 1 }, to: { id: "entity-router", version: 1 }, location: "ADR-003:Security", created_at: recordedAt, ...derived },
+    {
+      id: "r-adr-registry",
+      type: "DECLARES",
+      from: { id: "doc-adr-model-routing", version: 1 },
+      to: { id: "decision-registry-authority", version: 1 },
+      location: "ADR-003:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-adr-hardfilter",
+      type: "DECLARES",
+      from: { id: "doc-adr-model-routing", version: 1 },
+      to: { id: "decision-hard-filter-before-score", version: 1 },
+      location: "ADR-003:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-adr-failclosed",
+      type: "DECLARES",
+      from: { id: "doc-adr-model-routing", version: 1 },
+      to: { id: "decision-routing-fail-closed", version: 1 },
+      location: "ADR-003:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-adr-freshness",
+      type: "DECLARES",
+      from: { id: "doc-adr-model-routing", version: 1 },
+      to: { id: "decision-route-evidence-freshness", version: 1 },
+      location: "ADR-003:Security",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-adr-trace",
+      type: "DECLARES",
+      from: { id: "doc-adr-model-routing", version: 1 },
+      to: { id: "decision-route-trace", version: 1 },
+      location: "ADR-003:Security",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-registry-authority",
+      type: "GOVERNS",
+      from: { id: "decision-registry-authority", version: 1 },
+      to: { id: "entity-model-registry", version: 1 },
+      location: "ADR-003:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-registry-router",
+      type: "SUPPLIES_METADATA_TO",
+      from: { id: "entity-model-registry", version: 1 },
+      to: { id: "entity-router", version: 1 },
+      location: "ADR-003:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-hardfilter-router",
+      type: "CONSTRAINS",
+      from: { id: "decision-hard-filter-before-score", version: 1 },
+      to: { id: "entity-router", version: 1 },
+      location: "ADR-003:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-failclosed-router",
+      type: "CONSTRAINS",
+      from: { id: "decision-routing-fail-closed", version: 1 },
+      to: { id: "entity-router", version: 1 },
+      location: "ADR-003:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-freshness-registry",
+      type: "CONSTRAINS",
+      from: { id: "decision-route-evidence-freshness", version: 1 },
+      to: { id: "entity-model-registry", version: 1 },
+      location: "ADR-003:Security",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-trace-router",
+      type: "REQUIRES_TRACE_FOR",
+      from: { id: "decision-route-trace", version: 1 },
+      to: { id: "entity-router", version: 1 },
+      location: "ADR-003:Security",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-agent-six-parts", type: "DECLARES", from: { id: "doc-adr-agent-studio", version: 1 }, to: { id: "decision-agent-six-parts", version: 1 }, location: "ADR-004:Agent composition", created_at: recordedAt, ...derived },
-    { id: "r-agent-precedence", type: "DECLARES", from: { id: "doc-adr-agent-studio", version: 1 }, to: { id: "decision-instruction-precedence", version: 1 }, location: "ADR-004:Instruction precedence", created_at: recordedAt, ...derived },
-    { id: "r-agent-delegation", type: "DECLARES", from: { id: "doc-adr-agent-studio", version: 1 }, to: { id: "decision-delegation-no-expansion", version: 1 }, location: "ADR-004:Authority", created_at: recordedAt, ...derived },
-    { id: "r-sixparts-instance", type: "DEFINES", from: { id: "decision-agent-six-parts", version: 1 }, to: { id: "entity-agent-instance", version: 1 }, location: "ADR-004:Agent composition", created_at: recordedAt, ...derived },
-    { id: "r-precedence-instance", type: "CONSTRAINS", from: { id: "decision-instruction-precedence", version: 1 }, to: { id: "entity-agent-instance", version: 1 }, location: "ADR-004:Instruction precedence", created_at: recordedAt, ...derived },
-    { id: "r-delegation-instance", type: "CONSTRAINS", from: { id: "decision-delegation-no-expansion", version: 1 }, to: { id: "entity-agent-instance", version: 1 }, location: "ADR-004:Authority", created_at: recordedAt, ...derived },
+    {
+      id: "r-agent-six-parts",
+      type: "DECLARES",
+      from: { id: "doc-adr-agent-studio", version: 1 },
+      to: { id: "decision-agent-six-parts", version: 1 },
+      location: "ADR-004:Agent composition",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-agent-precedence",
+      type: "DECLARES",
+      from: { id: "doc-adr-agent-studio", version: 1 },
+      to: { id: "decision-instruction-precedence", version: 1 },
+      location: "ADR-004:Instruction precedence",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-agent-delegation",
+      type: "DECLARES",
+      from: { id: "doc-adr-agent-studio", version: 1 },
+      to: { id: "decision-delegation-no-expansion", version: 1 },
+      location: "ADR-004:Authority",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-sixparts-instance",
+      type: "DEFINES",
+      from: { id: "decision-agent-six-parts", version: 1 },
+      to: { id: "entity-agent-instance", version: 1 },
+      location: "ADR-004:Agent composition",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-precedence-instance",
+      type: "CONSTRAINS",
+      from: { id: "decision-instruction-precedence", version: 1 },
+      to: { id: "entity-agent-instance", version: 1 },
+      location: "ADR-004:Instruction precedence",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-delegation-instance",
+      type: "CONSTRAINS",
+      from: { id: "decision-delegation-no-expansion", version: 1 },
+      to: { id: "entity-agent-instance", version: 1 },
+      location: "ADR-004:Authority",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-work-doc-stage", type: "DECLARES", from: { id: "doc-manager-work-contract", version: 1 }, to: { id: "claim-manager-stage-machine", version: 1 }, location: "manager-work.ts", created_at: recordedAt, ...derived },
-    { id: "r-stage-work", type: "DESCRIBES", from: { id: "claim-manager-stage-machine", version: 1 }, to: { id: "entity-manager-work", version: 1 }, location: "manager-work.ts", created_at: recordedAt, ...derived },
-    { id: "r-runtime-implements-work", type: "IMPLEMENTS", from: { id: "artifact-manager-work-runtime", version: 1 }, to: { id: "entity-manager-work", version: 1 }, location: "commit:62bc523", created_at: recordedAt, ...derived },
-    { id: "r-publish-runtime", type: "CONSTRAINS", from: { id: "claim-manager-publish-workspace-write", version: 1 }, to: { id: "artifact-manager-work-runtime", version: 1 }, location: "manager-work-coordinator.ts", created_at: recordedAt, ...derived },
-    { id: "r-publish-policy", type: "REQUIRES", from: { id: "claim-manager-publish-workspace-write", version: 1 }, to: { id: "entity-policy-engine", version: 1 }, location: "manager-work-coordinator.ts", created_at: recordedAt, ...derived },
-    { id: "r-nofallback-runtime", type: "CONSTRAINS", from: { id: "claim-manager-no-fallback", version: 1 }, to: { id: "artifact-manager-work-runtime", version: 1 }, location: "manager-work-coordinator.ts", created_at: recordedAt, ...derived },
-    { id: "r-budget-runtime", type: "CONSTRAINS", from: { id: "claim-manager-reserves-budget", version: 1 }, to: { id: "artifact-manager-work-runtime", version: 1 }, location: "manager-work-coordinator.ts", created_at: recordedAt, ...derived },
-    { id: "r-stop-runtime", type: "CONSTRAINS", from: { id: "claim-manager-emergency-stop", version: 1 }, to: { id: "artifact-manager-work-runtime", version: 1 }, location: "manager-work-coordinator.ts", created_at: recordedAt, ...derived },
-    { id: "r-owner-runtime", type: "CONTROLS", from: { id: "claim-manager-owner-control", version: 1 }, to: { id: "artifact-manager-work-runtime", version: 1 }, location: "manager-work-coordinator.ts", created_at: recordedAt, ...derived },
-    { id: "r-approval-runtime", type: "GATES", from: { id: "claim-manager-approval-autonomy", version: 1 }, to: { id: "artifact-manager-work-runtime", version: 1 }, location: "manager-work-coordinator.ts", created_at: recordedAt, ...derived },
+    {
+      id: "r-work-doc-stage",
+      type: "DECLARES",
+      from: { id: "doc-manager-work-contract", version: 1 },
+      to: { id: "claim-manager-stage-machine", version: 1 },
+      location: "manager-work.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-stage-work",
+      type: "DESCRIBES",
+      from: { id: "claim-manager-stage-machine", version: 1 },
+      to: { id: "entity-manager-work", version: 1 },
+      location: "manager-work.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-runtime-implements-work",
+      type: "IMPLEMENTS",
+      from: { id: "artifact-manager-work-runtime", version: 1 },
+      to: { id: "entity-manager-work", version: 1 },
+      location: "commit:62bc523",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-publish-runtime",
+      type: "CONSTRAINS",
+      from: { id: "claim-manager-publish-workspace-write", version: 1 },
+      to: { id: "artifact-manager-work-runtime", version: 1 },
+      location: "manager-work-coordinator.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-publish-policy",
+      type: "REQUIRES",
+      from: { id: "claim-manager-publish-workspace-write", version: 1 },
+      to: { id: "entity-policy-engine", version: 1 },
+      location: "manager-work-coordinator.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-nofallback-runtime",
+      type: "CONSTRAINS",
+      from: { id: "claim-manager-no-fallback", version: 1 },
+      to: { id: "artifact-manager-work-runtime", version: 1 },
+      location: "manager-work-coordinator.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-budget-runtime",
+      type: "CONSTRAINS",
+      from: { id: "claim-manager-reserves-budget", version: 1 },
+      to: { id: "artifact-manager-work-runtime", version: 1 },
+      location: "manager-work-coordinator.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-stop-runtime",
+      type: "CONSTRAINS",
+      from: { id: "claim-manager-emergency-stop", version: 1 },
+      to: { id: "artifact-manager-work-runtime", version: 1 },
+      location: "manager-work-coordinator.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-owner-runtime",
+      type: "CONTROLS",
+      from: { id: "claim-manager-owner-control", version: 1 },
+      to: { id: "artifact-manager-work-runtime", version: 1 },
+      location: "manager-work-coordinator.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-approval-runtime",
+      type: "GATES",
+      from: { id: "claim-manager-approval-autonomy", version: 1 },
+      to: { id: "artifact-manager-work-runtime", version: 1 },
+      location: "manager-work-coordinator.ts",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-runtime-doc-artifact", type: "DECLARES", from: { id: "doc-manager-runtime-contract", version: 1 }, to: { id: "claim-runtime-artifacts-data-only", version: 1 }, location: "manager-runtime.ts", created_at: recordedAt, ...derived },
-    { id: "r-runtime-doc-bound", type: "DECLARES", from: { id: "doc-manager-runtime-contract", version: 1 }, to: { id: "claim-runtime-project-bound", version: 1 }, location: "manager-runtime.ts", created_at: recordedAt, ...derived },
-    { id: "r-runtime-doc-manager-role", type: "DECLARES", from: { id: "doc-manager-runtime-contract", version: 1 }, to: { id: "claim-manager-role-authority", version: 1 }, location: "manager-runtime.ts", created_at: recordedAt, ...derived },
-    { id: "r-runtime-doc-critic-role", type: "DECLARES", from: { id: "doc-manager-runtime-contract", version: 1 }, to: { id: "claim-critic-role-authority", version: 1 }, location: "manager-runtime.ts", created_at: recordedAt, ...derived },
-    { id: "r-dataonly-artifact", type: "CONSTRAINS", from: { id: "claim-runtime-artifacts-data-only", version: 1 }, to: { id: "entity-runtime-artifact", version: 1 }, location: "RuntimeArtifactSchema", created_at: recordedAt, ...derived },
-    { id: "r-bound-taskgraph", type: "CONSTRAINS", from: { id: "claim-runtime-project-bound", version: 1 }, to: { id: "entity-runtime-task-graph", version: 1 }, location: "MANAGER_RUNTIME_ROLE_CONTRACTS", created_at: recordedAt, ...derived },
-    { id: "r-manager-role", type: "DESCRIBES", from: { id: "claim-manager-role-authority", version: 1 }, to: { id: "entity-manager-role", version: 1 }, location: "manager role contract", created_at: recordedAt, ...derived },
-    { id: "r-critic-role", type: "DESCRIBES", from: { id: "claim-critic-role-authority", version: 1 }, to: { id: "entity-critic-role", version: 1 }, location: "critic role contract", created_at: recordedAt, ...derived },
-    { id: "r-manager-coordinates", type: "COORDINATES", from: { id: "entity-manager-role", version: 1 }, to: { id: "entity-runtime-task-graph", version: 1 }, location: "manager runtime role contract", created_at: recordedAt, ...derived },
-    { id: "r-critic-reviews", type: "REVIEWS", from: { id: "entity-critic-role", version: 1 }, to: { id: "entity-runtime-artifact", version: 1 }, location: "critic accepts artifact kinds", created_at: recordedAt, ...derived },
+    {
+      id: "r-runtime-doc-artifact",
+      type: "DECLARES",
+      from: { id: "doc-manager-runtime-contract", version: 1 },
+      to: { id: "claim-runtime-artifacts-data-only", version: 1 },
+      location: "manager-runtime.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-runtime-doc-bound",
+      type: "DECLARES",
+      from: { id: "doc-manager-runtime-contract", version: 1 },
+      to: { id: "claim-runtime-project-bound", version: 1 },
+      location: "manager-runtime.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-runtime-doc-manager-role",
+      type: "DECLARES",
+      from: { id: "doc-manager-runtime-contract", version: 1 },
+      to: { id: "claim-manager-role-authority", version: 1 },
+      location: "manager-runtime.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-runtime-doc-critic-role",
+      type: "DECLARES",
+      from: { id: "doc-manager-runtime-contract", version: 1 },
+      to: { id: "claim-critic-role-authority", version: 1 },
+      location: "manager-runtime.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-dataonly-artifact",
+      type: "CONSTRAINS",
+      from: { id: "claim-runtime-artifacts-data-only", version: 1 },
+      to: { id: "entity-runtime-artifact", version: 1 },
+      location: "RuntimeArtifactSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-bound-taskgraph",
+      type: "CONSTRAINS",
+      from: { id: "claim-runtime-project-bound", version: 1 },
+      to: { id: "entity-runtime-task-graph", version: 1 },
+      location: "MANAGER_RUNTIME_ROLE_CONTRACTS",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-manager-role",
+      type: "DESCRIBES",
+      from: { id: "claim-manager-role-authority", version: 1 },
+      to: { id: "entity-manager-role", version: 1 },
+      location: "manager role contract",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-critic-role",
+      type: "DESCRIBES",
+      from: { id: "claim-critic-role-authority", version: 1 },
+      to: { id: "entity-critic-role", version: 1 },
+      location: "critic role contract",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-manager-coordinates",
+      type: "COORDINATES",
+      from: { id: "entity-manager-role", version: 1 },
+      to: { id: "entity-runtime-task-graph", version: 1 },
+      location: "manager runtime role contract",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-critic-reviews",
+      type: "REVIEWS",
+      from: { id: "entity-critic-role", version: 1 },
+      to: { id: "entity-runtime-artifact", version: 1 },
+      location: "critic accepts artifact kinds",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-prov-doc-claim", type: "DECLARES", from: { id: "doc-runtime-provenance", version: 1 }, to: { id: "claim-runtime-provenance-acyclic", version: 1 }, location: "artifact provenance validator", created_at: recordedAt, ...derived },
-    { id: "r-prov-artifact", type: "CONSTRAINS", from: { id: "claim-runtime-provenance-acyclic", version: 1 }, to: { id: "entity-runtime-artifact", version: 1 }, location: "artifact provenance validator", created_at: recordedAt, ...derived },
-    { id: "r-check-doc-claim", type: "DECLARES", from: { id: "doc-runtime-checkpoint", version: 1 }, to: { id: "claim-checkpoint-bound-graph", version: 1 }, location: "checkpoint validator", created_at: recordedAt, ...derived },
-    { id: "r-check-entity", type: "CONSTRAINS", from: { id: "claim-checkpoint-bound-graph", version: 1 }, to: { id: "entity-runtime-checkpoint", version: 1 }, location: "checkpoint validator", created_at: recordedAt, ...derived },
-    { id: "r-check-graph", type: "BOUND_TO", from: { id: "entity-runtime-checkpoint", version: 1 }, to: { id: "entity-runtime-task-graph", version: 1 }, location: "checkpoint.graph_id", created_at: recordedAt, ...derived },
-    { id: "r-conflict-doc-claim", type: "DECLARES", from: { id: "doc-runtime-conflict", version: 1 }, to: { id: "claim-conflict-needs-resolution-artifact", version: 1 }, location: "conflict validator", created_at: recordedAt, ...derived },
-    { id: "r-conflict-entity", type: "CONSTRAINS", from: { id: "claim-conflict-needs-resolution-artifact", version: 1 }, to: { id: "entity-agent-conflict", version: 1 }, location: "conflict validator", created_at: recordedAt, ...derived },
-    { id: "r-manager-arbitrates", type: "ARBITRATES", from: { id: "entity-manager-role", version: 1 }, to: { id: "entity-agent-conflict", version: 1 }, location: "manager role contract", created_at: recordedAt, ...derived },
+    {
+      id: "r-prov-doc-claim",
+      type: "DECLARES",
+      from: { id: "doc-runtime-provenance", version: 1 },
+      to: { id: "claim-runtime-provenance-acyclic", version: 1 },
+      location: "artifact provenance validator",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-prov-artifact",
+      type: "CONSTRAINS",
+      from: { id: "claim-runtime-provenance-acyclic", version: 1 },
+      to: { id: "entity-runtime-artifact", version: 1 },
+      location: "artifact provenance validator",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-check-doc-claim",
+      type: "DECLARES",
+      from: { id: "doc-runtime-checkpoint", version: 1 },
+      to: { id: "claim-checkpoint-bound-graph", version: 1 },
+      location: "checkpoint validator",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-check-entity",
+      type: "CONSTRAINS",
+      from: { id: "claim-checkpoint-bound-graph", version: 1 },
+      to: { id: "entity-runtime-checkpoint", version: 1 },
+      location: "checkpoint validator",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-check-graph",
+      type: "BOUND_TO",
+      from: { id: "entity-runtime-checkpoint", version: 1 },
+      to: { id: "entity-runtime-task-graph", version: 1 },
+      location: "checkpoint.graph_id",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-conflict-doc-claim",
+      type: "DECLARES",
+      from: { id: "doc-runtime-conflict", version: 1 },
+      to: { id: "claim-conflict-needs-resolution-artifact", version: 1 },
+      location: "conflict validator",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-conflict-entity",
+      type: "CONSTRAINS",
+      from: { id: "claim-conflict-needs-resolution-artifact", version: 1 },
+      to: { id: "entity-agent-conflict", version: 1 },
+      location: "conflict validator",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-manager-arbitrates",
+      type: "ARBITRATES",
+      from: { id: "entity-manager-role", version: 1 },
+      to: { id: "entity-agent-conflict", version: 1 },
+      location: "manager role contract",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-policy-doc-verdict", type: "DECLARES", from: { id: "doc-policy-contract", version: 1 }, to: { id: "claim-policy-verdict-modes", version: 1 }, location: "policy.ts:verdictForModes", created_at: recordedAt, ...derived },
-    { id: "r-policy-doc-profile", type: "DECLARES", from: { id: "doc-policy-contract", version: 1 }, to: { id: "claim-policy-capability-profile-project", version: 1 }, location: "policy.ts:CapabilityProfileSchema", created_at: recordedAt, ...derived },
-    { id: "r-policy-verdict-engine", type: "DESCRIBES", from: { id: "claim-policy-verdict-modes", version: 1 }, to: { id: "entity-policy-engine", version: 1 }, location: "policy.ts", created_at: recordedAt, ...derived },
-    { id: "r-profile-engine", type: "CONSTRAINS", from: { id: "claim-policy-capability-profile-project", version: 1 }, to: { id: "entity-policy-engine", version: 1 }, location: "policy.ts", created_at: recordedAt, ...derived },
-    { id: "r-delegation-policy", type: "ENFORCED_BY", from: { id: "decision-delegation-no-expansion", version: 1 }, to: { id: "entity-policy-engine", version: 1 }, location: "ADR-004 delegation validator boundary", created_at: recordedAt, ...derived },
+    {
+      id: "r-policy-doc-verdict",
+      type: "DECLARES",
+      from: { id: "doc-policy-contract", version: 1 },
+      to: { id: "claim-policy-verdict-modes", version: 1 },
+      location: "policy.ts:verdictForModes",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-policy-doc-profile",
+      type: "DECLARES",
+      from: { id: "doc-policy-contract", version: 1 },
+      to: { id: "claim-policy-capability-profile-project", version: 1 },
+      location: "policy.ts:CapabilityProfileSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-policy-verdict-engine",
+      type: "DESCRIBES",
+      from: { id: "claim-policy-verdict-modes", version: 1 },
+      to: { id: "entity-policy-engine", version: 1 },
+      location: "policy.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-profile-engine",
+      type: "CONSTRAINS",
+      from: { id: "claim-policy-capability-profile-project", version: 1 },
+      to: { id: "entity-policy-engine", version: 1 },
+      location: "policy.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-delegation-policy",
+      type: "ENFORCED_BY",
+      from: { id: "decision-delegation-no-expansion", version: 1 },
+      to: { id: "entity-policy-engine", version: 1 },
+      location: "ADR-004 delegation validator boundary",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-context-doc-auth", type: "DECLARES", from: { id: "doc-project-context-boundary", version: 1 }, to: { id: "claim-context-not-authoritative", version: 1 }, location: "Project Context safe boundary", created_at: recordedAt, ...derived },
-    { id: "r-context-doc-secret", type: "DECLARES", from: { id: "doc-project-context-boundary", version: 1 }, to: { id: "claim-context-secret-redaction", version: 1 }, location: "Project Context safe boundary", created_at: recordedAt, ...derived },
-    { id: "r-context-doc-preview", type: "DECLARES", from: { id: "doc-project-context-boundary", version: 1 }, to: { id: "claim-context-two-step-mutation", version: 1 }, location: "Project Context preview contract", created_at: recordedAt, ...derived },
-    { id: "r-context-notauth-panel", type: "CONSTRAINS", from: { id: "claim-context-not-authoritative", version: 1 }, to: { id: "entity-project-context-panel", version: 1 }, location: "Project Context safe boundary", created_at: recordedAt, ...derived },
-    { id: "r-context-secret-panel", type: "CONSTRAINS", from: { id: "claim-context-secret-redaction", version: 1 }, to: { id: "entity-project-context-panel", version: 1 }, location: "Project Context safe boundary", created_at: recordedAt, ...derived },
-    { id: "r-context-preview-panel", type: "GATES_MUTATION_OF", from: { id: "claim-context-two-step-mutation", version: 1 }, to: { id: "entity-project-context-panel", version: 1 }, location: "Project Context preview contract", created_at: recordedAt, ...derived },
+    {
+      id: "r-context-doc-auth",
+      type: "DECLARES",
+      from: { id: "doc-project-context-boundary", version: 1 },
+      to: { id: "claim-context-not-authoritative", version: 1 },
+      location: "Project Context safe boundary",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-context-doc-secret",
+      type: "DECLARES",
+      from: { id: "doc-project-context-boundary", version: 1 },
+      to: { id: "claim-context-secret-redaction", version: 1 },
+      location: "Project Context safe boundary",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-context-doc-preview",
+      type: "DECLARES",
+      from: { id: "doc-project-context-boundary", version: 1 },
+      to: { id: "claim-context-two-step-mutation", version: 1 },
+      location: "Project Context preview contract",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-context-notauth-panel",
+      type: "CONSTRAINS",
+      from: { id: "claim-context-not-authoritative", version: 1 },
+      to: { id: "entity-project-context-panel", version: 1 },
+      location: "Project Context safe boundary",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-context-secret-panel",
+      type: "CONSTRAINS",
+      from: { id: "claim-context-secret-redaction", version: 1 },
+      to: { id: "entity-project-context-panel", version: 1 },
+      location: "Project Context safe boundary",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-context-preview-panel",
+      type: "GATES_MUTATION_OF",
+      from: { id: "claim-context-two-step-mutation", version: 1 },
+      to: { id: "entity-project-context-panel", version: 1 },
+      location: "Project Context preview contract",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-auth-doc-provider", type: "DECLARES", from: { id: "doc-auth-contract", version: 1 }, to: { id: "claim-auth-google-telegram", version: 1 }, location: "auth.ts", created_at: recordedAt, ...derived },
-    { id: "r-auth-doc-pkce", type: "DECLARES", from: { id: "doc-auth-contract", version: 1 }, to: { id: "claim-auth-pkce-s256", version: 1 }, location: "auth.ts", created_at: recordedAt, ...derived },
-    { id: "r-auth-doc-session", type: "DECLARES", from: { id: "doc-auth-contract", version: 1 }, to: { id: "claim-auth-session-expiry", version: 1 }, location: "auth.ts", created_at: recordedAt, ...derived },
-    { id: "r-auth-provider-flow", type: "DESCRIBES", from: { id: "claim-auth-google-telegram", version: 1 }, to: { id: "entity-auth-flow", version: 1 }, location: "auth.ts", created_at: recordedAt, ...derived },
-    { id: "r-auth-pkce-flow", type: "CONSTRAINS", from: { id: "claim-auth-pkce-s256", version: 1 }, to: { id: "entity-auth-flow", version: 1 }, location: "auth.ts", created_at: recordedAt, ...derived },
-    { id: "r-auth-session-flow", type: "CONSTRAINS", from: { id: "claim-auth-session-expiry", version: 1 }, to: { id: "entity-auth-flow", version: 1 }, location: "auth.ts", created_at: recordedAt, ...derived },
+    {
+      id: "r-auth-doc-provider",
+      type: "DECLARES",
+      from: { id: "doc-auth-contract", version: 1 },
+      to: { id: "claim-auth-google-telegram", version: 1 },
+      location: "auth.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-auth-doc-pkce",
+      type: "DECLARES",
+      from: { id: "doc-auth-contract", version: 1 },
+      to: { id: "claim-auth-pkce-s256", version: 1 },
+      location: "auth.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-auth-doc-session",
+      type: "DECLARES",
+      from: { id: "doc-auth-contract", version: 1 },
+      to: { id: "claim-auth-session-expiry", version: 1 },
+      location: "auth.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-auth-provider-flow",
+      type: "DESCRIBES",
+      from: { id: "claim-auth-google-telegram", version: 1 },
+      to: { id: "entity-auth-flow", version: 1 },
+      location: "auth.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-auth-pkce-flow",
+      type: "CONSTRAINS",
+      from: { id: "claim-auth-pkce-s256", version: 1 },
+      to: { id: "entity-auth-flow", version: 1 },
+      location: "auth.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-auth-session-flow",
+      type: "CONSTRAINS",
+      from: { id: "claim-auth-session-expiry", version: 1 },
+      to: { id: "entity-auth-flow", version: 1 },
+      location: "auth.ts",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-companion-doc-pref", type: "DECLARES", from: { id: "doc-companion-contract", version: 1 }, to: { id: "claim-companion-preference-bounds", version: 1 }, location: "companion.ts", created_at: recordedAt, ...derived },
-    { id: "r-companion-doc-gate", type: "DECLARES", from: { id: "doc-companion-contract", version: 1 }, to: { id: "claim-companion-gate-reasons", version: 1 }, location: "companion.ts", created_at: recordedAt, ...derived },
-    { id: "r-companion-doc-surface", type: "DECLARES", from: { id: "doc-companion-contract", version: 1 }, to: { id: "claim-companion-surfaces", version: 1 }, location: "companion.ts", created_at: recordedAt, ...derived },
-    { id: "r-companion-pref-gate", type: "CONSTRAINS", from: { id: "claim-companion-preference-bounds", version: 1 }, to: { id: "entity-companion-gate", version: 1 }, location: "companion.ts", created_at: recordedAt, ...derived },
-    { id: "r-companion-reason-gate", type: "GOVERNS", from: { id: "claim-companion-gate-reasons", version: 1 }, to: { id: "entity-companion-gate", version: 1 }, location: "companion.ts", created_at: recordedAt, ...derived },
-    { id: "r-companion-auth", type: "DEPENDS_ON", from: { id: "entity-companion-gate", version: 1 }, to: { id: "entity-auth-flow", version: 1 }, location: "owner_not_authenticated gate reason", created_at: recordedAt, ...derived },
-    { id: "r-registry-decision-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-registry-authority", version: 1 }, to: { id: "event-registry-foundation", version: 1 }, location: "commit:e5e1195", created_at: "2026-08-24T15:54:22.000Z", observed_at: "2026-08-24T15:54:22.000Z", valid_from: "2026-08-24T15:54:22.000Z", ...derived },
-    { id: "r-registry-foundation-produces", type: "PRODUCES", from: { id: "event-registry-foundation", version: 1 }, to: { id: "entity-model-registry", version: 1 }, location: "commit:e5e1195", created_at: "2026-08-24T15:54:22.000Z", observed_at: "2026-08-24T15:54:22.000Z", valid_from: "2026-08-24T15:54:22.000Z", ...derived },
-    { id: "r-registry-foundation-precedes-runtime", type: "PRECEDES", from: { id: "event-registry-foundation", version: 1 }, to: { id: "event-registry-runtime", version: 1 }, location: "git history", created_at: "2026-08-26T15:13:14.000Z", observed_at: "2026-08-26T15:13:14.000Z", valid_from: "2026-08-26T15:13:14.000Z", ...derived },
-    { id: "r-route-trace-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-route-trace", version: 1 }, to: { id: "event-registry-runtime", version: 1 }, location: "commit:7be9f87", created_at: "2026-08-26T15:13:14.000Z", observed_at: "2026-08-26T15:13:14.000Z", valid_from: "2026-08-26T15:13:14.000Z", ...derived },
-    { id: "r-registry-runtime-precedes-failclosed", type: "PRECEDES", from: { id: "event-registry-runtime", version: 1 }, to: { id: "event-registry-failclosed", version: 1 }, location: "git history", created_at: "2026-08-27T09:48:00.000Z", observed_at: "2026-08-27T09:48:00.000Z", valid_from: "2026-08-27T09:48:00.000Z", ...derived },
-    { id: "r-freshness-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-route-evidence-freshness", version: 1 }, to: { id: "event-registry-failclosed", version: 1 }, location: "commit:cb802ac", created_at: "2026-08-27T09:48:00.000Z", observed_at: "2026-08-27T09:48:00.000Z", valid_from: "2026-08-27T09:48:00.000Z", ...derived },
-    { id: "r-failclosed-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-routing-fail-closed", version: 1 }, to: { id: "event-registry-failclosed", version: 1 }, location: "commit:cb802ac", created_at: "2026-08-27T09:48:00.000Z", observed_at: "2026-08-27T09:48:00.000Z", valid_from: "2026-08-27T09:48:00.000Z", ...derived },
+    {
+      id: "r-companion-doc-pref",
+      type: "DECLARES",
+      from: { id: "doc-companion-contract", version: 1 },
+      to: { id: "claim-companion-preference-bounds", version: 1 },
+      location: "companion.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-companion-doc-gate",
+      type: "DECLARES",
+      from: { id: "doc-companion-contract", version: 1 },
+      to: { id: "claim-companion-gate-reasons", version: 1 },
+      location: "companion.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-companion-doc-surface",
+      type: "DECLARES",
+      from: { id: "doc-companion-contract", version: 1 },
+      to: { id: "claim-companion-surfaces", version: 1 },
+      location: "companion.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-companion-pref-gate",
+      type: "CONSTRAINS",
+      from: { id: "claim-companion-preference-bounds", version: 1 },
+      to: { id: "entity-companion-gate", version: 1 },
+      location: "companion.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-companion-reason-gate",
+      type: "GOVERNS",
+      from: { id: "claim-companion-gate-reasons", version: 1 },
+      to: { id: "entity-companion-gate", version: 1 },
+      location: "companion.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-companion-auth",
+      type: "DEPENDS_ON",
+      from: { id: "entity-companion-gate", version: 1 },
+      to: { id: "entity-auth-flow", version: 1 },
+      location: "owner_not_authenticated gate reason",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-registry-decision-implemented",
+      type: "IMPLEMENTED_BY",
+      from: { id: "decision-registry-authority", version: 1 },
+      to: { id: "event-registry-foundation", version: 1 },
+      location: "commit:e5e1195",
+      created_at: "2026-08-24T15:54:22.000Z",
+      observed_at: "2026-08-24T15:54:22.000Z",
+      valid_from: "2026-08-24T15:54:22.000Z",
+      ...derived
+    },
+    {
+      id: "r-registry-foundation-produces",
+      type: "PRODUCES",
+      from: { id: "event-registry-foundation", version: 1 },
+      to: { id: "entity-model-registry", version: 1 },
+      location: "commit:e5e1195",
+      created_at: "2026-08-24T15:54:22.000Z",
+      observed_at: "2026-08-24T15:54:22.000Z",
+      valid_from: "2026-08-24T15:54:22.000Z",
+      ...derived
+    },
+    {
+      id: "r-registry-foundation-precedes-runtime",
+      type: "PRECEDES",
+      from: { id: "event-registry-foundation", version: 1 },
+      to: { id: "event-registry-runtime", version: 1 },
+      location: "git history",
+      created_at: "2026-08-26T15:13:14.000Z",
+      observed_at: "2026-08-26T15:13:14.000Z",
+      valid_from: "2026-08-26T15:13:14.000Z",
+      ...derived
+    },
+    {
+      id: "r-route-trace-implemented",
+      type: "IMPLEMENTED_BY",
+      from: { id: "decision-route-trace", version: 1 },
+      to: { id: "event-registry-runtime", version: 1 },
+      location: "commit:7be9f87",
+      created_at: "2026-08-26T15:13:14.000Z",
+      observed_at: "2026-08-26T15:13:14.000Z",
+      valid_from: "2026-08-26T15:13:14.000Z",
+      ...derived
+    },
+    {
+      id: "r-registry-runtime-precedes-failclosed",
+      type: "PRECEDES",
+      from: { id: "event-registry-runtime", version: 1 },
+      to: { id: "event-registry-failclosed", version: 1 },
+      location: "git history",
+      created_at: "2026-08-27T09:48:00.000Z",
+      observed_at: "2026-08-27T09:48:00.000Z",
+      valid_from: "2026-08-27T09:48:00.000Z",
+      ...derived
+    },
+    {
+      id: "r-freshness-implemented",
+      type: "IMPLEMENTED_BY",
+      from: { id: "decision-route-evidence-freshness", version: 1 },
+      to: { id: "event-registry-failclosed", version: 1 },
+      location: "commit:cb802ac",
+      created_at: "2026-08-27T09:48:00.000Z",
+      observed_at: "2026-08-27T09:48:00.000Z",
+      valid_from: "2026-08-27T09:48:00.000Z",
+      ...derived
+    },
+    {
+      id: "r-failclosed-implemented",
+      type: "IMPLEMENTED_BY",
+      from: { id: "decision-routing-fail-closed", version: 1 },
+      to: { id: "event-registry-failclosed", version: 1 },
+      location: "commit:cb802ac",
+      created_at: "2026-08-27T09:48:00.000Z",
+      observed_at: "2026-08-27T09:48:00.000Z",
+      valid_from: "2026-08-27T09:48:00.000Z",
+      ...derived
+    },
 
-    { id: "r-agent-composition-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-agent-six-parts", version: 1 }, to: { id: "event-agent-contracts", version: 1 }, location: "commit:a70f88d", created_at: "2026-08-28T05:30:24.000Z", observed_at: "2026-08-28T05:30:24.000Z", valid_from: "2026-08-28T05:30:24.000Z", ...derived },
-    { id: "r-agent-delegation-implemented", type: "IMPLEMENTED_BY", from: { id: "decision-delegation-no-expansion", version: 1 }, to: { id: "event-agent-contracts", version: 1 }, location: "commit:a70f88d", created_at: "2026-08-28T05:30:24.000Z", observed_at: "2026-08-28T05:30:24.000Z", valid_from: "2026-08-28T05:30:24.000Z", ...derived },
-    { id: "r-agent-contracts-precede-blueprints", type: "PRECEDES", from: { id: "event-agent-contracts", version: 1 }, to: { id: "event-agent-blueprints", version: 1 }, location: "git history", created_at: "2026-08-28T12:54:30.000Z", observed_at: "2026-08-28T12:54:30.000Z", valid_from: "2026-08-28T12:54:30.000Z", ...derived },
-    { id: "r-agent-blueprints-precede-proposal", type: "PRECEDES", from: { id: "event-agent-blueprints", version: 1 }, to: { id: "event-agent-root-proposal", version: 1 }, location: "git history", created_at: "2026-08-29T20:51:12.000Z", observed_at: "2026-08-29T20:51:12.000Z", valid_from: "2026-08-29T20:51:12.000Z", ...derived },
-    { id: "r-blueprints-materialize-instance", type: "MATERIALIZES", from: { id: "event-agent-blueprints", version: 1 }, to: { id: "entity-agent-instance", version: 1 }, location: "commit:617a6e8", created_at: "2026-08-28T12:54:30.000Z", observed_at: "2026-08-28T12:54:30.000Z", valid_from: "2026-08-28T12:54:30.000Z", ...derived },
+    {
+      id: "r-agent-composition-implemented",
+      type: "IMPLEMENTED_BY",
+      from: { id: "decision-agent-six-parts", version: 1 },
+      to: { id: "event-agent-contracts", version: 1 },
+      location: "commit:a70f88d",
+      created_at: "2026-08-28T05:30:24.000Z",
+      observed_at: "2026-08-28T05:30:24.000Z",
+      valid_from: "2026-08-28T05:30:24.000Z",
+      ...derived
+    },
+    {
+      id: "r-agent-delegation-implemented",
+      type: "IMPLEMENTED_BY",
+      from: { id: "decision-delegation-no-expansion", version: 1 },
+      to: { id: "event-agent-contracts", version: 1 },
+      location: "commit:a70f88d",
+      created_at: "2026-08-28T05:30:24.000Z",
+      observed_at: "2026-08-28T05:30:24.000Z",
+      valid_from: "2026-08-28T05:30:24.000Z",
+      ...derived
+    },
+    {
+      id: "r-agent-contracts-precede-blueprints",
+      type: "PRECEDES",
+      from: { id: "event-agent-contracts", version: 1 },
+      to: { id: "event-agent-blueprints", version: 1 },
+      location: "git history",
+      created_at: "2026-08-28T12:54:30.000Z",
+      observed_at: "2026-08-28T12:54:30.000Z",
+      valid_from: "2026-08-28T12:54:30.000Z",
+      ...derived
+    },
+    {
+      id: "r-agent-blueprints-precede-proposal",
+      type: "PRECEDES",
+      from: { id: "event-agent-blueprints", version: 1 },
+      to: { id: "event-agent-root-proposal", version: 1 },
+      location: "git history",
+      created_at: "2026-08-29T20:51:12.000Z",
+      observed_at: "2026-08-29T20:51:12.000Z",
+      valid_from: "2026-08-29T20:51:12.000Z",
+      ...derived
+    },
+    {
+      id: "r-blueprints-materialize-instance",
+      type: "MATERIALIZES",
+      from: { id: "event-agent-blueprints", version: 1 },
+      to: { id: "entity-agent-instance", version: 1 },
+      location: "commit:617a6e8",
+      created_at: "2026-08-28T12:54:30.000Z",
+      observed_at: "2026-08-28T12:54:30.000Z",
+      valid_from: "2026-08-28T12:54:30.000Z",
+      ...derived
+    },
 
-    { id: "r-companion-pref-implemented", type: "IMPLEMENTED_BY", from: { id: "claim-companion-preference-bounds", version: 1 }, to: { id: "event-companion-contract", version: 1 }, location: "commit:479c016", created_at: "2026-09-19T18:18:11.000Z", observed_at: "2026-09-19T18:18:11.000Z", valid_from: "2026-09-19T18:18:11.000Z", ...derived },
-    { id: "r-companion-gates-implemented", type: "IMPLEMENTED_BY", from: { id: "claim-companion-gate-reasons", version: 1 }, to: { id: "event-companion-contract", version: 1 }, location: "commit:479c016", created_at: "2026-09-19T18:18:11.000Z", observed_at: "2026-09-19T18:18:11.000Z", valid_from: "2026-09-19T18:18:11.000Z", ...derived },
-    { id: "r-companion-event-produces-doc", type: "PRODUCES", from: { id: "event-companion-contract", version: 1 }, to: { id: "doc-companion-contract", version: 1 }, location: "commit:479c016", created_at: "2026-09-19T18:18:11.000Z", observed_at: "2026-09-19T18:18:11.000Z", valid_from: "2026-09-19T18:18:11.000Z", ...derived },
+    {
+      id: "r-companion-pref-implemented",
+      type: "IMPLEMENTED_BY",
+      from: { id: "claim-companion-preference-bounds", version: 1 },
+      to: { id: "event-companion-contract", version: 1 },
+      location: "commit:479c016",
+      created_at: "2026-09-19T18:18:11.000Z",
+      observed_at: "2026-09-19T18:18:11.000Z",
+      valid_from: "2026-09-19T18:18:11.000Z",
+      ...derived
+    },
+    {
+      id: "r-companion-gates-implemented",
+      type: "IMPLEMENTED_BY",
+      from: { id: "claim-companion-gate-reasons", version: 1 },
+      to: { id: "event-companion-contract", version: 1 },
+      location: "commit:479c016",
+      created_at: "2026-09-19T18:18:11.000Z",
+      observed_at: "2026-09-19T18:18:11.000Z",
+      valid_from: "2026-09-19T18:18:11.000Z",
+      ...derived
+    },
+    {
+      id: "r-companion-event-produces-doc",
+      type: "PRODUCES",
+      from: { id: "event-companion-contract", version: 1 },
+      to: { id: "doc-companion-contract", version: 1 },
+      location: "commit:479c016",
+      created_at: "2026-09-19T18:18:11.000Z",
+      observed_at: "2026-09-19T18:18:11.000Z",
+      valid_from: "2026-09-19T18:18:11.000Z",
+      ...derived
+    },
 
-    { id: "r-auth-provider-implemented", type: "IMPLEMENTED_BY", from: { id: "claim-auth-google-telegram", version: 1 }, to: { id: "event-auth-contract", version: 1 }, location: "commit:b2b5030", created_at: "2026-09-19T18:26:36.000Z", observed_at: "2026-09-19T18:26:36.000Z", valid_from: "2026-09-19T18:26:36.000Z", ...derived },
-    { id: "r-auth-pkce-implemented", type: "IMPLEMENTED_BY", from: { id: "claim-auth-pkce-s256", version: 1 }, to: { id: "event-auth-contract", version: 1 }, location: "commit:b2b5030", created_at: "2026-09-19T18:26:36.000Z", observed_at: "2026-09-19T18:26:36.000Z", valid_from: "2026-09-19T18:26:36.000Z", ...derived },
-    { id: "r-auth-event-produces-doc", type: "PRODUCES", from: { id: "event-auth-contract", version: 1 }, to: { id: "doc-auth-contract", version: 1 }, location: "commit:b2b5030", created_at: "2026-09-19T18:26:36.000Z", observed_at: "2026-09-19T18:26:36.000Z", valid_from: "2026-09-19T18:26:36.000Z", ...derived },
-    { id: "r-companion-precedes-auth", type: "PRECEDES", from: { id: "event-companion-contract", version: 1 }, to: { id: "event-auth-contract", version: 1 }, location: "git history 2026-09-19", created_at: "2026-09-19T18:26:36.000Z", observed_at: "2026-09-19T18:26:36.000Z", valid_from: "2026-09-19T18:26:36.000Z", ...derived },
+    {
+      id: "r-auth-provider-implemented",
+      type: "IMPLEMENTED_BY",
+      from: { id: "claim-auth-google-telegram", version: 1 },
+      to: { id: "event-auth-contract", version: 1 },
+      location: "commit:b2b5030",
+      created_at: "2026-09-19T18:26:36.000Z",
+      observed_at: "2026-09-19T18:26:36.000Z",
+      valid_from: "2026-09-19T18:26:36.000Z",
+      ...derived
+    },
+    {
+      id: "r-auth-pkce-implemented",
+      type: "IMPLEMENTED_BY",
+      from: { id: "claim-auth-pkce-s256", version: 1 },
+      to: { id: "event-auth-contract", version: 1 },
+      location: "commit:b2b5030",
+      created_at: "2026-09-19T18:26:36.000Z",
+      observed_at: "2026-09-19T18:26:36.000Z",
+      valid_from: "2026-09-19T18:26:36.000Z",
+      ...derived
+    },
+    {
+      id: "r-auth-event-produces-doc",
+      type: "PRODUCES",
+      from: { id: "event-auth-contract", version: 1 },
+      to: { id: "doc-auth-contract", version: 1 },
+      location: "commit:b2b5030",
+      created_at: "2026-09-19T18:26:36.000Z",
+      observed_at: "2026-09-19T18:26:36.000Z",
+      valid_from: "2026-09-19T18:26:36.000Z",
+      ...derived
+    },
+    {
+      id: "r-companion-precedes-auth",
+      type: "PRECEDES",
+      from: { id: "event-companion-contract", version: 1 },
+      to: { id: "event-auth-contract", version: 1 },
+      location: "git history 2026-09-19",
+      created_at: "2026-09-19T18:26:36.000Z",
+      observed_at: "2026-09-19T18:26:36.000Z",
+      valid_from: "2026-09-19T18:26:36.000Z",
+      ...derived
+    },
 
-    { id: "r-manager-event-produces-runtime", type: "PRODUCES", from: { id: "event-manager-runtime", version: 1 }, to: { id: "artifact-manager-work-runtime", version: 1 }, location: "commit:62bc523", created_at: "2026-09-26T11:00:05.000Z", observed_at: "2026-09-26T11:00:05.000Z", valid_from: "2026-09-26T11:00:05.000Z", ...derived },
-    { id: "r-project-gateway-doc", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-model-gateway", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
-    { id: "r-project-runtime-state-doc", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-runtime-state", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
-    { id: "r-project-context-validation-doc", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-runtime-context-validation", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
-    { id: "r-project-identity-doc", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-identity-contract", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
-    { id: "r-project-stepup-doc", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-step-up-contract", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
-    { id: "r-project-usage-doc", type: "HAS_DOCUMENT", from: { id: "project-cosmora-os", version: 1 }, to: { id: "doc-usage-contract", version: 1 }, location: "repository", created_at: recordedAt, ...derived },
+    {
+      id: "r-manager-event-produces-runtime",
+      type: "PRODUCES",
+      from: { id: "event-manager-runtime", version: 1 },
+      to: { id: "artifact-manager-work-runtime", version: 1 },
+      location: "commit:62bc523",
+      created_at: "2026-09-26T11:00:05.000Z",
+      observed_at: "2026-09-26T11:00:05.000Z",
+      valid_from: "2026-09-26T11:00:05.000Z",
+      ...derived
+    },
+    {
+      id: "r-project-gateway-doc",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-model-gateway", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-project-runtime-state-doc",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-runtime-state", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-project-context-validation-doc",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-runtime-context-validation", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-project-identity-doc",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-identity-contract", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-project-stepup-doc",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-step-up-contract", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-project-usage-doc",
+      type: "HAS_DOCUMENT",
+      from: { id: "project-cosmora-os", version: 1 },
+      to: { id: "doc-usage-contract", version: 1 },
+      location: "repository",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-gateway-doc-all-access", type: "DECLARES", from: { id: "doc-model-gateway", version: 1 }, to: { id: "decision-gateway-all-access", version: 1 }, location: "ADR-002:Decision", created_at: recordedAt, ...derived },
-    { id: "r-gateway-doc-fallback", type: "DECLARES", from: { id: "doc-model-gateway", version: 1 }, to: { id: "decision-gateway-fallback-boundary", version: 1 }, location: "ADR-002:Decision", created_at: recordedAt, ...derived },
-    { id: "r-gateway-doc-secrets", type: "DECLARES", from: { id: "doc-model-gateway", version: 1 }, to: { id: "decision-gateway-secrets-server-only", version: 1 }, location: "ADR-002:Decision", created_at: recordedAt, ...derived },
-    { id: "r-gateway-doc-accounting", type: "DECLARES", from: { id: "doc-model-gateway", version: 1 }, to: { id: "decision-gateway-run-accounting", version: 1 }, location: "ADR-002:Decision", created_at: recordedAt, ...derived },
-    { id: "r-gateway-all-access", type: "GOVERNS", from: { id: "decision-gateway-all-access", version: 1 }, to: { id: "entity-model-gateway", version: 1 }, location: "ADR-002:Decision", created_at: recordedAt, ...derived },
-    { id: "r-gateway-fallback", type: "CONSTRAINS", from: { id: "decision-gateway-fallback-boundary", version: 1 }, to: { id: "entity-model-gateway", version: 1 }, location: "ADR-002:Decision", created_at: recordedAt, ...derived },
-    { id: "r-gateway-secrets", type: "CONSTRAINS", from: { id: "decision-gateway-secrets-server-only", version: 1 }, to: { id: "entity-model-gateway", version: 1 }, location: "ADR-002:Decision", created_at: recordedAt, ...derived },
-    { id: "r-gateway-accounting", type: "RECORDED_IN", from: { id: "decision-gateway-run-accounting", version: 1 }, to: { id: "entity-project-usage", version: 1 }, location: "ADR-002:Decision", created_at: recordedAt, ...derived },
-    { id: "r-gateway-router", type: "ROUTES_VIA", from: { id: "entity-model-gateway", version: 1 }, to: { id: "entity-router", version: 1 }, location: "ADR-003 runtime integration boundary", created_at: recordedAt, ...derived },
-    { id: "r-manager-uses-gateway", type: "USES", from: { id: "artifact-manager-work-runtime", version: 1 }, to: { id: "entity-model-gateway", version: 1 }, location: "commit:62bc523:manager-work-coordinator gateway.stream", created_at: recordedAt, ...derived },
-    { id: "r-manager-budget-usage", type: "UPDATES", from: { id: "claim-manager-reserves-budget", version: 1 }, to: { id: "entity-project-usage", version: 1 }, location: "commit:62bc523:reserveModelUsage", created_at: recordedAt, ...derived },
-    { id: "r-route-trace-usage", type: "RECORDED_IN", from: { id: "decision-route-trace", version: 1 }, to: { id: "entity-project-usage", version: 1 }, location: "ADR-003:Security and data rules", created_at: recordedAt, ...derived },
+    {
+      id: "r-gateway-doc-all-access",
+      type: "DECLARES",
+      from: { id: "doc-model-gateway", version: 1 },
+      to: { id: "decision-gateway-all-access", version: 1 },
+      location: "ADR-002:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-gateway-doc-fallback",
+      type: "DECLARES",
+      from: { id: "doc-model-gateway", version: 1 },
+      to: { id: "decision-gateway-fallback-boundary", version: 1 },
+      location: "ADR-002:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-gateway-doc-secrets",
+      type: "DECLARES",
+      from: { id: "doc-model-gateway", version: 1 },
+      to: { id: "decision-gateway-secrets-server-only", version: 1 },
+      location: "ADR-002:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-gateway-doc-accounting",
+      type: "DECLARES",
+      from: { id: "doc-model-gateway", version: 1 },
+      to: { id: "decision-gateway-run-accounting", version: 1 },
+      location: "ADR-002:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-gateway-all-access",
+      type: "GOVERNS",
+      from: { id: "decision-gateway-all-access", version: 1 },
+      to: { id: "entity-model-gateway", version: 1 },
+      location: "ADR-002:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-gateway-fallback",
+      type: "CONSTRAINS",
+      from: { id: "decision-gateway-fallback-boundary", version: 1 },
+      to: { id: "entity-model-gateway", version: 1 },
+      location: "ADR-002:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-gateway-secrets",
+      type: "CONSTRAINS",
+      from: { id: "decision-gateway-secrets-server-only", version: 1 },
+      to: { id: "entity-model-gateway", version: 1 },
+      location: "ADR-002:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-gateway-accounting",
+      type: "RECORDED_IN",
+      from: { id: "decision-gateway-run-accounting", version: 1 },
+      to: { id: "entity-project-usage", version: 1 },
+      location: "ADR-002:Decision",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-gateway-router",
+      type: "ROUTES_VIA",
+      from: { id: "entity-model-gateway", version: 1 },
+      to: { id: "entity-router", version: 1 },
+      location: "ADR-003 runtime integration boundary",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-manager-uses-gateway",
+      type: "USES",
+      from: { id: "artifact-manager-work-runtime", version: 1 },
+      to: { id: "entity-model-gateway", version: 1 },
+      location: "commit:62bc523:manager-work-coordinator gateway.stream",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-manager-budget-usage",
+      type: "UPDATES",
+      from: { id: "claim-manager-reserves-budget", version: 1 },
+      to: { id: "entity-project-usage", version: 1 },
+      location: "commit:62bc523:reserveModelUsage",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-route-trace-usage",
+      type: "RECORDED_IN",
+      from: { id: "decision-route-trace", version: 1 },
+      to: { id: "entity-project-usage", version: 1 },
+      location: "ADR-003:Security and data rules",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-state-doc-private", type: "DECLARES", from: { id: "doc-runtime-state", version: 1 }, to: { id: "claim-context-private-chat-forbidden", version: 1 }, location: "RuntimeContextEnvelopeSchema", created_at: recordedAt, ...derived },
-    { id: "r-state-doc-untrusted", type: "DECLARES", from: { id: "doc-runtime-state", version: 1 }, to: { id: "claim-context-untrusted-data-only", version: 1 }, location: "RuntimeContextEnvelopeSchema", created_at: recordedAt, ...derived },
-    { id: "r-state-doc-checkpoint", type: "DECLARES", from: { id: "doc-runtime-state", version: 1 }, to: { id: "claim-checkpoint-no-authority-restore", version: 1 }, location: "RuntimeCheckpointSchema", created_at: recordedAt, ...derived },
-    { id: "r-context-validation-task", type: "DECLARES", from: { id: "doc-runtime-context-validation", version: 1 }, to: { id: "claim-context-task-bound", version: 1 }, location: "validateRuntimeContextMaterialization", created_at: recordedAt, ...derived },
-    { id: "r-context-validation-inputs", type: "DECLARES", from: { id: "doc-runtime-context-validation", version: 1 }, to: { id: "claim-context-inputs-declared", version: 1 }, location: "validateRuntimeContextMaterialization", created_at: recordedAt, ...derived },
-    { id: "r-context-validation-data", type: "DECLARES", from: { id: "doc-runtime-context-validation", version: 1 }, to: { id: "claim-context-data-class-bound", version: 1 }, location: "validateRuntimeContextMaterialization", created_at: recordedAt, ...derived },
-    { id: "r-private-context", type: "CONSTRAINS", from: { id: "claim-context-private-chat-forbidden", version: 1 }, to: { id: "entity-runtime-context", version: 1 }, location: "RuntimeContextEnvelopeSchema", created_at: recordedAt, ...derived },
-    { id: "r-untrusted-context", type: "CONSTRAINS", from: { id: "claim-context-untrusted-data-only", version: 1 }, to: { id: "entity-runtime-context", version: 1 }, location: "RuntimeContextEnvelopeSchema", created_at: recordedAt, ...derived },
-    { id: "r-task-bound-context", type: "CONSTRAINS", from: { id: "claim-context-task-bound", version: 1 }, to: { id: "entity-runtime-context", version: 1 }, location: "context materialization validator", created_at: recordedAt, ...derived },
-    { id: "r-input-bound-context", type: "CONSTRAINS", from: { id: "claim-context-inputs-declared", version: 1 }, to: { id: "entity-runtime-context", version: 1 }, location: "context materialization validator", created_at: recordedAt, ...derived },
-    { id: "r-data-bound-context", type: "CONSTRAINS", from: { id: "claim-context-data-class-bound", version: 1 }, to: { id: "entity-runtime-context", version: 1 }, location: "context materialization validator", created_at: recordedAt, ...derived },
-    { id: "r-context-taskgraph", type: "BOUND_TO", from: { id: "entity-runtime-context", version: 1 }, to: { id: "entity-runtime-task-graph", version: 1 }, location: "RuntimeContextEnvelope task_id/project_id", created_at: recordedAt, ...derived },
-    { id: "r-checkpoint-no-restore", type: "CONSTRAINS", from: { id: "claim-checkpoint-no-authority-restore", version: 1 }, to: { id: "entity-runtime-checkpoint", version: 1 }, location: "RuntimeCheckpointSchema", created_at: recordedAt, ...derived },
-    { id: "r-browser-context-not-runtime", type: "NOT_AUTHORITY_FOR", from: { id: "entity-project-context-panel", version: 1 }, to: { id: "entity-runtime-context", version: 1 }, location: "Project Context browser-local boundary", created_at: recordedAt, ...derived },
+    {
+      id: "r-state-doc-private",
+      type: "DECLARES",
+      from: { id: "doc-runtime-state", version: 1 },
+      to: { id: "claim-context-private-chat-forbidden", version: 1 },
+      location: "RuntimeContextEnvelopeSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-state-doc-untrusted",
+      type: "DECLARES",
+      from: { id: "doc-runtime-state", version: 1 },
+      to: { id: "claim-context-untrusted-data-only", version: 1 },
+      location: "RuntimeContextEnvelopeSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-state-doc-checkpoint",
+      type: "DECLARES",
+      from: { id: "doc-runtime-state", version: 1 },
+      to: { id: "claim-checkpoint-no-authority-restore", version: 1 },
+      location: "RuntimeCheckpointSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-context-validation-task",
+      type: "DECLARES",
+      from: { id: "doc-runtime-context-validation", version: 1 },
+      to: { id: "claim-context-task-bound", version: 1 },
+      location: "validateRuntimeContextMaterialization",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-context-validation-inputs",
+      type: "DECLARES",
+      from: { id: "doc-runtime-context-validation", version: 1 },
+      to: { id: "claim-context-inputs-declared", version: 1 },
+      location: "validateRuntimeContextMaterialization",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-context-validation-data",
+      type: "DECLARES",
+      from: { id: "doc-runtime-context-validation", version: 1 },
+      to: { id: "claim-context-data-class-bound", version: 1 },
+      location: "validateRuntimeContextMaterialization",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-private-context",
+      type: "CONSTRAINS",
+      from: { id: "claim-context-private-chat-forbidden", version: 1 },
+      to: { id: "entity-runtime-context", version: 1 },
+      location: "RuntimeContextEnvelopeSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-untrusted-context",
+      type: "CONSTRAINS",
+      from: { id: "claim-context-untrusted-data-only", version: 1 },
+      to: { id: "entity-runtime-context", version: 1 },
+      location: "RuntimeContextEnvelopeSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-task-bound-context",
+      type: "CONSTRAINS",
+      from: { id: "claim-context-task-bound", version: 1 },
+      to: { id: "entity-runtime-context", version: 1 },
+      location: "context materialization validator",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-input-bound-context",
+      type: "CONSTRAINS",
+      from: { id: "claim-context-inputs-declared", version: 1 },
+      to: { id: "entity-runtime-context", version: 1 },
+      location: "context materialization validator",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-data-bound-context",
+      type: "CONSTRAINS",
+      from: { id: "claim-context-data-class-bound", version: 1 },
+      to: { id: "entity-runtime-context", version: 1 },
+      location: "context materialization validator",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-context-taskgraph",
+      type: "BOUND_TO",
+      from: { id: "entity-runtime-context", version: 1 },
+      to: { id: "entity-runtime-task-graph", version: 1 },
+      location: "RuntimeContextEnvelope task_id/project_id",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-checkpoint-no-restore",
+      type: "CONSTRAINS",
+      from: { id: "claim-checkpoint-no-authority-restore", version: 1 },
+      to: { id: "entity-runtime-checkpoint", version: 1 },
+      location: "RuntimeCheckpointSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-browser-context-not-runtime",
+      type: "NOT_AUTHORITY_FOR",
+      from: { id: "entity-project-context-panel", version: 1 },
+      to: { id: "entity-runtime-context", version: 1 },
+      location: "Project Context browser-local boundary",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-identity-doc-session", type: "DECLARES", from: { id: "doc-identity-contract", version: 1 }, to: { id: "claim-identity-session-lifecycle", version: 1 }, location: "identity.ts", created_at: recordedAt, ...derived },
-    { id: "r-identity-session", type: "DESCRIBES", from: { id: "claim-identity-session-lifecycle", version: 1 }, to: { id: "entity-identity-session", version: 1 }, location: "IdentitySessionSchema", created_at: recordedAt, ...derived },
-    { id: "r-auth-session-bootstrap", type: "BOOTSTRAPS", from: { id: "entity-auth-flow", version: 1 }, to: { id: "entity-identity-session", version: 1 }, location: "AuthSessionBootstrapSchema and IdentitySessionSchema", created_at: recordedAt, ...derived },
+    {
+      id: "r-identity-doc-session",
+      type: "DECLARES",
+      from: { id: "doc-identity-contract", version: 1 },
+      to: { id: "claim-identity-session-lifecycle", version: 1 },
+      location: "identity.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-identity-session",
+      type: "DESCRIBES",
+      from: { id: "claim-identity-session-lifecycle", version: 1 },
+      to: { id: "entity-identity-session", version: 1 },
+      location: "IdentitySessionSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-auth-session-bootstrap",
+      type: "BOOTSTRAPS",
+      from: { id: "entity-auth-flow", version: 1 },
+      to: { id: "entity-identity-session", version: 1 },
+      location: "AuthSessionBootstrapSchema and IdentitySessionSchema",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-stepup-doc-purpose", type: "DECLARES", from: { id: "doc-step-up-contract", version: 1 }, to: { id: "claim-step-up-purpose-bound", version: 1 }, location: "StepUpPurposeSchema", created_at: recordedAt, ...derived },
-    { id: "r-stepup-doc-life", type: "DECLARES", from: { id: "doc-step-up-contract", version: 1 }, to: { id: "claim-step-up-single-lifecycle", version: 1 }, location: "StepUpProofSchema", created_at: recordedAt, ...derived },
-    { id: "r-stepup-purpose-proof", type: "CONSTRAINS", from: { id: "claim-step-up-purpose-bound", version: 1 }, to: { id: "entity-step-up-proof", version: 1 }, location: "StepUpProofSchema", created_at: recordedAt, ...derived },
-    { id: "r-stepup-life-proof", type: "CONSTRAINS", from: { id: "claim-step-up-single-lifecycle", version: 1 }, to: { id: "entity-step-up-proof", version: 1 }, location: "StepUpProofSchema", created_at: recordedAt, ...derived },
-    { id: "r-stepup-session", type: "BOUND_TO", from: { id: "entity-step-up-proof", version: 1 }, to: { id: "entity-identity-session", version: 1 }, location: "StepUpProof.session_id", created_at: recordedAt, ...derived },
+    {
+      id: "r-stepup-doc-purpose",
+      type: "DECLARES",
+      from: { id: "doc-step-up-contract", version: 1 },
+      to: { id: "claim-step-up-purpose-bound", version: 1 },
+      location: "StepUpPurposeSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-stepup-doc-life",
+      type: "DECLARES",
+      from: { id: "doc-step-up-contract", version: 1 },
+      to: { id: "claim-step-up-single-lifecycle", version: 1 },
+      location: "StepUpProofSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-stepup-purpose-proof",
+      type: "CONSTRAINS",
+      from: { id: "claim-step-up-purpose-bound", version: 1 },
+      to: { id: "entity-step-up-proof", version: 1 },
+      location: "StepUpProofSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-stepup-life-proof",
+      type: "CONSTRAINS",
+      from: { id: "claim-step-up-single-lifecycle", version: 1 },
+      to: { id: "entity-step-up-proof", version: 1 },
+      location: "StepUpProofSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-stepup-session",
+      type: "BOUND_TO",
+      from: { id: "entity-step-up-proof", version: 1 },
+      to: { id: "entity-identity-session", version: 1 },
+      location: "StepUpProof.session_id",
+      created_at: recordedAt,
+      ...derived
+    },
 
-    { id: "r-usage-doc-attempt", type: "DECLARES", from: { id: "doc-usage-contract", version: 1 }, to: { id: "claim-usage-attempt-accounting", version: 1 }, location: "ProjectUsageSummarySchema", created_at: recordedAt, ...derived },
-    { id: "r-usage-doc-unknown", type: "DECLARES", from: { id: "doc-usage-contract", version: 1 }, to: { id: "claim-usage-unknown-cost", version: 1 }, location: "ProjectUsageSummarySchema", created_at: recordedAt, ...derived },
-    { id: "r-usage-doc-limit", type: "DECLARES", from: { id: "doc-usage-contract", version: 1 }, to: { id: "claim-usage-limit-versioned", version: 1 }, location: "ProjectUsageLimitSchema", created_at: recordedAt, ...derived },
-    { id: "r-usage-attempt", type: "DESCRIBES", from: { id: "claim-usage-attempt-accounting", version: 1 }, to: { id: "entity-project-usage", version: 1 }, location: "usage.ts", created_at: recordedAt, ...derived },
-    { id: "r-usage-unknown", type: "DESCRIBES", from: { id: "claim-usage-unknown-cost", version: 1 }, to: { id: "entity-project-usage", version: 1 }, location: "usage.ts", created_at: recordedAt, ...derived },
-    { id: "r-usage-limit", type: "CONSTRAINS", from: { id: "claim-usage-limit-versioned", version: 1 }, to: { id: "entity-project-usage", version: 1 }, location: "usage.ts", created_at: recordedAt, ...derived }
+    {
+      id: "r-usage-doc-attempt",
+      type: "DECLARES",
+      from: { id: "doc-usage-contract", version: 1 },
+      to: { id: "claim-usage-attempt-accounting", version: 1 },
+      location: "ProjectUsageSummarySchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-usage-doc-unknown",
+      type: "DECLARES",
+      from: { id: "doc-usage-contract", version: 1 },
+      to: { id: "claim-usage-unknown-cost", version: 1 },
+      location: "ProjectUsageSummarySchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-usage-doc-limit",
+      type: "DECLARES",
+      from: { id: "doc-usage-contract", version: 1 },
+      to: { id: "claim-usage-limit-versioned", version: 1 },
+      location: "ProjectUsageLimitSchema",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-usage-attempt",
+      type: "DESCRIBES",
+      from: { id: "claim-usage-attempt-accounting", version: 1 },
+      to: { id: "entity-project-usage", version: 1 },
+      location: "usage.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-usage-unknown",
+      type: "DESCRIBES",
+      from: { id: "claim-usage-unknown-cost", version: 1 },
+      to: { id: "entity-project-usage", version: 1 },
+      location: "usage.ts",
+      created_at: recordedAt,
+      ...derived
+    },
+    {
+      id: "r-usage-limit",
+      type: "CONSTRAINS",
+      from: { id: "claim-usage-limit-versioned", version: 1 },
+      to: { id: "entity-project-usage", version: 1 },
+      location: "usage.ts",
+      created_at: recordedAt,
+      ...derived
+    }
   ]
 });
