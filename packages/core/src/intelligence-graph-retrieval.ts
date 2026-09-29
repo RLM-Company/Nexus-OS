@@ -352,7 +352,7 @@ export class IntelligenceGraphIndex {
           const nextKey = versionKey(nextRef);
           const nextNode = this.#nodes.get(nextKey);
           if (!nextNode || !nodeVisibleAt(nextNode, asOf)) continue;
-          if (query.verified_only && !verifiedEnough(nextNode)) continue;
+          if (query.verified_only && !verifiedEnough(nextNode, asOf)) continue;
 
           const nextPath = [...current.path, edgeRef(edge)];
           const record = this.#records.get(nextKey);
