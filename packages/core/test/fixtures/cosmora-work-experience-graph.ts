@@ -1,4 +1,5 @@
 import type { IntelligenceGraphEdge, IntelligenceGraphNode } from "@cosmora/contracts";
+import type { IntelligenceGraphSearchRecord } from "../../src/index.js";
 import { repositoryStructureFileId } from "./cosmora-repository-structure-graph.js";
 
 const ownerId = "owner-cosmora";
@@ -154,9 +155,26 @@ const chronologyEdges = chronology.map(([from, to, createdAt], index) =>
 export const cosmoraWorkExperienceGraph = (): {
   nodes: IntelligenceGraphNode[];
   edges: IntelligenceGraphEdge[];
+  records: IntelligenceGraphSearchRecord[];
 } => ({
   nodes: [...newEvents],
-  edges: [...changedFileEdges, ...chronologyEdges]
+  edges: [...changedFileEdges, ...chronologyEdges],
+  records: newEvents.map((node) => ({
+    node: { id: node.node_id, version: node.node_version },
+    text:
+      node.node_id === "event-stream-metadata-hardening"
+        ? "stream completion metadata canonicalization hardening contracts event"
+        : node.node_id === "event-model-request-contract-bounds"
+          ? "model request contract limits bounds hardening"
+          : "core direct model request limits bounds manager chat",
+    excerpt:
+      node.node_id === "event-stream-metadata-hardening"
+        ? "Commit hardened stream completion metadata and its regression coverage."
+        : node.node_id === "event-model-request-contract-bounds"
+          ? "Commit bounded shared model request limits."
+          : "Commit bounded core direct model request construction.",
+    estimated_tokens: 14
+  }))
 });
 
 export const COSMORA_WORK_EXPERIENCE_NEW_NODE_COUNT = newEvents.length;
