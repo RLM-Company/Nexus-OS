@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "graph_id": "cosmora-nexus-os-knowledge",
+  "generated_for": "codex/intelligence-graph-real-knowledge-20260929",
+  "authoritative_main": {
+    "repository": "RLM-Company/Nexus-OS",
+    "sha": "62bc5234b24e3b0c10262b043063fd31be9732bd",
+    "observed_at": "2026-09-30T19:54:28.000Z"
+  },
+  "totals": {
+    "nodes": 314,
+    "edges": 861,
+    "records": 314
+  },
+  "layers": [
+    {
+      "id": "semantic_knowledge",
+      "nodes": 97,
+      "edges": 140,
+      "authority": "verified_repository_evidence",
+      "generic_relates_to_edges": 0
+    },
+    {
+      "id": "repository_structure",
+      "nodes": 186,
+      "edges": 578,
+      "authority": "deterministic_repository_structure"
+    },
+    {
+      "id": "semantic_structure_bridges",
+      "nodes": 0,
+      "edges": 30,
+      "authority": "deterministic_repository_bridge"
+    },
+    {
+      "id": "work_experience",
+      "nodes": 3,
+      "edges": 27,
+      "authority": "verified_merged_git_history"
+    },
+    {
+      "id": "open_review",
+      "nodes": 13,
+      "edges": 45,
+      "authority": "candidate_only_unmerged",
+      "default_query_policy": "exclude_when_verified_only"
+    },
+    {
+      "id": "main_hardening_history",
+      "nodes": 15,
+      "edges": 41,
+      "authority": "verified_merged_git_history"
+    }
+  ],
+  "primary_relation_types": [
+    "REQUIRES",
+    "CONSTRAINS",
+    "ENFORCED_BY",
+    "IMPLEMENTED_BY",
+    "PRODUCES",
+    "PRECEDES",
+    "DEFINED_IN_FILE",
+    "IMPLEMENTED_IN_FILE",
+    "PERSISTED_BY",
+    "IMPORTS_FILE",
+    "IMPORTS_MODULE",
+    "DEPENDS_ON_MODULE",
+    "CHANGED_FILE",
+    "TOUCHES_MODULE",
+    "STACKED_BEFORE",
+    "PROPOSES_CHANGE_TO",
+    "PROPOSES_CONSTRAINT_FOR",
+    "CONTRADICTS",
+    "BOUND_TO",
+    "DEPENDS_ON",
+    "HARDENS"
+  ],
+  "safety": {
+    "private_chat_persistence": false,
+    "secrets_allowed": false,
+    "model_only_claims_may_self_verify": false,
+    "project_scope": "project-nexus-os",
+    "owner_scope": "owner-cosmora",
+    "unmerged_prs_are_authoritative": false
+  },
+  "source_files": [
+    "packages/core/test/fixtures/cosmora-real-knowledge-graph.ts",
+    "packages/core/test/fixtures/cosmora-repository-structure-graph.ts",
+    "packages/core/test/fixtures/cosmora-unified-knowledge-graph.ts",
+    "packages/core/test/fixtures/cosmora-work-experience-graph.ts",
+    "packages/core/test/fixtures/cosmora-open-review-graph.ts",
+    "packages/core/test/fixtures/cosmora-main-hardening-history-graph.ts"
+  ],
+  "notes": [
+    "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
+    "Open pull-request evidence is stored as discovered/candidate knowledge and must not be treated as merged runtime truth.",
+    "The graph grows through evidence-grounded typed relationships, not arbitrary similarity edges."
+  ]
+}
