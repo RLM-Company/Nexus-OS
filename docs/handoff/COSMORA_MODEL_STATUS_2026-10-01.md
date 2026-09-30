@@ -1,6 +1,9 @@
 # Model status and VPS update — 2026-10-01
 
-The VPS now runs `ba5d4eb48ef520fbe3dbbcb72226d5e37f8cb121` from draft
+This is the historical Model Status checkpoint. See the
+[integrated alpha checkpoint](COSMORA_INTEGRATED_ALPHA_2026-10-01.md) for the active release.
+
+The VPS was verified at `ba5d4eb48ef520fbe3dbbcb72226d5e37f8cb121` from draft
 [PR #272](https://github.com/RLM-Company/Nexus-OS/pull/272), stacked on
 [PR #271](https://github.com/RLM-Company/Nexus-OS/pull/271). No PR was merged.
 
@@ -23,8 +26,8 @@ reasons and unknown metadata fields are not rendered.
 - Only edge publishes host ports. Model requests remain globally stopped, with zero route
   attempts after deployment. No live model credential or paid request was introduced.
 
-The current source is `/opt/cosmora/releases/ba5d4eb`; the current Compose wrapper remains
-`/opt/cosmora/runtime/deployctl`. The previous wrapper is `/opt/cosmora/runtime/deployctl-8ade62f`.
+At this checkpoint the source was `/opt/cosmora/releases/ba5d4eb`; the Compose wrapper was
+`/opt/cosmora/runtime/deployctl`, with `/opt/cosmora/runtime/deployctl-8ade62f` retained for rollback.
 See the [operations checkpoint](COSMORA_ALPHA_OPERATIONS_2026-10-01.md) for protected configuration,
 backup and recovery evidence. Both previous releases remain available.
 
