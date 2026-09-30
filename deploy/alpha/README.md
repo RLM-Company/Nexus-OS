@@ -10,6 +10,15 @@ use persistent volumes. This is an owner-only alpha, not a multi-user deployment
 
 - Use a VPS with Docker Compose 2.30+ and a domain with an A/AAAA record pointing to that VPS. Open
   inbound 80/443. Keep SSH access private. Do not run this stack on a shared public computer.
+
+  A public IP can also be used with the optional `compose.ip.yaml` overlay. Set
+  `COSMORA_DEMO_DOMAIN` to that IP in both the shell and `private/site.env`, then use
+  `docker compose -f compose.yaml -f compose.ip.yaml` for **every** command below. The IP Caddyfile
+  requests a trusted Let's Encrypt `shortlived` certificate and supplies a default SNI for clients
+  without SNI. Domain deployments use the base Compose file. The two Caddyfiles share the same
+  owner authentication and API proxy rules. See the
+  [IP certificate policy](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability).
+
 - Review and integrate the live route and interface PRs. The source checkout must include both
   changes. No model key, session token or password belongs in Git or chat.
 - From the repository root, work in `deploy/alpha`. Put private values in the ignored `private/`
@@ -52,6 +61,11 @@ docker compose -f compose.yaml run --rm --no-deps \
 docker compose -f compose.yaml up -d edge
 ```
 
+API and Next have container health checks. Caddy starts only after both become healthy.
+`docker compose -f compose.yaml ps` reports this state; a running container alone is insufficient.
+The API check verifies SQLite, and the checks follow no redirects. These checks establish service
+availability, not live-model readiness.
+
 If `owner-session.env` already exists, the issuer refuses to overwrite it. To rotate, stop `edge`,
 rerun the issuer with `-e COSMORA_ROTATE_SESSION=1`, then start `edge`. The old active session is
 revoked and the new token replaces it atomically on disk. Session expiry is seven days; plan a
@@ -83,3 +97,42 @@ before starting the task.
 This deployment is intentionally single-instance: SQLite is not shared across replicas. Back up
 `cosmora_data` securely before updates. Do not publish the current static Sites preview as a live
 AI demo; it does not include this API or its database.
+
+## Database backup and recovery
+
+The backup command uses SQLite's online backup API, including committed WAL records. It opens
+the source read-only, verifies the copied database with `PRAGMA integrity_check`, and publishes
+a private snapshot plus a byte count and SHA-256 manifest. It never copies a live database file
+with `cp`. Backups contain private chats, projects and identity data; keep them outside Git and
+public web directories.
+
+```sh
+mkdir -m 700 -p private/backups
+docker compose -f compose.yaml run --rm --no-deps \
+  -v "$PWD/private/backups:/run/cosmora-backups" \
+  api node deploy/alpha/sqlite-backup.mjs create
+```
+
+The command prints only the new manifest path. To check an existing snapshot, pass that exact
+path to `node deploy/alpha/sqlite-backup.mjs verify <manifest.json>` with the same mount.
+Verification checks both hash and SQLite integrity and rejects paths outside the manifest
+directory. Each run creates a new snapshot; there is no automatic deletion or retention policy.
+Keep a protected copy on another machine as well, because a backup on this VPS cannot survive
+loss of the VPS. Transfer the matching `.sqlite` and `.sqlite.json` files together.
+
+For a recovery rehearsal, copy the verified snapshot into a **new** Docker volume or private
+directory. Start only an API container against that copy on an unpublished network with
+`RUNTIME_EMERGENCY_STOP=true`, no live provider credential and no mock fallback. Verify SQLite
+health, saved records and owner identity. The source backup must stay unchanged. Never point the
+rehearsal at the active `cosmora_data` volume or expose its routes.
+
+Actual recovery requires a maintenance window: stop edge, API and Next, preserve the current
+volume, restore into a new volume, and explicitly select it. Start the API with the environment
+emergency stop still enabled. Issue a **new** owner session for the restored database and recreate
+edge so it receives the new token. A token/session from after the backup may not exist in the
+restored database. Complete authenticated checks before reopening access or resuming model calls.
+Application rollback and database recovery are separate operations; an older image must be
+compatible with the selected database schema.
+
+Run `pnpm test:deploy` to check WAL snapshot recovery, tampering, missing databases, private Linux
+permissions, directory boundaries and container health behavior. It is included in `pnpm check`.
