@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **286 nodes**;
-- **775 typed edges**;
+- **334 nodes**;
+- **896 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -202,6 +202,40 @@ Recent hardening events also preserve concrete history:
 - `62bc523` — durable Manager work runtime.
 
 These are evidence-backed work-experience relationships, not semantic similarity guesses.
+
+## Open-review knowledge without authority leakage
+
+The unified graph now records two open, unmerged work streams as candidate knowledge:
+
+- Manager execution-contract hardening (#229, #237–#245);
+- Settings / Companion / communication controls (#221, #244, #246, #248, #250, #252, #254, #257).
+
+These nodes and edges use `verification_status = discovered`. Their relation vocabulary includes
+`STACKED_BEFORE`, `PROPOSES_CHANGE_TO`, `PROPOSES_CONSTRAINT_FOR`,
+`PROPOSES_UI_FOR`, `EXPOSES_CONTROL_FOR` and
+`REQUIRES_EXPLICIT_CONSENT_FOR`.
+
+They are intentionally visible for roadmap/review questions while `verified_only=true` removes
+them from authoritative retrieval.
+
+The graph therefore distinguishes:
+
+- what is true in merged `main`;
+- what was implemented historically;
+- what is currently proposed in open PRs.
+
+This prevents planning context from silently becoming runtime truth.
+
+## Canonical knowledge artifacts
+
+The repository now contains:
+
+- `knowledge/cosmora/graph-manifest.v1.json` — machine-readable layer/count/authority manifest;
+- `knowledge/cosmora/README.md` — consumption and quality rules;
+- `scripts/export-cosmora-intelligence-graph.ts` — deterministic full snapshot exporter.
+
+The exporter emits sorted node, edge and retrieval-record NDJSON plus `snapshot.json` and a generated
+manifest with SHA-256 checksums.
 
 ## Quality rules exercised by tests
 
