@@ -14,7 +14,9 @@ type ModelRuntimeStatus = {
 };
 
 type LoadState =
-  { kind: "loading" } | { kind: "loaded"; runtime: ModelRuntimeStatus } | { kind: "error" };
+  | { kind: "loading" }
+  | { kind: "loaded"; runtime: ModelRuntimeStatus; paused: boolean }
+  | { kind: "error" };
 
 const MODE_LABELS: Record<ModelRuntimeStatus["mode"], string> = {
   mock: "Mock",
@@ -37,14 +39,31 @@ export default function ModelStatusPage() {
     const load = async (): Promise<void> => {
       setState({ kind: "loading" });
       try {
-        const response = await fetch("/api/v1/model-runtime", {
+        const options = {
           method: "GET",
           cache: "no-store",
           signal: controller.signal
-        });
+        } as const;
+        const [response, operationsResponse] = await Promise.all([
+          fetch("/api/v1/model-runtime", options),
+          fetch("/api/v1/operations/status", options)
+        ]);
         if (!response.ok) throw new Error(`Model runtime request failed: ${response.status}`);
+        if (!operationsResponse.ok) {
+          throw new Error(`Operations status request failed: ${operationsResponse.status}`);
+        }
         const runtime = (await response.json()) as ModelRuntimeStatus;
-        if (active) setState({ kind: "loaded", runtime });
+        const operations = (await operationsResponse.json()) as {
+          process_stop?: { active?: boolean } | null;
+        } | null;
+        if (
+          !operations ||
+          (operations.process_stop !== null && typeof operations.process_stop?.active !== "boolean")
+        ) {
+          throw new Error("Operations status is unavailable");
+        }
+        const paused = operations.process_stop?.active === true;
+        if (active) setState({ kind: "loaded", runtime, paused });
       } catch (error) {
         if (controller.signal.aborted) return;
         console.error("Unable to load model runtime status", error);
@@ -62,23 +81,28 @@ export default function ModelStatusPage() {
   const readiness = useMemo(() => {
     if (state.kind !== "loaded") return null;
     const ready =
+      !state.paused &&
       state.runtime.mode !== "mock" &&
       state.runtime.credential_configured &&
       !state.runtime.fallback_to_mock;
     return {
       ready,
-      title: ready
-        ? "Готово к запуску"
-        : state.runtime.mode !== "mock" && state.runtime.credential_configured
-          ? "Отключите mock fallback"
-          : "Модель не подключена",
-      description: ready
-        ? "Внешний провайдер и credential настроены. Успешный ответ модели пока не проверен."
-        : state.runtime.mode === "mock"
-          ? "Runtime работает в mock-режиме. Внешняя модель не подключена."
-          : !state.runtime.credential_configured
-            ? "Провайдер выбран, но credential для запуска внешней модели не настроен."
-            : "Перед live smoke установите MODEL_FALLBACK_TO_MOCK=false и перезапустите API."
+      title: state.paused
+        ? "Запросы приостановлены"
+        : ready
+          ? "Провайдер настроен"
+          : state.runtime.mode !== "mock" && state.runtime.credential_configured
+            ? "Резервный режим включён"
+            : "Модель не подключена",
+      description: state.paused
+        ? "Выполнение запросов к модели остановлено для всех проектов."
+        : ready
+          ? "Провайдер и API-ключ настроены. Маршрут и лимиты требуют проверки; успешный ответ модели пока не подтверждён."
+          : state.runtime.mode === "mock"
+            ? "Используется локальная заглушка. Внешняя модель не подключена."
+            : !state.runtime.credential_configured
+              ? "Провайдер выбран, но API-ключ для внешней модели не настроен."
+              : "Ответ заглушки может заменить ответ внешней модели. Перед живым запуском отключите резервный режим."
     };
   }, [state]);
 
@@ -92,10 +116,7 @@ export default function ModelStatusPage() {
           <div>
             <p className={styles.eyebrow}>Model runtime</p>
             <h1>Подключение модели</h1>
-            <p className={styles.lead}>
-              Read-only состояние текущего Model Runtime. Секреты здесь не вводятся и не
-              отображаются.
-            </p>
+            <p className={styles.lead}>Подключение провайдера и состояние запросов к модели.</p>
           </div>
         </header>
 
@@ -103,7 +124,7 @@ export default function ModelStatusPage() {
           {state.kind === "loading" && (
             <div className={styles.loading} data-testid="runtime-loading">
               <span className={styles.loadingDot} aria-hidden="true" />
-              Загружаем состояние runtime…
+              Загружаем состояние модели…
             </div>
           )}
 
@@ -113,7 +134,7 @@ export default function ModelStatusPage() {
                 !
               </span>
               <div>
-                <strong>Не удалось получить состояние runtime</strong>
+                <strong>Не удалось получить состояние модели</strong>
                 <p>API временно недоступен. Проверьте подключение и повторите попытку.</p>
                 <button
                   type="button"
@@ -143,7 +164,7 @@ export default function ModelStatusPage() {
 
               <dl className={styles.details}>
                 <div className={styles.detailItem}>
-                  <dt>Режим runtime</dt>
+                  <dt>Режим подключения</dt>
                   <dd data-testid="runtime-mode">{MODE_LABELS[state.runtime.mode]}</dd>
                 </div>
                 <div className={styles.detailItem}>
@@ -155,31 +176,48 @@ export default function ModelStatusPage() {
                   <dd data-testid="runtime-model">{state.runtime.model}</dd>
                 </div>
                 <div className={styles.detailItem}>
-                  <dt>Credential настроен</dt>
+                  <dt>API-ключ настроен</dt>
                   <dd data-testid="runtime-credential">
                     <BooleanValue value={state.runtime.credential_configured} />
                   </dd>
                 </div>
                 <div className={styles.detailItem}>
-                  <dt>Mock fallback разрешён</dt>
+                  <dt>Резервный режим с заглушкой</dt>
                   <dd data-testid="runtime-fallback">
                     <BooleanValue value={state.runtime.fallback_to_mock} />
+                  </dd>
+                </div>
+                <div className={styles.detailItem}>
+                  <dt>Общая остановка запросов</dt>
+                  <dd data-testid="runtime-paused">
+                    <span className={styles.neutralValue}>{state.paused ? "Да" : "Нет"}</span>
                   </dd>
                 </div>
               </dl>
 
               {state.runtime.fallback_to_mock && !readiness.ready && (
                 <p className={styles.note} data-testid="runtime-fallback-note">
-                  Mock fallback доступен как резервный режим, но не считается подключённой внешней
-                  моделью.
+                  Резервная заглушка не подтверждает работу внешней модели.
                 </p>
               )}
               {readiness.ready && (
                 <p className={styles.note}>
-                  Перед первым платным запросом выполните <code>pnpm manager:preflight</code> в
-                  локальном проекте. Проверка не вызывает модель.
+                  Перед первым платным запросом проверьте маршрут и лимиты проекта. Наличие
+                  API-ключа не подтверждает, что модель уже ответила.
                 </p>
               )}
+              {state.paused && (
+                <p className={styles.note}>
+                  <Link href="/control-center">Открыть Центр управления</Link>
+                </p>
+              )}
+              <button
+                type="button"
+                className={styles.retryButton}
+                onClick={() => setRetryKey((value) => value + 1)}
+              >
+                Обновить состояние
+              </button>
             </>
           )}
         </section>

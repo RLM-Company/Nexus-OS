@@ -157,6 +157,9 @@ test("does not render secret fields returned alongside model runtime metadata", 
   page
 }) => {
   const secretMarker = "sk-audit-secret-marker";
+  await page.route("**/api/v1/operations/status", async (route) => {
+    await route.fulfill({ json: { process_stop: null } });
+  });
   await page.route("**/api/v1/model-runtime", async (route) => {
     await route.fulfill({
       status: 200,
@@ -175,7 +178,7 @@ test("does not render secret fields returned alongside model runtime metadata", 
   });
 
   await page.goto("/model-status");
-  await expect(page.getByTestId("runtime-readiness")).toContainText("Готово к запуску");
+  await expect(page.getByTestId("runtime-readiness")).toContainText("Провайдер настроен");
   await expect(page.locator("body")).not.toContainText(secretMarker);
   await expect(page.locator("body")).not.toContainText("MODEL_API_KEY=must-not-render");
 });
