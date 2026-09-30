@@ -11,6 +11,7 @@ import {
 import { cosmoraWorkExperienceGraph } from "./cosmora-work-experience-graph.js";
 import { cosmoraOpenReviewGraph } from "./cosmora-open-review-graph.js";
 import { cosmoraMainHardeningHistoryGraph } from "./cosmora-main-hardening-history-graph.js";
+import { cosmoraOpenSettingsReviewGraph } from "./cosmora-open-settings-review-graph.js";
 
 const recordedAt = "2026-09-29T20:00:00.000Z";
 
@@ -279,20 +280,23 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
   const workExperience = cosmoraWorkExperienceGraph();
   const openReview = cosmoraOpenReviewGraph();
   const mainHardening = cosmoraMainHardeningHistoryGraph();
+  const openSettings = cosmoraOpenSettingsReviewGraph();
 
   const nodes = [
     ...semantic.nodes,
     ...structural.nodes,
     ...workExperience.nodes,
     ...openReview.nodes,
-    ...mainHardening.nodes
+    ...mainHardening.nodes,
+    ...openSettings.nodes
   ];
   const records = [
     ...semantic.records,
     ...structural.records,
     ...workExperience.records,
     ...openReview.records,
-    ...mainHardening.records
+    ...mainHardening.records,
+    ...openSettings.records
   ];
   const edges = [
     ...semantic.edges,
@@ -300,7 +304,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...bridgeRows.map(bridgeEdge),
     ...workExperience.edges,
     ...openReview.edges,
-    ...mainHardening.edges
+    ...mainHardening.edges,
+    ...openSettings.edges
   ];
 
   const nodeKeys = nodes.map((node) => versionKey(node.node_id, node.node_version));
