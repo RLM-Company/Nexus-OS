@@ -20,16 +20,16 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(314);
-    expect(graph.records).toHaveLength(314);
-    expect(graph.edges).toHaveLength(861);
+    expect(graph.nodes).toHaveLength(334);
+    expect(graph.records).toHaveLength(334);
+    expect(graph.edges).toHaveLength(896);
 
     expect(
       new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size
-    ).toBe(314);
+    ).toBe(334);
     expect(
       new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size
-    ).toBe(861);
+    ).toBe(896);
 
     expect(() => createIndex()).not.toThrow();
   });
@@ -355,6 +355,64 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "event-main-bd7508fc|PRECEDES|event-core-model-request-bounds"
+    );
+  });
+
+  it("keeps open Settings and push-consent work visible but non-authoritative", () => {
+    const reviewPacket = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "proposal pr 257 push consent browser permission notifications",
+      mode: "local",
+      verified_only: false,
+      budget: { max_nodes: 12, max_edges: 16, max_fan_out: 10 }
+    });
+
+    expect(reviewPacket.nodes.map(({ node }) => node.node_id)).toContain(
+      "proposal-pr-257-push-consent"
+    );
+    expect(
+      reviewPacket.edges.some(
+        (edge) =>
+          edge.type === "REQUIRES_EXPLICIT_CONSENT_FOR" &&
+          edge.from.id === "proposal-pr-257-push-consent" &&
+          edge.to.id === "entity-companion-gate"
+      )
+    ).toBe(true);
+
+    const verifiedPacket = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "proposal pr 257 push consent browser permission notifications",
+      mode: "local",
+      verified_only: true,
+      budget: { max_nodes: 12, max_edges: 16, max_fan_out: 10 }
+    });
+
+    expect(
+      verifiedPacket.nodes.some(
+        ({ node }) => node.node_id === "proposal-pr-257-push-consent"
+      )
+    ).toBe(false);
+  });
+
+  it("preserves the Settings review dependency stack", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "proposal-pr-221-settings-foundation|STACKED_BEFORE|proposal-pr-244-notification-reconcile"
+    );
+    expect(pairs).toContain(
+      "proposal-pr-244-notification-reconcile|STACKED_BEFORE|proposal-pr-257-push-consent"
+    );
+    expect(pairs).toContain(
+      "proposal-pr-248-companion-policy-controls|EXPOSES_CONTROL_FOR|entity-companion-gate"
+    );
+    expect(pairs).toContain(
+      "proposal-pr-254-communication-policy-controls|EXPOSES_CONTROL_FOR|candidate-entity-communication-profile"
     );
   });
 
