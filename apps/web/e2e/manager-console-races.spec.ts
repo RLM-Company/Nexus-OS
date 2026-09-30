@@ -99,6 +99,10 @@ const fixture = async (page: Page) => {
       body = { items: [project("alpha"), project("beta")] };
     } else if (path === "/api/v1/model-runtime") {
       body = { mode: "mock", provider: "mock", model: "fixture", fallback_to_mock: false };
+    } else if (path === "/api/v1/operations/status") {
+      body = { process_stop: null };
+    } else if (path === "/api/v1/operations/emergency-stop") {
+      body = null;
     } else if (path === "/api/v1/projects/alpha") {
       const snapshot = structuredClone(state.alpha);
       await state.waitForAlpha;

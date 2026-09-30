@@ -1,8 +1,11 @@
 # Cosmora alpha operations — 2026-10-01
 
-## Current deployed revision
+This is the historical operations checkpoint for #271. See the
+[integrated alpha checkpoint](COSMORA_INTEGRATED_ALPHA_2026-10-01.md) for the active release.
 
-The VPS now runs `8ade62fa77eeee1837a51413787c4c68846acebd` from draft
+## Verified deployment revision
+
+The VPS was verified at `8ade62fa77eeee1837a51413787c4c68846acebd` from draft
 [PR #271](https://github.com/RLM-Company/Nexus-OS/pull/271), stacked on
 [PR #270](https://github.com/RLM-Company/Nexus-OS/pull/270). This replaces the initial
 [VPS boot](COSMORA_VPS_BOOT_2026-10-01.md). No PR was merged and the Intelligence Graph remains separate.
@@ -19,7 +22,7 @@ Compose completed `up --wait` successfully and both application containers repor
 
 ## Maintenance paths
 
-- Current source: `/opt/cosmora/releases/8ade62f`.
+- Source at this checkpoint: `/opt/cosmora/releases/8ade62f`.
 - Shared private configuration: `/opt/cosmora/private`, mode 0700; files mode 0600. Both release
   directories link to it so rollback continues to use current credentials and sessions.
 - Current Compose wrapper: `/opt/cosmora/runtime/deployctl`.

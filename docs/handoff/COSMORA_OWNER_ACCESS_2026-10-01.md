@@ -1,5 +1,8 @@
 # Hosted owner access verification — 2026-10-01
 
+This records the original utility installation. See the
+[integrated alpha checkpoint](COSMORA_INTEGRATED_ALPHA_2026-10-01.md) for the active deployment.
+
 [Draft PR #273](https://github.com/RLM-Company/Nexus-OS/pull/273) adds a manual HTTPS access
 verifier at implementation revision `d0eecb4fca828d6ba3b50a95a11ffc09a1ff7738`, stacked on
 [PR #272](https://github.com/RLM-Company/Nexus-OS/pull/272). No PR was merged.
@@ -13,7 +16,7 @@ The verifier checks both layers through Caddy, including the current session and
 Run `/opt/cosmora/runtime/verify-owner-access` on the VPS during manual maintenance. It invokes
 the current Compose wrapper with a temporary API-image container and read-only mounts for the
 private password and exact committed verifier. No application rebuild or database migration was
-needed; the application remains at `ba5d4eb` and its containers were not restarted for this utility.
+needed; at installation the application remained at `ba5d4eb` and was not restarted for this utility.
 The verifier source is `/opt/cosmora/operations/d0eecb4/deploy/alpha/verify-access.mjs`.
 
 - Transferred source archive SHA-256:

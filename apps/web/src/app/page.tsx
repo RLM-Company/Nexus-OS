@@ -6,6 +6,7 @@ import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./cha
 import { InstallApp } from "./install-app";
 import { ProjectContextPanel } from "./project-context-panel";
 import { ManagerWorkPanel } from "./manager-work-panel";
+import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 import { WorkspaceIcon } from "./workspace-icons";
 import { AccountMenu, MobileNavigation } from "./workspace-navigation";
 import {
@@ -409,6 +410,7 @@ const generalMessagePlaceholder = (id: string, chatId: string, runId: string): L
 export default function Home() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const executionGate = useExecutionGate(activeProject?.id);
   const [chatId, setChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [autonomyProfile, setAutonomyProfile] = useState<AutonomyProfile | null>(null);
@@ -1252,7 +1254,8 @@ export default function Home() {
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     const content = draft.trim();
-    if (!content || sending || loading || submitPendingRef.current) return;
+    if (!content || sending || loading || submitPendingRef.current || executionGate !== "clear")
+      return;
     submitPendingRef.current = true;
     try {
       if (!activeProject) {
@@ -1364,6 +1367,7 @@ export default function Home() {
   };
 
   const promoteToProject = async (): Promise<void> => {
+    if (executionGate !== "clear") return;
     if (!projectProposal || !activeLocalChatId || loading || projectPromotionPendingRef.current)
       return;
     projectPromotionPendingRef.current = true;
@@ -2188,7 +2192,7 @@ export default function Home() {
                     <div className="proposal-actions">
                       <button
                         type="button"
-                        disabled={loading}
+                        disabled={loading || executionGate !== "clear"}
                         onClick={() => void promoteToProject()}
                       >
                         Оформить как проект
@@ -2223,6 +2227,12 @@ export default function Home() {
           }
           onSubmit={(event) => void submit(event)}
         >
+          {executionGate !== "clear" && (
+            <p className="composer-execution-state" data-testid="chat-execution-gate">
+              {executionGateLabels[executionGate]}{" "}
+              <Link href={controlCenterHref}>Центр управления</Link>
+            </p>
+          )}
           <label htmlFor="task">
             {activeProject ? "Сообщение менеджеру" : "Сообщение Cosmora"}
           </label>
@@ -2274,7 +2284,10 @@ export default function Home() {
                     ↻ Вернуть запрос в редактор
                   </button>
                 )}
-                <button disabled={!draft.trim() || loading} aria-label="Отправить">
+                <button
+                  disabled={!draft.trim() || loading || executionGate !== "clear"}
+                  aria-label="Отправить"
+                >
                   <SendIcon />
                 </button>
               </div>

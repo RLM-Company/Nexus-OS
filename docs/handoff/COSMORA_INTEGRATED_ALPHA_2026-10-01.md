@@ -1,9 +1,9 @@
 # Integrated hosted alpha — 2026-10-01
 
 The private VPS at `https://13.141.51.16` now runs implementation revision
-`f265d59e82362895a50e40505469bfd8c03ccd8f` from draft
-[PR #276](https://github.com/RLM-Company/Nexus-OS/pull/276). The stack is #263 → #270 → #271 →
-#272 → #273 → #274 → #275 → #276. No PR was merged. Intelligence Graph development remains separate.
+`8851cea1858dbaf4cdf2ad984831b61de3067643` from draft
+[PR #277](https://github.com/RLM-Company/Nexus-OS/pull/277). The stack is #263 → #270 → #271 →
+#272 → #273 → #274 → #275 → #276 → #277. No PR was merged. Intelligence Graph development remains separate.
 
 Control Center now shows the global emergency stop and owner runtime counters before a project
 is selected, including on an empty installation. It identifies server-configured stops, supports
@@ -21,6 +21,12 @@ failure retains the generic error or unavailable gate and supports manual/schedu
 work mutation requests are unchanged. The initial browser regression reproduced the missing
 error after nine seconds before the fix.
 
+Ordinary and project chat now use the same execution gate as Manager. Send, Enter submission and
+project promotion require valid clearance for the global and selected-project stops. Drafts remain
+editable and retained while paused or unavailable; recovery enables controls without sending the
+draft automatically. Switching to ordinary chat removes the selected-project scope. Polling and
+read deadlines remain three and six seconds, respectively.
+
 ## Verification
 
 The complete `pnpm check` passed at `11e3412` in the integrated Windows checkout: formatting, secret scan,
@@ -37,32 +43,38 @@ production build and all **110** Chromium scenarios passed. All 21 focused statu
 passed, including three stalled-response/recovery checks. The source still contains the previously
 verified unit/API and deployment foundations; no backend source changed after the full gate.
 
-Source archive SHA-256: `8ae885b063d80c8d4a8061d40555e11cfdc391f68949dfaa3b40ca037c54c79a`.
-Image: `cosmora-alpha-app:f265d59`.
-Image ID: `sha256:a014c7b54836188adad83166bbab80a0bf56863f2ed9a3276835f2addf50cf9d`.
+After the shared chat gate at `8851cea`, web lint, strict TypeScript, formatting, secret scan,
+production build and all **114** Chromium scenarios passed. Ten focused chat/Manager scenarios
+also passed. This adds four chat regressions for draft retention, selected-project scope,
+stalled-status recovery and guarded project promotion. Backend source remains unchanged.
+
+Source archive SHA-256: `4567d248946229fadab665212f61f62440b16ea34466b5c2812e5fd52d6a87ba`.
+Image: `cosmora-alpha-app:8851cea`.
+Image ID: `sha256:90fef57047a53a9444fab7a5494310e511b451b1dc9842ada07caa0b41ba431b`.
 
 All nine packages built on the VPS. The exact image passed all 13 deployment tests with
 `--network none` and contains no private config directory. Compose `up --no-build --wait`
 completed successfully; API and web containers are healthy. The actual trusted-HTTPS owner access
 verifier exited 0, checking password protection, SQLite, current owner identity, expiry and global
-stop. Control Center returned authenticated HTTPS 200. Existing database and certificate volumes,
+stop. The interface, Control Center and Model Status returned authenticated HTTPS 200.
+Existing database and certificate volumes,
 session and owner password were preserved; previous releases remain available.
 
 A fresh online SQLite snapshot was verified before this update:
-`cosmora-2026-09-30T22-57-29-110Z-56e0e886-8ad3-44f7-892e-9e3be979b61d.sqlite`, with its matching
+`cosmora-2026-09-30T23-19-55-766Z-4d4e6476-a553-4f65-bc64-0af0de643f34.sqlite`, with its matching
 manifest. Both were copied into the protected Windows backup directory and passed checksum and
 integrity verification there. Their inherited ACL grants only the current user and SYSTEM access.
 
-GitHub CI run 969 (`36788229858`) failed with no job steps or available log URL; cause remains
+GitHub CI run 971 (`36790400174`) failed with no job steps or available log URL; cause remains
 unestablished. The separate browser is signed out of GitHub and cannot display this private run's
 annotation. A hosted interactive application walkthrough remains unverified because the in-app
 client blocks IP navigation. These limitations were not bypassed.
 
 ## Operations and remaining gates
 
-- Source: `/opt/cosmora/releases/f265d59`.
+- Source: `/opt/cosmora/releases/8851cea`.
 - Current Compose wrapper: `/opt/cosmora/runtime/deployctl`.
-- Previous wrapper: `/opt/cosmora/runtime/deployctl-974fbd0`.
+- Previous wrapper: `/opt/cosmora/runtime/deployctl-f265d59`.
 - Manual owner-access command: `/opt/cosmora/runtime/verify-owner-access`.
 - Protected configuration: `/opt/cosmora/private`; database backups: `/opt/cosmora/backups`.
 - Owner session expiry: `2026-10-07T21:02:42.963Z`. Rotate before expiry and recreate edge.
