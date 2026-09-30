@@ -53,4 +53,11 @@ test("creates guarded mock files, survives reload and downloads the result", asy
     "href",
     href!
   );
+  await page.route("**/api/v1/operations/status", (route) =>
+    route.fulfill({ json: { process_stop: { active: true } } })
+  );
+  await expect(panel.getByTestId("manager-execution-gate")).toContainText("для всех проектов");
+  await expect(panel.getByRole("button", { name: "Создать файлы", exact: true })).toBeDisabled();
+  await expect(panel.getByRole("link", { name: "result.md", exact: true })).toBeVisible();
+  expect((await request.get(href!)).status()).toBe(200);
 });

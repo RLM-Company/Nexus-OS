@@ -19,6 +19,13 @@ type Work = {
   events: { sequence: number; message: string; at: string }[];
 };
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
+type ExecutionGate = "checking" | "clear" | "process-stop" | "project-stop" | "unavailable";
+const executionGateLabels: Record<Exclude<ExecutionGate, "clear">, string> = {
+  checking: "Проверяем аварийное состояние перед запуском…",
+  "process-stop": "Запросы к модели приостановлены для всех проектов.",
+  "project-stop": "Запросы к модели остановлены для этого проекта.",
+  unavailable: "Не удалось проверить аварийное состояние. Новый запуск пока недоступен."
+};
 const labels: Record<string, string> = {
   queued: "В очереди",
   running: "Выполняется",
@@ -42,7 +49,7 @@ const errors: Record<string, string> = {
     "Запрос был прерван. Чтобы не списать токены повторно, он не отправлен заново.",
   UNSUPPORTED_ACTION: "План требует недоступных действий. Сейчас поддерживается создание файлов.",
   ROUTE_UNAVAILABLE: "Настроенная модель недоступна для этой роли или задачи.",
-  EMERGENCY_STOP: "Работа остановлена защитой проекта.",
+  EMERGENCY_STOP: "Работа прервана аварийной остановкой. Проверьте состояние в Центре управления.",
   DENIED: "Профиль проекта запрещает сохранение файлов.",
   WAITING_CONFIRMATION: "Подтвердите сохранение в центре управления, затем продолжите работу."
 };
@@ -72,12 +79,56 @@ export function ManagerWorkPanel({
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [runtime, setRuntime] = useState<{ mode: string; model: string } | null>(null);
+  const [executionGate, setExecutionGate] = useState<ExecutionGate>("checking");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
   const mutationEpoch = useRef(0);
   const pending = useRef<{ goal: string; role: string; id: string } | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async (): Promise<void> => {
+      try {
+        const [operations, projectStop] = await Promise.all([
+          json<{ process_stop?: { active?: boolean } | null }>("/api/v1/operations/status", {
+            signal: controller.signal
+          }),
+          json<{ active?: boolean } | null>(
+            "/api/v1/operations/emergency-stop?project_id=" + encodeURIComponent(projectId),
+            { signal: controller.signal }
+          )
+        ]);
+        if (
+          !operations ||
+          (operations.process_stop !== null &&
+            typeof operations.process_stop?.active !== "boolean") ||
+          (projectStop !== null && typeof projectStop?.active !== "boolean")
+        ) {
+          throw new Error("Execution status is unavailable");
+        }
+        if (!controller.signal.aborted) {
+          setExecutionGate(
+            operations.process_stop?.active
+              ? "process-stop"
+              : projectStop?.active
+                ? "project-stop"
+                : "clear"
+          );
+        }
+      } catch {
+        if (!controller.signal.aborted) setExecutionGate("unavailable");
+      } finally {
+        if (!controller.signal.aborted) timer = setTimeout(() => void refresh(), 3_000);
+      }
+    };
+    void refresh();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [projectId]);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -124,6 +175,8 @@ export function ManagerWorkPanel({
     };
   }, [base, selectedWorkId]);
   const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
+    if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
+      return;
     if (lock.current) return;
     mutationEpoch.current++;
     lock.current = true;
@@ -191,6 +244,14 @@ export function ManagerWorkPanel({
         Manager → выбранный исполнитель → Критик по риску. Роли используют настроенную модель.
         Результат — файлы для скачивания; запуск кода и публикация пока недоступны.
       </p>
+      {executionGate !== "clear" && (
+        <p className="manager-work-boundary" data-testid="manager-execution-gate">
+          {executionGateLabels[executionGate]} Сохранённые результаты остаются доступны.{" "}
+          <Link href={"/control-center?project=" + encodeURIComponent(projectId)}>
+            Центр управления
+          </Link>
+        </p>
+      )}
       <label className="manager-work-field">
         Задача
         <textarea
@@ -221,7 +282,14 @@ export function ManagerWorkPanel({
       <button
         type="button"
         className="manager-work-submit"
-        disabled={busy || projectHasActiveWork || !goal.trim() || !runtime || !historyLoaded}
+        disabled={
+          busy ||
+          projectHasActiveWork ||
+          !goal.trim() ||
+          !runtime ||
+          !historyLoaded ||
+          executionGate !== "clear"
+        }
         onClick={() => void act()}
       >
         Создать файлы
@@ -294,7 +362,7 @@ export function ManagerWorkPanel({
           {work.status === "awaiting_approval" && (
             <button
               className="manager-work-action primary"
-              disabled={busy}
+              disabled={busy || executionGate !== "clear"}
               onClick={() => void act("approve")}
             >
               Подтвердить план
@@ -312,7 +380,7 @@ export function ManagerWorkPanel({
           {["paused", "blocked"].includes(work.status) && (
             <button
               className="manager-work-action primary"
-              disabled={busy}
+              disabled={busy || executionGate !== "clear"}
               onClick={() => void act("resume")}
             >
               Продолжить
