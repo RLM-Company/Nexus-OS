@@ -68,7 +68,9 @@ test("shows a searchable plan with real entry points and honest future requireme
   page
 }) => {
   await page.goto("/?surface=features");
-  await expect(page.getByRole("heading", { name: "Возможности" })).toBeVisible();
+  await expect(
+    page.locator(".capability-workspace").getByRole("heading", { name: "Возможности", exact: true })
+  ).toBeVisible();
   await expect(page.getByText("10 в планах")).toBeVisible();
   await page.getByRole("button", { name: "Команда", exact: true }).click();
   await expect(page.getByText("Коллективный Work")).toBeVisible();

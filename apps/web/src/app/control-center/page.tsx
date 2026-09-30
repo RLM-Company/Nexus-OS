@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { safeApiError } from "../safe-api-error";
 import styles from "./control-center.module.css";
 
@@ -310,10 +310,12 @@ export default function ControlCenterPage() {
   const [runtimeRefreshRequired, setRuntimeRefreshRequired] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const loadEpoch = useRef(0);
   const actionPending =
     previewing || applying || limitPreviewing || limitApplying || deciding || stopping || clearing;
 
   const load = useCallback(async (id: string): Promise<void> => {
+    const epoch = ++loadEpoch.current;
     setLoading(true);
     setError(null);
     setNotice(null);
@@ -374,6 +376,7 @@ export default function ControlCenterPage() {
           "/api/v1/operations/emergency-stop/clearance-events?limit=50"
         )
       ]);
+      if (epoch !== loadEpoch.current) return;
       setData({
         profile: profileResponse.profile,
         confirmations: confirmationsResponse.items,
@@ -397,10 +400,11 @@ export default function ControlCenterPage() {
       );
       setLimitCurrency(usageLimitResponse.limit.max_cost?.currency ?? "USD");
     } catch (cause) {
+      if (epoch !== loadEpoch.current) return;
       setData(null);
       setError(cause instanceof Error ? cause.message : "Не удалось загрузить Control Center");
     } finally {
-      setLoading(false);
+      if (epoch === loadEpoch.current) setLoading(false);
     }
   }, []);
 

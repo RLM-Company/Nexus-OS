@@ -45,7 +45,8 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await expect(projectFacts).toContainText("Recovery");
   await expect(projectFacts).toContainText("Не требуется");
   await expect(projectFacts).toContainText("Сообщений");
-  await expect(page.getByRole("link", { name: "Control Center" })).toHaveAttribute(
+  await page.getByLabel("Аккаунт владельца").click();
+  await expect(page.getByRole("link", { name: "Автономность и безопасность" })).toHaveAttribute(
     "href",
     `/control-center?project=${createdBody.project.id}`
   );

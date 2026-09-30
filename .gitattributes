@@ -1,0 +1,2 @@
+# Match .editorconfig and Prettier on every platform, including core.autocrlf=true.
+* text=auto eol=lf

@@ -1,8 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const script = fileURLToPath(new URL("../../../scripts/manager-live-smoke.mjs", import.meta.url));
+const script = new URL("../../../scripts/manager-live-smoke.mjs", import.meta.url).href;
 describe("live smoke pre-dispatch budget", () => {
   it.each([
     { max_attempts_per_route: 2, max_output_tokens: 128 },

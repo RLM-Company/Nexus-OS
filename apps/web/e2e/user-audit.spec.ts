@@ -218,7 +218,7 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
 
   await newChat.focus();
   await page.keyboard.press("Tab");
-  await expect(page.getByLabel("Поиск чатов и проектов")).toBeFocused();
+  await expect(sidebar.getByLabel("Поиск чатов и проектов")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(chats).toBeFocused();
   await page.keyboard.press("Enter");
