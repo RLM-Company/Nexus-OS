@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { safeApiError } from "../safe-api-error";
+import RuntimeOverview from "./runtime-overview";
 import styles from "./control-center.module.css";
 
 type AutonomyLevel = "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
@@ -1090,13 +1091,16 @@ export default function ControlCenterPage() {
       )}
 
       {!projectId ? (
-        <section className={styles.emptyState}>
-          <span>CONTROL PLANE</span>
-          <h2>Выберите проект</h2>
-          <p>
-            Профиль автономности и подтверждения всегда загружаются в границах выбранного проекта.
-          </p>
-        </section>
+        <>
+          <RuntimeOverview />
+          <section className={styles.emptyState}>
+            <span>CONTROL PLANE</span>
+            <h2>Выберите проект</h2>
+            <p>
+              Профиль автономности и подтверждения всегда загружаются в границах выбранного проекта.
+            </p>
+          </section>
+        </>
       ) : data ? (
         <>
           <section className={styles.metrics} aria-label="Сводка автономности">
