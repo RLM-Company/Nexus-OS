@@ -1,7 +1,9 @@
 .panel {
   width: min(100%, 54rem);
+  min-height: 0;
   margin: 1.5rem auto 5rem;
   padding: 0 1rem;
+  overflow-y: auto;
 }
 
 .header,

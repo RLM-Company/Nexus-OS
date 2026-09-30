@@ -1,8 +1,8 @@
 # Cosmora OS
 
 Cosmora OS is an owner-controlled, policy-gated AI project workspace. This repository contains the
-integrated product and safety foundations; it does not yet contain an autonomous Manager or worker
-agent runtime.
+integrated product and safety foundations and a bounded, durable Manager work runtime for creating
+downloadable files. The current alpha does not execute arbitrary code or external actions.
 
 ## Current integrated scope
 
@@ -10,6 +10,8 @@ agent runtime.
 
 - responsive Next.js project shell with separately persisted ordinary chats and projects,
   server-side streaming, cancellation and restart recovery;
+- Manager work panel with plan, file drafts, optional Critic review, owner controls and saved task
+  history with downloads from earlier completed tasks;
 - browser-local Project Context preview with bounded source metadata, explicit preview before
   connecting a source, per-project local isolation, safe redaction and explicit clear confirmation;
 - mock-only Skills preview with read/preview permissions and disabled arbitrary execution, plus a
@@ -42,15 +44,23 @@ agent runtime.
   provenance, conflict, checkpoint, readiness and deterministic scenario release-gate contracts;
 - 19 canonical Manager Runtime scenario entries covering all 13 required categories and every
   autonomy level A0–A6.
+- durable Manager work coordinator with SQLite task state, bounded model requests and token
+  reservations, restart reconciliation and Policy Runtime checks before publishing files.
 
 ## Current boundary
 
-- Manager and worker agents do not execute task graphs or make model calls as agents yet.
+- Manager work executes a bounded plan → draft → optional review → publication flow through Model
+  Gateway. The default route is mock-only; an external provider requires a reviewed role/task route
+  and server-side credentials. A configured credential alone does not prove live readiness.
+- Generated files are inert downloads. Shell execution, repository edits, research, deployment and
+  messaging tools are unavailable to this executor; plans requiring them fail visibly.
 - Project Context source selection is browser-local preview state, not authoritative runtime context.
 - Skills preview does not execute packages or arbitrary code, and GitHub preview does not authenticate
   to GitHub or perform repository writes.
 - External tool effects and the local daemon are not connected to an autonomous agent loop.
-- Manager Runtime Step 6 is accepted as `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`.
+- The historical Manager Runtime Step 6 acceptance was
+  `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`. The later bounded work runtime is implemented;
+  that does not establish a general autonomous task-graph executor or production readiness.
 - Roadmap Step 5 owner-facing control slices are implemented. Finite-use override counters are
   explicit owner inputs, included in the server authority diff and consumed atomically by Tool
   Runtime.
@@ -297,6 +307,10 @@ development machine with
 - Every tool execution must pass through `packages/tool-runtime` and Policy Runtime.
 - Secrets are server-only and never committed.
 - Future packages reference local packages with `workspace:*`.
+
+For the current integration candidate and remaining release gates, see
+`docs/handoff/COSMORA_ALPHA_READINESS_2026-09-30.md`. Historical checkpoints describe their own
+revisions and must not be treated as the current runtime boundary.
 
 See `docs/decisions/ADR-001-technology-stack.md`,
 `docs/decisions/ADR-002-model-gateway.md`, the
