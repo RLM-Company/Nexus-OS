@@ -20,16 +20,16 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(286);
-    expect(graph.records).toHaveLength(286);
-    expect(graph.edges).toHaveLength(775);
+    expect(graph.nodes).toHaveLength(299);
+    expect(graph.records).toHaveLength(299);
+    expect(graph.edges).toHaveLength(820);
 
     expect(
       new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size
-    ).toBe(286);
+    ).toBe(299);
     expect(
       new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size
-    ).toBe(775);
+    ).toBe(820);
 
     expect(() => createIndex()).not.toThrow();
   });
@@ -240,6 +240,77 @@ describe("unified Cosmora Intelligence Graph", () => {
           edge.from.id === "event-core-model-request-bounds"
       )
     ).toBe(true);
+  });
+
+  it("keeps open PR proposals separate from verified main knowledge", () => {
+    const reviewPacket = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "proposal pr 241 critic verdict binding",
+      mode: "local",
+      verified_only: false,
+      budget: { max_nodes: 10, max_edges: 12, max_fan_out: 8 }
+    });
+
+    expect(reviewPacket.nodes.map(({ node }) => node.node_id)).toContain(
+      "proposal-pr-241-critic-verdict-binding"
+    );
+    expect(
+      reviewPacket.nodes.find(
+        ({ node }) => node.node_id === "proposal-pr-241-critic-verdict-binding"
+      )?.node.verification_status
+    ).toBe("discovered");
+    expect(
+      reviewPacket.edges.some(
+        (edge) =>
+          edge.type === "PROPOSES_CONSTRAINT_FOR" &&
+          edge.from.id === "proposal-pr-241-critic-verdict-binding" &&
+          edge.to.id === "entity-critic-role"
+      )
+    ).toBe(true);
+
+    const verifiedPacket = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "proposal pr 241 critic verdict binding",
+      mode: "local",
+      verified_only: true,
+      budget: { max_nodes: 10, max_edges: 12, max_fan_out: 8 }
+    });
+
+    expect(
+      verifiedPacket.nodes.some(
+        ({ node }) => node.node_id === "proposal-pr-241-critic-verdict-binding"
+      )
+    ).toBe(false);
+  });
+
+  it("preserves the open Manager hardening stack without promoting it to main", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "proposal-pr-229-manager-execution|STACKED_BEFORE|proposal-pr-237-verification-consistency"
+    );
+    expect(pairs).toContain(
+      "proposal-pr-241-critic-verdict-binding|STACKED_BEFORE|proposal-pr-243-verification-time-order"
+    );
+    expect(pairs).toContain(
+      "proposal-pr-243-verification-time-order|STACKED_BEFORE|proposal-pr-245-result-time-order"
+    );
+    expect(pairs).toContain(
+      "proposal-pr-229-manager-execution|STACKED_BEFORE|proposal-pr-242-manager-schema-boundaries"
+    );
+
+    const candidateEdges = graph.edges.filter(
+      (edge) => edge.extractor_version === "github-open-review-v1"
+    );
+    expect(candidateEdges.length).toBeGreaterThan(0);
+    expect(candidateEdges.every((edge) => edge.verification_status === "discovered")).toBe(
+      true
+    );
   });
 
   it("keeps every bridge evidence-grounded and specifically typed", () => {
