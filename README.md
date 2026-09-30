@@ -309,7 +309,9 @@ development machine with
 - Future packages reference local packages with `workspace:*`.
 
 For the current integration candidate and remaining release gates, see
-`docs/handoff/COSMORA_ALPHA_READINESS_2026-09-30.md`. Historical checkpoints describe their own
+[integrated hosted alpha checkpoint](docs/handoff/COSMORA_INTEGRATED_ALPHA_2026-10-01.md).
+It records the deployed revision, complete local verification, draft PR stack and remaining gates.
+Historical checkpoints describe their own
 revisions and must not be treated as the current runtime boundary.
 
 See `docs/decisions/ADR-001-technology-stack.md`,
