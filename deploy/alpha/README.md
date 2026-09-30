@@ -72,6 +72,27 @@ revoked and the new token replaces it atomically on disk. Session expiry is seve
 rotation before it expires. Caddy credentials and the bearer session are separate; losing one
 does not silently grant access to the other.
 
+Keep the separate Basic owner password in `private/owner-password`, mode `0600`, as one line.
+Use a private editor; never put it into a shell command, command-line argument, Git or logs.
+The access verifier reads this file without printing it and checks the actual HTTPS edge:
+
+```sh
+docker compose -f compose.yaml run --rm --no-deps \
+  -e COSMORA_ACCESS_ORIGIN="https://$COSMORA_DEMO_DOMAIN" \
+  -v "$PWD/private:/run/cosmora:ro" \
+  api node deploy/alpha/verify-access.mjs
+```
+
+Run it after deployment, credential/session rotation and during manual maintenance checks. It
+requires unauthenticated interface and health requests to return 401, then verifies authenticated
+interface access, healthy SQLite, exactly one current hosted owner session and global stop status.
+A session with 24 hours or less remaining fails with a rotation reminder. This catches an expired
+bearer session even when the public API health check still returns 200. Redirects are never
+followed, TLS certificate validation stays enabled, and failure output excludes response bodies
+and credentials. The command sends only GET requests and never calls a model, rotates credentials
+or clears stops. A PASS establishes owner access; it does not establish live AI readiness.
+This is a manual command; no timer or automatic renewal is installed.
+
 Check `https://<domain>/api/v1/health` and the Work screen after logging in. The health endpoint
 must also be password-protected at the edge. Before a paid trial, run the no-cost hosted preflight
 inside the API container:
@@ -135,4 +156,5 @@ Application rollback and database recovery are separate operations; an older ima
 compatible with the selected database schema.
 
 Run `pnpm test:deploy` to check WAL snapshot recovery, tampering, missing databases, private Linux
-permissions, directory boundaries and container health behavior. It is included in `pnpm check`.
+permissions, directory boundaries, container health and owner access verification. It is included
+in `pnpm check`.
