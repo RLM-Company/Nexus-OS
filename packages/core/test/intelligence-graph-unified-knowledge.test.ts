@@ -20,16 +20,16 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(299);
-    expect(graph.records).toHaveLength(299);
-    expect(graph.edges).toHaveLength(820);
+    expect(graph.nodes).toHaveLength(314);
+    expect(graph.records).toHaveLength(314);
+    expect(graph.edges).toHaveLength(861);
 
     expect(
       new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size
-    ).toBe(299);
+    ).toBe(314);
     expect(
       new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size
-    ).toBe(820);
+    ).toBe(861);
 
     expect(() => createIndex()).not.toThrow();
   });
@@ -310,6 +310,51 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(candidateEdges.length).toBeGreaterThan(0);
     expect(candidateEdges.every((edge) => edge.verification_status === "discovered")).toBe(
       true
+    );
+  });
+
+  it("retrieves verified security hardening from merged main history", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "reject padded environment secrets config hardening",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: {
+        max_depth: 2,
+        max_nodes: 16,
+        max_edges: 20,
+        max_fan_out: 10,
+        max_context_tokens: 3_000
+      }
+    });
+
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+    expect(ids).toContain("event-main-bd7508fc");
+    expect(ids).toContain(repositoryStructureFileId("packages/config/src/secrets.ts"));
+    expect(
+      packet.edges.some(
+        (edge) =>
+          edge.type === "CHANGED_FILE" &&
+          edge.from.id === "event-main-bd7508fc"
+      )
+    ).toBe(true);
+  });
+
+  it("preserves merged hardening chronology before later model-request bounds", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "event-main-5d268cb7|PRECEDES|event-main-9d35d7d9"
+    );
+    expect(pairs).toContain(
+      "event-main-9d8b8207|PRECEDES|event-main-bd66e37c"
+    );
+    expect(pairs).toContain(
+      "event-main-bd7508fc|PRECEDES|event-core-model-request-bounds"
     );
   });
 
