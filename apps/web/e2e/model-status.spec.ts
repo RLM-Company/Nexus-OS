@@ -173,6 +173,24 @@ test("cannot treat malformed execution status as a cleared stop", async ({ page 
   await expect(page.getByTestId("runtime-readiness")).toHaveCount(0);
 });
 
+test("bounds a stalled execution-status request and allows retry", async ({ page }) => {
+  await mockRuntimeRequest(page, readyRuntime);
+  let stalled = true;
+  await page.route("**/api/v1/operations/status", async (route) => {
+    if (!stalled) await route.fulfill({ json: { process_stop: null } });
+  });
+  await page.goto("/model-status");
+  await expect(page.getByTestId("runtime-loading")).toBeVisible();
+  await expect(page.getByTestId("model-runtime-card").getByRole("alert")).toContainText(
+    "Не удалось получить состояние модели",
+    { timeout: 9_000 }
+  );
+  await expect(page.getByTestId("runtime-readiness")).toHaveCount(0);
+  stalled = false;
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
+  await expect(page.getByTestId("runtime-readiness")).toContainText("Провайдер настроен");
+});
+
 test("keeps the model status page within the viewport on mobile and desktop", async ({ page }) => {
   await mockRuntimeRequest(page, readyRuntime);
 

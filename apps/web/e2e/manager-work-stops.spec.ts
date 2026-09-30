@@ -165,3 +165,26 @@ test("blocks resume and plan approval while retaining cancellation", async ({ pa
     panel(page).getByRole("button", { name: "Остановить задачу", exact: true })
   ).toBeEnabled();
 });
+
+test("bounds a stalled project-stop check while retaining fail-closed launch controls", async ({
+  page,
+  request
+}) => {
+  const projectId = await createProject(request);
+  let stalled = true;
+  await page.route("**/api/v1/operations/emergency-stop?**", async (route) => {
+    if (!stalled) await route.fulfill({ json: null });
+  });
+  await page.goto(`/?project=${projectId}&view=plan`);
+  await expect(panel(page).getByTestId("manager-execution-gate")).toContainText(
+    "Не удалось проверить",
+    { timeout: 9_000 }
+  );
+  await expect(
+    panel(page).getByRole("button", { name: "Создать файлы", exact: true })
+  ).toBeDisabled();
+  stalled = false;
+  await expect(
+    panel(page).getByRole("button", { name: "Создать файлы", exact: true })
+  ).toBeEnabled();
+});

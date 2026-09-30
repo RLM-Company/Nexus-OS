@@ -93,11 +93,11 @@ export function ManagerWorkPanel({
       try {
         const [operations, projectStop] = await Promise.all([
           json<{ process_stop?: { active?: boolean } | null }>("/api/v1/operations/status", {
-            signal: controller.signal
+            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6_000)])
           }),
           json<{ active?: boolean } | null>(
             "/api/v1/operations/emergency-stop?project_id=" + encodeURIComponent(projectId),
-            { signal: controller.signal }
+            { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6_000)]) }
           )
         ]);
         if (
