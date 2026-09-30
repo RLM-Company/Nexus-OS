@@ -1,0 +1,4 @@
+services:
+  edge:
+    volumes:
+      - ./Caddyfile.ip:/etc/caddy/Caddyfile:ro
