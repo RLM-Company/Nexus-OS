@@ -8,9 +8,9 @@
     "observed_at": "2026-09-30T19:54:28.000Z"
   },
   "totals": {
-    "nodes": 314,
-    "edges": 861,
-    "records": 314
+    "nodes": 334,
+    "edges": 896,
+    "records": 334
   },
   "layers": [
     {
@@ -50,6 +50,13 @@
       "nodes": 15,
       "edges": 41,
       "authority": "verified_merged_git_history"
+    },
+    {
+      "id": "open_settings_review",
+      "nodes": 20,
+      "edges": 35,
+      "authority": "candidate_only_unmerged",
+      "default_query_policy": "exclude_when_verified_only"
     }
   ],
   "primary_relation_types": [
@@ -89,7 +96,8 @@
     "packages/core/test/fixtures/cosmora-unified-knowledge-graph.ts",
     "packages/core/test/fixtures/cosmora-work-experience-graph.ts",
     "packages/core/test/fixtures/cosmora-open-review-graph.ts",
-    "packages/core/test/fixtures/cosmora-main-hardening-history-graph.ts"
+    "packages/core/test/fixtures/cosmora-main-hardening-history-graph.ts",
+    "packages/core/test/fixtures/cosmora-open-settings-review-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
