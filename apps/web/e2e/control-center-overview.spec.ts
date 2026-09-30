@@ -103,3 +103,21 @@ test("keeps the overview within mobile and desktop viewports", async ({ page }) 
     ).toBeTruthy();
   }
 });
+
+test("bounds a stalled status request and permits manual refresh", async ({ page }) => {
+  let stalled = true;
+  await page.route("**/api/v1/operations/status", async (route) => {
+    if (!stalled) await route.fulfill({ json: operations });
+  });
+  await page.goto("/control-center");
+  await expect(overview(page).getByRole("alert")).toContainText(
+    "Не удалось получить общее состояние",
+    { timeout: 9_000 }
+  );
+  await expect(overview(page).getByTestId("overview-process-stop")).toHaveCount(0);
+  stalled = false;
+  await overview(page).getByRole("button", { name: "Обновить сводку" }).click();
+  await expect(overview(page).getByTestId("overview-process-stop")).toHaveText(
+    "Запросы приостановлены"
+  );
+});

@@ -28,7 +28,7 @@ export default function RuntimeOverview() {
       try {
         const response = await fetch("/api/v1/operations/status", {
           cache: "no-store",
-          signal: controller.signal
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6_000)])
         });
         if (!response.ok) {
           if (active) setState({ kind: "error", message: safeApiErrorMessage(response.status) });

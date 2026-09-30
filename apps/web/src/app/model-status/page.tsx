@@ -42,7 +42,7 @@ export default function ModelStatusPage() {
         const options = {
           method: "GET",
           cache: "no-store",
-          signal: controller.signal
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6_000)])
         } as const;
         const [response, operationsResponse] = await Promise.all([
           fetch("/api/v1/model-runtime", options),
