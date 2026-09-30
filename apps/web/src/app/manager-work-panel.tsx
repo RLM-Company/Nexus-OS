@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
 type Work = {
   id: string;
@@ -19,13 +20,6 @@ type Work = {
   events: { sequence: number; message: string; at: string }[];
 };
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
-type ExecutionGate = "checking" | "clear" | "process-stop" | "project-stop" | "unavailable";
-const executionGateLabels: Record<Exclude<ExecutionGate, "clear">, string> = {
-  checking: "Проверяем аварийное состояние перед запуском…",
-  "process-stop": "Запросы к модели приостановлены для всех проектов.",
-  "project-stop": "Запросы к модели остановлены для этого проекта.",
-  unavailable: "Не удалось проверить аварийное состояние. Новый запуск пока недоступен."
-};
 const labels: Record<string, string> = {
   queued: "В очереди",
   running: "Выполняется",
@@ -79,56 +73,13 @@ export function ManagerWorkPanel({
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [runtime, setRuntime] = useState<{ mode: string; model: string } | null>(null);
-  const [executionGate, setExecutionGate] = useState<ExecutionGate>("checking");
+  const executionGate = useExecutionGate(projectId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
   const mutationEpoch = useRef(0);
   const pending = useRef<{ goal: string; role: string; id: string } | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
-  useEffect(() => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = async (): Promise<void> => {
-      try {
-        const [operations, projectStop] = await Promise.all([
-          json<{ process_stop?: { active?: boolean } | null }>("/api/v1/operations/status", {
-            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6_000)])
-          }),
-          json<{ active?: boolean } | null>(
-            "/api/v1/operations/emergency-stop?project_id=" + encodeURIComponent(projectId),
-            { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6_000)]) }
-          )
-        ]);
-        if (
-          !operations ||
-          (operations.process_stop !== null &&
-            typeof operations.process_stop?.active !== "boolean") ||
-          (projectStop !== null && typeof projectStop?.active !== "boolean")
-        ) {
-          throw new Error("Execution status is unavailable");
-        }
-        if (!controller.signal.aborted) {
-          setExecutionGate(
-            operations.process_stop?.active
-              ? "process-stop"
-              : projectStop?.active
-                ? "project-stop"
-                : "clear"
-          );
-        }
-      } catch {
-        if (!controller.signal.aborted) setExecutionGate("unavailable");
-      } finally {
-        if (!controller.signal.aborted) timer = setTimeout(() => void refresh(), 3_000);
-      }
-    };
-    void refresh();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [projectId]);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;

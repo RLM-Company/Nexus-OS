@@ -39,6 +39,10 @@ const installShellFixture = async (
         credential_configured: false,
         fallback_to_mock: false
       };
+    } else if (path === "/api/v1/operations/status") {
+      body = { process_stop: null };
+    } else if (path === "/api/v1/operations/emergency-stop") {
+      body = null;
     } else if (path === `/api/v1/projects/${auditProject.id}`) {
       body = {
         project: auditProject,

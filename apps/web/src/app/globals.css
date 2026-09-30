@@ -507,6 +507,18 @@ svg {
   color: #b8bfd0;
   font-size: 0.72rem;
 }
+
+.composer-execution-state {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.composer-execution-state a {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
 .composer textarea {
   display: block;
   width: 100%;
