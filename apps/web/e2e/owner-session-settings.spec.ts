@@ -115,9 +115,7 @@ test("shows server-confirmed owner session readiness in Settings", async ({ page
   await expect(status).toContainText("Сессия активна");
   await expect(status).toContainText("Многофакторная проверка");
   await expect(page.getByText("Активных сессий владельца: 2")).toBeVisible();
-  await expect(
-    page.getByText(/Срок действия текущей сессии близок к завершению/)
-  ).toBeVisible();
+  await expect(page.getByText(/Срок действия текущей сессии близок к завершению/)).toBeVisible();
   await expect(page.locator("body")).not.toContainText("current-owner-session");
   await expect(page.locator("body")).not.toContainText("agent-session-must-not-count");
 });
@@ -129,9 +127,7 @@ test("fails closed when owner session status is unavailable", async ({ page }) =
   const status = page.getByTestId("owner-session-status");
   await expect(status).toContainText("Недоступно");
   await expect(status).toContainText("Текущая сессия не подтверждена");
-  await expect(
-    page.getByText(/Сервер не подтвердил состояние текущей сессии/)
-  ).toBeVisible();
+  await expect(page.getByText(/Сервер не подтвердил состояние текущей сессии/)).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Компактная навигация" })).toBeEnabled();
   await expect(page.locator("body")).not.toContainText("raw-owner-session-error-marker");
 });
