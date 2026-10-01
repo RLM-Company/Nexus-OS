@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 353,
-    "edges": 966,
-    "records": 353
+    "nodes": 364,
+    "edges": 1007,
+    "records": 364
   },
   "layers": [
     {
@@ -76,6 +76,12 @@
       "nodes": 12,
       "edges": 33,
       "authority": "verified_merged_git_history"
+    },
+    {
+      "id": "agent_collaboration",
+      "nodes": 11,
+      "edges": 41,
+      "authority": "verified_runtime_role_contracts"
     }
   ],
   "primary_relation_types": [
@@ -110,7 +116,12 @@
     "OBSERVES",
     "SMOKE_TESTS",
     "INTEGRATES",
-    "VERIFIES_ARCHITECTURE_BOUNDARY"
+    "VERIFIES_ARCHITECTURE_BOUNDARY",
+    "ACCEPTS_ARTIFACT_KIND",
+    "EMITS_ARTIFACT_KIND",
+    "CAN_DELEGATE_WITHIN",
+    "CAN_REVIEW",
+    "CONSTRAINED_BY"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -130,7 +141,8 @@
     "packages/core/test/fixtures/cosmora-open-settings-review-graph.ts",
     "packages/core/test/fixtures/cosmora-test-coverage-graph.ts",
     "packages/core/test/fixtures/cosmora-intelligence-graph-development.ts",
-    "packages/core/test/fixtures/cosmora-product-history-graph.ts"
+    "packages/core/test/fixtures/cosmora-product-history-graph.ts",
+    "packages/core/test/fixtures/cosmora-agent-collaboration-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
