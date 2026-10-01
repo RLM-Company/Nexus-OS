@@ -20,16 +20,16 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(353);
-    expect(graph.records).toHaveLength(353);
-    expect(graph.edges).toHaveLength(966);
+    expect(graph.nodes).toHaveLength(364);
+    expect(graph.records).toHaveLength(364);
+    expect(graph.edges).toHaveLength(1007);
 
     expect(
       new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size
-    ).toBe(353);
+    ).toBe(364);
     expect(
       new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size
-    ).toBe(966);
+    ).toBe(1007);
 
     expect(() => createIndex()).not.toThrow();
   });
@@ -581,6 +581,85 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "event-main-5d268cb7|PRECEDES|event-product-web-runtime-boundaries"
+    );
+  });
+
+  it("traverses real agent collaboration through shared artifact kinds", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "researcher evidence",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: {
+        max_depth: 2,
+        max_nodes: 24,
+        max_edges: 32,
+        max_fan_out: 16,
+        max_context_tokens: 4_000
+      }
+    });
+
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+    expect(ids).toContain("entity-researcher-role");
+    expect(ids).toContain("entity-artifact-kind-evidence");
+    expect(ids).toContain("entity-analyst-role");
+    expect(ids).toContain("entity-critic-role");
+
+    const pairs = new Set(
+      packet.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    expect(pairs).toContain(
+      "entity-researcher-role|EMITS_ARTIFACT_KIND|entity-artifact-kind-evidence"
+    );
+    expect(pairs).toContain(
+      "entity-analyst-role|ACCEPTS_ARTIFACT_KIND|entity-artifact-kind-evidence"
+    );
+    expect(pairs).toContain(
+      "entity-critic-role|ACCEPTS_ARTIFACT_KIND|entity-artifact-kind-evidence"
+    );
+  });
+
+  it("keeps all five runtime roles under the shared authority boundary", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const constrained = graph.edges.filter(
+      (edge) =>
+        edge.type === "CONSTRAINED_BY" &&
+        edge.to.id === "claim-runtime-roles-no-authority-bypass"
+    );
+
+    expect(new Set(constrained.map((edge) => edge.from.id))).toEqual(
+      new Set([
+        "entity-manager-role",
+        "entity-architect-role",
+        "entity-researcher-role",
+        "entity-analyst-role",
+        "entity-critic-role"
+      ])
+    );
+
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.type === "VERIFIED_BY_TEST" &&
+          edge.from.id === "claim-runtime-roles-no-authority-bypass" &&
+          edge.to.id ===
+            repositoryStructureFileId("packages/contracts/test/manager-runtime.test.ts")
+      )
+    ).toBe(true);
+  });
+
+  it("preserves Manager delegation and Critic review authority without policy bypass", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "entity-manager-role|CAN_DELEGATE_WITHIN|entity-runtime-task-graph"
+    );
+    expect(pairs).toContain(
+      "entity-critic-role|CAN_REVIEW|entity-runtime-artifact"
     );
   });
 
