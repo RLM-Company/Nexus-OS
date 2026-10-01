@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 334 nodes;
-- 896 typed edges;
-- 334 retrieval records.
+- 341 nodes;
+- 933 typed edges;
+- 341 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -111,5 +111,9 @@ Prefer deterministic extraction where the repository can prove the relationship:
 
 Use curated semantic edges for relationships that require understanding rather than syntax, such as
 why a policy constraint exists or why one artifact is authoritative over another.
+
+Regression impact is explicit: `VERIFIED_BY_TEST` connects high-value decisions and constraints to
+the exact repository tests that exercise them. This enables `rule → implementation → regression`
+impact queries without guessing from file names.
 
 Do not create bulk generic `RELATES_TO` edges to inflate graph density.
