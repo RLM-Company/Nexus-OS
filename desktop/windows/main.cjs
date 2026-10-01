@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const {
   app,
   BrowserWindow,
@@ -95,7 +96,7 @@ async function probeServer(browserSession, origin, username, password) {
       };
     }
     if (response.status === 403) {
-      return { ok: false, message: "Доступ к этому серверу Cosmora запрещрещён." };
+      return { ok: false, message: "Доступ к этому серверу Cosmora запрещён." };
     }
     if (response.status >= 300 && response.status < 400) {
       return {
