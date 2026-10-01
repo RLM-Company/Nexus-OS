@@ -1,0 +1,156 @@
+:root {
+  color-scheme: light;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f6f7f9;
+  color: #111318;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.card {
+  width: min(560px, 100%);
+  padding: 36px;
+  border: 1px solid #e2e5ea;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 20px 60px rgb(20 24 33 / 8%);
+}
+
+.mark {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 14px;
+  background: #111318;
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.eyebrow {
+  margin: 28px 0 8px;
+  color: #747b89;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(30px, 6vw, 44px);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.lead,
+.hint {
+  color: #626a78;
+  line-height: 1.55;
+}
+
+.lead {
+  margin: 16px 0 28px;
+}
+
+form {
+  display: grid;
+  gap: 18px;
+}
+
+label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+label span {
+  color: #858c98;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+input {
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 13px;
+  border: 1px solid #d8dce3;
+  border-radius: 12px;
+  outline: none;
+}
+
+input:focus {
+  border-color: #79808c;
+  box-shadow: 0 0 0 3px rgb(17 19 24 / 8%);
+}
+
+.credentials {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 12px;
+  background: #111318;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.62;
+}
+
+.error {
+  min-height: 20px;
+  margin: 0;
+  color: #b42318;
+  font-size: 13px;
+}
+
+.hint {
+  margin: 22px 0 0;
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .shell {
+    padding: 16px;
+  }
+
+  .card {
+    padding: 24px;
+    border-radius: 18px;
+  }
+
+  .credentials {
+    grid-template-columns: 1fr;
+  }
+}
