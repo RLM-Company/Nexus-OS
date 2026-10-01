@@ -84,7 +84,7 @@ export const evaluateIntelligenceGraphRetrieval = (input: {
         project_id: input.projectId,
         text: evaluationCase.query,
         mode,
-        as_of: mode === "temporal" ? evaluationCase.as_of : null,
+        as_of: mode === "temporal" ? (evaluationCase.as_of ?? null) : null,
         verified_only: evaluationCase.verified_only ?? false,
         budget: evaluationCase.budget ?? {}
       });
