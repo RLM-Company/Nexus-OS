@@ -14,6 +14,7 @@ import { cosmoraMainHardeningHistoryGraph } from "./cosmora-main-hardening-histo
 import { cosmoraOpenSettingsReviewGraph } from "./cosmora-open-settings-review-graph.js";
 import { cosmoraTestCoverageGraph } from "./cosmora-test-coverage-graph.js";
 import { cosmoraIntelligenceGraphDevelopment } from "./cosmora-intelligence-graph-development.js";
+import { cosmoraProductHistoryGraph } from "./cosmora-product-history-graph.js";
 
 const recordedAt = "2026-09-29T20:00:00.000Z";
 
@@ -285,6 +286,7 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
   const openSettings = cosmoraOpenSettingsReviewGraph();
   const testCoverage = cosmoraTestCoverageGraph();
   const intelligenceDevelopment = cosmoraIntelligenceGraphDevelopment();
+  const productHistory = cosmoraProductHistoryGraph();
 
   const nodes = [
     ...semantic.nodes,
@@ -293,7 +295,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...openReview.nodes,
     ...mainHardening.nodes,
     ...openSettings.nodes,
-    ...intelligenceDevelopment.nodes
+    ...intelligenceDevelopment.nodes,
+    ...productHistory.nodes
   ];
   const records = [
     ...semantic.records,
@@ -303,7 +306,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...mainHardening.records,
     ...openSettings.records,
     ...testCoverage.records,
-    ...intelligenceDevelopment.records
+    ...intelligenceDevelopment.records,
+    ...productHistory.records
   ];
   const edges = [
     ...semantic.edges,
@@ -314,7 +318,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...mainHardening.edges,
     ...openSettings.edges,
     ...testCoverage.edges,
-    ...intelligenceDevelopment.edges
+    ...intelligenceDevelopment.edges,
+    ...productHistory.edges
   ];
 
   const nodeKeys = nodes.map((node) => versionKey(node.node_id, node.node_version));
