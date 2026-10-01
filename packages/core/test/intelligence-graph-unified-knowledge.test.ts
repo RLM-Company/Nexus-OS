@@ -20,16 +20,16 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(364);
-    expect(graph.records).toHaveLength(364);
-    expect(graph.edges).toHaveLength(1007);
+    expect(graph.nodes).toHaveLength(383);
+    expect(graph.records).toHaveLength(383);
+    expect(graph.edges).toHaveLength(1052);
 
     expect(
       new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size
-    ).toBe(364);
+    ).toBe(383);
     expect(
       new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size
-    ).toBe(1007);
+    ).toBe(1052);
 
     expect(() => createIndex()).not.toThrow();
   });
@@ -660,6 +660,67 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "entity-critic-role|CAN_REVIEW|entity-runtime-artifact"
+    );
+  });
+
+  it("retrieves Emergency Stop release-gate evidence through the scenario graph", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "Emergency stop pauses runtime denies new external operations",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: {
+        max_depth: 2,
+        max_nodes: 16,
+        max_edges: 20,
+        max_fan_out: 12,
+        max_context_tokens: 3_000
+      }
+    });
+
+    const runnerTest = repositoryStructureFileId(
+      "packages/core/test/manager-runtime-scenario-runner.test.ts"
+    );
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+    expect(ids).toContain("evaluation-runtime-emergency-stop-v1");
+    expect(ids).toContain("claim-manager-emergency-stop");
+    expect(ids).toContain(runnerTest);
+    expect(
+      packet.edges.some(
+        (edge) =>
+          edge.type === "EXECUTED_BY_TEST" &&
+          edge.from.id === "evaluation-runtime-emergency-stop-v1" &&
+          edge.to.id === runnerTest
+      )
+    ).toBe(true);
+  });
+
+  it("keeps A6 scenario dependent on verified step-up evidence", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "evaluation-runtime-autonomy-a6-v1|EVALUATES|entity-policy-engine"
+    );
+    expect(pairs).toContain(
+      "evaluation-runtime-autonomy-a6-v1|REQUIRES|entity-step-up-proof"
+    );
+  });
+
+  it("maps prompt-injection and cross-project scenarios to their exact safety rules", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "evaluation-runtime-prompt-injection-v1|EVALUATES|claim-context-untrusted-data-only"
+    );
+    expect(pairs).toContain(
+      "evaluation-runtime-cross-project-leak-v1|EVALUATES|claim-runtime-project-bound"
     );
   });
 
