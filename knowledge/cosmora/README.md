@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 364 nodes;
-- 1007 typed edges;
-- 364 retrieval records.
+- 383 nodes;
+- 1052 typed edges;
+- 383 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -119,5 +119,9 @@ impact queries without guessing from file names.
 Agent collaboration is represented from the actual Manager runtime role contracts: each role's
 accepted/emitted artifact kinds, Manager delegation boundary, Critic review capability, and the
 shared no-external-authority / no-permission-authority / no-policy-bypass constraint.
+
+Runtime safety scenarios are first-class Evaluation nodes. They map release-gate scenarios to the
+policy, routing, memory, checkpoint, critic and Emergency Stop rules they exercise, plus the exact
+catalog/runner tests that verify those scenarios.
 
 Do not create bulk generic `RELATES_TO` edges to inflate graph density.
