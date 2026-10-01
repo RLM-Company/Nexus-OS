@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 341,
-    "edges": 933,
-    "records": 341
+    "nodes": 353,
+    "edges": 966,
+    "records": 353
   },
   "layers": [
     {
@@ -70,6 +70,12 @@
       "edges": 10,
       "authority": "candidate_only_unmerged",
       "default_query_policy": "exclude_when_verified_only"
+    },
+    {
+      "id": "product_history",
+      "nodes": 12,
+      "edges": 33,
+      "authority": "verified_merged_git_history"
     }
   ],
   "primary_relation_types": [
@@ -100,7 +106,11 @@
     "BENCHMARKS_SCALE_FOR",
     "PROPOSES_KNOWLEDGE_LAYER_FOR",
     "SEPARATES_REAL_KNOWLEDGE_FROM",
-    "PROPOSES_RECOMMEND_ONLY_OBSERVATIONS_FOR"
+    "PROPOSES_RECOMMEND_ONLY_OBSERVATIONS_FOR",
+    "OBSERVES",
+    "SMOKE_TESTS",
+    "INTEGRATES",
+    "VERIFIES_ARCHITECTURE_BOUNDARY"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -119,7 +129,8 @@
     "packages/core/test/fixtures/cosmora-main-hardening-history-graph.ts",
     "packages/core/test/fixtures/cosmora-open-settings-review-graph.ts",
     "packages/core/test/fixtures/cosmora-test-coverage-graph.ts",
-    "packages/core/test/fixtures/cosmora-intelligence-graph-development.ts"
+    "packages/core/test/fixtures/cosmora-intelligence-graph-development.ts",
+    "packages/core/test/fixtures/cosmora-product-history-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
