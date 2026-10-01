@@ -1,0 +1,48 @@
+{
+  "name": "cosmora-windows-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Thin Windows desktop client for the hosted Cosmora workspace",
+  "main": "main.cjs",
+  "author": "RLM-Company",
+  "license": "UNLICENSED",
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "pack:win": "electron-builder --win nsis --x64 --publish never"
+  },
+  "build": {
+    "appId": "com.cosmora.desktop",
+    "productName": "Cosmora",
+    "electronVersion": "44.5.1",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "connection-policy.cjs",
+      "connection.html",
+      "connection.js",
+      "connection.css"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "Cosmora-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Cosmora",
+      "uninstallDisplayName": "Cosmora"
+    }
+  }
+}
