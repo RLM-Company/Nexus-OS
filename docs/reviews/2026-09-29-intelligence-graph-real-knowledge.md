@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **364 nodes**;
-- **1007 typed edges**;
+- **383 nodes**;
+- **1052 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -305,6 +305,29 @@ It models:
 
 This lets retrieval infer collaboration through shared artifacts rather than inventing direct
 role-to-role relationships.
+
+## Runtime Safety Scenario Graph
+
+The graph now contains **19** verified scenario-evaluation nodes and **45** scenario relationships
+derived from `MANAGER_RUNTIME_SCENARIOS`.
+
+It covers:
+
+- agent conflict and Manager arbitration;
+- serious/false Critic behavior;
+- bounded project memory;
+- autonomy A0–A6;
+- Emergency Stop;
+- model switching and timeout fallback;
+- operation replay/idempotency;
+- project recovery;
+- prompt injection;
+- memory poisoning;
+- cross-project isolation.
+
+Every scenario is linked to the safety rule/component it evaluates and to the catalog validation
+test. Scenarios directly exercised by the scenario runner also carry `EXECUTED_BY_TEST` edges.
+The A6 scenario additionally requires the verified Step-up proof boundary.
 
 ## Quality rules exercised by tests
 
