@@ -22,14 +22,14 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
     expect(graph.nodes).toHaveLength(334);
     expect(graph.records).toHaveLength(334);
-    expect(graph.edges).toHaveLength(896);
+    expect(graph.edges).toHaveLength(923);
 
     expect(
       new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size
     ).toBe(334);
     expect(
       new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size
-    ).toBe(896);
+    ).toBe(923);
 
     expect(() => createIndex()).not.toThrow();
   });
@@ -413,6 +413,77 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "proposal-pr-254-communication-policy-controls|EXPOSES_CONTROL_FOR|candidate-entity-communication-profile"
+    );
+  });
+
+  it("traverses from a safety rule to its exact regression test", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "delegation never expands tools data budget permission authority",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: {
+        max_depth: 2,
+        max_nodes: 16,
+        max_edges: 20,
+        max_fan_out: 12,
+        max_context_tokens: 3_000
+      }
+    });
+
+    const delegationTest = repositoryStructureFileId(
+      "packages/policy-engine/test/agent-delegation.test.ts"
+    );
+    expect(packet.nodes.map(({ node }) => node.node_id)).toContain(
+      "decision-delegation-no-expansion"
+    );
+    expect(packet.nodes.map(({ node }) => node.node_id)).toContain(delegationTest);
+    expect(
+      packet.edges.some(
+        (edge) =>
+          edge.type === "VERIFIED_BY_TEST" &&
+          edge.from.id === "decision-delegation-no-expansion" &&
+          edge.to.id === delegationTest
+      )
+    ).toBe(true);
+  });
+
+  it("maps Manager runtime constraints to executable API regressions", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const managerWorkTest = repositoryStructureFileId("apps/api/test/manager-work.test.ts");
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      `claim-manager-publish-workspace-write|VERIFIED_BY_TEST|${managerWorkTest}`
+    );
+    expect(pairs).toContain(
+      `claim-manager-reserves-budget|VERIFIED_BY_TEST|${managerWorkTest}`
+    );
+    expect(pairs).toContain(
+      `claim-manager-emergency-stop|VERIFIED_BY_TEST|${managerWorkTest}`
+    );
+  });
+
+  it("maps temporal and privacy rules to their regression suites", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const routerTest = repositoryStructureFileId(
+      "packages/model-gateway/test/router.test.ts"
+    );
+    const contextTest = repositoryStructureFileId(
+      "packages/contracts/test/manager-runtime-context-validation.test.ts"
+    );
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      `decision-route-evidence-freshness|VERIFIED_BY_TEST|${routerTest}`
+    );
+    expect(pairs).toContain(
+      `claim-context-private-chat-forbidden|VERIFIED_BY_TEST|${contextTest}`
     );
   });
 
