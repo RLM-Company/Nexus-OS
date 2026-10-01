@@ -5,12 +5,12 @@
   "authoritative_main": {
     "repository": "RLM-Company/Nexus-OS",
     "sha": "62bc5234b24e3b0c10262b043063fd31be9732bd",
-    "observed_at": "2026-09-30T19:54:28.000Z"
+    "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 334,
-    "edges": 896,
-    "records": 334
+    "nodes": 341,
+    "edges": 933,
+    "records": 341
   },
   "layers": [
     {
@@ -57,6 +57,19 @@
       "edges": 35,
       "authority": "candidate_only_unmerged",
       "default_query_policy": "exclude_when_verified_only"
+    },
+    {
+      "id": "test_coverage",
+      "nodes": 0,
+      "edges": 27,
+      "authority": "deterministic_regression_evidence"
+    },
+    {
+      "id": "intelligence_graph_development",
+      "nodes": 7,
+      "edges": 10,
+      "authority": "candidate_only_unmerged",
+      "default_query_policy": "exclude_when_verified_only"
     }
   ],
   "primary_relation_types": [
@@ -80,7 +93,14 @@
     "CONTRADICTS",
     "BOUND_TO",
     "DEPENDS_ON",
-    "HARDENS"
+    "HARDENS",
+    "VERIFIED_BY_TEST",
+    "PROPOSES_ARCHITECTURE_FOR",
+    "PROPOSES_KERNEL_FOR",
+    "BENCHMARKS_SCALE_FOR",
+    "PROPOSES_KNOWLEDGE_LAYER_FOR",
+    "SEPARATES_REAL_KNOWLEDGE_FROM",
+    "PROPOSES_RECOMMEND_ONLY_OBSERVATIONS_FOR"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -97,7 +117,9 @@
     "packages/core/test/fixtures/cosmora-work-experience-graph.ts",
     "packages/core/test/fixtures/cosmora-open-review-graph.ts",
     "packages/core/test/fixtures/cosmora-main-hardening-history-graph.ts",
-    "packages/core/test/fixtures/cosmora-open-settings-review-graph.ts"
+    "packages/core/test/fixtures/cosmora-open-settings-review-graph.ts",
+    "packages/core/test/fixtures/cosmora-test-coverage-graph.ts",
+    "packages/core/test/fixtures/cosmora-intelligence-graph-development.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
