@@ -38,6 +38,7 @@ export type UiPreferences = { compact: boolean; largeText: boolean };
 type OwnerSessionView = {
   status: "active" | "revoked" | "expired";
   assurance: "local" | "single_factor" | "multi_factor";
+  actor_kind: "owner" | "system" | "agent";
   expires_at: string;
   last_seen_at: string;
   current: boolean;
@@ -57,6 +58,9 @@ const isOwnerSessionView = (value: unknown): value is OwnerSessionView => {
     (candidate.assurance === "local" ||
       candidate.assurance === "single_factor" ||
       candidate.assurance === "multi_factor") &&
+    (candidate.actor_kind === "owner" ||
+      candidate.actor_kind === "system" ||
+      candidate.actor_kind === "agent") &&
     typeof candidate.expires_at === "string" &&
     typeof candidate.last_seen_at === "string" &&
     typeof candidate.current === "boolean"
@@ -1123,12 +1127,15 @@ function Settings({
         if (!Array.isArray(payload.items)) throw new Error("owner-session-invalid");
         if (!payload.items.every(isOwnerSessionView)) throw new Error("owner-session-invalid");
         const sessions = payload.items;
-        const current = sessions.find((session) => session.current) ?? null;
+        const current =
+          sessions.find((session) => session.current && session.actor_kind === "owner") ?? null;
         if (active) {
           setOwnerSessionState({
             phase: "ready",
             current,
-            activeCount: sessions.filter((session) => session.status === "active").length
+            activeCount: sessions.filter(
+              (session) => session.status === "active" && session.actor_kind === "owner"
+            ).length
           });
         }
       } catch {
