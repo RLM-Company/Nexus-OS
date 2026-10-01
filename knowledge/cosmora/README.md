@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 341 nodes;
-- 933 typed edges;
-- 341 retrieval records.
+- 353 nodes;
+- 966 typed edges;
+- 353 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
