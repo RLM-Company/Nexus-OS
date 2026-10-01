@@ -81,6 +81,21 @@ const installShellFixture = async (
               revoke_reason: null,
               actor_kind: "owner",
               current: false
+            },
+            {
+              session_id: "agent-session-must-not-count",
+              owner_id: "owner",
+              actor_id: "agent",
+              assurance: "single_factor",
+              status: "active",
+              issued_at: "2026-09-29T21:02:42.963Z",
+              expires_at: laterExpiry,
+              last_seen_at: "2026-10-01T18:00:00.000Z",
+              revoked_at: null,
+              revoked_by: null,
+              revoke_reason: null,
+              actor_kind: "agent",
+              current: false
             }
           ]
         }
@@ -104,6 +119,7 @@ test("shows server-confirmed owner session readiness in Settings", async ({ page
     page.getByText(/Срок действия текущей сессии близок к завершению/)
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText("current-owner-session");
+  await expect(page.locator("body")).not.toContainText("agent-session-must-not-count");
 });
 
 test("fails closed when owner session status is unavailable", async ({ page }) => {
