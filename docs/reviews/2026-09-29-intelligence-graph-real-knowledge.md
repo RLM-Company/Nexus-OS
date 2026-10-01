@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **341 nodes**;
-- **933 typed edges**;
+- **353 nodes**;
+- **966 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -236,6 +236,23 @@ The repository now contains:
 
 The exporter emits sorted node, edge and retrieval-record NDJSON plus `snapshot.json` and a generated
 manifest with SHA-256 checksums.
+
+## Verified product history
+
+The graph now also records merged product evolution before the durable Manager runtime:
+
+- background ordinary-chat execution (#145);
+- read-only model connection status (#144);
+- guarded live model smoke (#150);
+- integrated non-API local-alpha hardening (#191);
+- loopback-only local API proxy hardening (#200);
+- direct Manager/chat model-request validation (#192);
+- core runtime-boundary documentation (#193);
+- web runtime architecture-boundary tests (#195).
+
+These events connect to concrete implementation files, regression tests and semantic entities such as
+the Model Registry, project-context surface and Agent Studio. The chronology is joined to the later
+credential/model hardening history rather than stored as an isolated list.
 
 ## Regression impact layer
 
