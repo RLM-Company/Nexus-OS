@@ -20,16 +20,16 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(334);
-    expect(graph.records).toHaveLength(334);
-    expect(graph.edges).toHaveLength(923);
+    expect(graph.nodes).toHaveLength(341);
+    expect(graph.records).toHaveLength(341);
+    expect(graph.edges).toHaveLength(933);
 
     expect(
       new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size
-    ).toBe(334);
+    ).toBe(341);
     expect(
       new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size
-    ).toBe(923);
+    ).toBe(933);
 
     expect(() => createIndex()).not.toThrow();
   });
@@ -485,6 +485,42 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       `claim-context-private-chat-forbidden|VERIFIED_BY_TEST|${contextTest}`
     );
+  });
+
+  it("preserves the Intelligence Graph implementation dependency split", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "proposal-pr-265-intelligence-graph-kernel|STACKED_BEFORE|proposal-pr-266-intelligence-graph-retrieval"
+    );
+    expect(pairs).toContain(
+      "proposal-pr-266-intelligence-graph-retrieval|STACKED_BEFORE|proposal-pr-267-model-intelligence"
+    );
+    expect(pairs).toContain(
+      "proposal-pr-267-model-intelligence|STACKED_BEFORE|proposal-pr-268-synthetic-scale"
+    );
+    expect(pairs).toContain(
+      "proposal-pr-266-intelligence-graph-retrieval|STACKED_BEFORE|proposal-pr-269-real-knowledge"
+    );
+    expect(pairs).not.toContain(
+      "proposal-pr-264-intelligence-graph-architecture|STACKED_BEFORE|proposal-pr-265-intelligence-graph-kernel"
+    );
+  });
+
+  it("keeps real knowledge explicitly separate from the synthetic scale benchmark", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.type === "SEPARATES_REAL_KNOWLEDGE_FROM" &&
+          edge.from.id === "proposal-pr-269-real-knowledge" &&
+          edge.to.id === "proposal-pr-268-synthetic-scale"
+      )
+    ).toBe(true);
   });
 
   it("keeps every bridge evidence-grounded and specifically typed", () => {
