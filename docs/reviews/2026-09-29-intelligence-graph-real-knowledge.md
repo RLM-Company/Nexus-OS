@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **334 nodes**;
-- **896 typed edges**;
+- **341 nodes**;
+- **933 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -236,6 +236,40 @@ The repository now contains:
 
 The exporter emits sorted node, edge and retrieval-record NDJSON plus `snapshot.json` and a generated
 manifest with SHA-256 checksums.
+
+## Regression impact layer
+
+The unified graph now includes **27** deterministic `VERIFIED_BY_TEST` edges.
+
+Examples include:
+
+- routing evidence freshness → `packages/model-gateway/test/router.test.ts`;
+- gateway fallback boundary → `packages/model-gateway/test/gateway.test.ts`;
+- delegation no-expansion → `packages/policy-engine/test/agent-delegation.test.ts`;
+- Manager publication / usage reservation / Emergency Stop → `apps/api/test/manager-work.test.ts`;
+- D4 private-chat no-persistence → runtime-context validation tests;
+- provenance acyclicity → artifact-provenance tests;
+- checkpoint graph binding → checkpoint tests;
+- conflict resolution artifact requirement → conflict tests;
+- usage versioning / token-cost fail-closed behavior → usage-limit tests.
+
+This turns the graph into a change-impact map rather than a static documentation index.
+
+## Intelligence Graph development history
+
+Open PRs #264–#269 are also represented as candidate work-experience evidence.
+
+The graph preserves the actual branch topology:
+
+- #264 architecture and #265 kernel both started from `main`;
+- #265 → #266 retrieval;
+- #266 → #267 Model Intelligence → #268 synthetic scale;
+- #266 → #269 real knowledge.
+
+A dedicated `SEPARATES_REAL_KNOWLEDGE_FROM` edge records that #269 intentionally excludes the
+2M synthetic benchmark from project knowledge.
+
+Because all six PRs remain open, these nodes are `discovered`, not authoritative merged facts.
 
 ## Quality rules exercised by tests
 
