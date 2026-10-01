@@ -1109,7 +1109,9 @@ function Settings({
   onNavigate
 }: Props) {
   const [tab, setTab] = useState("general");
-  const [ownerSessionState, setOwnerSessionState] = useState<OwnerSessionState>({ phase: "loading" });
+  const [ownerSessionState, setOwnerSessionState] = useState<OwnerSessionState>({
+    phase: "loading"
+  });
 
   useEffect(() => {
     let active = true;
@@ -1142,6 +1144,9 @@ function Settings({
   const currentOwnerSession =
     ownerSessionState.phase === "ready" ? ownerSessionState.current : null;
   const ownerSessionHealthy = currentOwnerSession?.status === "active";
+  const ownerSessionExpiryLabel = currentOwnerSession
+    ? formatSessionDate(currentOwnerSession.expires_at)
+    : null;
 
   return (
     <>
@@ -1207,8 +1212,8 @@ function Settings({
               {ownerSessionState.phase === "ready" && currentOwnerSession ? (
                 <>
                   <p>
-                    Действует до <strong>{formatSessionDate(currentOwnerSession.expires_at)}</strong>.
-                    Активных сессий владельца: {ownerSessionState.activeCount}.
+                    Действует до <strong>{ownerSessionExpiryLabel}</strong>. Активных сессий владельца:{" "}
+                    {ownerSessionState.activeCount}.
                   </p>
                   {sessionNeedsRotation(currentOwnerSession) && (
                     <p className={styles.notice} role="status">
