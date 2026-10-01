@@ -84,7 +84,7 @@ const formatSessionDate = (value: string): string => {
 const sessionNeedsRotation = (session: OwnerSessionView): boolean => {
   const expiresAt = new Date(session.expires_at).getTime();
   if (!Number.isFinite(expiresAt)) return false;
-  return session.status !== "active" || expiresAt - Date.now() <= 7 * 24 * 60 * 60 * 1000;
+  return session.status !== "active" || expiresAt - Date.now() <= 48 * 60 * 60 * 1000;
 };
 
 export type WorkspaceProject = {
@@ -1121,7 +1121,8 @@ function Settings({
         if (!response.ok) throw new Error("owner-session-unavailable");
         const payload = (await response.json()) as { items?: unknown };
         if (!Array.isArray(payload.items)) throw new Error("owner-session-invalid");
-        const sessions = payload.items.filter(isOwnerSessionView);
+        if (!payload.items.every(isOwnerSessionView)) throw new Error("owner-session-invalid");
+        const sessions = payload.items;
         const current = sessions.find((session) => session.current) ?? null;
         if (active) {
           setOwnerSessionState({
