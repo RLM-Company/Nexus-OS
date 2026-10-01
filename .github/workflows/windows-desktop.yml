@@ -1,0 +1,48 @@
+name: Windows desktop
+
+on:
+  pull_request:
+    paths:
+      - "desktop/windows/**"
+      - "apps/web/**"
+      - ".github/workflows/windows-desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build NSIS installer
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Test desktop policy
+        run: node --test desktop/windows/test/*.test.cjs
+
+      - name: Build Windows installer
+        working-directory: desktop/windows
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmora-windows-x64
+          path: desktop/windows/dist/Cosmora-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14
