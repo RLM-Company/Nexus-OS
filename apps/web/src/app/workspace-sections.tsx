@@ -1212,9 +1212,9 @@ function Settings({
               {ownerSessionState.phase === "ready" && currentOwnerSession ? (
                 <>
                   <p>
-                    Действует до <strong>{ownerSessionExpiryLabel}</strong>. Активных сессий владельца:{" "}
-                    {ownerSessionState.activeCount}.
+                    Действует до <strong>{ownerSessionExpiryLabel}</strong>.
                   </p>
+                  <p>Активных сессий владельца: {ownerSessionState.activeCount}.</p>
                   {sessionNeedsRotation(currentOwnerSession) && (
                     <p className={styles.notice} role="status">
                       Срок действия текущей сессии близок к завершению или сессия уже неактивна.
