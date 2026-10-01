@@ -238,9 +238,7 @@ const edges: IntelligenceGraphEdge[] = [
     id: "product-chat-regression",
     type: "VERIFIED_BY_TEST",
     from: generalChat.node_id,
-    to: repositoryStructureFileId(
-      "apps/api/test/general-chat-background-run-coordinator.test.ts"
-    ),
+    to: repositoryStructureFileId("apps/api/test/general-chat-background-run-coordinator.test.ts"),
     location: "apps/api/test/general-chat-background-run-coordinator.test.ts",
     createdAt: "2026-09-17T17:23:51.000Z"
   }),
@@ -338,8 +336,7 @@ const edges: IntelligenceGraphEdge[] = [
     type: "HARDENS",
     from: "event-product-core-request-validation",
     to: repositoryStructureFileId("packages/core/src/chat.ts"),
-    location:
-      "commit:549eff68a319289519d8506818bf9d278d17d87a:packages/core/src/chat.ts",
+    location: "commit:549eff68a319289519d8506818bf9d278d17d87a:packages/core/src/chat.ts",
     createdAt: "2026-09-19T14:33:26.000Z"
   }),
   edge({
@@ -347,8 +344,7 @@ const edges: IntelligenceGraphEdge[] = [
     type: "HARDENS",
     from: "event-product-core-request-validation",
     to: repositoryStructureFileId("packages/core/src/manager.ts"),
-    location:
-      "commit:549eff68a319289519d8506818bf9d278d17d87a:packages/core/src/manager.ts",
+    location: "commit:549eff68a319289519d8506818bf9d278d17d87a:packages/core/src/manager.ts",
     createdAt: "2026-09-19T14:33:26.000Z"
   }),
   edge({
@@ -483,13 +479,7 @@ const edges: IntelligenceGraphEdge[] = [
   })
 ];
 
-const nodes = [
-  ...events,
-  generalChat,
-  modelStatus,
-  coreRuntimeReadme,
-  webProxyConfig
-];
+const nodes = [...events, generalChat, modelStatus, coreRuntimeReadme, webProxyConfig];
 
 const records: IntelligenceGraphSearchRecord[] = nodes.map((node) => ({
   node: { id: node.node_id, version: 1 },

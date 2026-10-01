@@ -1,9 +1,39 @@
 // Generated from main@62bc523; do not hand-edit individual edges.
 export const webImportsB = [
-  ["apps/web/src/app/icon.tsx","file","apps/web/src/app/app-icon-art.tsx","apps/web/src/app/icon.tsx:2"],
-  ["apps/web/src/app/page.tsx","file","apps/web/src/app/chat-mode.ts","apps/web/src/app/page.tsx:5"],
-  ["apps/web/src/app/page.tsx","file","apps/web/src/app/install-app.tsx","apps/web/src/app/page.tsx:6"],
-  ["apps/web/src/app/page.tsx","file","apps/web/src/app/project-context-panel.tsx","apps/web/src/app/page.tsx:7"],
-  ["apps/web/src/app/page.tsx","file","apps/web/src/app/manager-work-panel.tsx","apps/web/src/app/page.tsx:8"],
-  ["apps/web/src/app/skills/page.tsx","file","apps/web/src/app/skills/skills-manifest.ts","apps/web/src/app/skills/page.tsx:4"],
+  [
+    "apps/web/src/app/icon.tsx",
+    "file",
+    "apps/web/src/app/app-icon-art.tsx",
+    "apps/web/src/app/icon.tsx:2"
+  ],
+  [
+    "apps/web/src/app/page.tsx",
+    "file",
+    "apps/web/src/app/chat-mode.ts",
+    "apps/web/src/app/page.tsx:5"
+  ],
+  [
+    "apps/web/src/app/page.tsx",
+    "file",
+    "apps/web/src/app/install-app.tsx",
+    "apps/web/src/app/page.tsx:6"
+  ],
+  [
+    "apps/web/src/app/page.tsx",
+    "file",
+    "apps/web/src/app/project-context-panel.tsx",
+    "apps/web/src/app/page.tsx:7"
+  ],
+  [
+    "apps/web/src/app/page.tsx",
+    "file",
+    "apps/web/src/app/manager-work-panel.tsx",
+    "apps/web/src/app/page.tsx:8"
+  ],
+  [
+    "apps/web/src/app/skills/page.tsx",
+    "file",
+    "apps/web/src/app/skills/skills-manifest.ts",
+    "apps/web/src/app/skills/page.tsx:4"
+  ]
 ] as const;

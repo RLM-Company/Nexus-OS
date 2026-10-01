@@ -5,10 +5,8 @@ import { cosmoraRepositoryStructureGraphFixture } from "./fixtures/cosmora-repos
 const compile = () =>
   compileAuthorizedIntelligenceGraphFixture(cosmoraRepositoryStructureGraphFixture());
 
-const nodeAt = (
-  nodes: ReturnType<typeof compile>["nodes"],
-  location: string
-) => nodes.find((node) => node.source_ref.location === location);
+const nodeAt = (nodes: ReturnType<typeof compile>["nodes"], location: string) =>
+  nodes.find((node) => node.source_ref.location === location);
 
 describe("deterministic repository structure graph", () => {
   it("compiles the repository structure snapshot with exact deterministic counts", () => {

@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  compileAuthorizedIntelligenceGraphFixture,
-  IntelligenceGraphIndex
-} from "../src/index.js";
+import { compileAuthorizedIntelligenceGraphFixture, IntelligenceGraphIndex } from "../src/index.js";
 import { cosmoraRealKnowledgeGraphFixture } from "./fixtures/cosmora-real-knowledge-graph.js";
 
 const compile = () => compileAuthorizedIntelligenceGraphFixture(cosmoraRealKnowledgeGraphFixture());
@@ -262,24 +259,16 @@ describe("evidence-grounded Cosmora knowledge graph", () => {
       compiled.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
     );
 
-    expect(pairs).toContain(
-      "decision-registry-authority|IMPLEMENTED_BY|event-registry-foundation"
-    );
+    expect(pairs).toContain("decision-registry-authority|IMPLEMENTED_BY|event-registry-foundation");
     expect(pairs).toContain(
       "decision-route-evidence-freshness|IMPLEMENTED_BY|event-registry-failclosed"
     );
-    expect(pairs).toContain(
-      "decision-agent-six-parts|IMPLEMENTED_BY|event-agent-contracts"
-    );
-    expect(pairs).toContain(
-      "claim-auth-google-telegram|IMPLEMENTED_BY|event-auth-contract"
-    );
+    expect(pairs).toContain("decision-agent-six-parts|IMPLEMENTED_BY|event-agent-contracts");
+    expect(pairs).toContain("claim-auth-google-telegram|IMPLEMENTED_BY|event-auth-contract");
     expect(pairs).toContain(
       "claim-companion-preference-bounds|IMPLEMENTED_BY|event-companion-contract"
     );
-    expect(pairs).toContain(
-      "event-manager-runtime|PRODUCES|artifact-manager-work-runtime"
-    );
+    expect(pairs).toContain("event-manager-runtime|PRODUCES|artifact-manager-work-runtime");
   });
 
   it("uses implementation timestamps for historical graph queries", () => {
@@ -305,17 +294,11 @@ describe("evidence-grounded Cosmora knowledge graph", () => {
       compiled.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
     );
 
-    expect(pairs).toContain(
-      "claim-runtime-provenance-acyclic|CONSTRAINS|entity-runtime-artifact"
-    );
-    expect(pairs).toContain(
-      "entity-runtime-checkpoint|BOUND_TO|entity-runtime-task-graph"
-    );
+    expect(pairs).toContain("claim-runtime-provenance-acyclic|CONSTRAINS|entity-runtime-artifact");
+    expect(pairs).toContain("entity-runtime-checkpoint|BOUND_TO|entity-runtime-task-graph");
     expect(pairs).toContain(
       "claim-conflict-needs-resolution-artifact|CONSTRAINS|entity-agent-conflict"
     );
-    expect(pairs).toContain(
-      "entity-manager-role|ARBITRATES|entity-agent-conflict"
-    );
+    expect(pairs).toContain("entity-manager-role|ARBITRATES|entity-agent-conflict");
   });
 });

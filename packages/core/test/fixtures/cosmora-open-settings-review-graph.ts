@@ -131,18 +131,12 @@ const candidateFile = (id: string, path: string): IntelligenceGraphNode =>
   });
 
 const files = {
-  settingsPage: candidateFile(
-    "candidate-file-settings-page",
-    "apps/web/src/app/settings/page.tsx"
-  ),
+  settingsPage: candidateFile("candidate-file-settings-page", "apps/web/src/app/settings/page.tsx"),
   communicationContract: candidateFile(
     "candidate-file-communication-contract",
     "packages/contracts/src/communication.ts"
   ),
-  settingsSpec: candidateFile(
-    "candidate-file-settings-spec",
-    "apps/web/e2e/settings.spec.ts"
-  ),
+  settingsSpec: candidateFile("candidate-file-settings-spec", "apps/web/e2e/settings.spec.ts"),
   notificationSpec: candidateFile(
     "candidate-file-settings-notification-reconcile-spec",
     "apps/web/e2e/settings-notification-reconcile.spec.ts"
@@ -218,62 +212,256 @@ const edge = (input: {
 });
 
 const stack = [
-  ["proposal-pr-221-settings-foundation","proposal-pr-244-notification-reconcile","pull:244","2026-09-22T21:13:02.000Z"],
-  ["proposal-pr-221-settings-foundation","proposal-pr-246-timezone-boundary","pull:246","2026-09-22T21:14:12.000Z"],
-  ["proposal-pr-221-settings-foundation","proposal-pr-248-companion-policy-controls","pull:248","2026-09-22T21:18:00.000Z"],
-  ["proposal-pr-221-settings-foundation","proposal-pr-250-mobile-settings-navigation","pull:250","2026-09-22T21:19:21.000Z"],
-  ["proposal-pr-221-settings-foundation","proposal-pr-252-settings-reset-confirmation","pull:252","2026-09-22T21:20:32.000Z"],
-  ["proposal-pr-221-settings-foundation","proposal-pr-254-communication-policy-controls","pull:254","2026-09-22T21:22:39.000Z"],
-  ["proposal-pr-244-notification-reconcile","proposal-pr-257-push-consent","pull:257","2026-09-22T21:27:03.000Z"]
+  [
+    "proposal-pr-221-settings-foundation",
+    "proposal-pr-244-notification-reconcile",
+    "pull:244",
+    "2026-09-22T21:13:02.000Z"
+  ],
+  [
+    "proposal-pr-221-settings-foundation",
+    "proposal-pr-246-timezone-boundary",
+    "pull:246",
+    "2026-09-22T21:14:12.000Z"
+  ],
+  [
+    "proposal-pr-221-settings-foundation",
+    "proposal-pr-248-companion-policy-controls",
+    "pull:248",
+    "2026-09-22T21:18:00.000Z"
+  ],
+  [
+    "proposal-pr-221-settings-foundation",
+    "proposal-pr-250-mobile-settings-navigation",
+    "pull:250",
+    "2026-09-22T21:19:21.000Z"
+  ],
+  [
+    "proposal-pr-221-settings-foundation",
+    "proposal-pr-252-settings-reset-confirmation",
+    "pull:252",
+    "2026-09-22T21:20:32.000Z"
+  ],
+  [
+    "proposal-pr-221-settings-foundation",
+    "proposal-pr-254-communication-policy-controls",
+    "pull:254",
+    "2026-09-22T21:22:39.000Z"
+  ],
+  [
+    "proposal-pr-244-notification-reconcile",
+    "proposal-pr-257-push-consent",
+    "pull:257",
+    "2026-09-22T21:27:03.000Z"
+  ]
 ] as const;
 
-const edges: IntelligenceGraphEdge[] = stack.map(([from,to,location,createdAt],index)=>
-  edge({id:`settings-stack-${index+1}`,type:"STACKED_BEFORE",from,to,location,createdAt})
+const edges: IntelligenceGraphEdge[] = stack.map(([from, to, location, createdAt], index) =>
+  edge({ id: `settings-stack-${index + 1}`, type: "STACKED_BEFORE", from, to, location, createdAt })
 );
 
 const changes = [
-  ["proposal-pr-221-settings-foundation",files.settingsPage.node_id,"pull:221","2026-09-22T20:28:44.000Z"],
-  ["proposal-pr-221-settings-foundation",files.communicationContract.node_id,"pull:221","2026-09-22T20:28:44.000Z"],
-  ["proposal-pr-221-settings-foundation",files.settingsSpec.node_id,"pull:221","2026-09-22T20:28:44.000Z"],
-  ["proposal-pr-244-notification-reconcile",files.settingsPage.node_id,"pull:244","2026-09-22T21:13:02.000Z"],
-  ["proposal-pr-244-notification-reconcile",files.notificationSpec.node_id,"pull:244","2026-09-22T21:13:02.000Z"],
-  ["proposal-pr-246-timezone-boundary",files.settingsPage.node_id,"pull:246","2026-09-22T21:14:12.000Z"],
-  ["proposal-pr-246-timezone-boundary",files.timezoneSpec.node_id,"pull:246","2026-09-22T21:14:12.000Z"],
-  ["proposal-pr-248-companion-policy-controls",files.settingsPage.node_id,"pull:248","2026-09-22T21:18:00.000Z"],
-  ["proposal-pr-248-companion-policy-controls",files.companionPolicySpec.node_id,"pull:248","2026-09-22T21:18:00.000Z"],
-  ["proposal-pr-250-mobile-settings-navigation",repositoryStructureFileId("apps/web/src/app/page.tsx"),"pull:250","2026-09-22T21:19:21.000Z"],
-  ["proposal-pr-250-mobile-settings-navigation",files.mobileSettingsSpec.node_id,"pull:250","2026-09-22T21:19:21.000Z"],
-  ["proposal-pr-252-settings-reset-confirmation",files.settingsPage.node_id,"pull:252","2026-09-22T21:20:32.000Z"],
-  ["proposal-pr-252-settings-reset-confirmation",files.resetSpec.node_id,"pull:252","2026-09-22T21:20:32.000Z"],
-  ["proposal-pr-254-communication-policy-controls",files.settingsPage.node_id,"pull:254","2026-09-22T21:22:39.000Z"],
-  ["proposal-pr-254-communication-policy-controls",files.communicationPolicySpec.node_id,"pull:254","2026-09-22T21:22:39.000Z"],
-  ["proposal-pr-257-push-consent",files.settingsPage.node_id,"pull:257","2026-09-22T21:27:03.000Z"],
-  ["proposal-pr-257-push-consent",files.notificationSpec.node_id,"pull:257","2026-09-22T21:27:03.000Z"]
+  [
+    "proposal-pr-221-settings-foundation",
+    files.settingsPage.node_id,
+    "pull:221",
+    "2026-09-22T20:28:44.000Z"
+  ],
+  [
+    "proposal-pr-221-settings-foundation",
+    files.communicationContract.node_id,
+    "pull:221",
+    "2026-09-22T20:28:44.000Z"
+  ],
+  [
+    "proposal-pr-221-settings-foundation",
+    files.settingsSpec.node_id,
+    "pull:221",
+    "2026-09-22T20:28:44.000Z"
+  ],
+  [
+    "proposal-pr-244-notification-reconcile",
+    files.settingsPage.node_id,
+    "pull:244",
+    "2026-09-22T21:13:02.000Z"
+  ],
+  [
+    "proposal-pr-244-notification-reconcile",
+    files.notificationSpec.node_id,
+    "pull:244",
+    "2026-09-22T21:13:02.000Z"
+  ],
+  [
+    "proposal-pr-246-timezone-boundary",
+    files.settingsPage.node_id,
+    "pull:246",
+    "2026-09-22T21:14:12.000Z"
+  ],
+  [
+    "proposal-pr-246-timezone-boundary",
+    files.timezoneSpec.node_id,
+    "pull:246",
+    "2026-09-22T21:14:12.000Z"
+  ],
+  [
+    "proposal-pr-248-companion-policy-controls",
+    files.settingsPage.node_id,
+    "pull:248",
+    "2026-09-22T21:18:00.000Z"
+  ],
+  [
+    "proposal-pr-248-companion-policy-controls",
+    files.companionPolicySpec.node_id,
+    "pull:248",
+    "2026-09-22T21:18:00.000Z"
+  ],
+  [
+    "proposal-pr-250-mobile-settings-navigation",
+    repositoryStructureFileId("apps/web/src/app/page.tsx"),
+    "pull:250",
+    "2026-09-22T21:19:21.000Z"
+  ],
+  [
+    "proposal-pr-250-mobile-settings-navigation",
+    files.mobileSettingsSpec.node_id,
+    "pull:250",
+    "2026-09-22T21:19:21.000Z"
+  ],
+  [
+    "proposal-pr-252-settings-reset-confirmation",
+    files.settingsPage.node_id,
+    "pull:252",
+    "2026-09-22T21:20:32.000Z"
+  ],
+  [
+    "proposal-pr-252-settings-reset-confirmation",
+    files.resetSpec.node_id,
+    "pull:252",
+    "2026-09-22T21:20:32.000Z"
+  ],
+  [
+    "proposal-pr-254-communication-policy-controls",
+    files.settingsPage.node_id,
+    "pull:254",
+    "2026-09-22T21:22:39.000Z"
+  ],
+  [
+    "proposal-pr-254-communication-policy-controls",
+    files.communicationPolicySpec.node_id,
+    "pull:254",
+    "2026-09-22T21:22:39.000Z"
+  ],
+  [
+    "proposal-pr-257-push-consent",
+    files.settingsPage.node_id,
+    "pull:257",
+    "2026-09-22T21:27:03.000Z"
+  ],
+  [
+    "proposal-pr-257-push-consent",
+    files.notificationSpec.node_id,
+    "pull:257",
+    "2026-09-22T21:27:03.000Z"
+  ]
 ] as const;
 
-for(const [from,to,location,createdAt] of changes){
-  edges.push(edge({
-    id:`settings-change-${edges.length+1}`,
-    type:"PROPOSES_CHANGE_TO",from,to,location,createdAt
-  }));
+for (const [from, to, location, createdAt] of changes) {
+  edges.push(
+    edge({
+      id: `settings-change-${edges.length + 1}`,
+      type: "PROPOSES_CHANGE_TO",
+      from,
+      to,
+      location,
+      createdAt
+    })
+  );
 }
 
 const semantics = [
-  ["proposal-pr-221-settings-foundation","PROPOSES_UI_FOR",settingsSurface.node_id,"pull:221","2026-09-22T20:28:44.000Z"],
-  ["proposal-pr-221-settings-foundation","PROPOSES_UI_FOR",communicationProfile.node_id,"pull:221","2026-09-22T20:28:44.000Z"],
-  ["proposal-pr-221-settings-foundation","PROPOSES_UI_FOR","entity-auth-flow","pull:221","2026-09-22T20:28:44.000Z"],
-  ["proposal-pr-221-settings-foundation","PROPOSES_UI_FOR","entity-companion-gate","pull:221","2026-09-22T20:28:44.000Z"],
-  ["proposal-pr-244-notification-reconcile","HARDENS",settingsSurface.node_id,"pull:244","2026-09-22T21:13:02.000Z"],
-  ["proposal-pr-246-timezone-boundary","CONSTRAINS",settingsSurface.node_id,"pull:246","2026-09-22T21:14:12.000Z"],
-  ["proposal-pr-248-companion-policy-controls","EXPOSES_CONTROL_FOR","entity-companion-gate","pull:248","2026-09-22T21:18:00.000Z"],
-  ["proposal-pr-250-mobile-settings-navigation","EXPOSES_NAVIGATION_TO",settingsSurface.node_id,"pull:250","2026-09-22T21:19:21.000Z"],
-  ["proposal-pr-252-settings-reset-confirmation","HARDENS",settingsSurface.node_id,"pull:252","2026-09-22T21:20:32.000Z"],
-  ["proposal-pr-254-communication-policy-controls","EXPOSES_CONTROL_FOR",communicationProfile.node_id,"pull:254","2026-09-22T21:22:39.000Z"],
-  ["proposal-pr-257-push-consent","REQUIRES_EXPLICIT_CONSENT_FOR","entity-companion-gate","pull:257","2026-09-22T21:27:03.000Z"]
+  [
+    "proposal-pr-221-settings-foundation",
+    "PROPOSES_UI_FOR",
+    settingsSurface.node_id,
+    "pull:221",
+    "2026-09-22T20:28:44.000Z"
+  ],
+  [
+    "proposal-pr-221-settings-foundation",
+    "PROPOSES_UI_FOR",
+    communicationProfile.node_id,
+    "pull:221",
+    "2026-09-22T20:28:44.000Z"
+  ],
+  [
+    "proposal-pr-221-settings-foundation",
+    "PROPOSES_UI_FOR",
+    "entity-auth-flow",
+    "pull:221",
+    "2026-09-22T20:28:44.000Z"
+  ],
+  [
+    "proposal-pr-221-settings-foundation",
+    "PROPOSES_UI_FOR",
+    "entity-companion-gate",
+    "pull:221",
+    "2026-09-22T20:28:44.000Z"
+  ],
+  [
+    "proposal-pr-244-notification-reconcile",
+    "HARDENS",
+    settingsSurface.node_id,
+    "pull:244",
+    "2026-09-22T21:13:02.000Z"
+  ],
+  [
+    "proposal-pr-246-timezone-boundary",
+    "CONSTRAINS",
+    settingsSurface.node_id,
+    "pull:246",
+    "2026-09-22T21:14:12.000Z"
+  ],
+  [
+    "proposal-pr-248-companion-policy-controls",
+    "EXPOSES_CONTROL_FOR",
+    "entity-companion-gate",
+    "pull:248",
+    "2026-09-22T21:18:00.000Z"
+  ],
+  [
+    "proposal-pr-250-mobile-settings-navigation",
+    "EXPOSES_NAVIGATION_TO",
+    settingsSurface.node_id,
+    "pull:250",
+    "2026-09-22T21:19:21.000Z"
+  ],
+  [
+    "proposal-pr-252-settings-reset-confirmation",
+    "HARDENS",
+    settingsSurface.node_id,
+    "pull:252",
+    "2026-09-22T21:20:32.000Z"
+  ],
+  [
+    "proposal-pr-254-communication-policy-controls",
+    "EXPOSES_CONTROL_FOR",
+    communicationProfile.node_id,
+    "pull:254",
+    "2026-09-22T21:22:39.000Z"
+  ],
+  [
+    "proposal-pr-257-push-consent",
+    "REQUIRES_EXPLICIT_CONSENT_FOR",
+    "entity-companion-gate",
+    "pull:257",
+    "2026-09-22T21:27:03.000Z"
+  ]
 ] as const;
 
-for(const [from,type,to,location,createdAt] of semantics){
-  edges.push(edge({id:`settings-semantic-${edges.length+1}`,type,from,to,location,createdAt}));
+for (const [from, type, to, location, createdAt] of semantics) {
+  edges.push(
+    edge({ id: `settings-semantic-${edges.length + 1}`, type, from, to, location, createdAt })
+  );
 }
 
 const candidateNodes = [
@@ -284,15 +472,15 @@ const candidateNodes = [
   communicationProfile
 ];
 
-const records: IntelligenceGraphSearchRecord[] = candidateNodes.map((node)=>({
-  node:{id:node.node_id,version:1},
-  text:node.node_id.replaceAll("-"," "),
-  excerpt:node.source_ref.location,
-  estimated_tokens:12
+const records: IntelligenceGraphSearchRecord[] = candidateNodes.map((node) => ({
+  node: { id: node.node_id, version: 1 },
+  text: node.node_id.replaceAll("-", " "),
+  excerpt: node.source_ref.location,
+  estimated_tokens: 12
 }));
 
 export const cosmoraOpenSettingsReviewGraph = () => ({
-  nodes:candidateNodes,
+  nodes: candidateNodes,
   edges,
   records
 });

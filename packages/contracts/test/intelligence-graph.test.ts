@@ -417,7 +417,9 @@ describe("Intelligence Graph deterministic kernel", () => {
     expect(Value.Check(IntelligenceGraphEdgeSchema, validEdge)).toBe(true);
 
     expect(Value.Check(IntelligenceGraphNodeSchema, { ...validNode, node_version: 0 })).toBe(false);
-    expect(Value.Check(IntelligenceGraphNodeSchema, { ...validNode, unexpected: true })).toBe(false);
+    expect(Value.Check(IntelligenceGraphNodeSchema, { ...validNode, unexpected: true })).toBe(
+      false
+    );
     expect(Value.Check(IntelligenceGraphEdgeSchema, { ...validEdge, type: "supported by" })).toBe(
       false
     );

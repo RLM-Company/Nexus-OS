@@ -63,18 +63,12 @@ const verificationCounts = {
   nodes: Object.fromEntries(
     [...new Set(nodes.map((node) => node.verification_status))]
       .sort()
-      .map((status) => [
-        status,
-        nodes.filter((node) => node.verification_status === status).length
-      ])
+      .map((status) => [status, nodes.filter((node) => node.verification_status === status).length])
   ),
   edges: Object.fromEntries(
     [...new Set(edges.map((edge) => edge.verification_status))]
       .sort()
-      .map((status) => [
-        status,
-        edges.filter((edge) => edge.verification_status === status).length
-      ])
+      .map((status) => [status, edges.filter((edge) => edge.verification_status === status).length])
   )
 };
 

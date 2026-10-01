@@ -66,9 +66,7 @@ describe("Cosmora knowledge graph manifest", () => {
 
   it("marks every open-review layer as candidate-only", () => {
     const manifest = readManifest();
-    const candidates = manifest.layers.filter((layer) =>
-      layer.id.startsWith("open_")
-    );
+    const candidates = manifest.layers.filter((layer) => layer.id.startsWith("open_"));
 
     expect(candidates.length).toBeGreaterThanOrEqual(2);
     expect(

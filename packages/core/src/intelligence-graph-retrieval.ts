@@ -89,8 +89,9 @@ const edgeRef = (edge: IntelligenceGraphEdge): IntelligenceGraphVersionRef => ({
   version: edge.edge_version
 });
 
-const tokenize = (value: string): string[] =>
-  [...new Set(value.toLocaleLowerCase().match(/[\p{L}\p{N}_-]+/gu) ?? [])];
+const tokenize = (value: string): string[] => [
+  ...new Set(value.toLocaleLowerCase().match(/[\p{L}\p{N}_-]+/gu) ?? [])
+];
 
 const lexicalScore = (query: string, record: IntelligenceGraphSearchRecord): number => {
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -121,9 +122,24 @@ const safeInteger = (
 const resolveBudget = (
   budget: Partial<IntelligenceGraphQueryBudget> | undefined
 ): IntelligenceGraphQueryBudget => ({
-  max_depth: safeInteger(budget?.max_depth, DEFAULT_BUDGET.max_depth, HARD_LIMITS.max_depth, "max_depth"),
-  max_nodes: safeInteger(budget?.max_nodes, DEFAULT_BUDGET.max_nodes, HARD_LIMITS.max_nodes, "max_nodes"),
-  max_edges: safeInteger(budget?.max_edges, DEFAULT_BUDGET.max_edges, HARD_LIMITS.max_edges, "max_edges"),
+  max_depth: safeInteger(
+    budget?.max_depth,
+    DEFAULT_BUDGET.max_depth,
+    HARD_LIMITS.max_depth,
+    "max_depth"
+  ),
+  max_nodes: safeInteger(
+    budget?.max_nodes,
+    DEFAULT_BUDGET.max_nodes,
+    HARD_LIMITS.max_nodes,
+    "max_nodes"
+  ),
+  max_edges: safeInteger(
+    budget?.max_edges,
+    DEFAULT_BUDGET.max_edges,
+    HARD_LIMITS.max_edges,
+    "max_edges"
+  ),
   max_fan_out: safeInteger(
     budget?.max_fan_out,
     DEFAULT_BUDGET.max_fan_out,
@@ -201,7 +217,9 @@ export class IntelligenceGraphIndex {
 
     this.#ownerId = input.ownerId;
     this.#projectId = input.projectId;
-    this.#nodes = new Map(input.nodes.map((node) => [versionKey(nodeRef(node)), structuredClone(node)]));
+    this.#nodes = new Map(
+      input.nodes.map((node) => [versionKey(nodeRef(node)), structuredClone(node)])
+    );
     this.#edges = input.edges.map((edge) => structuredClone(edge));
     this.#records = new Map();
     this.#adjacency = new Map();
@@ -388,7 +406,10 @@ export class IntelligenceGraphIndex {
 
     const nodes = [...selectedNodes.values()];
     const unresolvedNodeIds = nodes
-      .filter(({ node }) => node.verification_status === "disputed" || node.verification_status === "hypothesis")
+      .filter(
+        ({ node }) =>
+          node.verification_status === "disputed" || node.verification_status === "hypothesis"
+      )
       .map(({ node }) => node.node_id)
       .sort();
 

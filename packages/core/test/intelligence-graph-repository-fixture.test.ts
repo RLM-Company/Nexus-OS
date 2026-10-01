@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  compileAuthorizedIntelligenceGraphFixture,
-  IntelligenceGraphIndex
-} from "../src/index.js";
+import { compileAuthorizedIntelligenceGraphFixture, IntelligenceGraphIndex } from "../src/index.js";
 import { cosmoraRepositoryIntelligenceGraphFixture } from "./fixtures/cosmora-repository-intelligence-graph.js";
 
 const index = () => {
@@ -38,10 +35,7 @@ describe("repository-grounded Cosmora Intelligence Graph fixture", () => {
 
     expect(packet.sufficient_evidence).toBe(true);
     expect(packet.nodes.map(({ node }) => node.node_id)).toEqual(
-      expect.arrayContaining([
-        "decision-model-registry-authority",
-        "claim-router-hard-filters"
-      ])
+      expect.arrayContaining(["decision-model-registry-authority", "claim-router-hard-filters"])
     );
   });
 

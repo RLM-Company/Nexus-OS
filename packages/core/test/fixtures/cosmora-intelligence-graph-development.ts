@@ -261,6 +261,5 @@ export const cosmoraIntelligenceGraphDevelopment = () => ({
   records
 });
 
-export const COSMORA_INTELLIGENCE_GRAPH_DEVELOPMENT_NODE_COUNT =
-  proposals.length + 1;
+export const COSMORA_INTELLIGENCE_GRAPH_DEVELOPMENT_NODE_COUNT = proposals.length + 1;
 export const COSMORA_INTELLIGENCE_GRAPH_DEVELOPMENT_EDGE_COUNT = edges.length;

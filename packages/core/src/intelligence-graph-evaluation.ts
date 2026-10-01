@@ -118,9 +118,7 @@ export const evaluateIntelligenceGraphRetrieval = (input: {
       cases: results.length,
       mean_precision: mean(results.map((result) => result.precision)),
       mean_recall: mean(results.map((result) => result.recall)),
-      sufficient_evidence_rate: mean(
-        results.map((result) => (result.sufficient_evidence ? 1 : 0))
-      ),
+      sufficient_evidence_rate: mean(results.map((result) => (result.sufficient_evidence ? 1 : 0))),
       truncated_rate: mean(results.map((result) => (result.truncated ? 1 : 0)))
     };
   });

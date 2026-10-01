@@ -160,9 +160,7 @@ describe("authorized Intelligence Graph fixture compiler", () => {
       }
     ];
 
-    expect(() => compileAuthorizedIntelligenceGraphFixture(invalid)).toThrow(
-      "unknown to node"
-    );
+    expect(() => compileAuthorizedIntelligenceGraphFixture(invalid)).toThrow("unknown to node");
   });
 
   it("rejects model-only inference when a fixture tries to mark it verified", () => {

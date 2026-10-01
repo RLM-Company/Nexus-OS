@@ -149,7 +149,9 @@ export const compileAuthorizedIntelligenceGraphFixture = (
   };
 
   if (sourceNode.sensitivity === "D4_PRIVATE_CHAT") {
-    throw new Error("Confidential-chat material cannot enter a persistent Intelligence Graph fixture");
+    throw new Error(
+      "Confidential-chat material cannot enter a persistent Intelligence Graph fixture"
+    );
   }
 
   const nodes: IntelligenceGraphNode[] = [sourceNode];
@@ -185,7 +187,9 @@ export const compileAuthorizedIntelligenceGraphFixture = (
 
     const sensitivity = entry.sensitivity ?? "D1_PROJECT";
     if (sensitivity === "D4_PRIVATE_CHAT") {
-      throw new Error("Confidential-chat material cannot enter a persistent Intelligence Graph fixture");
+      throw new Error(
+        "Confidential-chat material cannot enter a persistent Intelligence Graph fixture"
+      );
     }
 
     const node: IntelligenceGraphNode = {
@@ -253,7 +257,9 @@ export const compileAuthorizedIntelligenceGraphFixture = (
 
     const sensitivity = relation.sensitivity ?? "D1_PROJECT";
     if (sensitivity === "D4_PRIVATE_CHAT") {
-      throw new Error("Confidential-chat material cannot enter a persistent Intelligence Graph fixture");
+      throw new Error(
+        "Confidential-chat material cannot enter a persistent Intelligence Graph fixture"
+      );
     }
 
     edges.push({

@@ -89,9 +89,7 @@ const bridgeRows: readonly Bridge[] = [
     id: "bridge-runtime-provenance",
     type: "RESOLVES_TO_FILE",
     from: "doc-runtime-provenance",
-    to: repositoryStructureFileId(
-      "packages/contracts/src/manager-runtime-artifact-provenance.ts"
-    ),
+    to: repositoryStructureFileId("packages/contracts/src/manager-runtime-artifact-provenance.ts"),
     location: "packages/contracts/src/manager-runtime-artifact-provenance.ts"
   },
   {
@@ -119,9 +117,7 @@ const bridgeRows: readonly Bridge[] = [
     id: "bridge-runtime-context-validation",
     type: "RESOLVES_TO_FILE",
     from: "doc-runtime-context-validation",
-    to: repositoryStructureFileId(
-      "packages/contracts/src/manager-runtime-context-validation.ts"
-    ),
+    to: repositoryStructureFileId("packages/contracts/src/manager-runtime-context-validation.ts"),
     location: "packages/contracts/src/manager-runtime-context-validation.ts"
   },
   {
@@ -276,9 +272,7 @@ const bridgeEdge = (bridge: Bridge): IntelligenceGraphEdge => ({
 const versionKey = (id: string, version: number): string => `${id}@${version}`;
 
 export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture => {
-  const semantic = compileAuthorizedIntelligenceGraphFixture(
-    cosmoraRealKnowledgeGraphFixture()
-  );
+  const semantic = compileAuthorizedIntelligenceGraphFixture(cosmoraRealKnowledgeGraphFixture());
   const structural = compileAuthorizedIntelligenceGraphFixture(
     cosmoraRepositoryStructureGraphFixture()
   );

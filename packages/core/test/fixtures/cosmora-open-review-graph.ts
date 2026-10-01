@@ -1,7 +1,4 @@
-import type {
-  IntelligenceGraphEdge,
-  IntelligenceGraphNode
-} from "@cosmora/contracts";
+import type { IntelligenceGraphEdge, IntelligenceGraphNode } from "@cosmora/contracts";
 import type { IntelligenceGraphSearchRecord } from "../../src/index.js";
 import { repositoryStructureFileId } from "./cosmora-repository-structure-graph.js";
 
@@ -36,11 +33,7 @@ const sourceNode: IntelligenceGraphNode = {
   deleted_at: null
 };
 
-const proposalFile = (
-  id: string,
-  path: string,
-  createdAt: string
-): IntelligenceGraphNode => ({
+const proposalFile = (id: string, path: string, createdAt: string): IntelligenceGraphNode => ({
   contract_version: 1,
   node_id: id,
   node_version: 1,
@@ -131,8 +124,7 @@ const pulls = [
     number: 237,
     id: "proposal-pr-237-verification-consistency",
     title: "Manager verified-result consistency",
-    excerpt:
-      "Proposes rejecting verified artifacts when any verification for the artifact failed.",
+    excerpt: "Proposes rejecting verified artifacts when any verification for the artifact failed.",
     createdAt: "2026-09-22T20:59:04.000Z",
     headSha: "a5fd5f0563cb88e1cecc66f7e9bdb8ab99d2b477"
   }),
@@ -237,14 +229,54 @@ const edge = (input: {
 });
 
 const stackEdges = [
-  ["proposal-pr-229-manager-execution","proposal-pr-237-verification-consistency","pull:237","2026-09-22T20:59:04.000Z"],
-  ["proposal-pr-237-verification-consistency","proposal-pr-238-trace-correlation","pull:238","2026-09-22T21:00:02.000Z"],
-  ["proposal-pr-238-trace-correlation","proposal-pr-239-unresolved-task-completeness","pull:239","2026-09-22T21:03:09.000Z"],
-  ["proposal-pr-239-unresolved-task-completeness","proposal-pr-240-terminal-artifact-references","pull:240","2026-09-22T21:04:08.000Z"],
-  ["proposal-pr-240-terminal-artifact-references","proposal-pr-241-critic-verdict-binding","pull:241","2026-09-22T21:05:44.000Z"],
-  ["proposal-pr-241-critic-verdict-binding","proposal-pr-243-verification-time-order","pull:243","2026-09-22T21:12:52.000Z"],
-  ["proposal-pr-243-verification-time-order","proposal-pr-245-result-time-order","pull:245","2026-09-22T21:13:58.000Z"],
-  ["proposal-pr-229-manager-execution","proposal-pr-242-manager-schema-boundaries","pull:242","2026-09-22T21:09:25.000Z"]
+  [
+    "proposal-pr-229-manager-execution",
+    "proposal-pr-237-verification-consistency",
+    "pull:237",
+    "2026-09-22T20:59:04.000Z"
+  ],
+  [
+    "proposal-pr-237-verification-consistency",
+    "proposal-pr-238-trace-correlation",
+    "pull:238",
+    "2026-09-22T21:00:02.000Z"
+  ],
+  [
+    "proposal-pr-238-trace-correlation",
+    "proposal-pr-239-unresolved-task-completeness",
+    "pull:239",
+    "2026-09-22T21:03:09.000Z"
+  ],
+  [
+    "proposal-pr-239-unresolved-task-completeness",
+    "proposal-pr-240-terminal-artifact-references",
+    "pull:240",
+    "2026-09-22T21:04:08.000Z"
+  ],
+  [
+    "proposal-pr-240-terminal-artifact-references",
+    "proposal-pr-241-critic-verdict-binding",
+    "pull:241",
+    "2026-09-22T21:05:44.000Z"
+  ],
+  [
+    "proposal-pr-241-critic-verdict-binding",
+    "proposal-pr-243-verification-time-order",
+    "pull:243",
+    "2026-09-22T21:12:52.000Z"
+  ],
+  [
+    "proposal-pr-243-verification-time-order",
+    "proposal-pr-245-result-time-order",
+    "pull:245",
+    "2026-09-22T21:13:58.000Z"
+  ],
+  [
+    "proposal-pr-229-manager-execution",
+    "proposal-pr-242-manager-schema-boundaries",
+    "pull:242",
+    "2026-09-22T21:09:25.000Z"
+  ]
 ] as const;
 
 const stacked = stackEdges.map(([from, to, location, createdAt], index) =>
@@ -294,15 +326,15 @@ changed.push(
 );
 
 const semanticTargets = [
-  ["proposal-pr-229-manager-execution","entity-runtime-task-graph"],
-  ["proposal-pr-237-verification-consistency","entity-runtime-artifact"],
-  ["proposal-pr-238-trace-correlation","entity-runtime-task-graph"],
-  ["proposal-pr-239-unresolved-task-completeness","entity-runtime-task-graph"],
-  ["proposal-pr-240-terminal-artifact-references","entity-runtime-artifact"],
-  ["proposal-pr-241-critic-verdict-binding","entity-critic-role"],
-  ["proposal-pr-242-manager-schema-boundaries","doc-manager-runtime-contract"],
-  ["proposal-pr-243-verification-time-order","entity-runtime-artifact"],
-  ["proposal-pr-245-result-time-order","entity-runtime-task-graph"]
+  ["proposal-pr-229-manager-execution", "entity-runtime-task-graph"],
+  ["proposal-pr-237-verification-consistency", "entity-runtime-artifact"],
+  ["proposal-pr-238-trace-correlation", "entity-runtime-task-graph"],
+  ["proposal-pr-239-unresolved-task-completeness", "entity-runtime-task-graph"],
+  ["proposal-pr-240-terminal-artifact-references", "entity-runtime-artifact"],
+  ["proposal-pr-241-critic-verdict-binding", "entity-critic-role"],
+  ["proposal-pr-242-manager-schema-boundaries", "doc-manager-runtime-contract"],
+  ["proposal-pr-243-verification-time-order", "entity-runtime-artifact"],
+  ["proposal-pr-245-result-time-order", "entity-runtime-task-graph"]
 ] as const;
 
 const semantic = semanticTargets.map(([from, to], index) =>
@@ -366,5 +398,4 @@ export const cosmoraOpenReviewGraph = (): {
 });
 
 export const COSMORA_OPEN_REVIEW_NODE_COUNT = 13;
-export const COSMORA_OPEN_REVIEW_EDGE_COUNT =
-  stacked.length + changed.length + semantic.length;
+export const COSMORA_OPEN_REVIEW_EDGE_COUNT = stacked.length + changed.length + semantic.length;

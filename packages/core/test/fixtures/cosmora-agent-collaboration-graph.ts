@@ -7,11 +7,7 @@ const projectId = "project-nexus-os";
 const sourceId = "source-nexus-os-main-62bc523";
 const recordedAt = "2026-10-01T20:31:01.000Z";
 
-const role = (input: {
-  id: string;
-  roleName: string;
-  excerpt: string;
-}): IntelligenceGraphNode => ({
+const role = (input: { id: string; roleName: string; excerpt: string }): IntelligenceGraphNode => ({
   contract_version: 1,
   node_id: input.id,
   node_version: 1,
@@ -37,10 +33,7 @@ const role = (input: {
   deleted_at: null
 });
 
-const artifactKind = (input: {
-  id: string;
-  name: string;
-}): IntelligenceGraphNode => ({
+const artifactKind = (input: { id: string; name: string }): IntelligenceGraphNode => ({
   contract_version: 1,
   node_id: input.id,
   node_version: 1,
@@ -119,7 +112,9 @@ const authorityClaim: IntelligenceGraphNode = {
 };
 
 const artifactId = (kind: string): string =>
-  kind === "checkpoint" ? "entity-runtime-checkpoint" : `entity-artifact-kind-${kind.replace("_", "-")}`;
+  kind === "checkpoint"
+    ? "entity-runtime-checkpoint"
+    : `entity-artifact-kind-${kind.replace("_", "-")}`;
 
 const edge = (input: {
   id: string;
@@ -229,21 +224,24 @@ edges.push(
     type: "CAN_DELEGATE_WITHIN",
     from: "entity-manager-role",
     to: "entity-runtime-task-graph",
-    evidence: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.manager.can_delegate"
+    evidence:
+      "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.manager.can_delegate"
   }),
   edge({
     id: "collab-critic-can-review",
     type: "CAN_REVIEW",
     from: "entity-critic-role",
     to: "entity-runtime-artifact",
-    evidence: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.can_review"
+    evidence:
+      "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.can_review"
   }),
   edge({
     id: "collab-authority-regression",
     type: "VERIFIED_BY_TEST",
     from: authorityClaim.node_id,
     to: repositoryStructureFileId("packages/contracts/test/manager-runtime.test.ts"),
-    evidence: "packages/contracts/test/manager-runtime.test.ts:keeps all five roles project-bound and unable to bypass policy or issue authority"
+    evidence:
+      "packages/contracts/test/manager-runtime.test.ts:keeps all five roles project-bound and unable to bypass policy or issue authority"
   })
 );
 

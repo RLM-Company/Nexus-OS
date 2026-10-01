@@ -240,9 +240,7 @@ for (const row of rows) {
         id: `scenario-runner-test-${row.id}`,
         type: "EXECUTED_BY_TEST",
         from: scenarioNodeId,
-        to: repositoryStructureFileId(
-          "packages/core/test/manager-runtime-scenario-runner.test.ts"
-        ),
+        to: repositoryStructureFileId("packages/core/test/manager-runtime-scenario-runner.test.ts"),
         evidence: `packages/core/test/manager-runtime-scenario-runner.test.ts:${row.id}`
       })
     );

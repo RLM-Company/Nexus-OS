@@ -24,21 +24,19 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(graph.records).toHaveLength(383);
     expect(graph.edges).toHaveLength(1052);
 
-    expect(
-      new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size
-    ).toBe(383);
-    expect(
-      new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size
-    ).toBe(1052);
+    expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
+      383
+    );
+    expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
+      1052
+    );
 
     expect(() => createIndex()).not.toThrow();
   });
 
   it("bridges Manager policy knowledge to the exact runtime implementation file", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const managerFile = repositoryStructureFileId(
-      "apps/api/src/manager-work-coordinator.ts"
-    );
+    const managerFile = repositoryStructureFileId("apps/api/src/manager-work-coordinator.ts");
 
     expect(
       graph.edges.some(
@@ -78,17 +76,13 @@ describe("unified Cosmora Intelligence Graph", () => {
     const ids = packet.nodes.map(({ node }) => node.node_id);
     expect(ids).toContain("claim-manager-publish-workspace-write");
     expect(ids).toContain("artifact-manager-work-runtime");
-    expect(ids).toContain(
-      repositoryStructureFileId("apps/api/src/manager-work-coordinator.ts")
-    );
+    expect(ids).toContain(repositoryStructureFileId("apps/api/src/manager-work-coordinator.ts"));
     expect(ids).toContain("module:packages/tool-runtime");
   });
 
   it("joins Model Registry semantics to its contract file and implementation module", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const registryContract = repositoryStructureFileId(
-      "packages/contracts/src/model-registry.ts"
-    );
+    const registryContract = repositoryStructureFileId("packages/contracts/src/model-registry.ts");
 
     expect(
       graph.edges.some(
@@ -162,9 +156,7 @@ describe("unified Cosmora Intelligence Graph", () => {
       "apps/api/src/manager-work-coordinator.ts"
     );
     const authContract = repositoryStructureFileId("packages/contracts/src/auth.ts");
-    const modelOptions = repositoryStructureFileId(
-      "packages/core/src/model-service-options.ts"
-    );
+    const modelOptions = repositoryStructureFileId("packages/core/src/model-service-options.ts");
 
     expect(
       graph.edges.some(
@@ -194,9 +186,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("preserves the recent hardening chronology as real work experience", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "event-core-model-request-bounds|PRECEDES|event-model-request-contract-bounds"
@@ -204,12 +194,8 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       "event-model-request-contract-bounds|PRECEDES|event-stream-metadata-hardening"
     );
-    expect(pairs).toContain(
-      "event-stream-metadata-hardening|PRECEDES|event-companion-contract"
-    );
-    expect(pairs).toContain(
-      "event-auth-contract|PRECEDES|event-manager-runtime"
-    );
+    expect(pairs).toContain("event-stream-metadata-hardening|PRECEDES|event-companion-contract");
+    expect(pairs).toContain("event-auth-contract|PRECEDES|event-manager-runtime");
   });
 
   it("retrieves concrete files from a real hardening event", () => {
@@ -230,14 +216,10 @@ describe("unified Cosmora Intelligence Graph", () => {
 
     const ids = packet.nodes.map(({ node }) => node.node_id);
     expect(ids).toContain("event-core-model-request-bounds");
-    expect(ids).toContain(
-      repositoryStructureFileId("packages/core/src/model-service-options.ts")
-    );
+    expect(ids).toContain(repositoryStructureFileId("packages/core/src/model-service-options.ts"));
     expect(
       packet.edges.some(
-        (edge) =>
-          edge.type === "CHANGED_FILE" &&
-          edge.from.id === "event-core-model-request-bounds"
+        (edge) => edge.type === "CHANGED_FILE" && edge.from.id === "event-core-model-request-bounds"
       )
     ).toBe(true);
   });
@@ -287,9 +269,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("preserves the open Manager hardening stack without promoting it to main", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "proposal-pr-229-manager-execution|STACKED_BEFORE|proposal-pr-237-verification-consistency"
@@ -308,9 +288,7 @@ describe("unified Cosmora Intelligence Graph", () => {
       (edge) => edge.extractor_version === "github-open-review-v1"
     );
     expect(candidateEdges.length).toBeGreaterThan(0);
-    expect(candidateEdges.every((edge) => edge.verification_status === "discovered")).toBe(
-      true
-    );
+    expect(candidateEdges.every((edge) => edge.verification_status === "discovered")).toBe(true);
   });
 
   it("retrieves verified security hardening from merged main history", () => {
@@ -334,28 +312,18 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(ids).toContain(repositoryStructureFileId("packages/config/src/secrets.ts"));
     expect(
       packet.edges.some(
-        (edge) =>
-          edge.type === "CHANGED_FILE" &&
-          edge.from.id === "event-main-bd7508fc"
+        (edge) => edge.type === "CHANGED_FILE" && edge.from.id === "event-main-bd7508fc"
       )
     ).toBe(true);
   });
 
   it("preserves merged hardening chronology before later model-request bounds", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
-    expect(pairs).toContain(
-      "event-main-5d268cb7|PRECEDES|event-main-9d35d7d9"
-    );
-    expect(pairs).toContain(
-      "event-main-9d8b8207|PRECEDES|event-main-bd66e37c"
-    );
-    expect(pairs).toContain(
-      "event-main-bd7508fc|PRECEDES|event-core-model-request-bounds"
-    );
+    expect(pairs).toContain("event-main-5d268cb7|PRECEDES|event-main-9d35d7d9");
+    expect(pairs).toContain("event-main-9d8b8207|PRECEDES|event-main-bd66e37c");
+    expect(pairs).toContain("event-main-bd7508fc|PRECEDES|event-core-model-request-bounds");
   });
 
   it("keeps open Settings and push-consent work visible but non-authoritative", () => {
@@ -390,17 +358,13 @@ describe("unified Cosmora Intelligence Graph", () => {
     });
 
     expect(
-      verifiedPacket.nodes.some(
-        ({ node }) => node.node_id === "proposal-pr-257-push-consent"
-      )
+      verifiedPacket.nodes.some(({ node }) => node.node_id === "proposal-pr-257-push-consent")
     ).toBe(false);
   });
 
   it("preserves the Settings review dependency stack", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "proposal-pr-221-settings-foundation|STACKED_BEFORE|proposal-pr-244-notification-reconcile"
@@ -452,46 +416,30 @@ describe("unified Cosmora Intelligence Graph", () => {
   it("maps Manager runtime constraints to executable API regressions", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
     const managerWorkTest = repositoryStructureFileId("apps/api/test/manager-work.test.ts");
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       `claim-manager-publish-workspace-write|VERIFIED_BY_TEST|${managerWorkTest}`
     );
-    expect(pairs).toContain(
-      `claim-manager-reserves-budget|VERIFIED_BY_TEST|${managerWorkTest}`
-    );
-    expect(pairs).toContain(
-      `claim-manager-emergency-stop|VERIFIED_BY_TEST|${managerWorkTest}`
-    );
+    expect(pairs).toContain(`claim-manager-reserves-budget|VERIFIED_BY_TEST|${managerWorkTest}`);
+    expect(pairs).toContain(`claim-manager-emergency-stop|VERIFIED_BY_TEST|${managerWorkTest}`);
   });
 
   it("maps temporal and privacy rules to their regression suites", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const routerTest = repositoryStructureFileId(
-      "packages/model-gateway/test/router.test.ts"
-    );
+    const routerTest = repositoryStructureFileId("packages/model-gateway/test/router.test.ts");
     const contextTest = repositoryStructureFileId(
       "packages/contracts/test/manager-runtime-context-validation.test.ts"
     );
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
-    expect(pairs).toContain(
-      `decision-route-evidence-freshness|VERIFIED_BY_TEST|${routerTest}`
-    );
-    expect(pairs).toContain(
-      `claim-context-private-chat-forbidden|VERIFIED_BY_TEST|${contextTest}`
-    );
+    expect(pairs).toContain(`decision-route-evidence-freshness|VERIFIED_BY_TEST|${routerTest}`);
+    expect(pairs).toContain(`claim-context-private-chat-forbidden|VERIFIED_BY_TEST|${contextTest}`);
   });
 
   it("preserves the Intelligence Graph implementation dependency split", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "proposal-pr-265-intelligence-graph-kernel|STACKED_BEFORE|proposal-pr-266-intelligence-graph-retrieval"
@@ -555,33 +503,19 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("links the read-only model status surface to the Model Registry", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
-    expect(pairs).toContain(
-      "event-product-model-status|PRODUCES|entity-model-status-surface"
-    );
-    expect(pairs).toContain(
-      "entity-model-status-surface|OBSERVES|entity-model-registry"
-    );
+    expect(pairs).toContain("event-product-model-status|PRODUCES|entity-model-status-surface");
+    expect(pairs).toContain("entity-model-status-surface|OBSERVES|entity-model-registry");
   });
 
   it("preserves the product-hardening chronology around the local alpha", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
-    expect(pairs).toContain(
-      "event-product-live-model-smoke|PRECEDES|event-product-non-api-alpha"
-    );
-    expect(pairs).toContain(
-      "event-product-core-runtime-docs|PRECEDES|event-main-5d268cb7"
-    );
-    expect(pairs).toContain(
-      "event-main-5d268cb7|PRECEDES|event-product-web-runtime-boundaries"
-    );
+    expect(pairs).toContain("event-product-live-model-smoke|PRECEDES|event-product-non-api-alpha");
+    expect(pairs).toContain("event-product-core-runtime-docs|PRECEDES|event-main-5d268cb7");
+    expect(pairs).toContain("event-main-5d268cb7|PRECEDES|event-product-web-runtime-boundaries");
   });
 
   it("traverses real agent collaboration through shared artifact kinds", () => {
@@ -606,9 +540,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(ids).toContain("entity-analyst-role");
     expect(ids).toContain("entity-critic-role");
 
-    const pairs = new Set(
-      packet.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(packet.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
     expect(pairs).toContain(
       "entity-researcher-role|EMITS_ARTIFACT_KIND|entity-artifact-kind-evidence"
     );
@@ -624,8 +556,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
     const constrained = graph.edges.filter(
       (edge) =>
-        edge.type === "CONSTRAINED_BY" &&
-        edge.to.id === "claim-runtime-roles-no-authority-bypass"
+        edge.type === "CONSTRAINED_BY" && edge.to.id === "claim-runtime-roles-no-authority-bypass"
     );
 
     expect(new Set(constrained.map((edge) => edge.from.id))).toEqual(
@@ -651,16 +582,10 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("preserves Manager delegation and Critic review authority without policy bypass", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
-    expect(pairs).toContain(
-      "entity-manager-role|CAN_DELEGATE_WITHIN|entity-runtime-task-graph"
-    );
-    expect(pairs).toContain(
-      "entity-critic-role|CAN_REVIEW|entity-runtime-artifact"
-    );
+    expect(pairs).toContain("entity-manager-role|CAN_DELEGATE_WITHIN|entity-runtime-task-graph");
+    expect(pairs).toContain("entity-critic-role|CAN_REVIEW|entity-runtime-artifact");
   });
 
   it("retrieves Emergency Stop release-gate evidence through the scenario graph", () => {
@@ -698,23 +623,15 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("keeps A6 scenario dependent on verified step-up evidence", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
-    expect(pairs).toContain(
-      "evaluation-runtime-autonomy-a6-v1|EVALUATES|entity-policy-engine"
-    );
-    expect(pairs).toContain(
-      "evaluation-runtime-autonomy-a6-v1|REQUIRES|entity-step-up-proof"
-    );
+    expect(pairs).toContain("evaluation-runtime-autonomy-a6-v1|EVALUATES|entity-policy-engine");
+    expect(pairs).toContain("evaluation-runtime-autonomy-a6-v1|REQUIRES|entity-step-up-proof");
   });
 
   it("maps prompt-injection and cross-project scenarios to their exact safety rules", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "evaluation-runtime-prompt-injection-v1|EVALUATES|claim-context-untrusted-data-only"
@@ -726,14 +643,12 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("keeps every bridge evidence-grounded and specifically typed", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const bridgeEdges = graph.edges.filter((edge) =>
-      edge.extractor_version === "repository-bridge-v1"
+    const bridgeEdges = graph.edges.filter(
+      (edge) => edge.extractor_version === "repository-bridge-v1"
     );
 
     expect(bridgeEdges).toHaveLength(30);
-    expect(bridgeEdges.every((edge) => edge.evidence_ref.location.includes("/"))).toBe(
-      true
-    );
+    expect(bridgeEdges.every((edge) => edge.evidence_ref.location.includes("/"))).toBe(true);
     expect(bridgeEdges.some((edge) => edge.type === "RELATES_TO")).toBe(false);
   });
 });

@@ -113,7 +113,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "doc-policy-contract",
       kind: "Document",
       text: "policy autonomy capability grants verdict confirmation step up",
-      excerpt: "Policy contracts define autonomy levels, capabilities, permission modes and verdicts.",
+      excerpt:
+        "Policy contracts define autonomy levels, capabilities, permission modes and verdicts.",
       location: "packages/contracts/src/policy.ts",
       created_at: recordedAt,
       ...verified,
@@ -123,7 +124,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "doc-auth-contract",
       kind: "Document",
       text: "auth Google Telegram PKCE S256 external identity session",
-      excerpt: "Authentication contract supports Google and Telegram with state, nonce and PKCE S256.",
+      excerpt:
+        "Authentication contract supports Google and Telegram with state, nonce and PKCE S256.",
       location: "packages/contracts/src/auth.ts",
       created_at: recordedAt,
       ...verified,
@@ -143,7 +145,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "doc-project-context-boundary",
       kind: "Document",
       text: "Project Context browser local preview backend contract gap",
-      excerpt: "Browser-local Project Context is preview state and not authoritative runtime context.",
+      excerpt:
+        "Browser-local Project Context is preview state and not authoritative runtime context.",
       location: "docs/contracts/project-context-web-contract-gap-2026-09-18.md",
       created_at: recordedAt,
       ...verified,
@@ -207,7 +210,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "entity-runtime-artifact",
       kind: "Entity",
       text: "Manager runtime artifact evidence analysis decision handoff checkpoint",
-      excerpt: "Project-bound runtime artifact with provenance, data class and data-only treatment.",
+      excerpt:
+        "Project-bound runtime artifact with provenance, data class and data-only treatment.",
       location: "packages/contracts/src/manager-runtime.ts:RuntimeArtifactSchema",
       created_at: recordedAt,
       ...verified,
@@ -217,7 +221,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "entity-runtime-task-graph",
       kind: "Entity",
       text: "Manager runtime task graph dependencies roles memory scope",
-      excerpt: "Project-bound task graph with role assignment, dependencies and bounded task settings.",
+      excerpt:
+        "Project-bound task graph with role assignment, dependencies and bounded task settings.",
       location: "packages/contracts/src/manager-runtime.ts:RuntimeTaskGraphSchema",
       created_at: recordedAt,
       ...verified,
@@ -247,7 +252,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "entity-manager-role",
       kind: "AgentRole",
       text: "manager role delegates arbitrates conflict emits plan decision handoff checkpoint",
-      excerpt: "Manager can delegate and arbitrate conflicts but has no external-action or permission authority.",
+      excerpt:
+        "Manager can delegate and arbitrate conflicts but has no external-action or permission authority.",
       location: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.manager",
       created_at: recordedAt,
       ...verified,
@@ -257,7 +263,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "entity-critic-role",
       kind: "AgentRole",
       text: "critic role reviews architecture evidence analysis decision",
-      excerpt: "Critic can review and emit critic verdicts but cannot delegate or arbitrate conflicts.",
+      excerpt:
+        "Critic can review and emit critic verdicts but cannot delegate or arbitrate conflicts.",
       location: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic",
       created_at: recordedAt,
       ...verified,
@@ -268,7 +275,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       kind: "Entity",
       text: "Agent Studio project bound composed agent instance blueprint",
       excerpt: "Agent instance is assembled from independently versioned composition parts.",
-      location: "docs/decisions/ADR-004-agent-studio-and-modular-agent-composition.md:Agent composition",
+      location:
+        "docs/decisions/ADR-004-agent-studio-and-modular-agent-composition.md:Agent composition",
       created_at: recordedAt,
       ...verified,
       estimated_tokens: 16
@@ -278,7 +286,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       kind: "Entity",
       text: "Project Context browser local preview panel",
       excerpt: "Browser-local preview for bounded source selection and mock token estimates.",
-      location: "docs/contracts/project-context-web-contract-gap-2026-09-18.md:Current safe boundary",
+      location:
+        "docs/contracts/project-context-web-contract-gap-2026-09-18.md:Current safe boundary",
       created_at: recordedAt,
       ...verified,
       estimated_tokens: 15
@@ -308,7 +317,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "decision-registry-authority",
       kind: "Decision",
       text: "Model Registry only source of routing metadata secret free",
-      excerpt: "Cosmora uses the versioned secret-free Model Registry as the only routing metadata source.",
+      excerpt:
+        "Cosmora uses the versioned secret-free Model Registry as the only routing metadata source.",
       location: "docs/decisions/ADR-003-model-registry-routing.md:Decision",
       created_at: recordedAt,
       ...verified,
@@ -328,7 +338,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "decision-routing-fail-closed",
       kind: "Decision",
       text: "routing fails closed when all candidates violate hard constraints",
-      excerpt: "If hard filters remove all candidates, routing fails closed with a machine-readable reason.",
+      excerpt:
+        "If hard filters remove all candidates, routing fails closed with a machine-readable reason.",
       location: "docs/decisions/ADR-003-model-registry-routing.md:Decision",
       created_at: recordedAt,
       ...verified,
@@ -338,7 +349,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "decision-route-evidence-freshness",
       kind: "Decision",
       text: "active external model route requires evidence verification valid until",
-      excerpt: "External active routes require evidence, verification time and explicit validity window.",
+      excerpt:
+        "External active routes require evidence, verification time and explicit validity window.",
       location: "docs/decisions/ADR-003-model-registry-routing.md:Security and data rules",
       created_at: recordedAt,
       ...verified,
@@ -348,7 +360,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "decision-route-trace",
       kind: "Decision",
       text: "runtime route records registry version provider model cost usage",
-      excerpt: "Runtime integration records registry version, provider, model, estimated cost and final usage.",
+      excerpt:
+        "Runtime integration records registry version, provider, model, estimated cost and final usage.",
       location: "docs/decisions/ADR-003-model-registry-routing.md:Security and data rules",
       created_at: recordedAt,
       ...verified,
@@ -361,7 +374,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       text: "agent composition function behavior model tools memory lifecycle budget",
       excerpt:
         "Active agents are composed from function, behavior, model profile, permission scope, memory scope and lifecycle/budget.",
-      location: "docs/decisions/ADR-004-agent-studio-and-modular-agent-composition.md:Agent composition",
+      location:
+        "docs/decisions/ADR-004-agent-studio-and-modular-agent-composition.md:Agent composition",
       created_at: recordedAt,
       ...verified,
       estimated_tokens: 21
@@ -370,8 +384,10 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "decision-instruction-precedence",
       kind: "Decision",
       text: "agent instruction precedence constitution policy function behavior task",
-      excerpt: "Instruction authority is constitution, policy, function constraints, behavior, then task.",
-      location: "docs/decisions/ADR-004-agent-studio-and-modular-agent-composition.md:Instruction precedence",
+      excerpt:
+        "Instruction authority is constitution, policy, function constraints, behavior, then task.",
+      location:
+        "docs/decisions/ADR-004-agent-studio-and-modular-agent-composition.md:Instruction precedence",
       created_at: recordedAt,
       ...verified,
       estimated_tokens: 18
@@ -380,8 +396,10 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "decision-delegation-no-expansion",
       kind: "Decision",
       text: "delegation never expands tools data budget permission authority",
-      excerpt: "Creating or delegating an agent never expands the source mandate or grants extra authority.",
-      location: "docs/decisions/ADR-004-agent-studio-and-modular-agent-composition.md:Authority by autonomy level",
+      excerpt:
+        "Creating or delegating an agent never expands the source mandate or grants extra authority.",
+      location:
+        "docs/decisions/ADR-004-agent-studio-and-modular-agent-composition.md:Authority by autonomy level",
       created_at: recordedAt,
       ...verified,
       estimated_tokens: 18
@@ -401,7 +419,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-manager-publish-workspace-write",
       kind: "Claim",
       text: "Manager publish files requires workspace write capability Policy Engine",
-      excerpt: "The publish tool resolves the workspace.write capability and executes through guarded tool runtime.",
+      excerpt:
+        "The publish tool resolves the workspace.write capability and executes through guarded tool runtime.",
       location: "commit:62bc523:manager-work-coordinator.ts:manager.publish-files",
       created_at: recordedAt,
       provenance_kind: "runtime_record",
@@ -425,7 +444,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-manager-reserves-budget",
       kind: "Claim",
       text: "Manager reserves model request tokens before gateway dispatch",
-      excerpt: "Model request count and token budgets are reserved before gateway dispatch continues.",
+      excerpt:
+        "Model request count and token budgets are reserved before gateway dispatch continues.",
       location: "commit:62bc523:manager-work-coordinator.ts:model",
       created_at: recordedAt,
       provenance_kind: "runtime_record",
@@ -437,7 +457,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-manager-emergency-stop",
       kind: "Claim",
       text: "Manager work aborts on process or project Emergency Stop",
-      excerpt: "Manager work checks process/project stop state and aborts active work when stopped.",
+      excerpt:
+        "Manager work checks process/project stop state and aborts active work when stopped.",
       location: "commit:62bc523:manager-work-coordinator.ts:isStopped",
       created_at: recordedAt,
       provenance_kind: "runtime_record",
@@ -449,7 +470,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-manager-owner-control",
       kind: "Claim",
       text: "owner can pause resume approve cancel Manager work version checked",
-      excerpt: "Owner control supports pause, resume, approve and cancel with stale-version rejection.",
+      excerpt:
+        "Owner control supports pause, resume, approve and cancel with stale-version rejection.",
       location: "commit:62bc523:manager-work-coordinator.ts:control",
       created_at: recordedAt,
       provenance_kind: "runtime_record",
@@ -484,7 +506,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-runtime-project-bound",
       kind: "Claim",
       text: "Manager runtime roles and task artifacts project bound no policy bypass",
-      excerpt: "Runtime role contracts are project-bound and deny external-action, permission and policy-bypass authority.",
+      excerpt:
+        "Runtime role contracts are project-bound and deny external-action, permission and policy-bypass authority.",
       location: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS",
       created_at: recordedAt,
       ...verified,
@@ -494,7 +517,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-runtime-provenance-acyclic",
       kind: "Claim",
       text: "runtime artifact provenance same project no future source no cycles",
-      excerpt: "Provenance rejects missing/cross-project/future source artifacts and provenance cycles.",
+      excerpt:
+        "Provenance rejects missing/cross-project/future source artifacts and provenance cycles.",
       location: "packages/contracts/src/manager-runtime-artifact-provenance.ts",
       created_at: recordedAt,
       ...verified,
@@ -524,7 +548,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-manager-role-authority",
       kind: "Claim",
       text: "manager role can delegate arbitrate conflict but cannot bypass policy",
-      excerpt: "Manager can delegate and arbitrate conflicts while remaining project-bound with no policy bypass.",
+      excerpt:
+        "Manager can delegate and arbitrate conflicts while remaining project-bound with no policy bypass.",
       location: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.manager",
       created_at: recordedAt,
       ...verified,
@@ -534,7 +559,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-critic-role-authority",
       kind: "Claim",
       text: "critic role can review but cannot delegate arbitrate or bypass policy",
-      excerpt: "Critic can review and emit verdicts but lacks delegation, arbitration and policy-bypass authority.",
+      excerpt:
+        "Critic can review and emit verdicts but lacks delegation, arbitration and policy-bypass authority.",
       location: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic",
       created_at: recordedAt,
       ...verified,
@@ -545,8 +571,10 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-context-not-authoritative",
       kind: "Claim",
       text: "browser local Project Context selection is not authoritative runtime model context",
-      excerpt: "Browser-local source selection must never be interpreted as authoritative model context.",
-      location: "docs/contracts/project-context-web-contract-gap-2026-09-18.md:Current safe boundary",
+      excerpt:
+        "Browser-local source selection must never be interpreted as authoritative model context.",
+      location:
+        "docs/contracts/project-context-web-contract-gap-2026-09-18.md:Current safe boundary",
       created_at: recordedAt,
       ...verified,
       estimated_tokens: 17
@@ -555,8 +583,10 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-context-secret-redaction",
       kind: "Claim",
       text: "Project Context redacts secret like title summary metadata before persistence",
-      excerpt: "Secret-like title and summary metadata is redacted before normalized local state persists.",
-      location: "docs/contracts/project-context-web-contract-gap-2026-09-18.md:Current safe boundary",
+      excerpt:
+        "Secret-like title and summary metadata is redacted before normalized local state persists.",
+      location:
+        "docs/contracts/project-context-web-contract-gap-2026-09-18.md:Current safe boundary",
       created_at: recordedAt,
       ...verified,
       estimated_tokens: 17
@@ -565,8 +595,10 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-context-two-step-mutation",
       kind: "Claim",
       text: "future Project Context connection preview then explicit confirmation mutation",
-      excerpt: "Future source connection should preview first and mutate authoritative state only after confirmation.",
-      location: "docs/contracts/project-context-web-contract-gap-2026-09-18.md:Required preview contract",
+      excerpt:
+        "Future source connection should preview first and mutate authoritative state only after confirmation.",
+      location:
+        "docs/contracts/project-context-web-contract-gap-2026-09-18.md:Required preview contract",
       created_at: recordedAt,
       ...verified,
       estimated_tokens: 18
@@ -649,7 +681,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-policy-capability-profile-project",
       kind: "Claim",
       text: "capability profile project bound versioned autonomy grants",
-      excerpt: "CapabilityProfile carries project, base autonomy level, grants, overrides and version.",
+      excerpt:
+        "CapabilityProfile carries project, base autonomy level, grants, overrides and version.",
       location: "packages/contracts/src/policy.ts:CapabilityProfileSchema",
       created_at: recordedAt,
       ...verified,
@@ -673,7 +706,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "event-registry-runtime",
       kind: "Event",
       text: "commit 7be9f87 integrates runtime routing atomic usage ledger",
-      excerpt: "Runtime attempts were routed through the registry with atomic usage and cost records.",
+      excerpt:
+        "Runtime attempts were routed through the registry with atomic usage and cost records.",
       location: "commit:7be9f8774c9c768dc7ac477ec1fa77b5806cc279",
       created_at: "2026-08-26T15:13:14.000Z",
       observed_at: "2026-08-26T15:13:14.000Z",
@@ -687,7 +721,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "event-registry-failclosed",
       kind: "Event",
       text: "commit cb802ac requires verified discovery for external model routes",
-      excerpt: "External model routes were changed to fail closed without verified discovery evidence.",
+      excerpt:
+        "External model routes were changed to fail closed without verified discovery evidence.",
       location: "commit:cb802ac862631b07ee5dfa8b76d2c17dda67e5f6",
       created_at: "2026-08-27T09:48:00.000Z",
       observed_at: "2026-08-27T09:48:00.000Z",
@@ -701,7 +736,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "event-agent-contracts",
       kind: "Event",
       text: "commit a70f88d adds modular Agent Studio contracts delegation validator",
-      excerpt: "Modular Agent Studio contracts and fail-closed parent-to-child delegation validation were added.",
+      excerpt:
+        "Modular Agent Studio contracts and fail-closed parent-to-child delegation validation were added.",
       location: "commit:a70f88da63e6f565bd3f5592ee0c64bac507cd0f",
       created_at: "2026-08-28T05:30:24.000Z",
       observed_at: "2026-08-28T05:30:24.000Z",
@@ -715,7 +751,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "event-agent-blueprints",
       kind: "Event",
       text: "commit 617a6e8 persists inert owner project bound agent blueprints",
-      excerpt: "Immutable agent blueprint versions were persisted without activating agents or permissions.",
+      excerpt:
+        "Immutable agent blueprint versions were persisted without activating agents or permissions.",
       location: "commit:617a6e8520eb8bee4bd20246039abcb793c7018f",
       created_at: "2026-08-28T12:54:30.000Z",
       observed_at: "2026-08-28T12:54:30.000Z",
@@ -729,7 +766,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "event-agent-root-proposal",
       kind: "Event",
       text: "commit 0720b7f adds owner project bound root agent proposal API",
-      excerpt: "Root agent proposals became durable but remained non-executable and unable to call models or tools.",
+      excerpt:
+        "Root agent proposals became durable but remained non-executable and unable to call models or tools.",
       location: "commit:0720b7fe61812018707454462ab2d248d7e6cd91",
       created_at: "2026-08-29T20:51:12.000Z",
       observed_at: "2026-08-29T20:51:12.000Z",
@@ -757,7 +795,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "event-auth-contract",
       kind: "Event",
       text: "commit b2b5030 defines Google Telegram auth flow PR 214",
-      excerpt: "Google and Telegram auth flow contracts entered main immediately after Companion contracts.",
+      excerpt:
+        "Google and Telegram auth flow contracts entered main immediately after Companion contracts.",
       location: "commit:b2b5030abbfba72ae61ac018bbcec6dd64bff2cb",
       created_at: "2026-09-19T18:26:36.000Z",
       observed_at: "2026-09-19T18:26:36.000Z",
@@ -771,7 +810,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "event-manager-runtime",
       kind: "Event",
       text: "commit 62bc523 connects durable Manager work runtime PR 258",
-      excerpt: "Durable Manager work coordinator and routes were connected to the current main runtime.",
+      excerpt:
+        "Durable Manager work coordinator and routes were connected to the current main runtime.",
       location: "commit:62bc5234b24e3b0c10262b043063fd31be9732bd",
       created_at: "2026-09-26T11:00:05.000Z",
       observed_at: "2026-09-26T11:00:05.000Z",
@@ -805,7 +845,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "doc-runtime-context-validation",
       kind: "Document",
       text: "runtime context materialization validation project role sources data classes",
-      excerpt: "Validation binds materialized context to task, project, role, inputs and declared sources.",
+      excerpt:
+        "Validation binds materialized context to task, project, role, inputs and declared sources.",
       location: "packages/contracts/src/manager-runtime-context-validation.ts",
       created_at: recordedAt,
       ...verified,
@@ -835,7 +876,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "doc-usage-contract",
       kind: "Document",
       text: "project usage summary token cost limits versioned",
-      excerpt: "Usage contracts track attempts, tokens, known/unknown costs and versioned project limits.",
+      excerpt:
+        "Usage contracts track attempts, tokens, known/unknown costs and versioned project limits.",
       location: "packages/contracts/src/usage.ts",
       created_at: recordedAt,
       ...verified,
@@ -846,7 +888,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "entity-model-gateway",
       kind: "Entity",
       text: "provider neutral Model Gateway streaming model access",
-      excerpt: "Server-side gateway normalizes provider requests, streaming, cancellation, failures and fallback.",
+      excerpt:
+        "Server-side gateway normalizes provider requests, streaming, cancellation, failures and fallback.",
       location: "docs/decisions/ADR-002-model-gateway.md:Decision",
       created_at: recordedAt,
       ...verified,
@@ -856,7 +899,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "entity-runtime-context",
       kind: "Entity",
       text: "Manager runtime context envelope bounded task memory artifacts",
-      excerpt: "Context envelope binds project, task, role, memory scope, artifacts, sources and data classes.",
+      excerpt:
+        "Context envelope binds project, task, role, memory scope, artifacts, sources and data classes.",
       location: "packages/contracts/src/manager-runtime-state.ts:RuntimeContextEnvelopeSchema",
       created_at: recordedAt,
       ...verified,
@@ -886,7 +930,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "entity-project-usage",
       kind: "Entity",
       text: "project model usage ledger summary limits tokens costs",
-      excerpt: "Project usage state tracks reservations, committed usage, token totals and cost limits.",
+      excerpt:
+        "Project usage state tracks reservations, committed usage, token totals and cost limits.",
       location: "packages/contracts/src/usage.ts",
       created_at: recordedAt,
       ...verified,
@@ -907,7 +952,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "decision-gateway-fallback-boundary",
       kind: "Decision",
       text: "model fallback only before first text delta never mix providers after output",
-      excerpt: "Fallback is allowed only before output begins; streamed content from models is never combined.",
+      excerpt:
+        "Fallback is allowed only before output begins; streamed content from models is never combined.",
       location: "docs/decisions/ADR-002-model-gateway.md:Decision",
       created_at: recordedAt,
       ...verified,
@@ -917,7 +963,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "decision-gateway-secrets-server-only",
       kind: "Decision",
       text: "provider credentials server side excluded logs API browser version control",
-      excerpt: "Credential values remain server-side and are excluded from logs, API responses, browser code and VCS.",
+      excerpt:
+        "Credential values remain server-side and are excluded from logs, API responses, browser code and VCS.",
       location: "docs/decisions/ADR-002-model-gateway.md:Decision",
       created_at: recordedAt,
       ...verified,
@@ -927,7 +974,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "decision-gateway-run-accounting",
       kind: "Decision",
       text: "completed model run persists provider model input output tokens",
-      excerpt: "Completed runs persist provider, resolved model and reported input/output token counts.",
+      excerpt:
+        "Completed runs persist provider, resolved model and reported input/output token counts.",
       location: "docs/decisions/ADR-002-model-gateway.md:Decision",
       created_at: recordedAt,
       ...verified,
@@ -958,7 +1006,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-context-task-bound",
       kind: "Claim",
       text: "materialized context must match task project role memory mode",
-      excerpt: "Context materialization rejects mismatched project, task, role and memory read/write modes.",
+      excerpt:
+        "Context materialization rejects mismatched project, task, role and memory read/write modes.",
       location: "packages/contracts/src/manager-runtime-context-validation.ts",
       created_at: recordedAt,
       ...verified,
@@ -968,7 +1017,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-context-inputs-declared",
       kind: "Claim",
       text: "context artifacts and memory sources must be declared by task",
-      excerpt: "Materialized context cannot introduce artifacts or memory sources absent from the task contract.",
+      excerpt:
+        "Materialized context cannot introduce artifacts or memory sources absent from the task contract.",
       location: "packages/contracts/src/manager-runtime-context-validation.ts",
       created_at: recordedAt,
       ...verified,
@@ -978,7 +1028,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-context-data-class-bound",
       kind: "Claim",
       text: "context artifacts must use allowed data classes and declared sources",
-      excerpt: "Materialized artifacts are rejected when their data class or source is not allowed by the envelope.",
+      excerpt:
+        "Materialized artifacts are rejected when their data class or source is not allowed by the envelope.",
       location: "packages/contracts/src/manager-runtime-context-validation.ts",
       created_at: recordedAt,
       ...verified,
@@ -988,7 +1039,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-checkpoint-no-authority-restore",
       kind: "Claim",
       text: "runtime checkpoint cannot restore permissions sessions autonomy escalation",
-      excerpt: "RuntimeCheckpoint fixes permission, session and autonomy-escalation restoration to false.",
+      excerpt:
+        "RuntimeCheckpoint fixes permission, session and autonomy-escalation restoration to false.",
       location: "packages/contracts/src/manager-runtime-state.ts:RuntimeCheckpointSchema",
       created_at: recordedAt,
       ...verified,
@@ -999,7 +1051,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-identity-session-lifecycle",
       kind: "Claim",
       text: "identity session active revoked expired assurance issued expiry audit",
-      excerpt: "Identity sessions have explicit assurance, expiry and revocation lifecycle with audit events.",
+      excerpt:
+        "Identity sessions have explicit assurance, expiry and revocation lifecycle with audit events.",
       location: "packages/contracts/src/identity.ts",
       created_at: recordedAt,
       ...verified,
@@ -1009,7 +1062,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-step-up-purpose-bound",
       kind: "Claim",
       text: "step up proof purpose autonomy escalation critical tool emergency stop usage expansion",
-      excerpt: "Step-up proofs are purpose-specific for four explicitly enumerated sensitive operations.",
+      excerpt:
+        "Step-up proofs are purpose-specific for four explicitly enumerated sensitive operations.",
       location: "packages/contracts/src/step-up.ts:StepUpPurposeSchema",
       created_at: recordedAt,
       ...verified,
@@ -1019,7 +1073,8 @@ export const cosmoraRealKnowledgeGraphFixture = (): AuthorizedIntelligenceGraphF
       id: "claim-step-up-single-lifecycle",
       kind: "Claim",
       text: "step up proof active consumed expired with challenge hash expiry",
-      excerpt: "Step-up proof has active/consumed/expired status, expiry and optional consumption timestamp.",
+      excerpt:
+        "Step-up proof has active/consumed/expired status, expiry and optional consumption timestamp.",
       location: "packages/contracts/src/step-up.ts:StepUpProofSchema",
       created_at: recordedAt,
       ...verified,

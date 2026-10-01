@@ -30,7 +30,8 @@ const rows: readonly CoverageRow[] = [
     id: "coverage-routing-fail-closed",
     from: "decision-routing-fail-closed",
     testPath: "packages/model-gateway/test/router.test.ts",
-    evidence: "ModelRegistry and ModelRouter fail closed for unverified confidential and unavailable routes"
+    evidence:
+      "ModelRegistry and ModelRouter fail closed for unverified confidential and unavailable routes"
   },
   {
     id: "coverage-route-evidence-freshness",
@@ -42,7 +43,8 @@ const rows: readonly CoverageRow[] = [
     id: "coverage-gateway-fallback-boundary",
     from: "decision-gateway-fallback-boundary",
     testPath: "packages/model-gateway/test/gateway.test.ts",
-    evidence: "Gateway falls back before first delta and refuses fallback after partial provider output"
+    evidence:
+      "Gateway falls back before first delta and refuses fallback after partial provider output"
   },
   {
     id: "coverage-policy-verdict-modes",
@@ -90,7 +92,8 @@ const rows: readonly CoverageRow[] = [
     id: "coverage-identity-api-boundary",
     from: "claim-identity-session-lifecycle",
     testPath: "apps/api/test/identity-boundary.test.ts",
-    evidence: "API identity boundary requires valid bearer sessions and enforces revocation and owner isolation"
+    evidence:
+      "API identity boundary requires valid bearer sessions and enforces revocation and owner isolation"
   },
   {
     id: "coverage-step-up-purpose",
@@ -114,7 +117,8 @@ const rows: readonly CoverageRow[] = [
     id: "coverage-manager-budget-reservation",
     from: "claim-manager-reserves-budget",
     testPath: "apps/api/test/manager-work.test.ts",
-    evidence: "Manager work tests enforce project usage limits and reserve model usage before dispatch"
+    evidence:
+      "Manager work tests enforce project usage limits and reserve model usage before dispatch"
   },
   {
     id: "coverage-manager-emergency-stop",
@@ -126,7 +130,8 @@ const rows: readonly CoverageRow[] = [
     id: "coverage-delegation-no-expansion",
     from: "decision-delegation-no-expansion",
     testPath: "packages/policy-engine/test/agent-delegation.test.ts",
-    evidence: "Delegation tests reject expansion of owner, project, capability, tool, data, object, budget, depth and expiry"
+    evidence:
+      "Delegation tests reject expansion of owner, project, capability, tool, data, object, budget, depth and expiry"
   },
   {
     id: "coverage-context-private-chat",
@@ -144,19 +149,22 @@ const rows: readonly CoverageRow[] = [
     id: "coverage-context-data-class",
     from: "claim-context-data-class-bound",
     testPath: "packages/contracts/test/manager-runtime-context-validation.test.ts",
-    evidence: "Runtime context validation rejects disallowed data classes and cross-project artifacts"
+    evidence:
+      "Runtime context validation rejects disallowed data classes and cross-project artifacts"
   },
   {
     id: "coverage-runtime-provenance",
     from: "claim-runtime-provenance-acyclic",
     testPath: "packages/contracts/test/manager-runtime-artifact-provenance.test.ts",
-    evidence: "Artifact provenance tests reject cycles, future sources, unknown sources and cross-project provenance"
+    evidence:
+      "Artifact provenance tests reject cycles, future sources, unknown sources and cross-project provenance"
   },
   {
     id: "coverage-checkpoint-graph-binding",
     from: "claim-checkpoint-bound-graph",
     testPath: "packages/contracts/test/manager-runtime-checkpoint.test.ts",
-    evidence: "Checkpoint tests require project and task-graph binding with complete unique task state"
+    evidence:
+      "Checkpoint tests require project and task-graph binding with complete unique task state"
   },
   {
     id: "coverage-conflict-resolution",
@@ -174,7 +182,8 @@ const rows: readonly CoverageRow[] = [
     id: "coverage-policy-condition-authority",
     from: "entity-policy-engine",
     testPath: "packages/tool-runtime/test/policy-condition-authority.test.ts",
-    evidence: "Tool Runtime ignores caller-supplied conditional expansion and accepts only the trusted resolver"
+    evidence:
+      "Tool Runtime ignores caller-supplied conditional expansion and accepts only the trusted resolver"
   }
 ];
 
