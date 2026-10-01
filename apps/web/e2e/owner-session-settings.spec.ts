@@ -4,6 +4,8 @@ const installShellFixture = async (
   page: Page,
   options?: { ownerSessionStatus?: number }
 ): Promise<void> => {
+  const nearExpiry = new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString();
+  const laterExpiry = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -57,7 +59,7 @@ const installShellFixture = async (
               assurance: "multi_factor",
               status: "active",
               issued_at: "2026-09-30T21:02:42.963Z",
-              expires_at: "2026-10-07T21:02:42.963Z",
+              expires_at: nearExpiry,
               last_seen_at: "2026-10-01T20:30:00.000Z",
               revoked_at: null,
               revoked_by: null,
@@ -72,7 +74,7 @@ const installShellFixture = async (
               assurance: "single_factor",
               status: "active",
               issued_at: "2026-09-29T21:02:42.963Z",
-              expires_at: "2026-10-10T21:02:42.963Z",
+              expires_at: laterExpiry,
               last_seen_at: "2026-10-01T18:00:00.000Z",
               revoked_at: null,
               revoked_by: null,
