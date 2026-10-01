@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **353 nodes**;
-- **966 typed edges**;
+- **364 nodes**;
+- **1007 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -287,6 +287,24 @@ A dedicated `SEPARATES_REAL_KNOWLEDGE_FROM` edge records that #269 intentionally
 2M synthetic benchmark from project knowledge.
 
 Because all six PRs remain open, these nodes are `discovered`, not authoritative merged facts.
+
+## Agent Collaboration Graph
+
+The unified graph now includes a real collaboration layer derived from
+`MANAGER_RUNTIME_ROLE_CONTRACTS`.
+
+It models:
+
+- Manager, Architect, Researcher, Analyst and Critic role nodes;
+- `ACCEPTS_ARTIFACT_KIND` and `EMITS_ARTIFACT_KIND` edges;
+- plan, architecture, evidence, analysis, decision, handoff, checkpoint and critic-verdict artifact kinds;
+- Manager's bounded delegation capability;
+- Critic's review capability;
+- the shared rule that all five roles are project-bound and have no external-action authority,
+  permission authority or policy bypass.
+
+This lets retrieval infer collaboration through shared artifacts rather than inventing direct
+role-to-role relationships.
 
 ## Quality rules exercised by tests
 
