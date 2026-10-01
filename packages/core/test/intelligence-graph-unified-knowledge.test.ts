@@ -20,16 +20,16 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(341);
-    expect(graph.records).toHaveLength(341);
-    expect(graph.edges).toHaveLength(933);
+    expect(graph.nodes).toHaveLength(353);
+    expect(graph.records).toHaveLength(353);
+    expect(graph.edges).toHaveLength(966);
 
     expect(
       new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size
-    ).toBe(341);
+    ).toBe(353);
     expect(
       new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size
-    ).toBe(933);
+    ).toBe(966);
 
     expect(() => createIndex()).not.toThrow();
   });
@@ -521,6 +521,67 @@ describe("unified Cosmora Intelligence Graph", () => {
           edge.to.id === "proposal-pr-268-synthetic-scale"
       )
     ).toBe(true);
+  });
+
+  it("retrieves ordinary-chat background implementation and regression evidence", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "ordinary chat background runtime coordinator",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: {
+        max_depth: 2,
+        max_nodes: 16,
+        max_edges: 20,
+        max_fan_out: 12,
+        max_context_tokens: 3_000
+      }
+    });
+
+    const coordinator = repositoryStructureFileId(
+      "apps/api/src/general-chat-background-run-coordinator.ts"
+    );
+    const regression = repositoryStructureFileId(
+      "apps/api/test/general-chat-background-run-coordinator.test.ts"
+    );
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+
+    expect(ids).toContain("event-product-general-chat-background");
+    expect(ids).toContain("entity-general-chat-runtime");
+    expect(ids).toContain(coordinator);
+    expect(ids).toContain(regression);
+  });
+
+  it("links the read-only model status surface to the Model Registry", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "event-product-model-status|PRODUCES|entity-model-status-surface"
+    );
+    expect(pairs).toContain(
+      "entity-model-status-surface|OBSERVES|entity-model-registry"
+    );
+  });
+
+  it("preserves the product-hardening chronology around the local alpha", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "event-product-live-model-smoke|PRECEDES|event-product-non-api-alpha"
+    );
+    expect(pairs).toContain(
+      "event-product-core-runtime-docs|PRECEDES|event-main-5d268cb7"
+    );
+    expect(pairs).toContain(
+      "event-main-5d268cb7|PRECEDES|event-product-web-runtime-boundaries"
+    );
   });
 
   it("keeps every bridge evidence-grounded and specifically typed", () => {
