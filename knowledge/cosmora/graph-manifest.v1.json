@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 364,
-    "edges": 1007,
-    "records": 364
+    "nodes": 383,
+    "edges": 1052,
+    "records": 383
   },
   "layers": [
     {
@@ -82,6 +82,12 @@
       "nodes": 11,
       "edges": 41,
       "authority": "verified_runtime_role_contracts"
+    },
+    {
+      "id": "runtime_safety_scenarios",
+      "nodes": 19,
+      "edges": 45,
+      "authority": "verified_runtime_scenario_catalog"
     }
   ],
   "primary_relation_types": [
@@ -121,7 +127,10 @@
     "EMITS_ARTIFACT_KIND",
     "CAN_DELEGATE_WITHIN",
     "CAN_REVIEW",
-    "CONSTRAINED_BY"
+    "CONSTRAINED_BY",
+    "EVALUATES",
+    "CATALOG_VERIFIED_BY_TEST",
+    "EXECUTED_BY_TEST"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -142,7 +151,8 @@
     "packages/core/test/fixtures/cosmora-test-coverage-graph.ts",
     "packages/core/test/fixtures/cosmora-intelligence-graph-development.ts",
     "packages/core/test/fixtures/cosmora-product-history-graph.ts",
-    "packages/core/test/fixtures/cosmora-agent-collaboration-graph.ts"
+    "packages/core/test/fixtures/cosmora-agent-collaboration-graph.ts",
+    "packages/core/test/fixtures/cosmora-runtime-safety-scenario-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
