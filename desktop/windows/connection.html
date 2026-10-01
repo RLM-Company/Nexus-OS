@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Подключение к Cosmora</title>
+    <link rel="stylesheet" href="./connection.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="card" aria-labelledby="title">
+        <div class="mark" aria-hidden="true">C</div>
+        <p class="eyebrow">Cosmora for Windows</p>
+        <h1 id="title">Подключение к Cosmora</h1>
+        <p class="lead">
+          Укажите сервер. Адрес сохранится на этом компьютере, а логин и пароль — только в памяти
+          до закрытия приложения.
+        </p>
+
+        <form id="connection-form" autocomplete="off">
+          <label>
+            Адрес сервера
+            <input
+              id="origin"
+              name="origin"
+              type="url"
+              inputmode="url"
+              spellcheck="false"
+              required
+              placeholder="https://13.141.51.16"
+            />
+          </label>
+
+          <div class="credentials">
+            <label>
+              Логин <span>необязательно</span>
+              <input id="username" name="username" autocomplete="username" />
+            </label>
+            <label>
+              Пароль <span>не сохраняется</span>
+              <input id="password" name="password" type="password" autocomplete="current-password" />
+            </label>
+          </div>
+
+          <p id="error" class="error" role="alert" aria-live="assertive"></p>
+          <button id="connect" type="submit">Подключиться</button>
+        </form>
+
+        <p class="hint">
+          Удалённые адреса работают только по HTTPS. Проверка сертификата не отключается.
+        </p>
+      </section>
+    </main>
+    <script src="./connection.js"></script>
+  </body>
+</html>
