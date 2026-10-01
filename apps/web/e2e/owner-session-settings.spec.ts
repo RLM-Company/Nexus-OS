@@ -104,9 +104,7 @@ test("shows server-confirmed owner session readiness in Settings", async ({ page
   await expect(page.locator("body")).not.toContainText("current-owner-session");
 });
 
-test("fails closed without breaking local interface settings when session status is unavailable", async ({
-  page
-}) => {
+test("fails closed when owner session status is unavailable", async ({ page }) => {
   await installShellFixture(page, { ownerSessionStatus: 503 });
   await page.goto("/?surface=settings");
 
