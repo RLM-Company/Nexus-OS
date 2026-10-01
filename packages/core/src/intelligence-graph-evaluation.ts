@@ -1,8 +1,8 @@
 import type { IntelligenceGraphVersionRef } from "@cosmora/contracts";
-import {
+import type {
   IntelligenceGraphIndex,
-  type IntelligenceGraphQueryBudget,
-  type IntelligenceGraphQueryMode
+  IntelligenceGraphQueryBudget,
+  IntelligenceGraphQueryMode
 } from "./intelligence-graph-retrieval.js";
 
 export interface IntelligenceGraphRetrievalEvaluationCase {
