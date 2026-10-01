@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 353 nodes;
-- 966 typed edges;
-- 353 retrieval records.
+- 364 nodes;
+- 1007 typed edges;
+- 364 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -115,5 +115,9 @@ why a policy constraint exists or why one artifact is authoritative over another
 Regression impact is explicit: `VERIFIED_BY_TEST` connects high-value decisions and constraints to
 the exact repository tests that exercise them. This enables `rule → implementation → regression`
 impact queries without guessing from file names.
+
+Agent collaboration is represented from the actual Manager runtime role contracts: each role's
+accepted/emitted artifact kinds, Manager delegation boundary, Critic review capability, and the
+shared no-external-authority / no-permission-authority / no-policy-bypass constraint.
 
 Do not create bulk generic `RELATES_TO` edges to inflate graph density.
