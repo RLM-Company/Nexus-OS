@@ -420,7 +420,7 @@ export const cosmoraRepositoryStructureGraphFixture = (): AuthorizedIntelligence
       return [
         relation({
           type: kind === "file" ? "IMPORTS_FILE" : "IMPORTS_MODULE",
-          from: fileId(fromPath),
+          from: repositoryStructureFileId(fromPath),
           to: targetId,
           location
         })
