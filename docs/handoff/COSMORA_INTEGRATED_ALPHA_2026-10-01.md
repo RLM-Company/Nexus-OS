@@ -65,10 +65,17 @@ A fresh online SQLite snapshot was verified before this update:
 manifest. Both were copied into the protected Windows backup directory and passed checksum and
 integrity verification there. Their inherited ACL grants only the current user and SYSTEM access.
 
-GitHub CI run 971 (`36790400174`) failed with no job steps or available log URL; cause remains
-unestablished. The separate browser is signed out of GitHub and cannot display this private run's
-annotation. A hosted interactive application walkthrough remains unverified because the in-app
-client blocks IP navigation. These limitations were not bypassed.
+GitHub CI run 971 (`36790400174`) originally failed with no job steps or available log URL.
+That symptom was later reproduced by run 972 before a diagnostic retry received an actual hosted
+runner. Run 972 attempt 2 then completed the full workflow successfully on #277 head `04aa300`,
+including all 114 Chromium scenarios. The follow-up owner-session Settings change in draft #278
+also passed its complete hosted gate in run 1002 on `13e2c0d`, including 13 deployment test files
+and all 116 Chromium scenarios. The earlier no-step failures are therefore treated as runner
+allocation failures rather than evidence of a product-test failure. #278 remains source-only and
+has not replaced the deployed `8851cea` image.
+
+A hosted interactive application walkthrough remains unverified because the in-app client blocks
+IP navigation. That limitation was not bypassed.
 
 ## Operations and remaining gates
 
@@ -82,8 +89,10 @@ client blocks IP navigation. These limitations were not bypassed.
 Model execution remains globally stopped, with no live key and no paid request. Clear stop state
 does not itself establish reviewed provider routes, sufficient project budgets or a successful
 model response. Privately configure the provider, run no-cost preflight and obtain authorization
-for a capped live trial before that gate can be completed. Successful GitHub CI and owner merge
-review remain separate gates. Certificate renewal has not yet been observed.
+for a capped live trial before that gate can be completed. Hosted GitHub CI is now established for
+the release stack through draft #278; owner merge review remains separate. Certificate renewal has
+not yet been observed. Draft #280 adds a read-only certificate lifetime gate and expiry reporting,
+but that verifier is not deployed until its own CI and an explicit VPS update are completed.
 
 See the [deployment runbook](../../deploy/alpha/README.md),
 [backup/recovery checkpoint](COSMORA_ALPHA_OPERATIONS_2026-10-01.md),
