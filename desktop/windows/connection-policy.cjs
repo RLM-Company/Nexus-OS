@@ -19,9 +19,7 @@ function normalizeServerOrigin(value) {
   const isSecureRemote = parsed.protocol === "https:";
   const isLocalHttp = parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname);
   if (!isSecureRemote && !isLocalHttp) {
-    throw new Error(
-      "Для удалённого сервера требуется HTTPS. HTTP разрешён только для localhost."
-    );
+    throw new Error("Для удалённого сервера требуется HTTPS. HTTP разрешён только для localhost.");
   }
 
   if (parsed.username || parsed.password) {
