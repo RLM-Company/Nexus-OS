@@ -96,18 +96,18 @@ describe("deterministic repository structure graph", () => {
 
   it("preserves test-to-source imports as evidence-bearing file relationships", () => {
     const compiled = compile();
-    const authTest = nodeAt(compiled.nodes, "packages/contracts/test/auth.test.ts");
+    const identityTest = nodeAt(compiled.nodes, "packages/contracts/test/identity.test.ts");
     const contractsIndex = nodeAt(compiled.nodes, "packages/contracts/src/index.ts");
 
-    expect(authTest).toBeDefined();
+    expect(identityTest).toBeDefined();
     expect(contractsIndex).toBeDefined();
     expect(
       compiled.edges.some(
         (edge) =>
           edge.type === "IMPORTS_FILE" &&
-          edge.from.id === authTest!.node_id &&
+          edge.from.id === identityTest!.node_id &&
           edge.to.id === contractsIndex!.node_id &&
-          edge.evidence_ref.location.startsWith("packages/contracts/test/auth.test.ts:")
+          edge.evidence_ref.location.startsWith("packages/contracts/test/identity.test.ts:")
       )
     ).toBe(true);
   });
