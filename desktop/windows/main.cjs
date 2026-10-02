@@ -3,14 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const {
-  app,
-  BrowserWindow,
-  ipcMain,
-  Menu,
-  session,
-  shell
-} = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, session, shell } = require("electron");
 const {
   isAllowedRemoteNavigation,
   nextAvailableDownloadPath,
@@ -51,7 +44,7 @@ function saveOrigin(origin) {
 }
 
 function localConnectionUrl() {
-  return new URL("connection.html", `file://${__dirname.replace(/\\/g, "/")}/`).toString();
+  return pathToFileURL(path.join(__dirname, "connection.html")).toString();
 }
 
 function showConnection(message) {
@@ -239,8 +232,10 @@ ipcMain.handle("cosmora:connect", async (_event, payload) => {
     };
   }
 
-  const username = typeof payload?.username === "string" ? payload.username.slice(0, 256) : "";
-  const password = typeof payload?.password === "string" ? payload.password.slice(0, 2048) : "";
+  const username =
+    typeof payload?.username === "string" ? payload.username.slice(0, 256) : "";
+  const password =
+    typeof payload?.password === "string" ? payload.password.slice(0, 2048) : "";
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
   const probe = await probeServer(browserSession, origin, username, password);
   if (!probe.ok) return probe;
@@ -271,11 +266,7 @@ app.on("login", (event, webContents, details, _authInfo, callback) => {
   if (requestOrigin !== currentOrigin) return;
 
   event.preventDefault();
-  if (
-    runtimeCredentials &&
-    runtimeCredentials.origin === currentOrigin &&
-    details.firstAuthAttempt
-  ) {
+  if (runtimeCredentials && runtimeCredentials.origin === currentOrigin && details.firstAuthAttempt) {
     callback(runtimeCredentials.username, runtimeCredentials.password);
     return;
   }
