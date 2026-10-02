@@ -37,11 +37,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Capture exact Prettier formatting for desktop sources
-        run: |
-          pnpm exec prettier --write desktop/windows/connection-policy.cjs desktop/windows/connection.css desktop/windows/main.cjs desktop/windows/package.json desktop/windows/test/connection-policy.test.cjs
-          git diff -- desktop/windows
-
       - name: Install Playwright Chromium
         run: pnpm --filter @cosmora/web exec playwright install --with-deps chromium
 
