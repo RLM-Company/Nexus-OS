@@ -10,14 +10,8 @@ const {
 } = require("../connection-policy.cjs");
 
 test("allows HTTPS origins and loopback HTTP only", () => {
-  assert.equal(
-    normalizeServerOrigin("https://13.141.51.16"),
-    "https://13.141.51.16"
-  );
-  assert.equal(
-    normalizeServerOrigin("http://127.0.0.1:3000"),
-    "http://127.0.0.1:3000"
-  );
+  assert.equal(normalizeServerOrigin("https://13.141.51.16"), "https://13.141.51.16");
+  assert.equal(normalizeServerOrigin("http://127.0.0.1:3000"), "http://127.0.0.1:3000");
   assert.throws(() => normalizeServerOrigin("http://example.com"), /HTTPS/);
 });
 
@@ -32,18 +26,12 @@ test("keeps in-app navigation on the connected origin", () => {
     isAllowedRemoteNavigation("https://cosmora.example/projects/1", "https://cosmora.example"),
     true
   );
-  assert.equal(
-    isAllowedRemoteNavigation("https://example.com/", "https://cosmora.example"),
-    false
-  );
+  assert.equal(isAllowedRemoteNavigation("https://example.com/", "https://cosmora.example"), false);
 });
 
 test("sanitizes downloads and avoids overwriting existing files", () => {
   assert.equal(safeDownloadFilename('report<final>:"?.md'), "report_final____.md");
-  const seen = new Set([
-    "C:\\Downloads\\result.md",
-    "C:\\Downloads\\result (1).md"
-  ]);
+  const seen = new Set(["C:\\Downloads\\result.md", "C:\\Downloads\\result (1).md"]);
   const chosen = nextAvailableDownloadPath("C:\\Downloads", "result.md", (value) =>
     seen.has(value)
   );
