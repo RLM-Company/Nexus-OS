@@ -2,11 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import {
-  inspectTlsCertificate,
-  validateTlsCertificate,
-  verifyAccess
-} from "../verify-access.mjs";
+import { inspectTlsCertificate, validateTlsCertificate, verifyAccess } from "../verify-access.mjs";
 
 const now = Date.parse("2026-10-01T00:00:00Z");
 const password = "fixture-owner-password";
