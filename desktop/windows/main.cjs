@@ -83,9 +83,10 @@ async function probeServer(browserSession, origin, username, password) {
     if (response.status === 401) {
       return {
         ok: false,
-        message: username || password
-          ? "Сервер отклонил логин или пароль."
-          : "Сервер требует логин и пароль."
+        message:
+          username || password
+            ? "Сервер отклонил логин или пароль."
+            : "Сервер требует логин и пароль."
       };
     }
     if (response.status === 403) {
@@ -232,10 +233,8 @@ ipcMain.handle("cosmora:connect", async (_event, payload) => {
     };
   }
 
-  const username =
-    typeof payload?.username === "string" ? payload.username.slice(0, 256) : "";
-  const password =
-    typeof payload?.password === "string" ? payload.password.slice(0, 2048) : "";
+  const username = typeof payload?.username === "string" ? payload.username.slice(0, 256) : "";
+  const password = typeof payload?.password === "string" ? payload.password.slice(0, 2048) : "";
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
   const probe = await probeServer(browserSession, origin, username, password);
   if (!probe.ok) return probe;
@@ -266,7 +265,11 @@ app.on("login", (event, webContents, details, _authInfo, callback) => {
   if (requestOrigin !== currentOrigin) return;
 
   event.preventDefault();
-  if (runtimeCredentials && runtimeCredentials.origin === currentOrigin && details.firstAuthAttempt) {
+  if (
+    runtimeCredentials &&
+    runtimeCredentials.origin === currentOrigin &&
+    details.firstAuthAttempt
+  ) {
     callback(runtimeCredentials.username, runtimeCredentials.password);
     return;
   }
