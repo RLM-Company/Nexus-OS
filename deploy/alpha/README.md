@@ -84,13 +84,16 @@ docker compose -f compose.yaml run --rm --no-deps \
 ```
 
 Run it after deployment, credential/session rotation and during manual maintenance checks. It
-requires unauthenticated interface and health requests to return 401, then verifies authenticated
-interface access, healthy SQLite, exactly one current hosted owner session and global stop status.
-A session with 24 hours or less remaining fails with a rotation reminder. This catches an expired
-bearer session even when the public API health check still returns 200. Redirects are never
-followed, TLS certificate validation stays enabled, and failure output excludes response bodies
-and credentials. The command sends only GET requests and never calls a model, rotates credentials
-or clears stops. A PASS establishes owner access; it does not establish live AI readiness.
+first validates the HTTPS peer certificate, then requires unauthenticated interface and health
+requests to return 401 and verifies authenticated interface access, healthy SQLite, exactly one
+current hosted owner session and global stop status. A certificate or owner session with 24 hours
+or less remaining fails with an explicit maintenance reminder. PASS output includes both expiry
+timestamps so a later manual run can confirm that Caddy actually renewed the certificate. This
+catches an expiring certificate or bearer session even while service health is otherwise green.
+Redirects are never followed, TLS trust and hostname validation stay enabled, and failure output
+excludes response bodies and credentials. The command sends only GET requests after the TLS probe
+and never calls a model, rotates credentials, renews certificates or clears stops. A PASS
+establishes owner access and certificate readiness; it does not establish live AI readiness.
 This is a manual command; no timer or automatic renewal is installed.
 
 Check `https://<domain>/api/v1/health` and the Work screen after logging in. The health endpoint
