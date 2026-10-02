@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import { verifyAccess } from "../verify-access.mjs";
+import { validateTlsCertificate, verifyAccess } from "../verify-access.mjs";
 
 const now = Date.parse("2026-10-01T00:00:00Z");
 const password = "fixture-owner-password";
@@ -62,6 +62,7 @@ test("verifies password protection, current owner expiry and stop without model 
   const { origin, requests } = await fixture(t);
   assert.deepEqual(await verifyAccess({ origin, password, now }), {
     session_expires_at: currentSession.expires_at.replace("Z", ".000Z"),
+    tls_certificate_expires_at: null,
     model_requests_paused: true
   });
   assert.equal(requests.length, 6);
@@ -70,6 +71,28 @@ test("verifies password protection, current owner expiry and stop without model 
     [undefined, undefined]
   );
   assert.ok(requests.every((request) => !/chat|work|run/u.test(request.path)));
+});
+
+test("validates TLS certificate dates and minimum remaining lifetime", () => {
+  assert.deepEqual(
+    validateTlsCertificate(
+      {
+        valid_from: "Sep 30 00:00:00 2026 GMT",
+        valid_to: "Oct 03 00:00:00 2026 GMT"
+      },
+      now
+    ),
+    { expires_at: "2026-10-03T00:00:00.000Z" }
+  );
+
+  for (const certificate of [
+    { valid_from: "not-a-date", valid_to: "Oct 03 00:00:00 2026 GMT" },
+    { valid_from: "Oct 02 00:00:00 2026 GMT", valid_to: "Oct 03 00:00:00 2026 GMT" },
+    { valid_from: "Sep 30 00:00:00 2026 GMT", valid_to: "Oct 01 00:00:00 2026 GMT" },
+    { valid_from: "Sep 30 00:00:00 2026 GMT", valid_to: "Oct 02 00:00:00 2026 GMT" }
+  ]) {
+    assert.throws(() => validateTlsCertificate(certificate, now), /TLS certificate/u);
+  }
 });
 
 test("healthy public health cannot conceal an expired bearer session", async (t) => {
