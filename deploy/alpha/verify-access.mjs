@@ -1,10 +1,62 @@
 import { readFileSync } from "node:fs";
+import { isIP } from "node:net";
+import { connect as tlsConnect } from "node:tls";
 import { pathToFileURL } from "node:url";
 
 class AccessCheckError extends Error {}
 const requireState = (condition, message) => {
   if (!condition) throw new AccessCheckError(message);
 };
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
+export function validateTlsCertificate(certificate, now = Date.now()) {
+  const validFrom = Date.parse(certificate?.valid_from);
+  const validTo = Date.parse(certificate?.valid_to);
+  requireState(
+    Number.isFinite(validFrom) && Number.isFinite(validTo),
+    "TLS certificate dates are unavailable"
+  );
+  requireState(validFrom <= now, "TLS certificate is not yet valid");
+  requireState(validTo > now, "TLS certificate has expired");
+  requireState(validTo - now > DAY_MS, "TLS certificate expires within 24 hours");
+  return { expires_at: new Date(validTo).toISOString() };
+}
+
+export async function inspectTlsCertificate(base, now = Date.now(), connect = tlsConnect) {
+  const host =
+    base.hostname.startsWith("[") && base.hostname.endsWith("]")
+      ? base.hostname.slice(1, -1)
+      : base.hostname;
+  const port = base.port === "" ? 443 : Number(base.port);
+  requireState(Number.isInteger(port) && port > 0 && port <= 65_535, "TLS port is invalid");
+  return await new Promise((resolve, reject) => {
+    const socket = connect({
+      host,
+      port,
+      rejectUnauthorized: true,
+      servername: isIP(host) === 0 ? host : undefined,
+      timeout: 5_000
+    });
+    socket.once("secureConnect", () => {
+      try {
+        const certificate = socket.getPeerCertificate();
+        resolve(validateTlsCertificate(certificate, now));
+      } catch (error) {
+        reject(error);
+      } finally {
+        socket.end();
+      }
+    });
+    socket.once("timeout", () => {
+      socket.destroy();
+      reject(new AccessCheckError("TLS certificate check timed out"));
+    });
+    socket.once("error", () => {
+      reject(new AccessCheckError("TLS certificate validation failed"));
+    });
+  });
+}
 
 export async function verifyAccess({ origin, password, now = Date.now() }) {
   const base = new URL(origin);
@@ -19,6 +71,7 @@ export async function verifyAccess({ origin, password, now = Date.now() }) {
     "Use an HTTPS origin without credentials, paths or query parameters"
   );
   requireState(typeof password === "string" && password.length > 0, "Owner password is missing");
+  const certificate = base.protocol === "https:" ? await inspectTlsCertificate(base, now) : null;
   const authorization = `Basic ${Buffer.from(`owner:${password}`).toString("base64")}`;
   const request = async (path, authenticated, expectedStatus) => {
     let response;
@@ -68,7 +121,7 @@ export async function verifyAccess({ origin, password, now = Date.now() }) {
   );
   const expiresAt = Date.parse(current[0].expires_at);
   requireState(Number.isFinite(expiresAt) && expiresAt > now, "Owner session has expired");
-  requireState(expiresAt - now > 24 * 60 * 60 * 1_000, "Rotate the owner session within 24 hours");
+  requireState(expiresAt - now > DAY_MS, "Rotate the owner session within 24 hours");
   const operations = await json("/api/v1/operations/status");
   requireState(
     operations &&
@@ -77,6 +130,7 @@ export async function verifyAccess({ origin, password, now = Date.now() }) {
   );
   return {
     session_expires_at: new Date(expiresAt).toISOString(),
+    tls_certificate_expires_at: certificate?.expires_at ?? null,
     model_requests_paused: operations.process_stop?.active === true
   };
 }
@@ -89,6 +143,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const result = await verifyAccess({ origin, password });
     process.stdout.write(
       `Owner access PASS; SQLite healthy; session expires ${result.session_expires_at}; ` +
+        `TLS expires ${result.tls_certificate_expires_at}; ` +
         `model requests ${result.model_requests_paused ? "paused" : "not globally paused"}. ` +
         "No model request was sent.\n"
     );
