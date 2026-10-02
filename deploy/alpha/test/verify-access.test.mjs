@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import { validateTlsCertificate, verifyAccess } from "../verify-access.mjs";
+import {
+  inspectTlsCertificate,
+  validateTlsCertificate,
+  verifyAccess
+} from "../verify-access.mjs";
 
 const now = Date.parse("2026-10-01T00:00:00Z");
 const password = "fixture-owner-password";
@@ -71,6 +76,54 @@ test("verifies password protection, current owner expiry and stop without model 
     [undefined, undefined]
   );
   assert.ok(requests.every((request) => !/chat|work|run/u.test(request.path)));
+});
+
+test("TLS probe keeps verification enabled and chooses safe SNI", async () => {
+  const certificate = {
+    valid_from: "Sep 30 00:00:00 2026 GMT",
+    valid_to: "Oct 03 00:00:00 2026 GMT"
+  };
+  const makeProbe = () => {
+    const socket = new EventEmitter();
+    let ended = false;
+    let options;
+    socket.getPeerCertificate = () => certificate;
+    socket.end = () => {
+      ended = true;
+    };
+    socket.destroy = () => {};
+    return {
+      connect(received) {
+        options = received;
+        queueMicrotask(() => socket.emit("secureConnect"));
+        return socket;
+      },
+      state() {
+        return { ended, options };
+      }
+    };
+  };
+
+  const ipProbe = makeProbe();
+  assert.deepEqual(
+    await inspectTlsCertificate(new URL("https://127.0.0.1:8443"), now, ipProbe.connect),
+    { expires_at: "2026-10-03T00:00:00.000Z" }
+  );
+  assert.deepEqual(ipProbe.state(), {
+    ended: true,
+    options: {
+      host: "127.0.0.1",
+      port: 8443,
+      rejectUnauthorized: true,
+      servername: undefined,
+      timeout: 5_000
+    }
+  });
+
+  const dnsProbe = makeProbe();
+  await inspectTlsCertificate(new URL("https://alpha.example"), now, dnsProbe.connect);
+  assert.equal(dnsProbe.state().options.servername, "alpha.example");
+  assert.equal(dnsProbe.state().options.port, 443);
 });
 
 test("validates TLS certificate dates and minimum remaining lifetime", () => {
