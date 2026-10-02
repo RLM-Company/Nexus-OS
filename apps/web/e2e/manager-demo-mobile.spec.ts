@@ -12,7 +12,7 @@ test("keeps the Manager demo usable without horizontal overflow on a phone viewp
   await page.getByRole("tab", { name: "План" }).click();
 
   await page.getByRole("button", { name: "Подготовить Manager plan" }).click();
-  const demo = page.getByRole("region", { name: "Выполнение задачи Manager" });
+  const demo = page.getByRole("region", { name: "Manager demo workflow" });
   await expect(demo).toBeVisible();
   await expect(demo.getByRole("button", { name: "Запустить безопасный шаг" })).toBeVisible();
   await expect(demo.getByRole("button", { name: "Остановить" })).toBeVisible();
