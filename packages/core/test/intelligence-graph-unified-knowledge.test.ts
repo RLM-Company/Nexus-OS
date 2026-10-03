@@ -651,9 +651,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       "feedback-ci-record-vs-source-time|RESOLVED_BY|event-ci-fix-record-time"
     );
-    expect(pairs).toContain(
-      "event-ci-fix-record-time|VALIDATED_BY|evaluation-ci-1011-structure"
-    );
+    expect(pairs).toContain("event-ci-fix-record-time|VALIDATED_BY|evaluation-ci-1011-structure");
   });
 
   it("records the final green gate as evidence for PR 269", () => {
@@ -676,9 +674,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
     const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
-    expect(pairs).toContain(
-      "evaluation-ci-1018-e2e|FOUND_ISSUE|feedback-ci-manager-demo-selector"
-    );
+    expect(pairs).toContain("evaluation-ci-1018-e2e|FOUND_ISSUE|feedback-ci-manager-demo-selector");
     expect(pairs).toContain(
       "feedback-ci-manager-demo-selector|RESOLVED_BY|event-ci-fix-manager-demo-selector"
     );
