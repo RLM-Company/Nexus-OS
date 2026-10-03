@@ -4,8 +4,8 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.4.0** adds a manual, fail-closed update-check protocol and clearer desktop version
-identity on top of the lifecycle-hardened 0.3.0 client.
+Version **0.5.0** adds a verifiable Windows release chain on top of the 0.4.0 manual update
+protocol. Every CI installer now ships with metadata and SHA-256 generated from the actual EXE.
 
 ## Runtime model
 
@@ -114,6 +114,30 @@ This manual protocol is intentional while the application is unsigned. Electron 
 signing applications intended for distribution; automatic installation remains out of scope until a
 signing/release trust chain exists.
 
+## Release chain
+
+The ordinary `Windows desktop` pull-request workflow remains intentionally unsigned. After NSIS
+finishes, it derives a release bundle directly from the produced EXE:
+
+- `release-metadata.json` records schema, version, platform, architecture, filename, byte size,
+  SHA-256 and the source Git SHA;
+- `SHA256SUMS.txt` contains the exact installer digest;
+- the release-chain verifier re-hashes the installer and fails if the filename, size or digest no
+  longer matches the metadata.
+
+The metadata generator refuses an installer whose filename disagrees with
+`desktop/windows/package.json`, preventing a versioned artifact from being published under stale
+metadata.
+
+For a production signed release, the separate manual `Windows signed release` workflow uses the
+protected `windows-release` environment. It requires explicit `SIGNED_RELEASE` confirmation,
+validates the requested package version, verifies Authenticode after signing, then generates the
+release metadata and update manifest from the **signed** EXE. The resulting manifest is verified
+against the signed installer's version, filename, byte size and SHA-256 before upload.
+
+PR workflows never receive signing credentials. See `desktop/windows/SIGNING.md` for the release
+contract.
+
 ## Downloads and artifacts
 
 Only downloads whose URL belongs to the active Cosmora origin are accepted.
@@ -171,8 +195,8 @@ node --test desktop/windows/test/*.test.cjs
 
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
-validation, support-bundle redaction, diagnostic URL redaction, download filenames and protected
-credential persistence. The
+validation, release metadata/integrity verification, support-bundle redaction, diagnostic URL
+redaction, download filenames and protected credential persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
 building the installer.
 
@@ -189,7 +213,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.4.0-x64.exe`.
+`Cosmora-Setup-0.5.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
@@ -200,5 +224,6 @@ The alpha remains unsigned, so Windows SmartScreen may display an unknown-publis
 - no live AI/provider activation;
 - no paid provider request;
 - no automatic update download or installation;
-- no code-signing certificate integration;
+- no signing certificate is configured in this repository; signing is isolated to protected
+  release-environment secrets;
 - no automatic merge.
