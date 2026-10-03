@@ -6,9 +6,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const desktopRoot = path.resolve(__dirname, "..");
-const packageJson = JSON.parse(
-  fs.readFileSync(path.join(desktopRoot, "package.json"), "utf8")
-);
+const packageJson = JSON.parse(fs.readFileSync(path.join(desktopRoot, "package.json"), "utf8"));
 const iconPath = path.join(desktopRoot, "build", "icon.svg");
 
 test("Windows packaging explicitly uses the Cosmora SVG icon", () => {
