@@ -3,7 +3,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
-const { validateUpdateManifest } = require("./update-policy.cjs");
+const { parseVersion, validateUpdateManifest } = require("./update-policy.cjs");
 
 const RELEASE_SCHEMA_VERSION = 1;
 const DEFAULT_ARCH = "x64";
@@ -86,10 +86,17 @@ function validateReleaseMetadata(metadata) {
   ) {
     throw new Error("Release metadata does not match the Windows stable channel.");
   }
+  if (!parseVersion(metadata.version)) {
+    throw new Error("Release metadata contains an invalid semantic version.");
+  }
   if (metadata.filename !== expectedInstallerFilename(metadata.version, metadata.arch)) {
     throw new Error("Release metadata filename does not match its version.");
   }
-  if (!Number.isSafeInteger(metadata.sizeBytes) || metadata.sizeBytes <= 0) {
+  if (
+    !Number.isSafeInteger(metadata.sizeBytes) ||
+    metadata.sizeBytes <= 0 ||
+    metadata.sizeBytes > MAX_INSTALLER_BYTES
+  ) {
     throw new Error("Release metadata contains an invalid installer size.");
   }
   if (typeof metadata.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(metadata.sha256)) {
