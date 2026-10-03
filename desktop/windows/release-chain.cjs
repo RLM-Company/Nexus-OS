@@ -152,7 +152,11 @@ function validateManifestAgainstRelease(manifest, metadata) {
 
 function validateSignatureAgainstRelease(signatureMetadata, metadata) {
   const release = validateReleaseMetadata(metadata);
-  if (!signatureMetadata || typeof signatureMetadata !== "object" || Array.isArray(signatureMetadata)) {
+  if (
+    !signatureMetadata ||
+    typeof signatureMetadata !== "object" ||
+    Array.isArray(signatureMetadata)
+  ) {
     throw new Error("Signature metadata must be an object.");
   }
   if (signatureMetadata.schemaVersion !== 1 || signatureMetadata.authenticodeStatus !== "Valid") {
@@ -168,10 +172,7 @@ function validateSignatureAgainstRelease(signatureMetadata, metadata) {
   if (artifact.sizeBytes !== release.sizeBytes) {
     throw new Error("Signature metadata size does not match release metadata.");
   }
-  if (
-    typeof artifact.sha256 !== "string" ||
-    artifact.sha256.toLowerCase() !== release.sha256
-  ) {
+  if (typeof artifact.sha256 !== "string" || artifact.sha256.toLowerCase() !== release.sha256) {
     throw new Error("Signature metadata SHA-256 does not match release metadata.");
   }
   return signatureMetadata;
