@@ -7,6 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
+  buildUpdateManifest,
   createReleaseMetadata,
   expectedInstallerFilename,
   stableJson,
@@ -84,6 +85,23 @@ test("detects installer mutation after metadata generation", () => {
     () => verifyInstallerAgainstMetadata(value.installerPath, metadata),
     /size does not match|SHA-256 does not match/
   );
+});
+
+test("builds an update manifest directly from signed release metadata", () => {
+  const value = fixture();
+  const release = createReleaseMetadata(value);
+  const manifest = buildUpdateManifest({
+    metadata: release,
+    releasePageUrl: "https://releases.example/cosmora/0.5.0",
+    downloadUrl: "https://downloads.example/Cosmora-Setup-0.5.0-x64.exe",
+    publishedAt: "2026-10-03T08:00:00Z",
+    notes: "Signed Windows release."
+  });
+
+  assert.equal(manifest.version, release.version);
+  assert.equal(manifest.sha256, release.sha256);
+  assert.equal(manifest.sizeBytes, release.sizeBytes);
+  assert.equal(manifest.notes, "Signed Windows release.");
 });
 
 test("requires update manifest version, digest, size and filename to match release", () => {
