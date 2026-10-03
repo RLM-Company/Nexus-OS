@@ -148,6 +148,32 @@ function validateManifestAgainstRelease(manifest, metadata) {
   return validatedManifest;
 }
 
+function buildUpdateManifest({
+  metadata,
+  releasePageUrl,
+  downloadUrl,
+  publishedAt,
+  notes = ""
+}) {
+  const release = validateReleaseMetadata(metadata);
+  const manifest = {
+    schemaVersion: 1,
+    platform: release.platform,
+    arch: release.arch,
+    channel: release.channel,
+    version: release.version,
+    publishedAt,
+    releasePageUrl,
+    downloadUrl,
+    sha256: release.sha256,
+    sizeBytes: release.sizeBytes,
+    notes
+  };
+
+  validateManifestAgainstRelease(manifest, release);
+  return manifest;
+}
+
 function stableJson(value) {
   return JSON.stringify(value, null, 2) + "\n";
 }
@@ -205,6 +231,24 @@ function runCli(argv) {
     return;
   }
 
+  if (command === "manifest") {
+    const metadataPath = requireArg(values, "metadata");
+    const outputPath = requireArg(values, "output");
+    const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+    const manifest = buildUpdateManifest({
+      metadata,
+      releasePageUrl: requireArg(values, "release-page-url"),
+      downloadUrl: requireArg(values, "download-url"),
+      publishedAt: requireArg(values, "published-at"),
+      notes: values.notes || ""
+    });
+
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, stableJson(manifest), "utf8");
+    process.stdout.write(stableJson(manifest));
+    return;
+  }
+
   if (command === "verify") {
     const installerPath = requireArg(values, "installer");
     const metadataPath = requireArg(values, "metadata");
@@ -220,7 +264,7 @@ function runCli(argv) {
     return;
   }
 
-  throw new Error("Usage: release-chain.cjs <bundle|verify> [options]");
+  throw new Error("Usage: release-chain.cjs <bundle|manifest|verify> [options]");
 }
 
 if (require.main === module) {
@@ -234,6 +278,7 @@ if (require.main === module) {
 
 module.exports = {
   RELEASE_SCHEMA_VERSION,
+  buildUpdateManifest,
   createReleaseMetadata,
   expectedInstallerFilename,
   readPackageVersion,
