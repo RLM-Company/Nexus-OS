@@ -1,4 +1,4 @@
-# CheapVibeCode connection preparation — 2026-10-03
+# CheapVibeCode configuration — 2026-10-03
 
 CheapVibeCode is a separate provider from `vibecode.moe`; existing VibeCode registry evidence and
 credentials are not reused for it. The owner authorized account registration and accepted the
@@ -24,13 +24,14 @@ Windows user and SYSTEM. They must not be included in source archives, images or
 - Offline validation loaded the candidate through the API schema and built the external runtime
   using a fixture key, then resolved plan, draft and review routes. Network calls: zero;
   fallback disabled, one attempt per route and emergency stop enabled.
-- The real key is also staged in a root-only private VPS environment file. It is not activated;
-  the running application retains its current provider configuration.
+- At the owner's subsequent request, the protected VPS `model.env` was updated from the staged
+  CheapVibeCode profile. The prior file was preserved privately for rollback. Only the API container
+  was recreated; model execution remains globally stopped and no generation was requested.
 
 ## Opt-in configuration
 
 Use this only in a private environment file; fill the key locally and keep execution stopped
-until funding and the bounded live trial are ready:
+until funding and the bounded live trial are ready. The VPS uses this profile:
 
 ```dotenv
 MODEL_PROVIDER=openai-compatible
@@ -44,6 +45,12 @@ MODEL_MAX_ATTEMPTS_PER_ROUTE=1
 MANAGER_MAX_OUTPUT_TOKENS=1200
 RUNTIME_EMERGENCY_STOP=true
 ```
+
+GitHub Actions should use the same provider/base URL/model/fallback/output settings, with
+`MODEL_API_KEY` held as a secret. The connector cannot manage Actions Secrets/Variables, and the
+browser currently requires the owner to sign in. A matching set of ten variables and one secret
+was prepared privately; GitHub settings have not yet been changed. No connection-test workflow
+was dispatched. Its manual live-response test is separate from the VPS emergency stop.
 
 Do not run the provider's desktop/CLI installer scripts to configure Cosmora. The existing
 OpenAI-compatible adapter already uses the documented chat endpoint; changing Codex settings or
