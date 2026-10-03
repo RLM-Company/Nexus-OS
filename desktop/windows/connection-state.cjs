@@ -36,9 +36,7 @@ function transitionConnectionState(current, event) {
     case "manual_disconnect":
       return CONNECTION_STATES.DISCONNECTED;
     case "renderer_responsive":
-      return current === CONNECTION_STATES.DEGRADED
-        ? CONNECTION_STATES.ONLINE
-        : current;
+      return current === CONNECTION_STATES.DEGRADED ? CONNECTION_STATES.ONLINE : current;
     default:
       return current;
   }
