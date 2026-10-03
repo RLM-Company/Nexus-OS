@@ -20,18 +20,86 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(417);
-    expect(graph.records).toHaveLength(417);
-    expect(graph.edges).toHaveLength(1154);
+    expect(graph.nodes).toHaveLength(428);
+    expect(graph.records).toHaveLength(428);
+    expect(graph.edges).toHaveLength(1183);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      417
+      428
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1154
+      1183
     );
 
     expect(() => createIndex()).not.toThrow();
+  });
+
+  it("retrieves the checked-in bootstrap ModelVersion without inventing an external route", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "mock manager b0.1 bootstrap model streaming confidential zero cost registry",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: {
+        max_depth: 2,
+        max_nodes: 24,
+        max_edges: 36,
+        max_fan_out: 18,
+        max_context_tokens: 4_000
+      }
+    });
+
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+    expect(ids).toContain("model-version-mock-manager-b0-1");
+    expect(ids).toContain("entity-model-registry");
+    expect(ids).toContain("doc-model-registry-bootstrap-v1");
+
+    const pairs = new Set(
+      packet.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    expect(pairs).toContain(
+      "model-version-mock-manager-b0-1|REGISTERED_IN|entity-model-registry"
+    );
+    expect(pairs).toContain(
+      "evaluation-model-bootstrap-streaming|CONFIRMS_CAPABILITY_FOR|model-version-mock-manager-b0-1"
+    );
+  });
+
+  it("keeps Model Intelligence recommendations outside routing authority", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "entity-model-intelligence-graph|CONSTRAINED_BY|claim-model-intelligence-recommend-only"
+    );
+    expect(pairs).toContain(
+      "claim-model-intelligence-recommend-only|NOT_AUTHORITY_FOR|entity-model-registry"
+    );
+    expect(pairs).toContain(
+      "claim-model-intelligence-recommend-only|NOT_AUTHORITY_FOR|entity-router"
+    );
+  });
+
+  it("grounds model routing evaluations in the real Router and runtime tests", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    const routerTest = repositoryStructureFileId("packages/model-gateway/test/router.test.ts");
+    const runtimeTest = repositoryStructureFileId("apps/api/test/model-runtime.test.ts");
+
+    expect(pairs).toContain(
+      `evaluation-model-router-hard-filter|VERIFIED_BY_TEST|${routerTest}`
+    );
+    expect(pairs).toContain(
+      `evaluation-model-router-deterministic-score|VERIFIED_BY_TEST|${routerTest}`
+    );
+    expect(pairs).toContain(
+      `evaluation-model-runtime-registry-binding|VERIFIED_BY_TEST|${runtimeTest}`
+    );
   });
 
   it("retrieves Manager persistence invariants from the exact state store", () => {
