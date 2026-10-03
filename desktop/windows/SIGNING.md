@@ -22,10 +22,11 @@ The signed workflow:
 - emits sanitized `signature-metadata.json` only after all signature checks pass;
 - binds that signature metadata to the signed installer's exact filename, byte size and SHA-256;
 - requires the final release verifier to match those artifact fields against `release-metadata.json`;
-- installs the signed NSIS package into an isolated temporary directory, launches the installed
-  packaged application in no-network smoke mode, then silently uninstalls it;
-- fails if the signed installer does not produce the expected packaged version/path metadata or if
-  uninstall leaves the installation directory behind;
+- installs the signed NSIS package into an isolated temporary directory;
+- verifies Desktop/Start Menu shortcuts, uninstall registry metadata and executable version
+  resources before launching the installed packaged application in no-network smoke mode;
+- silently uninstalls and fails if the installation directory, shell shortcuts or uninstall registry
+  entry remain;
 - generates release metadata and SHA-256 from the signed EXE, never from the unsigned PR artifact;
 - generates the update manifest from that signed artifact metadata;
 - verifies version, filename, byte size and SHA-256 agreement before uploading the release bundle;
