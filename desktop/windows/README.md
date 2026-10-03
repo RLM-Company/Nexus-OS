@@ -1,28 +1,99 @@
 # Cosmora for Windows
 
-This is a thin Electron shell around the existing hosted Cosmora web application. It deliberately
-does not duplicate the API, authentication model, project storage, Manager runtime or AI provider.
+Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora web application.
+It deliberately reuses the current API, authentication, project storage, Manager runtime and result
+download endpoints instead of duplicating backend logic inside the desktop package.
 
-## Why this architecture
+Version **0.2.0** is the production-hardening layer stacked on top of the installable 0.1.0 MVP.
 
-The current web UI already implements the first-release journey: project creation, Manager task
-submission, progress polling, persisted task history and downloadable files. A thin desktop shell
-therefore minimizes new state and security surface while providing a normal Windows installer,
-desktop shortcut, persistent browser storage and connection handling.
+## Runtime model
 
-The shell:
+The desktop client:
 
-- accepts an HTTPS Cosmora origin (or loopback HTTP for local development);
-- stores only the selected server origin in Electron user data;
-- keeps Basic Auth credentials in memory only until the app exits;
-- uses a persistent Chromium session for the existing cookies and localStorage;
-- keeps navigation inside the selected Cosmora origin and sends external links to the default
-  browser;
-- refuses TLS bypasses and remote plain HTTP;
-- saves same-origin downloads into the Windows Downloads folder without overwriting an existing
-  file.
+- connects only to an explicit Cosmora origin;
+- requires HTTPS for remote servers and allows plain HTTP only for loopback development;
+- uses a persistent Chromium session for Cosmora cookies and localStorage;
+- automatically reopens the saved server on startup;
+- performs a health heartbeat every 30 seconds after connection;
+- uses bounded reconnect backoff after repeated health failures, renderer loss or main-frame load
+  failures;
+- restores the most recent same-origin route after reconnecting;
+- keeps cross-origin navigation outside the embedded app and rejects cross-origin server redirects.
 
-The default connection field is `https://13.141.51.16`. The app does not contain credentials.
+The global server-side AI emergency stop is not modified by the desktop client.
+
+## Credentials
+
+Credentials are never embedded in source code, the installer, the connection URL or diagnostics.
+
+By default Basic Auth credentials exist only in process memory. The connection screen also offers an
+explicit **remember credentials** option. When enabled on Windows, Electron `safeStorage` encrypts the
+credential payload using the operating-system protected storage before an encrypted blob is written
+under Electron user data.
+
+The encrypted credential record is scoped to the exact selected origin. If the user changes the
+server, the existing record is not reused. Clearing the remember option removes the encrypted record
+after a successful connection.
+
+If protected storage is unavailable, persistent credential storage fails closed and the UI asks the
+user to continue without remembering credentials.
+
+## Recovery protocol
+
+After a successful connection the client probes `/api/v1/health` every 30 seconds.
+
+Transient failures do not immediately discard the current page. After repeated failures, the client
+starts reconnect attempts with a bounded delay sequence:
+
+`1s → 2s → 5s → 10s → 30s`
+
+Further retries remain capped at 30 seconds. A successful probe restores the last same-origin route
+and restarts the heartbeat.
+
+Authentication or authorization failures stop automatic retries and return to the connection screen.
+An invalid remembered credential record is cleared before the next manual attempt.
+
+Composer drafts remain persisted by the existing web client, so a desktop reload or reconnect does
+not intentionally discard an unsent draft.
+
+## Downloads and artifacts
+
+Only downloads whose URL belongs to the active Cosmora origin are accepted.
+
+The desktop shell:
+
+- sanitizes Windows-invalid filename characters;
+- protects Windows reserved device names such as `CON`, `NUL`, `COM1` and `LPT1`;
+- never overwrites an existing file in Downloads;
+- computes SHA-256 for each completed download and records the checksum in diagnostics.
+
+The checksum is an audit value for the downloaded file. It is not presented as server-authenticated
+integrity proof unless the server later supplies an expected digest through a trusted protocol.
+
+## Diagnostics
+
+The **Cosmora → Open diagnostics folder** menu opens Electron's application log directory.
+
+The rotating JSON-lines log records lifecycle, recovery, blocked navigation, download completion and
+failure state. It does not intentionally record passwords, authorization headers, URL query strings
+or URL fragments. Diagnostic URLs are reduced to origin + path.
+
+The log is capped at approximately 1 MiB and retains approximately the latest 512 KiB when rotated.
+
+## Desktop security boundary
+
+- `contextIsolation: true`
+- `nodeIntegration: false`
+- renderer sandbox enabled
+- Chromium web security enabled
+- insecure content disabled
+- preload bridge is exposed only on the local `file:` connection screen
+- main-process connection IPC validates the sender frame
+- remote HTTP rejected except localhost / loopback
+- TLS certificate errors are explicitly rejected
+- cross-origin redirects are blocked
+- credentials in navigation URLs are rejected
+- a single application instance is enforced
 
 ## Local policy tests
 
@@ -32,30 +103,32 @@ From the repository root:
 node --test desktop/windows/test/*.test.cjs
 ```
 
+These tests cover origin policy, navigation policy, reconnect backoff, diagnostic URL redaction,
+download filenames and protected credential persistence.
+
 ## Build the Windows installer
 
-The repository workflow `Windows desktop` uses a Windows GitHub-hosted runner and
-`electron-builder@26.17.0` to package Electron `44.5.1` as an unsigned NSIS x64 installer.
+The repository workflow `Windows desktop` uses `windows-latest`, Node 24,
+`electron-builder@26.17.0` and Electron `44.5.1`.
 
-Equivalent local commands, from `desktop/windows`, are:
+Equivalent local commands from `desktop/windows` are:
 
 ```powershell
 node --test test/*.test.cjs
 npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
-The installer is written under `desktop/windows/dist/`. It creates Start Menu and desktop
-shortcuts. Because this alpha is not code-signed, Windows SmartScreen may show an unknown-publisher
-warning.
+The installer is emitted under `desktop/windows/dist/` as
+`Cosmora-Setup-0.2.0-x64.exe`.
 
-## First-run flow
+The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
-1. Install and launch Cosmora.
-2. Confirm the server address.
-3. Enter edge credentials if the server requires HTTP Basic authentication.
-4. The existing Cosmora interface opens in the desktop window.
-5. Create/open a project, open **План**, submit a Manager task and watch its server-persisted stages.
-6. When the task is complete, click a result filename. The desktop shell saves it in Downloads.
+## Deliberate non-goals of this hardening pass
 
-The hosted alpha currently has model execution globally stopped. The desktop client does not clear
-that stop, enable a provider, or fake live model output.
+- no VPS deployment;
+- no emergency-stop clearance;
+- no live AI/provider activation;
+- no paid provider request;
+- no auto-update feed;
+- no code-signing certificate integration;
+- no automatic merge.
