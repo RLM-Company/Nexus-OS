@@ -1,0 +1,149 @@
+name: Windows signed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact desktop version to release (for example 0.5.0)"
+        required: true
+        type: string
+      release_page_url:
+        description: "HTTPS release page URL"
+        required: true
+        type: string
+      download_url:
+        description: "Final HTTPS EXE download URL"
+        required: true
+        type: string
+      published_at:
+        description: "Release timestamp in ISO 8601 format"
+        required: true
+        type: string
+      confirm:
+        description: "Type SIGNED_RELEASE to authorize release signing"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-signed-release
+  cancel-in-progress: false
+
+jobs:
+  signed-release:
+    name: Build signed Windows release
+    runs-on: windows-latest
+    timeout-minutes: 25
+    environment: windows-release
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Require explicit signed-release confirmation
+        shell: pwsh
+        env:
+          RELEASE_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if ($env:RELEASE_CONFIRM -ne "SIGNED_RELEASE") {
+            throw "Release signing requires confirm=SIGNED_RELEASE."
+          }
+
+      - name: Validate requested release version
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          $packageVersion = node -p "require('./desktop/windows/package.json').version"
+          if ($packageVersion -ne $env:REQUESTED_VERSION) {
+            throw "Requested version $($env:REQUESTED_VERSION) does not match package version $packageVersion."
+          }
+
+      - name: Validate desktop syntax
+        shell: pwsh
+        run: |
+          node --check desktop/windows/main.cjs
+          node --check desktop/windows/preload.cjs
+          node --check desktop/windows/connection-policy.cjs
+          node --check desktop/windows/connection-state.cjs
+          node --check desktop/windows/credential-store.cjs
+          node --check desktop/windows/support-bundle.cjs
+          node --check desktop/windows/update-policy.cjs
+          node --check desktop/windows/release-chain.cjs
+          node --check desktop/windows/connection.js
+
+      - name: Test desktop policy
+        run: node --test desktop/windows/test/*.test.cjs
+
+      - name: Require signing credentials
+        shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
+            throw "windows-release environment secret WINDOWS_CSC_LINK is not configured."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) {
+            throw "windows-release environment secret WINDOWS_CSC_KEY_PASSWORD is not configured."
+          }
+
+      - name: Build signed Windows installer
+        working-directory: desktop/windows
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
+
+      - name: Verify Authenticode signature
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          $installer = "desktop/windows/dist/Cosmora-Setup-$($env:REQUESTED_VERSION)-x64.exe"
+          if (-not (Test-Path $installer)) {
+            throw "Signed installer was not produced at $installer."
+          }
+          $signature = Get-AuthenticodeSignature -FilePath $installer
+          if ($signature.Status -ne "Valid") {
+            throw "Authenticode verification failed with status $($signature.Status)."
+          }
+          if (-not $signature.SignerCertificate) {
+            throw "Authenticode signature has no signer certificate."
+          }
+          Write-Output "Signer: $($signature.SignerCertificate.Subject)"
+          Write-Output "Thumbprint: $($signature.SignerCertificate.Thumbprint)"
+
+      - name: Build signed release bundle
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          RELEASE_PAGE_URL: ${{ inputs.release_page_url }}
+          DOWNLOAD_URL: ${{ inputs.download_url }}
+          PUBLISHED_AT: ${{ inputs.published_at }}
+        run: |
+          $installer = "desktop/windows/dist/Cosmora-Setup-$($env:REQUESTED_VERSION)-x64.exe"
+          node desktop/windows/release-chain.cjs bundle --installer $installer --package desktop/windows/package.json --output desktop/windows/dist/release --git-sha "${{ github.sha }}"
+          node desktop/windows/release-chain.cjs manifest --metadata desktop/windows/dist/release/release-metadata.json --release-page-url "$env:RELEASE_PAGE_URL" --download-url "$env:DOWNLOAD_URL" --published-at "$env:PUBLISHED_AT" --output desktop/windows/dist/release/update-manifest.json
+          node desktop/windows/release-chain.cjs verify --installer $installer --metadata desktop/windows/dist/release/release-metadata.json --manifest desktop/windows/dist/release/update-manifest.json
+
+      - name: Upload signed release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmora-windows-signed-${{ inputs.version }}
+          path: |
+            desktop/windows/dist/Cosmora-Setup-${{ inputs.version }}-x64.exe
+            desktop/windows/dist/Cosmora-Setup-${{ inputs.version }}-x64.exe.blockmap
+            desktop/windows/dist/release/release-metadata.json
+            desktop/windows/dist/release/SHA256SUMS.txt
+            desktop/windows/dist/release/update-manifest.json
+          if-no-files-found: error
+          retention-days: 14
