@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 416,
-    "edges": 1152,
-    "records": 416
+    "nodes": 417,
+    "edges": 1154,
+    "records": 417
   },
   "layers": [
     {
@@ -103,8 +103,8 @@
     },
     {
       "id": "state_persistence",
-      "nodes": 6,
-      "edges": 31,
+      "nodes": 7,
+      "edges": 33,
       "authority": "verified_persistence_source"
     }
   ],
@@ -173,7 +173,8 @@
     "PERSISTS_DECISION_TRACE_FOR",
     "EXPOSES_RECOVERY_REQUIRED_FOR",
     "ATOMICALLY_CLAIMS",
-    "PREVENTS_DUPLICATE_EXECUTION_FOR"
+    "PREVENTS_DUPLICATE_EXECUTION_FOR",
+    "BLUEPRINT_FOR"
   ],
   "safety": {
     "private_chat_persistence": false,
