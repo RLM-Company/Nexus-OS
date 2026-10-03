@@ -4,8 +4,9 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.5.0** adds a verifiable Windows release chain on top of the 0.4.0 manual update
-protocol. Every CI installer now ships with metadata and SHA-256 generated from the actual EXE.
+Version **0.6.0** hardens the signed-release trust chain on top of 0.5.0. Production signing now
+requires a pinned signer identity, Code Signing EKU and a valid timestamp certificate before release
+metadata can be accepted.
 
 ## Runtime model
 
@@ -131,8 +132,10 @@ metadata.
 
 For a production signed release, the separate manual `Windows signed release` workflow uses the
 protected `windows-release` environment. It requires explicit `SIGNED_RELEASE` confirmation,
-validates the requested package version, verifies Authenticode after signing, then generates the
-release metadata and update manifest from the **signed** EXE. The resulting manifest is verified
+validates the requested package version, verifies Authenticode after signing, pins the expected
+certificate thumbprint and subject, requires Code Signing and Time Stamping EKUs, then generates
+`signature-metadata.json` bound to the signed EXE's filename/size/SHA-256. The final verifier must
+match that identity against `release-metadata.json` before the signed bundle can be uploaded. The resulting manifest is verified
 against the signed installer's version, filename, byte size and SHA-256 before upload.
 
 PR workflows never receive signing credentials. See `desktop/windows/SIGNING.md` for the release
@@ -195,8 +198,8 @@ node --test desktop/windows/test/*.test.cjs
 
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
-validation, release metadata/integrity verification, support-bundle redaction, diagnostic URL
-redaction, download filenames and protected credential persistence. The
+validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, support-bundle
+redaction, diagnostic URL redaction, download filenames and protected credential persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
 building the installer.
 
@@ -213,7 +216,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.5.0-x64.exe`.
+`Cosmora-Setup-0.6.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 

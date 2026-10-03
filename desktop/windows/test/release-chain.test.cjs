@@ -12,6 +12,7 @@ const {
   expectedInstallerFilename,
   stableJson,
   validateManifestAgainstRelease,
+  validateSignatureAgainstRelease,
   verifyInstallerAgainstMetadata,
   writeReleaseBundle
 } = require("../release-chain.cjs");
@@ -102,6 +103,30 @@ test("builds an update manifest directly from signed release metadata", () => {
   assert.equal(manifest.sha256, release.sha256);
   assert.equal(manifest.sizeBytes, release.sizeBytes);
   assert.equal(manifest.notes, "Signed Windows release.");
+});
+
+test("requires signature metadata artifact identity to match the release", () => {
+  const value = fixture();
+  const release = createReleaseMetadata(value);
+  const signature = {
+    schemaVersion: 1,
+    authenticodeStatus: "Valid",
+    artifact: {
+      filename: release.filename,
+      sizeBytes: release.sizeBytes,
+      sha256: release.sha256
+    }
+  };
+
+  assert.equal(validateSignatureAgainstRelease(signature, release), signature);
+  assert.throws(
+    () =>
+      validateSignatureAgainstRelease(
+        { ...signature, artifact: { ...signature.artifact, sha256: "b".repeat(64) } },
+        release
+      ),
+    /SHA-256 does not match/
+  );
 });
 
 test("requires update manifest version, digest, size and filename to match release", () => {
