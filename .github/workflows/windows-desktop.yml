@@ -6,6 +6,7 @@ on:
       - "desktop/windows/**"
       - "apps/web/**"
       - ".github/workflows/windows-desktop.yml"
+      - ".github/workflows/windows-release.yml"
   workflow_dispatch:
 
 permissions:
@@ -41,6 +42,7 @@ jobs:
           node --check desktop/windows/credential-store.cjs
           node --check desktop/windows/support-bundle.cjs
           node --check desktop/windows/update-policy.cjs
+          node --check desktop/windows/release-chain.cjs
           node --check desktop/windows/connection.js
 
       - name: Test desktop policy
@@ -52,10 +54,22 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
+      - name: Build and verify release bundle
+        shell: pwsh
+        run: |
+          $version = node -p "require('./desktop/windows/package.json').version"
+          $installer = "desktop/windows/dist/Cosmora-Setup-$version-x64.exe"
+          node desktop/windows/release-chain.cjs bundle --installer $installer --package desktop/windows/package.json --output desktop/windows/dist/release --git-sha "${{ github.event.pull_request.head.sha || github.sha }}"
+          node desktop/windows/release-chain.cjs verify --installer $installer --metadata desktop/windows/dist/release/release-metadata.json
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
           name: cosmora-windows-x64
-          path: desktop/windows/dist/Cosmora-Setup-*.exe
+          path: |
+            desktop/windows/dist/Cosmora-Setup-*.exe
+            desktop/windows/dist/Cosmora-Setup-*.exe.blockmap
+            desktop/windows/dist/release/release-metadata.json
+            desktop/windows/dist/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
