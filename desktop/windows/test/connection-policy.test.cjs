@@ -6,7 +6,9 @@ const {
   isAllowedRemoteNavigation,
   nextAvailableDownloadPath,
   normalizeServerOrigin,
-  safeDownloadFilename
+  retryDelayMs,
+  safeDownloadFilename,
+  safeLogUrl
 } = require("../connection-policy.cjs");
 
 test("allows HTTPS origins and loopback HTTP only", () => {
@@ -27,6 +29,21 @@ test("keeps in-app navigation on the connected origin", () => {
     true
   );
   assert.equal(isAllowedRemoteNavigation("https://example.com/", "https://cosmora.example"), false);
+});
+
+test("uses bounded reconnect backoff", () => {
+  assert.deepEqual(
+    [0, 1, 2, 3, 4, 5, 50].map((attempt) => retryDelayMs(attempt)),
+    [1000, 2000, 5000, 10000, 30000, 30000, 30000]
+  );
+});
+
+test("removes query parameters and fragments from diagnostic URLs", () => {
+  assert.equal(
+    safeLogUrl("https://user:secret@cosmora.example/projects/1?token=secret#result"),
+    "https://cosmora.example/projects/1"
+  );
+  assert.equal(safeLogUrl("not a url"), "<invalid-url>");
 });
 
 test("sanitizes downloads and avoids overwriting existing files", () => {
