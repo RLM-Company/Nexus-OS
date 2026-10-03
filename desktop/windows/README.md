@@ -134,7 +134,8 @@ For a production signed release, the separate manual `Windows signed release` wo
 protected `windows-release` environment. It requires explicit `SIGNED_RELEASE` confirmation,
 validates the requested package version, verifies Authenticode after signing, pins the expected
 certificate thumbprint and subject, requires Code Signing and Time Stamping EKUs, then generates
-`signature-metadata.json`, release metadata and the update manifest from the **signed** EXE. The resulting manifest is verified
+`signature-metadata.json` bound to the signed EXE's filename/size/SHA-256. The final verifier must
+match that identity against `release-metadata.json` before the signed bundle can be uploaded. The resulting manifest is verified
 against the signed installer's version, filename, byte size and SHA-256 before upload.
 
 PR workflows never receive signing credentials. See `desktop/windows/SIGNING.md` for the release
