@@ -23,6 +23,7 @@ const {
   transitionConnectionState
 } = require("./connection-state.cjs");
 const { serializeSupportBundle } = require("./support-bundle.cjs");
+const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
 const {
   MAX_MANIFEST_BYTES,
   updateManifestUrl,
@@ -64,7 +65,8 @@ let connectionState = CONNECTION_STATES.DISCONNECTED;
 let lastNetworkOnline = null;
 let updateCheckInFlight = false;
 
-const ownsSingleInstance = app.requestSingleInstanceLock();
+const smokeMode = isSmokeMode(process.argv);
+const ownsSingleInstance = smokeMode ? true : app.requestSingleInstanceLock();
 if (!ownsSingleInstance) {
   app.quit();
 }
@@ -1266,7 +1268,7 @@ app.on("child-process-gone", (_event, details) => {
   });
 });
 
-if (ownsSingleInstance) {
+if (ownsSingleInstance && !smokeMode) {
   app.on("second-instance", () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -1299,6 +1301,35 @@ function installPowerLifecycle() {
 
 app.whenReady().then(async () => {
   app.setAppUserModelId("com.cosmora.desktop");
+
+  if (smokeMode) {
+    try {
+      const payload = createSmokePayload({
+        version: app.getVersion(),
+        isPackaged: app.isPackaged,
+        execPath: process.execPath,
+        appPath: app.getAppPath(),
+        resourcesPath: process.resourcesPath,
+        platform: process.platform,
+        arch: process.arch
+      });
+      writeSmokeMarker({
+        outputPath: process.env.COSMORA_SMOKE_OUTPUT,
+        tempDir: os.tmpdir(),
+        payload
+      });
+      app.exit(0);
+    } catch (cause) {
+      process.stderr.write(
+        "Cosmora installer smoke mode failed: " +
+          (cause instanceof Error ? cause.message : String(cause)) +
+          "\n"
+      );
+      app.exit(2);
+    }
+    return;
+  }
+
   installPowerLifecycle();
   createMenu();
   await createMainWindow();
@@ -1306,6 +1337,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("activate", () => {
+  if (smokeMode) return;
   if (BrowserWindow.getAllWindows().length === 0) {
     void (async () => {
       await createMainWindow();
@@ -1317,7 +1349,7 @@ app.on("activate", () => {
 app.on("before-quit", () => {
   stopHeartbeat();
   cancelRecovery();
-  appendDiagnostic("application_stopping");
+  if (!smokeMode) appendDiagnostic("application_stopping");
 });
 
 app.on("window-all-closed", () => {
