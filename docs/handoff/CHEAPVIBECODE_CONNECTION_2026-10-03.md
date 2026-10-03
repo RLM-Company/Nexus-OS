@@ -65,10 +65,19 @@ installing another coding client is unnecessary.
 
 The owner authorized at most 100 RUB total for the initial top-up and trial, without a subscription
 or automatic top-ups. The minimum 100 RUB SBP top-up totals 103.50 RUB including commission and
-was not submitted. Lolz Market shows a 100 RUB total; two normal UI attempts, including one after
-reload, failed with `csrf check failed` before opening a payment page. No CSRF protection was
-bypassed, no payment succeeded and the balance remains zero. The live test remains blocked by
-funding; API-key existence alone is not a successful model response.
+was not submitted. Two initial Lolz Market UI attempts on the `www` portal, including one after
+reload, failed with `csrf check failed`. A later normal sign-in on `cheapvibecode.ru` succeeded,
+and its unchanged payment form created an unpaid 100 RUB invoice. The payment page requires an
+authenticated Lolz Market account; no such account was created. No CSRF protection was bypassed,
+no payment succeeded and the balance remains zero. The owner subsequently deferred funding.
+Live generation remains stopped; API-key existence alone is not a successful model response.
+
+The new credential and profile are also configured in the ignored local development `.env`,
+whose access is limited to the Windows owner and SYSTEM. The source secret scan excludes ignored
+private runtime files while still rejecting force-added credentials and staged secret content.
+The full Manager loop passed using the candidate's constraints and isolated loopback evidence;
+that fixture does not prove a paid provider response. See the
+[current launch checkpoint](COSMORA_LAUNCH_2026-10-03.md) for current operational evidence.
 
 The [service offer](https://www.cheapvibecode.ru/offer) prohibits resale of access and operation as
 a public proxy. A later public or paid Cosmora rollout requires reviewing the intended use against
