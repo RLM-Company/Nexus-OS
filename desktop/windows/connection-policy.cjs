@@ -3,6 +3,7 @@
 const path = require("node:path");
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 30000];
 
 function normalizeServerOrigin(value) {
   if (typeof value !== "string" || value.trim() === "") {
@@ -37,11 +38,48 @@ function isAllowedRemoteNavigation(value, origin) {
   if (!origin) return false;
   try {
     const parsed = new URL(value);
+    if (parsed.username || parsed.password) return false;
     return (
       (parsed.protocol === "https:" || parsed.protocol === "http:") && parsed.origin === origin
     );
   } catch {
     return false;
+  }
+}
+
+function safeExternalNavigationUrl(value) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    if (parsed.username || parsed.password) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedCredentialChallenge(value, origin, isProxy) {
+  if (!origin || isProxy) return false;
+  try {
+    const parsed = new URL(value);
+    if (parsed.username || parsed.password) return false;
+    return parsed.origin === origin;
+  } catch {
+    return false;
+  }
+}
+
+function retryDelayMs(attempt) {
+  const normalized = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
+  return RETRY_DELAYS_MS[Math.min(normalized, RETRY_DELAYS_MS.length - 1)];
+}
+
+function safeLogUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.origin + parsed.pathname;
+  } catch {
+    return "<invalid-url>";
   }
 }
 
@@ -52,7 +90,14 @@ function safeDownloadFilename(value) {
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
     .replace(/[. ]+$/g, "")
     .slice(0, 180);
-  return cleaned || fallback;
+  if (!cleaned) return fallback;
+
+  const deviceStem = cleaned.split(".")[0].toUpperCase();
+  if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(deviceStem)) {
+    return "_" + cleaned;
+  }
+
+  return cleaned;
 }
 
 function nextAvailableDownloadPath(directory, filename, existsSync) {
@@ -63,7 +108,7 @@ function nextAvailableDownloadPath(directory, filename, existsSync) {
   let suffix = 1;
 
   while (existsSync(candidate)) {
-    candidate = path.join(directory, `${stem} (${suffix})${extension}`);
+    candidate = path.join(directory, stem + " (" + suffix + ")" + extension);
     suffix += 1;
   }
 
@@ -71,8 +116,12 @@ function nextAvailableDownloadPath(directory, filename, existsSync) {
 }
 
 module.exports = {
+  isAllowedCredentialChallenge,
   isAllowedRemoteNavigation,
   nextAvailableDownloadPath,
   normalizeServerOrigin,
-  safeDownloadFilename
+  retryDelayMs,
+  safeDownloadFilename,
+  safeExternalNavigationUrl,
+  safeLogUrl
 };

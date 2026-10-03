@@ -119,6 +119,42 @@ input:focus {
   gap: 14px;
 }
 
+.remember {
+  grid-template-columns: 20px 1fr;
+  align-items: start;
+  gap: 10px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.remember input {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  padding: 0;
+}
+
+.remember span {
+  display: grid;
+  gap: 4px;
+  color: #303642;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.remember small {
+  color: #858c98;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.remember.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 button {
   min-height: 48px;
   border: 0;
