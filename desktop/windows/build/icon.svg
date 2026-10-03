@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cosmora">
+  <!-- Vector adaptation of apps/web/src/app/app-icon-art.tsx for native desktop packaging. -->
+  <defs>
+    <linearGradient id="cosmora-bg" x1="38" y1="8" x2="474" y2="506" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0b0c0f"/>
+      <stop offset="0.58" stop-color="#161329"/>
+      <stop offset="1" stop-color="#312768"/>
+    </linearGradient>
+    <filter id="cosmora-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#cosmora-bg)"/>
+
+  <rect
+    x="112"
+    y="112"
+    width="288"
+    height="288"
+    rx="92"
+    fill="#7152ff"
+    fill-opacity="0.2"
+    filter="url(#cosmora-glow)"
+  />
+
+  <rect
+    x="108"
+    y="108"
+    width="296"
+    height="296"
+    rx="95"
+    fill="#7f67ff"
+    fill-opacity="0.18"
+    stroke="#c3b9ff"
+    stroke-opacity="0.72"
+    stroke-width="10"
+  />
+
+  <path
+    d="M 335 184 C 314 160 286 148 256 148 C 196 148 148 196 148 256 C 148 316 196 364 256 364 C 286 364 314 352 335 328"
+    fill="none"
+    stroke="#f6f4ff"
+    stroke-width="44"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
