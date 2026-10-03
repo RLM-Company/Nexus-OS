@@ -2,10 +2,13 @@
 
 const { contextBridge, ipcRenderer } = require("electron");
 
+let lastReportedOnline = null;
+
 function reportNetworkStatus() {
-  ipcRenderer.send("cosmora:network-status", {
-    online: navigator.onLine === true
-  });
+  const online = navigator.onLine === true;
+  if (online === lastReportedOnline) return;
+  lastReportedOnline = online;
+  ipcRenderer.send("cosmora:network-status", { online });
 }
 
 window.addEventListener("online", reportNetworkStatus);
