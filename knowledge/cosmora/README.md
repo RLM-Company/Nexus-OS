@@ -172,13 +172,14 @@ The owner-approved Memory Constitution v1.1 explicitly says it is not runtime po
 Accordingly, the graph uses different relationship types:
 
 - `RUNTIME_GUARDED_BY` for rules backed by current validators;
-- `PARTIALLY_ENFORCED_BY` where only one subsystem implements part of the policy;
+- `PROPOSES_PARTIAL_ENFORCEMENT_IN` where an unmerged Intelligence Graph PR proposes partial enforcement;
 - `SPEC_ONLY_UNTIL_IMPLEMENTED` where the approved rule has no verified runtime enforcement yet.
 
 The current layer includes D0–D4 data classes, project isolation, data-only treatment for untrusted
 instructions, provenance constraints, versioned corrections and private-chat exclusion.
 
-`D4_PRIVATE_CHAT` is now rejected by the Intelligence Graph persistence validator itself in
-addition to the Manager runtime no-write-back guard. Deletion/trash behavior, global-owner-memory
+`D4_PRIVATE_CHAT` is already blocked from persistent write-back by the merged Manager runtime.
+The stricter Intelligence Graph snapshot-persistence rejection exists in open PR #269 and is stored
+as candidate knowledge until that change is merged. Deletion/trash behavior, global-owner-memory
 authorization, training-setting precedence, source transparency and memory-secret exclusion remain
 explicitly spec-only until their dedicated runtime paths exist.
