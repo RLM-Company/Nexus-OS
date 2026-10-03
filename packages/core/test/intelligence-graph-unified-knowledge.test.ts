@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(403);
-    expect(graph.records).toHaveLength(403);
-    expect(graph.edges).toHaveLength(1084);
+    expect(graph.nodes).toHaveLength(410);
+    expect(graph.records).toHaveLength(410);
+    expect(graph.edges).toHaveLength(1121);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      403
+      410
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1084
+      1121
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -680,6 +680,50 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "event-ci-fix-manager-demo-selector|VALIDATED_BY|evaluation-ci-1026-green"
+    );
+  });
+
+  it("maps Manager Work API to identity, work state and runtime control", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+
+    expect(pairs).toContain(
+      "entity-api-manager-work|REQUIRES_IDENTITY|entity-identity-session"
+    );
+    expect(pairs).toContain("entity-api-manager-work|MANAGES|entity-manager-work");
+    expect(pairs).toContain(
+      "entity-api-manager-work|CONTROLS_RUNTIME|artifact-manager-work-runtime"
+    );
+  });
+
+  it("maps General Chat API to persisted chat runtime and Model Gateway dispatch", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+
+    expect(pairs).toContain("entity-api-general-chat|MANAGES|entity-general-chat-runtime");
+    expect(pairs).toContain("entity-api-general-chat|DISPATCHES_TO|entity-model-gateway");
+    expect(pairs).toContain(
+      `entity-api-general-chat|VERIFIED_BY_TEST|${repositoryStructureFileId(
+        "apps/api/test/general-chat-api.test.ts"
+      )}`
+    );
+  });
+
+  it("keeps high-impact API mutations behind identity and step-up boundaries", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+
+    expect(pairs).toContain(
+      "entity-api-emergency-stop|REQUIRES_STEP_UP_FOR_CLEARANCE|entity-step-up-proof"
+    );
+    expect(pairs).toContain(
+      "entity-api-project-usage|REQUIRES_STEP_UP_FOR_EXPANSION|entity-step-up-proof"
+    );
+    expect(pairs).toContain(
+      "entity-api-autonomy-policy|REQUIRES_STEP_UP_FOR_ESCALATION|entity-step-up-proof"
+    );
+    expect(pairs).toContain(
+      "entity-api-autonomy-policy|ENFORCED_BY|entity-policy-engine"
     );
   });
 
