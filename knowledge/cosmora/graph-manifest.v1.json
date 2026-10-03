@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 403,
-    "edges": 1084,
-    "records": 403
+    "nodes": 410,
+    "edges": 1121,
+    "records": 410
   },
   "layers": [
     {
@@ -94,6 +94,12 @@
       "nodes": 20,
       "edges": 32,
       "authority": "verified_pr_work_history"
+    },
+    {
+      "id": "runtime_interface",
+      "nodes": 7,
+      "edges": 37,
+      "authority": "verified_api_source"
     }
   ],
   "primary_relation_types": [
@@ -141,7 +147,15 @@
     "FOUND_ISSUE",
     "RESOLVED_BY",
     "VALIDATED_BY",
-    "CONFIRMS_GREEN_GATE_FOR"
+    "CONFIRMS_GREEN_GATE_FOR",
+    "REQUIRES_IDENTITY",
+    "MANAGES",
+    "CONTROLS_RUNTIME",
+    "DISPATCHES_TO",
+    "REQUIRES_STEP_UP_FOR_CLEARANCE",
+    "REPORTS_STATUS_FOR",
+    "REQUIRES_STEP_UP_FOR_EXPANSION",
+    "REQUIRES_STEP_UP_FOR_ESCALATION"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -164,7 +178,8 @@
     "packages/core/test/fixtures/cosmora-product-history-graph.ts",
     "packages/core/test/fixtures/cosmora-agent-collaboration-graph.ts",
     "packages/core/test/fixtures/cosmora-runtime-safety-scenario-graph.ts",
-    "packages/core/test/fixtures/cosmora-ci-learning-graph.ts"
+    "packages/core/test/fixtures/cosmora-ci-learning-graph.ts",
+    "packages/core/test/fixtures/cosmora-runtime-interface-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
