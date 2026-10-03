@@ -4,15 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const {
-  app,
-  BrowserWindow,
-  ipcMain,
-  Menu,
-  safeStorage,
-  session,
-  shell
-} = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, safeStorage, session, shell } = require("electron");
 const { CredentialStore } = require("./credential-store.cjs");
 const {
   isAllowedRemoteNavigation,
@@ -463,12 +455,7 @@ function scheduleRecovery(reason) {
 }
 
 async function runRecovery(reason) {
-  if (
-    recoveryInFlight ||
-    !currentOrigin ||
-    !mainWindow ||
-    mainWindow.isDestroyed()
-  ) {
+  if (recoveryInFlight || !currentOrigin || !mainWindow || mainWindow.isDestroyed()) {
     return;
   }
 
@@ -653,13 +640,7 @@ function persistCredentialChoice(origin, username, password, rememberCredentials
   return { ok: true };
 }
 
-async function connectAndLoad({
-  origin,
-  username,
-  password,
-  rememberCredentials,
-  source
-}) {
+async function connectAndLoad({ origin, username, password, rememberCredentials, source }) {
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
   const probe = await probeServer(browserSession, origin, username, password);
 
@@ -672,12 +653,7 @@ async function connectAndLoad({
     return probe;
   }
 
-  const persisted = persistCredentialChoice(
-    origin,
-    username,
-    password,
-    rememberCredentials
-  );
+  const persisted = persistCredentialChoice(origin, username, password, rememberCredentials);
   if (!persisted.ok) return persisted;
 
   currentOrigin = origin;
