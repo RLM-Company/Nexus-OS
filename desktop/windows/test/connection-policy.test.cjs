@@ -29,6 +29,10 @@ test("keeps in-app navigation on the connected origin", () => {
     true
   );
   assert.equal(isAllowedRemoteNavigation("https://example.com/", "https://cosmora.example"), false);
+  assert.equal(
+    isAllowedRemoteNavigation("https://user:secret@cosmora.example/", "https://cosmora.example"),
+    false
+  );
 });
 
 test("uses bounded reconnect backoff", () => {
@@ -48,6 +52,7 @@ test("removes query parameters and fragments from diagnostic URLs", () => {
 
 test("sanitizes downloads and avoids overwriting existing files", () => {
   assert.equal(safeDownloadFilename('report<final>:"?.md'), "report_final____.md");
+  assert.equal(safeDownloadFilename("CON.txt"), "_CON.txt");
   const seen = new Set(["C:\\Downloads\\result.md", "C:\\Downloads\\result (1).md"]);
   const chosen = nextAvailableDownloadPath("C:\\Downloads", "result.md", (value) =>
     seen.has(value)
