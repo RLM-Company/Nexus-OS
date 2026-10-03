@@ -19,6 +19,7 @@ import { cosmoraAgentCollaborationGraph } from "./cosmora-agent-collaboration-gr
 import { cosmoraRuntimeSafetyScenarioGraph } from "./cosmora-runtime-safety-scenario-graph.js";
 import { cosmoraCiLearningGraph } from "./cosmora-ci-learning-graph.js";
 import { cosmoraRuntimeInterfaceGraph } from "./cosmora-runtime-interface-graph.js";
+import { cosmoraStatePersistenceGraph } from "./cosmora-state-persistence-graph.js";
 
 const recordedAt = "2026-09-29T20:00:00.000Z";
 
@@ -289,6 +290,7 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
   const runtimeSafetyScenarios = cosmoraRuntimeSafetyScenarioGraph();
   const ciLearning = cosmoraCiLearningGraph();
   const runtimeInterface = cosmoraRuntimeInterfaceGraph();
+  const statePersistence = cosmoraStatePersistenceGraph();
 
   const nodes = [
     ...semantic.nodes,
@@ -302,7 +304,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...agentCollaboration.nodes,
     ...runtimeSafetyScenarios.nodes,
     ...ciLearning.nodes,
-    ...runtimeInterface.nodes
+    ...runtimeInterface.nodes,
+    ...statePersistence.nodes
   ];
   const records = [
     ...semantic.records,
@@ -317,7 +320,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...agentCollaboration.records,
     ...runtimeSafetyScenarios.records,
     ...ciLearning.records,
-    ...runtimeInterface.records
+    ...runtimeInterface.records,
+    ...statePersistence.records
   ];
   const edges = [
     ...semantic.edges,
@@ -333,7 +337,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...agentCollaboration.edges,
     ...runtimeSafetyScenarios.edges,
     ...ciLearning.edges,
-    ...runtimeInterface.edges
+    ...runtimeInterface.edges,
+    ...statePersistence.edges
   ];
 
   const nodeKeys = nodes.map((node) => versionKey(node.node_id, node.node_version));
