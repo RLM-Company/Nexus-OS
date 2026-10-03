@@ -3,6 +3,7 @@
 const path = require("node:path");
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 30000];
 
 function normalizeServerOrigin(value) {
   if (typeof value !== "string" || value.trim() === "") {
@@ -45,6 +46,20 @@ function isAllowedRemoteNavigation(value, origin) {
   }
 }
 
+function retryDelayMs(attempt) {
+  const normalized = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
+  return RETRY_DELAYS_MS[Math.min(normalized, RETRY_DELAYS_MS.length - 1)];
+}
+
+function safeLogUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.origin + parsed.pathname;
+  } catch {
+    return "<invalid-url>";
+  }
+}
+
 function safeDownloadFilename(value) {
   const fallback = "cosmora-result";
   const source = typeof value === "string" && value.trim() ? value.trim() : fallback;
@@ -63,7 +78,7 @@ function nextAvailableDownloadPath(directory, filename, existsSync) {
   let suffix = 1;
 
   while (existsSync(candidate)) {
-    candidate = path.join(directory, `${stem} (${suffix})${extension}`);
+    candidate = path.join(directory, stem + " (" + suffix + ")" + extension);
     suffix += 1;
   }
 
@@ -74,5 +89,7 @@ module.exports = {
   isAllowedRemoteNavigation,
   nextAvailableDownloadPath,
   normalizeServerOrigin,
-  safeDownloadFilename
+  retryDelayMs,
+  safeDownloadFilename,
+  safeLogUrl
 };
