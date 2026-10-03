@@ -127,6 +127,28 @@ describe("Intelligence Graph deterministic kernel", () => {
     );
   });
 
+  it("rejects D4 private chat data from persistent graph snapshots", () => {
+    const privateClaim = node("private-claim", { sensitivity: "D4_PRIVATE_CHAT" });
+    const source = node("source-1", { kind: "Source" });
+    const privateRelation = edge("private-edge", privateClaim, source, {
+      sensitivity: "D4_PRIVATE_CHAT"
+    });
+
+    expect(
+      validateIntelligenceGraphSnapshot({
+        ownerId: "owner-1",
+        projectId: "project-1",
+        nodes: [privateClaim, source],
+        edges: [privateRelation]
+      })
+    ).toEqual(
+      expect.arrayContaining([
+        "Node private-claim@1 cannot persist D4 private chat data",
+        "Edge private-edge@1 cannot persist D4 private chat data"
+      ])
+    );
+  });
+
   it("requires explicit authorization before reading owner-global records", () => {
     const global = node("global", {
       kind: "Goal",
