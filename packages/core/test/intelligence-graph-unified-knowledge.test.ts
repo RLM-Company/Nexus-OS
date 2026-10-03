@@ -25,10 +25,10 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(graph.edges).toHaveLength(1154);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      416
+      417
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1152
+      1154
     );
 
     expect(() => createIndex()).not.toThrow();
