@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 434,
-    "edges": 1205,
-    "records": 434
+    "nodes": 448,
+    "edges": 1248,
+    "records": 448
   },
   "layers": [
     {
@@ -113,6 +113,13 @@
       "edges": 51,
       "authority": "verified_registry_and_router_evidence",
       "mode": "observe_recommend_only"
+    },
+    {
+      "id": "memory_governance",
+      "nodes": 14,
+      "edges": 43,
+      "authority": "owner_approved_spec_plus_runtime_guards",
+      "status_model": "spec_only_vs_runtime_guarded"
     }
   ],
   "primary_relation_types": [
@@ -191,7 +198,14 @@
     "CONFIRMS_ZERO_COST_BOOTSTRAP_FOR",
     "RESTRICTS_CONFIDENTIAL_USE_FOR",
     "MARKS_UNKNOWN_PRICING_FOR",
-    "SERVES_BOOTSTRAP_RUNTIME_FOR"
+    "SERVES_BOOTSTRAP_RUNTIME_FOR",
+    "SPECIFIED_BY",
+    "DEFINES_DATA_CLASS",
+    "SUBJECT_TO",
+    "RUNTIME_GUARDED_BY",
+    "PARTIALLY_ENFORCED_BY",
+    "SPEC_ONLY_UNTIL_IMPLEMENTED",
+    "EXCLUDED_FROM_TRAINING_BY"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -217,7 +231,8 @@
     "packages/core/test/fixtures/cosmora-ci-learning-graph.ts",
     "packages/core/test/fixtures/cosmora-runtime-interface-graph.ts",
     "packages/core/test/fixtures/cosmora-state-persistence-graph.ts",
-    "packages/core/test/fixtures/cosmora-model-intelligence-graph.ts"
+    "packages/core/test/fixtures/cosmora-model-intelligence-graph.ts",
+    "packages/core/test/fixtures/cosmora-memory-governance-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
