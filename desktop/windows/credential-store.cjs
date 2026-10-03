@@ -14,8 +14,8 @@ class CredentialStore {
     try {
       return Boolean(
         this.safeStorage &&
-          typeof this.safeStorage.isEncryptionAvailable === "function" &&
-          this.safeStorage.isEncryptionAvailable()
+        typeof this.safeStorage.isEncryptionAvailable === "function" &&
+        this.safeStorage.isEncryptionAvailable()
       );
     } catch {
       return false;
@@ -52,7 +52,9 @@ class CredentialStore {
       throw new Error("Windows protected credential storage is unavailable.");
     }
 
-    const encrypted = this.safeStorage.encryptString(JSON.stringify({ origin, username, password }));
+    const encrypted = this.safeStorage.encryptString(
+      JSON.stringify({ origin, username, password })
+    );
     const temporary = this.filePath + ".tmp";
 
     this.fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
