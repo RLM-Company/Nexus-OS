@@ -47,6 +47,28 @@ function isAllowedRemoteNavigation(value, origin) {
   }
 }
 
+function safeExternalNavigationUrl(value) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    if (parsed.username || parsed.password) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedCredentialChallenge(value, origin, isProxy) {
+  if (!origin || isProxy) return false;
+  try {
+    const parsed = new URL(value);
+    if (parsed.username || parsed.password) return false;
+    return parsed.origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 function retryDelayMs(attempt) {
   const normalized = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
   return RETRY_DELAYS_MS[Math.min(normalized, RETRY_DELAYS_MS.length - 1)];
@@ -70,8 +92,8 @@ function safeDownloadFilename(value) {
     .slice(0, 180);
   if (!cleaned) return fallback;
 
-  const stem = path.parse(cleaned).name.toUpperCase();
-  if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(stem)) {
+  const deviceStem = cleaned.split(".")[0].toUpperCase();
+  if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(deviceStem)) {
     return "_" + cleaned;
   }
 
@@ -94,10 +116,12 @@ function nextAvailableDownloadPath(directory, filename, existsSync) {
 }
 
 module.exports = {
+  isAllowedCredentialChallenge,
   isAllowedRemoteNavigation,
   nextAvailableDownloadPath,
   normalizeServerOrigin,
   retryDelayMs,
   safeDownloadFilename,
+  safeExternalNavigationUrl,
   safeLogUrl
 };
