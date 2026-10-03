@@ -55,9 +55,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(ids).toContain("entity-manager-work");
     expect(ids).toContain(repositoryStructureFileId("packages/db/src/manager-work-store.ts"));
 
-    const pairs = new Set(
-      packet.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(packet.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
     expect(pairs).toContain(
       "entity-store-manager-work|ENFORCES_IDEMPOTENCY_FOR|entity-manager-work"
     );
@@ -71,9 +69,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("keeps usage accounting uncertainty explicit in persistent state", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "entity-store-project-usage|PRESERVES_UNKNOWN_COST_FOR|entity-project-usage"
@@ -85,9 +81,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("maps identity and chat runtime stores to their safety invariants and tests", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "entity-store-identity|HASHES_SESSION_TOKEN_FOR|entity-identity-session"

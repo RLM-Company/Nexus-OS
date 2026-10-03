@@ -414,7 +414,6 @@ The correct growth strategy is:
 
 The 2M synthetic benchmark remains separate and should never be reported as 2M learned Cosmora facts.
 
-
 ## State & Persistence Graph
 
 The graph now includes **6** verified store entities and **31** persistence relationships.

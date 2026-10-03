@@ -134,7 +134,6 @@ identity boundary, domain state, Model Gateway or Policy/Step-up controls, and c
 
 Do not create bulk generic `RELATES_TO` edges to inflate graph density.
 
-
 ## State and persistence
 
 Persistent runtime state is explicit rather than inferred from file names. The graph maps Manager

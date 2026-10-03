@@ -324,7 +324,8 @@ const records: IntelligenceGraphSearchRecord[] = [
   {
     node: { id: "entity-store-manager-work", version: 1 },
     text: "Manager Work persistent store idempotency optimistic version recovery no replay",
-    excerpt: "Manager work state uses client request idempotency, optimistic versioning and fail-closed recovery.",
+    excerpt:
+      "Manager work state uses client request idempotency, optimistic versioning and fail-closed recovery.",
     estimated_tokens: 20
   },
   {
@@ -336,25 +337,29 @@ const records: IntelligenceGraphSearchRecord[] = [
   {
     node: { id: "entity-store-identity", version: 1 },
     text: "identity session store owner scoped token hash revocation assurance expiry",
-    excerpt: "Identity store persists owner-scoped sessions and stores hashed session-token evidence.",
+    excerpt:
+      "Identity store persists owner-scoped sessions and stores hashed session-token evidence.",
     estimated_tokens: 18
   },
   {
     node: { id: "entity-store-policy", version: 1 },
     text: "policy store operation idempotency decision trace recovery required",
-    excerpt: "Policy store persists exact-intent operations, decision traces and recovery-required operations.",
+    excerpt:
+      "Policy store persists exact-intent operations, decision traces and recovery-required operations.",
     estimated_tokens: 18
   },
   {
     node: { id: "entity-store-agent-blueprint", version: 1 },
     text: "agent blueprint store project scoped versioned composition grant memory scope",
-    excerpt: "Agent blueprints are versioned, owner/project scoped and validated before persistence.",
+    excerpt:
+      "Agent blueprints are versioned, owner/project scoped and validated before persistence.",
     estimated_tokens: 18
   },
   {
     node: { id: "entity-store-general-chat-runtime", version: 1 },
     text: "general chat runtime store atomic queued run claim duplicate execution guard",
-    excerpt: "Runtime store atomically claims queued chat runs and guards against duplicate execution.",
+    excerpt:
+      "Runtime store atomically claims queued chat runs and guards against duplicate execution.",
     estimated_tokens: 18
   }
 ];
