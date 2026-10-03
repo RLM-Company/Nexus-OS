@@ -150,6 +150,33 @@ function validateManifestAgainstRelease(manifest, metadata) {
   return validatedManifest;
 }
 
+function validateSignatureAgainstRelease(signatureMetadata, metadata) {
+  const release = validateReleaseMetadata(metadata);
+  if (!signatureMetadata || typeof signatureMetadata !== "object" || Array.isArray(signatureMetadata)) {
+    throw new Error("Signature metadata must be an object.");
+  }
+  if (signatureMetadata.schemaVersion !== 1 || signatureMetadata.authenticodeStatus !== "Valid") {
+    throw new Error("Signature metadata is not a valid verified signature record.");
+  }
+  const artifact = signatureMetadata.artifact;
+  if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
+    throw new Error("Signature metadata does not contain installer identity.");
+  }
+  if (artifact.filename !== release.filename) {
+    throw new Error("Signature metadata filename does not match release metadata.");
+  }
+  if (artifact.sizeBytes !== release.sizeBytes) {
+    throw new Error("Signature metadata size does not match release metadata.");
+  }
+  if (
+    typeof artifact.sha256 !== "string" ||
+    artifact.sha256.toLowerCase() !== release.sha256
+  ) {
+    throw new Error("Signature metadata SHA-256 does not match release metadata.");
+  }
+  return signatureMetadata;
+}
+
 function buildUpdateManifest({ metadata, releasePageUrl, downloadUrl, publishedAt, notes = "" }) {
   const release = validateReleaseMetadata(metadata);
   const manifest = {
@@ -255,6 +282,10 @@ function runCli(argv) {
       const manifest = JSON.parse(fs.readFileSync(values.manifest, "utf8"));
       validateManifestAgainstRelease(manifest, release);
     }
+    if (values.signature) {
+      const signature = JSON.parse(fs.readFileSync(values.signature, "utf8"));
+      validateSignatureAgainstRelease(signature, release);
+    }
 
     process.stdout.write(stableJson(release));
     return;
@@ -282,6 +313,7 @@ module.exports = {
   stableJson,
   validateManifestAgainstRelease,
   validateReleaseMetadata,
+  validateSignatureAgainstRelease,
   verifyInstallerAgainstMetadata,
   writeReleaseBundle
 };
