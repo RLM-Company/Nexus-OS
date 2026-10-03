@@ -24,6 +24,11 @@ const {
 } = require("./connection-state.cjs");
 const { serializeSupportBundle } = require("./support-bundle.cjs");
 const {
+  MAX_MANIFEST_BYTES,
+  updateManifestUrl,
+  validateUpdateManifest
+} = require("./update-policy.cjs");
+const {
   isAllowedCredentialChallenge,
   isAllowedRemoteNavigation,
   nextAvailableDownloadPath,
@@ -39,6 +44,7 @@ const CONNECTION_FILE = "connection.json";
 const CREDENTIAL_FILE = "credentials.bin";
 const DIAGNOSTIC_FILE = "cosmora-desktop.log";
 const HEALTH_TIMEOUT_MS = 6000;
+const UPDATE_CHECK_TIMEOUT_MS = 8000;
 const HEARTBEAT_INTERVAL_MS = 30000;
 const MAX_DIAGNOSTIC_BYTES = 1024 * 1024;
 const KEEP_DIAGNOSTIC_BYTES = 512 * 1024;
@@ -56,6 +62,7 @@ let recoveryInFlight = false;
 let connectionInFlight = false;
 let connectionState = CONNECTION_STATES.DISCONNECTED;
 let lastNetworkOnline = null;
+let updateCheckInFlight = false;
 
 const ownsSingleInstance = app.requestSingleInstanceLock();
 if (!ownsSingleInstance) {
@@ -617,6 +624,288 @@ async function exportSupportBundle() {
   }
 }
 
+async function readResponseTextWithLimit(response, maxBytes) {
+  const declaredLength = response.headers.get("content-length");
+  if (declaredLength) {
+    const declaredBytes = Number(declaredLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
+      throw new Error("Update manifest exceeds the allowed size.");
+    }
+  }
+
+  if (!response.body || typeof response.body.getReader !== "function") {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > maxBytes) {
+      throw new Error("Update manifest exceeds the allowed size.");
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = Buffer.from(value);
+      totalBytes += chunk.length;
+      if (totalBytes > maxBytes) {
+        try {
+          await reader.cancel();
+        } catch {
+          // Best effort cancellation after the size limit is exceeded.
+        }
+        throw new Error("Update manifest exceeds the allowed size.");
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    if (typeof reader.releaseLock === "function") reader.releaseLock();
+  }
+
+  return Buffer.concat(chunks, totalBytes).toString("utf8");
+}
+
+async function fetchDesktopUpdate(origin) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
+  const credentials =
+    runtimeCredentials && runtimeCredentials.origin === origin
+      ? runtimeCredentials
+      : { username: "", password: "" };
+
+  try {
+    const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
+    const response = await browserSession.fetch(updateManifestUrl(origin), {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+      redirect: "manual",
+      headers: credentialHeader(credentials.username, credentials.password),
+      signal: controller.signal
+    });
+
+    if (response.status === 404) {
+      return {
+        ok: false,
+        code: "not_configured",
+        message: "Канал обновлений пока не настроен на этом сервере Cosmora."
+      };
+    }
+    if (response.status === 401 || response.status === 403) {
+      return {
+        ok: false,
+        code: "auth",
+        message: "Сервер не разрешил проверить обновления для текущей сессии."
+      };
+    }
+    if (response.status >= 300 && response.status < 400) {
+      return {
+        ok: false,
+        code: "redirect",
+        message: "Сервер попытался перенаправить запрос обновлений."
+      };
+    }
+    if (!response.ok) {
+      return {
+        ok: false,
+        code: "http",
+        message: "Проверка обновлений завершилась ошибкой HTTP " + response.status + "."
+      };
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!/application\/(?:[a-z0-9.+-]*\+)?json\b/i.test(contentType)) {
+      return {
+        ok: false,
+        code: "format",
+        message: "Сервер обновлений вернул неожиданный формат данных."
+      };
+    }
+
+    let raw;
+    try {
+      raw = await readResponseTextWithLimit(response, MAX_MANIFEST_BYTES);
+    } catch (cause) {
+      return {
+        ok: false,
+        code: "too_large",
+        message:
+          cause instanceof Error ? cause.message : "Манифест обновления превышает допустимый размер."
+      };
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return {
+        ok: false,
+        code: "invalid_json",
+        message: "Сервер обновлений вернул повреждённый JSON."
+      };
+    }
+
+    try {
+      return {
+        ok: true,
+        manifest: validateUpdateManifest(parsed, app.getVersion())
+      };
+    } catch (cause) {
+      appendDiagnostic("update_manifest_rejected", {
+        reason: cause instanceof Error ? cause.message.slice(0, 160) : "invalid"
+      });
+      return {
+        ok: false,
+        code: "invalid_manifest",
+        message: "Манифест обновления не прошёл проверку безопасности."
+      };
+    }
+  } catch (cause) {
+    if (cause && cause.name === "AbortError") {
+      return {
+        ok: false,
+        code: "timeout",
+        message: "Сервер обновлений не ответил за 8 секунд."
+      };
+    }
+    return {
+      ok: false,
+      code: "network",
+      message: "Не удалось проверить обновления. Проверьте сеть и подключение к Cosmora."
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function showAboutDialog() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  await dialog.showMessageBox(mainWindow, {
+    type: "info",
+    title: "О Cosmora",
+    message: "Cosmora for Windows " + app.getVersion(),
+    detail:
+      "Electron " +
+      (process.versions.electron || "unknown") +
+      "\nСостояние соединения: " +
+      connectionState +
+      "\nОбновления: только ручная проверка; автоматическая установка отключена."
+  });
+}
+
+async function checkForDesktopUpdate() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  if (updateCheckInFlight) {
+    await dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "Cosmora",
+      message: "Проверка обновлений уже выполняется."
+    });
+    return;
+  }
+
+  if (!currentOrigin) {
+    await dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "Cosmora",
+      message: "Сначала подключитесь к серверу Cosmora."
+    });
+    return;
+  }
+
+  if (connectionInFlight || recoveryInFlight) {
+    await dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "Cosmora",
+      message: "Дождитесь завершения подключения или восстановления соединения."
+    });
+    return;
+  }
+
+  updateCheckInFlight = true;
+  const origin = currentOrigin;
+  appendDiagnostic("update_check_started", {
+    currentVersion: app.getVersion()
+  });
+
+  try {
+    const result = await fetchDesktopUpdate(origin);
+    if (currentOrigin !== origin) {
+      appendDiagnostic("update_check_discarded", { reason: "connection_changed" });
+      return;
+    }
+
+    if (!result.ok) {
+      appendDiagnostic("update_check_failed", { code: result.code });
+      await dialog.showMessageBox(mainWindow, {
+        type: result.code === "not_configured" ? "info" : "warning",
+        title: "Обновления Cosmora",
+        message: result.message
+      });
+      return;
+    }
+
+    const manifest = result.manifest;
+    if (!manifest.updateAvailable) {
+      appendDiagnostic("update_check_current", {
+        currentVersion: app.getVersion(),
+        manifestVersion: manifest.version
+      });
+      await dialog.showMessageBox(mainWindow, {
+        type: "info",
+        title: "Обновления Cosmora",
+        message: "Установлена актуальная версия Cosmora.",
+        detail: "Текущая версия: " + app.getVersion()
+      });
+      return;
+    }
+
+    appendDiagnostic("update_available", {
+      currentVersion: app.getVersion(),
+      availableVersion: manifest.version,
+      installerMetadataPresent: Boolean(manifest.downloadUrl)
+    });
+
+    const detail = [
+      "Текущая версия: " + app.getVersion(),
+      "Доступна версия: " + manifest.version,
+      "Опубликована: " + manifest.publishedAt.slice(0, 10),
+      manifest.notes ? "\n" + manifest.notes : "",
+      "\nCosmora не скачивает и не запускает обновление автоматически."
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const choice = await dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "Обновление Cosmora",
+      message: "Доступна новая версия.",
+      detail,
+      buttons: ["Позже", "Открыть страницу релиза"],
+      defaultId: 0,
+      cancelId: 0
+    });
+
+    if (choice.response === 1) {
+      const releasePage = safeExternalNavigationUrl(manifest.releasePageUrl);
+      if (releasePage && releasePage.startsWith("https://")) {
+        appendDiagnostic("update_release_page_opened", {
+          availableVersion: manifest.version
+        });
+        void shell.openExternal(releasePage);
+      }
+    }
+  } finally {
+    updateCheckInFlight = false;
+  }
+}
+
 function createMenu() {
   const template = [
     {
@@ -627,6 +916,12 @@ function createMenu() {
           accelerator: "Ctrl+Shift+K",
           click: () => {
             void showConnection();
+          }
+        },
+        {
+          label: "Проверить обновления…",
+          click: () => {
+            void checkForDesktopUpdate();
           }
         },
         {
@@ -644,6 +939,12 @@ function createMenu() {
           }
         },
         { type: "separator" },
+        {
+          label: "О Cosmora",
+          click: () => {
+            void showAboutDialog();
+          }
+        },
         { role: "quit", label: "Выход" }
       ]
     },
