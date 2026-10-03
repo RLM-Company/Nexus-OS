@@ -4,10 +4,10 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.7.0** adds an end-to-end NSIS installer lifecycle check on top of the 0.6.0 signing
-trust chain. CI now installs the generated EXE into a clean temporary directory, launches the
-installed packaged application in a no-network smoke mode, verifies its packaged identity, then
-silently uninstalls it and requires the installation directory to disappear.
+Version **0.8.0** gives the Windows package native Cosmora identity on top of the 0.7.0 installer
+lifecycle checks. The desktop build now uses a vector adaptation of the existing web app icon art
+instead of the default Electron icon, and CI fails if electron-builder ever falls back to Electron's
+default branding.
 
 ## Runtime model
 
@@ -142,6 +142,20 @@ against the signed installer's version, filename, byte size and SHA-256 before u
 PR workflows never receive signing credentials. See `desktop/windows/SIGNING.md` for the release
 contract.
 
+## Native Windows identity
+
+The master desktop icon is `desktop/windows/build/icon.svg`. It is a vector adaptation of the
+existing `apps/web/src/app/app-icon-art.tsx`: the same dark purple gradient, translucent violet
+rounded frame and light Cosmora `C` mark.
+
+electron-builder 26 accepts SVG as a Windows icon source and converts it into the native resources
+used by the executable and installer. The Windows configuration pins `win.icon` to this SVG instead
+of relying on implicit discovery.
+
+The Windows and signed-release workflows capture electron-builder output and fail if the builder
+reports `default Electron icon is used`. Unit tests also require the configured SVG and its core
+Cosmora color/shape contract to remain present.
+
 ## Installer lifecycle smoke test
 
 The ordinary Windows workflow validates more than the existence of an NSIS file. After the installer
@@ -217,9 +231,9 @@ node --test desktop/windows/test/*.test.cjs
 
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
-validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, packaged smoke-mode
-policy, support-bundle redaction, diagnostic URL redaction, download filenames and protected
-credential persistence. The
+validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, native identity
+configuration, packaged smoke-mode policy, support-bundle redaction, diagnostic URL redaction,
+download filenames and protected credential persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
 building the installer.
 
@@ -236,7 +250,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.7.0-x64.exe`.
+`Cosmora-Setup-0.8.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
