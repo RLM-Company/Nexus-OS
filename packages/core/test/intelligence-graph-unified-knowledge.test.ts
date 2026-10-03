@@ -55,12 +55,8 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(ids).toContain("entity-model-registry");
     expect(ids).toContain("doc-model-registry-bootstrap-v1");
 
-    const pairs = new Set(
-      packet.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
-    expect(pairs).toContain(
-      "model-version-mock-manager-b0-1|REGISTERED_IN|entity-model-registry"
-    );
+    const pairs = new Set(packet.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    expect(pairs).toContain("model-version-mock-manager-b0-1|REGISTERED_IN|entity-model-registry");
     expect(pairs).toContain(
       "evaluation-model-bootstrap-streaming|CONFIRMS_CAPABILITY_FOR|model-version-mock-manager-b0-1"
     );
@@ -106,9 +102,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("keeps Model Intelligence recommendations outside routing authority", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "entity-model-intelligence-graph|CONSTRAINED_BY|claim-model-intelligence-recommend-only"
@@ -123,15 +117,11 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("grounds model routing evaluations in the real Router and runtime tests", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
     const routerTest = repositoryStructureFileId("packages/model-gateway/test/router.test.ts");
     const runtimeTest = repositoryStructureFileId("apps/api/test/model-runtime.test.ts");
 
-    expect(pairs).toContain(
-      `evaluation-model-router-hard-filter|VERIFIED_BY_TEST|${routerTest}`
-    );
+    expect(pairs).toContain(`evaluation-model-router-hard-filter|VERIFIED_BY_TEST|${routerTest}`);
     expect(pairs).toContain(
       `evaluation-model-router-deterministic-score|VERIFIED_BY_TEST|${routerTest}`
     );

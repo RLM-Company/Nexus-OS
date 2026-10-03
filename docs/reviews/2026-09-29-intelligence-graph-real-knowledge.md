@@ -431,7 +431,6 @@ It records:
 Each store is connected to its exact source file, and where dedicated regression coverage exists, to
 the corresponding test file.
 
-
 ## Model Intelligence Graph
 
 The unified graph now includes **17** Model Intelligence nodes and **51** evidence-grounded

@@ -45,7 +45,8 @@ const node = (input: {
 const modelIntelligence = node({
   id: "entity-model-intelligence-graph",
   kind: "Entity",
-  location: "docs/decisions/ADR-004-intelligence-graph-foundation.md:Model Intelligence Graph contract",
+  location:
+    "docs/decisions/ADR-004-intelligence-graph-foundation.md:Model Intelligence Graph contract",
   validFrom: "2026-09-28T00:00:00.000Z"
 });
 
@@ -87,7 +88,8 @@ const vibecodeClaude = node({
 const recommendOnly = node({
   id: "claim-model-intelligence-recommend-only",
   kind: "Claim",
-  location: "docs/decisions/ADR-004-intelligence-graph-foundation.md:Model Intelligence Graph contract",
+  location:
+    "docs/decisions/ADR-004-intelligence-graph-foundation.md:Model Intelligence Graph contract",
   validFrom: "2026-09-28T00:00:00.000Z"
 });
 
@@ -192,7 +194,8 @@ const edges: IntelligenceGraphEdge[] = [
     type: "OBSERVES",
     from: modelIntelligence.node_id,
     to: "entity-model-registry",
-    location: "docs/decisions/ADR-004-intelligence-graph-foundation.md:Model Registry remains authority"
+    location:
+      "docs/decisions/ADR-004-intelligence-graph-foundation.md:Model Registry remains authority"
   }),
   edge({
     id: "model-intelligence-observes-router",
@@ -220,14 +223,16 @@ const edges: IntelligenceGraphEdge[] = [
     type: "NOT_AUTHORITY_FOR",
     from: recommendOnly.node_id,
     to: "entity-model-registry",
-    location: "docs/decisions/ADR-004-intelligence-graph-foundation.md:Model Registry remains authority"
+    location:
+      "docs/decisions/ADR-004-intelligence-graph-foundation.md:Model Registry remains authority"
   }),
   edge({
     id: "model-intelligence-not-router-authority",
     type: "NOT_AUTHORITY_FOR",
     from: recommendOnly.node_id,
     to: "entity-router",
-    location: "docs/decisions/ADR-004-intelligence-graph-foundation.md:Router must not treat evaluation as permission"
+    location:
+      "docs/decisions/ADR-004-intelligence-graph-foundation.md:Router must not treat evaluation as permission"
   }),
   edge({
     id: "model-bootstrap-registered-in",
@@ -304,7 +309,8 @@ const edges: IntelligenceGraphEdge[] = [
     type: "CONFIRMS_CONFIDENTIAL_COMPATIBILITY_FOR",
     from: "evaluation-model-bootstrap-confidential",
     to: bootstrapModel.node_id,
-    location: "config/model-registry.v1.json:confidential_compatible=true;training_usage=none;retention=zero"
+    location:
+      "config/model-registry.v1.json:confidential_compatible=true;training_usage=none;retention=zero"
   }),
   edge({
     id: "model-confidential-uses-registry-document",
@@ -346,7 +352,8 @@ const edges: IntelligenceGraphEdge[] = [
     type: "VERIFIED_BY_TEST",
     from: "evaluation-model-router-hard-filter",
     to: routerTest,
-    location: "packages/model-gateway/test/router.test.ts:capability/confidential/context/budget failures"
+    location:
+      "packages/model-gateway/test/router.test.ts:capability/confidential/context/budget failures"
   }),
   edge({
     id: "model-score-evaluates-router",
@@ -360,7 +367,8 @@ const edges: IntelligenceGraphEdge[] = [
     type: "VERIFIED_BY_TEST",
     from: "evaluation-model-router-deterministic-score",
     to: routerTest,
-    location: "packages/model-gateway/test/router.test.ts:selects deterministically by quality latency and cost"
+    location:
+      "packages/model-gateway/test/router.test.ts:selects deterministically by quality latency and cost"
   }),
   edge({
     id: "model-runtime-binding-evaluates-gateway",
@@ -381,7 +389,8 @@ const edges: IntelligenceGraphEdge[] = [
     type: "VERIFIED_BY_TEST",
     from: "evaluation-model-runtime-registry-binding",
     to: runtimeTest,
-    location: "apps/api/test/model-runtime.test.ts:binds external adapter only to an active registry route"
+    location:
+      "apps/api/test/model-runtime.test.ts:binds external adapter only to an active registry route"
   }),
   edge({
     id: "model-intelligence-observes-vibecode-gpt",
@@ -541,7 +550,8 @@ const edges: IntelligenceGraphEdge[] = [
     type: "RESTRICTS_CONFIDENTIAL_USE_FOR",
     from: "evaluation-model-vibecode-nonconfidential",
     to: vibecodeClaude.node_id,
-    location: "config/model-registry.vibecode.v1.json:claude-sonnet-5:confidential_compatible=false",
+    location:
+      "config/model-registry.vibecode.v1.json:claude-sonnet-5:confidential_compatible=false",
     validFrom: ownerPreviewGeneratedAt,
     validTo: ownerPreviewValidUntil
   }),
@@ -577,7 +587,8 @@ const edges: IntelligenceGraphEdge[] = [
     type: "USES_EVIDENCE_FROM",
     from: "evaluation-model-runtime-registry-binding",
     to: ownerPreviewRegistryDocument.node_id,
-    location: "apps/api/test/model-runtime.test.ts:MODEL_REGISTRY_PATH=config/model-registry.vibecode.v1.json",
+    location:
+      "apps/api/test/model-runtime.test.ts:MODEL_REGISTRY_PATH=config/model-registry.vibecode.v1.json",
     validFrom: ownerPreviewGeneratedAt,
     validTo: ownerPreviewValidUntil
   }),

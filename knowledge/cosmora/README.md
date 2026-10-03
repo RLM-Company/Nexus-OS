@@ -144,7 +144,6 @@ State-specific invariants include idempotency, optimistic versioning, fail-close
 automatic replay, unknown-cost preservation, owner/project scoping, session-token hashing and atomic
 queued-run claims. Agent Blueprint persistence is modeled separately from runtime Agent Instance state.
 
-
 ## Model Intelligence
 
 Model Intelligence is **observe/recommend-only**. It never activates a route and never replaces the
