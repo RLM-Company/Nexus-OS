@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 410,
-    "edges": 1121,
-    "records": 410
+    "nodes": 416,
+    "edges": 1152,
+    "records": 416
   },
   "layers": [
     {
@@ -100,6 +100,12 @@
       "nodes": 7,
       "edges": 37,
       "authority": "verified_api_source"
+    },
+    {
+      "id": "state_persistence",
+      "nodes": 6,
+      "edges": 31,
+      "authority": "verified_persistence_source"
     }
   ],
   "primary_relation_types": [
@@ -155,7 +161,19 @@
     "REQUIRES_STEP_UP_FOR_CLEARANCE",
     "REPORTS_STATUS_FOR",
     "REQUIRES_STEP_UP_FOR_EXPANSION",
-    "REQUIRES_STEP_UP_FOR_ESCALATION"
+    "REQUIRES_STEP_UP_FOR_ESCALATION",
+    "PERSISTS",
+    "ENFORCES_IDEMPOTENCY_FOR",
+    "USES_OPTIMISTIC_VERSIONING_FOR",
+    "RECOVERS_WITHOUT_AUTOMATIC_REPLAY",
+    "PRESERVES_UNKNOWN_COST_FOR",
+    "HASHES_SESSION_TOKEN_FOR",
+    "OWNER_SCOPES",
+    "PROJECT_SCOPES",
+    "PERSISTS_DECISION_TRACE_FOR",
+    "EXPOSES_RECOVERY_REQUIRED_FOR",
+    "ATOMICALLY_CLAIMS",
+    "PREVENTS_DUPLICATE_EXECUTION_FOR"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -179,7 +197,8 @@
     "packages/core/test/fixtures/cosmora-agent-collaboration-graph.ts",
     "packages/core/test/fixtures/cosmora-runtime-safety-scenario-graph.ts",
     "packages/core/test/fixtures/cosmora-ci-learning-graph.ts",
-    "packages/core/test/fixtures/cosmora-runtime-interface-graph.ts"
+    "packages/core/test/fixtures/cosmora-runtime-interface-graph.ts",
+    "packages/core/test/fixtures/cosmora-state-persistence-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
