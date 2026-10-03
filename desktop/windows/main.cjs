@@ -7,10 +7,12 @@ const { pathToFileURL } = require("node:url");
 const { app, BrowserWindow, ipcMain, Menu, safeStorage, session, shell } = require("electron");
 const { CredentialStore } = require("./credential-store.cjs");
 const {
+  isAllowedCredentialChallenge,
   isAllowedRemoteNavigation,
   nextAvailableDownloadPath,
   normalizeServerOrigin,
   retryDelayMs,
+  safeExternalNavigationUrl,
   safeLogUrl
 } = require("./connection-policy.cjs");
 
@@ -249,18 +251,9 @@ async function hashFileSha256(filePath) {
 
 function installDownloadPolicy(browserSession) {
   browserSession.on("will-download", (event, item) => {
-    let downloadOrigin;
-    try {
-      downloadOrigin = new URL(item.getURL()).origin;
-    } catch {
+    if (!isAllowedRemoteNavigation(item.getURL(), currentOrigin)) {
       event.preventDefault();
-      appendDiagnostic("download_blocked", { reason: "invalid_url" });
-      return;
-    }
-
-    if (!currentOrigin || downloadOrigin !== currentOrigin) {
-      event.preventDefault();
-      appendDiagnostic("download_blocked", { reason: "cross_origin" });
+      appendDiagnostic("download_blocked", { reason: "untrusted_url" });
       return;
     }
 
@@ -308,8 +301,9 @@ function installNavigationGuards(window) {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedRemoteNavigation(url, currentOrigin)) {
       void window.loadURL(url);
-    } else if (/^https?:/i.test(url)) {
-      void shell.openExternal(url);
+    } else {
+      const externalUrl = safeExternalNavigationUrl(url);
+      if (externalUrl) void shell.openExternal(externalUrl);
     }
     return { action: "deny" };
   });
@@ -318,7 +312,8 @@ function installNavigationGuards(window) {
     if (url === localConnectionUrl() || isAllowedRemoteNavigation(url, currentOrigin)) return;
     event.preventDefault();
     appendDiagnostic("navigation_blocked", { url: safeLogUrl(url) });
-    if (/^https?:/i.test(url)) void shell.openExternal(url);
+    const externalUrl = safeExternalNavigationUrl(url);
+    if (externalUrl) void shell.openExternal(externalUrl);
   });
 
   window.webContents.on("will-redirect", (event, url) => {
@@ -769,17 +764,20 @@ ipcMain.handle("cosmora:connect", async (event, payload) => {
   }
 });
 
-app.on("login", (event, webContents, details, _authInfo, callback) => {
+app.on("login", (event, webContents, details, authInfo, callback) => {
   if (!webContents || !currentOrigin) return;
-
-  let requestOrigin;
-  try {
-    requestOrigin = new URL(details.url).origin;
-  } catch {
+  if (!mainWindow || mainWindow.isDestroyed() || webContents.id !== mainWindow.webContents.id) {
     return;
   }
 
-  if (requestOrigin !== currentOrigin) return;
+  if (authInfo?.isProxy) {
+    event.preventDefault();
+    appendDiagnostic("proxy_auth_declined");
+    callback();
+    return;
+  }
+
+  if (!isAllowedCredentialChallenge(details.url, currentOrigin, false)) return;
 
   event.preventDefault();
   if (
