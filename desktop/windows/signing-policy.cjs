@@ -11,7 +11,7 @@ const TIMESTAMPING_EKU = "1.3.6.1.5.5.7.3.8";
 function normalizeThumbprint(value) {
   if (typeof value !== "string") return null;
   const normalized = value.replace(/[^a-f0-9]/gi, "").toUpperCase();
-  return /^[A-F0-9]{40,128}$/.test(normalized) ? normalized : null;
+  return /^(?:[A-F0-9]{2}){20,64}$/.test(normalized) ? normalized : null;
 }
 
 function normalizeSubject(value) {
