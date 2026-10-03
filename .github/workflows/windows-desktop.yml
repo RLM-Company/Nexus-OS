@@ -54,7 +54,16 @@ jobs:
         working-directory: desktop/windows
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
+        shell: pwsh
+        run: |
+          npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never 2>&1 |
+            Tee-Object -FilePath electron-builder.log
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          if (Select-String -Path electron-builder.log -SimpleMatch "default Electron icon is used") {
+            throw "Windows build fell back to the default Electron icon."
+          }
 
       - name: Smoke test installed NSIS lifecycle
         shell: pwsh
