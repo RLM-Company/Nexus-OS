@@ -129,11 +129,12 @@ $versionInfo = (Get-Item $app).VersionInfo
 if ([string]$versionInfo.ProductName -ne "Cosmora") {
   throw "Installed executable ProductName is not Cosmora."
 }
+$versionPattern = "^$([regex]::Escape($Version))(?:\.0)?$"
 if (
-  [string]$versionInfo.ProductVersion -ne $Version -and
-  [string]$versionInfo.FileVersion -ne $Version
+  [string]$versionInfo.ProductVersion -notmatch $versionPattern -and
+  [string]$versionInfo.FileVersion -notmatch $versionPattern
 ) {
-  throw "Installed executable version metadata does not include $Version."
+  throw "Installed executable version metadata does not match $Version."
 }
 
 $env:COSMORA_SMOKE_OUTPUT = $marker
