@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **416 nodes**;
-- **1152 typed edges**;
+- **417 nodes**;
+- **1154 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -416,7 +416,7 @@ The 2M synthetic benchmark remains separate and should never be reported as 2M l
 
 ## State & Persistence Graph
 
-The graph now includes **6** verified store entities and **31** persistence relationships.
+The graph now includes **6** verified store entities, **1** explicit Agent Blueprint concept and **33** persistence relationships.
 
 It records:
 
@@ -425,7 +425,7 @@ It records:
 - project Usage Ledger persistence, versioned limits and preservation of unknown cost;
 - owner-scoped Identity sessions with hashed token evidence;
 - Policy operation idempotency, decision traces and recovery-required operations;
-- versioned, project-bound Agent Blueprint persistence;
+- versioned, project-bound Agent Blueprint persistence, explicitly distinct from runtime Agent Instance state;
 - General Chat atomic queued-run claim and duplicate-execution guard.
 
 Each store is connected to its exact source file, and where dedicated regression coverage exists, to
