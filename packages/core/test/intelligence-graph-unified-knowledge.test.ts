@@ -20,21 +20,21 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(428);
-    expect(graph.records).toHaveLength(428);
-    expect(graph.edges).toHaveLength(1183);
+    expect(graph.nodes).toHaveLength(434);
+    expect(graph.records).toHaveLength(434);
+    expect(graph.edges).toHaveLength(1205);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      428
+      434
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1183
+      1205
     );
 
     expect(() => createIndex()).not.toThrow();
   });
 
-  it("retrieves the checked-in bootstrap ModelVersion without inventing an external route", () => {
+  it("retrieves the checked-in bootstrap ModelVersion from Registry evidence", () => {
     const packet = createIndex().query({
       owner_id: "owner-cosmora",
       project_id: "project-nexus-os",
@@ -63,6 +63,44 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "evaluation-model-bootstrap-streaming|CONFIRMS_CAPABILITY_FOR|model-version-mock-manager-b0-1"
+    );
+  });
+
+  it("keeps owner-preview VibeCode models time-bounded and non-confidential", () => {
+    const current = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "vibecode gpt 5.5 owner preview non confidential unknown pricing",
+      mode: "temporal",
+      as_of: "2026-10-10T00:00:00.000Z",
+      verified_only: true,
+      budget: { max_depth: 2, max_nodes: 24, max_edges: 36 }
+    });
+    const expired = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "vibecode gpt 5.5 owner preview non confidential unknown pricing",
+      mode: "temporal",
+      as_of: "2026-10-14T00:00:00.000Z",
+      verified_only: true,
+      budget: { max_depth: 2, max_nodes: 24, max_edges: 36 }
+    });
+
+    expect(current.nodes.map(({ node }) => node.node_id)).toContain(
+      "model-version-vibecode-gpt-5-5"
+    );
+    expect(expired.nodes.map(({ node }) => node.node_id)).not.toContain(
+      "model-version-vibecode-gpt-5-5"
+    );
+
+    const pairs = new Set(
+      current.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    expect(pairs).toContain(
+      "evaluation-model-vibecode-nonconfidential|RESTRICTS_CONFIDENTIAL_USE_FOR|model-version-vibecode-gpt-5-5"
+    );
+    expect(pairs).toContain(
+      "evaluation-model-vibecode-unknown-pricing|MARKS_UNKNOWN_PRICING_FOR|model-version-vibecode-gpt-5-5"
     );
   });
 
