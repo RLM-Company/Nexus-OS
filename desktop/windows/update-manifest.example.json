@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "platform": "win32",
+  "arch": "x64",
+  "channel": "stable",
+  "version": "0.4.1",
+  "publishedAt": "2026-10-03T08:00:00Z",
+  "releasePageUrl": "https://example.com/cosmora/releases/0.4.1",
+  "downloadUrl": "https://example.com/cosmora/Cosmora-Setup-0.4.1-x64.exe",
+  "sha256": "REPLACE_WITH_64_HEX_SHA256",
+  "sizeBytes": 119000000,
+  "notes": "Short human-readable release notes."
+}

@@ -4,7 +4,8 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.3.0** adds lifecycle recovery and supportability on top of the hardened 0.2.0 client.
+Version **0.4.0** adds a manual, fail-closed update-check protocol and clearer desktop version
+identity on top of the lifecycle-hardened 0.3.0 client.
 
 ## Runtime model
 
@@ -24,7 +25,8 @@ The desktop client:
   offline or auth-required;
 - reacts to renderer online/offline events and Windows suspend/resume without exposing a new web API;
 - runs an immediate recovery probe after resume or network restoration instead of waiting for the
-  next periodic heartbeat.
+  next periodic heartbeat;
+- exposes a manual **Check for updates…** action and an **About Cosmora** version dialog.
 
 The global server-side AI emergency stop is not modified by the desktop client.
 
@@ -74,6 +76,43 @@ recovery path is used when Chromium reports that the network has returned.
 Network-loss events move the desktop client into an explicit offline state and pause heartbeat work
 until Chromium reports connectivity again. Recovery is ignored while a manual/startup connection is
 already in progress, preventing two connection flows from racing each other.
+
+## Update protocol
+
+The Windows client does **not** use Electron autoUpdater and does not silently download, execute or
+install code.
+
+**Cosmora → Check for updates…** requests this same-origin endpoint from the currently connected
+Cosmora server:
+
+`/api/v1/desktop/windows/update.json`
+
+The request uses the existing persistent Chromium session and, when applicable, the current
+in-memory Basic Auth credentials. Redirects are disabled. The response must be JSON and is capped at
+64 KiB before parsing.
+
+The manifest contract is versioned and fail-closed. Version 1 requires:
+
+- `schemaVersion: 1`;
+- `platform: "win32"`, `arch: "x64"`, `channel: "stable"`;
+- a strict semantic `version` and ISO-compatible `publishedAt`;
+- an HTTPS `releasePageUrl` without embedded credentials;
+- optional installer metadata consisting of an HTTPS `.exe` `downloadUrl`, a 64-hex SHA-256
+  digest and a positive installer size capped at 512 MiB.
+
+A reference payload lives at `desktop/windows/update-manifest.example.json`.
+
+When a newer version is announced, the client shows its version/date/notes and can open only the
+validated HTTPS release page in the system browser. It does not open the installer URL and does not
+download or execute the installer. Equal or older versions are treated as no update.
+
+A 404 response is treated as an unconfigured update channel rather than a client failure. Redirects,
+wrong content types, oversized payloads, invalid JSON, malformed versions, credential-bearing URLs
+and invalid installer metadata are rejected.
+
+This manual protocol is intentional while the application is unsigned. Electron recommends code
+signing applications intended for distribution; automatic installation remains out of scope until a
+signing/release trust chain exists.
 
 ## Downloads and artifacts
 
@@ -131,8 +170,9 @@ node --test desktop/windows/test/*.test.cjs
 ```
 
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
-connection-state transitions, lifecycle recovery policy, reconnect backoff, support-bundle
-redaction, diagnostic URL redaction, download filenames and protected credential persistence. The
+connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
+validation, support-bundle redaction, diagnostic URL redaction, download filenames and protected
+credential persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
 building the installer.
 
@@ -149,7 +189,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.3.0-x64.exe`.
+`Cosmora-Setup-0.4.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
@@ -159,6 +199,6 @@ The alpha remains unsigned, so Windows SmartScreen may display an unknown-publis
 - no emergency-stop clearance;
 - no live AI/provider activation;
 - no paid provider request;
-- no auto-update feed;
+- no automatic update download or installation;
 - no code-signing certificate integration;
 - no automatic merge.
