@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **434 nodes**;
-- **1205 typed edges**;
+- **448 nodes**;
+- **1248 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -458,3 +458,35 @@ A dedicated `claim-model-intelligence-recommend-only` node has
 `NOT_AUTHORITY_FOR` edges to both Model Registry and Router. Model Intelligence therefore stores
 observations and evaluations but cannot grant permission, declare a route active or bypass Router
 hard filters.
+
+
+## Memory Governance Graph
+
+The unified graph now includes **14** Memory Governance nodes and **43** relationships.
+
+It separates three states that must not be conflated:
+
+1. **specified** — owner-approved Memory Constitution rule;
+2. **runtime guarded** — a current validator/test enforces the rule at a concrete boundary;
+3. **spec only** — approved design that is not yet runtime policy.
+
+Runtime-backed examples include:
+
+- D4 private-chat write-back rejection in Manager runtime context;
+- D4 private-chat persistence rejection in the Intelligence Graph kernel;
+- project-bound context materialization;
+- data-only treatment of untrusted instructions;
+- project-local, acyclic artifact provenance;
+- Intelligence Graph supersession as partial support for versioned corrections.
+
+Explicitly spec-only examples include:
+
+- global owner-memory access authorization;
+- protected-trash / deletion lifecycle;
+- general-model-training vs project-memory separation controls;
+- memory source transparency UI/trace behavior;
+- memory-secret exclusion as a full storage policy;
+- account/project training-setting precedence.
+
+This prevents a future agent from reading an approved design document and assuming every rule is
+already enforced in production.
