@@ -34,7 +34,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(() => createIndex()).not.toThrow();
   });
 
-  it("traverses D4 private-chat governance into both runtime and graph persistence guards", () => {
+  it("keeps verified D4 governance on main runtime and candidate graph hardening separate", () => {
     const packet = createIndex().query({
       owner_id: "owner-cosmora",
       project_id: "project-nexus-os",
@@ -56,9 +56,18 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(ids).toContain(
       repositoryStructureFileId("packages/contracts/src/manager-runtime-state.ts")
     );
-    expect(ids).toContain(
-      repositoryStructureFileId("packages/contracts/src/intelligence-graph.ts")
+    expect(ids).not.toContain("proposal-pr-269-real-knowledge");
+
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const candidate = graph.edges.find(
+      (edge) => edge.edge_id === "memory-private-chat-intelligence-kernel"
     );
+    expect(candidate).toMatchObject({
+      type: "PROPOSES_PERSISTENCE_GUARD_IN",
+      verification_status: "discovered",
+      from: { id: "claim-context-private-chat-forbidden", version: 1 },
+      to: { id: "proposal-pr-269-real-knowledge", version: 1 }
+    });
   });
 
   it("keeps approved-but-unimplemented memory policies explicitly spec-only", () => {
@@ -84,20 +93,34 @@ describe("unified Cosmora Intelligence Graph", () => {
     }
   });
 
-  it("marks versioned memory correction as only partially enforced by graph supersession", () => {
+  it("keeps versioned correction support candidate until Package B merges", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    const candidateEdges = graph.edges.filter(
+      (edge) =>
+        edge.from.id === "claim-memory-corrections-versioned" &&
+        edge.verification_status === "discovered"
+    );
 
-    expect(pairs).toContain(
-      `claim-memory-corrections-versioned|PARTIALLY_ENFORCED_BY|${repositoryStructureFileId(
-        "packages/contracts/src/intelligence-graph.ts"
-      )}`
+    expect(candidateEdges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "PROPOSES_PARTIAL_ENFORCEMENT_IN",
+          to: { id: "proposal-pr-265-intelligence-graph-kernel", version: 1 }
+        }),
+        expect.objectContaining({
+          type: "PROPOSES_TEST_COVERAGE_IN",
+          to: { id: "proposal-pr-265-intelligence-graph-kernel", version: 1 }
+        })
+      ])
     );
-    expect(pairs).toContain(
-      `claim-memory-corrections-versioned|VERIFIED_BY_TEST|${repositoryStructureFileId(
-        "packages/contracts/test/intelligence-graph.test.ts"
-      )}`
-    );
+
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.from.id === "claim-memory-corrections-versioned" &&
+          edge.type === "RUNTIME_GUARDED_BY"
+      )
+    ).toBe(false);
   });
 
   it("retrieves the checked-in bootstrap ModelVersion from Registry evidence", () => {
