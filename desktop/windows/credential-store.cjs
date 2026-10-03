@@ -11,11 +11,15 @@ class CredentialStore {
   }
 
   isAvailable() {
-    return Boolean(
-      this.safeStorage &&
-        typeof this.safeStorage.isEncryptionAvailable === "function" &&
-        this.safeStorage.isEncryptionAvailable()
-    );
+    try {
+      return Boolean(
+        this.safeStorage &&
+          typeof this.safeStorage.isEncryptionAvailable === "function" &&
+          this.safeStorage.isEncryptionAvailable()
+      );
+    } catch {
+      return false;
+    }
   }
 
   load(origin) {
