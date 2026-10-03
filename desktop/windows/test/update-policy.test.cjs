@@ -82,8 +82,14 @@ test("treats equal or older versions as no update", () => {
     releasePageUrl: "https://example.com/cosmora/releases"
   };
 
-  assert.equal(validateUpdateManifest({ ...base, version: "0.4.0" }, "0.4.0").updateAvailable, false);
-  assert.equal(validateUpdateManifest({ ...base, version: "0.3.9" }, "0.4.0").updateAvailable, false);
+  assert.equal(
+    validateUpdateManifest({ ...base, version: "0.4.0" }, "0.4.0").updateAvailable,
+    false
+  );
+  assert.equal(
+    validateUpdateManifest({ ...base, version: "0.3.9" }, "0.4.0").updateAvailable,
+    false
+  );
 });
 
 test("rejects unsafe update URLs and malformed installer metadata", () => {
@@ -98,7 +104,8 @@ test("rejects unsafe update URLs and malformed installer metadata", () => {
   };
 
   assert.throws(
-    () => validateUpdateManifest({ ...base, releasePageUrl: "http://example.com/release" }, "0.4.0"),
+    () =>
+      validateUpdateManifest({ ...base, releasePageUrl: "http://example.com/release" }, "0.4.0"),
     /HTTPS/
   );
   assert.throws(
