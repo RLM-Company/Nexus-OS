@@ -20,6 +20,8 @@ The signed workflow:
 - requires the signer certificate to contain the Code Signing EKU;
 - requires a timestamp certificate with the Time Stamping EKU;
 - emits sanitized `signature-metadata.json` only after all signature checks pass;
+- binds that signature metadata to the signed installer's exact filename, byte size and SHA-256;
+- requires the final release verifier to match those artifact fields against `release-metadata.json`;
 - generates release metadata and SHA-256 from the signed EXE, never from the unsigned PR artifact;
 - generates the update manifest from that signed artifact metadata;
 - verifies version, filename, byte size and SHA-256 agreement before uploading the release bundle;
