@@ -20,9 +20,9 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(416);
-    expect(graph.records).toHaveLength(416);
-    expect(graph.edges).toHaveLength(1152);
+    expect(graph.nodes).toHaveLength(417);
+    expect(graph.records).toHaveLength(417);
+    expect(graph.edges).toHaveLength(1154);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
       416
@@ -76,6 +76,23 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "entity-store-project-usage|USES_OPTIMISTIC_VERSIONING_FOR|entity-project-usage"
+    );
+  });
+
+  it("keeps persisted agent blueprints distinct from runtime agent instances", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "entity-store-agent-blueprint|PERSISTS|entity-agent-blueprint"
+    );
+    expect(pairs).toContain(
+      "entity-agent-blueprint|BLUEPRINT_FOR|entity-agent-instance"
+    );
+    expect(pairs).not.toContain(
+      "entity-store-agent-blueprint|PERSISTS|entity-agent-instance"
     );
   });
 
