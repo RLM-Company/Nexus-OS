@@ -20,18 +20,88 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(434);
-    expect(graph.records).toHaveLength(434);
-    expect(graph.edges).toHaveLength(1205);
+    expect(graph.nodes).toHaveLength(448);
+    expect(graph.records).toHaveLength(448);
+    expect(graph.edges).toHaveLength(1248);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      434
+      448
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1205
+      1248
     );
 
     expect(() => createIndex()).not.toThrow();
+  });
+
+  it("traverses D4 private-chat governance into both runtime and graph persistence guards", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "D4 private chat persistence forbidden memory governance",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: {
+        max_depth: 3,
+        max_nodes: 32,
+        max_edges: 48,
+        max_fan_out: 20,
+        max_context_tokens: 5_000
+      }
+    });
+
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+    expect(ids).toContain("entity-data-class-d4-private-chat");
+    expect(ids).toContain("claim-context-private-chat-forbidden");
+    expect(ids).toContain(
+      repositoryStructureFileId("packages/contracts/src/manager-runtime-state.ts")
+    );
+    expect(ids).toContain(
+      repositoryStructureFileId("packages/contracts/src/intelligence-graph.ts")
+    );
+  });
+
+  it("keeps approved-but-unimplemented memory policies explicitly spec-only", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const specOnly = graph.edges.filter((edge) => edge.type === "SPEC_ONLY_UNTIL_IMPLEMENTED");
+    const specOnlyClaims = new Set(specOnly.map((edge) => edge.from.id));
+
+    expect(specOnlyClaims).toEqual(
+      new Set([
+        "claim-memory-global-owner-gated",
+        "claim-memory-deletion-protected-trash",
+        "claim-memory-training-separate",
+        "claim-memory-source-transparency",
+        "claim-memory-secrets-excluded",
+        "claim-memory-owner-settings-precedence"
+      ])
+    );
+
+    for (const claimId of specOnlyClaims) {
+      expect(
+        graph.edges.some(
+          (edge) => edge.from.id === claimId && edge.type === "RUNTIME_GUARDED_BY"
+        )
+      ).toBe(false);
+    }
+  });
+
+  it("marks versioned memory correction as only partially enforced by graph supersession", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      `claim-memory-corrections-versioned|PARTIALLY_ENFORCED_BY|${repositoryStructureFileId(
+        "packages/contracts/src/intelligence-graph.ts"
+      )}`
+    );
+    expect(pairs).toContain(
+      `claim-memory-corrections-versioned|VERIFIED_BY_TEST|${repositoryStructureFileId(
+        "packages/contracts/test/intelligence-graph.test.ts"
+      )}`
+    );
   });
 
   it("retrieves the checked-in bootstrap ModelVersion from Registry evidence", () => {
