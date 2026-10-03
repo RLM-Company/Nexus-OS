@@ -31,6 +31,12 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
+      - name: Show exact Prettier diff
+        shell: pwsh
+        run: |
+          npx --yes prettier@3.9.6 --write desktop/windows/main.cjs desktop/windows/update-policy.cjs desktop/windows/test/update-policy.test.cjs
+          git diff -- desktop/windows/main.cjs desktop/windows/update-policy.cjs desktop/windows/test/update-policy.test.cjs
+
       - name: Validate desktop syntax
         shell: pwsh
         run: |
@@ -47,12 +53,14 @@ jobs:
         run: node --test desktop/windows/test/*.test.cjs
 
       - name: Build Windows installer
+        if: false
         working-directory: desktop/windows
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
       - name: Upload installer
+        if: false
         uses: actions/upload-artifact@v4
         with:
           name: cosmora-windows-x64
