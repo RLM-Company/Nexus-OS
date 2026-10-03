@@ -3,9 +3,26 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow, ipcMain, Menu, safeStorage, session, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  powerMonitor,
+  safeStorage,
+  session,
+  shell
+} = require("electron");
 const { CredentialStore } = require("./credential-store.cjs");
+const {
+  CONNECTION_STATES,
+  connectionTitleSuffix,
+  transitionConnectionState
+} = require("./connection-state.cjs");
+const { serializeSupportBundle } = require("./support-bundle.cjs");
 const {
   isAllowedCredentialChallenge,
   isAllowedRemoteNavigation,
@@ -37,6 +54,7 @@ let recoveryTimer = null;
 let recoveryAttempt = 0;
 let recoveryInFlight = false;
 let connectionInFlight = false;
+let connectionState = CONNECTION_STATES.DISCONNECTED;
 
 const ownsSingleInstance = app.requestSingleInstanceLock();
 if (!ownsSingleInstance) {
@@ -124,6 +142,15 @@ function localConnectionUrl() {
 
 function isTrustedConnectionEvent(event) {
   return Boolean(event.senderFrame && event.senderFrame.url === localConnectionUrl());
+}
+
+function isTrustedMainWindowEvent(event) {
+  return Boolean(
+    mainWindow &&
+      !mainWindow.isDestroyed() &&
+      event.sender &&
+      event.sender.id === mainWindow.webContents.id
+  );
 }
 
 function credentialHeader(username, password) {
@@ -216,13 +243,31 @@ function setConnectionTitle(status) {
   mainWindow.setTitle(status ? "Cosmora — " + status : "Cosmora");
 }
 
-async function showConnection(message) {
+function transitionState(event, details = {}) {
+  const previous = connectionState;
+  const next = transitionConnectionState(previous, event);
+  connectionState = next;
+  setConnectionTitle(connectionTitleSuffix(next));
+
+  if (previous !== next) {
+    appendDiagnostic("connection_state_changed", {
+      from: previous,
+      to: next,
+      trigger: event,
+      ...details
+    });
+  }
+
+  return next;
+}
+
+async function showConnection(message, stateEvent = "manual_disconnect") {
   stopHeartbeat();
   cancelRecovery();
   currentOrigin = null;
   runtimeCredentials = null;
   lastRemoteUrl = null;
-  setConnectionTitle("");
+  transitionState(stateEvent);
 
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
@@ -351,12 +396,12 @@ function installNavigationGuards(window) {
 
   window.webContents.on("unresponsive", () => {
     appendDiagnostic("renderer_unresponsive");
-    setConnectionTitle("интерфейс не отвечает");
+    transitionState("renderer_unresponsive");
   });
 
   window.webContents.on("responsive", () => {
     appendDiagnostic("renderer_responsive");
-    if (currentOrigin && heartbeatFailures === 0) setConnectionTitle("");
+    if (currentOrigin && heartbeatFailures === 0) transitionState("renderer_responsive");
   });
 }
 
@@ -393,7 +438,7 @@ async function heartbeatTick() {
       }
       heartbeatFailures = 0;
       cancelRecovery();
-      setConnectionTitle("");
+      transitionState("recovery_success");
       return;
     }
 
@@ -402,14 +447,16 @@ async function heartbeatTick() {
       code: result.code,
       failures: heartbeatFailures
     });
+    transitionState("heartbeat_failed", {
+      code: result.code,
+      failures: heartbeatFailures
+    });
 
     if (result.code === "auth" || result.code === "forbidden") {
       if (result.code === "auth") credentialStore().clear();
-      await showConnection(result.message);
+      await showConnection(result.message, "auth_failed");
       return;
     }
-
-    setConnectionTitle("нет соединения");
     if (heartbeatFailures >= 3) scheduleRecovery("heartbeat");
   } finally {
     heartbeatInFlight = false;
@@ -436,7 +483,7 @@ function scheduleRecovery(reason) {
 
   const delay = retryDelayMs(recoveryAttempt);
   recoveryAttempt += 1;
-  setConnectionTitle("переподключение…");
+  transitionState("recovery_started", { reason });
   appendDiagnostic("recovery_scheduled", {
     reason,
     attempt: recoveryAttempt,
@@ -481,7 +528,7 @@ async function runRecovery(reason) {
 
       if (probe.code === "auth" || probe.code === "forbidden") {
         if (probe.code === "auth") credentialStore().clear();
-        await showConnection(probe.message);
+        await showConnection(probe.message, "auth_failed");
         return;
       }
 
@@ -492,7 +539,7 @@ async function runRecovery(reason) {
     await mainWindow.loadURL(target);
     recoveryAttempt = 0;
     heartbeatFailures = 0;
-    setConnectionTitle("");
+    transitionState("recovery_success");
     startHeartbeat();
     appendDiagnostic("recovery_succeeded", {
       url: safeLogUrl(target)
@@ -505,6 +552,61 @@ async function runRecovery(reason) {
   } finally {
     recoveryInFlight = false;
     if (retry && currentOrigin) scheduleRecovery(reason);
+  }
+}
+
+function readDiagnosticTail() {
+  try {
+    const source = fs.readFileSync(diagnosticPath());
+    return source.subarray(Math.max(0, source.length - KEEP_DIAGNOSTIC_BYTES)).toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function supportBundleDefaultName() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return "Cosmora-Support-" + stamp + ".json";
+}
+
+async function exportSupportBundle() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "Экспорт пакета поддержки Cosmora",
+    defaultPath: path.join(app.getPath("documents"), supportBundleDefaultName()),
+    filters: [{ name: "JSON", extensions: ["json"] }]
+  });
+
+  if (result.canceled || !result.filePath) return;
+
+  const origin = currentOrigin || readSavedOrigin();
+  const payload = serializeSupportBundle({
+    generatedAt: new Date().toISOString(),
+    appVersion: app.getVersion(),
+    electronVersion: process.versions.electron || "",
+    chromeVersion: process.versions.chrome || "",
+    nodeVersion: process.versions.node || "",
+    platform: process.platform,
+    release: os.release(),
+    arch: process.arch,
+    origin,
+    connectionState,
+    lastRoute: lastRemoteUrl ? safeLogUrl(lastRemoteUrl) : null,
+    rememberedCredentials: credentialStore().has(origin),
+    diagnosticText: readDiagnosticTail()
+  });
+
+  try {
+    fs.writeFileSync(result.filePath, payload, {
+      encoding: "utf8",
+      mode: 0o600
+    });
+    appendDiagnostic("support_bundle_exported", {
+      filename: path.basename(result.filePath)
+    });
+  } catch {
+    appendDiagnostic("support_bundle_export_failed");
   }
 }
 
@@ -526,6 +628,12 @@ function createMenu() {
             const directory = app.getPath("logs");
             fs.mkdirSync(directory, { recursive: true });
             void shell.openPath(directory);
+          }
+        },
+        {
+          label: "Экспортировать пакет поддержки…",
+          click: () => {
+            void exportSupportBundle();
           }
         },
         { type: "separator" },
@@ -636,6 +744,7 @@ function persistCredentialChoice(origin, username, password, rememberCredentials
 }
 
 async function connectAndLoad({ origin, username, password, rememberCredentials, source }) {
+  transitionState("connect_started", { source });
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
   const probe = await probeServer(browserSession, origin, username, password);
 
@@ -645,6 +754,9 @@ async function connectAndLoad({ origin, username, password, rememberCredentials,
       code: probe.code,
       origin
     });
+    transitionState(
+      probe.code === "auth" || probe.code === "forbidden" ? "auth_failed" : "manual_disconnect"
+    );
     return probe;
   }
 
@@ -660,6 +772,7 @@ async function connectAndLoad({ origin, username, password, rememberCredentials,
     await mainWindow.loadURL(origin);
     recoveryAttempt = 0;
     heartbeatFailures = 0;
+    transitionState("connect_success", { source });
     startHeartbeat();
     appendDiagnostic("connection_opened", {
       source,
@@ -672,7 +785,7 @@ async function connectAndLoad({ origin, username, password, rememberCredentials,
       source,
       origin
     });
-    await showConnection("Сервер доступен, но интерфейс Cosmora не открылся.");
+    await showConnection("Сервер доступен, но интерфейс Cosmora не открылся.", "manual_disconnect");
     return {
       ok: false,
       code: "load",
@@ -698,7 +811,10 @@ async function tryStartupConnection() {
 
     if (!result.ok) {
       if (result.code === "auth" && saved) credentialStore().clear();
-      await showConnection(result.message);
+      await showConnection(
+        result.message,
+        result.code === "auth" || result.code === "forbidden" ? "auth_failed" : "manual_disconnect"
+      );
     }
   } finally {
     connectionInFlight = false;
@@ -720,6 +836,26 @@ ipcMain.handle("cosmora:connection-defaults", (event) => {
     rememberCredentials: Boolean(saved),
     protectedStorageAvailable: store.isAvailable()
   };
+});
+
+ipcMain.on("cosmora:network-status", (event, payload) => {
+  if (!isTrustedMainWindowEvent(event)) return;
+  const online = payload?.online === true;
+  appendDiagnostic("network_status", { online });
+
+  if (!currentOrigin) return;
+
+  if (!online) {
+    stopHeartbeat();
+    cancelRecovery();
+    transitionState("network_offline");
+    return;
+  }
+
+  cancelRecovery();
+  recoveryAttempt = 0;
+  transitionState("network_online");
+  void runRecovery("network_online");
 });
 
 ipcMain.handle("cosmora:connect", async (event, payload) => {
@@ -795,7 +931,8 @@ app.on("login", (event, webContents, details, authInfo, callback) => {
     void showConnection(
       runtimeCredentials
         ? "Сервер повторно запросил авторизацию. Проверьте логин и пароль."
-        : "Сервер требует логин и пароль."
+        : "Сервер требует логин и пароль.",
+      "auth_failed"
     );
   });
 });
@@ -826,8 +963,31 @@ if (ownsSingleInstance) {
   });
 }
 
+function installPowerLifecycle() {
+  powerMonitor.on("suspend", () => {
+    appendDiagnostic("system_suspend");
+    stopHeartbeat();
+    cancelRecovery();
+  });
+
+  powerMonitor.on("resume", () => {
+    appendDiagnostic("system_resume");
+    if (!currentOrigin) return;
+    cancelRecovery();
+    recoveryAttempt = 0;
+    transitionState("resume");
+    void runRecovery("resume");
+  });
+
+  powerMonitor.on("unlock-screen", () => {
+    appendDiagnostic("screen_unlocked");
+    if (currentOrigin) void heartbeatTick();
+  });
+}
+
 app.whenReady().then(async () => {
   app.setAppUserModelId("com.cosmora.desktop");
+  installPowerLifecycle();
   createMenu();
   await createMainWindow();
   await tryStartupConnection();
