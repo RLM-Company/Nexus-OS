@@ -8,6 +8,7 @@ const test = require("node:test");
 const {
   CODE_SIGNING_EKU,
   TIMESTAMPING_EKU,
+  installerIdentity,
   normalizeThumbprint,
   validateSignatureEvidence,
   writeSignatureMetadata
@@ -94,11 +95,15 @@ test("rejects missing timestamp evidence and non-valid Authenticode status", () 
 test("writes sanitized signature metadata without the expected pin inputs", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cosmora-signature-"));
   const evidencePath = path.join(directory, "evidence.json");
+  const installerPath = path.join(directory, "Cosmora-Setup-0.6.0-x64.exe");
   const outputPath = path.join(directory, "signature-metadata.json");
   fs.writeFileSync(evidencePath, JSON.stringify(evidence()), "utf8");
+  fs.writeFileSync(installerPath, "signed-installer-fixture", "utf8");
 
+  const identity = installerIdentity(installerPath);
   const metadata = writeSignatureMetadata({
     evidencePath,
+    installerPath,
     outputPath,
     expectedThumbprint: expected.thumbprint,
     expectedSubject: expected.subject
@@ -107,6 +112,9 @@ test("writes sanitized signature metadata without the expected pin inputs", () =
 
   assert.equal(JSON.parse(disk).signer.thumbprint, expected.thumbprint);
   assert.equal(metadata.signer.subject, "CN=Cosmora Software, O=RLM-Company");
+  assert.equal(metadata.artifact.filename, "Cosmora-Setup-0.6.0-x64.exe");
+  assert.equal(metadata.artifact.sha256, identity.sha256);
+  assert.equal(metadata.artifact.sizeBytes, identity.sizeBytes);
   assert.equal(disk.includes("expectedThumbprint"), false);
   assert.equal(disk.includes("expectedSubject"), false);
 });
