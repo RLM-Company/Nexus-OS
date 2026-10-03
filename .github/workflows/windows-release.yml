@@ -170,6 +170,7 @@ jobs:
 
           node desktop/windows/signing-policy.cjs `
             --evidence desktop/windows/dist/release/signature-evidence.json `
+            --installer $installer `
             --output desktop/windows/dist/release/signature-metadata.json `
             --expected-thumbprint "$env:EXPECTED_THUMBPRINT" `
             --expected-subject "$env:EXPECTED_SUBJECT"
@@ -187,7 +188,7 @@ jobs:
           $installer = "desktop/windows/dist/Cosmora-Setup-$($env:REQUESTED_VERSION)-x64.exe"
           node desktop/windows/release-chain.cjs bundle --installer $installer --package desktop/windows/package.json --output desktop/windows/dist/release --git-sha "${{ github.sha }}"
           node desktop/windows/release-chain.cjs manifest --metadata desktop/windows/dist/release/release-metadata.json --release-page-url "$env:RELEASE_PAGE_URL" --download-url "$env:DOWNLOAD_URL" --published-at "$env:PUBLISHED_AT" --output desktop/windows/dist/release/update-manifest.json
-          node desktop/windows/release-chain.cjs verify --installer $installer --metadata desktop/windows/dist/release/release-metadata.json --manifest desktop/windows/dist/release/update-manifest.json
+          node desktop/windows/release-chain.cjs verify --installer $installer --metadata desktop/windows/dist/release/release-metadata.json --manifest desktop/windows/dist/release/update-manifest.json --signature desktop/windows/dist/release/signature-metadata.json
 
       - name: Upload signed release bundle
         uses: actions/upload-artifact@v4
