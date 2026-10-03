@@ -13,7 +13,7 @@ function redactString(value) {
       "$1[REDACTED]"
     )
     .replace(
-      /\b(password|passwd|secret|token|api[_-]?key|authorization)=([^\s,;]+)/gi,
+      /\b(password|passwd|secret|token|api[_-]?key|authorization)=([^\s,;&#]+)/gi,
       "$1=[REDACTED]"
     );
 }
