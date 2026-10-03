@@ -17,8 +17,8 @@
         <p class="eyebrow">Cosmora for Windows</p>
         <h1 id="title">Подключение к Cosmora</h1>
         <p class="lead">
-          Укажите сервер. Адрес сохранится на этом компьютере, а логин и пароль — только в памяти до
-          закрытия приложения.
+          Адрес сервера сохранится на этом компьютере. Логин и пароль по умолчанию живут только до
+          закрытия приложения; при желании их можно зашифрованно сохранить средствами Windows.
         </p>
 
         <form id="connection-form" autocomplete="off">
@@ -41,7 +41,7 @@
               <input id="username" name="username" autocomplete="username" />
             </label>
             <label>
-              Пароль <span>не сохраняется</span>
+              Пароль <span>не сохраняется без вашего выбора</span>
               <input
                 id="password"
                 name="password"
@@ -51,12 +51,23 @@
             </label>
           </div>
 
+          <label class="remember">
+            <input id="remember" name="remember" type="checkbox" />
+            <span>
+              Запомнить учётные данные на этом устройстве
+              <small id="credential-status">
+                Данные будут зашифрованы системным защищённым хранилищем Windows.
+              </small>
+            </span>
+          </label>
+
           <p id="error" class="error" role="alert" aria-live="assertive"></p>
           <button id="connect" type="submit">Подключиться</button>
         </form>
 
         <p class="hint">
-          Удалённые адреса работают только по HTTPS. Проверка сертификата не отключается.
+          Удалённые адреса работают только по HTTPS. Проверка сертификата не отключается. При
+          временном обрыве клиент пытается восстановить соединение автоматически.
         </p>
       </section>
     </main>
