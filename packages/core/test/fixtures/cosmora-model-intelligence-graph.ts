@@ -492,6 +492,42 @@ const edges: IntelligenceGraphEdge[] = [
     validTo: ownerPreviewValidUntil
   }),
   edge({
+    id: "model-vibecode-nonconfidential-evaluates-gpt",
+    type: "EVALUATES",
+    from: "evaluation-model-vibecode-nonconfidential",
+    to: vibecodeGpt.node_id,
+    location: "config/model-registry.vibecode.v1.json:gpt-5.5:privacy",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-nonconfidential-evaluates-claude",
+    type: "EVALUATES",
+    from: "evaluation-model-vibecode-nonconfidential",
+    to: vibecodeClaude.node_id,
+    location: "config/model-registry.vibecode.v1.json:claude-sonnet-5:privacy",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-pricing-evaluates-gpt",
+    type: "EVALUATES",
+    from: "evaluation-model-vibecode-unknown-pricing",
+    to: vibecodeGpt.node_id,
+    location: "config/model-registry.vibecode.v1.json:gpt-5.5:pricing",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-pricing-evaluates-claude",
+    type: "EVALUATES",
+    from: "evaluation-model-vibecode-unknown-pricing",
+    to: vibecodeClaude.node_id,
+    location: "config/model-registry.vibecode.v1.json:claude-sonnet-5:pricing",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
     id: "model-vibecode-nonconfidential-gpt",
     type: "RESTRICTS_CONFIDENTIAL_USE_FOR",
     from: "evaluation-model-vibecode-nonconfidential",
