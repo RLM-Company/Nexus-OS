@@ -55,6 +55,7 @@ let recoveryAttempt = 0;
 let recoveryInFlight = false;
 let connectionInFlight = false;
 let connectionState = CONNECTION_STATES.DISCONNECTED;
+let lastNetworkOnline = null;
 
 const ownsSingleInstance = app.requestSingleInstanceLock();
 if (!ownsSingleInstance) {
@@ -607,6 +608,12 @@ async function exportSupportBundle() {
     });
   } catch {
     appendDiagnostic("support_bundle_export_failed");
+    await dialog.showMessageBox(mainWindow, {
+      type: "error",
+      title: "Cosmora",
+      message: "Не удалось сохранить пакет поддержки.",
+      detail: "Выберите другой файл или проверьте права на запись."
+    });
   }
 }
 
@@ -841,6 +848,8 @@ ipcMain.handle("cosmora:connection-defaults", (event) => {
 ipcMain.on("cosmora:network-status", (event, payload) => {
   if (!isTrustedMainWindowEvent(event)) return;
   const online = payload?.online === true;
+  if (online === lastNetworkOnline) return;
+  lastNetworkOnline = online;
   appendDiagnostic("network_status", { online });
 
   if (!currentOrigin || connectionInFlight) return;
