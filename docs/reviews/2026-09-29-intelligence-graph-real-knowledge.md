@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **383 nodes**;
-- **1052 typed edges**;
+- **403 nodes**;
+- **1084 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -328,6 +328,25 @@ It covers:
 Every scenario is linked to the safety rule/component it evaluates and to the catalog validation
 test. Scenarios directly exercised by the scenario runner also carry `EXECUTED_BY_TEST` edges.
 The A6 scenario additionally requires the verified Step-up proof boundary.
+
+## CI Learning Graph
+
+The graph now records the actual quality-gate learning sequence for PR #269.
+
+It preserves:
+
+- run #1001 → formatting failure → repository Prettier fix;
+- run #1005 → lint/source-ID issues → lint-fix sequence;
+- run #1006 → temporal query typing issue → exactOptionalPropertyTypes fix;
+- run #1007 → graph record-time/source-time confusion → candidate temporal-model fix;
+- run #1011 → stale auth-test expectation → identity-test correction;
+- run #1018 → ambiguous mobile Manager locator → targeted Playwright selector fix;
+- run #1026 → complete green monorepo quality gate.
+
+Relationships use `FOUND_ISSUE`, `RESOLVED_BY`, `VALIDATED_BY`,
+`PRECEDES` and `CONFIRMS_GREEN_GATE_FOR`.
+
+This makes failed checks reusable project knowledge instead of disposable CI noise.
 
 ## Quality rules exercised by tests
 
