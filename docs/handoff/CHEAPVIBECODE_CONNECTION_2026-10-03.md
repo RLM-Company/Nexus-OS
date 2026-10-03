@@ -50,7 +50,12 @@ GitHub Actions should use the same provider/base URL/model/fallback/output setti
 `MODEL_API_KEY` held as a secret. The connector cannot manage Actions Secrets/Variables, and the
 browser currently requires the owner to sign in. A matching set of ten variables and one secret
 was prepared privately; GitHub settings have not yet been changed. No connection-test workflow
-was dispatched. Its manual live-response test is separate from the VPS emergency stop.
+was dispatched. The connection workflow now defaults to authenticated catalog/balance GETs,
+with zero generation requests. Its optional live trial requires an explicit workflow input,
+`RUNTIME_EMERGENCY_STOP=false`, fallback disabled, one attempt and a positive CheapVibeCode
+balance; it sends one request capped at eight output tokens with no retry. The Actions stop
+variable is a separate configuration from the VPS's persisted stop and does not clear it.
+Provider error bodies and generated text are never printed by the check.
 
 Do not run the provider's desktop/CLI installer scripts to configure Cosmora. The existing
 OpenAI-compatible adapter already uses the documented chat endpoint; changing Codex settings or
