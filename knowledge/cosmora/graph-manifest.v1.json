@@ -118,7 +118,7 @@
       "id": "memory_governance",
       "nodes": 14,
       "edges": 43,
-      "authority": "owner_approved_spec_plus_runtime_guards",
+      "authority": "owner_approved_spec_plus_main_runtime_guards_and_candidate_proposals",
       "status_model": "spec_only_vs_runtime_guarded"
     }
   ],
@@ -203,9 +203,11 @@
     "DEFINES_DATA_CLASS",
     "SUBJECT_TO",
     "RUNTIME_GUARDED_BY",
-    "PARTIALLY_ENFORCED_BY",
     "SPEC_ONLY_UNTIL_IMPLEMENTED",
-    "EXCLUDED_FROM_TRAINING_BY"
+    "EXCLUDED_FROM_TRAINING_BY",
+    "PROPOSES_PERSISTENCE_GUARD_IN",
+    "PROPOSES_TEST_COVERAGE_IN",
+    "PROPOSES_PARTIAL_ENFORCEMENT_IN"
   ],
   "safety": {
     "private_chat_persistence": false,
