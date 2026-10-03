@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **403 nodes**;
-- **1084 typed edges**;
+- **410 nodes**;
+- **1121 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -347,6 +347,34 @@ Relationships use `FOUND_ISSUE`, `RESOLVED_BY`, `VALIDATED_BY`,
 `PRECEDES` and `CONFIRMS_GREEN_GATE_FOR`.
 
 This makes failed checks reusable project knowledge instead of disposable CI noise.
+
+## Runtime Interface Graph
+
+The graph now includes **7** verified API-family nodes and **37** source-backed interface
+relationships from current `main`.
+
+Covered interface families:
+
+- Manager Work;
+- General Chat;
+- Identity;
+- Emergency Stop / clearance;
+- Model Runtime status;
+- Project Usage limits;
+- Autonomy / policy profiles.
+
+All non-health APIs are linked to the fail-closed owner identity boundary. High-impact mutations are
+also connected to their exact Step-up purpose where the source code requires it. Interface families
+link to the concrete handler file and API regression tests rather than duplicating every GET/POST as
+a separate graph node.
+
+This enables queries such as:
+
+`usage limit → API family → Step-up proof → test`
+
+and:
+
+`General Chat API → persisted runtime → Model Gateway`.
 
 ## Quality rules exercised by tests
 
