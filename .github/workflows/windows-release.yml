@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Exact desktop version to release (for example 0.8.0)"
+        description: "Exact desktop version to release (for example 0.9.0)"
         required: true
         type: string
       release_page_url:
@@ -81,6 +81,17 @@ jobs:
           node --check desktop/windows/signing-policy.cjs
           node --check desktop/windows/smoke-mode.cjs
           node --check desktop/windows/connection.js
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "desktop/windows/scripts/installer-lifecycle.ps1"),
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | Format-List -Force
+            throw "installer-lifecycle.ps1 contains PowerShell syntax errors."
+          }
 
       - name: Test desktop policy
         run: node --test desktop/windows/test/*.test.cjs
@@ -187,87 +198,16 @@ jobs:
 
           Remove-Item "desktop/windows/dist/release/signature-evidence.json" -Force
 
-      - name: Smoke test installed signed NSIS lifecycle
+      - name: Verify installed signed Windows shell lifecycle
         shell: pwsh
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
-          $ErrorActionPreference = "Stop"
-          $installer = (Resolve-Path "desktop/windows/dist/Cosmora-Setup-$($env:REQUESTED_VERSION)-x64.exe").Path
-          $installDir = Join-Path $env:RUNNER_TEMP "cosmora-signed-installed-$($env:REQUESTED_VERSION)"
-          $marker = Join-Path $env:TEMP "cosmora-smoke-signed-$($env:REQUESTED_VERSION).json"
-
-          Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item $marker -Force -ErrorAction SilentlyContinue
-
-          $install = Start-Process -FilePath $installer -ArgumentList @("/S", "/D=$installDir") -Wait -PassThru
-          if ($install.ExitCode -ne 0) {
-            throw "Signed NSIS install failed with exit code $($install.ExitCode)."
-          }
-
-          $app = Join-Path $installDir "Cosmora.exe"
-          if (-not (Test-Path $app -PathType Leaf)) {
-            throw "Installed signed Cosmora.exe was not found at $app."
-          }
-
-          $uninstaller = Get-ChildItem -Path $installDir -Filter "Uninstall*.exe" -File |
-            Select-Object -First 1
-          if (-not $uninstaller) {
-            throw "Signed NSIS uninstaller was not found in $installDir."
-          }
-
-          $env:COSMORA_SMOKE_OUTPUT = $marker
-          try {
-            $smokeProcess = Start-Process -FilePath $app -ArgumentList "--cosmora-smoke-test" -Wait -PassThru
-          } finally {
-            Remove-Item Env:COSMORA_SMOKE_OUTPUT -ErrorAction SilentlyContinue
-          }
-          if ($smokeProcess.ExitCode -ne 0) {
-            throw "Installed signed Cosmora smoke process failed with exit code $($smokeProcess.ExitCode)."
-          }
-
-          $record = Get-Content $marker -Raw | ConvertFrom-Json
-          if (
-            $record.schemaVersion -ne 1 -or
-            $record.version -ne $env:REQUESTED_VERSION -or
-            $record.isPackaged -ne $true -or
-            $record.platform -ne "win32" -or
-            $record.arch -ne "x64"
-          ) {
-            throw "Installed signed Cosmora reported unexpected smoke metadata."
-          }
-
-          $expectedExe = [IO.Path]::GetFullPath($app)
-          $actualExe = [IO.Path]::GetFullPath([string]$record.execPath)
-          if (-not [string]::Equals($expectedExe, $actualExe, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Signed smoke executable path does not match the installed application."
-          }
-
-          $expectedResources = [IO.Path]::GetFullPath((Join-Path $installDir "resources"))
-          $actualResources = [IO.Path]::GetFullPath([string]$record.resourcesPath)
-          if (-not [string]::Equals($expectedResources, $actualResources, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Signed smoke resources path does not match the installed application."
-          }
-
-          $expectedAsar = [IO.Path]::GetFullPath((Join-Path $expectedResources "app.asar"))
-          $actualAppPath = [IO.Path]::GetFullPath([string]$record.appPath)
-          if (-not [string]::Equals($expectedAsar, $actualAppPath, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Signed smoke app path is not the packaged app.asar."
-          }
-
-          $uninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -Wait -PassThru
-          if ($uninstall.ExitCode -ne 0) {
-            throw "Signed NSIS uninstall failed with exit code $($uninstall.ExitCode)."
-          }
-
-          for ($attempt = 0; $attempt -lt 80 -and (Test-Path $installDir); $attempt++) {
-            Start-Sleep -Milliseconds 250
-          }
-          if (Test-Path $installDir) {
-            throw "Signed NSIS uninstall left the installation directory behind."
-          }
-
-          Remove-Item $marker -Force -ErrorAction SilentlyContinue
+          $installer = "desktop/windows/dist/Cosmora-Setup-$($env:REQUESTED_VERSION)-x64.exe"
+          ./desktop/windows/scripts/installer-lifecycle.ps1 `
+            -InstallerPath $installer `
+            -Version $env:REQUESTED_VERSION `
+            -InstallPrefix "cosmora-signed-installed"
 
       - name: Build signed release bundle
         shell: pwsh

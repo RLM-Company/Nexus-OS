@@ -4,10 +4,10 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.8.0** gives the Windows package native Cosmora identity on top of the 0.7.0 installer
-lifecycle checks. The desktop build now uses a vector adaptation of the existing web app icon art
-instead of the default Electron icon, and CI fails if electron-builder ever falls back to Electron's
-default branding.
+Version **0.9.0** extends the installer lifecycle gate into native Windows shell integration.
+CI now verifies the actual Desktop and Start Menu shortcuts, uninstall registry metadata and
+executable version resources after installation, then requires the shortcuts, registry entry and
+installation directory to disappear after uninstall.
 
 ## Runtime model
 
@@ -156,18 +156,38 @@ The Windows and signed-release workflows capture electron-builder output and fai
 reports `default Electron icon is used`. Unit tests also require the configured SVG and its core
 Cosmora color/shape contract to remain present.
 
+## Windows shell integration
+
+The installer lifecycle verifier is shared by both the ordinary unsigned Windows build and the
+protected signed-release workflow at `desktop/windows/scripts/installer-lifecycle.ps1`.
+
+After a silent install it requires:
+
+- `Cosmora.exe` and the NSIS uninstaller to exist in the selected installation directory;
+- `Cosmora.lnk` on the current user's Desktop and Start Menu;
+- both shortcuts to target the installed `Cosmora.exe`;
+- exactly one uninstall registry entry for the installed Cosmora version;
+- that entry to expose a non-empty `UninstallString` pointing at the installed uninstaller;
+- `InstallLocation`, when present, to match the selected installation directory;
+- Windows executable metadata to report product name `Cosmora` and the expected version.
+
+After silent uninstall the verifier waits for asynchronous NSIS cleanup and fails if the install
+directory, either shortcut or the matching uninstall registry entry remains.
+
 ## Installer lifecycle smoke test
 
 The ordinary Windows workflow validates more than the existence of an NSIS file. After the installer
 is built, CI:
 
 1. performs a silent install into an isolated temporary directory;
-2. requires the installed `Cosmora.exe` and NSIS uninstaller to exist;
+2. validates executable/uninstaller presence, Windows shortcuts, uninstall registry metadata and
+   executable product/version resources;
 3. launches the installed executable with the explicit `--cosmora-smoke-test` argument;
 4. requires the process to report the exact package version, `win32/x64`, packaged mode, installed
    executable path, resources directory and packaged `app.asar` path;
 5. performs a silent uninstall;
-6. waits for NSIS cleanup and fails if the installation directory remains.
+6. waits for NSIS cleanup and fails if the installation directory, shortcuts or uninstall registry
+   entry remain.
 
 Smoke mode executes before BrowserWindow/session creation. It does not perform the normal startup
 health probe and does not connect to Cosmora. The marker path is supplied through
@@ -232,8 +252,8 @@ node --test desktop/windows/test/*.test.cjs
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
 validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, native identity
-configuration, packaged smoke-mode policy, support-bundle redaction, diagnostic URL redaction,
-download filenames and protected credential persistence. The
+configuration, Windows shell integration, packaged smoke-mode policy, support-bundle redaction,
+diagnostic URL redaction, download filenames and protected credential persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
 building the installer.
 
@@ -250,7 +270,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.8.0-x64.exe`.
+`Cosmora-Setup-0.9.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
