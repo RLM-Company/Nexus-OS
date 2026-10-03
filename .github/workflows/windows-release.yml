@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Exact desktop version to release (for example 0.5.0)"
+        description: "Exact desktop version to release (for example 0.6.0)"
         required: true
         type: string
       release_page_url:
@@ -78,22 +78,31 @@ jobs:
           node --check desktop/windows/support-bundle.cjs
           node --check desktop/windows/update-policy.cjs
           node --check desktop/windows/release-chain.cjs
+          node --check desktop/windows/signing-policy.cjs
           node --check desktop/windows/connection.js
 
       - name: Test desktop policy
         run: node --test desktop/windows/test/*.test.cjs
 
-      - name: Require signing credentials
+      - name: Require signing credentials and signer pins
         shell: pwsh
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          EXPECTED_THUMBPRINT: ${{ secrets.WINDOWS_CSC_EXPECTED_THUMBPRINT }}
+          EXPECTED_SUBJECT: ${{ secrets.WINDOWS_CSC_EXPECTED_SUBJECT }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
             throw "windows-release environment secret WINDOWS_CSC_LINK is not configured."
           }
           if ([string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) {
             throw "windows-release environment secret WINDOWS_CSC_KEY_PASSWORD is not configured."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:EXPECTED_THUMBPRINT)) {
+            throw "windows-release environment secret WINDOWS_CSC_EXPECTED_THUMBPRINT is not configured."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:EXPECTED_SUBJECT)) {
+            throw "windows-release environment secret WINDOWS_CSC_EXPECTED_SUBJECT is not configured."
           }
 
       - name: Build signed Windows installer
@@ -103,15 +112,32 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
-      - name: Verify Authenticode signature
+      - name: Verify pinned Authenticode signature
         shell: pwsh
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
+          EXPECTED_THUMBPRINT: ${{ secrets.WINDOWS_CSC_EXPECTED_THUMBPRINT }}
+          EXPECTED_SUBJECT: ${{ secrets.WINDOWS_CSC_EXPECTED_SUBJECT }}
         run: |
+          function Get-EkuOids([System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate) {
+            $extension = $Certificate.Extensions |
+              Where-Object { $_.Oid.Value -eq "2.5.29.37" } |
+              Select-Object -First 1
+            if (-not $extension) {
+              return @()
+            }
+            $eku = [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new(
+              $extension,
+              $false
+            )
+            return @($eku.EnhancedKeyUsages | ForEach-Object { $_.Value })
+          }
+
           $installer = "desktop/windows/dist/Cosmora-Setup-$($env:REQUESTED_VERSION)-x64.exe"
           if (-not (Test-Path $installer)) {
             throw "Signed installer was not produced at $installer."
           }
+
           $signature = Get-AuthenticodeSignature -FilePath $installer
           if ($signature.Status -ne "Valid") {
             throw "Authenticode verification failed with status $($signature.Status)."
@@ -119,8 +145,36 @@ jobs:
           if (-not $signature.SignerCertificate) {
             throw "Authenticode signature has no signer certificate."
           }
-          Write-Output "Signer: $($signature.SignerCertificate.Subject)"
-          Write-Output "Thumbprint: $($signature.SignerCertificate.Thumbprint)"
+          if (-not $signature.TimeStamperCertificate) {
+            throw "Authenticode signature has no timestamp certificate."
+          }
+
+          New-Item -ItemType Directory -Path "desktop/windows/dist/release" -Force | Out-Null
+          $evidence = [ordered]@{
+            status = [string]$signature.Status
+            signerSubject = $signature.SignerCertificate.Subject
+            signerThumbprint = $signature.SignerCertificate.Thumbprint
+            signerNotBefore = $signature.SignerCertificate.NotBefore.ToUniversalTime().ToString("o")
+            signerNotAfter = $signature.SignerCertificate.NotAfter.ToUniversalTime().ToString("o")
+            signerEkus = @(Get-EkuOids $signature.SignerCertificate)
+            timestampSubject = $signature.TimeStamperCertificate.Subject
+            timestampThumbprint = $signature.TimeStamperCertificate.Thumbprint
+            timestampNotBefore = $signature.TimeStamperCertificate.NotBefore.ToUniversalTime().ToString("o")
+            timestampNotAfter = $signature.TimeStamperCertificate.NotAfter.ToUniversalTime().ToString("o")
+            timestampEkus = @(Get-EkuOids $signature.TimeStamperCertificate)
+            verifiedAt = (Get-Date).ToUniversalTime().ToString("o")
+          }
+          $evidence |
+            ConvertTo-Json -Depth 5 |
+            Set-Content -Path "desktop/windows/dist/release/signature-evidence.json" -Encoding utf8
+
+          node desktop/windows/signing-policy.cjs `
+            --evidence desktop/windows/dist/release/signature-evidence.json `
+            --output desktop/windows/dist/release/signature-metadata.json `
+            --expected-thumbprint "$env:EXPECTED_THUMBPRINT" `
+            --expected-subject "$env:EXPECTED_SUBJECT"
+
+          Remove-Item "desktop/windows/dist/release/signature-evidence.json" -Force
 
       - name: Build signed release bundle
         shell: pwsh
@@ -144,6 +198,7 @@ jobs:
             desktop/windows/dist/Cosmora-Setup-${{ inputs.version }}-x64.exe.blockmap
             desktop/windows/dist/release/release-metadata.json
             desktop/windows/dist/release/SHA256SUMS.txt
+            desktop/windows/dist/release/signature-metadata.json
             desktop/windows/dist/release/update-manifest.json
           if-no-files-found: error
           retention-days: 14
