@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **410 nodes**;
-- **1121 typed edges**;
+- **416 nodes**;
+- **1152 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -413,3 +413,21 @@ The correct growth strategy is:
 5. never inflate the graph with arbitrary similarity edges.
 
 The 2M synthetic benchmark remains separate and should never be reported as 2M learned Cosmora facts.
+
+
+## State & Persistence Graph
+
+The graph now includes **6** verified store entities and **31** persistence relationships.
+
+It records:
+
+- Manager Work persistence, client-request idempotency, optimistic versioning and recovery without
+  automatic replay;
+- project Usage Ledger persistence, versioned limits and preservation of unknown cost;
+- owner-scoped Identity sessions with hashed token evidence;
+- Policy operation idempotency, decision traces and recovery-required operations;
+- versioned, project-bound Agent Blueprint persistence;
+- General Chat atomic queued-run claim and duplicate-execution guard.
+
+Each store is connected to its exact source file, and where dedicated regression coverage exists, to
+the corresponding test file.
