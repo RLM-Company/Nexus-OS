@@ -81,19 +81,11 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("keeps persisted agent blueprints distinct from runtime agent instances", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
-    expect(pairs).toContain(
-      "entity-store-agent-blueprint|PERSISTS|entity-agent-blueprint"
-    );
-    expect(pairs).toContain(
-      "entity-agent-blueprint|BLUEPRINT_FOR|entity-agent-instance"
-    );
-    expect(pairs).not.toContain(
-      "entity-store-agent-blueprint|PERSISTS|entity-agent-instance"
-    );
+    expect(pairs).toContain("entity-store-agent-blueprint|PERSISTS|entity-agent-blueprint");
+    expect(pairs).toContain("entity-agent-blueprint|BLUEPRINT_FOR|entity-agent-instance");
+    expect(pairs).not.toContain("entity-store-agent-blueprint|PERSISTS|entity-agent-instance");
   });
 
   it("maps identity and chat runtime stores to their safety invariants and tests", () => {

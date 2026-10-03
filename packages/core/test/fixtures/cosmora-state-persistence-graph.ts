@@ -383,7 +383,8 @@ const records: IntelligenceGraphSearchRecord[] = [
   {
     node: { id: "entity-agent-blueprint", version: 1 },
     text: "agent blueprint versioned project scoped grant memory scope function behavior model profile",
-    excerpt: "AgentBlueprint is a versioned project-bound composition embedded into an AgentInstance.",
+    excerpt:
+      "AgentBlueprint is a versioned project-bound composition embedded into an AgentInstance.",
     estimated_tokens: 18
   }
 ];
