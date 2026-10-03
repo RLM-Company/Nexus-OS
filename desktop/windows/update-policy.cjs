@@ -13,15 +13,21 @@ function parseVersion(value) {
   );
   if (!match) return null;
 
+  const core = [match[1], match[2], match[3]].map(Number);
+  if (core.some((part) => !Number.isSafeInteger(part))) return null;
+
   const rawPrerelease = match[4] ? match[4].split(".") : [];
   if (rawPrerelease.some((part) => part === "" || /^0\d+$/.test(part))) return null;
 
   const prerelease = rawPrerelease.map((part) => (/^\d+$/.test(part) ? Number(part) : part));
+  if (prerelease.some((part) => typeof part === "number" && !Number.isSafeInteger(part))) {
+    return null;
+  }
 
   return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3]),
+    major: core[0],
+    minor: core[1],
+    patch: core[2],
     prerelease
   };
 }
