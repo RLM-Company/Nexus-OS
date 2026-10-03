@@ -126,6 +126,7 @@ const edge = (input: {
   to: string;
   location: string;
   validFrom?: string;
+  status?: IntelligenceGraphEdge["verification_status"];
 }): IntelligenceGraphEdge => ({
   contract_version: 1,
   edge_id: input.id,
@@ -140,7 +141,7 @@ const edge = (input: {
   observed_at: recordedAt,
   valid_from: input.validFrom ?? specificationAt,
   valid_to: null,
-  verification_status: "verified",
+  verification_status: input.status ?? "verified",
   sensitivity: "D1_PROJECT",
   evidence_ref: {
     source_id: sourceId,
@@ -164,9 +165,6 @@ const runtimeContextValidationFile = repositoryStructureFileId(
 const runtimeProvenanceFile = repositoryStructureFileId(
   "packages/contracts/src/manager-runtime-artifact-provenance.ts"
 );
-const intelligenceGraphFile = repositoryStructureFileId(
-  "packages/contracts/src/intelligence-graph.ts"
-);
 const runtimeStateTest = repositoryStructureFileId(
   "packages/contracts/test/manager-runtime-state.test.ts"
 );
@@ -175,9 +173,6 @@ const runtimeContextTest = repositoryStructureFileId(
 );
 const runtimeProvenanceTest = repositoryStructureFileId(
   "packages/contracts/test/manager-runtime-artifact-provenance.test.ts"
-);
-const intelligenceGraphTest = repositoryStructureFileId(
-  "packages/contracts/test/intelligence-graph.test.ts"
 );
 
 const edges: IntelligenceGraphEdge[] = [
@@ -233,11 +228,12 @@ const edges: IntelligenceGraphEdge[] = [
   }),
   edge({
     id: "memory-private-chat-intelligence-kernel",
-    type: "RUNTIME_GUARDED_BY",
+    type: "PROPOSES_PERSISTENCE_GUARD_IN",
     from: "claim-context-private-chat-forbidden",
-    to: intelligenceGraphFile,
+    to: "proposal-pr-269-real-knowledge",
     location: "packages/contracts/src/intelligence-graph.ts:D4_PRIVATE_CHAT persistence rejection",
-    validFrom: runtimeSnapshotAt
+    validFrom: recordedAt,
+    status: "discovered"
   }),
   edge({
     id: "memory-private-chat-runtime-test",
@@ -249,11 +245,12 @@ const edges: IntelligenceGraphEdge[] = [
   }),
   edge({
     id: "memory-private-chat-graph-test",
-    type: "VERIFIED_BY_TEST",
+    type: "PROPOSES_TEST_COVERAGE_IN",
     from: "claim-context-private-chat-forbidden",
-    to: intelligenceGraphTest,
+    to: "proposal-pr-269-real-knowledge",
     location: "packages/contracts/test/intelligence-graph.test.ts:rejects D4 private chat data",
-    validFrom: runtimeSnapshotAt
+    validFrom: recordedAt,
+    status: "discovered"
   }),
 
   edge({
@@ -346,19 +343,21 @@ const edges: IntelligenceGraphEdge[] = [
   }),
   edge({
     id: "memory-corrections-partial-enforcement",
-    type: "PARTIALLY_ENFORCED_BY",
+    type: "PROPOSES_PARTIAL_ENFORCEMENT_IN",
     from: "claim-memory-corrections-versioned",
-    to: intelligenceGraphFile,
+    to: "proposal-pr-265-intelligence-graph-kernel",
     location: "packages/contracts/src/intelligence-graph.ts:supersedes validation",
-    validFrom: runtimeSnapshotAt
+    validFrom: recordedAt,
+    status: "discovered"
   }),
   edge({
     id: "memory-corrections-graph-test",
-    type: "VERIFIED_BY_TEST",
+    type: "PROPOSES_TEST_COVERAGE_IN",
     from: "claim-memory-corrections-versioned",
-    to: intelligenceGraphTest,
+    to: "proposal-pr-265-intelligence-graph-kernel",
     location: "packages/contracts/test/intelligence-graph.test.ts:versioned correction",
-    validFrom: runtimeSnapshotAt
+    validFrom: recordedAt,
+    status: "discovered"
   }),
 
   edge({
