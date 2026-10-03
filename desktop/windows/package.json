@@ -1,6 +1,6 @@
 {
   "name": "cosmora-windows-desktop",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Thin Windows desktop client for the hosted Cosmora workspace",
   "main": "main.cjs",
@@ -25,6 +25,7 @@
       "connection-state.cjs",
       "credential-store.cjs",
       "support-bundle.cjs",
+      "update-policy.cjs",
       "connection.html",
       "connection.js",
       "connection.css"
