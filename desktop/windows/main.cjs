@@ -609,7 +609,7 @@ function resolveConnectionCredentials(payload, origin) {
   let password = typeof payload?.password === "string" ? payload.password.slice(0, 2048) : "";
   const rememberCredentials = payload?.rememberCredentials === true;
 
-  if (payload?.useStoredCredentials === true && rememberCredentials && password === "") {
+  if (payload?.useStoredCredentials === true && password === "") {
     const saved = credentialStore().load(origin);
     if (saved && (!username || username === saved.username)) {
       username = saved.username;
@@ -711,19 +711,26 @@ async function connectAndLoad({
 }
 
 async function tryStartupConnection() {
-  const origin = readSavedOrigin();
-  const saved = credentialStore().load(origin);
-  const result = await connectAndLoad({
-    origin,
-    username: saved?.username || "",
-    password: saved?.password || "",
-    rememberCredentials: Boolean(saved),
-    source: "startup"
-  });
+  if (connectionInFlight) return;
+  connectionInFlight = true;
 
-  if (!result.ok) {
-    if (result.code === "auth" && saved) credentialStore().clear();
-    await showConnection(result.message);
+  try {
+    const origin = readSavedOrigin();
+    const saved = credentialStore().load(origin);
+    const result = await connectAndLoad({
+      origin,
+      username: saved?.username || "",
+      password: saved?.password || "",
+      rememberCredentials: Boolean(saved),
+      source: "startup"
+    });
+
+    if (!result.ok) {
+      if (result.code === "auth" && saved) credentialStore().clear();
+      await showConnection(result.message);
+    }
+  } finally {
+    connectionInFlight = false;
   }
 }
 
