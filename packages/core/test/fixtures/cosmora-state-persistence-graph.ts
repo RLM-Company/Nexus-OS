@@ -58,6 +58,10 @@ const nodes = [
   storeNode({
     id: "entity-store-general-chat-runtime",
     location: "apps/api/src/general-chat-runtime-store.ts:GeneralChatRuntimeStore"
+  }),
+  storeNode({
+    id: "entity-agent-blueprint",
+    location: "packages/contracts/src/agent-studio.ts:AgentBlueprintSchema"
   })
 ] as const;
 
@@ -251,7 +255,7 @@ const edges: IntelligenceGraphEdge[] = [
     id: "state-blueprint-persists",
     type: "PERSISTS",
     from: "entity-store-agent-blueprint",
-    to: "entity-agent-instance",
+    to: "entity-agent-blueprint",
     location: "packages/db/src/agent-blueprint-store.ts:agent_blueprints"
   }),
   edge({
@@ -265,15 +269,29 @@ const edges: IntelligenceGraphEdge[] = [
     id: "state-blueprint-versioning",
     type: "USES_OPTIMISTIC_VERSIONING_FOR",
     from: "entity-store-agent-blueprint",
-    to: "entity-agent-instance",
+    to: "entity-agent-blueprint",
     location: "packages/db/src/agent-blueprint-store.ts:createBlueprintVersion:expectedVersion"
   }),
   edge({
     id: "state-blueprint-project-bound",
     type: "PROJECT_SCOPES",
     from: "entity-store-agent-blueprint",
-    to: "entity-agent-instance",
+    to: "entity-agent-blueprint",
     location: "packages/db/src/agent-blueprint-store.ts:_ownsProject"
+  }),
+  edge({
+    id: "state-blueprint-contract-file",
+    type: "DEFINED_IN_FILE",
+    from: "entity-agent-blueprint",
+    to: repositoryStructureFileId("packages/contracts/src/agent-studio.ts"),
+    location: "packages/contracts/src/agent-studio.ts:AgentBlueprintSchema"
+  }),
+  edge({
+    id: "state-blueprint-instance-shape",
+    type: "BLUEPRINT_FOR",
+    from: "entity-agent-blueprint",
+    to: "entity-agent-instance",
+    location: "packages/contracts/src/agent-studio.ts:AgentInstanceSchema.blueprint"
   }),
   edge({
     id: "state-blueprint-test",
@@ -360,6 +378,12 @@ const records: IntelligenceGraphSearchRecord[] = [
     text: "general chat runtime store atomic queued run claim duplicate execution guard",
     excerpt:
       "Runtime store atomically claims queued chat runs and guards against duplicate execution.",
+    estimated_tokens: 18
+  },
+  {
+    node: { id: "entity-agent-blueprint", version: 1 },
+    text: "agent blueprint versioned project scoped grant memory scope function behavior model profile",
+    excerpt: "AgentBlueprint is a versioned project-bound composition embedded into an AgentInstance.",
     estimated_tokens: 18
   }
 ];
