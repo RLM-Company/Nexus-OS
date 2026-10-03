@@ -643,9 +643,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("preserves the CI failure-to-fix learning chain", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "evaluation-ci-1007-temporal|FOUND_ISSUE|feedback-ci-record-vs-source-time"
@@ -660,9 +658,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("records the final green gate as evidence for PR 269", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const green = graph.nodes.find(
-      (node) => node.node_id === "evaluation-ci-1026-green"
-    );
+    const green = graph.nodes.find((node) => node.node_id === "evaluation-ci-1026-green");
 
     expect(green?.verification_status).toBe("verified");
     expect(green?.source_ref.location).toContain("conclusion=success");
@@ -678,9 +674,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("remembers the E2E selector failure and its fix", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "evaluation-ci-1018-e2e|FOUND_ISSUE|feedback-ci-manager-demo-selector"
