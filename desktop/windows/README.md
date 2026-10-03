@@ -18,7 +18,8 @@ The desktop client:
 - uses bounded reconnect backoff after repeated health failures, renderer loss or main-frame load
   failures;
 - restores the most recent same-origin route after reconnecting;
-- keeps cross-origin navigation outside the embedded app and rejects cross-origin server redirects.
+- keeps cross-origin navigation outside the embedded app and rejects cross-origin server redirects;
+- refuses external browser URLs that contain embedded credentials.
 
 The global server-side AI emergency stop is not modified by the desktop client.
 
@@ -93,6 +94,7 @@ The log is capped at approximately 1 MiB and retains approximately the latest 51
 - TLS certificate errors are explicitly rejected
 - cross-origin redirects are blocked
 - credentials in navigation URLs are rejected
+- server credentials are never supplied to proxy authentication challenges
 - a single application instance is enforced
 
 ## Local policy tests
@@ -103,8 +105,10 @@ From the repository root:
 node --test desktop/windows/test/*.test.cjs
 ```
 
-These tests cover origin policy, navigation policy, reconnect backoff, diagnostic URL redaction,
-download filenames and protected credential persistence.
+These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
+reconnect backoff, diagnostic URL redaction, download filenames and protected credential
+persistence. The Windows workflow also runs Node syntax checks against every packaged JavaScript
+entry point before building the installer.
 
 ## Build the Windows installer
 
