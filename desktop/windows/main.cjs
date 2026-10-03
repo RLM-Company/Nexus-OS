@@ -981,7 +981,7 @@ function installPowerLifecycle() {
 
   powerMonitor.on("unlock-screen", () => {
     appendDiagnostic("screen_unlocked");
-    if (currentOrigin) void heartbeatTick();
+    if (currentOrigin && !connectionInFlight) void heartbeatTick();
   });
 }
 
