@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 383 nodes;
-- 1052 typed edges;
-- 383 retrieval records.
+- 403 nodes;
+- 1084 typed edges;
+- 403 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -123,5 +123,9 @@ shared no-external-authority / no-permission-authority / no-policy-bypass constr
 Runtime safety scenarios are first-class Evaluation nodes. They map release-gate scenarios to the
 policy, routing, memory, checkpoint, critic and Emergency Stop rules they exercise, plus the exact
 catalog/runner tests that verify those scenarios.
+
+CI learning is retained as verified work experience: failed quality-gate runs are connected to the
+issue they exposed, the fix that resolved it, and the next validation run. A final green run is
+stored as branch evidence rather than silently discarded once the PR passes.
 
 Do not create bulk generic `RELATES_TO` edges to inflate graph density.
