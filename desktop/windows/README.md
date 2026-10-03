@@ -4,9 +4,10 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.6.0** hardens the signed-release trust chain on top of 0.5.0. Production signing now
-requires a pinned signer identity, Code Signing EKU and a valid timestamp certificate before release
-metadata can be accepted.
+Version **0.7.0** adds an end-to-end NSIS installer lifecycle check on top of the 0.6.0 signing
+trust chain. CI now installs the generated EXE into a clean temporary directory, launches the
+installed packaged application in a no-network smoke mode, verifies its packaged identity, then
+silently uninstalls it and requires the installation directory to disappear.
 
 ## Runtime model
 
@@ -141,6 +142,24 @@ against the signed installer's version, filename, byte size and SHA-256 before u
 PR workflows never receive signing credentials. See `desktop/windows/SIGNING.md` for the release
 contract.
 
+## Installer lifecycle smoke test
+
+The ordinary Windows workflow validates more than the existence of an NSIS file. After the installer
+is built, CI:
+
+1. performs a silent install into an isolated temporary directory;
+2. requires the installed `Cosmora.exe` and NSIS uninstaller to exist;
+3. launches the installed executable with the explicit `--cosmora-smoke-test` argument;
+4. requires the process to report the exact package version, `win32/x64`, packaged mode, installed
+   executable path, resources directory and packaged `app.asar` path;
+5. performs a silent uninstall;
+6. waits for NSIS cleanup and fails if the installation directory remains.
+
+Smoke mode executes before BrowserWindow/session creation. It does not perform the normal startup
+health probe and does not connect to Cosmora. The marker path is supplied through
+`COSMORA_SMOKE_OUTPUT` and is accepted only inside the operating-system temporary directory with a
+restricted `cosmora-smoke-*.json` filename.
+
 ## Downloads and artifacts
 
 Only downloads whose URL belongs to the active Cosmora origin are accepted.
@@ -198,8 +217,9 @@ node --test desktop/windows/test/*.test.cjs
 
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
-validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, support-bundle
-redaction, diagnostic URL redaction, download filenames and protected credential persistence. The
+validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, packaged smoke-mode
+policy, support-bundle redaction, diagnostic URL redaction, download filenames and protected
+credential persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
 building the installer.
 
@@ -216,7 +236,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.6.0-x64.exe`.
+`Cosmora-Setup-0.7.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
