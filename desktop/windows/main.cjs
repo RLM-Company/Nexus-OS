@@ -734,7 +734,9 @@ async function fetchDesktopUpdate(origin) {
         ok: false,
         code: "too_large",
         message:
-          cause instanceof Error ? cause.message : "Манифест обновления превышает допустимый размер."
+          cause instanceof Error
+            ? cause.message
+            : "Манифест обновления превышает допустимый размер."
       };
     }
 
