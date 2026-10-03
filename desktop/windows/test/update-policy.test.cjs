@@ -24,6 +24,7 @@ test("parses stable and prerelease versions", () => {
     prerelease: ["beta", 2]
   });
   assert.equal(parseVersion("01.2.3"), null);
+  assert.equal(parseVersion("1.2.3-beta.01"), null);
   assert.equal(parseVersion("1.2"), null);
 });
 
@@ -74,7 +75,8 @@ test("treats equal or older versions as no update", () => {
     platform: "win32",
     arch: "x64",
     channel: "stable",
-    publishedAt: "2026-10-03T08:00:00Z"
+    publishedAt: "2026-10-03T08:00:00Z",
+    releasePageUrl: "https://example.com/cosmora/releases"
   };
 
   assert.equal(validateUpdateManifest({ ...base, version: "0.4.0" }, "0.4.0").updateAvailable, false);
@@ -88,7 +90,8 @@ test("rejects unsafe update URLs and malformed installer metadata", () => {
     arch: "x64",
     channel: "stable",
     version: "0.5.0",
-    publishedAt: "2026-10-03T08:00:00Z"
+    publishedAt: "2026-10-03T08:00:00Z",
+    releasePageUrl: "https://example.com/cosmora/releases/0.5.0"
   };
 
   assert.throws(
