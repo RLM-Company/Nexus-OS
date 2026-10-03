@@ -16,6 +16,10 @@ The signed workflow:
 - requires the requested version to exactly match `desktop/windows/package.json`;
 - reads certificate material only from environment secrets;
 - builds first, then verifies Windows Authenticode status is `Valid`;
+- requires the actual signer thumbprint and subject to match protected environment pins;
+- requires the signer certificate to contain the Code Signing EKU;
+- requires a timestamp certificate with the Time Stamping EKU;
+- emits sanitized `signature-metadata.json` only after all signature checks pass;
 - generates release metadata and SHA-256 from the signed EXE, never from the unsigned PR artifact;
 - generates the update manifest from that signed artifact metadata;
 - verifies version, filename, byte size and SHA-256 agreement before uploading the release bundle;
@@ -26,7 +30,9 @@ The signed workflow:
 Configure these only inside the protected `windows-release` environment:
 
 - `WINDOWS_CSC_LINK` — electron-builder-compatible certificate source;
-- `WINDOWS_CSC_KEY_PASSWORD` — password for the signing identity.
+- `WINDOWS_CSC_KEY_PASSWORD` — password for the signing identity;
+- `WINDOWS_CSC_EXPECTED_THUMBPRINT` — pinned signer certificate thumbprint;
+- `WINDOWS_CSC_EXPECTED_SUBJECT` — pinned signer certificate subject.
 
 Do not expose these values to ordinary pull-request workflows.
 
@@ -38,7 +44,9 @@ Do not expose these values to ordinary pull-request workflows.
 - `published_at` — ISO 8601 release timestamp;
 - `confirm` — exactly `SIGNED_RELEASE`.
 
-The workflow fails closed if any validation or Authenticode verification fails.
+The workflow fails closed if any validation, signer pin, EKU, timestamp or Authenticode verification
+fails. Rotating the production certificate therefore requires an explicit update to the protected
+thumbprint/subject environment secrets before the next signed release.
 
 ## Release bundle
 
@@ -48,6 +56,7 @@ A successful signed workflow uploads:
 - its blockmap;
 - `release-metadata.json`;
 - `SHA256SUMS.txt`;
+- `signature-metadata.json` with verified signer/timestamp certificate metadata;
 - `update-manifest.json`.
 
 The update manifest is suitable for the manual 0.4+ update-check protocol only after the operator
