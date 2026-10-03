@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **417 nodes**;
-- **1154 typed edges**;
+- **434 nodes**;
+- **1205 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -430,3 +430,32 @@ It records:
 
 Each store is connected to its exact source file, and where dedicated regression coverage exists, to
 the corresponding test file.
+
+
+## Model Intelligence Graph
+
+The unified graph now includes **17** Model Intelligence nodes and **51** evidence-grounded
+relationships.
+
+Verified ModelVersion observations:
+
+- `mock:manager-b0.1` from the default bootstrap Registry;
+- `vibecode:gpt-5.5` from the owner-preview Registry;
+- `vibecode:claude-sonnet-5` from the owner-preview Registry.
+
+The two VibeCode observations are temporal: their authorized-discovery evidence is valid from
+2026-09-13 through 2026-10-13, and graph validity follows that evidence window.
+
+The layer records:
+
+- Registry membership and exact source documents;
+- streaming capability;
+- bootstrap confidential compatibility and zero pricing;
+- VibeCode non-confidential restriction and unknown pricing;
+- Router hard-filter and deterministic-scoring evaluations;
+- runtime binding checks requiring an active Registry route.
+
+A dedicated `claim-model-intelligence-recommend-only` node has
+`NOT_AUTHORITY_FOR` edges to both Model Registry and Router. Model Intelligence therefore stores
+observations and evaluations but cannot grant permission, declare a route active or bypass Router
+hard filters.
