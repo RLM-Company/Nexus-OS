@@ -38,6 +38,7 @@ function isAllowedRemoteNavigation(value, origin) {
   if (!origin) return false;
   try {
     const parsed = new URL(value);
+    if (parsed.username || parsed.password) return false;
     return (
       (parsed.protocol === "https:" || parsed.protocol === "http:") && parsed.origin === origin
     );
@@ -67,7 +68,14 @@ function safeDownloadFilename(value) {
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
     .replace(/[. ]+$/g, "")
     .slice(0, 180);
-  return cleaned || fallback;
+  if (!cleaned) return fallback;
+
+  const stem = path.parse(cleaned).name.toUpperCase();
+  if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(stem)) {
+    return "_" + cleaned;
+  }
+
+  return cleaned;
 }
 
 function nextAvailableDownloadPath(directory, filename, existsSync) {
