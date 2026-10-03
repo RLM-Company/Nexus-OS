@@ -20,18 +20,86 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(410);
-    expect(graph.records).toHaveLength(410);
-    expect(graph.edges).toHaveLength(1121);
+    expect(graph.nodes).toHaveLength(416);
+    expect(graph.records).toHaveLength(416);
+    expect(graph.edges).toHaveLength(1152);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      410
+      416
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1121
+      1152
     );
 
     expect(() => createIndex()).not.toThrow();
+  });
+
+  it("retrieves Manager persistence invariants from the exact state store", () => {
+    const packet = createIndex().query({
+      owner_id: "owner-cosmora",
+      project_id: "project-nexus-os",
+      text: "Manager work persistent store idempotency optimistic version recovery no replay",
+      mode: "multi_hop",
+      verified_only: true,
+      budget: {
+        max_depth: 2,
+        max_nodes: 24,
+        max_edges: 32,
+        max_fan_out: 16,
+        max_context_tokens: 4_000
+      }
+    });
+
+    const ids = packet.nodes.map(({ node }) => node.node_id);
+    expect(ids).toContain("entity-store-manager-work");
+    expect(ids).toContain("entity-manager-work");
+    expect(ids).toContain(repositoryStructureFileId("packages/db/src/manager-work-store.ts"));
+
+    const pairs = new Set(
+      packet.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    expect(pairs).toContain(
+      "entity-store-manager-work|ENFORCES_IDEMPOTENCY_FOR|entity-manager-work"
+    );
+    expect(pairs).toContain(
+      "entity-store-manager-work|USES_OPTIMISTIC_VERSIONING_FOR|entity-manager-work"
+    );
+    expect(pairs).toContain(
+      "entity-store-manager-work|RECOVERS_WITHOUT_AUTOMATIC_REPLAY|entity-manager-work"
+    );
+  });
+
+  it("keeps usage accounting uncertainty explicit in persistent state", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "entity-store-project-usage|PRESERVES_UNKNOWN_COST_FOR|entity-project-usage"
+    );
+    expect(pairs).toContain(
+      "entity-store-project-usage|USES_OPTIMISTIC_VERSIONING_FOR|entity-project-usage"
+    );
+  });
+
+  it("maps identity and chat runtime stores to their safety invariants and tests", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "entity-store-identity|HASHES_SESSION_TOKEN_FOR|entity-identity-session"
+    );
+    expect(pairs).toContain(
+      "entity-store-general-chat-runtime|ATOMICALLY_CLAIMS|entity-general-chat-runtime"
+    );
+    expect(pairs).toContain(
+      `entity-store-identity|VERIFIED_BY_TEST|${repositoryStructureFileId(
+        "packages/db/test/identity-store.test.ts"
+      )}`
+    );
   });
 
   it("bridges Manager policy knowledge to the exact runtime implementation file", () => {
