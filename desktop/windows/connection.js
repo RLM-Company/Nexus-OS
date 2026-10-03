@@ -10,11 +10,13 @@ const button = document.querySelector("#connect");
 const error = document.querySelector("#error");
 
 let hasStoredCredentials = false;
+let storedOrigin = "";
 
 async function initialize() {
   try {
     const defaults = await window.cosmoraDesktop.getConnectionDefaults();
     origin.value = defaults.origin;
+    storedOrigin = defaults.origin;
     username.value = defaults.username || "";
     remember.checked = Boolean(defaults.rememberCredentials);
     hasStoredCredentials = Boolean(defaults.rememberCredentials);
@@ -46,7 +48,7 @@ form.addEventListener("submit", async (event) => {
       username: username.value,
       password: password.value,
       rememberCredentials: remember.checked,
-      useStoredCredentials: hasStoredCredentials && remember.checked && password.value === ""
+      useStoredCredentials: hasStoredCredentials && password.value === ""
     });
 
     if (!result.ok) {
@@ -61,6 +63,15 @@ form.addEventListener("submit", async (event) => {
   } finally {
     button.disabled = false;
     button.textContent = "Подключиться";
+  }
+});
+
+origin.addEventListener("input", () => {
+  if (hasStoredCredentials && origin.value.trim() !== storedOrigin) {
+    hasStoredCredentials = false;
+    remember.checked = false;
+    credentialStatus.textContent =
+      "Для другого сервера сохранённые учётные данные использоваться не будут.";
   }
 });
 
