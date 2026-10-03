@@ -10,6 +10,10 @@ function redactString(value) {
     .replace(
       /([?&](?:token|access_token|refresh_token|password|secret|api[_-]?key)=)[^&#\s]*/gi,
       "$1[REDACTED]"
+    )
+    .replace(
+      /\b(password|passwd|secret|token|api[_-]?key|authorization)=([^\s,;]+)/gi,
+      "$1=[REDACTED]"
     );
 }
 
