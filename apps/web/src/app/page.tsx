@@ -1404,7 +1404,7 @@ export default function Home() {
     projectPromotionPendingRef.current = true;
     const content = projectProposal.content;
     const sourceChatId = activeLocalChatId;
-    const epoch = viewEpochRef.current;
+    let epoch = viewEpochRef.current;
     setSending(true);
     setRunPhase("queued");
     setError(null);
@@ -1418,6 +1418,11 @@ export default function Home() {
         void loadProjects().catch(() => undefined);
         return;
       }
+      // Promotion changes the active view. Ignore pending reads from the source chat.
+      epoch = ++viewEpochRef.current;
+      setSending(true);
+      setRunPhase("queued");
+      setLastCompletedRoute(null);
       selectedProjectRef.current = accepted.project.id;
       replaceConsoleRoute(accepted.project.id, "chat");
       viewRequestRef.current += 1;
