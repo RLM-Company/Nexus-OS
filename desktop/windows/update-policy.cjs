@@ -8,9 +8,9 @@ const MAX_INSTALLER_BYTES = 512 * 1024 * 1024;
 
 function parseVersion(value) {
   if (typeof value !== "string") return null;
-  const match = value.trim().match(
-    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?$/
-  );
+  const match = value
+    .trim()
+    .match(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?$/);
   if (!match) return null;
 
   const core = [match[1], match[2], match[3]].map(Number);
@@ -143,7 +143,9 @@ function validateUpdateManifest(value, currentVersion) {
   }
 
   const notes =
-    typeof value.notes === "string" ? value.notes.replace(/[\u0000-\u001f]+/g, " ").slice(0, 2000) : "";
+    typeof value.notes === "string"
+      ? value.notes.replace(/[\u0000-\u001f]+/g, " ").slice(0, 2000)
+      : "";
 
   return {
     schemaVersion: 1,
