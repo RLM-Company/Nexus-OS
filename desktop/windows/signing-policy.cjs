@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -116,12 +117,38 @@ function validateSignatureEvidence(evidence, expected) {
   };
 }
 
-function writeSignatureMetadata({ evidencePath, outputPath, expectedThumbprint, expectedSubject }) {
+function installerIdentity(installerPath) {
+  const stats = fs.statSync(installerPath);
+  if (!stats.isFile() || stats.size <= 0) {
+    throw new Error("Installer path is not a non-empty regular file.");
+  }
+
+  const digest = crypto.createHash("sha256");
+  digest.update(fs.readFileSync(installerPath));
+
+  return {
+    filename: path.basename(installerPath),
+    sizeBytes: stats.size,
+    sha256: digest.digest("hex")
+  };
+}
+
+function writeSignatureMetadata({
+  evidencePath,
+  installerPath,
+  outputPath,
+  expectedThumbprint,
+  expectedSubject
+}) {
   const evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
-  const metadata = validateSignatureEvidence(evidence, {
+  const signature = validateSignatureEvidence(evidence, {
     thumbprint: expectedThumbprint,
     subject: expectedSubject
   });
+  const metadata = {
+    ...signature,
+    artifact: installerIdentity(installerPath)
+  };
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, JSON.stringify(metadata, null, 2) + "\n", "utf8");
@@ -151,6 +178,7 @@ function runCli(argv) {
   const values = parseArgs(argv);
   const metadata = writeSignatureMetadata({
     evidencePath: requireArg(values, "evidence"),
+    installerPath: requireArg(values, "installer"),
     outputPath: requireArg(values, "output"),
     expectedThumbprint: requireArg(values, "expected-thumbprint"),
     expectedSubject: requireArg(values, "expected-subject")
@@ -171,6 +199,7 @@ module.exports = {
   CODE_SIGNING_EKU,
   SIGNATURE_SCHEMA_VERSION,
   TIMESTAMPING_EKU,
+  installerIdentity,
   normalizeSubject,
   normalizeThumbprint,
   validateSignatureEvidence,
