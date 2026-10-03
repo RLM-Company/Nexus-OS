@@ -1,5 +1,7 @@
 "use strict";
 
+const { normalizeServerOrigin } = require("./connection-policy.cjs");
+
 const UPDATE_MANIFEST_PATH = "/api/v1/desktop/windows/update.json";
 const MAX_MANIFEST_BYTES = 64 * 1024;
 const MAX_INSTALLER_BYTES = 512 * 1024 * 1024;
@@ -11,11 +13,10 @@ function parseVersion(value) {
   );
   if (!match) return null;
 
-  const prerelease = match[4]
-    ? match[4].split(".").map((part) => (/^\d+$/.test(part) ? Number(part) : part))
-    : [];
+  const rawPrerelease = match[4] ? match[4].split(".") : [];
+  if (rawPrerelease.some((part) => part === "" || /^0\d+$/.test(part))) return null;
 
-  if (prerelease.some((part) => part === "")) return null;
+  const prerelease = rawPrerelease.map((part) => (/^\d+$/.test(part) ? Number(part) : part));
 
   return {
     major: Number(match[1]),
@@ -42,7 +43,7 @@ function comparePrerelease(left, right) {
     const bNumber = typeof b === "number";
     if (aNumber && bNumber) return a < b ? -1 : 1;
     if (aNumber !== bNumber) return aNumber ? -1 : 1;
-    return String(a).localeCompare(String(b));
+    return String(a) < String(b) ? -1 : 1;
   }
 
   return 0;
@@ -63,11 +64,8 @@ function compareVersions(leftValue, rightValue) {
 }
 
 function updateManifestUrl(origin) {
-  const parsed = new URL(origin);
-  if (parsed.protocol !== "https:" && parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
-    throw new Error("Update manifest requires a trusted Cosmora origin.");
-  }
-  return new URL(UPDATE_MANIFEST_PATH, parsed.origin).toString();
+  const normalized = normalizeServerOrigin(origin);
+  return new URL(UPDATE_MANIFEST_PATH, normalized).toString();
 }
 
 function safeHttpsUrl(value, label) {
@@ -107,12 +105,18 @@ function validateUpdateManifest(value, currentVersion) {
     throw new Error("Update manifest contains an invalid version.");
   }
 
+  if (typeof value.publishedAt !== "string" || value.publishedAt.trim() === "") {
+    throw new Error("Update manifest contains an invalid publish date.");
+  }
   const publishedAt = new Date(value.publishedAt);
-  if (!value.publishedAt || Number.isNaN(publishedAt.getTime())) {
+  if (Number.isNaN(publishedAt.getTime())) {
     throw new Error("Update manifest contains an invalid publish date.");
   }
 
   const releasePageUrl = safeHttpsUrl(value.releasePageUrl, "Release page");
+  if (!releasePageUrl) {
+    throw new Error("Update manifest requires a release page.");
+  }
   const downloadUrl = safeHttpsUrl(value.downloadUrl, "Download URL");
 
   if (downloadUrl && !new URL(downloadUrl).pathname.toLowerCase().endsWith(".exe")) {
