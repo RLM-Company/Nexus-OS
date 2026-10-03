@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 416 nodes;
-- 1152 typed edges;
-- 416 retrieval records.
+- 417 nodes;
+- 1154 typed edges;
+- 417 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -142,4 +142,4 @@ to the exact stores that persist them.
 
 State-specific invariants include idempotency, optimistic versioning, fail-closed recovery without
 automatic replay, unknown-cost preservation, owner/project scoping, session-token hashing and atomic
-queued-run claims.
+queued-run claims. Agent Blueprint persistence is modeled separately from runtime Agent Instance state.
