@@ -263,6 +263,9 @@ export const validateIntelligenceGraphSnapshot = (input: {
     if (node.owner_id !== input.ownerId) {
       issues.push(`Node ${key} belongs to another owner`);
     }
+    if (node.sensitivity === "D4_PRIVATE_CHAT") {
+      issues.push(`Node ${key} cannot persist D4 private chat data`);
+    }
     if (node.scope === "project") {
       if (input.projectId === null || node.project_id !== input.projectId) {
         issues.push(`Node ${key} belongs to another project`);
@@ -307,6 +310,9 @@ export const validateIntelligenceGraphSnapshot = (input: {
 
     if (edge.owner_id !== input.ownerId) {
       issues.push(`Edge ${key} belongs to another owner`);
+    }
+    if (edge.sensitivity === "D4_PRIVATE_CHAT") {
+      issues.push(`Edge ${key} cannot persist D4 private chat data`);
     }
     if (edge.scope === "project") {
       if (input.projectId === null || edge.project_id !== input.projectId) {
