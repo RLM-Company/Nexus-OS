@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(383);
-    expect(graph.records).toHaveLength(383);
-    expect(graph.edges).toHaveLength(1052);
+    expect(graph.nodes).toHaveLength(403);
+    expect(graph.records).toHaveLength(403);
+    expect(graph.edges).toHaveLength(1084);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      383
+      403
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1052
+      1084
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -638,6 +638,58 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "evaluation-runtime-cross-project-leak-v1|EVALUATES|claim-runtime-project-bound"
+    );
+  });
+
+  it("preserves the CI failure-to-fix learning chain", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "evaluation-ci-1007-temporal|FOUND_ISSUE|feedback-ci-record-vs-source-time"
+    );
+    expect(pairs).toContain(
+      "feedback-ci-record-vs-source-time|RESOLVED_BY|event-ci-fix-record-time"
+    );
+    expect(pairs).toContain(
+      "event-ci-fix-record-time|VALIDATED_BY|evaluation-ci-1011-structure"
+    );
+  });
+
+  it("records the final green gate as evidence for PR 269", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const green = graph.nodes.find(
+      (node) => node.node_id === "evaluation-ci-1026-green"
+    );
+
+    expect(green?.verification_status).toBe("verified");
+    expect(green?.source_ref.location).toContain("conclusion=success");
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.type === "CONFIRMS_GREEN_GATE_FOR" &&
+          edge.from.id === "evaluation-ci-1026-green" &&
+          edge.to.id === "proposal-pr-269-real-knowledge"
+      )
+    ).toBe(true);
+  });
+
+  it("remembers the E2E selector failure and its fix", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "evaluation-ci-1018-e2e|FOUND_ISSUE|feedback-ci-manager-demo-selector"
+    );
+    expect(pairs).toContain(
+      "feedback-ci-manager-demo-selector|RESOLVED_BY|event-ci-fix-manager-demo-selector"
+    );
+    expect(pairs).toContain(
+      "event-ci-fix-manager-demo-selector|VALIDATED_BY|evaluation-ci-1026-green"
     );
   });
 
