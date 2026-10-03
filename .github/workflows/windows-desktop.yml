@@ -37,7 +37,9 @@ jobs:
           node --check desktop/windows/main.cjs
           node --check desktop/windows/preload.cjs
           node --check desktop/windows/connection-policy.cjs
+          node --check desktop/windows/connection-state.cjs
           node --check desktop/windows/credential-store.cjs
+          node --check desktop/windows/support-bundle.cjs
           node --check desktop/windows/connection.js
 
       - name: Test desktop policy
