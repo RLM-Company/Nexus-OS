@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Exact desktop version to release (for example 0.7.0)"
+        description: "Exact desktop version to release (for example 0.8.0)"
         required: true
         type: string
       release_page_url:
@@ -111,7 +111,16 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
-        run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
+        shell: pwsh
+        run: |
+          npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never 2>&1 |
+            Tee-Object -FilePath electron-builder.log
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          if (Select-String -Path electron-builder.log -SimpleMatch "default Electron icon is used") {
+            throw "Signed Windows build fell back to the default Electron icon."
+          }
 
       - name: Verify pinned Authenticode signature
         shell: pwsh
