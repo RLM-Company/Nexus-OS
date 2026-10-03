@@ -148,9 +148,9 @@ function isTrustedConnectionEvent(event) {
 function isTrustedMainWindowEvent(event) {
   return Boolean(
     mainWindow &&
-      !mainWindow.isDestroyed() &&
-      event.sender &&
-      event.sender.id === mainWindow.webContents.id
+    !mainWindow.isDestroyed() &&
+    event.sender &&
+    event.sender.id === mainWindow.webContents.id
   );
 }
 
