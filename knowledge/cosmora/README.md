@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 434 nodes;
-- 1205 typed edges;
-- 434 retrieval records.
+- 448 nodes;
+- 1248 typed edges;
+- 448 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -162,3 +162,24 @@ The VibeCode owner-preview observations are time-bounded to their Registry evide
 `valid_to = 2026-10-13T00:00:00.000Z`. They are explicitly marked non-confidential-compatible with
 unknown pricing, so the graph cannot silently turn preview metadata into a confidential or
 cost-bounded recommendation.
+
+
+## Memory Governance
+
+Memory governance distinguishes **owner-approved specification** from **current runtime
+enforcement**.
+
+The owner-approved Memory Constitution v1.1 explicitly says it is not runtime policy by itself.
+Accordingly, the graph uses different relationship types:
+
+- `RUNTIME_GUARDED_BY` for rules backed by current validators;
+- `PARTIALLY_ENFORCED_BY` where only one subsystem implements part of the policy;
+- `SPEC_ONLY_UNTIL_IMPLEMENTED` where the approved rule has no verified runtime enforcement yet.
+
+The current layer includes D0–D4 data classes, project isolation, data-only treatment for untrusted
+instructions, provenance constraints, versioned corrections and private-chat exclusion.
+
+`D4_PRIVATE_CHAT` is now rejected by the Intelligence Graph persistence validator itself in
+addition to the Manager runtime no-write-back guard. Deletion/trash behavior, global-owner-memory
+authorization, training-setting precedence, source transparency and memory-secret exclusion remain
+explicitly spec-only until their dedicated runtime paths exist.
