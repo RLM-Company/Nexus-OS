@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 417,
-    "edges": 1154,
-    "records": 417
+    "nodes": 434,
+    "edges": 1205,
+    "records": 434
   },
   "layers": [
     {
@@ -106,6 +106,13 @@
       "nodes": 7,
       "edges": 33,
       "authority": "verified_persistence_source"
+    },
+    {
+      "id": "model_intelligence",
+      "nodes": 17,
+      "edges": 51,
+      "authority": "verified_registry_and_router_evidence",
+      "mode": "observe_recommend_only"
     }
   ],
   "primary_relation_types": [
@@ -174,7 +181,17 @@
     "EXPOSES_RECOVERY_REQUIRED_FOR",
     "ATOMICALLY_CLAIMS",
     "PREVENTS_DUPLICATE_EXECUTION_FOR",
-    "BLUEPRINT_FOR"
+    "BLUEPRINT_FOR",
+    "REGISTERED_IN",
+    "DEFINED_BY",
+    "DESCRIBES",
+    "USES_EVIDENCE_FROM",
+    "CONFIRMS_CAPABILITY_FOR",
+    "CONFIRMS_CONFIDENTIAL_COMPATIBILITY_FOR",
+    "CONFIRMS_ZERO_COST_BOOTSTRAP_FOR",
+    "RESTRICTS_CONFIDENTIAL_USE_FOR",
+    "MARKS_UNKNOWN_PRICING_FOR",
+    "SERVES_BOOTSTRAP_RUNTIME_FOR"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -199,7 +216,8 @@
     "packages/core/test/fixtures/cosmora-runtime-safety-scenario-graph.ts",
     "packages/core/test/fixtures/cosmora-ci-learning-graph.ts",
     "packages/core/test/fixtures/cosmora-runtime-interface-graph.ts",
-    "packages/core/test/fixtures/cosmora-state-persistence-graph.ts"
+    "packages/core/test/fixtures/cosmora-state-persistence-graph.ts",
+    "packages/core/test/fixtures/cosmora-model-intelligence-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
