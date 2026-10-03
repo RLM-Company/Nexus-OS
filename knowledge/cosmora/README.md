@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 417 nodes;
-- 1154 typed edges;
-- 417 retrieval records.
+- 434 nodes;
+- 1205 typed edges;
+- 434 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -143,3 +143,23 @@ to the exact stores that persist them.
 State-specific invariants include idempotency, optimistic versioning, fail-closed recovery without
 automatic replay, unknown-cost preservation, owner/project scoping, session-token hashing and atomic
 queued-run claims. Agent Blueprint persistence is modeled separately from runtime Agent Instance state.
+
+
+## Model Intelligence
+
+Model Intelligence is **observe/recommend-only**. It never activates a route and never replaces the
+Model Registry or Router.
+
+The graph currently records:
+
+- the checked-in bootstrap `mock:manager-b0.1` ModelVersion;
+- the checked-in owner-preview `vibecode:gpt-5.5` and
+  `vibecode:claude-sonnet-5` ModelVersions;
+- Registry evidence, streaming capability, privacy compatibility, pricing status, Router hard
+  filters and deterministic scoring;
+- runtime binding tests that require an active Registry route.
+
+The VibeCode owner-preview observations are time-bounded to their Registry evidence window and have
+`valid_to = 2026-10-13T00:00:00.000Z`. They are explicitly marked non-confidential-compatible with
+unknown pricing, so the graph cannot silently turn preview metadata into a confidential or
+cost-bounded recommendation.
