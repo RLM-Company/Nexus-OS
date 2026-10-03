@@ -7,12 +7,15 @@ const projectId = "project-nexus-os";
 const sourceId = "source-nexus-os-main-62bc523";
 const recordedAt = "2026-10-03T08:57:16.000Z";
 const registryGeneratedAt = "2026-08-24T00:00:00.000Z";
+const ownerPreviewGeneratedAt = "2026-09-13T00:00:00.000Z";
+const ownerPreviewValidUntil = "2026-10-13T00:00:00.000Z";
 
 const node = (input: {
   id: string;
   kind: IntelligenceGraphNode["kind"];
   location: string;
   validFrom?: string;
+  validTo?: string | null;
 }): IntelligenceGraphNode => ({
   contract_version: 1,
   node_id: input.id,
@@ -24,7 +27,7 @@ const node = (input: {
   created_at: recordedAt,
   observed_at: recordedAt,
   valid_from: input.validFrom ?? registryGeneratedAt,
-  valid_to: null,
+  valid_to: input.validTo ?? null,
   verification_status: "verified",
   sensitivity: "D1_PROJECT",
   source_ref: {
@@ -58,6 +61,29 @@ const registryDocument = node({
   location: "config/model-registry.v1.json"
 });
 
+const ownerPreviewRegistryDocument = node({
+  id: "doc-model-registry-vibecode-owner-preview",
+  kind: "Document",
+  location: "config/model-registry.vibecode.v1.json",
+  validFrom: ownerPreviewGeneratedAt
+});
+
+const vibecodeGpt = node({
+  id: "model-version-vibecode-gpt-5-5",
+  kind: "ModelVersion",
+  location: "config/model-registry.vibecode.v1.json:vibecode:gpt-5.5",
+  validFrom: ownerPreviewGeneratedAt,
+  validTo: ownerPreviewValidUntil
+});
+
+const vibecodeClaude = node({
+  id: "model-version-vibecode-claude-sonnet-5",
+  kind: "ModelVersion",
+  location: "config/model-registry.vibecode.v1.json:vibecode:claude-sonnet-5",
+  validFrom: ownerPreviewGeneratedAt,
+  validTo: ownerPreviewValidUntil
+});
+
 const recommendOnly = node({
   id: "claim-model-intelligence-recommend-only",
   kind: "Claim",
@@ -65,8 +91,12 @@ const recommendOnly = node({
   validFrom: "2026-09-28T00:00:00.000Z"
 });
 
-const evaluation = (id: string, location: string): IntelligenceGraphNode =>
-  node({ id, kind: "Evaluation", location });
+const evaluation = (
+  id: string,
+  location: string,
+  validFrom = registryGeneratedAt,
+  validTo: string | null = null
+): IntelligenceGraphNode => node({ id, kind: "Evaluation", location, validFrom, validTo });
 
 const evaluations = [
   evaluation(
@@ -96,6 +126,24 @@ const evaluations = [
   evaluation(
     "evaluation-model-runtime-registry-binding",
     "apps/api/src/model-runtime.ts:buildModelRuntime"
+  ),
+  evaluation(
+    "evaluation-model-vibecode-evidence-window",
+    "config/model-registry.vibecode.v1.json:authorized_discovery",
+    ownerPreviewGeneratedAt,
+    ownerPreviewValidUntil
+  ),
+  evaluation(
+    "evaluation-model-vibecode-nonconfidential",
+    "config/model-registry.vibecode.v1.json:privacy",
+    ownerPreviewGeneratedAt,
+    ownerPreviewValidUntil
+  ),
+  evaluation(
+    "evaluation-model-vibecode-unknown-pricing",
+    "config/model-registry.vibecode.v1.json:pricing=null",
+    ownerPreviewGeneratedAt,
+    ownerPreviewValidUntil
   )
 ] as const;
 
@@ -105,6 +153,8 @@ const edge = (input: {
   from: string;
   to: string;
   location: string;
+  validFrom?: string;
+  validTo?: string | null;
 }): IntelligenceGraphEdge => ({
   contract_version: 1,
   edge_id: input.id,
@@ -117,8 +167,8 @@ const edge = (input: {
   scope: "project",
   created_at: recordedAt,
   observed_at: recordedAt,
-  valid_from: registryGeneratedAt,
-  valid_to: null,
+  valid_from: input.validFrom ?? registryGeneratedAt,
+  valid_to: input.validTo ?? null,
   verification_status: "verified",
   sensitivity: "D1_PROJECT",
   evidence_ref: {
@@ -334,6 +384,168 @@ const edges: IntelligenceGraphEdge[] = [
     location: "apps/api/test/model-runtime.test.ts:binds external adapter only to an active registry route"
   }),
   edge({
+    id: "model-intelligence-observes-vibecode-gpt",
+    type: "OBSERVES",
+    from: modelIntelligence.node_id,
+    to: vibecodeGpt.node_id,
+    location: "config/model-registry.vibecode.v1.json:vibecode:gpt-5.5",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-intelligence-observes-vibecode-claude",
+    type: "OBSERVES",
+    from: modelIntelligence.node_id,
+    to: vibecodeClaude.node_id,
+    location: "config/model-registry.vibecode.v1.json:vibecode:claude-sonnet-5",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-gpt-registered-in",
+    type: "REGISTERED_IN",
+    from: vibecodeGpt.node_id,
+    to: "entity-model-registry",
+    location: "config/model-registry.vibecode.v1.json:entries[1]",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-claude-registered-in",
+    type: "REGISTERED_IN",
+    from: vibecodeClaude.node_id,
+    to: "entity-model-registry",
+    location: "config/model-registry.vibecode.v1.json:entries[2]",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-gpt-defined-by-document",
+    type: "DEFINED_BY",
+    from: vibecodeGpt.node_id,
+    to: ownerPreviewRegistryDocument.node_id,
+    location: "config/model-registry.vibecode.v1.json:entries[1]",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-claude-defined-by-document",
+    type: "DEFINED_BY",
+    from: vibecodeClaude.node_id,
+    to: ownerPreviewRegistryDocument.node_id,
+    location: "config/model-registry.vibecode.v1.json:entries[2]",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-document-describes-gpt",
+    type: "DESCRIBES",
+    from: ownerPreviewRegistryDocument.node_id,
+    to: vibecodeGpt.node_id,
+    location: "config/model-registry.vibecode.v1.json:entries[1]",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-document-describes-claude",
+    type: "DESCRIBES",
+    from: ownerPreviewRegistryDocument.node_id,
+    to: vibecodeClaude.node_id,
+    location: "config/model-registry.vibecode.v1.json:entries[2]",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-evidence-evaluates-gpt",
+    type: "EVALUATES",
+    from: "evaluation-model-vibecode-evidence-window",
+    to: vibecodeGpt.node_id,
+    location: "config/model-registry.vibecode.v1.json:gpt-5.5:source",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-evidence-evaluates-claude",
+    type: "EVALUATES",
+    from: "evaluation-model-vibecode-evidence-window",
+    to: vibecodeClaude.node_id,
+    location: "config/model-registry.vibecode.v1.json:claude-sonnet-5:source",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-evidence-document",
+    type: "USES_EVIDENCE_FROM",
+    from: "evaluation-model-vibecode-evidence-window",
+    to: ownerPreviewRegistryDocument.node_id,
+    location: "config/model-registry.vibecode.v1.json:valid_until=2026-10-13",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-evidence-runtime-test",
+    type: "VERIFIED_BY_TEST",
+    from: "evaluation-model-vibecode-evidence-window",
+    to: runtimeTest,
+    location: "apps/api/test/model-runtime.test.ts:builds checked-in owner-preview route",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-nonconfidential-gpt",
+    type: "RESTRICTS_CONFIDENTIAL_USE_FOR",
+    from: "evaluation-model-vibecode-nonconfidential",
+    to: vibecodeGpt.node_id,
+    location: "config/model-registry.vibecode.v1.json:gpt-5.5:confidential_compatible=false",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-nonconfidential-claude",
+    type: "RESTRICTS_CONFIDENTIAL_USE_FOR",
+    from: "evaluation-model-vibecode-nonconfidential",
+    to: vibecodeClaude.node_id,
+    location: "config/model-registry.vibecode.v1.json:claude-sonnet-5:confidential_compatible=false",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-pricing-gpt",
+    type: "MARKS_UNKNOWN_PRICING_FOR",
+    from: "evaluation-model-vibecode-unknown-pricing",
+    to: vibecodeGpt.node_id,
+    location: "config/model-registry.vibecode.v1.json:gpt-5.5:pricing=null",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-pricing-claude",
+    type: "MARKS_UNKNOWN_PRICING_FOR",
+    from: "evaluation-model-vibecode-unknown-pricing",
+    to: vibecodeClaude.node_id,
+    location: "config/model-registry.vibecode.v1.json:claude-sonnet-5:pricing=null",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-runtime-validates-gpt",
+    type: "VALIDATED_BY",
+    from: vibecodeGpt.node_id,
+    to: "evaluation-model-runtime-registry-binding",
+    location: "apps/api/test/model-runtime.test.ts:MODEL_NAME=gpt-5.5",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
+    id: "model-vibecode-runtime-validates-preview-document",
+    type: "USES_EVIDENCE_FROM",
+    from: "evaluation-model-runtime-registry-binding",
+    to: ownerPreviewRegistryDocument.node_id,
+    location: "apps/api/test/model-runtime.test.ts:MODEL_REGISTRY_PATH=config/model-registry.vibecode.v1.json",
+    validFrom: ownerPreviewGeneratedAt,
+    validTo: ownerPreviewValidUntil
+  }),
+  edge({
     id: "model-bootstrap-serves-gateway",
     type: "SERVES_BOOTSTRAP_RUNTIME_FOR",
     from: bootstrapModel.node_id,
@@ -344,8 +556,11 @@ const edges: IntelligenceGraphEdge[] = [
 
 const nodes = [
   modelIntelligence,
-  bootstrapModel,
   registryDocument,
+  ownerPreviewRegistryDocument,
+  bootstrapModel,
+  vibecodeGpt,
+  vibecodeClaude,
   recommendOnly,
   ...evaluations
 ];
@@ -370,6 +585,24 @@ const records: IntelligenceGraphSearchRecord[] = [
     text: "model registry bootstrap b0.2 bootstrap 1 config",
     excerpt: "Checked-in Model Registry document containing the active bootstrap mock route.",
     estimated_tokens: 16
+  },
+  {
+    node: { id: ownerPreviewRegistryDocument.node_id, version: 1 },
+    text: "vibecode owner preview registry gpt 5.5 claude sonnet 5 evidence expiry",
+    excerpt: "Owner-preview Registry with external routes whose evidence expires on 2026-10-13.",
+    estimated_tokens: 18
+  },
+  {
+    node: { id: vibecodeGpt.node_id, version: 1 },
+    text: "vibecode gpt 5.5 owner preview streaming non confidential unknown pricing",
+    excerpt: "Time-bounded owner-preview ModelVersion from the checked-in VibeCode registry.",
+    estimated_tokens: 18
+  },
+  {
+    node: { id: vibecodeClaude.node_id, version: 1 },
+    text: "vibecode claude sonnet 5 owner preview streaming non confidential unknown pricing",
+    excerpt: "Time-bounded owner-preview ModelVersion from the checked-in VibeCode registry.",
+    estimated_tokens: 18
   },
   {
     node: { id: recommendOnly.node_id, version: 1 },
