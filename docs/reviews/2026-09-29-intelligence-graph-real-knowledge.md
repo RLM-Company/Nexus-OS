@@ -463,20 +463,21 @@ hard filters.
 
 The unified graph now includes **14** Memory Governance nodes and **43** relationships.
 
-It separates three states that must not be conflated:
+It separates authority states that must not be conflated:
 
 1. **specified** — owner-approved Memory Constitution rule;
 2. **runtime guarded** — a current validator/test enforces the rule at a concrete boundary;
-3. **spec only** — approved design that is not yet runtime policy.
+3. **candidate implementation** — implemented/proposed in an open Intelligence Graph PR but not merged into `main`;
+4. **spec only** — approved design that is not yet runtime policy.
 
 Runtime-backed examples include:
 
 - D4 private-chat write-back rejection in Manager runtime context;
-- D4 private-chat persistence rejection in the Intelligence Graph kernel;
+- D4 private-chat persistence rejection proposed in open PR #269 (candidate until merge);
 - project-bound context materialization;
 - data-only treatment of untrusted instructions;
 - project-local, acyclic artifact provenance;
-- Intelligence Graph supersession as partial support for versioned corrections.
+- Intelligence Graph supersession proposed in Package B / PR #265 as partial support for versioned corrections (candidate until merge).
 
 Explicitly spec-only examples include:
 
