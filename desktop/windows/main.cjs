@@ -843,7 +843,7 @@ ipcMain.on("cosmora:network-status", (event, payload) => {
   const online = payload?.online === true;
   appendDiagnostic("network_status", { online });
 
-  if (!currentOrigin) return;
+  if (!currentOrigin || connectionInFlight) return;
 
   if (!online) {
     stopHeartbeat();
@@ -972,7 +972,7 @@ function installPowerLifecycle() {
 
   powerMonitor.on("resume", () => {
     appendDiagnostic("system_resume");
-    if (!currentOrigin) return;
+    if (!currentOrigin || connectionInFlight) return;
     cancelRecovery();
     recoveryAttempt = 0;
     transitionState("resume");
