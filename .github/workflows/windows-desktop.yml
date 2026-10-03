@@ -31,6 +31,12 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
+      - name: Show exact Prettier diff
+        shell: pwsh
+        run: |
+          npx --yes prettier@3.9.6 --write desktop/windows/credential-store.cjs desktop/windows/main.cjs
+          git diff -- desktop/windows/credential-store.cjs desktop/windows/main.cjs
+
       - name: Test desktop policy
         run: node --test desktop/windows/test/*.test.cjs
 
