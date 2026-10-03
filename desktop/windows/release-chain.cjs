@@ -29,12 +29,7 @@ function readPackageVersion(packageJsonPath) {
   return parsed.version.trim();
 }
 
-function createReleaseMetadata({
-  installerPath,
-  packageJsonPath,
-  arch = DEFAULT_ARCH,
-  gitSha
-}) {
+function createReleaseMetadata({ installerPath, packageJsonPath, arch = DEFAULT_ARCH, gitSha }) {
   const version = readPackageVersion(packageJsonPath);
   const expectedName = expectedInstallerFilename(version, arch);
   const actualName = path.basename(installerPath);
@@ -155,13 +150,7 @@ function validateManifestAgainstRelease(manifest, metadata) {
   return validatedManifest;
 }
 
-function buildUpdateManifest({
-  metadata,
-  releasePageUrl,
-  downloadUrl,
-  publishedAt,
-  notes = ""
-}) {
+function buildUpdateManifest({ metadata, releasePageUrl, downloadUrl, publishedAt, notes = "" }) {
   const release = validateReleaseMetadata(metadata);
   const manifest = {
     schemaVersion: 1,
