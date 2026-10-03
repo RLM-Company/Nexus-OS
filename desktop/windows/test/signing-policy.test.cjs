@@ -43,6 +43,7 @@ test("normalizes certificate thumbprints", () => {
     expected.thumbprint
   );
   assert.equal(normalizeThumbprint("not-a-thumbprint"), null);
+  assert.equal(normalizeThumbprint("A".repeat(41)), null);
 });
 
 test("accepts pinned signer with code signing EKU and timestamp", () => {
