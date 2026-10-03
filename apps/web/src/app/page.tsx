@@ -289,7 +289,11 @@ const clientId = (): string =>
 
 const SIDEBAR_SECTIONS_STORAGE_KEY = "cosmora:sidebar-sections";
 const WORKSPACE_SURFACE_STORAGE_KEY = "cosmora:workspace-surface";
+const COMPOSER_DRAFT_STORAGE_PREFIX = "cosmora:composer-draft:";
 const EMPTY_LOCAL_CHAT_MESSAGES: LocalChatMessage[] = [];
+
+const composerDraftStorageKey = (projectId: string | null, chatId: string | null): string =>
+  `${COMPOSER_DRAFT_STORAGE_PREFIX}${projectId ? `project:${projectId}` : chatId ? `chat:${chatId}` : "new-chat"}`;
 
 const isToolSurface = (value: string | null): value is ToolSurface =>
   TOOL_ITEMS.some((item) => item.id === value);
@@ -418,6 +422,7 @@ export default function Home() {
   const [demoRuns, setDemoRuns] = useState<DemoManagerRun[]>([]);
   const [demoActionPending, setDemoActionPending] = useState(false);
   const [draft, setDraft] = useState("");
+  const [draftStorageReadyKey, setDraftStorageReadyKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -464,6 +469,27 @@ export default function Home() {
     : projects;
   const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
   const projectProposal = activeLocalChat?.projectProposal ?? null;
+  const composerDraftKey = composerDraftStorageKey(activeProject?.id ?? null, activeLocalChatId);
+
+  useEffect(() => {
+    setDraftStorageReadyKey(null);
+    try {
+      setDraft(window.localStorage.getItem(composerDraftKey) ?? "");
+    } catch {
+      setDraft("");
+    }
+    setDraftStorageReadyKey(composerDraftKey);
+  }, [composerDraftKey]);
+
+  useEffect(() => {
+    if (draftStorageReadyKey !== composerDraftKey) return;
+    try {
+      if (draft) window.localStorage.setItem(composerDraftKey, draft);
+      else window.localStorage.removeItem(composerDraftKey);
+    } catch {
+      // Draft remains available for the current session if persistent storage is unavailable.
+    }
+  }, [composerDraftKey, draft, draftStorageReadyKey]);
 
   useEffect(() => {
     try {
@@ -1294,6 +1320,11 @@ export default function Home() {
             };
             return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
           });
+          try {
+            window.localStorage.removeItem(composerDraftKey);
+          } catch {
+            // Server acceptance is authoritative even when local draft cleanup is unavailable.
+          }
           setActiveLocalChatId(accepted.chat.id);
           followGeneralChatStream(accepted);
           void loadGeneralChats().catch(() => {
