@@ -40,6 +40,7 @@ jobs:
           node --check desktop/windows/connection-state.cjs
           node --check desktop/windows/credential-store.cjs
           node --check desktop/windows/support-bundle.cjs
+          node --check desktop/windows/update-policy.cjs
           node --check desktop/windows/connection.js
 
       - name: Test desktop policy
