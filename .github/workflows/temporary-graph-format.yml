@@ -34,11 +34,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Format graph files
-        run: pnpm exec prettier --write \
-          docs/reviews/2026-09-29-intelligence-graph-real-knowledge.md \
-          knowledge/cosmora/README.md \
-          packages/core/test/fixtures/cosmora-state-persistence-graph.ts \
-          packages/core/test/intelligence-graph-unified-knowledge.test.ts
+        run: pnpm exec prettier --write docs/reviews/2026-09-29-intelligence-graph-real-knowledge.md knowledge/cosmora/README.md packages/core/test/fixtures/cosmora-state-persistence-graph.ts packages/core/test/intelligence-graph-unified-knowledge.test.ts
 
       - name: Commit formatting only
         shell: bash
