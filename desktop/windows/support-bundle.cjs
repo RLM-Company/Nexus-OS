@@ -5,6 +5,7 @@ const MAX_DIAGNOSTIC_RECORDS = 200;
 
 function redactString(value) {
   return String(value)
+    .replace(/\b(Authorization|Cookie|Set-Cookie):\s*[^\r\n]+/gi, "$1: [REDACTED]")
     .replace(/\b(Basic|Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
     .replace(/(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi, "$1[REDACTED]@")
     .replace(
