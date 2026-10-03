@@ -687,9 +687,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
     const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
-    expect(pairs).toContain(
-      "entity-api-manager-work|REQUIRES_IDENTITY|entity-identity-session"
-    );
+    expect(pairs).toContain("entity-api-manager-work|REQUIRES_IDENTITY|entity-identity-session");
     expect(pairs).toContain("entity-api-manager-work|MANAGES|entity-manager-work");
     expect(pairs).toContain(
       "entity-api-manager-work|CONTROLS_RUNTIME|artifact-manager-work-runtime"
@@ -722,9 +720,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       "entity-api-autonomy-policy|REQUIRES_STEP_UP_FOR_ESCALATION|entity-step-up-proof"
     );
-    expect(pairs).toContain(
-      "entity-api-autonomy-policy|ENFORCED_BY|entity-policy-engine"
-    );
+    expect(pairs).toContain("entity-api-autonomy-policy|ENFORCED_BY|entity-policy-engine");
   });
 
   it("keeps every bridge evidence-grounded and specifically typed", () => {
