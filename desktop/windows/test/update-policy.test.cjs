@@ -25,6 +25,8 @@ test("parses stable and prerelease versions", () => {
   });
   assert.equal(parseVersion("01.2.3"), null);
   assert.equal(parseVersion("1.2.3-beta.01"), null);
+  assert.equal(parseVersion("9007199254740992.0.0"), null);
+  assert.equal(parseVersion("1.2.3-beta.9007199254740992"), null);
   assert.equal(parseVersion("1.2"), null);
 });
 
@@ -35,7 +37,7 @@ test("compares stable and prerelease versions safely", () => {
   assert.equal(compareVersions("1.0.0", "1.0.0"), 0);
 });
 
-test("builds the manifest URL on the connected origin", () => {
+test("builds the manifest URL only on a trusted connected origin", () => {
   assert.equal(
     updateManifestUrl("https://cosmora.example"),
     "https://cosmora.example/api/v1/desktop/windows/update.json"
@@ -44,6 +46,7 @@ test("builds the manifest URL on the connected origin", () => {
     updateManifestUrl("http://127.0.0.1:3000"),
     "http://127.0.0.1:3000/api/v1/desktop/windows/update.json"
   );
+  assert.throws(() => updateManifestUrl("http://cosmora.example"), /HTTPS/);
 });
 
 test("accepts a valid stable Windows update manifest", () => {
@@ -97,6 +100,10 @@ test("rejects unsafe update URLs and malformed installer metadata", () => {
   assert.throws(
     () => validateUpdateManifest({ ...base, releasePageUrl: "http://example.com/release" }, "0.4.0"),
     /HTTPS/
+  );
+  assert.throws(
+    () => validateUpdateManifest({ ...base, releasePageUrl: "" }, "0.4.0"),
+    /release page/
   );
   assert.throws(
     () =>
