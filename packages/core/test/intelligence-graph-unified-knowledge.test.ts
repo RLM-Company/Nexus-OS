@@ -79,18 +79,14 @@ describe("unified Cosmora Intelligence Graph", () => {
 
     for (const claimId of specOnlyClaims) {
       expect(
-        graph.edges.some(
-          (edge) => edge.from.id === claimId && edge.type === "RUNTIME_GUARDED_BY"
-        )
+        graph.edges.some((edge) => edge.from.id === claimId && edge.type === "RUNTIME_GUARDED_BY")
       ).toBe(false);
     }
   });
 
   it("marks versioned memory correction as only partially enforced by graph supersession", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       `claim-memory-corrections-versioned|PARTIALLY_ENFORCED_BY|${repositoryStructureFileId(

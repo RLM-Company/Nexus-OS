@@ -459,7 +459,6 @@ A dedicated `claim-model-intelligence-recommend-only` node has
 observations and evaluations but cannot grant permission, declare a route active or bypass Router
 hard filters.
 
-
 ## Memory Governance Graph
 
 The unified graph now includes **14** Memory Governance nodes and **43** relationships.

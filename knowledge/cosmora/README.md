@@ -163,7 +163,6 @@ The VibeCode owner-preview observations are time-bounded to their Registry evide
 unknown pricing, so the graph cannot silently turn preview metadata into a confidential or
 cost-bounded recommendation.
 
-
 ## Memory Governance
 
 Memory governance distinguishes **owner-approved specification** from **current runtime

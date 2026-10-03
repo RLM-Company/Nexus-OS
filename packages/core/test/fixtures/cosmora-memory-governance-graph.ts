@@ -292,7 +292,8 @@ const edges: IntelligenceGraphEdge[] = [
     type: "RUNTIME_GUARDED_BY",
     from: "claim-context-untrusted-data-only",
     to: runtimeStateFile,
-    location: "packages/contracts/src/manager-runtime-state.ts:untrusted_instruction_treatment=data_only",
+    location:
+      "packages/contracts/src/manager-runtime-state.ts:untrusted_instruction_treatment=data_only",
     validFrom: runtimeSnapshotAt
   }),
   edge({
