@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 403 nodes;
-- 1084 typed edges;
-- 403 retrieval records.
+- 410 nodes;
+- 1121 typed edges;
+- 410 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -127,5 +127,9 @@ catalog/runner tests that verify those scenarios.
 CI learning is retained as verified work experience: failed quality-gate runs are connected to the
 issue they exposed, the fix that resolved it, and the next validation run. A final green run is
 stored as branch evidence rather than silently discarded once the PR passes.
+
+Runtime interfaces are modeled as compact API families rather than one node per HTTP method. Each
+family carries the exact route patterns in retrieval text and connects to its handler file, owner
+identity boundary, domain state, Model Gateway or Policy/Step-up controls, and concrete API tests.
 
 Do not create bulk generic `RELATES_TO` edges to inflate graph density.
