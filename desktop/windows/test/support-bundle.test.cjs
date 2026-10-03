@@ -10,8 +10,11 @@ const {
 
 test("redacts auth headers, URL credentials and sensitive query parameters", () => {
   const source =
+    "Authorization: Bearer header-secret Cookie: session=cookie-secret " +
     "Bearer abc.def https://owner:secret@example.test/path?token=abc&safe=1 Basic Zm9vOmJhcg==";
   const redacted = redactString(source);
+  assert.equal(redacted.includes("header-secret"), false);
+  assert.equal(redacted.includes("cookie-secret"), false);
   assert.equal(redacted.includes("abc.def"), false);
   assert.equal(redacted.includes("owner:secret"), false);
   assert.equal(redacted.includes("token=abc"), false);
