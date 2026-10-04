@@ -31,7 +31,9 @@ function responseFor(bytes, overrides = {}) {
     status: overrides.status || 200,
     headers: {
       "content-length":
-        overrides.contentLength === undefined ? String(bytes.length) : String(overrides.contentLength)
+        overrides.contentLength === undefined
+          ? String(bytes.length)
+          : String(overrides.contentLength)
     }
   });
 }
@@ -69,7 +71,11 @@ test("requires credential-free HTTPS EXE metadata", () => {
   assert.equal(requireInstallerMetadata(manifest).sizeBytes, bytes.length);
 
   assert.throws(
-    () => requireInstallerMetadata({ ...manifest, downloadUrl: "http://downloads.example/Cosmora.exe" }),
+    () =>
+      requireInstallerMetadata({
+        ...manifest,
+        downloadUrl: "http://downloads.example/Cosmora.exe"
+      }),
     /HTTPS/
   );
   assert.throws(
@@ -81,7 +87,11 @@ test("requires credential-free HTTPS EXE metadata", () => {
     /credential-free/
   );
   assert.throws(
-    () => requireInstallerMetadata({ ...manifest, downloadUrl: "https://downloads.example/Cosmora.zip" }),
+    () =>
+      requireInstallerMetadata({
+        ...manifest,
+        downloadUrl: "https://downloads.example/Cosmora.zip"
+      }),
     /EXE/
   );
 });
@@ -95,7 +105,8 @@ test("rejects redirects and mismatched Content-Length before writing", () => {
     /redirects/
   );
   assert.throws(
-    () => validateInstallerResponse(responseFor(bytes, { contentLength: bytes.length + 1 }), manifest),
+    () =>
+      validateInstallerResponse(responseFor(bytes, { contentLength: bytes.length + 1 }), manifest),
     /Content-Length/
   );
 });
@@ -114,10 +125,7 @@ test("streams, hashes and finalizes a verified installer", async () => {
   assert.equal(result.filename, "Cosmora-Setup-0.9.0-x64.exe");
   assert.equal(result.bytes, bytes.length);
   assert.equal(fs.readFileSync(result.path).toString("utf8"), bytes.toString("utf8"));
-  assert.equal(
-    result.sha256,
-    crypto.createHash("sha256").update(bytes).digest("hex")
-  );
+  assert.equal(result.sha256, crypto.createHash("sha256").update(bytes).digest("hex"));
   assert.equal(
     fs.readdirSync(directory).some((name) => name.endsWith(".part")),
     false
