@@ -127,12 +127,8 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
     const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
-    expect(pairs).toContain(
-      "manager-status-running|SAFE_RECOVERY_TO|manager-status-paused"
-    );
-    expect(pairs).toContain(
-      "manager-status-running|UNCERTAIN_RECOVERY_TO|manager-status-failed"
-    );
+    expect(pairs).toContain("manager-status-running|SAFE_RECOVERY_TO|manager-status-paused");
+    expect(pairs).toContain("manager-status-running|UNCERTAIN_RECOVERY_TO|manager-status-failed");
     expect(pairs).toContain(
       `claim-manager-recovery-no-auto-replay|VERIFIED_BY_TEST|${repositoryStructureFileId(
         "apps/api/test/manager-work.test.ts"
@@ -165,12 +161,8 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       "confirmation-status-approved|ONE_USE_CONSUMPTION_TO|confirmation-status-consumed"
     );
-    expect(pairs).toContain(
-      "step-up-status-active|CONSUMES_TO|step-up-status-consumed"
-    );
-    expect(pairs).toContain(
-      "step-up-status-active|EXPIRES_TO|step-up-status-expired"
-    );
+    expect(pairs).toContain("step-up-status-active|CONSUMES_TO|step-up-status-consumed");
+    expect(pairs).toContain("step-up-status-active|EXPIRES_TO|step-up-status-expired");
   });
 
   it("keeps recovery checkpoints from restoring authority", () => {

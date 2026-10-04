@@ -205,7 +205,6 @@ strictest affected capability, conditional expansions only come from the trusted
 scoped controls fail closed when a tool cannot enforce them, and child agent delegation cannot
 expand capabilities, tools, data scopes, objects, budgets, delegation depth or expiry.
 
-
 ## Execution & Recovery
 
 The graph now materializes the durable execution state machines instead of representing recovery

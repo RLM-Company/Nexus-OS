@@ -160,13 +160,17 @@ const edge = (input: {
 const managerContractFile = repositoryStructureFileId("packages/contracts/src/manager-work.ts");
 const policyContractFile = repositoryStructureFileId("packages/contracts/src/policy.ts");
 const stepUpContractFile = repositoryStructureFileId("packages/contracts/src/step-up.ts");
-const managerCoordinatorFile = repositoryStructureFileId("apps/api/src/manager-work-coordinator.ts");
+const managerCoordinatorFile = repositoryStructureFileId(
+  "apps/api/src/manager-work-coordinator.ts"
+);
 const managerStoreFile = repositoryStructureFileId("packages/db/src/manager-work-store.ts");
 const policyStoreFile = repositoryStructureFileId("packages/db/src/policy-store.ts");
 const stepUpStoreFile = repositoryStructureFileId("packages/db/src/step-up-proof-store.ts");
 const managerTest = repositoryStructureFileId("apps/api/test/manager-work.test.ts");
 const policyStoreTest = repositoryStructureFileId("packages/db/test/policy-store.test.ts");
-const toolRuntimeTest = repositoryStructureFileId("packages/tool-runtime/test/tool-runtime.test.ts");
+const toolRuntimeTest = repositoryStructureFileId(
+  "packages/tool-runtime/test/tool-runtime.test.ts"
+);
 const stepUpStoreTest = repositoryStructureFileId("packages/db/test/step-up-proof-store.test.ts");
 
 const definitionEdges: IntelligenceGraphEdge[] = [

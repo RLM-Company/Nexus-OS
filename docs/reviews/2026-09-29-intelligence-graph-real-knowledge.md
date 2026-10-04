@@ -513,7 +513,6 @@ Additional verified structure covers:
 Every runtime boundary is connected to its concrete source file and regression test rather than
 being inferred from prose.
 
-
 ## Execution & Recovery Graph
 
 The unified graph now includes **33 Execution & Recovery nodes** and **108 typed relationships**.
