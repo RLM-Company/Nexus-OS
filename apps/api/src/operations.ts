@@ -6,6 +6,7 @@ export type RuntimeFailureCode = GatewayErrorCode | "EMERGENCY_STOP" | "USAGE_LI
 
 const emptyFailures = (): Record<RuntimeFailureCode, number> => ({
   ROUTE_UNAVAILABLE: 0,
+  CONTEXT_TOO_LARGE: 0,
   PROVIDER_TIMEOUT: 0,
   PROVIDER_ERROR: 0,
   CIRCUIT_OPEN: 0,

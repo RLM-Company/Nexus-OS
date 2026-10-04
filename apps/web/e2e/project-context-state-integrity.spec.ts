@@ -69,7 +69,7 @@ test("rejects duplicate persisted Project Context source ids", async ({ page }) 
     );
   });
 
-  await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?context_preview=1&project=context-alpha&view=context");
 
   await expect(
     page.getByRole("alert").filter({ hasText: "Локальное состояние повреждено" })
@@ -109,7 +109,7 @@ test("rejects persisted Project Context sources above the 64k connected budget",
     );
   });
 
-  await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?context_preview=1&project=context-alpha&view=context");
 
   await expect(
     page.getByRole("alert").filter({ hasText: "Локальное состояние повреждено" })
@@ -147,7 +147,7 @@ test("prevents connecting a Project Context source above the 64k budget", async 
     );
   });
 
-  await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?context_preview=1&project=context-alpha&view=context");
 
   const panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
   await expect(panel.getByText("50 000 / 64 000 токенов")).toBeVisible();

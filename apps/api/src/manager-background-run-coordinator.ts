@@ -1,3 +1,4 @@
+import { ContextTooLargeError } from "@cosmora/core";
 import type { ManagerService } from "@cosmora/core";
 import {
   ProjectUsageLimitExceededError,
@@ -180,6 +181,7 @@ export class ManagerBackgroundRunCoordinator {
       const modelRequest = this.#manager.buildRequest({
         projectId: queued.project_id,
         runId: queued.run_id,
+        materials: this.#store.getMaterialsForRun(queued.run_id, queued.owner_id),
         messages: conversation
       });
       let completed: Extract<ModelGatewayStreamEvent, { type: "response.completed" }> | undefined;
@@ -302,11 +304,13 @@ export class ManagerBackgroundRunCoordinator {
       }
 
       const gatewayError =
-        error instanceof GatewayRunError
-          ? error
-          : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
-              cause: error
-            });
+        error instanceof ContextTooLargeError
+          ? new GatewayRunError("CONTEXT_TOO_LARGE", "gateway", error.message, false)
+          : error instanceof GatewayRunError
+            ? error
+            : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
+                cause: error
+              });
       this.#store.failRun(queued.run_id, gatewayError.code);
       this.#runtimeMetrics.runFailed(gatewayError.code);
       this.#logger?.warn(

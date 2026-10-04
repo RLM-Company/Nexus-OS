@@ -33,7 +33,7 @@ test("fully redacts quoted secret-like Project Context values", async ({ page, r
     { key: storageKey }
   );
 
-  await page.goto(`/?project=${encodeURIComponent(projectId)}&view=context`);
+  await page.goto(`/?context_preview=1&project=${encodeURIComponent(projectId)}&view=context`);
 
   const panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
   await expect(panel).toContainText("token=[скрыто]");

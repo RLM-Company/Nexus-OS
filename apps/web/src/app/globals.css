@@ -3937,3 +3937,112 @@ body:has(.workspace-drawer[open]) {
   overflow: auto;
   font-size: 0.85rem;
 }
+
+.chat-response {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chat-response p {
+  white-space: normal;
+}
+.chat-response li {
+  margin: 0.35em 0;
+}
+.chat-response a {
+  color: var(--accent, #b59eff);
+  text-decoration: underline;
+}
+.chat-response blockquote {
+  margin: 1em 0;
+  padding-left: 1em;
+  border-left: 3px solid var(--line);
+}
+.response-code {
+  max-width: 100%;
+  margin: 0.8em 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.response-code pre {
+  white-space: pre;
+  overflow: auto;
+  max-height: 480px;
+  padding: 12px;
+  margin: 0;
+  font-size: 0.88rem;
+}
+.response-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 7px 0;
+  font-size: 0.8rem;
+}
+.response-code .response-actions {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.response-actions button {
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.response-table {
+  overflow-x: auto;
+  max-width: 100%;
+  margin: 0.8em 0;
+}
+.response-table table {
+  border-collapse: collapse;
+  min-width: 260px;
+}
+.response-table td,
+.response-table th {
+  padding: 8px;
+  border: 1px solid var(--line);
+}
+
+.web-search-panel,
+.chat-history-actions,
+.chat-archive-panel {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+.web-search-panel summary,
+.chat-history-actions summary,
+.chat-archive-panel summary {
+  cursor: pointer;
+}
+.web-search-panel input,
+.chat-history-actions input {
+  width: 100%;
+  margin: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  padding: 8px;
+}
+.web-search-panel button,
+.chat-history-actions button,
+.chat-archive-panel button {
+  margin: 5px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  padding: 7px;
+  cursor: pointer;
+}
+.web-search-panel a {
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+}

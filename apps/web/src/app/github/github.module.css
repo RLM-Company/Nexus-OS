@@ -5,6 +5,72 @@
   background: var(--bg);
 }
 
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.toolbar label,
+.review > label {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.explorer {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(0, 3fr);
+  gap: 1rem;
+}
+.files {
+  max-height: 35rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.files button {
+  text-align: left;
+  overflow-wrap: anywhere;
+  flex-shrink: 0;
+}
+.editor {
+  min-width: 0;
+}
+.editor h2 {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+}
+.editor textarea {
+  width: 100%;
+  min-height: 28rem;
+  resize: vertical;
+  font-family: monospace;
+}
+.review {
+  margin-top: 2rem;
+}
+.diff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+.diff pre {
+  overflow: auto;
+  max-height: 25rem;
+  background: var(--bg);
+  padding: 0.75rem;
+}
+@media (max-width: 650px) {
+  .explorer,
+  .diff {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .files {
+    max-height: 12rem;
+  }
+}
+
 .shell {
   width: min(100%, 72rem);
   margin: 0 auto;

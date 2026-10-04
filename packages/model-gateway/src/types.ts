@@ -51,7 +51,12 @@ export type ModelGatewayStreamEvent =
     };
 
 export type GatewayErrorCode =
-  "ROUTE_UNAVAILABLE" | "PROVIDER_TIMEOUT" | "PROVIDER_ERROR" | "CIRCUIT_OPEN" | "INTERRUPTED";
+  | "ROUTE_UNAVAILABLE"
+  | "PROVIDER_TIMEOUT"
+  | "PROVIDER_ERROR"
+  | "CIRCUIT_OPEN"
+  | "INTERRUPTED"
+  | "CONTEXT_TOO_LARGE";
 
 export interface ModelGatewayReliabilityOptions {
   maxAttemptsPerRoute: number;

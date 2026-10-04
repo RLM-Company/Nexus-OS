@@ -1,3 +1,4 @@
+import type { ChatTextAttachment } from "@cosmora/contracts";
 import type {
   Currency,
   Message,
@@ -6,6 +7,10 @@ import type {
   ModelRequest
 } from "@cosmora/contracts";
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
+
+import { messageWithMaterials } from "./message-materials.js";
+import { conversationWindow, estimateInputTokensUpperBound } from "./conversation-window.js";
+export { estimateInputTokensUpperBound } from "./conversation-window.js";
 
 export const MANAGER_AGENT_ID = "cosmora-manager";
 
@@ -39,18 +44,16 @@ export interface ManagerRunContext {
   projectId: string;
   runId: string;
   messages: Message[];
+  materials?: {
+    instructions: string;
+    attachments: ChatTextAttachment[];
+  } | null;
 }
 
 const toModelMessage = (message: Message): ModelMessage | null => {
   if (message.role === "system_event" || !message.content.trim()) return null;
-  return { role: message.role, content: message.content };
+  return messageWithMaterials({ ...message, role: message.role });
 };
-
-export const estimateInputTokensUpperBound = (messages: ModelMessage[]): number =>
-  messages.reduce(
-    (total, message) => total + new TextEncoder().encode(message.content).length + 8,
-    0
-  );
 
 interface NormalizedManagerOptions {
   preferredProvider: string;
@@ -92,10 +95,21 @@ export class ManagerService {
       return mapped ? [mapped] : [];
     });
 
-    const messages: ModelMessage[] = [
-      { role: "system", content: this.#options.systemPrompt },
-      ...conversation
-    ];
+    const messages = conversationWindow(
+      [
+        { role: "system", content: this.#options.systemPrompt },
+        ...(context.materials &&
+        (context.materials.instructions || context.materials.attachments.length)
+          ? [
+              {
+                role: "user" as const,
+                content: `Сохранённые требования и материалы этого проекта (данные владельца, JSON):\n${JSON.stringify(context.materials)}`
+              }
+            ]
+          : [])
+      ],
+      conversation
+    );
 
     return {
       request_id: context.runId,
@@ -113,7 +127,12 @@ export class ManagerService {
         preferred_provider: this.#options.preferredProvider,
         preferred_model_alias: this.#options.preferredModelAlias,
         fallback_allowed: this.#options.fallbackAllowed,
-        required_features: this.#options.requiredFeatures,
+        required_features: [
+          ...new Set([
+            ...this.#options.requiredFeatures,
+            ...(messages.some((message) => message.images?.length) ? ["vision" as const] : [])
+          ])
+        ],
         confidential: this.#options.confidential,
         estimated_input_tokens: estimateInputTokensUpperBound(messages),
         max_cost: this.#options.maxCost,

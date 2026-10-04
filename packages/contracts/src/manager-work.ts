@@ -1,3 +1,4 @@
+import type { ChatTextAttachment } from "./chat-attachments.js";
 import { Type, type Static } from "typebox";
 import { EntityIdSchema } from "./primitives.js";
 
@@ -74,6 +75,10 @@ export interface ManagerWork {
   owner_id: string;
   actor_id: string;
   request: CreateManagerWork;
+  materials?: {
+    instructions: string;
+    attachments: ChatTextAttachment[];
+  };
   status: ManagerWorkStatus;
   stage: ManagerWorkStage;
   version: number;

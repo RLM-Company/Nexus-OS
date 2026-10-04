@@ -1,3 +1,4 @@
+import { ContextTooLargeError } from "@cosmora/core";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
   ApiErrorSchema,
@@ -228,10 +229,60 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
     { additionalProperties: false }
   );
 
+  app.patch(
+    "/api/v1/chats/:chatId",
+    {
+      schema: {
+        params,
+        body: Type.Object(
+          {
+            title: Type.Optional(Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" })),
+            archived: Type.Optional(Type.Boolean())
+          },
+          { additionalProperties: false, minProperties: 1 }
+        )
+      }
+    },
+    async (request, reply) => {
+      try {
+        const chat = options.store.updateChat(
+          request.params.chatId,
+          options.identityFor(request).owner_id,
+          request.body
+        );
+        return chat
+          ? { chat }
+          : reply.code(404).send(error(request.id, "CHAT_NOT_FOUND", "Chat not found"));
+      } catch (cause) {
+        if (cause instanceof GeneralChatBusyError)
+          return reply
+            .code(409)
+            .send(
+              error(
+                request.id,
+                "VALIDATION_ERROR",
+                "Остановите ответ перед переносом чата в архив."
+              )
+            );
+        throw cause;
+      }
+    }
+  );
+
   app.get(
     "/api/v1/chats",
-    { schema: { response: { 200: GeneralChatListResponseSchema } } },
-    (request) => ({ items: options.store.listChats(options.identityFor(request).owner_id) })
+    {
+      schema: {
+        querystring: Type.Object(
+          { archived: Type.Optional(Type.Boolean({ default: false })) },
+          { additionalProperties: false }
+        ),
+        response: { 200: GeneralChatListResponseSchema }
+      }
+    },
+    (request) => ({
+      items: options.store.listChats(options.identityFor(request).owner_id, request.query.archived)
+    })
   );
 
   app.post(
@@ -545,11 +596,13 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           });
         } else {
           const gatewayError =
-            cause instanceof GatewayRunError
-              ? cause
-              : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
-                  cause
-                });
+            cause instanceof ContextTooLargeError
+              ? new GatewayRunError("CONTEXT_TOO_LARGE", "gateway", cause.message, false)
+              : cause instanceof GatewayRunError
+                ? cause
+                : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
+                    cause
+                  });
           options.store.failRun(run.id, gatewayError.code);
           options.runtimeMetrics.runFailed(gatewayError.code);
           sendEvent(reply, {

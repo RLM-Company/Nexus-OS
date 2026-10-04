@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { CreateManagerWork, ManagerWork, ManagerWorkFiles } from "@cosmora/contracts";
+import { ProjectStore } from "./project-store.js";
 
 export class ManagerWorkConflict extends Error {}
 
@@ -31,12 +32,18 @@ export class ManagerWorkStore {
       return state;
     }
     const at = new Date().toISOString();
+    const materials = new ProjectStore(this.sqlite).getMaterials(projectId, ownerId);
     const state: ManagerWork = {
       id: randomUUID(),
       project_id: projectId,
       owner_id: ownerId,
       actor_id: actorId,
       request,
+      ...(materials && (materials.instructions || materials.attachments.length)
+        ? {
+            materials: { instructions: materials.instructions, attachments: materials.attachments }
+          }
+        : {}),
       status: "queued",
       stage: "plan",
       version: 1,

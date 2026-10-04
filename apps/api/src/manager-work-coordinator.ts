@@ -166,6 +166,7 @@ export class ManagerWorkCoordinator {
         role: "user",
         content: JSON.stringify({
           goal: work.request.goal,
+          materials: work.materials,
           plan: stage !== "plan" ? work.plan : undefined,
           draft: stage === "review" ? work.draft : undefined
         })

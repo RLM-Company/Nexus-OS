@@ -62,7 +62,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("previews, connects, persists and explicitly clears project context", async ({ page }) => {
-  await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?context_preview=1&project=context-alpha&view=context");
 
   await expect(page.getByRole("tab", { name: "Контекст" })).toHaveAttribute(
     "aria-selected",
@@ -97,7 +97,7 @@ test("previews, connects, persists and explicitly clears project context", async
 });
 
 test("redacts secret-like values from browser-local context", async ({ page }) => {
-  await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?context_preview=1&project=context-alpha&view=context");
   await page.evaluate(() => {
     window.localStorage.setItem(
       "cosmora:project-context:context-alpha",
@@ -140,7 +140,7 @@ test("recovers safely from corrupted browser-local context state", async ({ page
     );
   });
 
-  await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?context_preview=1&project=context-alpha&view=context");
 
   const panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
   await expect(
@@ -158,7 +158,7 @@ test("recovers safely from corrupted browser-local context state", async ({ page
 });
 
 test("shows offline state without losing local context", async ({ page, context }) => {
-  await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?context_preview=1&project=context-alpha&view=context");
   const panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
 
   await panel.getByRole("button", { name: "Отключить" }).first().click();
@@ -173,7 +173,7 @@ test("shows offline state without losing local context", async ({ page, context 
 
 test("fits the project context at 390x844", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?context_preview=1&project=context-alpha&view=context");
 
   await expect(page.getByRole("tabpanel", { name: "Контекст проекта" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(

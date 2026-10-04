@@ -46,7 +46,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("manages focus and Escape for Project Context dialogs", async ({ page }) => {
-  await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?context_preview=1&project=context-alpha&view=context");
 
   const panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
   const connectButton = panel.getByRole("button", { name: "Подключить" });

@@ -1,3 +1,4 @@
+import { ContextTooLargeError } from "@cosmora/core";
 import type { ChatService } from "@cosmora/core";
 import type { EmergencyStopStore, StoredGeneralChatMessage } from "@cosmora/db";
 import {
@@ -280,11 +281,13 @@ export class GeneralChatBackgroundRunCoordinator {
       }
 
       const gatewayError =
-        error instanceof GatewayRunError
-          ? error
-          : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
-              cause: error
-            });
+        error instanceof ContextTooLargeError
+          ? new GatewayRunError("CONTEXT_TOO_LARGE", "gateway", error.message, false)
+          : error instanceof GatewayRunError
+            ? error
+            : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
+                cause: error
+              });
       this.#store.failRun(queued.run_id, gatewayError.code);
       this.#runtimeMetrics.runFailed(gatewayError.code);
       this.#logger?.warn(
