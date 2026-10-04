@@ -2,10 +2,7 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const {
-  isAllowedDesktopPermission,
-  normalizeOrigin
-} = require("../permission-policy.cjs");
+const { isAllowedDesktopPermission, normalizeOrigin } = require("../permission-policy.cjs");
 
 test("allows only write-only clipboard permission on the exact connected origin", () => {
   const connectedOrigin = "https://cosmora.example";
