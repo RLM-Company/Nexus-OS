@@ -31,6 +31,11 @@ const {
 } = require("./update-policy.cjs");
 const { isSameOriginInstallerDownload, streamVerifiedInstaller } = require("./update-download.cjs");
 const {
+  cleanupInstallStaging,
+  stageVerifiedInstaller,
+  verifyInstallerFile
+} = require("./install-handoff.cjs");
+const {
   isAllowedCredentialChallenge,
   isAllowedRemoteNavigation,
   nextAvailableDownloadPath,
@@ -824,6 +829,77 @@ async function downloadDesktopUpdate(manifest, origin) {
   }
 }
 
+async function offerInstallerHandoff(downloaded, manifest) {
+  const staged = await stageVerifiedInstaller({
+    sourcePath: downloaded.path,
+    manifest,
+    downloadsDirectory: app.getPath("downloads"),
+    userDataDirectory: app.getPath("userData")
+  });
+
+  appendDiagnostic("update_install_staged", {
+    availableVersion: manifest.version,
+    bytes: staged.sizeBytes,
+    sha256: staged.sha256
+  });
+
+  const confirmation = await dialog.showMessageBox(mainWindow, {
+    type: "warning",
+    title: "Установка обновления Cosmora",
+    message: "Запустить проверенный установщик?",
+    detail:
+      "Версия: " +
+      manifest.version +
+      "\nРазмер: " +
+      staged.sizeBytes +
+      " байт" +
+      "\nSHA-256: " +
+      staged.sha256 +
+      "\n\nCosmora ещё раз проверит файл непосредственно перед запуском. " +
+      "После передачи установщика Windows приложение закроется. Установка не будет тихой.",
+    buttons: ["Отмена", "Запустить установщик и закрыть Cosmora"],
+    defaultId: 0,
+    cancelId: 0
+  });
+
+  if (confirmation.response !== 1) {
+    fs.rmSync(staged.stageDirectory, { recursive: true, force: true });
+    appendDiagnostic("update_install_cancelled", {
+      availableVersion: manifest.version
+    });
+    return false;
+  }
+
+  const finalVerification = await verifyInstallerFile({
+    filePath: staged.path,
+    manifest,
+    allowedDirectory: staged.stageDirectory
+  });
+
+  if (
+    finalVerification.sizeBytes !== staged.sizeBytes ||
+    finalVerification.sha256 !== staged.sha256
+  ) {
+    fs.rmSync(staged.stageDirectory, { recursive: true, force: true });
+    throw new Error("Проверенный установщик изменился перед запуском.");
+  }
+
+  const launchError = await shell.openPath(staged.path);
+  if (launchError) {
+    fs.rmSync(staged.stageDirectory, { recursive: true, force: true });
+    throw new Error("Windows не смогла запустить установщик: " + launchError);
+  }
+
+  appendDiagnostic("update_install_handoff_started", {
+    availableVersion: manifest.version,
+    bytes: finalVerification.sizeBytes,
+    sha256: finalVerification.sha256
+  });
+
+  setTimeout(() => app.quit(), 500);
+  return true;
+}
+
 async function showAboutDialog() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
@@ -836,7 +912,7 @@ async function showAboutDialog() {
       (process.versions.electron || "unknown") +
       "\nСостояние соединения: " +
       connectionState +
-      "\nОбновления: ручная проверка и проверенная загрузка; автоматическая установка отключена."
+      "\nОбновления: ручная проверка, проверенная загрузка и подтверждаемый install handoff."
   });
 }
 
@@ -962,14 +1038,16 @@ async function checkForDesktopUpdate() {
           detail:
             "Файл: " +
             downloaded.filename +
-            "\nРазмер и SHA-256 совпадают с манифестом. Cosmora не запускала установщик.",
-          buttons: ["Закрыть", "Показать в папке"],
+            "\nРазмер и SHA-256 совпадают с манифестом. Установка ещё не запускалась.",
+          buttons: ["Закрыть", "Показать в папке", "Установить…"],
           defaultId: 0,
           cancelId: 0
         });
 
         if (completed.response === 1) {
           shell.showItemInFolder(downloaded.path);
+        } else if (completed.response === 2) {
+          await offerInstallerHandoff(downloaded, manifest);
         }
       } catch (cause) {
         appendDiagnostic("update_download_failed", {
@@ -1397,6 +1475,15 @@ function installPowerLifecycle() {
 
 app.whenReady().then(async () => {
   app.setAppUserModelId("com.cosmora.desktop");
+
+  try {
+    const removed = cleanupInstallStaging(app.getPath("userData"));
+    if (removed > 0) {
+      appendDiagnostic("update_install_staging_cleaned", { removed });
+    }
+  } catch {
+    appendDiagnostic("update_install_staging_cleanup_failed");
+  }
 
   if (smokeMode) {
     try {
