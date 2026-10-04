@@ -76,7 +76,13 @@ export function createOwnerAccess({ origin, passwordHash, now = Date.now }) {
   };
   const server = createServer(async (request, response) => {
     prune();
-    const path = request.url;
+    let path;
+    try {
+      path = new URL(request.url, "http://owner-access").pathname;
+    } catch {
+      response.writeHead(400, headers).end();
+      return;
+    }
     if (path === "/health" && request.method === "GET") {
       response.writeHead(200, { ...headers, "content-type": "application/json" });
       response.end('{"status":"ok"}');

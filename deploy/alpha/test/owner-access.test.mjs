@@ -73,6 +73,17 @@ test("logout revokes the server-side session and cannot be triggered by a cross-
   assert.match(logout.headers.get("set-cookie"), /Max-Age=0/u);
   assert.equal((await f.verify(cookie)).status, 303);
 });
+test("original URL query parameters do not bypass or break authentication", async (t) => {
+  const f = await fixture(t);
+  const path = "/__owner/verify?ref=main&archived=true";
+  const headers = { "x-forwarded-uri": "/api/v1/github/tree?ref=main" };
+  assert.equal((await f.request(path, { headers })).status, 401);
+  const cookie = (await f.login()).headers.get("set-cookie");
+  assert.equal((await f.request(path, { headers: { ...headers, cookie } })).status, 204);
+  const form = await f.request("/login?next=https://other.example");
+  assert.equal(form.status, 200);
+  assert.doesNotMatch(await form.text(), /other.example/u);
+});
 test("wrong credentials render a safe error; origin and body types cannot bypass login", async (t) => {
   const f = await fixture(t);
   const wrong = await f.login("incorrect");
