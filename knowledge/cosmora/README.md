@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 522 nodes;
-- 1578 typed edges;
-- 522 retrieval records.
+- 553 nodes;
+- 1654 typed edges;
+- 553 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -227,3 +227,24 @@ fails closed: work with an in-flight provider call or publish stage becomes
 Confirmation is modeled as PENDING → APPROVED / REJECTED / EXPIRED and APPROVED → CONSUMED.
 Step-Up proof is modeled as active → consumed / expired. Runtime checkpoints remain explicitly
 unable to restore permissions, sessions or autonomy escalation.
+
+
+## Identity & Trust
+
+The graph now models how identity trust is created, bounded and revoked instead of representing
+authentication as a single generic session node.
+
+The layer contains **31 nodes** and **76 relationships** covering:
+
+- owner, system and agent actor kinds;
+- active/disabled actor state;
+- active/revoked/expired session state;
+- local, single-factor and multi-factor assurance;
+- the exact Google/Telegram external-auth provider set;
+- external-identity verification states;
+- all seven identity/Step-Up audit event types;
+- owner-scoped session and audit access;
+- hashed session-token storage rather than raw-token persistence;
+- exact one-use Step-Up binding to owner/session/purpose/challenge;
+- fail-closed Step-Up behavior after expiry or session revocation;
+- owner-only API access, with agent/system sessions rejected at that boundary.
