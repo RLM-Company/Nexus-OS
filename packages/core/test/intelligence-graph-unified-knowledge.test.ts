@@ -391,7 +391,7 @@ describe("unified Cosmora Intelligence Graph", () => {
         max_depth: 3,
         max_nodes: 96,
         max_edges: 160,
-        max_fan_out: 48,
+        max_fan_out: 40,
         max_context_tokens: 12_000
       }
     });
