@@ -168,7 +168,8 @@ workspace and builds its NSIS installer separately. The shared
 
 1. silently installs the baseline version into a temporary installation directory;
 2. launches the installed baseline executable in no-network smoke mode;
-3. creates isolated persistence sentinels under the expected Cosmora user-data directory:
+3. clears the app-specific user-data directory inside the ephemeral GitHub-hosted runner profile,
+   then creates persistence sentinels under Cosmora's actual Windows user-data directory:
    `connection.json`, `credentials.bin`, and a `persist:cosmora` session sentinel;
 4. records SHA-256 for each sentinel;
 5. installs the current installer over the same installation directory;
@@ -178,10 +179,13 @@ workspace and builds its NSIS installer separately. The shared
 8. requires every persistence sentinel to remain present and byte-identical;
 9. silently uninstalls the upgraded application and requires the installation directory to
    disappear;
-10. requires the user-data sentinels to remain after uninstall, then removes only the isolated CI
-    workspace.
+10. requires the user-data sentinels to remain after uninstall, then removes the app-specific test
+    profile and temporary installation workspace.
 
-This validates installer upgrade behavior without using real credentials or a real user profile.
+The GitHub-hosted Windows VM is ephemeral. The test uses its real Windows Roaming AppData location
+because Electron resolves that path through the Windows Known Folder API rather than the `APPDATA`
+environment variable. This validates installer upgrade behavior without using real credentials or a
+persistent human user profile.
 The `credentials.bin` file in this test is a deterministic sentinel, not a real encrypted
 credential payload.
 
