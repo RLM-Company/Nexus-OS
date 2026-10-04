@@ -4,11 +4,12 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.10.0** adds an explicit secure install handoff on top of verified update downloads.
-Cosmora still never installs silently: after a verified download the user may choose Install, the
-client re-verifies the Downloads copy, copies it into a random private staging directory, verifies
-the staged copy again, shows a second confirmation with version/size/SHA-256, then performs one final
-size/hash verification immediately before handing that exact EXE to Windows.
+Version **0.11.0** hardens the desktop shell and makes it behave like a persistent Windows
+application. Browser permissions are deny-by-default, with only sanitized clipboard writes allowed
+for the exact connected Cosmora origin. Camera, microphone, geolocation, notifications, display
+capture, USB, HID, Serial and other privileged browser capabilities remain blocked. Window position,
+normal size and maximized state are persisted atomically and restored only onto currently available
+display work areas.
 
 ## Runtime model
 
@@ -154,6 +155,20 @@ against the signed installer's version, filename, byte size and SHA-256 before u
 PR workflows never receive signing credentials. See `desktop/windows/SIGNING.md` for the release
 contract.
 
+## Desktop permission and window-state boundary
+
+The persistent Electron session installs both permission-check and permission-request handlers. The
+only allowed web permission is `clipboard-sanitized-write`, and only when the requesting origin
+exactly matches the currently connected Cosmora origin. Device permissions are denied, display
+capture is denied, device-selection prompts are cancelled, and webview attachment is explicitly
+blocked.
+
+The main window stores only normal bounds and maximized state in `window-state.json` under the
+desktop user-data directory. Writes use an atomic temporary-file replacement. On startup, corrupt or
+unknown-schema state is ignored. Saved bounds are matched against current display work areas; an
+off-screen window falls back to a centered primary-display position and oversized bounds are clamped.
+Fullscreen is intentionally not persisted.
+
 ## Installer lifecycle smoke test
 
 The ordinary Windows workflow validates more than the existence of an NSIS file. After the installer
@@ -273,7 +288,7 @@ node --test desktop/windows/test/*.test.cjs
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
 validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, packaged smoke-mode
-policy, upgrade persistence across NSIS installs, verified update download size/hash/origin policy, secure install-handoff revalidation/staging,
+policy, upgrade persistence across NSIS installs, verified update download size/hash/origin policy, secure install-handoff revalidation/staging, deny-by-default Electron permissions, safe window-state persistence,
 support-bundle redaction, diagnostic URL redaction, download filenames and protected credential
 persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
@@ -296,7 +311,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.10.0-x64.exe`.
+`Cosmora-Setup-0.11.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
