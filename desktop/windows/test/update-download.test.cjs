@@ -103,10 +103,12 @@ test("rejects redirects and mismatched Content-Length before writing", () => {
 test("streams, hashes and finalizes a verified installer", async () => {
   const bytes = Buffer.from("verified-cosmora-installer");
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cosmora-update-download-"));
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cosmora-update-temp-"));
   const result = await streamVerifiedInstaller({
     response: responseFor(bytes),
     manifest: manifestFor(bytes),
-    downloadsDirectory: directory
+    downloadsDirectory: directory,
+    temporaryDirectory
   });
 
   assert.equal(result.filename, "Cosmora-Setup-0.9.0-x64.exe");
@@ -120,6 +122,7 @@ test("streams, hashes and finalizes a verified installer", async () => {
     fs.readdirSync(directory).some((name) => name.endsWith(".part")),
     false
   );
+  assert.equal(fs.readdirSync(temporaryDirectory).length, 0);
 });
 
 test("does not overwrite an existing installer", async () => {
