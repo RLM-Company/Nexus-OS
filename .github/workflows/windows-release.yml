@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Exact desktop version to release (for example 0.8.0)"
+        description: "Exact desktop version to release (for example 0.10.0)"
         required: true
         type: string
       release_page_url:
