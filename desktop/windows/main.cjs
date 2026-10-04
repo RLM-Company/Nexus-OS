@@ -76,6 +76,7 @@ let connectionState = CONNECTION_STATES.DISCONNECTED;
 let lastNetworkOnline = null;
 let updateCheckInFlight = false;
 let windowStateTimer = null;
+const securedSessions = new WeakSet();
 
 const smokeMode = isSmokeMode(process.argv);
 const ownsSingleInstance = smokeMode ? true : app.requestSingleInstanceLock();
@@ -1153,6 +1154,9 @@ function createMenu() {
 }
 
 function installSessionSecurity(browserSession) {
+  if (securedSessions.has(browserSession)) return;
+  securedSessions.add(browserSession);
+
   browserSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) =>
     isAllowedDesktopPermission({
       permission,
