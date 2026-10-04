@@ -4,11 +4,10 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.9.0** adds verified manual update downloads and speeds up Windows packaging. When a
-trusted update manifest contains installer metadata, Cosmora can download the EXE on explicit user
-request, stream it through SHA-256 verification, require the exact byte size from the manifest, and
-only then place the verified installer in Downloads. The client never executes or installs the file
-automatically.
+Version **1.0.0** adds native progress and cancellation controls to the verified update downloader.
+An explicit update download now reports progress in the Windows taskbar and window title, exposes a
+menu command to cancel the active transfer, and still requires the exact manifest size and SHA-256
+before an installer is allowed into Downloads.
 
 ## Runtime model
 
@@ -111,8 +110,12 @@ redirects disabled, sends Basic Auth only when the installer URL has the exact s
 connected Cosmora server, streams into the operating-system temp directory, and requires both exact
 byte size and SHA-256 before copying the EXE into Downloads.
 
-A failed, truncated, oversized or hash-mismatched download is deleted and never appears as a final
-installer in Downloads. Existing installer files are never overwritten; a collision-safe filename is
+Progress is shown through the native Windows taskbar progress indicator and the Cosmora window title.
+While a transfer is active, **Cosmora → Cancel update download** is enabled and **Check for updates**
+is disabled. Cancellation aborts the network request and removes the staged partial file.
+
+A failed, cancelled, truncated, oversized or hash-mismatched download is deleted and never appears as
+a final installer in Downloads. Existing installer files are never overwritten; a collision-safe filename is
 chosen instead. After success the client can reveal the file in Explorer, but it never executes the
 installer. The release page remains available as a separate user action. Equal or older versions are
 treated as no update.
@@ -289,7 +292,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.9.0-x64.exe`.
+`Cosmora-Setup-1.0.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
