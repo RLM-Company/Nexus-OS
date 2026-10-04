@@ -8,6 +8,7 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   installerFilename,
+  isSameOriginInstallerDownload,
   requireInstallerMetadata,
   streamVerifiedInstaller,
   validateInstallerResponse
@@ -34,6 +35,31 @@ function responseFor(bytes, overrides = {}) {
     }
   });
 }
+
+test("shares credentials only with the connected origin", () => {
+  assert.equal(
+    isSameOriginInstallerDownload(
+      "https://cosmora.example/releases/Cosmora.exe",
+      "https://cosmora.example"
+    ),
+    true
+  );
+  assert.equal(
+    isSameOriginInstallerDownload(
+      "https://downloads.example/Cosmora.exe",
+      "https://cosmora.example"
+    ),
+    false
+  );
+  assert.equal(
+    isSameOriginInstallerDownload(
+      "https://cosmora.example.evil.test/Cosmora.exe",
+      "https://cosmora.example"
+    ),
+    false
+  );
+  assert.equal(isSameOriginInstallerDownload("not-a-url", "https://cosmora.example"), false);
+});
 
 test("requires credential-free HTTPS EXE metadata", () => {
   const bytes = Buffer.from("installer");
