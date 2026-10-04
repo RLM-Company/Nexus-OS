@@ -129,21 +129,13 @@ describe("unified Cosmora Intelligence Graph", () => {
 
     expect(matrixEdges).toHaveLength(133);
 
-    const pairs = new Set(
-      matrixEdges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
-    expect(pairs).toContain(
-      "autonomy-level-a0|RESOLVES_AS_DENY|capability-context-web-read"
-    );
-    expect(pairs).toContain(
-      "autonomy-level-a2|RESOLVES_AS_AUTONOMOUS|capability-workspace-write"
-    );
+    const pairs = new Set(matrixEdges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    expect(pairs).toContain("autonomy-level-a0|RESOLVES_AS_DENY|capability-context-web-read");
+    expect(pairs).toContain("autonomy-level-a2|RESOLVES_AS_AUTONOMOUS|capability-workspace-write");
     expect(pairs).toContain(
       "autonomy-level-a3|RESOLVES_AS_AUTONOMOUS|capability-external-communicate"
     );
-    expect(pairs).toContain(
-      "autonomy-level-a6|RESOLVES_AS_FULL|capability-finance-credit"
-    );
+    expect(pairs).toContain("autonomy-level-a6|RESOLVES_AS_FULL|capability-finance-credit");
   });
 
   it("marks exactly the seven canonical capabilities that require step-up", () => {
@@ -168,9 +160,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("keeps conditional authority inside the trusted Tool Runtime resolver", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
     const conditionTest = repositoryStructureFileId(
       "packages/tool-runtime/test/policy-condition-authority.test.ts"
     );
@@ -188,9 +178,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("grounds bounded delegation in the validator and regression suite", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
     const delegationTest = repositoryStructureFileId(
       "packages/policy-engine/test/agent-delegation.test.ts"
     );
@@ -198,12 +186,8 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       "entity-agent-delegation-validator|ENFORCES|decision-delegation-no-expansion"
     );
-    expect(pairs).toContain(
-      "entity-agent-delegation-validator|VALIDATES|entity-agent-blueprint"
-    );
-    expect(pairs).toContain(
-      `entity-agent-delegation-validator|VERIFIED_BY_TEST|${delegationTest}`
-    );
+    expect(pairs).toContain("entity-agent-delegation-validator|VALIDATES|entity-agent-blueprint");
+    expect(pairs).toContain(`entity-agent-delegation-validator|VERIFIED_BY_TEST|${delegationTest}`);
   });
 
   it("retrieves the checked-in bootstrap ModelVersion from Registry evidence", () => {

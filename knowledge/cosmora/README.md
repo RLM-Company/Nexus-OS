@@ -184,7 +184,6 @@ as candidate knowledge until that change is merged. Deletion/trash behavior, glo
 authorization, training-setting precedence, source transparency and memory-secret exclusion remain
 explicitly spec-only until their dedicated runtime paths exist.
 
-
 ## Authority & Capability
 
 The graph now materializes the actual Cosmora authority model instead of treating policy as a

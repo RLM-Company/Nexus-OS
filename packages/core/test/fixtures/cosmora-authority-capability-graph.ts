@@ -34,12 +34,44 @@ const levels = ["A0", "A1", "A2", "A3", "A4", "A5", "A6"] as const;
 const modes = ["DENY", "CONFIRM", "SCOPED", "AUTONOMOUS", "FULL"] as const;
 
 const matrix = {
-  "context.web.read": ["DENY", "SCOPED", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"],
-  "context.project.read": ["DENY", "SCOPED", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"],
+  "context.web.read": [
+    "DENY",
+    "SCOPED",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ],
+  "context.project.read": [
+    "DENY",
+    "SCOPED",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ],
   "context.global.read": ["DENY", "SCOPED", "SCOPED", "SCOPED", "SCOPED", "SCOPED", "FULL"],
-  "workspace.write": ["DENY", "DENY", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"],
+  "workspace.write": [
+    "DENY",
+    "DENY",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ],
   "integration.private.use": ["DENY", "SCOPED", "SCOPED", "SCOPED", "SCOPED", "AUTONOMOUS", "FULL"],
-  "external.communicate": ["DENY", "DENY", "CONFIRM", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"],
+  "external.communicate": [
+    "DENY",
+    "DENY",
+    "CONFIRM",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ],
   "audience.expand": ["DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "AUTONOMOUS", "FULL"],
   "account.manage": ["DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "AUTONOMOUS", "FULL"],
   "production.deploy": ["DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"],
@@ -48,11 +80,35 @@ const matrix = {
   "legal.accept_terms": ["DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"],
   "contract.finalize": ["DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"],
   "data.disclose": ["DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"],
-  "agent.manage": ["AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"],
-  "prompt.temporary": ["DENY", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"],
+  "agent.manage": [
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ],
+  "prompt.temporary": [
+    "DENY",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ],
   "prompt.permanent": ["DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"],
   "strategy.change": ["DENY", "DENY", "CONFIRM", "CONFIRM", "CONFIRM", "CONFIRM", "FULL"],
-  "sandbox.experiment": ["DENY", "SCOPED", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "AUTONOMOUS", "FULL"]
+  "sandbox.experiment": [
+    "DENY",
+    "SCOPED",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "AUTONOMOUS",
+    "FULL"
+  ]
 } as const;
 
 const stepUpCapabilities = [
@@ -72,7 +128,8 @@ const stepUpPurposes = [
   "project_usage_limit_expansion"
 ] as const;
 
-const safeId = (value: string): string => value.replaceAll(".", "-").replaceAll("_", "-").toLowerCase();
+const safeId = (value: string): string =>
+  value.replaceAll(".", "-").replaceAll("_", "-").toLowerCase();
 
 const node = (input: {
   id: string;
@@ -201,11 +258,17 @@ const edge = (input: {
 const policyFile = repositoryStructureFileId("packages/contracts/src/policy.ts");
 const policyTest = repositoryStructureFileId("packages/contracts/test/policy.test.ts");
 const policyEngineFile = repositoryStructureFileId("packages/policy-engine/src/index.ts");
-const policyEngineTest = repositoryStructureFileId("packages/policy-engine/test/policy-engine.test.ts");
+const policyEngineTest = repositoryStructureFileId(
+  "packages/policy-engine/test/policy-engine.test.ts"
+);
 const delegationFile = repositoryStructureFileId("packages/policy-engine/src/agent-delegation.ts");
-const delegationTest = repositoryStructureFileId("packages/policy-engine/test/agent-delegation.test.ts");
+const delegationTest = repositoryStructureFileId(
+  "packages/policy-engine/test/agent-delegation.test.ts"
+);
 const toolRuntimeFile = repositoryStructureFileId("packages/tool-runtime/src/index.ts");
-const toolRuntimeTest = repositoryStructureFileId("packages/tool-runtime/test/tool-runtime.test.ts");
+const toolRuntimeTest = repositoryStructureFileId(
+  "packages/tool-runtime/test/tool-runtime.test.ts"
+);
 const conditionTest = repositoryStructureFileId(
   "packages/tool-runtime/test/policy-condition-authority.test.ts"
 );
@@ -498,13 +561,15 @@ const records: IntelligenceGraphSearchRecord[] = [
   {
     node: { id: "entity-capability-profile", version: 1 },
     text: "capability profile project autonomy grants overrides version",
-    excerpt: "Project-bound capability profile contains exactly one canonical grant per capability.",
+    excerpt:
+      "Project-bound capability profile contains exactly one canonical grant per capability.",
     estimated_tokens: 16
   },
   {
     node: { id: "entity-permission-contract", version: 1 },
     text: "permission contract subject project purpose objects approval step up limits",
-    excerpt: "Permission contracts are subject/project/purpose/object scoped and carry bounded approval evidence.",
+    excerpt:
+      "Permission contracts are subject/project/purpose/object scoped and carry bounded approval evidence.",
     estimated_tokens: 18
   },
   {
@@ -528,7 +593,8 @@ const records: IntelligenceGraphSearchRecord[] = [
   {
     node: { id: "claim-policy-condition-authority-trusted-only", version: 1 },
     text: "conditional policy expansion trusted runtime resolver caller input ignored fail closed",
-    excerpt: "Conditional expansions come only from the runtime's trusted resolver; failure pauses execution.",
+    excerpt:
+      "Conditional expansions come only from the runtime's trusted resolver; failure pauses execution.",
     estimated_tokens: 18
   }
 ];

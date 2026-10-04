@@ -491,7 +491,6 @@ Explicitly spec-only examples include:
 This prevents a future agent from reading an approved design document and assuming every rule is
 already enforced in production.
 
-
 ## Authority & Capability Graph
 
 The unified graph now includes **41 Authority & Capability nodes** and **222 relationships**.
