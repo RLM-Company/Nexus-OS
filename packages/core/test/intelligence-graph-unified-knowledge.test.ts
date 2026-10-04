@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(522);
-    expect(graph.records).toHaveLength(522);
-    expect(graph.edges).toHaveLength(1578);
+    expect(graph.nodes).toHaveLength(553);
+    expect(graph.records).toHaveLength(553);
+    expect(graph.edges).toHaveLength(1654);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      522
+      553
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1578
+      1654
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -121,6 +121,76 @@ describe("unified Cosmora Intelligence Graph", () => {
           edge.type === "RUNTIME_GUARDED_BY"
       )
     ).toBe(false);
+  });
+
+  it("models the complete external auth provider set without inventing providers", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const providers = graph.nodes
+      .filter((node) => node.node_id.startsWith("auth-provider-"))
+      .map((node) => node.node_id)
+      .sort();
+
+    expect(providers).toEqual(["auth-provider-google", "auth-provider-telegram"]);
+  });
+
+  it("preserves identity session revocation and expiry as distinct trust failures", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+
+    expect(pairs).toContain(
+      "identity-session-status-active|TRANSITIONS_TO|identity-session-status-revoked"
+    );
+    expect(pairs).toContain(
+      "identity-session-status-active|TRANSITIONS_TO|identity-session-status-expired"
+    );
+    expect(pairs).toContain(
+      "identity-actor-status-disabled|CASCADE_REVOKES|identity-session-status-revoked"
+    );
+  });
+
+  it("records the exact seven identity audit event types", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const auditTypes = graph.edges
+      .filter((edge) => edge.type === "AUDIT_EVENT_FOR")
+      .map((edge) => edge.from.id)
+      .sort();
+
+    expect(auditTypes).toEqual(
+      [
+        "identity-audit-actor-disabled",
+        "identity-audit-session-expired",
+        "identity-audit-session-issued",
+        "identity-audit-session-revoked",
+        "identity-audit-step-up-consumed",
+        "identity-audit-step-up-issued",
+        "identity-audit-step-up-rejected"
+      ].sort()
+    );
+  });
+
+  it("grounds raw-token exclusion, owner API identity and one-use Step-Up in tests", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    const identityStoreTest = repositoryStructureFileId("packages/db/test/identity-store.test.ts");
+    const stepUpStoreTest = repositoryStructureFileId(
+      "packages/db/test/step-up-proof-store.test.ts"
+    );
+    const identityBoundaryTest = repositoryStructureFileId(
+      "apps/api/test/identity-boundary.test.ts"
+    );
+
+    expect(pairs).toContain(
+      `claim-identity-token-never-stored-raw|VERIFIED_BY_TEST|${identityStoreTest}`
+    );
+    expect(pairs).toContain(
+      `claim-step-up-exact-binding-one-use|VERIFIED_BY_TEST|${stepUpStoreTest}`
+    );
+    expect(pairs).toContain(
+      `claim-owner-api-requires-owner-session|VERIFIED_BY_TEST|${identityBoundaryTest}`
+    );
+    expect(pairs).toContain(
+      "entity-step-up-proof|BOUND_TO|entity-identity-session"
+    );
   });
 
   it("models Manager recovery without automatic replay", () => {
