@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(553);
-    expect(graph.records).toHaveLength(553);
-    expect(graph.edges).toHaveLength(1654);
+    expect(graph.nodes).toHaveLength(572);
+    expect(graph.records).toHaveLength(572);
+    expect(graph.edges).toHaveLength(1716);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      553
+      572
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1654
+      1716
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -189,6 +189,88 @@ describe("unified Cosmora Intelligence Graph", () => {
       `claim-owner-api-requires-owner-session|VERIFIED_BY_TEST|${identityBoundaryTest}`
     );
     expect(pairs).toContain("entity-step-up-proof|BOUND_TO|entity-identity-session");
+  });
+
+  it("models the exact four RuntimeArtifact source-trust classes", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const trust = graph.nodes
+      .filter((node) => node.node_id.startsWith("source-trust-"))
+      .map((node) => node.node_id)
+      .sort();
+
+    expect(trust).toEqual(
+      [
+        "source-trust-external-untrusted",
+        "source-trust-owner",
+        "source-trust-project",
+        "source-trust-system"
+      ].sort()
+    );
+  });
+
+  it("grounds provenance DAG invariants in the validator and regression suite", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    const provenanceTest = repositoryStructureFileId(
+      "packages/contracts/test/manager-runtime-artifact-provenance.test.ts"
+    );
+
+    for (const claimId of [
+      "claim-lineage-same-project",
+      "claim-lineage-no-self-reference",
+      "claim-lineage-known-sources-only",
+      "claim-lineage-no-future-source",
+      "claim-lineage-acyclic"
+    ]) {
+      expect(pairs).toContain(
+        `${claimId}|ENFORCED_BY|entity-artifact-provenance-validator`
+      );
+      expect(pairs).toContain(`${claimId}|VERIFIED_BY_TEST|${provenanceTest}`);
+    }
+  });
+
+  it("binds artifact lineage to declared task inputs, producer role and output kinds", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    const taskBindingTest = repositoryStructureFileId(
+      "packages/contracts/test/manager-runtime-artifact-task-binding.test.ts"
+    );
+
+    for (const claimId of [
+      "claim-lineage-artifact-task-exists",
+      "claim-lineage-producer-role-matches-task",
+      "claim-lineage-output-kind-declared",
+      "claim-lineage-inputs-declared",
+      "claim-lineage-artifact-after-task"
+    ]) {
+      expect(pairs).toContain(
+        `${claimId}|ENFORCED_BY|entity-artifact-task-binding-validator`
+      );
+      expect(pairs).toContain(`${claimId}|VERIFIED_BY_TEST|${taskBindingTest}`);
+    }
+  });
+
+  it("limits Critic review lineage to supported prior artifact kinds", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const reviewedKinds = graph.edges
+      .filter(
+        (edge) =>
+          edge.from.id === "entity-critic-artifact-validator" &&
+          edge.type === "MAY_REVIEW_KIND"
+      )
+      .map((edge) => edge.to.id)
+      .sort();
+
+    expect(reviewedKinds).toEqual(
+      [
+        "entity-artifact-kind-analysis",
+        "entity-artifact-kind-architecture",
+        "entity-artifact-kind-decision",
+        "entity-artifact-kind-evidence",
+        "entity-artifact-kind-handoff"
+      ].sort()
+    );
+    expect(reviewedKinds).not.toContain("entity-runtime-checkpoint");
   });
 
   it("models Manager recovery without automatic replay", () => {
