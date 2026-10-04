@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **553 nodes**;
-- **1654 typed edges**;
+- **572 nodes**;
+- **1716 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -557,3 +557,24 @@ Security properties are grounded in implementation and tests: session tokens are
 storage, revocation is owner-scoped and immediate, disabling an actor revokes active sessions,
 expired sessions fail authentication, Step-Up fails closed after expiry/revocation, and the owner API
 rejects otherwise-valid agent/system sessions.
+
+
+## Data Lineage & Provenance Graph
+
+The unified graph now includes **19 Data Lineage nodes** and **62 source-backed relationships**.
+
+The layer makes three validation surfaces explicit:
+
+1. **artifact provenance DAG** — unique IDs, same-project scope, known earlier sources, no
+   self-reference and no cycles;
+2. **artifact/task binding** — known task, matching producer role, declared output kind, declared
+   input lineage and valid chronology;
+3. **Critic review lineage** — reviewed artifacts must exist, stay in-project, be supported by the
+   Critic role and predate the verdict.
+
+The exact four `RuntimeSourceTrustSchema` values are represented as nodes and connected to
+`RuntimeArtifact`. `external_untrusted` is explicitly constrained by the existing
+`data_only` instruction rule.
+
+This layer is deliberately different from Agent Collaboration: collaboration describes which roles
+can exchange artifact kinds; lineage describes whether a concrete provenance chain would be valid.
