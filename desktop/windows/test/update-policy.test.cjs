@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  MAX_INSTALLER_BYTES,
   MAX_MANIFEST_BYTES,
   compareVersions,
   parseVersion,
@@ -153,6 +154,7 @@ test("rejects unsafe update URLs and malformed installer metadata", () => {
   );
 });
 
-test("caps update manifest transport size", () => {
+test("caps update manifest and installer transport sizes", () => {
   assert.equal(MAX_MANIFEST_BYTES, 64 * 1024);
+  assert.equal(MAX_INSTALLER_BYTES, 512 * 1024 * 1024);
 });
