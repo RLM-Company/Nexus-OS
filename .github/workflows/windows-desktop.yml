@@ -18,13 +18,20 @@ concurrency:
 
 jobs:
   build:
-    name: Build NSIS installer
+    name: Build and lifecycle-test NSIS installer
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+
+      - name: Check out upgrade baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: upgrade-baseline
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -56,93 +63,45 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
-      - name: Smoke test installed NSIS lifecycle
+      - name: Build upgrade baseline installer
+        if: github.event_name == 'pull_request'
+        working-directory: upgrade-baseline/desktop/windows
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
+
+      - name: Test fresh installer lifecycle
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
           $version = node -p "require('./desktop/windows/package.json').version"
-          $installer = (Resolve-Path "desktop/windows/dist/Cosmora-Setup-$version-x64.exe").Path
-          $installDir = Join-Path $env:RUNNER_TEMP "cosmora-installed-$version"
-          $marker = Join-Path $env:TEMP "cosmora-smoke-$version.json"
+          $installer = "desktop/windows/dist/Cosmora-Setup-$version-x64.exe"
+          ./desktop/windows/ci/nsis-lifecycle.ps1 `
+            -Mode Fresh `
+            -CurrentInstaller $installer `
+            -CurrentVersion $version `
+            -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-fresh-lifecycle")
 
-          Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item $marker -Force -ErrorAction SilentlyContinue
-
-          $install = Start-Process -FilePath $installer -ArgumentList @("/S", "/D=$installDir") -Wait -PassThru
-          if ($install.ExitCode -ne 0) {
-            throw "NSIS install failed with exit code $($install.ExitCode)."
-          }
-
-          $app = Join-Path $installDir "Cosmora.exe"
-          if (-not (Test-Path $app -PathType Leaf)) {
-            throw "Installed Cosmora.exe was not found at $app."
-          }
-
-          $uninstaller = Get-ChildItem -Path $installDir -Filter "Uninstall*.exe" -File |
-            Select-Object -First 1
-          if (-not $uninstaller) {
-            throw "NSIS uninstaller was not found in $installDir."
+      - name: Test upgrade lifecycle and persisted user data
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          $currentVersion = node -p "require('./desktop/windows/package.json').version"
+          $baselineVersion = node -p "require('./upgrade-baseline/desktop/windows/package.json').version"
+          if ($baselineVersion -eq $currentVersion) {
+            throw "Pull-request base version must differ from current desktop version for upgrade testing."
           }
 
-          $env:COSMORA_SMOKE_OUTPUT = $marker
-          try {
-            $smoke = Start-Process -FilePath $app -ArgumentList "--cosmora-smoke-test" -Wait -PassThru
-          } finally {
-            Remove-Item Env:COSMORA_SMOKE_OUTPUT -ErrorAction SilentlyContinue
-          }
-          if ($smoke.ExitCode -ne 0) {
-            throw "Installed Cosmora smoke process failed with exit code $($smoke.ExitCode)."
-          }
-          if (-not (Test-Path $marker -PathType Leaf)) {
-            throw "Installed Cosmora did not produce the smoke marker."
-          }
+          $currentInstaller = "desktop/windows/dist/Cosmora-Setup-$currentVersion-x64.exe"
+          $baselineInstaller = "upgrade-baseline/desktop/windows/dist/Cosmora-Setup-$baselineVersion-x64.exe"
 
-          $record = Get-Content $marker -Raw | ConvertFrom-Json
-          if ($record.schemaVersion -ne 1) {
-            throw "Unexpected smoke schema version $($record.schemaVersion)."
-          }
-          if ($record.version -ne $version) {
-            throw "Installed version $($record.version) does not match package version $version."
-          }
-          if ($record.isPackaged -ne $true) {
-            throw "Installed Cosmora did not report packaged mode."
-          }
-          if ($record.platform -ne "win32" -or $record.arch -ne "x64") {
-            throw "Installed Cosmora reported an unexpected platform or architecture."
-          }
-
-          $expectedExe = [IO.Path]::GetFullPath($app)
-          $actualExe = [IO.Path]::GetFullPath([string]$record.execPath)
-          if (-not [string]::Equals($expectedExe, $actualExe, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Smoke executable path does not match the installed application."
-          }
-
-          $expectedResources = [IO.Path]::GetFullPath((Join-Path $installDir "resources"))
-          $actualResources = [IO.Path]::GetFullPath([string]$record.resourcesPath)
-          if (-not [string]::Equals($expectedResources, $actualResources, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Smoke resources path does not match the installed application."
-          }
-
-          $expectedAsar = [IO.Path]::GetFullPath((Join-Path $expectedResources "app.asar"))
-          $actualAppPath = [IO.Path]::GetFullPath([string]$record.appPath)
-          if (-not [string]::Equals($expectedAsar, $actualAppPath, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Smoke app path is not the packaged app.asar."
-          }
-
-          $uninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -Wait -PassThru
-          if ($uninstall.ExitCode -ne 0) {
-            throw "NSIS uninstall failed with exit code $($uninstall.ExitCode)."
-          }
-
-          for ($attempt = 0; $attempt -lt 80 -and (Test-Path $installDir); $attempt++) {
-            Start-Sleep -Milliseconds 250
-          }
-          if (Test-Path $installDir) {
-            Get-ChildItem -Path $installDir -Recurse -Force | Select-Object -First 50 | Format-Table -AutoSize
-            throw "NSIS uninstall left the installation directory behind."
-          }
-
-          Remove-Item $marker -Force -ErrorAction SilentlyContinue
+          ./desktop/windows/ci/nsis-lifecycle.ps1 `
+            -Mode Upgrade `
+            -CurrentInstaller $currentInstaller `
+            -CurrentVersion $currentVersion `
+            -BaselineInstaller $baselineInstaller `
+            -BaselineVersion $baselineVersion `
+            -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-upgrade-lifecycle")
 
       - name: Build and verify release bundle
         shell: pwsh
