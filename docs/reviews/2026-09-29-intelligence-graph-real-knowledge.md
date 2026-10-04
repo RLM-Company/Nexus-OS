@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **522 nodes**;
-- **1578 typed edges**;
+- **553 nodes**;
+- **1654 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -537,3 +537,24 @@ The graph distinguishes:
 
 Transition evidence comes from current main contracts/stores/coordinator code and is connected to
 the regression tests that exercise the corresponding recovery and replay behavior.
+
+
+## Identity & Trust Graph
+
+The unified graph now includes **31 Identity & Trust nodes** and **76 source-backed relationships**.
+
+It preserves four separate trust dimensions that should not be collapsed:
+
+1. **actor identity** — owner/system/agent kind plus active/disabled state;
+2. **session trust** — active/revoked/expired lifecycle and authentication assurance;
+3. **external identity** — Google/Telegram provider and verification status;
+4. **Step-Up trust** — exact owner/session/purpose/challenge binding with one-use consumption.
+
+The layer also records the complete identity audit vocabulary:
+`session.issued`, `session.revoked`, `session.expired`, `actor.disabled`,
+`step_up.issued`, `step_up.consumed`, and `step_up.rejected`.
+
+Security properties are grounded in implementation and tests: session tokens are hashed before
+storage, revocation is owner-scoped and immediate, disabling an actor revokes active sessions,
+expired sessions fail authentication, Step-Up fails closed after expiry/revocation, and the owner API
+rejects otherwise-valid agent/system sessions.
