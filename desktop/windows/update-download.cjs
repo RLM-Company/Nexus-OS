@@ -136,11 +136,12 @@ async function streamVerifiedInstaller({
   response,
   manifest,
   downloadsDirectory,
+  temporaryDirectory = downloadsDirectory,
   existsSync = fs.existsSync
 }) {
   const metadata = validateInstallerResponse(response, manifest);
   const filename = installerFilename(manifest);
-  const tempPath = temporaryInstallerPath(downloadsDirectory, filename);
+  const tempPath = temporaryInstallerPath(temporaryDirectory, filename);
   const digest = crypto.createHash("sha256");
   const reader = response.body.getReader();
   let handle = null;
@@ -148,6 +149,7 @@ async function streamVerifiedInstaller({
 
   try {
     fs.mkdirSync(downloadsDirectory, { recursive: true });
+    fs.mkdirSync(temporaryDirectory, { recursive: true });
     handle = fs.openSync(tempPath, "wx", 0o600);
 
     while (true) {
