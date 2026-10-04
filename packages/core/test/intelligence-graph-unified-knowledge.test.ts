@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(489);
-    expect(graph.records).toHaveLength(489);
-    expect(graph.edges).toHaveLength(1470);
+    expect(graph.nodes).toHaveLength(522);
+    expect(graph.records).toHaveLength(522);
+    expect(graph.edges).toHaveLength(1578);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      489
+      522
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1470
+      1578
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -121,6 +121,68 @@ describe("unified Cosmora Intelligence Graph", () => {
           edge.type === "RUNTIME_GUARDED_BY"
       )
     ).toBe(false);
+  });
+
+  it("models Manager recovery without automatic replay", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+
+    expect(pairs).toContain(
+      "manager-status-running|SAFE_RECOVERY_TO|manager-status-paused"
+    );
+    expect(pairs).toContain(
+      "manager-status-running|UNCERTAIN_RECOVERY_TO|manager-status-failed"
+    );
+    expect(pairs).toContain(
+      `claim-manager-recovery-no-auto-replay|VERIFIED_BY_TEST|${repositoryStructureFileId(
+        "apps/api/test/manager-work.test.ts"
+      )}`
+    );
+  });
+
+  it("separates uncertain RESERVED recovery from safe SUCCEEDED replay", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+
+    expect(pairs).toContain(
+      "claim-policy-reserved-recovery-required|APPLIES_TO|tool-operation-status-reserved"
+    );
+    expect(pairs).toContain(
+      "claim-policy-succeeded-replay-safe|APPLIES_TO|tool-operation-status-succeeded"
+    );
+    expect(pairs).toContain(
+      "tool-operation-status-reserved|COMPLETES_TO|tool-operation-status-succeeded"
+    );
+  });
+
+  it("preserves one-use confirmation and Step-Up lifecycles", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+
+    expect(pairs).toContain(
+      "confirmation-status-pending|OWNER_APPROVES_TO|confirmation-status-approved"
+    );
+    expect(pairs).toContain(
+      "confirmation-status-approved|ONE_USE_CONSUMPTION_TO|confirmation-status-consumed"
+    );
+    expect(pairs).toContain(
+      "step-up-status-active|CONSUMES_TO|step-up-status-consumed"
+    );
+    expect(pairs).toContain(
+      "step-up-status-active|EXPIRES_TO|step-up-status-expired"
+    );
+  });
+
+  it("keeps recovery checkpoints from restoring authority", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.type === "RECOVERY_CONSTRAINED_BY" &&
+          edge.from.id === "entity-runtime-checkpoint" &&
+          edge.to.id === "claim-checkpoint-no-authority-restore"
+      )
+    ).toBe(true);
   });
 
   it("encodes all 133 canonical autonomy-matrix cells", () => {
