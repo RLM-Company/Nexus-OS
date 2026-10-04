@@ -123,7 +123,7 @@ function Invoke-PackagedSmoke(
     $actualUserData = [IO.Path]::GetFullPath([string]$record.userDataPath)
     $expected = [IO.Path]::GetFullPath($ExpectedUserData)
     if (-not [string]::Equals($expected, $actualUserData, [StringComparison]::OrdinalIgnoreCase)) {
-      throw "Smoke user-data path does not match the isolated profile."
+      throw "Smoke user-data path does not match the isolated profile. Expected: $expected Actual: $actualUserData"
     }
   }
 
@@ -139,7 +139,7 @@ $installDir = Join-Path $root "install"
 $profileRoot = Join-Path $root "profile"
 $appData = Join-Path $profileRoot "AppData\Roaming"
 $localAppData = Join-Path $profileRoot "AppData\Local"
-$userData = Join-Path $appData "Cosmora"
+$userData = Join-Path $appData "cosmora-windows-desktop"
 $marker = Join-Path $env:TEMP "cosmora-smoke-$($Mode.ToLowerInvariant())-$CurrentVersion.json"
 
 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
