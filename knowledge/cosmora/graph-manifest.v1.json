@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 448,
-    "edges": 1248,
-    "records": 448
+    "nodes": 489,
+    "edges": 1470,
+    "records": 489
   },
   "layers": [
     {
@@ -120,6 +120,13 @@
       "edges": 43,
       "authority": "owner_approved_spec_plus_main_runtime_guards_and_candidate_proposals",
       "status_model": "spec_only_vs_runtime_guarded"
+    },
+    {
+      "id": "authority_capability",
+      "nodes": 41,
+      "edges": 222,
+      "authority": "verified_policy_runtime_and_regression_evidence",
+      "matrix": "19_capabilities_x_7_autonomy_levels"
     }
   ],
   "primary_relation_types": [
@@ -207,7 +214,19 @@
     "EXCLUDED_FROM_TRAINING_BY",
     "PROPOSES_PERSISTENCE_GUARD_IN",
     "PROPOSES_TEST_COVERAGE_IN",
-    "PROPOSES_PARTIAL_ENFORCEMENT_IN"
+    "PROPOSES_PARTIAL_ENFORCEMENT_IN",
+    "RESOLVES_AS_DENY",
+    "RESOLVES_AS_CONFIRM",
+    "RESOLVES_AS_SCOPED",
+    "RESOLVES_AS_AUTONOMOUS",
+    "RESOLVES_AS_FULL",
+    "EVALUATED_BY",
+    "REQUIRES_STEP_UP",
+    "LESS_AUTONOMOUS_THAN",
+    "ENFORCES_POLICY_VERDICT_FROM",
+    "ENFORCES",
+    "VALIDATES",
+    "BOUNDS_PROOF_PURPOSE_FOR"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -234,7 +253,8 @@
     "packages/core/test/fixtures/cosmora-runtime-interface-graph.ts",
     "packages/core/test/fixtures/cosmora-state-persistence-graph.ts",
     "packages/core/test/fixtures/cosmora-model-intelligence-graph.ts",
-    "packages/core/test/fixtures/cosmora-memory-governance-graph.ts"
+    "packages/core/test/fixtures/cosmora-memory-governance-graph.ts",
+    "packages/core/test/fixtures/cosmora-authority-capability-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
