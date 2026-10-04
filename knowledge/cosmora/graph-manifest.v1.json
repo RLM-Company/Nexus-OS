@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 489,
-    "edges": 1470,
-    "records": 489
+    "nodes": 522,
+    "edges": 1578,
+    "records": 522
   },
   "layers": [
     {
@@ -127,6 +127,13 @@
       "edges": 222,
       "authority": "verified_policy_runtime_and_regression_evidence",
       "matrix": "19_capabilities_x_7_autonomy_levels"
+    },
+    {
+      "id": "execution_recovery",
+      "nodes": 33,
+      "edges": 108,
+      "authority": "verified_state_machine_and_recovery_evidence",
+      "semantics": "manager_policy_confirmation_step_up_lifecycles"
     }
   ],
   "primary_relation_types": [
@@ -226,7 +233,30 @@
     "ENFORCES_POLICY_VERDICT_FROM",
     "ENFORCES",
     "VALIDATES",
-    "BOUNDS_PROOF_PURPOSE_FOR"
+    "BOUNDS_PROOF_PURPOSE_FOR",
+    "STATE_OF",
+    "ADVANCES_TO",
+    "MAY_ADVANCE_TO",
+    "TRANSITIONS_TO",
+    "RESUMES_TO",
+    "APPROVAL_RESUMES_TO",
+    "OWNER_CAN_CANCEL_TO",
+    "TOOL_GATE_CAN_BLOCK_TO",
+    "COMPLETES_TO",
+    "ERROR_TRANSITIONS_TO",
+    "SAFE_RECOVERY_TO",
+    "UNCERTAIN_RECOVERY_TO",
+    "APPROVAL_TRANSITIONS_TO",
+    "REJECTION_TRANSITIONS_TO",
+    "EXPIRY_TRANSITIONS_TO",
+    "ATOMICALLY_RESERVES_TO",
+    "FAILS_TO",
+    "OWNER_APPROVES_TO",
+    "OWNER_REJECTS_TO",
+    "EXPIRES_TO",
+    "ONE_USE_CONSUMPTION_TO",
+    "CONSUMES_TO",
+    "RECOVERY_CONSTRAINED_BY"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -254,7 +284,8 @@
     "packages/core/test/fixtures/cosmora-state-persistence-graph.ts",
     "packages/core/test/fixtures/cosmora-model-intelligence-graph.ts",
     "packages/core/test/fixtures/cosmora-memory-governance-graph.ts",
-    "packages/core/test/fixtures/cosmora-authority-capability-graph.ts"
+    "packages/core/test/fixtures/cosmora-authority-capability-graph.ts",
+    "packages/core/test/fixtures/cosmora-execution-recovery-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
