@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
-    "demo": "next dev -H 127.0.0.1",
-    "dev": "next dev -H 127.0.0.1",
-    "demo:lan": "next dev -H 0.0.0.0",
+    "build": "node scripts/prepare-pdf-worker.mjs && next build",
+    "demo": "node scripts/prepare-pdf-worker.mjs && next dev -H 127.0.0.1",
+    "dev": "node scripts/prepare-pdf-worker.mjs && next dev -H 127.0.0.1",
+    "demo:lan": "node scripts/prepare-pdf-worker.mjs && next dev -H 0.0.0.0",
     "lint": "eslint src",
     "start": "next start -H 127.0.0.1",
     "test:e2e": "playwright test",
@@ -14,9 +14,13 @@
   },
   "dependencies": {
     "@cosmora/contracts": "workspace:*",
+    "fflate": "0.8.3",
     "next": "16.3.1",
+    "pdfjs-dist": "6.3.289",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

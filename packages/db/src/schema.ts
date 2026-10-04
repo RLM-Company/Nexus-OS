@@ -373,6 +373,7 @@ export const runs = sqliteTable(
       .notNull()
       .references(() => chats.id, { onDelete: "cascade" }),
     status: text("status").notNull(),
+    projectMaterialsJson: text("project_materials_json").notNull().default("{}"),
     provider: text("provider"),
     modelResolved: text("model_resolved"),
     inputTokens: integer("input_tokens"),
@@ -396,6 +397,7 @@ export const messages = sqliteTable(
     role: text("role").notNull(),
     contentType: text("content_type").notNull(),
     content: text("content").notNull(),
+    attachmentsJson: text("attachments_json").notNull().default("[]"),
     status: text("status").notNull(),
     clientMessageId: text("client_message_id"),
     replyToMessageId: text("reply_to_message_id"),
@@ -416,6 +418,7 @@ export const generalChats = sqliteTable(
     id: text("id").primaryKey(),
     ownerId: text("owner_id").notNull(),
     title: text("title").notNull(),
+    archived: integer("archived").notNull().default(0),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
   },
@@ -755,4 +758,33 @@ export const managerWorkFiles = sqliteTable(
     content: text("content").notNull()
   },
   (table) => [primaryKey({ columns: [table.executionId, table.name] })]
+);
+
+export const projectMaterials = sqliteTable("project_materials", {
+  projectId: text("project_id")
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  instructions: text("instructions").notNull(),
+  attachmentsJson: text("attachments_json").notNull().default("[]"),
+  updatedAt: text("updated_at").notNull()
+});
+export const githubChangeDrafts = sqliteTable(
+  "github_change_drafts",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("review"),
+    planJson: text("plan_json").notNull(),
+    prUrl: text("pr_url"),
+    publishedSha: text("published_sha"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    index("github_drafts_owner_project").on(table.ownerId, table.projectId, table.createdAt)
+  ]
 );

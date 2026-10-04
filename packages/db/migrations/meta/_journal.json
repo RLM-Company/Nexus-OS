@@ -148,6 +148,34 @@
       "when": 1790985600000,
       "tag": "0020_chat_text_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1791072000000,
+      "tag": "0021_project_message_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1791072000001,
+      "tag": "0022_github_change_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1791072000002,
+      "tag": "0023_project_materials",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791072000003,
+      "tag": "0024_chat_archive",
+      "breakpoints": true
     }
   ]
 }

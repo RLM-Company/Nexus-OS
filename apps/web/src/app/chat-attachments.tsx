@@ -4,25 +4,28 @@ import { useRef, useState } from "react";
 import {
   CHAT_ATTACHMENT_LIMITS,
   CHAT_TEXT_EXTENSIONS,
-  isChatTextFilename,
   isValidChatAttachments,
-  type ChatTextAttachment
+  type ChatAttachment
 } from "@cosmora/contracts/chat-attachments";
+import { decodeChatAttachment } from "./decode-chat-attachment";
 
 export function useChatAttachments(scope: string) {
   const scopeRef = useRef(scope);
-  scopeRef.current = scope;
   const operationRef = useRef(0);
+  if (scopeRef.current !== scope) {
+    scopeRef.current = scope;
+    operationRef.current++;
+  }
   const [state, setState] = useState<{
     scope: string;
-    files: ChatTextAttachment[];
+    files: ChatAttachment[];
     reading: boolean;
     error: string | null;
   }>({ scope, files: [], reading: false, error: null });
   const files = state.scope === scope ? state.files : [];
   const reading = state.scope === scope && state.reading;
   const error = state.scope === scope ? state.error : null;
-  const replace = (next: ChatTextAttachment[]): void => {
+  const replace = (next: ChatAttachment[]): void => {
     operationRef.current += 1;
     setState({ scope, files: next, reading: false, error: null });
   };
@@ -33,29 +36,11 @@ export function useChatAttachments(scope: string) {
       if (files.length + selected.length > CHAT_ATTACHMENT_LIMITS.files) {
         throw new Error("Можно прикрепить до 4 файлов.");
       }
-      const added = await Promise.all(
-        selected.map(async (file) => {
-          if (!isChatTextFilename(file.name)) {
-            throw new Error(
-              "Выберите текстовый файл или исходный код. PDF и изображения пока не поддерживаются."
-            );
-          }
-          if (file.size > CHAT_ATTACHMENT_LIMITS.bytesPerFile) {
-            throw new Error("Файл слишком большой: до 32 КБ и 8 000 символов на файл.");
-          }
-          let content: string;
-          try {
-            content = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
-          } catch {
-            throw new Error("Не удалось прочитать файл. Используйте текст в кодировке UTF-8.");
-          }
-          return { name: file.name, content };
-        })
-      );
+      const added = await Promise.all(selected.map(decodeChatAttachment));
       const next = [...files, ...added];
       if (!isValidChatAttachments(next)) {
         throw new Error(
-          "Нужен непустой текст без двоичных данных: до 8 000 символов на файл и 24 КБ всего."
+          "Нужен непустой текст до 8 000 символов; общий контекст до 24 КБ и не больше 2 изображений."
         );
       }
       if (scopeRef.current === scope && operationRef.current === operation) {
@@ -81,14 +66,16 @@ export function ChatAttachmentPicker({
   error,
   disabled,
   onAdd,
-  onRemove
+  onRemove,
+  textOnly = false
 }: {
-  files: ChatTextAttachment[];
+  files: ChatAttachment[];
   reading: boolean;
   error: string | null;
   disabled: boolean;
   onAdd: (files: File[]) => void;
   onRemove: (index: number) => void;
+  textOnly?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   return (
@@ -99,7 +86,14 @@ export function ChatAttachmentPicker({
         multiple
         hidden
         aria-label="Текстовые файлы и код"
-        accept={CHAT_TEXT_EXTENSIONS.map((extension) => `.${extension}`).join(",")}
+        accept={[
+          ...CHAT_TEXT_EXTENSIONS,
+          "pdf",
+          "docx",
+          ...(textOnly ? [] : ["png", "jpg", "jpeg"])
+        ]
+          .map((extension) => `.${extension}`)
+          .join(",")}
         disabled={disabled || reading}
         onChange={(event) => {
           const selected = Array.from(event.currentTarget.files ?? []);
@@ -114,13 +108,17 @@ export function ChatAttachmentPicker({
       >
         {reading ? "Читаю файлы…" : "Прикрепить файл"}
       </button>
-      <small>Текст и код · до 4 файлов, 8 000 символов на файл, 24 КБ всего</small>
+      <small>
+        Текст, код, PDF, DOCX{textOnly ? "" : " и изображения"} · до 4 файлов · текст до 8 000
+        символов, документы до 2 МБ{textOnly ? "" : ", изображения до 1 МБ"}
+      </small>
       {files.length > 0 && (
         <ul aria-label="Прикреплённые файлы">
           {files.map((file, index) => (
             <li key={`${index}:${file.name}`}>
               <span>
-                {file.name} · {file.content.length} символов
+                {file.name} ·{" "}
+                {"content" in file ? `${file.content.length} символов` : "изображение"}
               </span>
               <button
                 type="button"
@@ -139,25 +137,43 @@ export function ChatAttachmentPicker({
   );
 }
 
-export function ChatMessageAttachments({ files }: { files?: ChatTextAttachment[] }) {
+export function ChatMessageAttachments({ files }: { files?: ChatAttachment[] }) {
   if (!files?.length) return null;
   return (
     <div className="chat-message-attachments" aria-label="Файлы сообщения">
       {files.map((file, index) => (
         <details key={`${index}:${file.name}`}>
           <summary>
-            {file.name} · {file.content.length} символов
+            {file.name} · {"content" in file ? `${file.content.length} символов` : "изображение"}
           </summary>
-          <pre>{file.content}</pre>
+          {"content" in file ? (
+            <pre>{file.content}</pre>
+          ) : (
+            <img
+              src={`data:${file.media_type};base64,${file.data_base64}`}
+              alt={file.name}
+              style={{ maxWidth: "100%", maxHeight: 320, objectFit: "contain" }}
+            />
+          )}
           <button
             type="button"
             onClick={() => {
               const url = URL.createObjectURL(
-                new Blob([file.content], { type: "text/plain;charset=utf-8" })
+                "content" in file
+                  ? new Blob([file.content], { type: "text/plain;charset=utf-8" })
+                  : new Blob(
+                      [
+                        Uint8Array.from(atob(file.data_base64), (character) =>
+                          character.charCodeAt(0)
+                        )
+                      ],
+                      { type: file.media_type }
+                    )
               );
               const link = document.createElement("a");
               link.href = url;
-              link.download = file.name;
+              link.download =
+                "content" in file && file.source_type ? `${file.name}.txt` : file.name;
               link.click();
               window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
             }}

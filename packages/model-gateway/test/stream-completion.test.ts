@@ -55,6 +55,47 @@ describe.each([
     ]
   }
 ])("$name stream completion", ({ Adapter, good, bad }) => {
+  it("sends image bytes as provider-native multimodal blocks instead of text metadata", async () => {
+    let sent: { messages: Array<{ content: unknown }> } | undefined;
+    const adapter = new Adapter({
+      id: "test",
+      baseUrl: "https://unused.invalid",
+      apiKey: "fixture-key",
+      model: "test",
+      fetchImplementation: (_input, init) => {
+        if (typeof init?.body !== "string") throw new Error("Expected JSON body");
+        sent = JSON.parse(init.body) as typeof sent;
+        return Promise.resolve(new Response(good));
+      }
+    });
+    const imageRequest = {
+      ...request,
+      messages: [
+        {
+          role: "user" as const,
+          content: "Что на изображении?",
+          images: [{ media_type: "image/png" as const, data_base64: "fixture-image-bytes" }]
+        }
+      ]
+    };
+    for await (const event of adapter.stream(imageRequest, new AbortController().signal))
+      expect(event.type).toMatch(/text.delta|response.completed/);
+    const blocks = sent?.messages[0]?.content;
+    expect(blocks).toEqual(
+      Adapter === OpenAICompatibleAdapter
+        ? [
+            { type: "text", text: "Что на изображении?" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,fixture-image-bytes" } }
+          ]
+        : [
+            { type: "text", text: "Что на изображении?" },
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: "fixture-image-bytes" }
+            }
+          ]
+    );
+  });
   it.each(bad)("never completes an empty, truncated or erroneous stream (%#)", async (body) => {
     const seen: ProviderStreamEvent[] = [];
     const adapter = new Adapter({

@@ -233,6 +233,8 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   await expect(chats).toHaveAttribute("aria-expanded", "false");
 
   await page.keyboard.press("Tab");
+  await expect(sidebar.locator(".chat-archive-panel summary")).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(projects).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(projects).toBeFocused();

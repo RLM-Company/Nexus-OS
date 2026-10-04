@@ -2,7 +2,8 @@
 
 Cosmora OS is an owner-controlled, policy-gated AI project workspace. This repository contains the
 integrated product and safety foundations and a bounded, durable Manager work runtime for creating
-downloadable files. The current alpha does not execute arbitrary code or external actions.
+downloadable files. The private MVP also provides owner-operated GitHub and web search integrations.
+The AI executor does not execute arbitrary code or external actions.
 
 ## Current integrated scope
 
@@ -12,10 +13,14 @@ downloadable files. The current alpha does not execute arbitrary code or externa
   server-side streaming, cancellation and restart recovery;
 - Manager work panel with plan, file drafts, optional Critic review, owner controls and saved task
   history with downloads from earlier completed tasks;
-- browser-local Project Context preview with bounded source metadata, explicit preview before
-  connecting a source, per-project local isolation, safe redaction and explicit clear confirmation;
-- mock-only Skills preview with read/preview permissions and disabled arbitrary execution, plus a
-  mock/read-only GitHub preview with strict `github.com` URL allowlisting and disabled write actions;
+- server-persisted project instructions and text/code/PDF/DOCX materials, optimistic version checks
+  and a material snapshot taken when each message or Manager work item is accepted;
+- chat text/code/PDF/DOCX attachments and PNG/JPEG multimodal payloads, safe Markdown/code downloads,
+  chat rename, export, reversible archive and a bounded model context retaining full stored history;
+- owner-bound GitHub repository browsing, code import into unsent chat drafts, editing/new files,
+  persisted before/after review and explicit publication to a new branch and draft PR;
+- optional private SearXNG search with source links/snippets attached only by an owner action;
+- mock-only Skills preview with read/preview permissions and disabled arbitrary execution;
 - local Image, Video and Sound prompt workspaces that do not send prompts to an external model while
   that model surface is disconnected;
 - Agent Studio catalogs, blueprints and owner/delegated proposal flows with idempotent writes and
@@ -54,8 +59,14 @@ downloadable files. The current alpha does not execute arbitrary code or externa
   and server-side credentials. A configured credential alone does not prove live readiness.
 - Generated files are inert downloads. Shell execution, repository edits, research, deployment and
   messaging tools are unavailable to this executor; plans requiring them fail visibly.
-- Project Context source selection is browser-local preview state, not authoritative runtime context.
-- Skills preview does not execute packages or arbitrary code, and GitHub preview does not authenticate
+- Project materials are runtime context for new accepted requests. Historical browser-local metadata
+  remains available only in the explicit `context_preview=1` demonstration.
+- Images require a Registry route with independently verified vision support. The current CheapVibeCode
+  profile does not advertise vision; image history/payload support is not live-provider acceptance.
+- GitHub is owner-operated and repository/owner-bound. Every publication requires the exact saved
+  review hash and approval; changed bases fail. No merge or automatic write retry is provided.
+- Search supplies search-engine snippets, not full-page retrieval or autonomous browsing.
+- Skills preview does not execute packages or arbitrary code, and the historical GitHub preview does not authenticate
   to GitHub or perform repository writes.
 - External tool effects and the local daemon are not connected to an autonomous agent loop.
 - The historical Manager Runtime Step 6 acceptance was

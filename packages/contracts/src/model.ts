@@ -10,7 +10,19 @@ export const ModelMessageSchema = Type.Object(
       Type.Literal("assistant"),
       Type.Literal("tool")
     ]),
-    content: Type.String()
+    content: Type.String(),
+    images: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            media_type: Type.Union([Type.Literal("image/png"), Type.Literal("image/jpeg")]),
+            data_base64: Type.String({ minLength: 1, maxLength: 1_333_336 })
+          },
+          { additionalProperties: false }
+        ),
+        { maxItems: 2 }
+      )
+    )
   },
   { additionalProperties: false }
 );

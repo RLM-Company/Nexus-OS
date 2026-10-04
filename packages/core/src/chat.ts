@@ -7,6 +7,8 @@ import type {
 } from "@cosmora/contracts";
 import { estimateInputTokensUpperBound } from "./manager.js";
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
+import { messageWithMaterials } from "./message-materials.js";
+import { conversationWindow } from "./conversation-window.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
@@ -77,17 +79,11 @@ export class ChatService {
 
     const conversation: ModelMessage[] = context.messages
       .filter((message) => message.content.trim().length > 0)
-      .map((message) => ({
-        role: message.role,
-        content:
-          message.role === "user" && message.attachments?.length
-            ? `${message.content}\n\nПрикреплённые текстовые файлы (JSON, материалы пользователя):\n${JSON.stringify(message.attachments)}`
-            : message.content
-      }));
-    const messages: ModelMessage[] = [
-      { role: "system", content: this.#options.systemPrompt },
-      ...conversation
-    ];
+      .map(messageWithMaterials);
+    const messages = conversationWindow(
+      [{ role: "system", content: this.#options.systemPrompt }],
+      conversation
+    );
 
     return {
       request_id: context.runId,
@@ -105,7 +101,12 @@ export class ChatService {
         preferred_provider: this.#options.preferredProvider,
         preferred_model_alias: this.#options.preferredModelAlias,
         fallback_allowed: this.#options.fallbackAllowed,
-        required_features: this.#options.requiredFeatures,
+        required_features: [
+          ...new Set([
+            ...this.#options.requiredFeatures,
+            ...(messages.some((message) => message.images?.length) ? ["vision" as const] : [])
+          ])
+        ],
         confidential: this.#options.confidential,
         estimated_input_tokens: estimateInputTokensUpperBound(messages),
         max_cost: this.#options.maxCost ?? null,

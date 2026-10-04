@@ -30,6 +30,8 @@ import { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { ManagerRuntimeProjectStore } from "./manager-runtime-project-store.js";
 import { buildModelRuntime } from "./model-runtime.js";
 import { RuntimeMetrics } from "./operations.js";
+import { GithubIntegration, GithubDraftStore } from "./github-integration.js";
+import { WebSearch } from "./web-search.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
@@ -96,6 +98,14 @@ try {
     manager: modelRuntime.manager
   });
   app = buildApp({
+    webSearch: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
+    githubIntegration: new GithubIntegration({
+      ownerId:
+        process.env.GITHUB_OWNER_ID ?? (config.nodeEnv === "production" ? "" : "local-owner"),
+      ...(process.env.GITHUB_TOKEN ? { token: process.env.GITHUB_TOKEN } : {}),
+      ...(process.env.GITHUB_REPOSITORY ? { repository: process.env.GITHUB_REPOSITORY } : {})
+    }),
+    githubDraftStore: new GithubDraftStore(database.sqlite),
     config,
     database,
     identityStore,

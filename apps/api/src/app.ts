@@ -1,3 +1,4 @@
+import { ContextTooLargeError } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { ServerConfig } from "@cosmora/config";
 import { composeDemoManagerPlan, type ChatService, type ManagerService } from "@cosmora/core";
@@ -57,6 +58,7 @@ import {
   UpdateProjectUsageLimitRequestSchema,
   createCapabilityProfile,
   hasUniqueCapabilityOverrideIds,
+  isValidChatAttachments,
   requiresStepUp,
   type ApiError,
   type AgentBlueprintListResponse,
@@ -151,6 +153,10 @@ import {
   projectUsageLimitStepUpChallenge
 } from "./step-up-challenge.js";
 import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-routes.js";
+import { GithubIntegration, type GithubDraftStore } from "./github-integration.js";
+import { registerGithubRoutes } from "./github-routes.js";
+import { WebSearch, registerWebSearchRoutes } from "./web-search.js";
+import { registerProjectMaterialsRoutes } from "./project-materials-routes.js";
 
 export interface AppDependencies {
   config: ServerConfig;
@@ -179,6 +185,9 @@ export interface AppDependencies {
   runtimeMetrics?: RuntimeMetrics;
   managerRunExecutionMode?: "stream" | "background";
   generalChatRunExecutionMode?: "stream" | "background";
+  githubIntegration?: GithubIntegration;
+  githubDraftStore?: GithubDraftStore;
+  webSearch?: WebSearch;
   now?: () => string;
 }
 
@@ -546,6 +555,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   }
 
   const app = Fastify({
+    bodyLimit: 3_000_000,
     logger:
       dependencies.config.nodeEnv === "test"
         ? false
@@ -618,6 +628,18 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       return reply.status(database === "ok" ? 200 : 503).send(response);
     }
   );
+
+  registerGithubRoutes({
+    app,
+    integration: dependencies.githubIntegration ?? new GithubIntegration(),
+    identityFor,
+    ...(dependencies.githubDraftStore ? { drafts: dependencies.githubDraftStore } : {}),
+    ...(dependencies.projectStore ? { projects: dependencies.projectStore } : {}),
+    ...(dependencies.emergencyStopStore ? { emergency: dependencies.emergencyStopStore } : {})
+  });
+  registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
+  if (dependencies.projectStore)
+    registerProjectMaterialsRoutes(app, dependencies.projectStore, identityFor);
 
   if (dependencies.identityStore) {
     const identityStore = dependencies.identityStore;
@@ -1658,6 +1680,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         schema: {
           body: CreateProjectRequestSchema,
           response: {
+            400: ApiErrorSchema,
             201: MessageAcceptedResponseSchema,
             200: MessageAcceptedResponseSchema,
             409: ApiErrorSchema
@@ -1665,10 +1688,16 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
       },
       async (request, reply) => {
+        if (!isValidChatAttachments(request.body.attachments ?? [])) {
+          return reply
+            .status(400)
+            .send(errorBody(request.id, "VALIDATION_ERROR", "Invalid attachments"));
+        }
         const accepted = store.createProject(
           request.body.initial_message,
           request.body.client_message_id,
-          identityFor(request).owner_id
+          identityFor(request).owner_id,
+          request.body.attachments
         );
         dependencies.policyStore?.ensureProfile(accepted.project.id);
         dependencies.usageStore?.ensureLimit(accepted.project.id, identityFor(request).owner_id);
@@ -2333,6 +2362,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           },
           body: CreateMessageRequestSchema,
           response: {
+            400: ApiErrorSchema,
             202: MessageAcceptedResponseSchema,
             200: MessageAcceptedResponseSchema,
             404: ApiErrorSchema,
@@ -2341,11 +2371,17 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
       },
       async (request, reply) => {
+        if (!isValidChatAttachments(request.body.attachments ?? [])) {
+          return reply
+            .status(400)
+            .send(errorBody(request.id, "VALIDATION_ERROR", "Invalid attachments"));
+        }
         const accepted = store.createMessage(
           request.params.projectId,
           request.body.content,
           request.body.client_message_id,
-          identityFor(request).owner_id
+          identityFor(request).owner_id,
+          request.body.attachments
         );
         if (!accepted) {
           return reply
@@ -2709,6 +2745,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           const modelRequest = manager.buildRequest({
             projectId: run.project_id,
             runId: run.id,
+            materials: store.getMaterialsForRun(run.id, ownerId),
             messages: conversation
           });
           for await (const event of modelGateway.stream(modelRequest, controller.signal)) {
@@ -2860,11 +2897,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             return reply;
           }
           const gatewayError =
-            error instanceof GatewayRunError
-              ? error
-              : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
-                  cause: error
-                });
+            error instanceof ContextTooLargeError
+              ? new GatewayRunError("CONTEXT_TOO_LARGE", "gateway", error.message, false)
+              : error instanceof GatewayRunError
+                ? error
+                : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
+                    cause: error
+                  });
           const code = gatewayError.code;
           store.failRun(run.id, code);
           runtimeMetrics.runFailed(code);

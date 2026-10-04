@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
 import { InstallApp } from "./install-app";
+import { ChatResponse } from "./chat-response";
+import { WebSearchPanel } from "./web-search-panel";
+import { ChatHistoryActions } from "./chat-history-actions";
+import { ChatArchivePanel } from "./chat-archive-panel";
 import { ProjectContextPanel } from "./project-context-panel";
+import { ProjectContextPreview } from "./project-context-preview";
 import { ManagerWorkPanel } from "./manager-work-panel";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 import { WorkspaceIcon } from "./workspace-icons";
@@ -14,7 +19,7 @@ import {
   ChatMessageAttachments,
   useChatAttachments
 } from "./chat-attachments";
-import type { ChatTextAttachment } from "@cosmora/contracts/chat-attachments";
+import { isValidChatAttachments, type ChatAttachment } from "@cosmora/contracts/chat-attachments";
 import {
   WorkspaceSections,
   TOOL_ITEMS,
@@ -40,6 +45,7 @@ type Message = {
   role: "user" | "assistant" | "system_event";
   content_type: "text";
   content: string;
+  attachments?: ChatAttachment[];
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
   reply_to_message_id: string | null;
   run_id: string | null;
@@ -66,7 +72,7 @@ type LocalChatMessage = {
   role: "user" | "assistant";
   content_type: "text";
   content: string;
-  attachments?: ChatTextAttachment[];
+  attachments?: ChatAttachment[];
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
   run_id: string | null;
   error_code: string | null;
@@ -77,6 +83,7 @@ type LocalChatMessage = {
 type ProjectProposal = {
   content: string;
   assessment: TaskComplexity;
+  attachments?: ChatAttachment[];
 };
 
 type LocalChatSession = {
@@ -148,9 +155,11 @@ const isProjectView = (value: string | null): value is ProjectView =>
   value === "chat" || value === "plan" || value === "project" || value === "context";
 
 const replaceConsoleRoute = (projectId: string | null, view: ProjectView = "chat"): void => {
-  const route = projectId
+  let route = projectId
     ? `/?project=${encodeURIComponent(projectId)}&view=${encodeURIComponent(view)}`
     : "/";
+  if (new URLSearchParams(window.location.search).get("context_preview") === "1")
+    route += `${route.includes("?") ? "&" : "?"}context_preview=1`;
   window.history.replaceState(window.history.state, "", route);
 };
 
@@ -314,14 +323,24 @@ const greetingSeed = (): number => {
 
 const displayedContent = (message: Message): string | null => {
   if (message.status === "cancelled") return "Запуск остановлен владельцем.";
-  if (message.status === "failed") return "Запуск завершился с ошибкой.";
+  if (message.status === "failed")
+    return message.error_code === "CONTEXT_TOO_LARGE"
+      ? "Сообщение и материалы слишком большие. Сократите текст или число файлов и повторите отправку."
+      : message.error_code === "ROUTE_UNAVAILABLE"
+        ? "Для этого запроса нет доступного маршрута модели с нужными возможностями."
+        : "Запуск завершился с ошибкой.";
   if (message.content) return message.content;
   return null;
 };
 
 const displayedGeneralContent = (message: LocalChatMessage): string | null => {
   if (message.status === "cancelled") return "Ответ остановлен владельцем.";
-  if (message.status === "failed") return "Ответ завершился с ошибкой.";
+  if (message.status === "failed")
+    return message.error_code === "CONTEXT_TOO_LARGE"
+      ? "Сообщение и материалы слишком большие. Сократите текст или число файлов и повторите отправку."
+      : message.error_code === "ROUTE_UNAVAILABLE"
+        ? "Для этого запроса нет доступного маршрута модели с нужными возможностями."
+        : "Ответ завершился с ошибкой.";
   return message.content || null;
 };
 
@@ -438,6 +457,10 @@ export default function Home() {
   const [lastCompletedRoute, setLastCompletedRoute] = useState<CompletedRoute | null>(null);
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const [projectView, setProjectView] = useState<ProjectView>("chat");
+  const [contextPreview, setContextPreview] = useState(false);
+  useEffect(() => {
+    setContextPreview(new URLSearchParams(window.location.search).get("context_preview") === "1");
+  }, []);
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
   const [greeting, setGreeting] = useState("Чем могу помочь?");
   const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
@@ -827,6 +850,29 @@ export default function Home() {
     if (loading || initialRouteHandledRef.current) return;
     initialRouteHandledRef.current = true;
     const params = new URLSearchParams(window.location.search);
+    const imported = params.get("github_import");
+    if (imported && /^[a-f0-9-]{36}$/.test(imported)) {
+      try {
+        const key = `cosmora:github-import:${imported}`;
+        const stored = window.sessionStorage.getItem(key);
+        if (stored) {
+          const material = JSON.parse(stored) as { attachment: ChatAttachment; prompt: string };
+          if (
+            isValidChatAttachments([material.attachment]) &&
+            typeof material.prompt === "string" &&
+            material.prompt.length <= 1000
+          ) {
+            chatAttachments.replace([material.attachment]);
+            setDraft(material.prompt);
+          }
+          window.sessionStorage.removeItem(key);
+        }
+        window.history.replaceState(null, "", "/");
+      } catch {
+        setError("Не удалось открыть файл из GitHub. Прикрепите его к чату отдельно.");
+      }
+      return;
+    }
     const projectId = params.get("project");
     if (!projectId) return;
     const requestedView = params.get("view");
@@ -1290,7 +1336,7 @@ export default function Home() {
   const restoreRunDraft = (): void => {
     if (!recoverableMessage) return;
     setDraft(recoverableMessage.content);
-    if (!activeProject) chatAttachments.replace(recoverableChatMessage?.attachments ?? []);
+    chatAttachments.replace(recoverableMessage.attachments ?? []);
     setError(null);
     window.requestAnimationFrame(() => composerRef.current?.focus());
   };
@@ -1343,10 +1389,16 @@ export default function Home() {
             return;
           }
           chatAttachments.replace([]);
-          const hasFiles =
-            chatAttachments.files.length > 0 ||
-            localChatMessages.some((message) => message.attachments?.length);
-          const proposal = assessment.requiresProject && !hasFiles ? { content, assessment } : null;
+          const materials = [
+            ...localChatMessages
+              .filter((message) => message.role === "user")
+              .flatMap((message) => message.attachments ?? []),
+            ...chatAttachments.files
+          ];
+          const proposal =
+            assessment.requiresProject && isValidChatAttachments(materials)
+              ? { content, assessment, attachments: materials }
+              : null;
           setLocalChats((current) => {
             const existing = current.find((chat) => chat.id === accepted.chat.id);
             const updated: LocalChatSession = {
@@ -1392,7 +1444,11 @@ export default function Home() {
           `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
           {
             method: "POST",
-            body: JSON.stringify({ content, client_message_id: clientId() })
+            body: JSON.stringify({
+              content,
+              client_message_id: clientId(),
+              attachments: chatAttachments.files
+            })
           }
         );
 
@@ -1401,6 +1457,7 @@ export default function Home() {
           return;
         }
         selectedProjectRef.current = accepted.project.id;
+        chatAttachments.replace([]);
         replaceConsoleRoute(accepted.project.id, "chat");
         // Invalidate snapshots fetched before server acceptance of this run.
         viewRequestRef.current += 1;
@@ -1449,7 +1506,11 @@ export default function Home() {
     try {
       const accepted = await api<AcceptedResponse>("/api/v1/projects", {
         method: "POST",
-        body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+        body: JSON.stringify({
+          initial_message: content,
+          client_message_id: clientId(),
+          attachments: projectProposal.attachments ?? []
+        })
       });
       if (epoch !== viewEpochRef.current) {
         void loadProjects().catch(() => undefined);
@@ -1671,6 +1732,7 @@ export default function Home() {
               </div>
             )}
           </section>
+          <ChatArchivePanel onRestore={() => void loadGeneralChats()} />
           <section className="sidebar-section">
             <button
               type="button"
@@ -2047,13 +2109,21 @@ export default function Home() {
           </div>
         )}
 
-        {activeProject && projectView === "context" && (
-          <ProjectContextPanel
-            projectId={activeProject.id}
-            projectTitle={activeProject.title}
-            messageCount={messages.length}
-          />
-        )}
+        {activeProject &&
+          projectView === "context" &&
+          (contextPreview ? (
+            <ProjectContextPreview
+              projectId={activeProject.id}
+              projectTitle={activeProject.title}
+              messageCount={messages.length}
+            />
+          ) : (
+            <ProjectContextPanel
+              projectId={activeProject.id}
+              projectTitle={activeProject.title}
+              messageCount={messages.length}
+            />
+          ))}
 
         {activeProject && projectView === "plan" && (
           <div className="project-context view-panel" role="tabpanel" aria-label="План">
@@ -2194,13 +2264,12 @@ export default function Home() {
                         })}
                       </time>
                     </header>
-                    <p>
-                      {displayedContent(message) || (
-                        <span className="typing">
-                          Формирую ответ<span>…</span>
-                        </span>
-                      )}
-                    </p>
+                    <ChatResponse
+                      content={displayedContent(message)}
+                      assistant={message.role === "assistant"}
+                      complete={message.status === "completed"}
+                    />
+                    <ChatMessageAttachments files={message.attachments ?? []} />
                   </div>
                 </article>
               ))}
@@ -2209,6 +2278,28 @@ export default function Home() {
           </section>
         ) : localChatMessages.length > 0 ? (
           <section className="chat-panel general-chat-panel" aria-label="Обычный чат Cosmora">
+            {activeLocalChat && (
+              <ChatHistoryActions
+                key={activeLocalChat.id}
+                id={activeLocalChat.id}
+                title={activeLocalChat.title}
+                messages={localChatMessages}
+                disabled={sending || loading}
+                onChange={(title) =>
+                  setLocalChats((current) =>
+                    current.map((chat) =>
+                      chat.id === activeLocalChat.id ? { ...chat, title } : chat
+                    )
+                  )
+                }
+                onArchive={() => {
+                  setLocalChats((current) =>
+                    current.filter((chat) => chat.id !== activeLocalChat.id)
+                  );
+                  newChat();
+                }}
+              />
+            )}
             <div className="chat-heading general-chat-heading">
               <div>
                 <strong>Cosmora</strong>
@@ -2240,13 +2331,11 @@ export default function Home() {
                         })}
                       </time>
                     </header>
-                    <p>
-                      {displayedGeneralContent(message) || (
-                        <span className="typing">
-                          Формирую ответ<span>…</span>
-                        </span>
-                      )}
-                    </p>
+                    <ChatResponse
+                      content={displayedGeneralContent(message)}
+                      assistant={message.role === "assistant"}
+                      complete={message.status === "completed"}
+                    />
                     <ChatMessageAttachments files={message.attachments ?? []} />
                   </div>
                 </article>
@@ -2326,7 +2415,7 @@ export default function Home() {
               activeProject ? "Уточните задачу или добавьте требование…" : "Спросите что-нибудь…"
             }
           />
-          {!activeProject && (
+          {
             <ChatAttachmentPicker
               files={chatAttachments.files}
               reading={chatAttachments.reading}
@@ -2339,7 +2428,17 @@ export default function Home() {
                 )
               }
             />
-          )}
+          }
+          <WebSearchPanel
+            scope={composerDraftKey}
+            disabled={sending || loading || chatAttachments.reading}
+            onAttach={(file) => {
+              const next = [...chatAttachments.files, file];
+              if (!isValidChatAttachments(next)) return false;
+              chatAttachments.replace(next);
+              return true;
+            }}
+          />
           <div className="composer-footer">
             <span role={error ? "alert" : undefined} aria-live={error ? "assertive" : "polite"}>
               {error ??

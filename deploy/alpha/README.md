@@ -158,3 +158,23 @@ compatible with the selected database schema.
 Run `pnpm test:deploy` to check WAL snapshot recovery, tampering, missing databases, private Linux
 permissions, directory boundaries, container health and owner access verification. It is included
 in `pnpm check`.
+
+## Private MVP integrations
+
+Set `GITHUB_TOKEN`, `GITHUB_REPOSITORY` and `GITHUB_OWNER_ID` in the private API `model.env`.
+The configured owner ID must match the authenticated hosted owner. Missing owner binding disables
+GitHub in production. Use a fine-grained, expiring token scoped to one repository with Contents and
+Pull requests read/write and Metadata read. No GitHub key reaches the web container or JSON status API.
+Keep process emergency stop enabled until the owner resumes the live trial; GitHub publication
+also respects this stop, while repository reads and preparing review remain available.
+
+Optional search uses `compose.search.yaml` in every Compose invocation. Create private
+`search-settings.yml` with default settings, JSON search format, a generated server secret, and an
+explicit list of free engines. No search port is published. This overlay pins the tested official
+SearXNG image digest and limits its CPU/memory. The API accepts only a configured internal origin;
+it never follows arbitrary result links. Search requests are owner-operated and sent as POST bodies
+to avoid putting the query in API request logs. Search engines may throttle the VPS: surface an
+unavailable or empty result instead of fabricating sources or changing to a paid provider.
+
+Back up before applying migrations 0021–0024. Rollback to the previous image remains compatible
+because these migrations only add tables/columns and retain all existing records.

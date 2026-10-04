@@ -72,7 +72,7 @@ test("rejects unsupported/binary files and drops attachments when opening a new 
     buffer: Buffer.from("test")
   });
   await expect(page.locator(".composer").getByRole("alert")).toContainText(
-    "PDF и изображения пока не поддерживаются"
+    "Не удалось прочитать PDF"
   );
   await input.setInputFiles({
     name: "binary.txt",

@@ -48,7 +48,18 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       },
       body: JSON.stringify({
         model: this.#model,
-        messages: request.messages,
+        messages: request.messages.map(({ role, content, images }) => ({
+          role,
+          content: images?.length
+            ? [
+                { type: "text", text: content },
+                ...images.map((image) => ({
+                  type: "image_url",
+                  image_url: { url: `data:${image.media_type};base64,${image.data_base64}` }
+                }))
+              ]
+            : content
+        })),
         max_tokens: request.constraints.max_output_tokens,
         stream: true,
         stream_options: { include_usage: true }

@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { isValidChatAttachments, type ChatTextAttachment, type Currency } from "@cosmora/contracts";
+import {
+  isValidChatAttachments,
+  sameChatAttachments,
+  type ChatAttachment,
+  type Currency
+} from "@cosmora/contracts";
 import {
   IdempotencyConflictError,
   LOCAL_OWNER_ID,
@@ -28,7 +33,7 @@ export interface StoredGeneralChatMessage {
   role: "user" | "assistant";
   content_type: "text";
   content: string;
-  attachments?: ChatTextAttachment[];
+  attachments?: ChatAttachment[];
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
   run_id: string | null;
   error_code: string | null;
@@ -83,7 +88,7 @@ const asChat = (row: SqlRow): StoredGeneralChat => row as unknown as StoredGener
 const asMessage = (row: SqlRow): StoredGeneralChatMessage => {
   const { attachments_json, ...message } = row;
   if (typeof attachments_json !== "string") throw new Error("Invalid persisted chat attachments");
-  const attachments = JSON.parse(attachments_json) as ChatTextAttachment[];
+  const attachments = JSON.parse(attachments_json) as ChatAttachment[];
   return {
     ...message,
     ...(attachments.length ? { attachments } : {})
@@ -91,15 +96,9 @@ const asMessage = (row: SqlRow): StoredGeneralChatMessage => {
 };
 const sameAttachments = (
   message: StoredGeneralChatMessage,
-  attachments: ChatTextAttachment[]
-): boolean =>
-  (message.attachments ?? []).length === attachments.length &&
-  attachments.every(
-    (file, index) =>
-      file.name === message.attachments?.[index]?.name &&
-      file.content === message.attachments[index]?.content
-  );
-const assertAttachments = (attachments: ChatTextAttachment[]): void => {
+  attachments: ChatAttachment[]
+): boolean => sameChatAttachments(message.attachments ?? [], attachments);
+const assertAttachments = (attachments: ChatAttachment[]): void => {
   if (!isValidChatAttachments(attachments)) throw new Error("Invalid chat attachments");
 };
 const asRun = (row: SqlRow): StoredGeneralChatRun => row as unknown as StoredGeneralChatRun;
@@ -126,7 +125,8 @@ export class GeneralChatStore {
   }
 
   listChats(
-    ownerId = LOCAL_OWNER_ID
+    ownerId = LOCAL_OWNER_ID,
+    archived = false
   ): Array<StoredGeneralChat & { last_message_preview: string | null }> {
     return this.#sqlite
       .prepare(
@@ -134,10 +134,10 @@ export class GeneralChatStore {
           (SELECT substr(content, 1, 240) FROM general_chat_messages m
            WHERE m.chat_id = c.id ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1)
            AS last_message_preview
-         FROM general_chats c WHERE c.owner_id = ?
+         FROM general_chats c WHERE c.owner_id = ? AND c.archived = ?
          ORDER BY c.updated_at DESC`
       )
-      .all(ownerId) as unknown as Array<
+      .all(ownerId, Number(archived)) as unknown as Array<
       StoredGeneralChat & { last_message_preview: string | null }
     >;
   }
@@ -149,6 +149,38 @@ export class GeneralChatStore {
       )
       .get(chatId, ownerId) as SqlRow | undefined;
     return row ? asChat(row) : null;
+  }
+
+  updateChat(
+    chatId: string,
+    ownerId: string,
+    update: { title?: string; archived?: boolean }
+  ): StoredGeneralChat | null {
+    const chat = this.getChat(chatId, ownerId);
+    if (!chat) return null;
+    if (update.title !== undefined && (!update.title.trim() || update.title.length > 160))
+      throw new Error("Invalid chat title");
+    if (
+      update.archived === true &&
+      this.#sqlite
+        .prepare(
+          "SELECT 1 FROM general_chat_runs WHERE chat_id = ? AND status IN ('queued', 'running')"
+        )
+        .get(chatId)
+    )
+      throw new GeneralChatBusyError();
+    this.#sqlite
+      .prepare(
+        "UPDATE general_chats SET title = ?, archived = coalesce(?, archived), updated_at = ? WHERE id = ? AND owner_id = ?"
+      )
+      .run(
+        update.title?.trim() ?? chat.title,
+        update.archived === undefined ? null : Number(update.archived),
+        timestamp(),
+        chatId,
+        ownerId
+      );
+    return this.getChat(chatId, ownerId);
   }
 
   listMessages(chatId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage[] {
@@ -166,7 +198,7 @@ export class GeneralChatStore {
     initialMessage: string,
     clientMessageId: string,
     ownerId = LOCAL_OWNER_ID,
-    attachments: ChatTextAttachment[] = []
+    attachments: ChatAttachment[] = []
   ): AcceptedGeneralChatMessage {
     assertAttachments(attachments);
     const existing = this.findByClientMessageId(clientMessageId, ownerId);
@@ -209,7 +241,7 @@ export class GeneralChatStore {
     content: string,
     clientMessageId: string,
     ownerId = LOCAL_OWNER_ID,
-    attachments: ChatTextAttachment[] = []
+    attachments: ChatAttachment[] = []
   ): AcceptedGeneralChatMessage | null {
     assertAttachments(attachments);
     const chat = this.getChat(chatId, ownerId);
@@ -260,7 +292,7 @@ export class GeneralChatStore {
     clientMessageId: string,
     createdAt: string,
     ownerId: string,
-    attachments: ChatTextAttachment[]
+    attachments: ChatAttachment[]
   ): Omit<AcceptedGeneralChatMessage, "duplicate"> {
     const runId = randomUUID();
     const messageId = randomUUID();

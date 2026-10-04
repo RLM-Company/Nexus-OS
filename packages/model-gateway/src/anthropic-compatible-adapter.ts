@@ -12,7 +12,12 @@ export interface AnthropicCompatibleAdapterOptions {
 
 interface AnthropicMessage {
   role: "user" | "assistant";
-  content: string;
+  content:
+    | string
+    | Array<
+        | { type: "text"; text: string }
+        | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+      >;
 }
 
 interface MessageStreamEvent {
@@ -200,7 +205,22 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
           false
         );
       }
-      translated.push({ role: message.role, content: message.content });
+      translated.push({
+        role: message.role,
+        content: message.images?.length
+          ? [
+              { type: "text", text: message.content },
+              ...message.images.map((image) => ({
+                type: "image" as const,
+                source: {
+                  type: "base64" as const,
+                  media_type: image.media_type,
+                  data: image.data_base64
+                }
+              }))
+            ]
+          : message.content
+      });
     }
 
     if (translated.length === 0) {
