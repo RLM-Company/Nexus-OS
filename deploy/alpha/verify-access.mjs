@@ -6,7 +6,7 @@ const requireState = (condition, message) => {
   if (!condition) throw new AccessCheckError(message);
 };
 
-export async function verifyAccess({ origin, password, now = Date.now() }) {
+export async function verifyAccess({ origin, password, now = Date.now(), authMode = "basic" }) {
   const base = new URL(origin);
   requireState(
     base.username === "" &&
@@ -19,14 +19,16 @@ export async function verifyAccess({ origin, password, now = Date.now() }) {
     "Use an HTTPS origin without credentials, paths or query parameters"
   );
   requireState(typeof password === "string" && password.length > 0, "Owner password is missing");
-  const authorization = `Basic ${Buffer.from(`owner:${password}`).toString("base64")}`;
+  let authHeaders = {
+    authorization: `Basic ${Buffer.from(`owner:${password}`).toString("base64")}`
+  };
   const request = async (path, authenticated, expectedStatus) => {
     let response;
     try {
       response = await fetch(new URL(path, base), {
         method: "GET",
-        headers: authenticated ? { authorization } : {},
-        redirect: "error",
+        headers: authenticated ? authHeaders : {},
+        redirect: expectedStatus === 303 ? "manual" : "error",
         signal: AbortSignal.timeout(5_000)
       });
     } catch {
@@ -48,8 +50,39 @@ export async function verifyAccess({ origin, password, now = Date.now() }) {
       throw new AccessCheckError("API response was not valid JSON");
     }
   };
-  for (const path of ["/", "/api/v1/health"]) {
-    await (await request(path, false, 401)).body?.cancel();
+  if (authMode === "form") {
+    const root = await request("/", false, 303);
+    requireState(root.headers.get("location") === "/login", "Login redirect is missing");
+    await root.body?.cancel();
+    await (await request("/login", false, 200)).body?.cancel();
+    await (await request("/api/v1/health", false, 401)).body?.cancel();
+    let login;
+    try {
+      login = await fetch(new URL("/__owner/login", base), {
+        method: "POST",
+        redirect: "manual",
+        headers: { origin: base.origin, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ username: "owner", password }),
+        signal: AbortSignal.timeout(5_000)
+      });
+    } catch {
+      throw new AccessCheckError("Owner form login failed");
+    }
+    const cookie = login.headers.get("set-cookie");
+    requireState(
+      login.status === 303 &&
+        login.headers.get("location") === "/" &&
+        /^__Host-cosmora-owner=[a-f0-9]{64};/.test(cookie ?? "") &&
+        /; Secure; HttpOnly; SameSite=Strict;/.test(cookie),
+      "Owner form login failed"
+    );
+    await login.body?.cancel();
+    authHeaders = { cookie: cookie.split(";")[0] };
+  } else {
+    requireState(authMode === "basic", "Unknown authentication mode");
+    for (const path of ["/", "/api/v1/health"]) {
+      await (await request(path, false, 401)).body?.cancel();
+    }
   }
   await (await request("/", true, 200)).body?.cancel();
   const health = await json("/api/v1/health");
@@ -86,7 +119,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const origin = process.env.COSMORA_ACCESS_ORIGIN;
     requireState(origin?.startsWith("https://"), "COSMORA_ACCESS_ORIGIN must use HTTPS");
     const password = readFileSync("/run/cosmora/owner-password", "utf8").replace(/\r?\n$/u, "");
-    const result = await verifyAccess({ origin, password });
+    const result = await verifyAccess({ origin, password, authMode: "form" });
     process.stdout.write(
       `Owner access PASS; SQLite healthy; session expires ${result.session_expires_at}; ` +
         `model requests ${result.model_requests_paused ? "paused" : "not globally paused"}. ` +

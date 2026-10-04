@@ -39,6 +39,33 @@ services:
       NODE_ENV: production
     networks: [internal]
 
+  owner-access:
+    image: cosmora-alpha-app:local
+    restart: unless-stopped
+    command: node /run/owner-login/owner-access.mjs
+    env_file:
+      - path: ./private/owner-login.env
+        format: raw
+    environment:
+      COSMORA_DEMO_DOMAIN: ${COSMORA_DEMO_DOMAIN:?Set COSMORA_DEMO_DOMAIN}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3080/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks: [internal]
+    mem_limit: 192m
+    cpus: 0.5
+    volumes:
+      - ./owner-access.mjs:/run/owner-login/owner-access.mjs:ro
+
   edge:
     image: caddy:2.11.4-alpine
     restart: unless-stopped
@@ -46,6 +73,8 @@ services:
       api:
         condition: service_healthy
       web:
+        condition: service_healthy
+      owner-access:
         condition: service_healthy
     env_file:
       - path: ./private/site.env

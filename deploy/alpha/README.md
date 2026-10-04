@@ -1,8 +1,11 @@
 # Private hosted alpha
 
 This stack runs the actual Next interface and Node API on a single VPS. Caddy terminates HTTPS,
-requires an owner password for every route, and replaces the browser's Basic authorization with a
-short-lived, server-side bearer session before proxying `/api/*`. Only ports 80 and 443 are
+serves an ordinary owner login form and checks an eight-hour, revocable, HttpOnly cookie before
+serving private routes. An internal gateway verifies the existing password with scrypt, bounds
+login attempts and rejects cross-site form submissions. It stores session digests in memory;
+restarting the gateway requires another login. Caddy supplies the short-lived server-side bearer
+session before proxying `/api/*`; that token never reaches the browser. Only ports 80 and 443 are
 published; the API and web server share a private Docker network. SQLite and Caddy certificates
 use persistent volumes. This is an owner-only alpha, not a multi-user deployment.
 
@@ -30,17 +33,25 @@ Create `private/model.env` containing the reviewed `MODEL_PROVIDER`, `MODEL_PROV
 Use the opt-in Manager route only after checking its still-current evidence, price and privacy
 limitations. Never commit the file. `MODEL_API_KEY` must stay on the API service only.
 
-Create `private/site.env` with the following lines. Generate the hash interactively with
-`docker run --rm -it caddy:2.11.4-alpine caddy hash-password`, which reads the password without
-echoing it. Copy only the resulting hash into this file:
+Create `private/site.env` with the following line:
 
 ```dotenv
 COSMORA_DEMO_DOMAIN=demo.example.com
-COSMORA_BASIC_AUTH_HASH=<hash from caddy>
 ```
 
 Export `COSMORA_DEMO_DOMAIN` in the shell (same value) for Compose interpolation. Do not put the
-hash or the password in shell history. Keep `private/site.env` mode `0600`.
+password in shell history. Keep `private/site.env` mode `0600`. Save the owner password in
+`private/owner-password` with mode `0600`, then prepare its scrypt hash without printing it.
+Existing deployments reuse their existing owner password; no credential change is needed:
+
+```sh
+docker run --rm --network none -v "$PWD/private:/run/cosmora" -v "$PWD:/run/owner-login:ro" \
+  node:24-bookworm-slim node /run/owner-login/prepare-owner-login.mjs
+```
+
+This creates `private/owner-login.env` with mode `0600` and refuses to overwrite an existing file.
+Only the login service receives it. Browser Basic credentials are ignored; no Basic challenge
+is sent, preventing `ERR_INVALID_AUTH_CREDENTIALS` in embedded browsers.
 
 ## Boot sequence
 
@@ -58,10 +69,10 @@ private file for Caddy; it does not print the token:
 docker compose -f compose.yaml run --rm --no-deps \
   -e COSMORA_SESSION_FILE=/run/cosmora/owner-session.env \
   -v "$PWD/private:/run/cosmora" api node deploy/alpha/issue-owner-session.mjs
-docker compose -f compose.yaml up -d edge
+docker compose -f compose.yaml up -d owner-access edge
 ```
 
-API and Next have container health checks. Caddy starts only after both become healthy.
+API, Next and the owner login service have container health checks. Caddy starts only after all become healthy.
 `docker compose -f compose.yaml ps` reports this state; a running container alone is insufficient.
 The API check verifies SQLite, and the checks follow no redirects. These checks establish service
 availability, not live-model readiness.
@@ -84,7 +95,8 @@ docker compose -f compose.yaml run --rm --no-deps \
 ```
 
 Run it after deployment, credential/session rotation and during manual maintenance checks. It
-requires unauthenticated interface and health requests to return 401, then verifies authenticated
+requires unauthenticated interface requests to redirect to `/login` and health requests to return
+401 without a Basic challenge, then verifies a form login and authenticated
 interface access, healthy SQLite, exactly one current hosted owner session and global stop status.
 A session with 24 hours or less remaining fails with a rotation reminder. This catches an expired
 bearer session even when the public API health check still returns 200. Redirects are never
