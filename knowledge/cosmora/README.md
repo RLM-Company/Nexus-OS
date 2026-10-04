@@ -268,7 +268,6 @@ The layer contains **19 nodes** and **62 relationships** covering:
 Every lineage invariant points to its validator and regression test. External-untrusted source trust
 is also tied back to the existing data-only instruction boundary.
 
-
 ## Resource & Cost Budget
 
 The graph now represents runtime resource accounting and model-budget enforcement explicitly.

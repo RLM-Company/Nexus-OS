@@ -578,7 +578,6 @@ The exact four `RuntimeSourceTrustSchema` values are represented as nodes and co
 This layer is deliberately different from Agent Collaboration: collaboration describes which roles
 can exchange artifact kinds; lineage describes whether a concrete provenance chain would be valid.
 
-
 ## Resource & Cost Budget Graph
 
 The unified graph now includes **18 Resource & Cost Budget nodes** and **51 source-backed

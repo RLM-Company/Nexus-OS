@@ -316,15 +316,11 @@ describe("unified Cosmora Intelligence Graph", () => {
     const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
     const managerTest = repositoryStructureFileId("apps/api/test/manager-work.test.ts");
 
-    expect(pairs).toContain(
-      "entity-model-usage-reservation|PRECEDES|entity-router"
-    );
+    expect(pairs).toContain("entity-model-usage-reservation|PRECEDES|entity-router");
     expect(pairs).toContain(
       "entity-manager-work-budget|RESERVES_THROUGH|entity-model-usage-reservation"
     );
-    expect(pairs).toContain(
-      `claim-manager-retries-consume-budget|VERIFIED_BY_TEST|${managerTest}`
-    );
+    expect(pairs).toContain(`claim-manager-retries-consume-budget|VERIFIED_BY_TEST|${managerTest}`);
   });
 
   it("keeps unknown pricing incompatible with cost-limited routing", () => {

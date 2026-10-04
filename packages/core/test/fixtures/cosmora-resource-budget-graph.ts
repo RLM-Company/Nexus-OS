@@ -296,7 +296,8 @@ const edges: IntelligenceGraphEdge[] = [
     type: "CONSTRAINS",
     from: "entity-manager-work-budget",
     to: "entity-manager-work",
-    location: "packages/contracts/src/manager-work.ts:max_model_requests/max_input_tokens/max_output_tokens"
+    location:
+      "packages/contracts/src/manager-work.ts:max_model_requests/max_input_tokens/max_output_tokens"
   }),
   edge({
     id: "budget-manager-tested",
