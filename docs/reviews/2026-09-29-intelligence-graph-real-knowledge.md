@@ -538,7 +538,6 @@ The graph distinguishes:
 Transition evidence comes from current main contracts/stores/coordinator code and is connected to
 the regression tests that exercise the corresponding recovery and replay behavior.
 
-
 ## Identity & Trust Graph
 
 The unified graph now includes **31 Identity & Trust nodes** and **76 source-backed relationships**.

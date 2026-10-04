@@ -188,9 +188,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       `claim-owner-api-requires-owner-session|VERIFIED_BY_TEST|${identityBoundaryTest}`
     );
-    expect(pairs).toContain(
-      "entity-step-up-proof|BOUND_TO|entity-identity-session"
-    );
+    expect(pairs).toContain("entity-step-up-proof|BOUND_TO|entity-identity-session");
   });
 
   it("models Manager recovery without automatic replay", () => {

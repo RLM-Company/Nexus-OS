@@ -228,7 +228,6 @@ Confirmation is modeled as PENDING → APPROVED / REJECTED / EXPIRED and APPROVE
 Step-Up proof is modeled as active → consumed / expired. Runtime checkpoints remain explicitly
 unable to restore permissions, sessions or autonomy escalation.
 
-
 ## Identity & Trust
 
 The graph now models how identity trust is created, bounded and revoked instead of representing
