@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 489 nodes;
-- 1470 typed edges;
-- 489 retrieval records.
+- 522 nodes;
+- 1578 typed edges;
+- 522 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -204,3 +204,27 @@ The layer also records runtime safety properties verified by tests: compound act
 strictest affected capability, conditional expansions only come from the trusted runtime resolver,
 scoped controls fail closed when a tool cannot enforce them, and child agent delegation cannot
 expand capabilities, tools, data scopes, objects, budgets, delegation depth or expiry.
+
+
+## Execution & Recovery
+
+The graph now materializes the durable execution state machines instead of representing recovery
+only as isolated scenarios.
+
+The layer contains **33 nodes** and **108 relationships** across:
+
+- Manager Work stages and statuses;
+- Policy / Tool Operation statuses;
+- Confirmation lifecycle;
+- Step-Up proof lifecycle;
+- recovery and replay invariants.
+
+Verified paths distinguish safe replay from uncertain external effects. A completed policy
+operation may replay its stored result, while an already RESERVED operation returns
+`RECOVERY_REQUIRED` rather than silently invoking the tool again. Interrupted Manager work also
+fails closed: work with an in-flight provider call or publish stage becomes
+`RECOVERY_REQUIRED`; otherwise it recovers to a durable pause without automatic replay.
+
+Confirmation is modeled as PENDING → APPROVED / REJECTED / EXPIRED and APPROVED → CONSUMED.
+Step-Up proof is modeled as active → consumed / expired. Runtime checkpoints remain explicitly
+unable to restore permissions, sessions or autonomy escalation.
