@@ -381,35 +381,40 @@ edges.push(
     type: "MAY_REVIEW_KIND",
     from: "entity-critic-artifact-validator",
     to: "entity-artifact-kind-architecture",
-    location: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.accepts"
+    location:
+      "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.accepts"
   }),
   edge({
     id: "lineage-critic-reviews-evidence",
     type: "MAY_REVIEW_KIND",
     from: "entity-critic-artifact-validator",
     to: "entity-artifact-kind-evidence",
-    location: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.accepts"
+    location:
+      "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.accepts"
   }),
   edge({
     id: "lineage-critic-reviews-analysis",
     type: "MAY_REVIEW_KIND",
     from: "entity-critic-artifact-validator",
     to: "entity-artifact-kind-analysis",
-    location: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.accepts"
+    location:
+      "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.accepts"
   }),
   edge({
     id: "lineage-critic-reviews-decision",
     type: "MAY_REVIEW_KIND",
     from: "entity-critic-artifact-validator",
     to: "entity-artifact-kind-decision",
-    location: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.accepts"
+    location:
+      "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.accepts"
   }),
   edge({
     id: "lineage-critic-reviews-handoff",
     type: "MAY_REVIEW_KIND",
     from: "entity-critic-artifact-validator",
     to: "entity-artifact-kind-handoff",
-    location: "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.accepts"
+    location:
+      "packages/contracts/src/manager-runtime.ts:MANAGER_RUNTIME_ROLE_CONTRACTS.critic.accepts"
   })
 );
 

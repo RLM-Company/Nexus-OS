@@ -248,7 +248,6 @@ The layer contains **31 nodes** and **76 relationships** covering:
 - fail-closed Step-Up behavior after expiry or session revocation;
 - owner-only API access, with agent/system sessions rejected at that boundary.
 
-
 ## Data Lineage & Provenance
 
 The graph now represents provenance as a first-class runtime structure rather than a generic

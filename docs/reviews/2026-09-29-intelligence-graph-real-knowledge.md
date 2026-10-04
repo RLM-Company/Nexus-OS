@@ -558,7 +558,6 @@ storage, revocation is owner-scoped and immediate, disabling an actor revokes ac
 expired sessions fail authentication, Step-Up fails closed after expiry/revocation, and the owner API
 rejects otherwise-valid agent/system sessions.
 
-
 ## Data Lineage & Provenance Graph
 
 The unified graph now includes **19 Data Lineage nodes** and **62 source-backed relationships**.

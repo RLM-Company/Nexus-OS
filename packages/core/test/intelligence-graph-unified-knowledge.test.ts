@@ -222,9 +222,7 @@ describe("unified Cosmora Intelligence Graph", () => {
       "claim-lineage-no-future-source",
       "claim-lineage-acyclic"
     ]) {
-      expect(pairs).toContain(
-        `${claimId}|ENFORCED_BY|entity-artifact-provenance-validator`
-      );
+      expect(pairs).toContain(`${claimId}|ENFORCED_BY|entity-artifact-provenance-validator`);
       expect(pairs).toContain(`${claimId}|VERIFIED_BY_TEST|${provenanceTest}`);
     }
   });
@@ -243,9 +241,7 @@ describe("unified Cosmora Intelligence Graph", () => {
       "claim-lineage-inputs-declared",
       "claim-lineage-artifact-after-task"
     ]) {
-      expect(pairs).toContain(
-        `${claimId}|ENFORCED_BY|entity-artifact-task-binding-validator`
-      );
+      expect(pairs).toContain(`${claimId}|ENFORCED_BY|entity-artifact-task-binding-validator`);
       expect(pairs).toContain(`${claimId}|VERIFIED_BY_TEST|${taskBindingTest}`);
     }
   });
@@ -255,8 +251,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     const reviewedKinds = graph.edges
       .filter(
         (edge) =>
-          edge.from.id === "entity-critic-artifact-validator" &&
-          edge.type === "MAY_REVIEW_KIND"
+          edge.from.id === "entity-critic-artifact-validator" && edge.type === "MAY_REVIEW_KIND"
       )
       .map((edge) => edge.to.id)
       .sort();
