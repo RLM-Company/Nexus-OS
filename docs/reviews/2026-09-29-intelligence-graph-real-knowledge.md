@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **489 nodes**;
-- **1470 typed edges**;
+- **522 nodes**;
+- **1578 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -512,3 +512,29 @@ Additional verified structure covers:
 
 Every runtime boundary is connected to its concrete source file and regression test rather than
 being inferred from prose.
+
+
+## Execution & Recovery Graph
+
+The unified graph now includes **33 Execution & Recovery nodes** and **108 typed relationships**.
+
+This layer encodes real state machines rather than synthetic similarity:
+
+- Manager Work: 5 stages and 8 statuses;
+- Policy / Tool Operation: 7 persisted statuses;
+- Confirmation: 5 statuses;
+- Step-Up proof: 3 statuses.
+
+The graph distinguishes:
+
+- ordinary stage advancement from owner approval and resume;
+- terminal completion/failure/cancellation from temporary pause/block;
+- safe Manager recovery from uncertain in-flight recovery;
+- `RESERVED → RECOVERY_REQUIRED` semantics from
+  `SUCCEEDED → idempotent replay`;
+- one-use confirmation consumption;
+- one-use or expiry of Step-Up proof;
+- checkpoint recovery data from authority restoration.
+
+Transition evidence comes from current main contracts/stores/coordinator code and is connected to
+the regression tests that exercise the corresponding recovery and replay behavior.
