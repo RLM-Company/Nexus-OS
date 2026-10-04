@@ -29,7 +29,10 @@ const {
   updateManifestUrl,
   validateUpdateManifest
 } = require("./update-policy.cjs");
-const { streamVerifiedInstaller } = require("./update-download.cjs");
+const {
+  isSameOriginInstallerDownload,
+  streamVerifiedInstaller
+} = require("./update-download.cjs");
 const {
   isAllowedCredentialChallenge,
   isAllowedRemoteNavigation,
@@ -791,8 +794,7 @@ async function fetchDesktopUpdate(origin) {
 async function downloadDesktopUpdate(manifest, origin) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPDATE_DOWNLOAD_TIMEOUT_MS);
-  const downloadOrigin = new URL(manifest.downloadUrl).origin;
-  const sameOrigin = downloadOrigin === origin;
+  const sameOrigin = isSameOriginInstallerDownload(manifest.downloadUrl, origin);
   const credentials =
     sameOrigin && runtimeCredentials && runtimeCredentials.origin === origin
       ? runtimeCredentials
