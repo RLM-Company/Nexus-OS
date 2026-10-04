@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 448 nodes;
-- 1248 typed edges;
-- 448 retrieval records.
+- 489 nodes;
+- 1470 typed edges;
+- 489 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -183,3 +183,25 @@ The stricter Intelligence Graph snapshot-persistence rejection exists in open PR
 as candidate knowledge until that change is merged. Deletion/trash behavior, global-owner-memory
 authorization, training-setting precedence, source transparency and memory-secret exclusion remain
 explicitly spec-only until their dedicated runtime paths exist.
+
+
+## Authority & Capability
+
+The graph now materializes the actual Cosmora authority model instead of treating policy as a
+single opaque component.
+
+The layer contains **41 nodes** and **222 typed relationships**, including the complete canonical
+autonomy matrix:
+
+- 19 capability IDs;
+- 7 autonomy levels (A0–A6);
+- 5 permission modes;
+- all **133 capability × autonomy-level cells** from `AUTONOMY_MATRIX`;
+- the 7 capabilities listed by `STEP_UP_CAPABILITIES`;
+- all four Step-Up proof purposes;
+- capability profiles, permission contracts, Guarded Tool Runtime and agent-delegation validation.
+
+The layer also records runtime safety properties verified by tests: compound actions take the
+strictest affected capability, conditional expansions only come from the trusted runtime resolver,
+scoped controls fail closed when a tool cannot enforce them, and child agent delegation cannot
+expand capabilities, tools, data scopes, objects, budgets, delegation depth or expiry.
