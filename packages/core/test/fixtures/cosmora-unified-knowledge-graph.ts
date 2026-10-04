@@ -24,6 +24,7 @@ import { cosmoraModelIntelligenceGraph } from "./cosmora-model-intelligence-grap
 import { cosmoraMemoryGovernanceGraph } from "./cosmora-memory-governance-graph.js";
 import { cosmoraAuthorityCapabilityGraph } from "./cosmora-authority-capability-graph.js";
 import { cosmoraExecutionRecoveryGraph } from "./cosmora-execution-recovery-graph.js";
+import { cosmoraIdentityTrustGraph } from "./cosmora-identity-trust-graph.js";
 
 const recordedAt = "2026-09-29T20:00:00.000Z";
 
@@ -299,6 +300,7 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
   const memoryGovernance = cosmoraMemoryGovernanceGraph();
   const authorityCapability = cosmoraAuthorityCapabilityGraph();
   const executionRecovery = cosmoraExecutionRecoveryGraph();
+  const identityTrust = cosmoraIdentityTrustGraph();
 
   const nodes = [
     ...semantic.nodes,
@@ -317,7 +319,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...modelIntelligence.nodes,
     ...memoryGovernance.nodes,
     ...authorityCapability.nodes,
-    ...executionRecovery.nodes
+    ...executionRecovery.nodes,
+    ...identityTrust.nodes
   ];
   const records = [
     ...semantic.records,
@@ -337,7 +340,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...modelIntelligence.records,
     ...memoryGovernance.records,
     ...authorityCapability.records,
-    ...executionRecovery.records
+    ...executionRecovery.records,
+    ...identityTrust.records
   ];
   const edges = [
     ...semantic.edges,
@@ -358,7 +362,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...modelIntelligence.edges,
     ...memoryGovernance.edges,
     ...authorityCapability.edges,
-    ...executionRecovery.edges
+    ...executionRecovery.edges,
+    ...identityTrust.edges
   ];
 
   const nodeKeys = nodes.map((node) => versionKey(node.node_id, node.node_version));
