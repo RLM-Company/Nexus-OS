@@ -4,11 +4,11 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.9.0** adds verified manual update downloads and speeds up Windows packaging. When a
-trusted update manifest contains installer metadata, Cosmora can download the EXE on explicit user
-request, stream it through SHA-256 verification, require the exact byte size from the manifest, and
-only then place the verified installer in Downloads. The client never executes or installs the file
-automatically.
+Version **0.10.0** adds an explicit secure install handoff on top of verified update downloads.
+Cosmora still never installs silently: after a verified download the user may choose Install, the
+client re-verifies the Downloads copy, copies it into a random private staging directory, verifies
+the staged copy again, shows a second confirmation with version/size/SHA-256, then performs one final
+size/hash verification immediately before handing that exact EXE to Windows.
 
 ## Runtime model
 
@@ -113,17 +113,20 @@ byte size and SHA-256 before copying the EXE into Downloads.
 
 A failed, truncated, oversized or hash-mismatched download is deleted and never appears as a final
 installer in Downloads. Existing installer files are never overwritten; a collision-safe filename is
-chosen instead. After success the client can reveal the file in Explorer, but it never executes the
-installer. The release page remains available as a separate user action. Equal or older versions are
-treated as no update.
+chosen instead. After success the client can reveal the file in Explorer or explicitly start the secure install
+handoff. The handoff never passes silent-install arguments, never elevates privileges itself and does
+not execute the original Downloads file directly. Instead it uses a random app-private staging copy
+that must match the manifest before and after the final confirmation. Once Windows accepts the staged
+installer for launch, Cosmora closes so the interactive installer can continue. The release page
+remains available as a separate action. Equal or older versions are treated as no update.
 
 A 404 response is treated as an unconfigured update channel rather than a client failure. Redirects,
 wrong content types, oversized payloads, invalid JSON, malformed versions, credential-bearing URLs
 and invalid installer metadata are rejected.
 
-This remains a manual update protocol. Verified download is not equivalent to automatic update:
-Cosmora does not execute the installer and does not elevate privileges. Production signing remains a
-separate protected release step.
+This remains a manual update protocol. Download and installation handoff are separate explicit user
+actions. Cosmora never performs a silent installation or self-elevation. Production signing remains
+a separate protected release step.
 
 ## Release chain
 
@@ -216,7 +219,11 @@ The desktop shell:
 - stages update installers outside Downloads until manifest size and SHA-256 both match;
 - never forwards connected-server Basic Auth to a different installer origin;
 - never overwrites an existing verified installer;
-- never executes a downloaded update installer.
+- never executes the mutable Downloads copy directly;
+- re-verifies the Downloads copy before creating a random private staging copy;
+- re-verifies the staged EXE before and after the final user confirmation;
+- launches only the verified staged copy and passes no silent-install arguments;
+- cleans abandoned staging directories after 24 hours on a later application start.
 
 For ordinary downloads, the checksum remains an audit value. For the explicit update-download path,
 the expected digest and size come from the validated update manifest and are required before the EXE
@@ -266,7 +273,7 @@ node --test desktop/windows/test/*.test.cjs
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
 validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, packaged smoke-mode
-policy, upgrade persistence across NSIS installs, verified update download size/hash/origin policy,
+policy, upgrade persistence across NSIS installs, verified update download size/hash/origin policy, secure install-handoff revalidation/staging,
 support-bundle redaction, diagnostic URL redaction, download filenames and protected credential
 persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
@@ -289,7 +296,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.9.0-x64.exe`.
+`Cosmora-Setup-0.10.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
@@ -299,7 +306,7 @@ The alpha remains unsigned, so Windows SmartScreen may display an unknown-publis
 - no emergency-stop clearance;
 - no live AI/provider activation;
 - no paid provider request;
-- no automatic update download, execution or installation;
+- no automatic update download or installation; install handoff always requires explicit confirmation;
 - no signing certificate is configured in this repository; signing is isolated to protected
   release-environment secrets;
 - no automatic merge.
