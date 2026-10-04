@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 553,
-    "edges": 1654,
-    "records": 553
+    "nodes": 572,
+    "edges": 1716,
+    "records": 572
   },
   "layers": [
     {
@@ -141,6 +141,13 @@
       "edges": 76,
       "authority": "verified_identity_auth_step_up_and_api_evidence",
       "semantics": "actor_session_assurance_provider_audit_step_up"
+    },
+    {
+      "id": "data_lineage",
+      "nodes": 19,
+      "edges": 62,
+      "authority": "verified_runtime_artifact_provenance_and_task_binding",
+      "semantics": "source_trust_provenance_dag_task_binding_critic_review"
     }
   ],
   "primary_relation_types": [
@@ -275,7 +282,14 @@
     "CASCADE_REVOKES",
     "FAILS_CLOSED_WITH",
     "ALLOWED_AT_OWNER_API",
-    "DENIED_AT_OWNER_API"
+    "DENIED_AT_OWNER_API",
+    "CLASSIFIES_SOURCE_FOR",
+    "HAS_PROVENANCE_VALIDATED_BY",
+    "BOUND_TO_TASK_BY",
+    "VALIDATES_AGAINST",
+    "VALIDATES_REVIEW_LINEAGE_FOR",
+    "REFINES",
+    "MAY_REVIEW_KIND"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -305,7 +319,8 @@
     "packages/core/test/fixtures/cosmora-memory-governance-graph.ts",
     "packages/core/test/fixtures/cosmora-authority-capability-graph.ts",
     "packages/core/test/fixtures/cosmora-execution-recovery-graph.ts",
-    "packages/core/test/fixtures/cosmora-identity-trust-graph.ts"
+    "packages/core/test/fixtures/cosmora-identity-trust-graph.ts",
+    "packages/core/test/fixtures/cosmora-data-lineage-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
