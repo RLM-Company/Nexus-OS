@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **448 nodes**;
-- **1248 typed edges**;
+- **489 nodes**;
+- **1470 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -490,3 +490,26 @@ Explicitly spec-only examples include:
 
 This prevents a future agent from reading an approved design document and assuming every rule is
 already enforced in production.
+
+
+## Authority & Capability Graph
+
+The unified graph now includes **41 Authority & Capability nodes** and **222 relationships**.
+
+The dense core is not synthetic: all **133** autonomy edges are direct graph encodings of the
+checked-in `AUTONOMY_MATRIX` (19 capabilities × 7 levels). Each edge records the exact resolved
+mode for one level/capability pair.
+
+Additional verified structure covers:
+
+- the permission-mode ordering from DENY through FULL;
+- all 7 `STEP_UP_CAPABILITIES`;
+- all 4 `StepUpPurposeSchema` purposes;
+- Capability Profile and Permission Contract evaluation by Policy Engine;
+- Guarded Tool Runtime enforcement of Policy Engine verdicts;
+- trusted-only conditional-expansion authority;
+- strictest-capability resolution for compound actions;
+- agent delegation bounds preventing expansion of authority, budget, scopes, depth and expiry.
+
+Every runtime boundary is connected to its concrete source file and regression test rather than
+being inferred from prose.
