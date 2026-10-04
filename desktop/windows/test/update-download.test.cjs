@@ -180,6 +180,50 @@ test("does not overwrite an existing installer", async () => {
   );
 });
 
+test("removes staged data when the stream is aborted", async () => {
+  const bytes = Buffer.from("verified-cosmora-installer-abort");
+  const downloadsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cosmora-update-abort-out-"));
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cosmora-update-abort-temp-"));
+  let reads = 0;
+
+  const response = {
+    ok: true,
+    status: 200,
+    headers: new Headers({ "content-length": String(bytes.length) }),
+    body: {
+      getReader() {
+        return {
+          async read() {
+            reads += 1;
+            if (reads === 1) {
+              return { done: false, value: bytes.subarray(0, 5) };
+            }
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            throw error;
+          },
+          async cancel() {},
+          releaseLock() {}
+        };
+      }
+    }
+  };
+
+  await assert.rejects(
+    () =>
+      streamVerifiedInstaller({
+        response,
+        manifest: manifestFor(bytes),
+        downloadsDirectory,
+        temporaryDirectory
+      }),
+    (error) => error && error.name === "AbortError"
+  );
+
+  assert.deepEqual(fs.readdirSync(downloadsDirectory), []);
+  assert.deepEqual(fs.readdirSync(temporaryDirectory), []);
+});
+
 test("removes partial files when size or SHA-256 verification fails", async () => {
   const bytes = Buffer.from("verified-cosmora-installer");
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cosmora-update-reject-"));
