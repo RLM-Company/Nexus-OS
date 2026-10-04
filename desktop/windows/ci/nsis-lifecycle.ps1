@@ -136,21 +136,16 @@ function Get-FileDigest([string]$PathValue) {
 
 $root = [IO.Path]::GetFullPath($WorkRoot)
 $installDir = Join-Path $root "install"
-$profileRoot = Join-Path $root "profile"
-$appData = Join-Path $profileRoot "AppData\Roaming"
-$localAppData = Join-Path $profileRoot "AppData\Local"
-$userData = Join-Path $appData "cosmora-windows-desktop"
+$roamingAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
+if ([string]::IsNullOrWhiteSpace($roamingAppData)) {
+  throw "Windows Roaming AppData path is unavailable."
+}
+$userData = Join-Path $roamingAppData "cosmora-windows-desktop"
 $marker = Join-Path $env:TEMP "cosmora-smoke-$($Mode.ToLowerInvariant())-$CurrentVersion.json"
 
 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $userData -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $appData -Force | Out-Null
-New-Item -ItemType Directory -Path $localAppData -Force | Out-Null
-
-$previousAppData = $env:APPDATA
-$previousLocalAppData = $env:LOCALAPPDATA
-$env:APPDATA = $appData
-$env:LOCALAPPDATA = $localAppData
 
 try {
   $current = Resolve-ExistingFile $CurrentInstaller "Current installer"
@@ -231,8 +226,7 @@ try {
     }
   }
 } finally {
-  $env:APPDATA = $previousAppData
-  $env:LOCALAPPDATA = $previousLocalAppData
   Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $userData -Recurse -Force -ErrorAction SilentlyContinue
 }
