@@ -39,12 +39,14 @@ test("requires packaged win32 x64 smoke payloads with absolute paths", () => {
     execPath: absolute,
     appPath: path.resolve(os.tmpdir(), "resources", "app.asar"),
     resourcesPath: path.resolve(os.tmpdir(), "resources"),
+    userDataPath: path.resolve(os.tmpdir(), "Cosmora"),
     platform: "win32",
     arch: "x64"
   });
 
   assert.equal(payload.version, "0.7.0");
   assert.equal(payload.isPackaged, true);
+  assert.equal(path.isAbsolute(payload.userDataPath), true);
   assert.throws(
     () => createSmokePayload({ ...payload, isPackaged: false }),
     /packaged application/
@@ -63,7 +65,8 @@ test("writes a deterministic JSON smoke marker", () => {
     arch: "x64",
     execPath: "C:\\Cosmora\\Cosmora.exe",
     appPath: "C:\\Cosmora\\resources\\app.asar",
-    resourcesPath: "C:\\Cosmora\\resources"
+    resourcesPath: "C:\\Cosmora\\resources",
+    userDataPath: "C:\\Users\\runner\\AppData\\Roaming\\Cosmora"
   };
 
   writeSmokeMarker({ outputPath: target, tempDir: root, payload });

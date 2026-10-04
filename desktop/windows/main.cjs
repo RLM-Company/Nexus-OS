@@ -1310,6 +1310,7 @@ app.whenReady().then(async () => {
         execPath: process.execPath,
         appPath: app.getAppPath(),
         resourcesPath: process.resourcesPath,
+        userDataPath: app.getPath("userData"),
         platform: process.platform,
         arch: process.arch
       });
