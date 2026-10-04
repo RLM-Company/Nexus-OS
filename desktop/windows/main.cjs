@@ -13,6 +13,7 @@ const {
   Menu,
   powerMonitor,
   safeStorage,
+  screen,
   session,
   shell
 } = require("electron");
@@ -35,6 +36,8 @@ const {
   stageVerifiedInstaller,
   verifyInstallerFile
 } = require("./install-handoff.cjs");
+const { isAllowedDesktopPermission } = require("./permission-policy.cjs");
+const { loadWindowState, saveWindowState } = require("./window-state.cjs");
 const {
   isAllowedCredentialChallenge,
   isAllowedRemoteNavigation,
@@ -50,6 +53,7 @@ const SESSION_PARTITION = "persist:cosmora";
 const CONNECTION_FILE = "connection.json";
 const CREDENTIAL_FILE = "credentials.bin";
 const DIAGNOSTIC_FILE = "cosmora-desktop.log";
+const WINDOW_STATE_FILE = "window-state.json";
 const HEALTH_TIMEOUT_MS = 6000;
 const UPDATE_CHECK_TIMEOUT_MS = 8000;
 const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -71,6 +75,7 @@ let connectionInFlight = false;
 let connectionState = CONNECTION_STATES.DISCONNECTED;
 let lastNetworkOnline = null;
 let updateCheckInFlight = false;
+let windowStateTimer = null;
 
 const smokeMode = isSmokeMode(process.argv);
 const ownsSingleInstance = smokeMode ? true : app.requestSingleInstanceLock();
@@ -88,6 +93,10 @@ function credentialPath() {
 
 function diagnosticPath() {
   return path.join(app.getPath("logs"), DIAGNOSTIC_FILE);
+}
+
+function windowStatePath() {
+  return path.join(app.getPath("userData"), WINDOW_STATE_FILE);
 }
 
 function credentialStore() {
@@ -1143,13 +1152,92 @@ function createMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+function installSessionSecurity(browserSession) {
+  browserSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) =>
+    isAllowedDesktopPermission({
+      permission,
+      requestingUrl: requestingOrigin,
+      connectedOrigin: currentOrigin
+    })
+  );
+
+  browserSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const requestingUrl =
+      typeof details?.requestingUrl === "string" && details.requestingUrl
+        ? details.requestingUrl
+        : webContents?.getURL?.() || "";
+    callback(
+      isAllowedDesktopPermission({
+        permission,
+        requestingUrl,
+        connectedOrigin: currentOrigin
+      })
+    );
+  });
+
+  browserSession.setDevicePermissionHandler(() => false);
+  browserSession.setDisplayMediaRequestHandler((_request, callback) => callback(null));
+
+  browserSession.on("select-usb-device", (event, _details, callback) => {
+    event.preventDefault();
+    callback();
+  });
+  browserSession.on("select-hid-device", (event, _details, callback) => {
+    event.preventDefault();
+    callback();
+  });
+  browserSession.on("select-serial-port", (event, _portList, _webContents, callback) => {
+    event.preventDefault();
+    callback("");
+  });
+}
+
+function persistWindowState(browserWindow) {
+  if (!browserWindow || browserWindow.isDestroyed()) return;
+  try {
+    saveWindowState(windowStatePath(), {
+      schemaVersion: 1,
+      bounds: browserWindow.getNormalBounds(),
+      maximized: browserWindow.isMaximized()
+    });
+  } catch {
+    appendDiagnostic("window_state_save_failed");
+  }
+}
+
+function scheduleWindowStateSave(browserWindow) {
+  if (windowStateTimer) clearTimeout(windowStateTimer);
+  windowStateTimer = setTimeout(() => {
+    windowStateTimer = null;
+    persistWindowState(browserWindow);
+  }, 250);
+}
+
+function installWindowStatePersistence(browserWindow) {
+  for (const eventName of ["move", "resize", "maximize", "unmaximize"]) {
+    browserWindow.on(eventName, () => scheduleWindowStateSave(browserWindow));
+  }
+  browserWindow.on("close", () => {
+    if (windowStateTimer) {
+      clearTimeout(windowStateTimer);
+      windowStateTimer = null;
+    }
+    persistWindowState(browserWindow);
+  });
+}
+
 async function createMainWindow() {
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
   installDownloadPolicy(browserSession);
+  installSessionSecurity(browserSession);
+
+  const restoredWindowState = loadWindowState(
+    windowStatePath(),
+    screen.getAllDisplays().map((display) => display.workArea)
+  );
 
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    ...restoredWindowState.bounds,
     minWidth: 900,
     minHeight: 640,
     backgroundColor: "#ffffff",
@@ -1168,10 +1256,16 @@ async function createMainWindow() {
   });
 
   installNavigationGuards(mainWindow);
+  installWindowStatePersistence(mainWindow);
+  if (restoredWindowState.maximized) mainWindow.maximize();
   mainWindow.once("ready-to-show", () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
   });
   mainWindow.on("closed", () => {
+    if (windowStateTimer) {
+      clearTimeout(windowStateTimer);
+      windowStateTimer = null;
+    }
     stopHeartbeat();
     cancelRecovery();
     mainWindow = null;
@@ -1443,6 +1537,13 @@ app.on("child-process-gone", (_event, details) => {
 });
 
 if (ownsSingleInstance && !smokeMode) {
+  app.on("web-contents-created", (_event, contents) => {
+    contents.on("will-attach-webview", (event) => {
+      event.preventDefault();
+      appendDiagnostic("webview_attachment_blocked");
+    });
+  });
+
   app.on("second-instance", () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
