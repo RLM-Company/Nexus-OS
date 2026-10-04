@@ -4,10 +4,11 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.8.0** adds real upgrade-lifecycle validation and consolidates Windows installer testing
-into one reusable CI script. Pull requests now build the desktop installer from the PR base commit,
-install that baseline, preserve isolated user data, install the current version over it, verify the
-upgraded packaged application, and finally uninstall it without deleting the preserved profile.
+Version **0.9.0** adds verified manual update downloads and speeds up Windows packaging. When a
+trusted update manifest contains installer metadata, Cosmora can download the EXE on explicit user
+request, stream it through SHA-256 verification, require the exact byte size from the manifest, and
+only then place the verified installer in Downloads. The client never executes or installs the file
+automatically.
 
 ## Runtime model
 
@@ -104,17 +105,25 @@ The manifest contract is versioned and fail-closed. Version 1 requires:
 
 A reference payload lives at `desktop/windows/update-manifest.example.json`.
 
-When a newer version is announced, the client shows its version/date/notes and can open only the
-validated HTTPS release page in the system browser. It does not open the installer URL and does not
-download or execute the installer. Equal or older versions are treated as no update.
+When a newer version is announced, the client shows its version/date/notes. If the manifest contains
+installer metadata, the user may explicitly choose **Download and verify**. The client downloads with
+redirects disabled, sends Basic Auth only when the installer URL has the exact same origin as the
+connected Cosmora server, streams into the operating-system temp directory, and requires both exact
+byte size and SHA-256 before copying the EXE into Downloads.
+
+A failed, truncated, oversized or hash-mismatched download is deleted and never appears as a final
+installer in Downloads. Existing installer files are never overwritten; a collision-safe filename is
+chosen instead. After success the client can reveal the file in Explorer, but it never executes the
+installer. The release page remains available as a separate user action. Equal or older versions are
+treated as no update.
 
 A 404 response is treated as an unconfigured update channel rather than a client failure. Redirects,
 wrong content types, oversized payloads, invalid JSON, malformed versions, credential-bearing URLs
 and invalid installer metadata are rejected.
 
-This manual protocol is intentional while the application is unsigned. Electron recommends code
-signing applications intended for distribution; automatic installation remains out of scope until a
-signing/release trust chain exists.
+This remains a manual update protocol. Verified download is not equivalent to automatic update:
+Cosmora does not execute the installer and does not elevate privileges. Production signing remains a
+separate protected release step.
 
 ## Release chain
 
@@ -194,17 +203,24 @@ workflow drift.
 
 ## Downloads and artifacts
 
-Only downloads whose URL belongs to the active Cosmora origin are accepted.
+Ordinary web-content downloads are still accepted only from the active Cosmora origin. The verified
+update downloader is a separate path driven by the already validated update manifest and allows a
+credential-free HTTPS release/CDN origin.
 
 The desktop shell:
 
 - sanitizes Windows-invalid filename characters;
 - protects Windows reserved device names such as `CON`, `NUL`, `COM1` and `LPT1`;
 - never overwrites an existing file in Downloads;
-- computes SHA-256 for each completed download and records the checksum in diagnostics.
+- computes SHA-256 for each completed ordinary download and records the checksum in diagnostics;
+- stages update installers outside Downloads until manifest size and SHA-256 both match;
+- never forwards connected-server Basic Auth to a different installer origin;
+- never overwrites an existing verified installer;
+- never executes a downloaded update installer.
 
-The checksum is an audit value for the downloaded file. It is not presented as server-authenticated
-integrity proof unless the server later supplies an expected digest through a trusted protocol.
+For ordinary downloads, the checksum remains an audit value. For the explicit update-download path,
+the expected digest and size come from the validated update manifest and are required before the EXE
+is finalized.
 
 ## Diagnostics
 
@@ -250,10 +266,16 @@ node --test desktop/windows/test/*.test.cjs
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
 validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, packaged smoke-mode
-policy, upgrade persistence across NSIS installs, support-bundle redaction, diagnostic URL
-redaction, download filenames and protected credential persistence. The
+policy, upgrade persistence across NSIS installs, verified update download size/hash/origin policy,
+support-bundle redaction, diagnostic URL redaction, download filenames and protected credential
+persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
 building the installer.
+
+
+The Windows workflows also cache only the large Electron and electron-builder/NSIS packaging
+binaries under an exact Electron 44.5.1 / electron-builder 26.17.0 cache key. Source code,
+credentials and application artifacts are not part of this cache.
 
 ## Build the Windows installer
 
@@ -268,7 +290,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.8.0-x64.exe`.
+`Cosmora-Setup-0.9.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
@@ -278,7 +300,7 @@ The alpha remains unsigned, so Windows SmartScreen may display an unknown-publis
 - no emergency-stop clearance;
 - no live AI/provider activation;
 - no paid provider request;
-- no automatic update download or installation;
+- no automatic update download, execution or installation;
 - no signing certificate is configured in this repository; signing is isolated to protected
   release-environment secrets;
 - no automatic merge.
