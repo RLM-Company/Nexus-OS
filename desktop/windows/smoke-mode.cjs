@@ -40,6 +40,7 @@ function createSmokePayload({
   execPath,
   appPath,
   resourcesPath,
+  userDataPath,
   platform,
   arch
 }) {
@@ -50,7 +51,7 @@ function createSmokePayload({
     throw new Error("Smoke mode must run from a packaged application.");
   }
 
-  for (const [label, value] of Object.entries({ execPath, appPath, resourcesPath })) {
+  for (const [label, value] of Object.entries({ execPath, appPath, resourcesPath, userDataPath })) {
     if (typeof value !== "string" || !path.isAbsolute(value)) {
       throw new Error("Smoke payload requires an absolute " + label + ".");
     }
@@ -71,7 +72,8 @@ function createSmokePayload({
     arch,
     execPath: path.resolve(execPath),
     appPath: path.resolve(appPath),
-    resourcesPath: path.resolve(resourcesPath)
+    resourcesPath: path.resolve(resourcesPath),
+    userDataPath: path.resolve(userDataPath)
   };
 }
 
