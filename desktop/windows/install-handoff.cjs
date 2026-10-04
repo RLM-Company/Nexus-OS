@@ -113,10 +113,7 @@ async function stageVerifiedInstaller({
   const stageDirectory = path.join(root, token);
   fs.mkdirSync(stageDirectory, { recursive: false, mode: 0o700 });
 
-  const stagedPath = path.join(
-    stageDirectory,
-    `Cosmora-Setup-${metadata.version}-x64.exe`
-  );
+  const stagedPath = path.join(stageDirectory, `Cosmora-Setup-${metadata.version}-x64.exe`);
 
   try {
     fs.copyFileSync(sourcePath, stagedPath, fs.constants.COPYFILE_EXCL);
