@@ -39,6 +39,14 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
+      - name: Restore Electron packaging cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: windows-electron-packaging-v1-44.5.1-26.17.0
+
       - name: Validate desktop syntax
         shell: pwsh
         run: |
@@ -49,6 +57,7 @@ jobs:
           node --check desktop/windows/credential-store.cjs
           node --check desktop/windows/support-bundle.cjs
           node --check desktop/windows/update-policy.cjs
+          node --check desktop/windows/update-download.cjs
           node --check desktop/windows/release-chain.cjs
           node --check desktop/windows/signing-policy.cjs
           node --check desktop/windows/smoke-mode.cjs

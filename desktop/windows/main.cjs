@@ -29,6 +29,7 @@ const {
   updateManifestUrl,
   validateUpdateManifest
 } = require("./update-policy.cjs");
+const { isSameOriginInstallerDownload, streamVerifiedInstaller } = require("./update-download.cjs");
 const {
   isAllowedCredentialChallenge,
   isAllowedRemoteNavigation,
@@ -46,6 +47,7 @@ const CREDENTIAL_FILE = "credentials.bin";
 const DIAGNOSTIC_FILE = "cosmora-desktop.log";
 const HEALTH_TIMEOUT_MS = 6000;
 const UPDATE_CHECK_TIMEOUT_MS = 8000;
+const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 const HEARTBEAT_INTERVAL_MS = 30000;
 const MAX_DIAGNOSTIC_BYTES = 1024 * 1024;
 const KEEP_DIAGNOSTIC_BYTES = 512 * 1024;
@@ -786,6 +788,42 @@ async function fetchDesktopUpdate(origin) {
   }
 }
 
+async function downloadDesktopUpdate(manifest, origin) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPDATE_DOWNLOAD_TIMEOUT_MS);
+  const sameOrigin = isSameOriginInstallerDownload(manifest.downloadUrl, origin);
+  const credentials =
+    sameOrigin && runtimeCredentials && runtimeCredentials.origin === origin
+      ? runtimeCredentials
+      : { username: "", password: "" };
+
+  try {
+    const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
+    const response = await browserSession.fetch(manifest.downloadUrl, {
+      method: "GET",
+      cache: "no-store",
+      credentials: sameOrigin ? "include" : "omit",
+      redirect: "manual",
+      headers: sameOrigin ? credentialHeader(credentials.username, credentials.password) : {},
+      signal: controller.signal
+    });
+
+    return await streamVerifiedInstaller({
+      response,
+      manifest,
+      downloadsDirectory: app.getPath("downloads"),
+      temporaryDirectory: app.getPath("temp")
+    });
+  } catch (cause) {
+    if (cause && cause.name === "AbortError") {
+      throw new Error("Скачивание обновления превысило лимит времени.");
+    }
+    throw cause;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function showAboutDialog() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
@@ -798,7 +836,7 @@ async function showAboutDialog() {
       (process.versions.electron || "unknown") +
       "\nСостояние соединения: " +
       connectionState +
-      "\nОбновления: только ручная проверка; автоматическая установка отключена."
+      "\nОбновления: ручная проверка и проверенная загрузка; автоматическая установка отключена."
   });
 }
 
@@ -886,17 +924,75 @@ async function checkForDesktopUpdate() {
       .filter(Boolean)
       .join("\n");
 
+    const canDownload = Boolean(manifest.downloadUrl && manifest.sha256 && manifest.sizeBytes);
+    const buttons = canDownload
+      ? ["Позже", "Скачать и проверить", "Открыть страницу релиза"]
+      : ["Позже", "Открыть страницу релиза"];
+
     const choice = await dialog.showMessageBox(mainWindow, {
       type: "info",
       title: "Обновление Cosmora",
       message: "Доступна новая версия.",
       detail,
-      buttons: ["Позже", "Открыть страницу релиза"],
+      buttons,
       defaultId: 0,
       cancelId: 0
     });
 
-    if (choice.response === 1) {
+    if (canDownload && choice.response === 1) {
+      appendDiagnostic("update_download_started", {
+        availableVersion: manifest.version,
+        expectedBytes: manifest.sizeBytes
+      });
+      setConnectionTitle("скачивание обновления…");
+
+      try {
+        const downloaded = await downloadDesktopUpdate(manifest, origin);
+        appendDiagnostic("update_download_verified", {
+          availableVersion: manifest.version,
+          filename: downloaded.filename,
+          bytes: downloaded.bytes,
+          sha256: downloaded.sha256
+        });
+
+        const completed = await dialog.showMessageBox(mainWindow, {
+          type: "info",
+          title: "Обновление Cosmora",
+          message: "Установщик скачан и проверен.",
+          detail:
+            "Файл: " +
+            downloaded.filename +
+            "\nРазмер и SHA-256 совпадают с манифестом. Cosmora не запускала установщик.",
+          buttons: ["Закрыть", "Показать в папке"],
+          defaultId: 0,
+          cancelId: 0
+        });
+
+        if (completed.response === 1) {
+          shell.showItemInFolder(downloaded.path);
+        }
+      } catch (cause) {
+        appendDiagnostic("update_download_failed", {
+          availableVersion: manifest.version,
+          reason: cause instanceof Error ? cause.message.slice(0, 160) : "unknown"
+        });
+        await dialog.showMessageBox(mainWindow, {
+          type: "warning",
+          title: "Обновление Cosmora",
+          message: "Не удалось безопасно скачать обновление.",
+          detail:
+            cause instanceof Error
+              ? cause.message
+              : "Файл не прошёл проверку или загрузка была прервана."
+        });
+      } finally {
+        setConnectionTitle(connectionTitleSuffix(connectionState));
+      }
+      return;
+    }
+
+    const releaseChoice = canDownload ? 2 : 1;
+    if (choice.response === releaseChoice) {
       const releasePage = safeExternalNavigationUrl(manifest.releasePageUrl);
       if (releasePage && releasePage.startsWith("https://")) {
         appendDiagnostic("update_release_page_opened", {

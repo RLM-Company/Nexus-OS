@@ -164,6 +164,7 @@ function validateUpdateManifest(value, currentVersion) {
 }
 
 module.exports = {
+  MAX_INSTALLER_BYTES,
   MAX_MANIFEST_BYTES,
   compareVersions,
   parseVersion,
