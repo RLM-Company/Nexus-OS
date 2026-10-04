@@ -475,7 +475,7 @@ const semanticEdges: IntelligenceGraphEdge[] = [
     id: "identity-owner-api-claim",
     type: "ENFORCED_BY",
     from: "claim-owner-api-requires-owner-session",
-    to: "entity-runtime-interface-identity",
+    to: "entity-api-identity",
     location: "apps/api/test/identity-boundary.test.ts"
   }),
   edge({
@@ -489,21 +489,21 @@ const semanticEdges: IntelligenceGraphEdge[] = [
     id: "identity-owner-kind-api",
     type: "ALLOWED_AT_OWNER_API",
     from: "identity-actor-kind-owner",
-    to: "entity-runtime-interface-identity",
+    to: "entity-api-identity",
     location: "apps/api/test/identity-boundary.test.ts:owner session"
   }),
   edge({
     id: "identity-agent-kind-denied-api",
     type: "DENIED_AT_OWNER_API",
     from: "identity-actor-kind-agent",
-    to: "entity-runtime-interface-identity",
+    to: "entity-api-identity",
     location: "apps/api/test/identity-boundary.test.ts:agent session forbidden"
   }),
   edge({
     id: "identity-system-kind-denied-api",
     type: "DENIED_AT_OWNER_API",
     from: "identity-actor-kind-system",
-    to: "entity-runtime-interface-identity",
+    to: "entity-api-identity",
     location: "apps/api/test/identity-boundary.test.ts:system session forbidden"
   })
 ];
