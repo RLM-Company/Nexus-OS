@@ -4,10 +4,10 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.7.0** adds an end-to-end NSIS installer lifecycle check on top of the 0.6.0 signing
-trust chain. CI now installs the generated EXE into a clean temporary directory, launches the
-installed packaged application in a no-network smoke mode, verifies its packaged identity, then
-silently uninstalls it and requires the installation directory to disappear.
+Version **0.8.0** adds real upgrade-lifecycle validation and consolidates Windows installer testing
+into one reusable CI script. Pull requests now build the desktop installer from the PR base commit,
+install that baseline, preserve isolated user data, install the current version over it, verify the
+upgraded packaged application, and finally uninstall it without deleting the preserved profile.
 
 ## Runtime model
 
@@ -160,6 +160,34 @@ health probe and does not connect to Cosmora. The marker path is supplied throug
 `COSMORA_SMOKE_OUTPUT` and is accepted only inside the operating-system temporary directory with a
 restricted `cosmora-smoke-*.json` filename.
 
+## Upgrade lifecycle
+
+For pull requests, the Windows workflow checks out the PR base commit into an isolated baseline
+workspace and builds its NSIS installer separately. The shared
+`desktop/windows/ci/nsis-lifecycle.ps1` script then:
+
+1. silently installs the baseline version into a temporary installation directory;
+2. launches the installed baseline executable in no-network smoke mode;
+3. creates isolated persistence sentinels under the expected Cosmora user-data directory:
+   `connection.json`, `credentials.bin`, and a `persist:cosmora` session sentinel;
+4. records SHA-256 for each sentinel;
+5. installs the current installer over the same installation directory;
+6. launches the upgraded installed executable and requires its reported version and packaged paths
+   to match the current build;
+7. verifies Electron reports the expected isolated `userDataPath`;
+8. requires every persistence sentinel to remain present and byte-identical;
+9. silently uninstalls the upgraded application and requires the installation directory to
+   disappear;
+10. requires the user-data sentinels to remain after uninstall, then removes only the isolated CI
+    workspace.
+
+This validates installer upgrade behavior without using real credentials or a real user profile.
+The `credentials.bin` file in this test is a deterministic sentinel, not a real encrypted
+credential payload.
+
+Fresh-install and signed-release lifecycle checks reuse the same PowerShell implementation, reducing
+workflow drift.
+
 ## Downloads and artifacts
 
 Only downloads whose URL belongs to the active Cosmora origin are accepted.
@@ -218,8 +246,8 @@ node --test desktop/windows/test/*.test.cjs
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
 validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, packaged smoke-mode
-policy, support-bundle redaction, diagnostic URL redaction, download filenames and protected
-credential persistence. The
+policy, upgrade persistence across NSIS installs, support-bundle redaction, diagnostic URL
+redaction, download filenames and protected credential persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
 building the installer.
 
@@ -236,7 +264,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.7.0-x64.exe`.
+`Cosmora-Setup-0.8.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
