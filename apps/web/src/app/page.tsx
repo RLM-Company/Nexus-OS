@@ -10,6 +10,12 @@ import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 import { WorkspaceIcon } from "./workspace-icons";
 import { AccountMenu, MobileNavigation } from "./workspace-navigation";
 import {
+  ChatAttachmentPicker,
+  ChatMessageAttachments,
+  useChatAttachments
+} from "./chat-attachments";
+import type { ChatTextAttachment } from "@cosmora/contracts/chat-attachments";
+import {
   WorkspaceSections,
   TOOL_ITEMS,
   STUDIO_ITEMS,
@@ -60,6 +66,7 @@ type LocalChatMessage = {
   role: "user" | "assistant";
   content_type: "text";
   content: string;
+  attachments?: ChatTextAttachment[];
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
   run_id: string | null;
   error_code: string | null;
@@ -470,6 +477,7 @@ export default function Home() {
   const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
   const projectProposal = activeLocalChat?.projectProposal ?? null;
   const composerDraftKey = composerDraftStorageKey(activeProject?.id ?? null, activeLocalChatId);
+  const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
 
   useEffect(() => {
     setDraftStorageReadyKey(null);
@@ -1189,7 +1197,16 @@ export default function Home() {
     });
   };
 
-  const recoverableMessage = recoverableUserMessage(messages);
+  const failedChatReply = localChatMessages.findLast((message) => message.role === "assistant");
+  const recoverableChatMessage =
+    failedChatReply && ["failed", "cancelled"].includes(failedChatReply.status)
+      ? localChatMessages.find(
+          (message) => message.role === "user" && message.run_id === failedChatReply.run_id
+        )
+      : undefined;
+  const recoverableMessage = activeProject
+    ? recoverableUserMessage(messages)
+    : recoverableChatMessage;
   const demoSource = latestDemoSource(messages);
   const latestDemoRun = demoRuns[0] ?? null;
 
@@ -1273,6 +1290,7 @@ export default function Home() {
   const restoreRunDraft = (): void => {
     if (!recoverableMessage) return;
     setDraft(recoverableMessage.content);
+    if (!activeProject) chatAttachments.replace(recoverableChatMessage?.attachments ?? []);
     setError(null);
     window.requestAnimationFrame(() => composerRef.current?.focus());
   };
@@ -1280,7 +1298,14 @@ export default function Home() {
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     const content = draft.trim();
-    if (!content || sending || loading || submitPendingRef.current || executionGate !== "clear")
+    if (
+      !content ||
+      sending ||
+      loading ||
+      chatAttachments.reading ||
+      submitPendingRef.current ||
+      executionGate !== "clear"
+    )
       return;
     submitPendingRef.current = true;
     try {
@@ -1298,18 +1323,30 @@ export default function Home() {
                 `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`,
                 {
                   method: "POST",
-                  body: JSON.stringify({ content, client_message_id: clientId() })
+                  body: JSON.stringify({
+                    content,
+                    client_message_id: clientId(),
+                    attachments: chatAttachments.files
+                  })
                 }
               )
             : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
                 method: "POST",
-                body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+                body: JSON.stringify({
+                  initial_message: content,
+                  client_message_id: clientId(),
+                  attachments: chatAttachments.files
+                })
               });
           if (epoch !== viewEpochRef.current) {
             void loadGeneralChats().catch(() => undefined);
             return;
           }
-          const proposal = assessment.requiresProject ? { content, assessment } : null;
+          chatAttachments.replace([]);
+          const hasFiles =
+            chatAttachments.files.length > 0 ||
+            localChatMessages.some((message) => message.attachments?.length);
+          const proposal = assessment.requiresProject && !hasFiles ? { content, assessment } : null;
           setLocalChats((current) => {
             const existing = current.find((chat) => chat.id === accepted.chat.id);
             const updated: LocalChatSession = {
@@ -2210,6 +2247,7 @@ export default function Home() {
                         </span>
                       )}
                     </p>
+                    <ChatMessageAttachments files={message.attachments ?? []} />
                   </div>
                 </article>
               ))}
@@ -2288,6 +2326,20 @@ export default function Home() {
               activeProject ? "Уточните задачу или добавьте требование…" : "Спросите что-нибудь…"
             }
           />
+          {!activeProject && (
+            <ChatAttachmentPicker
+              files={chatAttachments.files}
+              reading={chatAttachments.reading}
+              error={chatAttachments.error}
+              disabled={sending || loading}
+              onAdd={(files) => void chatAttachments.add(files)}
+              onRemove={(index) =>
+                chatAttachments.replace(
+                  chatAttachments.files.filter((_, position) => position !== index)
+                )
+              }
+            />
+          )}
           <div className="composer-footer">
             <span role={error ? "alert" : undefined} aria-live={error ? "assertive" : "polite"}>
               {error ??
@@ -2321,7 +2373,9 @@ export default function Home() {
                   </button>
                 )}
                 <button
-                  disabled={!draft.trim() || loading || executionGate !== "clear"}
+                  disabled={
+                    !draft.trim() || loading || chatAttachments.reading || executionGate !== "clear"
+                  }
                   aria-label="Отправить"
                 >
                   <SendIcon />

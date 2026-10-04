@@ -3867,3 +3867,73 @@ body:has(.workspace-drawer[open]) {
     scroll-behavior: auto !important;
   }
 }
+
+.chat-attachment-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+.chat-attachment-picker > button,
+.chat-message-attachments button {
+  font: inherit;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.chat-attachment-picker small {
+  opacity: 0.7;
+}
+.chat-attachment-picker ul {
+  width: 100%;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chat-attachment-picker li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.chat-attachment-picker li span {
+  overflow-wrap: anywhere;
+}
+.chat-attachment-picker li button {
+  flex-shrink: 0;
+}
+.chat-attachment-picker p {
+  width: 100%;
+  margin: 0;
+}
+.chat-message-attachments {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  min-width: 0;
+}
+.chat-message-attachments details {
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+}
+.chat-message-attachments summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.chat-message-attachments pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 0.85rem;
+}

@@ -7,6 +7,48 @@ import {
 } from "../src/index.js";
 
 describe("GeneralChatStore", () => {
+  it("persists files across store reloads, isolates owners and includes them in idempotency", async () => {
+    const database = openDatabase(":memory:");
+    try {
+      await runMigrations(database);
+      const store = new GeneralChatStore(database.sqlite);
+      const attachments = [{ name: "пример.ts", content: "const value = 42;" }];
+      const first = store.createChat("Объясни", "files-1", "owner-a", attachments);
+      const reloaded = new GeneralChatStore(database.sqlite);
+      expect(reloaded.listMessages(first.chat.id, "owner-a")[0]?.attachments).toEqual(attachments);
+      expect(reloaded.getConversationForRun(first.run.id, "owner-a")[0]?.attachments).toEqual(
+        attachments
+      );
+      expect(reloaded.listMessages(first.chat.id, "owner-b")).toEqual([]);
+      expect(reloaded.getConversationForRun(first.run.id, "owner-b")).toEqual([]);
+      expect(
+        reloaded.createChat("Объясни", "files-1", "owner-a", [
+          { content: "const value = 42;", name: "пример.ts" }
+        ]).duplicate
+      ).toBe(true);
+      expect(() => reloaded.createChat("Объясни", "files-1", "owner-a", [])).toThrow(
+        IdempotencyConflictError
+      );
+      store.cancelRun(first.run.id, "owner-a");
+      const next = store.createMessage(first.chat.id, "И второй", "files-2", "owner-a", [
+        { name: "other.txt", content: "Другой текст" }
+      ]);
+      expect(next?.userMessage.attachments?.[0]?.name).toBe("other.txt");
+      expect(
+        store
+          .getConversationForRun(next!.run.id, "owner-a")
+          .filter((item) => item.role === "user")
+          .map((item) => item.attachments)
+      ).toEqual([attachments, next?.userMessage.attachments]);
+      expect(() =>
+        store.createMessage(first.chat.id, "И второй", "files-2", "owner-a", [
+          { name: "other.txt", content: "Изменённый текст" }
+        ])
+      ).toThrow(IdempotencyConflictError);
+    } finally {
+      database.close();
+    }
+  });
   it("persists ordinary chat history independently from projects", async () => {
     const database = openDatabase(":memory:");
     try {

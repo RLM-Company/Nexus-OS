@@ -2,7 +2,8 @@ import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
   ApiErrorSchema,
   CreateGeneralChatRequestSchema,
-  CreateMessageRequestSchema,
+  CreateGeneralChatMessageRequestSchema,
+  isValidChatAttachments,
   GeneralChatDetailResponseSchema,
   GeneralChatListResponseSchema,
   GeneralChatMessageAcceptedResponseSchema,
@@ -241,15 +242,22 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         response: {
           200: GeneralChatMessageAcceptedResponseSchema,
           201: GeneralChatMessageAcceptedResponseSchema,
+          400: ApiErrorSchema,
           409: ApiErrorSchema
         }
       }
     },
     async (request, reply) => {
+      if (!isValidChatAttachments(request.body.attachments ?? [])) {
+        return reply
+          .status(400)
+          .send(error(request.id, "VALIDATION_ERROR", "Invalid text attachments"));
+      }
       const accepted = options.store.createChat(
         request.body.initial_message,
         request.body.client_message_id,
-        options.identityFor(request).owner_id
+        options.identityFor(request).owner_id,
+        request.body.attachments
       );
       return reply.status(accepted.duplicate ? 200 : 201).send(acceptedResponse(accepted));
     }
@@ -278,22 +286,29 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
     {
       schema: {
         params,
-        body: CreateMessageRequestSchema,
+        body: CreateGeneralChatMessageRequestSchema,
         response: {
           200: GeneralChatMessageAcceptedResponseSchema,
           202: GeneralChatMessageAcceptedResponseSchema,
+          400: ApiErrorSchema,
           404: ApiErrorSchema,
           409: ApiErrorSchema
         }
       }
     },
     async (request, reply) => {
+      if (!isValidChatAttachments(request.body.attachments ?? [])) {
+        return reply
+          .status(400)
+          .send(error(request.id, "VALIDATION_ERROR", "Invalid text attachments"));
+      }
       try {
         const accepted = options.store.createMessage(
           request.params.chatId,
           request.body.content,
           request.body.client_message_id,
-          options.identityFor(request).owner_id
+          options.identityFor(request).owner_id,
+          request.body.attachments
         );
         if (!accepted) {
           return reply.status(404).send(error(request.id, "CHAT_NOT_FOUND", "Chat not found"));

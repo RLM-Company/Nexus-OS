@@ -454,6 +454,7 @@ export const generalChatMessages = sqliteTable(
     role: text("role").notNull(),
     contentType: text("content_type").notNull(),
     content: text("content").notNull(),
+    attachmentsJson: text("attachments_json").notNull().default("[]"),
     status: text("status").notNull(),
     clientMessageId: text("client_message_id"),
     runId: text("run_id").references(() => generalChatRuns.id, { onDelete: "set null" }),

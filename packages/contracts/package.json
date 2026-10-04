@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./chat-attachments": {
+      "development": "./src/chat-attachments.ts",
+      "types": "./src/chat-attachments.ts",
+      "default": "./dist/chat-attachments.js"
+    },
     ".": {
       "development": "./src/index.ts",
       "types": "./src/index.ts",

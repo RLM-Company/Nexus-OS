@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { Currency } from "@cosmora/contracts";
+import { isValidChatAttachments, type ChatTextAttachment, type Currency } from "@cosmora/contracts";
 import {
   IdempotencyConflictError,
   LOCAL_OWNER_ID,
@@ -28,6 +28,7 @@ export interface StoredGeneralChatMessage {
   role: "user" | "assistant";
   content_type: "text";
   content: string;
+  attachments?: ChatTextAttachment[];
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
   run_id: string | null;
   error_code: string | null;
@@ -79,8 +80,28 @@ export interface AcceptedGeneralChatMessage {
 type SqlRow = Record<string, unknown>;
 const timestamp = (): string => new Date().toISOString();
 const asChat = (row: SqlRow): StoredGeneralChat => row as unknown as StoredGeneralChat;
-const asMessage = (row: SqlRow): StoredGeneralChatMessage =>
-  row as unknown as StoredGeneralChatMessage;
+const asMessage = (row: SqlRow): StoredGeneralChatMessage => {
+  const { attachments_json, ...message } = row;
+  if (typeof attachments_json !== "string") throw new Error("Invalid persisted chat attachments");
+  const attachments = JSON.parse(attachments_json) as ChatTextAttachment[];
+  return {
+    ...message,
+    ...(attachments.length ? { attachments } : {})
+  } as unknown as StoredGeneralChatMessage;
+};
+const sameAttachments = (
+  message: StoredGeneralChatMessage,
+  attachments: ChatTextAttachment[]
+): boolean =>
+  (message.attachments ?? []).length === attachments.length &&
+  attachments.every(
+    (file, index) =>
+      file.name === message.attachments?.[index]?.name &&
+      file.content === message.attachments[index]?.content
+  );
+const assertAttachments = (attachments: ChatTextAttachment[]): void => {
+  if (!isValidChatAttachments(attachments)) throw new Error("Invalid chat attachments");
+};
 const asRun = (row: SqlRow): StoredGeneralChatRun => row as unknown as StoredGeneralChatRun;
 const asUsage = (row: SqlRow): StoredGeneralChatUsage => row as unknown as StoredGeneralChatUsage;
 const titleFor = (content: string): string => {
@@ -88,7 +109,7 @@ const titleFor = (content: string): string => {
   return compact.length > 58 ? `${compact.slice(0, 57)}…` : compact;
 };
 
-const MESSAGE_COLUMNS = `id, chat_id, role, content_type, content, status,
+const MESSAGE_COLUMNS = `id, chat_id, role, content_type, content, attachments_json, status,
   run_id, error_code, created_at, updated_at`;
 const RUN_COLUMNS = `id, chat_id, status, provider, model_resolved,
   input_tokens, output_tokens, created_at, updated_at`;
@@ -137,17 +158,24 @@ export class GeneralChatStore {
         `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages
          WHERE chat_id = ? ORDER BY created_at ASC, rowid ASC`
       )
-      .all(chatId) as unknown as StoredGeneralChatMessage[];
+      .all(chatId)
+      .map((row) => asMessage(row as SqlRow));
   }
 
   createChat(
     initialMessage: string,
     clientMessageId: string,
-    ownerId = LOCAL_OWNER_ID
+    ownerId = LOCAL_OWNER_ID,
+    attachments: ChatTextAttachment[] = []
   ): AcceptedGeneralChatMessage {
+    assertAttachments(attachments);
     const existing = this.findByClientMessageId(clientMessageId, ownerId);
     if (existing) {
-      if (existing.userMessage.content !== initialMessage) throw new IdempotencyConflictError();
+      if (
+        existing.userMessage.content !== initialMessage ||
+        !sameAttachments(existing.userMessage, attachments)
+      )
+        throw new IdempotencyConflictError();
       return { ...existing, duplicate: true };
     }
 
@@ -165,7 +193,8 @@ export class GeneralChatStore {
         initialMessage,
         clientMessageId,
         createdAt,
-        ownerId
+        ownerId,
+        attachments
       );
       this.#sqlite.exec("COMMIT;");
       return { ...accepted, duplicate: false };
@@ -179,13 +208,19 @@ export class GeneralChatStore {
     chatId: string,
     content: string,
     clientMessageId: string,
-    ownerId = LOCAL_OWNER_ID
+    ownerId = LOCAL_OWNER_ID,
+    attachments: ChatTextAttachment[] = []
   ): AcceptedGeneralChatMessage | null {
+    assertAttachments(attachments);
     const chat = this.getChat(chatId, ownerId);
     if (!chat) return null;
     const existing = this.findByClientMessageId(clientMessageId, ownerId);
     if (existing) {
-      if (existing.chat.id !== chatId || existing.userMessage.content !== content) {
+      if (
+        existing.chat.id !== chatId ||
+        existing.userMessage.content !== content ||
+        !sameAttachments(existing.userMessage, attachments)
+      ) {
         throw new IdempotencyConflictError();
       }
       return { ...existing, duplicate: true };
@@ -200,7 +235,14 @@ export class GeneralChatStore {
     const createdAt = timestamp();
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
-      const accepted = this.#insertMessage(chatId, content, clientMessageId, createdAt, ownerId);
+      const accepted = this.#insertMessage(
+        chatId,
+        content,
+        clientMessageId,
+        createdAt,
+        ownerId,
+        attachments
+      );
       this.#sqlite
         .prepare("UPDATE general_chats SET updated_at = ? WHERE id = ?")
         .run(createdAt, chatId);
@@ -217,7 +259,8 @@ export class GeneralChatStore {
     content: string,
     clientMessageId: string,
     createdAt: string,
-    ownerId: string
+    ownerId: string,
+    attachments: ChatTextAttachment[]
   ): Omit<AcceptedGeneralChatMessage, "duplicate"> {
     const runId = randomUUID();
     const messageId = randomUUID();
@@ -229,10 +272,20 @@ export class GeneralChatStore {
     this.#sqlite
       .prepare(
         `INSERT INTO general_chat_messages
-          (id, chat_id, owner_id, role, content_type, content, status, client_message_id, run_id, created_at, updated_at)
-         VALUES (?, ?, ?, 'user', 'text', ?, 'completed', ?, ?, ?, ?)`
+          (id, chat_id, owner_id, role, content_type, content, attachments_json, status, client_message_id, run_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'user', 'text', ?, ?, 'completed', ?, ?, ?, ?)`
       )
-      .run(messageId, chatId, ownerId, content, clientMessageId, runId, createdAt, createdAt);
+      .run(
+        messageId,
+        chatId,
+        ownerId,
+        content,
+        JSON.stringify(attachments),
+        clientMessageId,
+        runId,
+        createdAt,
+        createdAt
+      );
     const chat = this.getChat(chatId, ownerId);
     const userMessage = this.#sqlite
       .prepare(`SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE id = ?`)
@@ -250,7 +303,7 @@ export class GeneralChatStore {
   ): Omit<AcceptedGeneralChatMessage, "duplicate"> | null {
     const row = this.#sqlite
       .prepare(
-        `SELECT m.id, m.chat_id, m.role, m.content_type, m.content, m.status,
+        `SELECT m.id, m.chat_id, m.role, m.content_type, m.content, m.attachments_json, m.status,
           m.run_id, m.error_code, m.created_at, m.updated_at
          FROM general_chat_messages m
          JOIN general_chats c ON c.id = m.chat_id
@@ -287,7 +340,8 @@ export class GeneralChatStore {
            SELECT rowid FROM general_chat_messages WHERE run_id = ? AND role = 'user' LIMIT 1
          ) ORDER BY rowid ASC`
       )
-      .all(run.chat_id, runId) as unknown as StoredGeneralChatMessage[];
+      .all(run.chat_id, runId)
+      .map((row) => asMessage(row as SqlRow));
   }
 
   getAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage | null {
