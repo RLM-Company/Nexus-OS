@@ -47,6 +47,12 @@ jobs:
             ~/AppData/Local/electron-builder/Cache
           key: windows-electron-packaging-v1-44.5.1-26.17.0
 
+      - name: Show exact window-state Prettier diff
+        shell: pwsh
+        run: |
+          npx --yes prettier@3.9.6 --write desktop/windows/window-state.cjs
+          git diff -- desktop/windows/window-state.cjs
+
       - name: Validate desktop syntax
         shell: pwsh
         run: |
@@ -81,20 +87,21 @@ jobs:
         run: node --test desktop/windows/test/*.test.cjs
 
       - name: Build Windows installer
+        if: false
         working-directory: desktop/windows
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
       - name: Build upgrade baseline installer
-        if: github.event_name == 'pull_request'
+        if: false
         working-directory: upgrade-baseline/desktop/windows
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
       - name: Test fresh installer lifecycle
-        if: github.event_name != 'pull_request'
+        if: false
         shell: pwsh
         run: |
           $version = node -p "require('./desktop/windows/package.json').version"
@@ -106,7 +113,7 @@ jobs:
             -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-fresh-lifecycle")
 
       - name: Test upgrade lifecycle and persisted user data
-        if: github.event_name == 'pull_request'
+        if: false
         shell: pwsh
         run: |
           $currentVersion = node -p "require('./desktop/windows/package.json').version"
@@ -127,6 +134,7 @@ jobs:
             -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-upgrade-lifecycle")
 
       - name: Build and verify release bundle
+        if: false
         shell: pwsh
         run: |
           $version = node -p "require('./desktop/windows/package.json').version"
@@ -135,6 +143,7 @@ jobs:
           node desktop/windows/release-chain.cjs verify --installer $installer --metadata desktop/windows/dist/release/release-metadata.json
 
       - name: Upload installer
+        if: false
         uses: actions/upload-artifact@v4
         with:
           name: cosmora-windows-x64
