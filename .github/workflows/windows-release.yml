@@ -81,6 +81,17 @@ jobs:
           node --check desktop/windows/signing-policy.cjs
           node --check desktop/windows/smoke-mode.cjs
           node --check desktop/windows/connection.js
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "desktop/windows/ci/nsis-lifecycle.ps1",
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "NSIS lifecycle PowerShell syntax validation failed."
+          }
 
       - name: Test desktop policy
         run: node --test desktop/windows/test/*.test.cjs
