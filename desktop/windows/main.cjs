@@ -29,10 +29,7 @@ const {
   updateManifestUrl,
   validateUpdateManifest
 } = require("./update-policy.cjs");
-const {
-  isSameOriginInstallerDownload,
-  streamVerifiedInstaller
-} = require("./update-download.cjs");
+const { isSameOriginInstallerDownload, streamVerifiedInstaller } = require("./update-download.cjs");
 const {
   isAllowedCredentialChallenge,
   isAllowedRemoteNavigation,
