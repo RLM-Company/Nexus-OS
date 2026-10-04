@@ -19,11 +19,50 @@ async function fixture(t, overrides = {}) {
   const authorization = `Basic ${Buffer.from(`owner:${password}`).toString("base64")}`;
   const server = createServer((request, response) => {
     requests.push({ path: request.url, authorization: request.headers.authorization });
+    if (overrides.form) {
+      if (request.url === "/login") {
+        response.writeHead(200).end("Owner login form");
+        return;
+      }
+      if (request.url === "/__owner/login") {
+        let body = "";
+        request.on("data", (chunk) => {
+          body += chunk;
+        });
+        request.on("end", () => {
+          const valid = new URLSearchParams(body).get("password") === password;
+          response
+            .writeHead(
+              valid ? 303 : 422,
+              valid
+                ? {
+                    location: "/",
+                    "set-cookie":
+                      "__Host-cosmora-owner=" +
+                      "a".repeat(64) +
+                      "; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800"
+                  }
+                : {}
+            )
+            .end();
+        });
+        return;
+      }
+      if (request.headers.cookie !== "__Host-cosmora-owner=" + "a".repeat(64)) {
+        response
+          .writeHead(
+            request.url === "/" ? 303 : 401,
+            request.url === "/" ? { location: "/login" } : {}
+          )
+          .end();
+        return;
+      }
+    }
     if (overrides.redirect && !overrides.authenticatedRedirect) {
       response.writeHead(302, { location: "/redirect-target" }).end();
       return;
     }
-    if (request.headers.authorization !== authorization) {
+    if (!overrides.form && request.headers.authorization !== authorization) {
       response.writeHead(overrides.unprotected ? 200 : 401).end();
       return;
     }
@@ -70,6 +109,27 @@ test("verifies password protection, current owner expiry and stop without model 
     [undefined, undefined]
   );
   assert.ok(requests.every((request) => !/chat|work|run/u.test(request.path)));
+});
+
+test("verifies the form session without following login redirects or exposing Basic credentials", async (t) => {
+  const { origin, requests } = await fixture(t, { form: true });
+  const result = await verifyAccess({ origin, password, now, authMode: "form" });
+  assert.equal(result.model_requests_paused, true);
+  assert.equal(result.session_expires_at, "2026-10-07T00:00:00.000Z");
+  assert.ok(requests.every((request) => request.authorization === undefined));
+  assert.ok(requests.some((request) => request.path === "/__owner/login"));
+});
+test("form verifier rejects wrong passwords and a revoked downstream owner session", async (t) => {
+  const good = await fixture(t, { form: true });
+  await assert.rejects(
+    verifyAccess({ origin: good.origin, password: "incorrect", now, authMode: "form" }),
+    /form login failed/u
+  );
+  const revoked = await fixture(t, { form: true, sessionStatus: 401 });
+  await assert.rejects(
+    verifyAccess({ origin: revoked.origin, password, now, authMode: "form" }),
+    /Authenticated access failed/u
+  );
 });
 
 test("healthy public health cannot conceal an expired bearer session", async (t) => {
