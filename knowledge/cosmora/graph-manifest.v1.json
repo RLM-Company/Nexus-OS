@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 572,
-    "edges": 1716,
-    "records": 572
+    "nodes": 590,
+    "edges": 1767,
+    "records": 590
   },
   "layers": [
     {
@@ -148,6 +148,13 @@
       "edges": 62,
       "authority": "verified_runtime_artifact_provenance_and_task_binding",
       "semantics": "source_trust_provenance_dag_task_binding_critic_review"
+    },
+    {
+      "id": "resource_budget",
+      "nodes": 18,
+      "edges": 51,
+      "authority": "verified_usage_router_manager_budget_evidence",
+      "semantics": "reservation_limits_cost_tokens_unknown_evidence"
     }
   ],
   "primary_relation_types": [
@@ -289,7 +296,10 @@
     "VALIDATES_AGAINST",
     "VALIDATES_REVIEW_LINEAGE_FOR",
     "REFINES",
-    "MAY_REVIEW_KIND"
+    "MAY_REVIEW_KIND",
+    "EXPANSION_REQUIRES",
+    "RESERVES_THROUGH",
+    "CONSISTENT_WITH"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -320,7 +330,8 @@
     "packages/core/test/fixtures/cosmora-authority-capability-graph.ts",
     "packages/core/test/fixtures/cosmora-execution-recovery-graph.ts",
     "packages/core/test/fixtures/cosmora-identity-trust-graph.ts",
-    "packages/core/test/fixtures/cosmora-data-lineage-graph.ts"
+    "packages/core/test/fixtures/cosmora-data-lineage-graph.ts",
+    "packages/core/test/fixtures/cosmora-resource-budget-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
