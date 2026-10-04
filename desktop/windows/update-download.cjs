@@ -114,7 +114,12 @@ function temporaryInstallerPath(downloadsDirectory, filename) {
   );
 }
 
-function finalizeVerifiedInstaller(tempPath, downloadsDirectory, filename, existsSync = fs.existsSync) {
+function finalizeVerifiedInstaller(
+  tempPath,
+  downloadsDirectory,
+  filename,
+  existsSync = fs.existsSync
+) {
   fs.mkdirSync(downloadsDirectory, { recursive: true });
 
   for (let attempt = 0; attempt < 100; attempt += 1) {
