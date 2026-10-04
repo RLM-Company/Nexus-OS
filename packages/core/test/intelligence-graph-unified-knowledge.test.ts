@@ -389,10 +389,10 @@ describe("unified Cosmora Intelligence Graph", () => {
       verified_only: true,
       budget: {
         max_depth: 3,
-        max_nodes: 60,
-        max_edges: 100,
-        max_fan_out: 40,
-        max_context_tokens: 8_000
+        max_nodes: 96,
+        max_edges: 160,
+        max_fan_out: 48,
+        max_context_tokens: 12_000
       }
     });
 
