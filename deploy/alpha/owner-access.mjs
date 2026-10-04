@@ -46,7 +46,7 @@ export function createOwnerAccess({ origin, passwordHash, now = Date.now }) {
   const headers = {
     "cache-control": "no-store",
     "x-content-type-options": "nosniff",
-    "referrer-policy": "no-referrer",
+    "referrer-policy": "same-origin",
     "content-security-policy": `default-src 'none'; style-src 'sha256-${createHash("sha256").update(style).digest("base64")}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`
   };
   const html = (response, status, message = "", loggedIn = false) => {

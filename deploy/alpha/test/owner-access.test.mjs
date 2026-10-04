@@ -36,6 +36,7 @@ test("unauthed navigation goes to an ordinary form; API stays closed without a B
   assert.equal(api.headers.get("www-authenticate"), null);
   const form = await f.request("/login");
   assert.equal(form.status, 200);
+  assert.equal(form.headers.get("referrer-policy"), "same-origin");
   assert.match(await form.text(), /Войти в Cosmora/u);
   assert.match(form.headers.get("content-security-policy"), /frame-ancestors 'none'/u);
 });
