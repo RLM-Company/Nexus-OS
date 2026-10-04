@@ -814,7 +814,8 @@ async function downloadDesktopUpdate(manifest, origin) {
     return await streamVerifiedInstaller({
       response,
       manifest,
-      downloadsDirectory: app.getPath("downloads")
+      downloadsDirectory: app.getPath("downloads"),
+      temporaryDirectory: app.getPath("temp")
     });
   } catch (cause) {
     if (cause && cause.name === "AbortError") {
