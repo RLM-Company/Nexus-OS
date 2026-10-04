@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **572 nodes**;
-- **1716 typed edges**;
+- **590 nodes**;
+- **1767 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -577,3 +577,25 @@ The exact four `RuntimeSourceTrustSchema` values are represented as nodes and co
 
 This layer is deliberately different from Agent Collaboration: collaboration describes which roles
 can exchange artifact kinds; lineage describes whether a concrete provenance chain would be valid.
+
+
+## Resource & Cost Budget Graph
+
+The unified graph now includes **18 Resource & Cost Budget nodes** and **51 source-backed
+relationships**.
+
+The layer separates three budget boundaries:
+
+1. **Manager execution budget** — bounded model-request count and input/output token caps;
+2. **project usage budget** — versioned total-token and currency cost ceilings enforced before
+   reservation;
+3. **model route budget** — request-level maximum cost evaluated from Registry pricing evidence.
+
+The Usage Ledger lifecycle is explicit:
+`reserved → committed | failed | cancelled`.
+
+Reservation precedes Router dispatch. Missing accounting evidence fails closed when project limits are
+active. Unknown pricing cannot satisfy a cost-limited route. Failed/cancelled attempts preserve their
+reserved upper bounds because provider failure does not prove that billing was refunded.
+
+All budget claims are joined to concrete usage/router/Manager regression tests.
