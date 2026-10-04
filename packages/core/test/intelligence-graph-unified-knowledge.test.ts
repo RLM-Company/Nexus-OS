@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(448);
-    expect(graph.records).toHaveLength(448);
-    expect(graph.edges).toHaveLength(1248);
+    expect(graph.nodes).toHaveLength(489);
+    expect(graph.records).toHaveLength(489);
+    expect(graph.edges).toHaveLength(1470);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      448
+      489
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1248
+      1470
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -121,6 +121,89 @@ describe("unified Cosmora Intelligence Graph", () => {
           edge.type === "RUNTIME_GUARDED_BY"
       )
     ).toBe(false);
+  });
+
+  it("encodes all 133 canonical autonomy-matrix cells", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const matrixEdges = graph.edges.filter((edge) => edge.edge_id.startsWith("authority-matrix-"));
+
+    expect(matrixEdges).toHaveLength(133);
+
+    const pairs = new Set(
+      matrixEdges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    expect(pairs).toContain(
+      "autonomy-level-a0|RESOLVES_AS_DENY|capability-context-web-read"
+    );
+    expect(pairs).toContain(
+      "autonomy-level-a2|RESOLVES_AS_AUTONOMOUS|capability-workspace-write"
+    );
+    expect(pairs).toContain(
+      "autonomy-level-a3|RESOLVES_AS_AUTONOMOUS|capability-external-communicate"
+    );
+    expect(pairs).toContain(
+      "autonomy-level-a6|RESOLVES_AS_FULL|capability-finance-credit"
+    );
+  });
+
+  it("marks exactly the seven canonical capabilities that require step-up", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const stepUp = graph.edges
+      .filter((edge) => edge.type === "REQUIRES_STEP_UP")
+      .map((edge) => edge.from.id)
+      .sort();
+
+    expect(stepUp).toEqual(
+      [
+        "capability-contract-finalize",
+        "capability-data-disclose",
+        "capability-finance-credit",
+        "capability-finance-spend",
+        "capability-legal-accept-terms",
+        "capability-prompt-permanent",
+        "capability-strategy-change"
+      ].sort()
+    );
+  });
+
+  it("keeps conditional authority inside the trusted Tool Runtime resolver", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    const conditionTest = repositoryStructureFileId(
+      "packages/tool-runtime/test/policy-condition-authority.test.ts"
+    );
+
+    expect(pairs).toContain(
+      "claim-policy-condition-authority-trusted-only|CONSTRAINS|entity-policy-engine"
+    );
+    expect(pairs).toContain(
+      `claim-policy-condition-authority-trusted-only|VERIFIED_BY_TEST|${conditionTest}`
+    );
+    expect(pairs).toContain(
+      "entity-guarded-tool-runtime|ENFORCES_POLICY_VERDICT_FROM|entity-policy-engine"
+    );
+  });
+
+  it("grounds bounded delegation in the validator and regression suite", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    const delegationTest = repositoryStructureFileId(
+      "packages/policy-engine/test/agent-delegation.test.ts"
+    );
+
+    expect(pairs).toContain(
+      "entity-agent-delegation-validator|ENFORCES|decision-delegation-no-expansion"
+    );
+    expect(pairs).toContain(
+      "entity-agent-delegation-validator|VALIDATES|entity-agent-blueprint"
+    );
+    expect(pairs).toContain(
+      `entity-agent-delegation-validator|VERIFIED_BY_TEST|${delegationTest}`
+    );
   });
 
   it("retrieves the checked-in bootstrap ModelVersion from Registry evidence", () => {
