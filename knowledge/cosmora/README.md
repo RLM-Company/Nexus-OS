@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 553 nodes;
-- 1654 typed edges;
-- 553 retrieval records.
+- 572 nodes;
+- 1716 typed edges;
+- 572 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -247,3 +247,24 @@ The layer contains **31 nodes** and **76 relationships** covering:
 - exact one-use Step-Up binding to owner/session/purpose/challenge;
 - fail-closed Step-Up behavior after expiry or session revocation;
 - owner-only API access, with agent/system sessions rejected at that boundary.
+
+
+## Data Lineage & Provenance
+
+The graph now represents provenance as a first-class runtime structure rather than a generic
+relationship.
+
+The layer contains **19 nodes** and **62 relationships** covering:
+
+- all four RuntimeArtifact source-trust classes: system, owner, project and external-untrusted;
+- unique artifact identity and same-project provenance;
+- rejection of self-references, unknown sources, future sources and provenance cycles;
+- artifact-to-task binding;
+- producer-role / assigned-role consistency;
+- task-declared output kinds and input-artifact lineage;
+- artifact chronology relative to task and task graph;
+- Critic review lineage limited to supported, existing, same-project artifacts created before the
+  verdict.
+
+Every lineage invariant points to its validator and regression test. External-untrusted source trust
+is also tied back to the existing data-only instruction boundary.
