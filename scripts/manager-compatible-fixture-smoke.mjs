@@ -2,16 +2,37 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { IdentityStore, openDatabase, runMigrations } from "../packages/db/dist/index.js";
 
 const root = process.cwd();
-const temporary = mkdtempSync(join(tmpdir(), "cosmora-compatible-smoke-"));
+const temporaryRoot = realpathSync(tmpdir());
+const temporary = mkdtempSync(join(temporaryRoot, "cosmora-compatible-smoke-"));
 const databaseUrl = `file:${join(temporary, "cosmora.db")}`;
 const owner = "fixture-owner";
 const credential = "local-fixture-only";
+const registry = JSON.parse(
+  readFileSync(
+    join(root, "config/model-registry.cheapvibecode.manager-work-preview.v1.json"),
+    "utf8"
+  )
+);
+const verifiedAt = new Date().toISOString();
+registry.registry_version = "cheapvibecode-local-fixture";
+registry.generated_at = verifiedAt;
+for (const entry of registry.entries.filter((entry) => entry.provider_id === "cheapvibecode")) {
+  // Only the isolated fixture copy gets synthetic evidence; production expiry is preserved.
+  entry.source = {
+    kind: "authorized_discovery",
+    verified_at: verifiedAt,
+    valid_until: new Date(Date.now() + 60_000).toISOString(),
+    reference: "local-loopback-fixture"
+  };
+}
+const registryPath = join(temporary, "model-registry.fixture.json");
+writeFileSync(registryPath, JSON.stringify(registry));
 let calls = 0;
 const stages = [];
 let api;
@@ -42,6 +63,9 @@ const provider = createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
   const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  assert.equal(body.model, "gpt-5.5");
+  assert.equal(body.stream, true);
+  assert.ok(Number.isInteger(body.max_tokens) && body.max_tokens > 0 && body.max_tokens <= 1200);
   const system = body.messages?.find((message) => message.role === "system")?.content ?? "";
   const stage = system.includes("short plan in owner language")
     ? "plan"
@@ -97,13 +121,15 @@ try {
       API_PORT: String(apiPort),
       DATABASE_URL: databaseUrl,
       MODEL_PROVIDER: "openai-compatible",
-      MODEL_PROVIDER_ID: "vibecode",
+      MODEL_PROVIDER_ID: "cheapvibecode",
       MODEL_NAME: "gpt-5.5",
       MODEL_BASE_URL: `http://127.0.0.1:${providerPort}/v1`,
       MODEL_API_KEY: credential,
-      MODEL_REGISTRY_PATH: "config/model-registry.vibecode.manager-work-preview.v1.json",
+      MODEL_REGISTRY_PATH: registryPath,
       MODEL_FALLBACK_TO_MOCK: "false",
-      MODEL_MAX_ATTEMPTS_PER_ROUTE: "1"
+      MODEL_MAX_ATTEMPTS_PER_ROUTE: "1",
+      MANAGER_MAX_OUTPUT_TOKENS: "1200",
+      RUNTIME_EMERGENCY_STOP: "false"
     },
     stdio: "ignore"
   });
@@ -129,6 +155,13 @@ try {
     assert(response.ok, `${path} returned HTTP ${response.status}`);
     return response;
   };
+  const runtime = await (await request("/api/v1/model-runtime")).json();
+  assert.equal(runtime.provider, "cheapvibecode");
+  assert.equal(runtime.model, "gpt-5.5");
+  assert.equal(runtime.mode, "openai-compatible");
+  assert.equal(runtime.fallback_to_mock, false);
+  assert.equal(runtime.max_attempts_per_route, 1);
+  assert.equal(runtime.max_output_tokens, 1200);
   const created = await (
     await request("/api/v1/projects", "POST", {
       initial_message: "Создай небольшой документ",
@@ -170,7 +203,7 @@ try {
   const file = await request(base + "/work/" + encodeURIComponent(work.id) + "/files/result.md");
   assert.match(await file.text(), /Локальный потоковый ответ/);
   process.stdout.write(
-    "OpenAI-compatible Manager fixture PASS: production auth, project chat plus 3 streamed work stages, Critic and download; no external request.\n"
+    "CheapVibeCode profile fixture PASS: production auth, project chat plus 3 streamed work stages, Critic and download; output cap 1200; local fixture evidence only; no external request.\n"
   );
 } finally {
   if (api && api.exitCode === null) {
@@ -178,5 +211,8 @@ try {
     await new Promise((resolve) => api.once("exit", resolve));
   }
   await close(provider);
-  rmSync(temporary, { recursive: true, force: true });
+  const cleanupTarget = realpathSync(temporary);
+  assert.equal(dirname(cleanupTarget), temporaryRoot);
+  assert.ok(basename(cleanupTarget).startsWith("cosmora-compatible-smoke-"));
+  rmSync(cleanupTarget, { recursive: true, force: true });
 }

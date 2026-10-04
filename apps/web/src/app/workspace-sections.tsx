@@ -35,6 +35,62 @@ export const STUDIO_ITEMS = TOOL_ITEMS.filter((item) =>
   ["images", "video", "sound"].includes(item.id)
 );
 export type UiPreferences = { compact: boolean; largeText: boolean };
+type OwnerSessionView = {
+  status: "active" | "revoked" | "expired";
+  assurance: "local" | "single_factor" | "multi_factor";
+  actor_kind: "owner" | "system" | "agent";
+  expires_at: string;
+  last_seen_at: string;
+  current: boolean;
+};
+type OwnerSessionState =
+  | { phase: "loading" }
+  | { phase: "unavailable" }
+  | { phase: "ready"; current: OwnerSessionView | null; activeCount: number };
+
+const isOwnerSessionView = (value: unknown): value is OwnerSessionView => {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<OwnerSessionView>;
+  return (
+    (candidate.status === "active" ||
+      candidate.status === "revoked" ||
+      candidate.status === "expired") &&
+    (candidate.assurance === "local" ||
+      candidate.assurance === "single_factor" ||
+      candidate.assurance === "multi_factor") &&
+    (candidate.actor_kind === "owner" ||
+      candidate.actor_kind === "system" ||
+      candidate.actor_kind === "agent") &&
+    typeof candidate.expires_at === "string" &&
+    typeof candidate.last_seen_at === "string" &&
+    typeof candidate.current === "boolean"
+  );
+};
+
+const assuranceLabel = (assurance: OwnerSessionView["assurance"]): string => {
+  if (assurance === "multi_factor") return "Многофакторная проверка";
+  if (assurance === "single_factor") return "Подтверждённая сессия";
+  return "Локальная проверка";
+};
+
+const formatSessionDate = (value: string): string => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "время не подтверждено";
+  return parsed.toLocaleString("ru", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+};
+
+const sessionNeedsRotation = (session: OwnerSessionView): boolean => {
+  const expiresAt = new Date(session.expires_at).getTime();
+  if (!Number.isFinite(expiresAt)) return false;
+  return session.status !== "active" || expiresAt - Date.now() <= 48 * 60 * 60 * 1000;
+};
+
 export type WorkspaceProject = {
   id: string;
   title: string;
@@ -1057,6 +1113,49 @@ function Settings({
   onNavigate
 }: Props) {
   const [tab, setTab] = useState("general");
+  const [ownerSessionState, setOwnerSessionState] = useState<OwnerSessionState>({
+    phase: "loading"
+  });
+
+  useEffect(() => {
+    let active = true;
+    const loadOwnerSession = async (): Promise<void> => {
+      try {
+        const response = await fetch("/api/v1/identity/sessions", { cache: "no-store" });
+        if (!response.ok) throw new Error("owner-session-unavailable");
+        const payload = (await response.json()) as { items?: unknown };
+        if (!Array.isArray(payload.items)) throw new Error("owner-session-invalid");
+        if (!payload.items.every(isOwnerSessionView)) throw new Error("owner-session-invalid");
+        const sessions = payload.items;
+        const current =
+          sessions.find((session) => session.current && session.actor_kind === "owner") ?? null;
+        if (active) {
+          setOwnerSessionState({
+            phase: "ready",
+            current,
+            activeCount: sessions.filter(
+              (session) => session.status === "active" && session.actor_kind === "owner"
+            ).length
+          });
+        }
+      } catch {
+        if (active) setOwnerSessionState({ phase: "unavailable" });
+      }
+    };
+
+    void loadOwnerSession();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const currentOwnerSession =
+    ownerSessionState.phase === "ready" ? ownerSessionState.current : null;
+  const ownerSessionHealthy = currentOwnerSession?.status === "active";
+  const ownerSessionExpiryLabel = currentOwnerSession
+    ? formatSessionDate(currentOwnerSession.expires_at)
+    : null;
+
   return (
     <>
       <Header icon="settings" eyebrow="Ваше пространство" title="Настройки">
@@ -1085,10 +1184,58 @@ function Settings({
                 </span>
                 <div>
                   <h3>Владелец</h3>
-                  <p>Локальный профиль</p>
+                  <p>
+                    {ownerSessionState.phase === "loading"
+                      ? "Проверяем текущую сессию…"
+                      : ownerSessionHealthy
+                        ? "Доступ подтверждён сервером"
+                        : "Статус сессии требует внимания"}
+                  </p>
                 </div>
-                <span className={styles.badge}>На этом устройстве</span>
+                <span className={styles.badge}>
+                  {ownerSessionState.phase === "loading"
+                    ? "Проверка"
+                    : ownerSessionHealthy
+                      ? "Активна"
+                      : "Нет подтверждения"}
+                </span>
               </div>
+              <h3>Доступ владельца</h3>
+              <div className={styles.statusBox} data-testid="owner-session-status">
+                <span className={styles.badge}>
+                  {ownerSessionState.phase === "loading"
+                    ? "Проверяем"
+                    : ownerSessionHealthy
+                      ? "Сессия активна"
+                      : "Недоступно"}
+                </span>
+                <strong>
+                  {currentOwnerSession
+                    ? assuranceLabel(currentOwnerSession.assurance)
+                    : ownerSessionState.phase === "loading"
+                      ? "Получаем состояние с сервера"
+                      : "Текущая сессия не подтверждена"}
+                </strong>
+              </div>
+              {ownerSessionState.phase === "ready" && currentOwnerSession ? (
+                <>
+                  <p>
+                    Действует до <strong>{ownerSessionExpiryLabel}</strong>.
+                  </p>
+                  <p>Активных сессий владельца: {ownerSessionState.activeCount}.</p>
+                  {sessionNeedsRotation(currentOwnerSession) && (
+                    <p className={styles.notice} role="status">
+                      Срок действия текущей сессии близок к завершению или сессия уже неактивна.
+                      Обновите доступ до следующего обслуживания.
+                    </p>
+                  )}
+                </>
+              ) : ownerSessionState.phase === "unavailable" ? (
+                <p className={styles.footnote}>
+                  Сервер не подтвердил состояние текущей сессии. Остальные настройки остаются
+                  доступны, но перед обслуживанием или запуском проверьте доступ владельца.
+                </p>
+              ) : null}
               <h3>Интерфейс</h3>
               <label className={styles.settingRow}>
                 <span>
@@ -1116,8 +1263,9 @@ function Settings({
                 {preferencesNotice}
               </p>
               <p className={styles.footnote}>
-                Настройки интерфейса сохраняются в этом браузере. Вход через Google и Telegram,
-                синхронизация профиля и совместные аккаунты пока недоступны.
+                Настройки интерфейса сохраняются в этом браузере. Текущая сессия владельца
+                подтверждается сервером; вход через Google и Telegram, синхронизация профиля и
+                совместные аккаунты пока недоступны.
               </p>
               <button
                 type="button"

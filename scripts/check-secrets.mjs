@@ -1,17 +1,8 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const ignoredDirectories = new Set([
-  ".git",
-  ".next",
-  ".turbo",
-  "coverage",
-  "data",
-  "dist",
-  "node_modules",
-  "repo-files"
-]);
 const textExtensions = new Set([
   ".cjs",
   ".env",
@@ -41,31 +32,68 @@ const patterns = [
   { name: "AWS access key", value: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/ }
 ];
 
-const files = (directory) =>
-  readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) return [];
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) return files(path);
-    if (isDotenvFileName(entry.name) || textExtensions.has(extname(entry.name))) return [path];
-    return [];
-  });
+// Scan tracked files (including force-added ignored files) and new source files.
+// Private, ignored .env files are legitimate runtime inputs, not source artifacts.
+const paths = execFileSync(
+  "git",
+  ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+  {
+    cwd: root,
+    encoding: "utf8"
+  }
+)
+  .split("\0")
+  .filter(Boolean);
+const isSource = (path) => {
+  const name = path.split(/[\\/]/u).at(-1) ?? "";
+  return isDotenvFileName(name) || textExtensions.has(extname(path));
+};
+const files = [...new Set(paths)].filter(isSource);
+const staged = execFileSync(
+  "git",
+  ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"],
+  {
+    cwd: root,
+    encoding: "utf8"
+  }
+)
+  .split("\0")
+  .filter((path) => path && isSource(path));
+const indexSource = (path) => {
+  try {
+    return execFileSync("git", ["show", `:${path}`], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  } catch {
+    throw new Error("Secret scan could not read staged source.");
+  }
+};
 
 const findings = [];
-for (const file of files(root)) {
-  const source = readFileSync(file, "utf8");
-  const relativeFile = relative(root, file);
+const scanSource = (relativeFile, source, suffix = "") => {
   for (const pattern of patterns) {
     if (pattern.value.test(source)) {
-      findings.push(`${relativeFile}: ${pattern.name}`);
+      findings.push(`${relativeFile}${suffix}: ${pattern.name}`);
     }
   }
   if (
     isDotenvFileName(relativeFile.split(/[\\/]/u).at(-1) ?? "") &&
     /^MODEL_API_KEY=(?!\s*$|your-|replace-|example)/m.test(source)
   ) {
-    findings.push(`${relativeFile}: configured model credential`);
+    findings.push(`${relativeFile}${suffix}: configured model credential`);
   }
+};
+for (const path of files) {
+  const file = join(root, path);
+  scanSource(
+    relative(root, file),
+    existsSync(file) ? readFileSync(file, "utf8") : indexSource(path)
+  );
 }
+for (const path of staged) scanSource(path, indexSource(path), " (staged)");
 
 if (findings.length > 0) {
   process.stderr.write(`Potential secrets detected:\n${findings.join("\n")}\n`);

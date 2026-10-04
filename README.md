@@ -65,7 +65,8 @@ downloadable files. The current alpha does not execute arbitrary code or externa
   explicit owner inputs, included in the server authority diff and consumed atomically by Tool
   Runtime.
 - The final Manager system prompt belongs to roadmap Step 7 and must be written with the owner.
-- No production provider or production Secret Manager backend has been selected.
+- The private alpha uses an opt-in CheapVibeCode candidate. A production provider and managed
+  Secret Manager backend remain unselected.
 - The first closed paid beta remains limited to A0–A2; A3–A6 require later security and economic
   gates.
 
@@ -165,54 +166,59 @@ unavailable, the app reports that state instead of displaying potentially stale 
 
 ## Connect a model provider
 
-Keep the API key only in a local `.env` file (never paste it into chat or commit it):
+The current private-alpha profile uses CheapVibeCode. Keep the API key only in a protected,
+ignored environment file (never paste it into chat or commit it). For local development, replace
+the mock provider values in the repository-root `.env` with this profile:
 
 ```dotenv
+NODE_ENV=development
 MODEL_PROVIDER=openai-compatible
-MODEL_PROVIDER_ID=vibecode
-MODEL_REGISTRY_PATH=config/model-registry.vibecode.v1.json
-MODEL_BASE_URL=https://vibecode.moe/v1
+MODEL_PROVIDER_ID=cheapvibecode
+MODEL_REGISTRY_PATH=config/model-registry.cheapvibecode.manager-work-preview.v1.json
+MODEL_BASE_URL=https://ru.cheapvibecode.ru/v1
 MODEL_API_KEY=your-local-secret
 MODEL_NAME=gpt-5.5
 MODEL_FALLBACK_TO_MOCK=false
-MODEL_MAX_ATTEMPTS_PER_ROUTE=2
-MODEL_RETRY_BASE_DELAY_MS=250
-MODEL_RETRY_MAX_DELAY_MS=2000
-MODEL_CIRCUIT_FAILURE_THRESHOLD=3
-MODEL_CIRCUIT_OPEN_MS=30000
-RUNTIME_EMERGENCY_STOP=false
+MODEL_MAX_ATTEMPTS_PER_ROUTE=1
+MANAGER_MAX_OUTPUT_TOKENS=1200
+RUNTIME_EMERGENCY_STOP=true
 ```
 
 The API `demo`, `dev` and `start` commands load this repository-root `.env` directly; the browser
 process does not receive the credential. Repository-relative registry paths resolve from the
-repository root, so the profile above works regardless of the shell working directory. Start the
-console with `pnpm demo`, then verify the live route without sending a paid model request:
+repository root, so the profile above works regardless of the shell working directory. Verify
+the key, configured model and balance using read-only provider requests while execution is stopped:
 
 ```bash
-pnpm manager:preflight
+node --env-file=.env scripts/provider-connection-check.mjs
 ```
 
-At handoff, the only secret-dependent steps are: copy `.env.example` to a local `.env`, fill the
-external-provider block and `MODEL_API_KEY`, start `pnpm demo`, then run the preflight above. Do not
-commit `.env`. With `MODEL_FALLBACK_TO_MOCK=false`, an unavailable live provider fails visibly
-instead of returning a synthetic answer.
+Discovery sends no generation request and does not establish that a model can complete a task.
+The connection workflow uses the same read-only default; its optional eight-token live trial has
+explicit execution guards. Keep the environment and persisted process stops active while funding
+is deferred. After a deliberate live-trial decision, `pnpm manager:preflight` separately checks
+the running local API, route permissions and clear stops without calling a model. It intentionally
+fails while execution remains stopped. With `MODEL_FALLBACK_TO_MOCK=false`, an unavailable live
+provider fails visibly instead of returning a synthetic answer.
 
-The checked-in owner-preview registry also permits `claude-sonnet-5` through the
-`anthropic-compatible` protocol. Its dated provider evidence expires on 2026-10-13 and must be
-reverified rather than silently reused. The default registry remains mock-only, so removing the
-local `.env` returns the repository to its safe local mode.
+The CheapVibeCode candidate allows ordinary/project chat and the Manager, Analyst and Critic work
+stages. It caps the route at 32,000 context and 1,200 output tokens. Its catalog evidence expires
+on 10 October 2026 and must be refreshed before using an expired route. Provider-declared
+streaming support has not yet been exercised with a paid response; JSON conformance, pricing and
+privacy remain unverified. Confidential routing is disabled and no monetary cap is proven.
+Historical VibeCode discovery registries are separate providers and are not the current profile.
 
-The checked-in VibeCode preview entries currently allow ordinary/project chat only. They do not
-allow the `analyst` and `critic` roles or `manager_work_*` tasks, so adding a key alone does not
-enable real Manager work. `pnpm manager:preflight` checks these route permissions before any paid
-request and fails with the missing role/task. Mock Manager work remains available meanwhile.
+After building the packages, `node scripts/manager-compatible-fixture-smoke.mjs` verifies the
+current candidate's route constraints with a local streaming fixture: production authentication,
+project chat, three Manager stages, Critic and download. It uses a temporary database, fixture
+credential and isolated fixture evidence; it neither extends the production registry's expiry
+nor contacts a real provider. Removing the local `.env` restores the default mock configuration.
 
-For a controlled local Manager work trial, `config/model-registry.vibecode.manager-work-preview.v1.json`
-is a separate opt-in candidate. It adds the `manager`, `analyst` and `critic` work stages to the
-existing `vibecode:gpt-5.5` streaming preview route; the ordinary preview and default mock routes
-are unchanged. Select it with `MODEL_REGISTRY_PATH` only for a reviewed, non-confidential task.
-This metadata does not prove that the provider follows the requested JSON format. Pricing and
-privacy terms remain unknown, so it is not a production route or a guaranteed monetary cap.
+The secret scan checks tracked files, new non-ignored source files and staged changes. It allows
+ignored private runtime files and still rejects a credential if that file is force-added to Git.
+Docker also excludes `.env` files from build contexts. See the
+[current launch checkpoint](docs/handoff/COSMORA_LAUNCH_2026-10-03.md) for deployment evidence and
+remaining release gates.
 
 An OpenAI-compatible provider must expose streaming `POST /chat/completions`; an
 Anthropic-compatible provider must expose streaming `POST /messages`. Cosmora does not expose the

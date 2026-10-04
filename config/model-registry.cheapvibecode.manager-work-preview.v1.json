@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "registry_version": "cheapvibecode-manager-work-candidate-2026-10-03",
+  "generated_at": "2026-10-03T07:01:39.000Z",
+  "entries": [
+    {
+      "provider_id": "mock",
+      "model_id": "manager-b0.1",
+      "aliases": ["manager", "test"],
+      "protocol": "mock",
+      "status": "active",
+      "roles": [],
+      "task_types": [],
+      "capabilities": {
+        "streaming": true,
+        "structured_output": false,
+        "tool_calling": false,
+        "vision": false
+      },
+      "context_window_tokens": 100000,
+      "max_output_tokens": 100000,
+      "quality_tier": 1,
+      "latency_tier": 1,
+      "pricing": {
+        "currency": "USD",
+        "input_per_million_tokens": 0,
+        "output_per_million_tokens": 0
+      },
+      "privacy": {
+        "confidential_compatible": true,
+        "training_usage": "none",
+        "retention": "zero"
+      },
+      "source": {
+        "kind": "static",
+        "verified_at": "2026-08-24T00:00:00.000Z",
+        "valid_until": null,
+        "reference": "packages/model-gateway/src/mock-adapter.ts"
+      }
+    },
+    {
+      "provider_id": "cheapvibecode",
+      "model_id": "gpt-5.5",
+      "aliases": ["manager", "gpt-5.5"],
+      "protocol": "openai-compatible",
+      "status": "active",
+      "roles": ["manager", "assistant", "analyst", "critic"],
+      "task_types": [
+        "project_chat",
+        "chat_response",
+        "manager_work_plan",
+        "manager_work_draft",
+        "manager_work_review"
+      ],
+      "capabilities": {
+        "streaming": true,
+        "structured_output": false,
+        "tool_calling": false,
+        "vision": false
+      },
+      "context_window_tokens": 32000,
+      "max_output_tokens": 1200,
+      "quality_tier": 4,
+      "latency_tier": 3,
+      "pricing": null,
+      "privacy": {
+        "confidential_compatible": false,
+        "training_usage": "unknown",
+        "retention": "unknown"
+      },
+      "source": {
+        "kind": "authorized_discovery",
+        "verified_at": "2026-10-03T07:01:39.000Z",
+        "valid_until": "2026-10-10T07:01:39.000Z",
+        "reference": "https://ru.cheapvibecode.ru/v1/models"
+      }
+    }
+  ]
+}

@@ -20,8 +20,11 @@
     "test": "turbo run test",
     "test:e2e": "pnpm --filter @cosmora/web test:e2e",
     "test:deploy": "node --test deploy/alpha/test/*.test.mjs",
+    "test:connection": "node --test scripts/test/provider-connection-check.test.mjs",
+    "test:secrets": "node --test scripts/test/check-secrets.test.mjs",
+    "test:profile": "node scripts/manager-compatible-fixture-smoke.mjs",
     "typecheck": "turbo run typecheck",
-    "check": "pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm build && pnpm test:e2e"
+    "check": "pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm test:connection && pnpm test:secrets && pnpm build && pnpm test:profile && pnpm test:e2e"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
