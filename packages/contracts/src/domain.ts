@@ -1,5 +1,6 @@
 import { Type, type Static } from "typebox";
 import { EntityIdSchema, IsoDateTimeSchema } from "./primitives.js";
+import { CHAT_ATTACHMENT_LIMITS } from "./chat-attachments.js";
 
 export const OnboardingStatusSchema = Type.Union([
   Type.Literal("not_started"),
@@ -159,6 +160,17 @@ export const GeneralChatSummarySchema = Type.Object(
 );
 export type GeneralChatSummary = Static<typeof GeneralChatSummarySchema>;
 
+export const ChatTextAttachmentSchema = Type.Object(
+  {
+    name: Type.String({ minLength: 1, maxLength: 160 }),
+    content: Type.String({ minLength: 1, maxLength: CHAT_ATTACHMENT_LIMITS.charactersPerFile })
+  },
+  { additionalProperties: false }
+);
+const ChatAttachmentsSchema = Type.Array(ChatTextAttachmentSchema, {
+  maxItems: CHAT_ATTACHMENT_LIMITS.files
+});
+
 export const GeneralChatMessageSchema = Type.Object(
   {
     id: EntityIdSchema,
@@ -166,6 +178,7 @@ export const GeneralChatMessageSchema = Type.Object(
     role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
     content_type: Type.Literal("text"),
     content: Type.String(),
+    attachments: Type.Optional(ChatAttachmentsSchema),
     status: MessageStatusSchema,
     run_id: Type.Union([EntityIdSchema, Type.Null()]),
     error_code: Type.Union([Type.String(), Type.Null()]),
@@ -179,11 +192,21 @@ export type GeneralChatMessage = Static<typeof GeneralChatMessageSchema>;
 export const CreateGeneralChatRequestSchema = Type.Object(
   {
     initial_message: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
-    client_message_id: EntityIdSchema
+    client_message_id: EntityIdSchema,
+    attachments: Type.Optional(ChatAttachmentsSchema)
   },
   { additionalProperties: false }
 );
 export type CreateGeneralChatRequest = Static<typeof CreateGeneralChatRequestSchema>;
+
+export const CreateGeneralChatMessageRequestSchema = Type.Object(
+  {
+    content: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
+    client_message_id: EntityIdSchema,
+    attachments: Type.Optional(ChatAttachmentsSchema)
+  },
+  { additionalProperties: false }
+);
 
 export const GeneralChatListResponseSchema = Type.Object(
   { items: Type.Array(GeneralChatSummarySchema) },

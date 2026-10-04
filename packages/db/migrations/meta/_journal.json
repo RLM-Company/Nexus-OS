@@ -141,6 +141,13 @@
       "when": 1790380800000,
       "tag": "0019_manager_work",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1790985600000,
+      "tag": "0020_chat_text_attachments",
+      "breakpoints": true
     }
   ]
 }
