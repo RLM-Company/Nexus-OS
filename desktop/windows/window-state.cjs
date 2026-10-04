@@ -20,7 +20,14 @@ function normalizeWorkArea(value) {
   const y = integer(value.y);
   const width = integer(value.width);
   const height = integer(value.height);
-  if (x === null || y === null || width === null || height === null || width <= 0 || height <= 0)
+  if (
+    x === null ||
+    y === null ||
+    width === null ||
+    height === null ||
+    width <= 0 ||
+    height <= 0
+  )
     return null;
   return { x, y, width, height };
 }
@@ -43,7 +50,10 @@ function centeredBounds(workArea) {
 }
 
 function clampBoundsToWorkArea(bounds, workArea) {
-  const width = Math.min(Math.max(bounds.width, Math.min(MIN_WIDTH, workArea.width)), workArea.width);
+  const width = Math.min(
+    Math.max(bounds.width, Math.min(MIN_WIDTH, workArea.width)),
+    workArea.width
+  );
   const height = Math.min(
     Math.max(bounds.height, Math.min(MIN_HEIGHT, workArea.height)),
     workArea.height
@@ -61,7 +71,9 @@ function clampBoundsToWorkArea(bounds, workArea) {
 }
 
 function sanitizeWindowState(value, workAreas) {
-  const areas = Array.isArray(workAreas) ? workAreas.map(normalizeWorkArea).filter(Boolean) : [];
+  const areas = Array.isArray(workAreas)
+    ? workAreas.map(normalizeWorkArea).filter(Boolean)
+    : [];
   if (areas.length === 0) {
     return {
       schemaVersion: WINDOW_STATE_SCHEMA_VERSION,
