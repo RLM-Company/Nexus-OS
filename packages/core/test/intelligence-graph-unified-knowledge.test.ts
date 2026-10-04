@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(572);
-    expect(graph.records).toHaveLength(572);
-    expect(graph.edges).toHaveLength(1716);
+    expect(graph.nodes).toHaveLength(590);
+    expect(graph.records).toHaveLength(590);
+    expect(graph.edges).toHaveLength(1767);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      572
+      590
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1716
+      1767
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -266,6 +266,81 @@ describe("unified Cosmora Intelligence Graph", () => {
       ].sort()
     );
     expect(reviewedKinds).not.toContain("entity-runtime-checkpoint");
+  });
+
+  it("models the four persistent model-usage attempt states", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const states = graph.nodes
+      .filter((node) => node.node_id.startsWith("usage-attempt-status-"))
+      .map((node) => node.node_id)
+      .sort();
+
+    expect(states).toEqual(
+      [
+        "usage-attempt-status-reserved",
+        "usage-attempt-status-committed",
+        "usage-attempt-status-failed",
+        "usage-attempt-status-cancelled"
+      ].sort()
+    );
+
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    expect(pairs).toContain(
+      "usage-attempt-status-reserved|TRANSITIONS_TO|usage-attempt-status-committed"
+    );
+    expect(pairs).toContain(
+      "usage-attempt-status-reserved|TRANSITIONS_TO|usage-attempt-status-failed"
+    );
+    expect(pairs).toContain(
+      "usage-attempt-status-reserved|TRANSITIONS_TO|usage-attempt-status-cancelled"
+    );
+  });
+
+  it("fails project usage limits closed on tokens, cost and missing evidence", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    const limitsTest = repositoryStructureFileId("packages/db/test/usage-limits.test.ts");
+
+    for (const claimId of [
+      "claim-usage-token-limit-fail-closed",
+      "claim-usage-cost-limit-fail-closed",
+      "claim-usage-missing-evidence-fail-closed"
+    ]) {
+      expect(pairs).toContain(`${claimId}|CONSTRAINS|entity-project-usage-limit`);
+      expect(pairs).toContain(`${claimId}|VERIFIED_BY_TEST|${limitsTest}`);
+    }
+  });
+
+  it("reserves Manager usage before routing and counts retries against its budget", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    const managerTest = repositoryStructureFileId("apps/api/test/manager-work.test.ts");
+
+    expect(pairs).toContain(
+      "entity-model-usage-reservation|PRECEDES|entity-router"
+    );
+    expect(pairs).toContain(
+      "entity-manager-work-budget|RESERVES_THROUGH|entity-model-usage-reservation"
+    );
+    expect(pairs).toContain(
+      `claim-manager-retries-consume-budget|VERIFIED_BY_TEST|${managerTest}`
+    );
+  });
+
+  it("keeps unknown pricing incompatible with cost-limited routing", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    const routerTest = repositoryStructureFileId("packages/model-gateway/test/router.test.ts");
+
+    expect(pairs).toContain(
+      "claim-router-cost-limit-needs-known-pricing|CONSTRAINS|entity-model-route-budget"
+    );
+    expect(pairs).toContain(
+      `claim-router-cost-limit-needs-known-pricing|VERIFIED_BY_TEST|${routerTest}`
+    );
+    expect(pairs).toContain(
+      "claim-router-cost-limit-needs-known-pricing|CONSISTENT_WITH|evaluation-model-vibecode-unknown-pricing"
+    );
   });
 
   it("models Manager recovery without automatic replay", () => {
