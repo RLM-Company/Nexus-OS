@@ -52,6 +52,25 @@ function requireInstallerMetadata(manifest) {
   };
 }
 
+function isSameOriginInstallerDownload(downloadUrl, connectedOrigin) {
+  try {
+    return new URL(downloadUrl).origin === new URL(connectedOrigin).origin;
+  } catch {
+    return false;
+  }
+}
+
+function writeAll(handle, chunk) {
+  let offset = 0;
+  while (offset < chunk.length) {
+    const written = fs.writeSync(handle, chunk, offset, chunk.length - offset);
+    if (!Number.isSafeInteger(written) || written <= 0) {
+      throw new Error("Installer file write did not make progress.");
+    }
+    offset += written;
+  }
+}
+
 function installerFilename(manifest) {
   const metadata = requireInstallerMetadata(manifest);
   return `Cosmora-Setup-${metadata.version}-x64.exe`;
@@ -147,7 +166,7 @@ async function streamVerifiedInstaller({
       }
 
       digest.update(chunk);
-      fs.writeSync(handle, chunk);
+      writeAll(handle, chunk);
     }
 
     fs.closeSync(handle);
@@ -193,6 +212,7 @@ async function streamVerifiedInstaller({
 module.exports = {
   finalizeVerifiedInstaller,
   installerFilename,
+  isSameOriginInstallerDownload,
   requireInstallerMetadata,
   streamVerifiedInstaller,
   validateInstallerResponse
