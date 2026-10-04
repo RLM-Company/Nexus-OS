@@ -133,6 +133,35 @@ test("streams, hashes and finalizes a verified installer", async () => {
   assert.equal(fs.readdirSync(temporaryDirectory).length, 0);
 });
 
+test("reports bounded monotonic download progress", async () => {
+  const bytes = Buffer.from("verified-cosmora-installer-progress");
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cosmora-update-progress-"));
+  const progress = [];
+
+  await streamVerifiedInstaller({
+    response: responseFor(bytes),
+    manifest: manifestFor(bytes),
+    downloadsDirectory: directory,
+    onProgress: (value) => progress.push(value)
+  });
+
+  assert.ok(progress.length >= 2);
+  assert.deepEqual(progress[0], {
+    receivedBytes: 0,
+    totalBytes: bytes.length,
+    fraction: 0
+  });
+  assert.equal(progress.at(-1).receivedBytes, bytes.length);
+  assert.equal(progress.at(-1).totalBytes, bytes.length);
+  assert.equal(progress.at(-1).fraction, 1);
+
+  for (let index = 1; index < progress.length; index += 1) {
+    assert.ok(progress[index].receivedBytes >= progress[index - 1].receivedBytes);
+    assert.ok(progress[index].fraction >= progress[index - 1].fraction);
+    assert.ok(progress[index].fraction >= 0 && progress[index].fraction <= 1);
+  }
+});
+
 test("does not overwrite an existing installer", async () => {
   const bytes = Buffer.from("verified-cosmora-installer");
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cosmora-update-collision-"));
