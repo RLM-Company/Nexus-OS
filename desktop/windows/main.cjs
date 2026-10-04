@@ -66,6 +66,9 @@ let connectionInFlight = false;
 let connectionState = CONNECTION_STATES.DISCONNECTED;
 let lastNetworkOnline = null;
 let updateCheckInFlight = false;
+let updateDownloadController = null;
+let updateDownloadCancelledByUser = false;
+let updateDownloadPercent = -1;
 
 const smokeMode = isSmokeMode(process.argv);
 const ownsSingleInstance = smokeMode ? true : app.requestSingleInstanceLock();
@@ -788,8 +791,47 @@ async function fetchDesktopUpdate(origin) {
   }
 }
 
+function updateDownloadUi(progress) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const fraction =
+    progress && Number.isFinite(progress.fraction)
+      ? Math.max(0, Math.min(1, progress.fraction))
+      : 0;
+  const percent = Math.floor(fraction * 100);
+  mainWindow.setProgressBar(fraction);
+
+  if (percent !== updateDownloadPercent) {
+    updateDownloadPercent = percent;
+    setConnectionTitle("скачивание обновления… " + percent + "%");
+  }
+}
+
+function clearUpdateDownloadUi() {
+  updateDownloadPercent = -1;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setProgressBar(-1);
+    setConnectionTitle(connectionTitleSuffix(connectionState));
+  }
+}
+
+function cancelDesktopUpdateDownload() {
+  if (!updateDownloadController) return;
+  updateDownloadCancelledByUser = true;
+  appendDiagnostic("update_download_cancel_requested");
+  updateDownloadController.abort();
+}
+
 async function downloadDesktopUpdate(manifest, origin) {
+  if (updateDownloadController) {
+    throw new Error("Загрузка обновления уже выполняется.");
+  }
+
   const controller = new AbortController();
+  updateDownloadController = controller;
+  updateDownloadCancelledByUser = false;
+  createMenu();
+  updateDownloadUi({ fraction: 0 });
   const timeout = setTimeout(() => controller.abort(), UPDATE_DOWNLOAD_TIMEOUT_MS);
   const sameOrigin = isSameOriginInstallerDownload(manifest.downloadUrl, origin);
   const credentials =
@@ -812,15 +854,26 @@ async function downloadDesktopUpdate(manifest, origin) {
       response,
       manifest,
       downloadsDirectory: app.getPath("downloads"),
-      temporaryDirectory: app.getPath("temp")
+      temporaryDirectory: app.getPath("temp"),
+      onProgress: updateDownloadUi
     });
   } catch (cause) {
     if (cause && cause.name === "AbortError") {
-      throw new Error("Скачивание обновления превысило лимит времени.");
+      throw new Error(
+        updateDownloadCancelledByUser
+          ? "Скачивание обновления отменено пользователем."
+          : "Скачивание обновления превысило лимит времени."
+      );
     }
     throw cause;
   } finally {
     clearTimeout(timeout);
+    if (updateDownloadController === controller) {
+      updateDownloadController = null;
+      updateDownloadCancelledByUser = false;
+      clearUpdateDownloadUi();
+      createMenu();
+    }
   }
 }
 
@@ -944,8 +997,6 @@ async function checkForDesktopUpdate() {
         availableVersion: manifest.version,
         expectedBytes: manifest.sizeBytes
       });
-      setConnectionTitle("скачивание обновления…");
-
       try {
         const downloaded = await downloadDesktopUpdate(manifest, origin);
         appendDiagnostic("update_download_verified", {
@@ -985,8 +1036,6 @@ async function checkForDesktopUpdate() {
               ? cause.message
               : "Файл не прошёл проверку или загрузка была прервана."
         });
-      } finally {
-        setConnectionTitle(connectionTitleSuffix(connectionState));
       }
       return;
     }
@@ -1020,8 +1069,16 @@ function createMenu() {
         },
         {
           label: "Проверить обновления…",
+          enabled: !updateDownloadController,
           click: () => {
             void checkForDesktopUpdate();
+          }
+        },
+        {
+          label: "Отменить загрузку обновления",
+          enabled: Boolean(updateDownloadController),
+          click: () => {
+            cancelDesktopUpdateDownload();
           }
         },
         {
@@ -1096,6 +1153,10 @@ async function createMainWindow() {
   mainWindow.on("closed", () => {
     stopHeartbeat();
     cancelRecovery();
+    if (updateDownloadController) {
+      updateDownloadController.abort();
+      updateDownloadController = null;
+    }
     mainWindow = null;
   });
 

@@ -142,7 +142,8 @@ async function streamVerifiedInstaller({
   manifest,
   downloadsDirectory,
   temporaryDirectory = downloadsDirectory,
-  existsSync = fs.existsSync
+  existsSync = fs.existsSync,
+  onProgress
 }) {
   const metadata = validateInstallerResponse(response, manifest);
   const filename = installerFilename(manifest);
@@ -156,6 +157,14 @@ async function streamVerifiedInstaller({
     fs.mkdirSync(downloadsDirectory, { recursive: true });
     fs.mkdirSync(temporaryDirectory, { recursive: true });
     handle = fs.openSync(tempPath, "wx", 0o600);
+
+    if (typeof onProgress === "function") {
+      onProgress({
+        receivedBytes: 0,
+        totalBytes: metadata.sizeBytes,
+        fraction: 0
+      });
+    }
 
     while (true) {
       const { done, value } = await reader.read();
@@ -174,6 +183,14 @@ async function streamVerifiedInstaller({
 
       digest.update(chunk);
       writeAll(handle, chunk);
+
+      if (typeof onProgress === "function") {
+        onProgress({
+          receivedBytes: totalBytes,
+          totalBytes: metadata.sizeBytes,
+          fraction: totalBytes / metadata.sizeBytes
+        });
+      }
     }
 
     fs.closeSync(handle);
