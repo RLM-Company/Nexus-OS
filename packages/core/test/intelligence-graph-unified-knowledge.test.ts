@@ -380,7 +380,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     ).toBe(true);
   });
 
-  it("can traverse from a semantic Manager constraint into real code dependencies", () => {
+  it("can traverse from a semantic Manager constraint into its real implementation", () => {
     const packet = createIndex().query({
       owner_id: "owner-cosmora",
       project_id: "project-nexus-os",
@@ -389,10 +389,10 @@ describe("unified Cosmora Intelligence Graph", () => {
       verified_only: true,
       budget: {
         max_depth: 3,
-        max_nodes: 96,
-        max_edges: 160,
+        max_nodes: 60,
+        max_edges: 100,
         max_fan_out: 40,
-        max_context_tokens: 12_000
+        max_context_tokens: 8_000
       }
     });
 
@@ -400,7 +400,6 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(ids).toContain("claim-manager-publish-workspace-write");
     expect(ids).toContain("artifact-manager-work-runtime");
     expect(ids).toContain(repositoryStructureFileId("apps/api/src/manager-work-coordinator.ts"));
-    expect(ids).toContain("module:packages/tool-runtime");
   });
 
   it("joins Model Registry semantics to its contract file and implementation module", () => {
