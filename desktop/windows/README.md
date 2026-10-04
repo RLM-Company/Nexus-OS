@@ -272,7 +272,6 @@ persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
 building the installer.
 
-
 The Windows workflows also cache only the large Electron and electron-builder/NSIS packaging
 binaries under an exact Electron 44.5.1 / electron-builder 26.17.0 cache key. Source code,
 credentials and application artifacts are not part of this cache.
