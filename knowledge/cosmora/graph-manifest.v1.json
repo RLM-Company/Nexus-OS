@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 522,
-    "edges": 1578,
-    "records": 522
+    "nodes": 553,
+    "edges": 1654,
+    "records": 553
   },
   "layers": [
     {
@@ -134,6 +134,13 @@
       "edges": 108,
       "authority": "verified_state_machine_and_recovery_evidence",
       "semantics": "manager_policy_confirmation_step_up_lifecycles"
+    },
+    {
+      "id": "identity_trust",
+      "nodes": 31,
+      "edges": 76,
+      "authority": "verified_identity_auth_step_up_and_api_evidence",
+      "semantics": "actor_session_assurance_provider_audit_step_up"
     }
   ],
   "primary_relation_types": [
@@ -256,7 +263,19 @@
     "EXPIRES_TO",
     "ONE_USE_CONSUMPTION_TO",
     "CONSUMES_TO",
-    "RECOVERY_CONSTRAINED_BY"
+    "RECOVERY_CONSTRAINED_BY",
+    "ALLOWED_KIND_FOR",
+    "ALLOWED_STATUS_FOR",
+    "ASSURANCE_LEVEL_FOR",
+    "PROVIDER_FOR",
+    "VERIFICATION_STATUS_FOR",
+    "AUDIT_EVENT_FOR",
+    "BELONGS_TO_ACTOR",
+    "OWNER_SCOPED_BY",
+    "CASCADE_REVOKES",
+    "FAILS_CLOSED_WITH",
+    "ALLOWED_AT_OWNER_API",
+    "DENIED_AT_OWNER_API"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -285,7 +304,8 @@
     "packages/core/test/fixtures/cosmora-model-intelligence-graph.ts",
     "packages/core/test/fixtures/cosmora-memory-governance-graph.ts",
     "packages/core/test/fixtures/cosmora-authority-capability-graph.ts",
-    "packages/core/test/fixtures/cosmora-execution-recovery-graph.ts"
+    "packages/core/test/fixtures/cosmora-execution-recovery-graph.ts",
+    "packages/core/test/fixtures/cosmora-identity-trust-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
