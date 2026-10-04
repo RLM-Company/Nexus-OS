@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 572 nodes;
-- 1716 typed edges;
-- 572 retrieval records.
+- 590 nodes;
+- 1767 typed edges;
+- 590 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -267,3 +267,24 @@ The layer contains **19 nodes** and **62 relationships** covering:
 
 Every lineage invariant points to its validator and regression test. External-untrusted source trust
 is also tied back to the existing data-only instruction boundary.
+
+
+## Resource & Cost Budget
+
+The graph now represents runtime resource accounting and model-budget enforcement explicitly.
+
+The layer contains **18 nodes** and **51 relationships** covering:
+
+- reserved / committed / failed / cancelled model-usage attempt states;
+- project token and cost limits with optimistic versioning;
+- reservation before model dispatch;
+- Manager Work request caps for model-call count and token budgets;
+- Router request cost ceilings and Registry pricing evidence;
+- actual ModelResponse usage committed back into project accounting;
+- fail-closed token-limit, cost-limit and missing-evidence paths;
+- preservation of unknown committed/reserved cost rather than fabricated values;
+- failed/cancelled reservations retained as upper bounds because failure is not proof of refund;
+- unknown model pricing excluded from cost-limited routing.
+
+Project usage-limit expansion is linked to the existing Step-Up purpose instead of being treated as a
+normal unprivileged settings change.
