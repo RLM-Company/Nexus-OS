@@ -337,7 +337,9 @@ export function ManagerWorkPanel({
             <div>
               <small>Исполнитель</small>
               <strong>
-                {roleLabels[work.request?.worker_role ?? role] ?? work.request?.worker_role ?? role}
+                {work.request?.worker_role
+                  ? (roleLabels[work.request.worker_role] ?? work.request.worker_role)
+                  : "Не указан"}
               </strong>
             </div>
             <div>
@@ -392,7 +394,7 @@ export function ManagerWorkPanel({
                 <li key={e.sequence}>
                   <span className="manager-work-event-copy">
                     <small>
-                      {stageLabels[e.stage ?? work.stage] ?? "Событие"}
+                      {e.stage ? (stageLabels[e.stage] ?? "Событие") : "Событие"}
                       {time ? " · " + time : ""}
                     </small>
                     <span>{e.message}</span>
