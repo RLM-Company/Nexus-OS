@@ -96,7 +96,24 @@ function restoreWindowState(storedState, displays) {
   const workAreas = normalizeWorkAreas(displays);
 
   if (state && isSufficientlyVisible(state.bounds, workAreas)) {
-    return state;
+    const matchingArea = workAreas.find((area) => {
+      const overlap = overlapSize(state.bounds, area);
+      return overlap.width >= MIN_VISIBLE_WIDTH && overlap.height >= MIN_VISIBLE_HEIGHT;
+    });
+    if (
+      matchingArea &&
+      state.bounds.width <= matchingArea.width &&
+      state.bounds.height <= matchingArea.height
+    ) {
+      return state;
+    }
+    if (matchingArea) {
+      return {
+        schemaVersion: WINDOW_STATE_SCHEMA_VERSION,
+        bounds: centeredBounds(state.bounds.width, state.bounds.height, matchingArea),
+        maximized: state.maximized
+      };
+    }
   }
 
   const preferred = state?.bounds || {
