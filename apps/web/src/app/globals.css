@@ -3230,43 +3230,129 @@ textarea:focus-visible {
   align-items: center;
   text-decoration: none;
 }
-.manager-work-files {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.55rem;
-  padding: 0;
-  margin: 0.75rem 0 0;
-  list-style: none;
+.manager-work-results {
+  margin-top: 0.85rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: #fff;
 }
-.manager-work-files a {
+.manager-work-results > header {
   display: flex;
-  min-height: 2.75rem;
+  min-height: 3.4rem;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 0.7rem;
-  color: var(--accent-strong);
-  background: #fff;
-  font-size: 0.75rem;
-  font-weight: 600;
+  gap: 1rem;
+  padding: 0.7rem 0.8rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
 }
-.manager-work-files a:hover {
+.manager-work-results > header > div {
+  display: grid;
+  gap: 0.12rem;
+}
+.manager-work-results > header small,
+.manager-work-results > header > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.manager-work-results > header strong {
+  font-size: 0.8rem;
+}
+.manager-work-result-layout {
+  display: grid;
+  grid-template-columns: minmax(10rem, 13rem) minmax(0, 1fr);
+  min-height: 14rem;
+}
+.manager-work-result-tabs {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  padding: 0.55rem;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+.manager-work-result-tabs button {
+  display: grid;
+  min-width: 0;
+  gap: 0.18rem;
+  padding: 0.58rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 0.58rem;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+}
+.manager-work-result-tabs button[aria-selected="true"] {
   border-color: var(--accent-line);
   background: var(--accent-soft);
 }
-.manager-work-files a > span {
-  min-width: 0;
+.manager-work-result-tabs button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+.manager-work-result-tabs span {
   overflow: hidden;
+  font-size: 0.72rem;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.manager-work-files a > small {
-  flex-shrink: 0;
+.manager-work-result-tabs small {
   color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 500;
+  font-size: 0.64rem;
+}
+.manager-work-result-preview {
+  min-width: 0;
+  background: #fff;
+}
+.manager-work-result-preview-head {
+  display: flex;
+  min-height: 3.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.8rem;
+  border-bottom: 1px solid var(--line);
+}
+.manager-work-result-preview-head > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+.manager-work-result-preview-head strong {
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.manager-work-result-preview-head small {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+.manager-work-result-preview-head a {
+  flex-shrink: 0;
+  padding: 0.42rem 0.6rem;
+  border: 1px solid var(--accent-line);
+  border-radius: 0.55rem;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.manager-work-result-preview pre {
+  max-height: 26rem;
+  padding: 0.9rem;
+  margin: 0;
+  overflow: auto;
+  color: var(--text);
+  background: #fff;
+  font: 0.72rem/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  overflow-wrap: normal;
+  tab-size: 2;
+  white-space: pre;
 }
 
 @media (max-width: 620px) {
@@ -3284,6 +3370,26 @@ textarea:focus-visible {
   }
   .manager-work-phases li {
     min-height: 3.25rem;
+  }
+  .manager-work-results > header,
+  .manager-work-result-preview-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .manager-work-result-layout {
+    grid-template-columns: 1fr;
+  }
+  .manager-work-result-tabs {
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .manager-work-result-preview-head a {
+    width: 100%;
+    text-align: center;
+  }
+  .manager-work-result-preview pre {
+    max-height: 20rem;
   }
   .manager-work-panel .manager-work-submit,
   .manager-work-panel .manager-work-action,
