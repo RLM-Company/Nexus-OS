@@ -24,10 +24,7 @@ const {
   transitionConnectionState
 } = require("./connection-state.cjs");
 const { serializeSupportBundle } = require("./support-bundle.cjs");
-const {
-  devicePermissionDecision,
-  permissionDecision
-} = require("./permission-policy.cjs");
+const { devicePermissionDecision, permissionDecision } = require("./permission-policy.cjs");
 const {
   MIN_HEIGHT,
   MIN_WIDTH,
@@ -381,28 +378,26 @@ function installPermissionPolicy(browserSession) {
     }).allowed;
   });
 
-  browserSession.setPermissionRequestHandler(
-    (_webContents, permission, callback, details) => {
-      const requestingOrigin =
-        typeof details?.requestingUrl === "string" && details.requestingUrl
-          ? details.requestingUrl
-          : typeof details?.securityOrigin === "string"
-            ? details.securityOrigin
-            : "";
+  browserSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    const requestingOrigin =
+      typeof details?.requestingUrl === "string" && details.requestingUrl
+        ? details.requestingUrl
+        : typeof details?.securityOrigin === "string"
+          ? details.securityOrigin
+          : "";
 
-      const decision = permissionDecision({
-        permission,
-        requestingOrigin,
-        activeOrigin: currentOrigin
-      });
+    const decision = permissionDecision({
+      permission,
+      requestingOrigin,
+      activeOrigin: currentOrigin
+    });
 
-      appendDiagnostic("permission_request_denied", {
-        permission: String(permission || "unknown").slice(0, 80),
-        reason: decision.reason
-      });
-      callback(false);
-    }
-  );
+    appendDiagnostic("permission_request_denied", {
+      permission: String(permission || "unknown").slice(0, 80),
+      reason: decision.reason
+    });
+    callback(false);
+  });
 
   browserSession.setDevicePermissionHandler((details) => {
     return devicePermissionDecision({
