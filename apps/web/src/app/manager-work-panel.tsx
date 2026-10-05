@@ -250,7 +250,7 @@ export function ManagerWorkPanel({
             </div>
             <div>
               <dt>Модель</dt>
-              <dd>{runtime?.mode === "mock" ? "Mock" : runtime?.model ?? "Проверяется…"}</dd>
+              <dd>{runtime?.mode === "mock" ? "Mock" : (runtime?.model ?? "Проверяется…")}</dd>
             </div>
             <div>
               <dt>Запросы</dt>
@@ -277,7 +277,11 @@ export function ManagerWorkPanel({
             })}
           </ol>
           {latestEvent && (
-            <div className="manager-work-now" aria-live="polite" data-testid="manager-current-activity">
+            <div
+              className="manager-work-now"
+              aria-live="polite"
+              data-testid="manager-current-activity"
+            >
               <small>Сейчас</small>
               <strong>{latestEvent.message}</strong>
               <span>
