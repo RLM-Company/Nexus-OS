@@ -139,7 +139,6 @@ function saveMainWindowState() {
   }
 }
 
-
 function credentialStore() {
   return new CredentialStore({
     filePath: credentialPath(),
@@ -362,13 +361,12 @@ async function hashFileSha256(filePath) {
 }
 
 function installPermissionPolicy(browserSession) {
-  browserSession.setPermissionCheckHandler(
-    (_webContents, permission, requestingOrigin) =>
-      isDesktopPermissionAllowed({
-        permission,
-        requestingUrl: requestingOrigin,
-        connectedOrigin: currentOrigin
-      })
+  browserSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) =>
+    isDesktopPermissionAllowed({
+      permission,
+      requestingUrl: requestingOrigin,
+      connectedOrigin: currentOrigin
+    })
   );
 
   browserSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
@@ -1233,10 +1231,7 @@ async function createMainWindow() {
     sessionPoliciesInstalled = true;
   }
 
-  const restoredWindowState = restoreWindowState(
-    readSavedWindowState(),
-    screen.getAllDisplays()
-  );
+  const restoredWindowState = restoreWindowState(readSavedWindowState(), screen.getAllDisplays());
 
   mainWindow = new BrowserWindow({
     ...restoredWindowState.bounds,
