@@ -83,6 +83,7 @@ let connectionInFlight = false;
 let connectionState = CONNECTION_STATES.DISCONNECTED;
 let lastNetworkOnline = null;
 let updateCheckInFlight = false;
+let sessionPoliciesInstalled = false;
 
 const smokeMode = isSmokeMode(process.argv);
 const ownsSingleInstance = smokeMode ? true : app.requestSingleInstanceLock();
@@ -1226,8 +1227,11 @@ function createMenu() {
 
 async function createMainWindow() {
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
-  installDownloadPolicy(browserSession);
-  installPermissionPolicy(browserSession);
+  if (!sessionPoliciesInstalled) {
+    installDownloadPolicy(browserSession);
+    installPermissionPolicy(browserSession);
+    sessionPoliciesInstalled = true;
+  }
 
   const restoredWindowState = restoreWindowState(
     readSavedWindowState(),
