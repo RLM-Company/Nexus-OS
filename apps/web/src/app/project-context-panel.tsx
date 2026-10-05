@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   isValidChatAttachments,
   attachmentContextSize,
+  sameChatAttachments,
   type ChatTextAttachment
 } from "@cosmora/contracts/chat-attachments";
 import {
@@ -20,63 +21,110 @@ type Materials = {
   attachments: ChatTextAttachment[];
   updated_at: string;
 };
-export function ProjectContextPanel({
-  projectId,
-  projectTitle,
-  messageCount
-}: {
+type Props = {
   projectId: string;
   projectTitle: string;
   messageCount: number;
-}) {
+};
+const uncertainSaveMessage =
+  "Не удалось подтвердить сохранение. Черновик оставлен в этом окне. Загрузите сохранённую версию, чтобы проверить результат перед новой записью.";
+
+function parseMaterials(value: unknown, projectId: string): Materials {
+  if (!value || typeof value !== "object") throw new Error("Invalid materials");
+  const candidate = value as Materials;
+  if (
+    candidate.project_id !== projectId ||
+    !Number.isSafeInteger(candidate.version) ||
+    candidate.version < 0 ||
+    typeof candidate.instructions !== "string" ||
+    candidate.instructions.length > 4000 ||
+    typeof candidate.updated_at !== "string" ||
+    !Number.isFinite(Date.parse(candidate.updated_at)) ||
+    !Array.isArray(candidate.attachments) ||
+    !candidate.attachments.every(
+      (file) =>
+        file &&
+        typeof file === "object" &&
+        typeof file.name === "string" &&
+        typeof file.content === "string" &&
+        Object.keys(file).every((key) => ["name", "content", "source_type"].includes(key))
+    ) ||
+    !isValidChatAttachments(candidate.attachments) ||
+    new TextEncoder().encode(candidate.instructions).length +
+      candidate.attachments.reduce((sum, file) => sum + attachmentContextSize(file), 0) >
+      24000
+  ) {
+    throw new Error("Invalid materials");
+  }
+  return candidate;
+}
+
+export function ProjectContextPanel(props: Props) {
+  return <ProjectMaterialsEditor key={props.projectId} {...props} />;
+}
+
+function ProjectMaterialsEditor({ projectId, projectTitle, messageCount }: Props) {
   const [saved, setSaved] = useState<Materials | null>(null);
   const [instructions, setInstructions] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmReload, setConfirmReload] = useState(false);
+  const [needsRefresh, setNeedsRefresh] = useState(false);
   const files = useChatAttachments(`project-materials:${projectId}`);
-  const active = useRef(projectId);
   const operation = useRef(0);
-  active.current = projectId;
+  const request = useRef<AbortController | null>(null);
+  const dirty =
+    saved !== null &&
+    (saved.instructions !== instructions || !sameChatAttachments(saved.attachments, files.files));
   const load = async () => {
+    if (request.current) return;
+    const controller = new AbortController();
+    request.current = controller;
     const id = ++operation.current;
     setPending(true);
-    setSaved(null);
+    setConfirmReload(false);
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/materials`);
-      if (!response.ok) throw new Error("Не удалось загрузить материалы проекта.");
-      const value = (await response.json()) as Materials;
-      if (
-        value.project_id !== projectId ||
-        typeof value.instructions !== "string" ||
-        !Array.isArray(value.attachments) ||
-        !Number.isInteger(value.version) ||
-        !isValidChatAttachments(value.attachments)
-      ) {
-        throw new Error("Сервер вернул неверные материалы проекта.");
-      }
-      if (active.current !== projectId || id !== operation.current) return;
+      const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/materials`, {
+        cache: "no-store",
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6_000)])
+      });
+      if (!response.ok) throw new Error("Materials unavailable");
+      const value = parseMaterials(await response.json(), projectId);
+      if (controller.signal.aborted || id !== operation.current) return;
       setSaved(value);
       setInstructions(value.instructions);
       files.replace(value.attachments);
-    } catch (cause) {
-      if (active.current === projectId && id === operation.current)
-        setError(cause instanceof Error ? cause.message : "Ошибка загрузки");
+      setNeedsRefresh(false);
+    } catch {
+      if (!controller.signal.aborted && id === operation.current)
+        setError(
+          "Не удалось загрузить материалы проекта. Черновик не изменён. Повторите загрузку."
+        );
     } finally {
-      if (active.current === projectId && id === operation.current) setPending(false);
+      if (id === operation.current) setPending(false);
+      if (request.current === controller) request.current = null;
     }
   };
   useEffect(() => {
-    setInstructions("");
     void load();
     return () => {
       operation.current++;
+      request.current?.abort();
+      request.current = null;
     };
   }, [projectId]);
   const save = async () => {
-    if (!saved || saved.project_id !== projectId) return;
+    if (
+      !saved ||
+      saved.project_id !== projectId ||
+      request.current ||
+      files.reading ||
+      needsRefresh
+    )
+      return;
     if (
       files.files.some((file) => !("content" in file)) ||
       !isValidChatAttachments(files.files) ||
@@ -87,31 +135,50 @@ export function ProjectContextPanel({
       setError("Материалы проекта: текст, код, PDF и DOCX. Общий текст с требованиями — до 24 КБ.");
       return;
     }
+    const controller = new AbortController();
+    request.current = controller;
     setPending(true);
     const id = ++operation.current;
+    setConfirmReload(false);
     setError(null);
     setNotice(null);
     try {
       const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/materials`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ version: saved.version, instructions, attachments: files.files })
+        body: JSON.stringify({ version: saved.version, instructions, attachments: files.files }),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6_000)])
       });
-      if (!response.ok)
-        throw new Error(
+      if (controller.signal.aborted || id !== operation.current) return;
+      if (!response.ok) {
+        setNeedsRefresh(response.status === 409 || response.status >= 500);
+        setError(
           response.status === 409
             ? "Материалы изменились в другом окне. Загрузите сохранённую версию перед повторным сохранением."
-            : "Не удалось сохранить материалы. Черновик оставлен в этом окне."
+            : response.status >= 500
+              ? uncertainSaveMessage
+              : "Не удалось сохранить материалы. Черновик оставлен в этом окне."
         );
-      const value = (await response.json()) as Materials;
-      if (active.current !== projectId || id !== operation.current) return;
+        return;
+      }
+      const value = parseMaterials(await response.json(), projectId);
+      if (
+        value.version !== saved.version + 1 ||
+        value.instructions !== instructions ||
+        !sameChatAttachments(value.attachments, files.files)
+      )
+        throw new Error("Unconfirmed materials write");
+      if (controller.signal.aborted || id !== operation.current) return;
       setSaved(value);
       setNotice("Материалы сохранены. Они войдут в новые сообщения и задания проекта.");
-    } catch (cause) {
-      if (active.current === projectId && id === operation.current)
-        setError(cause instanceof Error ? cause.message : "Ошибка сохранения");
+    } catch {
+      if (!controller.signal.aborted && id === operation.current) {
+        setNeedsRefresh(true);
+        setError(uncertainSaveMessage);
+      }
     } finally {
-      if (active.current === projectId && id === operation.current) setPending(false);
+      if (id === operation.current) setPending(false);
+      if (request.current === controller) request.current = null;
     }
   };
   return (
@@ -152,7 +219,10 @@ export function ProjectContextPanel({
         reading={files.reading}
         error={files.error}
         disabled={pending || saved?.project_id !== projectId}
-        onAdd={(selected) => void files.add(selected)}
+        onAdd={(selected) => {
+          setNotice(null);
+          void files.add(selected);
+        }}
         onRemove={(index) => {
           files.replace(files.files.filter((_, position) => position !== index));
           setNotice(null);
@@ -166,15 +236,36 @@ export function ProjectContextPanel({
       <div className={styles.modalActions}>
         <button
           type="button"
-          disabled={pending || files.reading || saved?.project_id !== projectId}
+          disabled={pending || files.reading || saved?.project_id !== projectId || needsRefresh}
           onClick={() => void save()}
         >
           Сохранить материалы
         </button>
-        <button type="button" disabled={pending || files.reading} onClick={() => void load()}>
+        <button
+          type="button"
+          disabled={pending || files.reading}
+          onClick={() => {
+            if (dirty) setConfirmReload(true);
+            else void load();
+          }}
+        >
           Загрузить сохранённую версию
         </button>
       </div>
+      {confirmReload && (
+        <div role="group" aria-label="Замена черновика" className={styles.boundary}>
+          <p>
+            Заменить несохранённые требования и файлы версией с сервера? Черновик изменится только
+            после успешной загрузки.
+          </p>
+          <button type="button" disabled={pending} onClick={() => void load()}>
+            Заменить черновик
+          </button>
+          <button type="button" disabled={pending} onClick={() => setConfirmReload(false)}>
+            Оставить черновик
+          </button>
+        </div>
+      )}
     </section>
   );
 }
