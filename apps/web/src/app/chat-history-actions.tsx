@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { downloadText } from "./chat-response";
 export function ChatHistoryActions({
   id,
@@ -19,28 +19,55 @@ export function ChatHistoryActions({
   const [name, setName] = useState(title);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const request = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      request.current = null;
+    },
+    []
+  );
   const update = async (archived: boolean) => {
+    if (disabled || request.current || (!archived && !name.trim())) return;
+    const controller = new AbortController();
+    request.current = controller;
     setPending(true);
     setError(null);
     try {
       const response = await fetch(`/api/v1/chats/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(archived ? { archived: true } : { title: name.trim() })
+        body: JSON.stringify(archived ? { archived: true } : { title: name.trim() }),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6_000)])
       });
-      if (!response.ok)
-        throw new Error("Не удалось изменить чат. Остановите текущий ответ и повторите.");
-      const value = (await response.json()) as { chat: { title: string } };
+      if (request.current !== controller) return;
+      if (!response.ok) throw new Error("Chat update rejected");
+      const value = (await response.json()) as { chat?: { id?: unknown; title?: unknown } } | null;
+      if (
+        value?.chat?.id !== id ||
+        typeof value.chat.title !== "string" ||
+        !value.chat.title.trim() ||
+        value.chat.title.length > 160 ||
+        (!archived && value.chat.title !== name.trim())
+      )
+        throw new Error("Chat update unconfirmed");
+      if (request.current !== controller) return;
       if (archived) onArchive();
       else onChange(value.chat.title);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Ошибка сохранения");
+    } catch {
+      if (request.current === controller)
+        setError(
+          "Не удалось подтвердить изменение чата. Проверьте список чатов и архив перед повторной попыткой."
+        );
     } finally {
-      setPending(false);
+      if (request.current === controller) {
+        request.current = null;
+        setPending(false);
+      }
     }
   };
   return (
-    <details className="chat-history-actions">
+    <details className="chat-history-actions" aria-busy={pending}>
       <summary>Управление чатом</summary>
       <label>
         Название чата
@@ -77,6 +104,7 @@ export function ChatHistoryActions({
       <button type="button" disabled={disabled || pending} onClick={() => void update(true)}>
         Убрать чат в архив
       </button>
+      {pending && <p role="status">Сохраняю изменения чата…</p>}
       {error && <p role="alert">{error}</p>}
     </details>
   );
