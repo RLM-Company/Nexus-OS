@@ -23,10 +23,7 @@ function validateBounds(value) {
     height: value.height
   };
 
-  if (
-    integerInRange(value.x, -100000, 100000) &&
-    integerInRange(value.y, -100000, 100000)
-  ) {
+  if (integerInRange(value.x, -100000, 100000) && integerInRange(value.y, -100000, 100000)) {
     result.x = value.x;
     result.y = value.y;
   }
