@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(590);
-    expect(graph.records).toHaveLength(590);
-    expect(graph.edges).toHaveLength(1767);
+    expect(graph.nodes).toHaveLength(633);
+    expect(graph.records).toHaveLength(633);
+    expect(graph.edges).toHaveLength(1896);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      590
+      633
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1767
+      1896
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -336,6 +336,90 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "claim-router-cost-limit-needs-known-pricing|CONSISTENT_WITH|evaluation-model-vibecode-unknown-pricing"
+    );
+  });
+
+  it("models exactly the 22 validated server configuration keys", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const keys = graph.nodes
+      .filter((node) => node.node_id.startsWith("config-key-"))
+      .map((node) => node.node_id)
+      .sort();
+
+    expect(keys).toHaveLength(22);
+    expect(keys).toContain("config-key-model-api-key");
+    expect(keys).toContain("config-key-runtime-emergency-stop");
+    expect(keys).toContain("config-key-model-circuit-open-ms");
+    expect(keys).toContain("config-key-manager-max-output-tokens");
+  });
+
+  it("keeps MODEL_API_KEY at the secret resolver boundary without persisting its value", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    const configTest = repositoryStructureFileId("packages/config/test/config.test.ts");
+    const secretsTest = repositoryStructureFileId("packages/config/test/secrets.test.ts");
+
+    expect(pairs).toContain(
+      "entity-environment-secret-resolver|RESOLVES_SECRET_FOR|config-key-model-api-key"
+    );
+    expect(pairs).toContain(
+      `claim-config-secret-values-not-persisted|VERIFIED_BY_TEST|${configTest}`
+    );
+    expect(pairs).toContain(
+      `claim-config-secret-canonical-only|VERIFIED_BY_TEST|${secretsTest}`
+    );
+    expect(
+      graph.records.some(
+        (record) =>
+          record.text.includes("must-not-survive-config-loading") ||
+          record.excerpt.includes("runtime-only-value") ||
+          record.excerpt.includes("test-runtime-secret")
+      )
+    ).toBe(false);
+  });
+
+  it("fails external model configuration closed on missing secret or inactive Registry route", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    const runtimeTest = repositoryStructureFileId("apps/api/test/model-runtime.test.ts");
+
+    for (const key of [
+      "config-key-model-provider",
+      "config-key-model-provider-id",
+      "config-key-model-registry-path",
+      "config-key-model-name"
+    ]) {
+      expect(pairs).toContain(`claim-config-runtime-route-active|REQUIRES_CONFIG_KEY|${key}`);
+    }
+    expect(pairs).toContain(
+      "claim-config-runtime-route-active|REQUIRES|entity-model-registry"
+    );
+    expect(pairs).toContain(
+      `claim-config-runtime-route-active|VERIFIED_BY_TEST|${runtimeTest}`
+    );
+    expect(pairs).toContain(
+      `claim-config-missing-secret-fail-closed|VERIFIED_BY_TEST|${runtimeTest}`
+    );
+  });
+
+  it("grounds reliability, Manager limits and Emergency Stop configuration in regression tests", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
+    const configTest = repositoryStructureFileId("packages/config/test/config.test.ts");
+
+    for (const claimId of [
+      "claim-config-reliability-bounded",
+      "claim-config-retry-order-valid",
+      "claim-config-manager-limits-bounded",
+      "claim-config-emergency-stop-boolean"
+    ]) {
+      expect(pairs).toContain(`${claimId}|VERIFIED_BY_TEST|${configTest}`);
+    }
+    expect(pairs).toContain(
+      "config-key-runtime-emergency-stop|CONFIGURES|claim-manager-emergency-stop"
+    );
+    expect(pairs).toContain(
+      "claim-config-manager-limits-bounded|CONSTRAINS|entity-manager-work"
     );
   });
 
