@@ -2952,6 +2952,108 @@ textarea:focus-visible {
   background: var(--surface);
   box-shadow: none;
 }
+.manager-work-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+.manager-work-overview > div {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.72rem;
+  background: var(--panel);
+}
+.manager-work-overview small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.manager-work-overview strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.manager-work-phases {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.4rem;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  list-style: none;
+}
+.manager-work-phases li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.45rem;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.72rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.72);
+}
+.manager-work-phase-index {
+  display: grid;
+  width: 1.45rem;
+  height: 1.45rem;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.manager-work-phase-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.16rem;
+}
+.manager-work-phase-copy strong {
+  color: inherit;
+  font-size: 0.72rem;
+}
+.manager-work-phase-copy small {
+  color: inherit;
+  font-size: 0.62rem;
+  line-height: 1.35;
+}
+.manager-work-phases li[data-state="done"] {
+  border-color: var(--success-line);
+  color: var(--success);
+  background: var(--success-soft);
+}
+.manager-work-phases li[data-state="done"] .manager-work-phase-index {
+  color: var(--success);
+  background: #fff;
+}
+.manager-work-phases li[data-state="current"] {
+  border-color: var(--accent-line);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+.manager-work-phases li[data-state="current"] .manager-work-phase-index {
+  color: #fff;
+  background: var(--accent-strong);
+}
+.manager-work-phases li[data-state="attention"] {
+  border-color: #d6b86a;
+  color: #7a5d12;
+  background: #fff8df;
+}
+.manager-work-phases li[data-state="failed"] {
+  border-color: var(--danger-line);
+  color: var(--danger);
+  background: var(--danger-soft);
+}
 .manager-work-usage {
   display: inline-flex;
   margin: 0.9rem 0 0;
@@ -3049,7 +3151,7 @@ textarea:focus-visible {
 .manager-work-events li {
   display: grid;
   grid-template-columns: 1.65rem minmax(0, 1fr);
-  align-items: center;
+  align-items: start;
   gap: 0.55rem;
   min-height: 2.45rem;
   padding: 0.45rem 0.6rem;
@@ -3072,6 +3174,20 @@ textarea:focus-visible {
   content: counter(manager-work-step);
   font-size: 0.75rem;
   font-weight: 600;
+}
+.manager-work-event-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.18rem;
+}
+.manager-work-event-copy > small {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+.manager-work-event-copy > span {
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 .manager-work-review.pass {
   border-color: var(--success-line);
@@ -3126,6 +3242,8 @@ textarea:focus-visible {
   display: flex;
   min-height: 2.75rem;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 0.7rem;
@@ -3138,6 +3256,18 @@ textarea:focus-visible {
   border-color: var(--accent-line);
   background: var(--accent-soft);
 }
+.manager-work-files a > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.manager-work-files a > small {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
 
 @media (max-width: 620px) {
   .manager-work-panel {
@@ -3147,6 +3277,13 @@ textarea:focus-visible {
   .manager-work-panel .manager-work-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .manager-work-overview,
+  .manager-work-phases {
+    grid-template-columns: 1fr;
+  }
+  .manager-work-phases li {
+    min-height: 3.25rem;
   }
   .manager-work-panel .manager-work-submit,
   .manager-work-panel .manager-work-action,
