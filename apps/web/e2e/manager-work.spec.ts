@@ -22,6 +22,11 @@ test("creates guarded mock files, survives reload and downloads the result", asy
   await panel.getByLabel("Задача для выполнения").fill("Создай краткий документ с планом запуска");
   await panel.getByRole("button", { name: "Создать файлы", exact: true }).click();
   await expect(panel.getByRole("link", { name: "result.md", exact: true })).toBeVisible();
+  const resultPreview = panel.getByRole("tabpanel", { name: "Предпросмотр result.md" });
+  await expect(resultPreview).toContainText("Живая модель не вызывалась");
+  await expect(panel.getByRole("region", { name: "Результаты задачи Manager" })).toContainText(
+    "Текстовый предпросмотр · без выполнения кода"
+  );
   const phases = panel.getByRole("list", { name: "Этапы задачи Manager" });
   await expect(phases.getByRole("listitem")).toHaveCount(5);
   await expect(phases.locator('[data-state="done"]')).toHaveCount(5);
