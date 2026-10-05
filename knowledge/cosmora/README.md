@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 590 nodes;
-- 1767 typed edges;
-- 590 retrieval records.
+- 633 nodes;
+- 1896 typed edges;
+- 633 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -287,3 +287,22 @@ The layer contains **18 nodes** and **51 relationships** covering:
 
 Project usage-limit expansion is linked to the existing Step-Up purpose instead of being treated as a
 normal unprivileged settings change.
+
+
+## Configuration & Secret Boundary
+
+The graph models the validated server configuration surface without storing secret values.
+
+The layer contains **43 nodes / 129 relationships**:
+
+- all 22 keys accepted by `RawServerConfigSchema`;
+- configuration groups for runtime, API, database, model routing, reliability, safety, Manager limits
+  and test-fixture controls;
+- `ServerConfig` and `EnvironmentSecretResolver` boundaries;
+- fail-closed claims for external provider completeness, canonical provider identity, credential-free
+  provider URLs, bounded retry/circuit settings, Manager limits and Emergency Stop parsing;
+- runtime binding that requires an active Model Registry route and an available secret.
+
+`MODEL_API_KEY` is represented only as a **secret key name**. The raw value is deliberately absent
+from node text, excerpts and graph evidence. Tests connect the rule that config loading exposes only
+`modelApiKeyConfigured`, while the actual credential is resolved at the composition boundary.
