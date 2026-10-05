@@ -129,6 +129,29 @@ export function ManagerWorkPanel({
   const mutationEpoch = useRef(0);
   const pending = useRef<{ goal: string; role: string; id: string } | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
+  const selectionKey = "cosmora:manager-work-selection:" + projectId;
+  const rememberSelection = (item: Work | null) => {
+    const id = item?.id ?? null;
+    setSelectedWorkId(id);
+    setSelectedFileName(null);
+    if (item) setWork(item);
+    try {
+      if (id) window.sessionStorage.setItem(selectionKey, id);
+      else window.sessionStorage.removeItem(selectionKey);
+    } catch {
+      // Selection persistence is a convenience only; work state remains server-backed.
+    }
+  };
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = window.sessionStorage.getItem(selectionKey);
+    } catch {
+      // Fall back to the latest server item when session storage is unavailable.
+    }
+    setSelectedWorkId(stored);
+    setSelectedFileName(null);
+  }, [selectionKey]);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -145,8 +168,14 @@ export function ManagerWorkPanel({
           const latest = selectedWorkId
             ? (list.items.find((item) => item.id === selectedWorkId) ?? list.items[0] ?? null)
             : (list.items[0] ?? null);
-          if (selectedWorkId && !list.items.some((item) => item.id === selectedWorkId))
+          if (selectedWorkId && !list.items.some((item) => item.id === selectedWorkId)) {
             setSelectedWorkId(null);
+            try {
+              window.sessionStorage.removeItem(selectionKey);
+            } catch {
+              // The server list remains authoritative even when storage is unavailable.
+            }
+          }
           setWorks((current) =>
             list.items.map((item) => {
               const previous = current.find((candidate) => candidate.id === item.id);
@@ -173,7 +202,7 @@ export function ManagerWorkPanel({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [base, selectedWorkId]);
+  }, [base, selectedWorkId, selectionKey]);
   const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
     if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
       return;
@@ -205,9 +234,7 @@ export function ManagerWorkPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      setSelectedWorkId(updated.id);
-      setSelectedFileName(null);
-      setWork(updated);
+      rememberSelection(updated);
       setWorks((current) =>
         current.some((item) => item.id === updated.id)
           ? current.map((item) => (item.id === updated.id ? updated : item))
@@ -222,7 +249,8 @@ export function ManagerWorkPanel({
     }
   };
   const active = work && isActive(work);
-  const projectHasActiveWork = Boolean(active) || works.some(isActive);
+  const activeWork = works.find(isActive) ?? null;
+  const projectHasActiveWork = Boolean(active) || Boolean(activeWork);
   const selectedFile =
     work?.draft?.files.find((file) => file.name === selectedFileName) ??
     work?.draft?.files[0] ??
@@ -323,9 +351,7 @@ export function ManagerWorkPanel({
                 key={item.id}
                 aria-pressed={item.id === (selectedWorkId ?? works[0]?.id)}
                 onClick={() => {
-                  setSelectedWorkId(item.id);
-                  setSelectedFileName(null);
-                  setWork(item);
+                  rememberSelection(item);
                   setError("");
                 }}
               >
@@ -337,8 +363,19 @@ export function ManagerWorkPanel({
               </button>
             ))}
           </div>
-          {projectHasActiveWork && !active && (
-            <p>Другая задача ещё выполняется. Откройте её в списке, чтобы увидеть шаги.</p>
+          {projectHasActiveWork && !active && activeWork && (
+            <p className="manager-work-active-hint">
+              Другая задача ещё выполняется.
+              <button
+                type="button"
+                onClick={() => {
+                  rememberSelection(activeWork);
+                  setError("");
+                }}
+              >
+                Открыть активную задачу
+              </button>
+            </p>
           )}
         </div>
       )}
