@@ -16,7 +16,10 @@ function safeOrigin(value) {
 
 function safePermissionName(value) {
   if (typeof value !== "string") return "unknown";
-  const normalized = value.toLowerCase().replace(/[^a-z0-9._-]/g, "_").slice(0, 64);
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "_")
+    .slice(0, 64);
   return normalized || "unknown";
 }
 
