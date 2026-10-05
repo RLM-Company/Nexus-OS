@@ -229,27 +229,29 @@ export function ManagerWorkPanel({
         </span>
       </header>
       {work ? (
-        <div className="manager-work-cockpit" aria-label="Состояние выполнения Manager">
-          <div className="manager-work-metrics">
+        <div
+          className="manager-work-cockpit"
+          role="group"
+          aria-label="Состояние выполнения Manager"
+        >
+          <dl className="manager-work-metrics">
             <div>
-              <small>Этап</small>
-              <strong>{stageLabel(work.stage)}</strong>
+              <dt>Этап</dt>
+              <dd>{stageLabel(work.stage)}</dd>
             </div>
             <div>
-              <small>Модель</small>
-              <strong>
-                {runtime?.mode === "mock" ? "Mock" : runtime?.model ?? "Проверяется…"}
-              </strong>
+              <dt>Модель</dt>
+              <dd>{runtime?.mode === "mock" ? "Mock" : runtime?.model ?? "Проверяется…"}</dd>
             </div>
             <div>
-              <small>Запросы</small>
-              <strong>{work.model_requests} / 3</strong>
+              <dt>Запросы</dt>
+              <dd>{work.model_requests} / 3</dd>
             </div>
             <div>
-              <small>Результат</small>
-              <strong>{outputCount > 0 ? fileCountLabel(outputCount) : "—"}</strong>
+              <dt>Результат</dt>
+              <dd>{outputCount > 0 ? fileCountLabel(outputCount) : "—"}</dd>
             </div>
-          </div>
+          </dl>
           <ol className="manager-work-stage-track" aria-label="Этапы выполнения Manager">
             {workStages.map((stage) => {
               const state = stageState(work, stage.id);
