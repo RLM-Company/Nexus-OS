@@ -105,7 +105,9 @@ test("shows real Manager stages, current activity and budget without extra mutat
 
   const events = panel.getByRole("list", { name: "Шаги выполнения" });
   await expect(events.getByRole("listitem")).toHaveCount(3);
-  await expect(events.locator('li[data-current="true"]')).toContainText("Критик проверяет черновик");
+  await expect(events.locator('li[data-current="true"]')).toContainText(
+    "Критик проверяет черновик"
+  );
   await expect(events.locator('li[data-current="true"]')).toContainText("Проверка");
 
   await page.setViewportSize({ width: 390, height: 844 });
