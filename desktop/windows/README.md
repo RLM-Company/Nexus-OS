@@ -4,11 +4,12 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.10.0** adds an explicit secure install handoff on top of verified update downloads.
-Cosmora still never installs silently: after a verified download the user may choose Install, the
-client re-verifies the Downloads copy, copies it into a random private staging directory, verifies
-the staged copy again, shows a second confirmation with version/size/SHA-256, then performs one final
-size/hash verification immediately before handing that exact EXE to Windows.
+Version **0.11.0** hardens desktop privacy and improves everyday window behavior. The persistent
+Chromium session now has a deny-by-default web permission policy: camera, microphone, geolocation,
+notifications, device APIs, clipboard reads and other privileged requests are rejected unless a
+capability is deliberately introduced. The only current exception is sanitized clipboard write from
+the exact connected Cosmora origin. Window size, position and maximized state are also restored
+across launches with off-screen and monitor-size recovery.
 
 ## Runtime model
 
@@ -246,6 +247,41 @@ credential-bearing URLs and common sensitive query parameters even if they accid
 future diagnostic record. The bundle contains only a boolean indicating whether protected
 credentials exist; it never exports the credential values themselves.
 
+## Desktop permissions
+
+The persistent Cosmora session uses explicit permission handlers rather than Chromium defaults.
+
+Current policy:
+
+- camera/microphone media access: denied;
+- geolocation: denied;
+- notifications: denied;
+- MIDI/SysEx: denied;
+- pointer lock and web-requested fullscreen: denied;
+- clipboard read: denied;
+- external-open permissions: denied;
+- USB/HID/serial/Bluetooth-style device permission grants: denied by the device handler;
+- sanitized clipboard write: allowed only when the requesting URL has the exact same origin as the
+  currently connected Cosmora server.
+
+The local connection screen has no connected origin and therefore receives no web permissions.
+Permission requests are logged only by sanitized permission name and allow/deny result, never by
+secret-bearing request data.
+
+## Window state
+
+Cosmora stores only window geometry and maximized state in `window-state.json` under Electron user
+data. The state is schema-versioned and validated before use. Corrupt, unreasonable or incompatible
+geometry is ignored.
+
+A restored window must retain a meaningful visible area on one of the current displays. If a monitor
+was disconnected or the previous window is larger than the new display work area, Cosmora recenters
+and fits the saved size to the available screen instead of reopening off-screen. The state file is
+written atomically with user-only file mode where supported.
+
+Session-level download and permission handlers are installed once per process, preventing duplicate
+listeners if the application window is closed and recreated.
+
 ## Desktop security boundary
 
 - `contextIsolation: true`
@@ -261,6 +297,8 @@ credentials exist; it never exports the credential values themselves.
 - credentials in navigation URLs are rejected
 - server credentials are never supplied to proxy authentication challenges
 - a single application instance is enforced
+- web permissions are deny-by-default; only exact-origin sanitized clipboard write is currently allowed
+- device permission grants are denied by default
 
 ## Local policy tests
 
@@ -273,7 +311,7 @@ node --test desktop/windows/test/*.test.cjs
 These tests cover origin policy, navigation policy, proxy-auth isolation, external URL handling,
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
 validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, packaged smoke-mode
-policy, upgrade persistence across NSIS installs, verified update download size/hash/origin policy, secure install-handoff revalidation/staging,
+policy, upgrade persistence across NSIS installs, verified update download size/hash/origin policy, secure install-handoff revalidation/staging, deny-by-default permission policy, safe window-state restoration,
 support-bundle redaction, diagnostic URL redaction, download filenames and protected credential
 persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
@@ -296,7 +334,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.10.0-x64.exe`.
+`Cosmora-Setup-0.11.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
