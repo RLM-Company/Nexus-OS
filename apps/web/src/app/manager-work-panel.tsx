@@ -20,6 +20,12 @@ type Work = {
   events: { sequence: number; stage: string; message: string; at: string }[];
 };
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
+
+const workPollDelay = (items: Work[], hidden: boolean): number => {
+  const hasActiveWork = items.some(isActive);
+  if (hidden) return hasActiveWork ? 2500 : 10_000;
+  return hasActiveWork ? 750 : 3000;
+};
 const labels: Record<string, string> = {
   queued: "В очереди",
   running: "Выполняется",
@@ -125,16 +131,30 @@ export function ManagerWorkPanel({
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
   useEffect(() => {
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let refreshInFlight = false;
+    let runtimeRefreshAt = 0;
+
     const refresh = async () => {
+      if (refreshInFlight || controller.signal.aborted) return;
+      refreshInFlight = true;
       const epoch = mutationEpoch.current;
+      let nextDelay = document.hidden ? 10_000 : 3000;
+
       try {
+        const refreshRuntime = Date.now() >= runtimeRefreshAt;
         const [list, model] = await Promise.all([
           json<{ items: Work[] }>(base, { signal: controller.signal }),
-          json<{ mode: string; model: string }>("/api/v1/model-runtime", {
-            signal: controller.signal
-          })
+          refreshRuntime
+            ? json<{ mode: string; model: string }>("/api/v1/model-runtime", {
+                signal: controller.signal
+              }).catch(() => null)
+            : Promise.resolve(null)
         ]);
+
+        if (refreshRuntime) runtimeRefreshAt = Date.now() + (model ? 30_000 : 5000);
+        nextDelay = workPollDelay(list.items, document.hidden);
+
         if (!controller.signal.aborted && epoch === mutationEpoch.current && !lock.current) {
           const latest = selectedWorkId
             ? (list.items.find((item) => item.id === selectedWorkId) ?? list.items[0] ?? null)
@@ -152,20 +172,33 @@ export function ManagerWorkPanel({
               ? previous
               : latest
           );
-          setRuntime(model);
+          if (model) setRuntime(model);
           setHistoryLoaded(true);
         }
       } catch {
         if (!controller.signal.aborted)
           setError("Состояние временно недоступно. Работа сохраняется на сервере.");
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(() => void refresh(), 750);
+        refreshInFlight = false;
+        if (!controller.signal.aborted) {
+          timer = setTimeout(() => void refresh(), nextDelay);
+        }
       }
     };
+
+    const handleVisibility = () => {
+      if (controller.signal.aborted || document.hidden || refreshInFlight) return;
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      void refresh();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
     void refresh();
     return () => {
       controller.abort();
-      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (timer) clearTimeout(timer);
     };
   }, [base, selectedWorkId]);
   const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
