@@ -325,11 +325,10 @@ development machine with
 - Secrets are server-only and never committed.
 - Future packages reference local packages with `workspace:*`.
 
-For the current integration candidate and remaining release gates, see
-[integrated hosted alpha checkpoint](docs/handoff/COSMORA_INTEGRATED_ALPHA_2026-10-01.md).
-It records the deployed revision, complete local verification, draft PR stack and remaining gates.
-Historical checkpoints describe their own
-revisions and must not be treated as the current runtime boundary.
+For the current hosted private-alpha state and remaining release gates, see
+[current private-alpha status](docs/handoff/COSMORA_PRIVATE_ALPHA_STATUS_2026-10-05.md).
+Older launch and integration checkpoints remain historical evidence for their own revisions and
+must not be treated as the current runtime boundary.
 
 See `docs/decisions/ADR-001-technology-stack.md`,
 `docs/decisions/ADR-002-model-gateway.md`, the
