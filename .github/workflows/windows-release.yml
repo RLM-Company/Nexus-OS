@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Exact desktop version to release (for example 0.10.0)"
+        description: "Exact desktop version to release (for example 0.11.0)"
         required: true
         type: string
       release_page_url:
@@ -87,6 +87,8 @@ jobs:
           node --check desktop/windows/update-policy.cjs
           node --check desktop/windows/update-download.cjs
           node --check desktop/windows/install-handoff.cjs
+          node --check desktop/windows/permission-policy.cjs
+          node --check desktop/windows/window-state.cjs
           node --check desktop/windows/release-chain.cjs
           node --check desktop/windows/signing-policy.cjs
           node --check desktop/windows/smoke-mode.cjs
