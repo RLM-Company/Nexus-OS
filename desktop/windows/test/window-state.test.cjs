@@ -56,14 +56,18 @@ test("clamps restored bounds into the selected display work area", () => {
 });
 
 test("centers default bounds and fits them to smaller displays", () => {
-  assert.deepEqual(
-    defaultWindowBounds({ x: 0, y: 0, width: 1920, height: 1080 }),
-    { x: 240, y: 90, width: 1440, height: 900 }
-  );
-  assert.deepEqual(
-    defaultWindowBounds({ x: 100, y: 50, width: 800, height: 600 }),
-    { x: 100, y: 50, width: 800, height: 600 }
-  );
+  assert.deepEqual(defaultWindowBounds({ x: 0, y: 0, width: 1920, height: 1080 }), {
+    x: 240,
+    y: 90,
+    width: 1440,
+    height: 900
+  });
+  assert.deepEqual(defaultWindowBounds({ x: 100, y: 50, width: 800, height: 600 }), {
+    x: 100,
+    y: 50,
+    width: 800,
+    height: 600
+  });
 });
 
 test("writes and reads window state atomically", () => {
