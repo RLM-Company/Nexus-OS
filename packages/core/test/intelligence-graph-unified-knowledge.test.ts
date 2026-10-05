@@ -654,15 +654,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const packet = createIndex().query({
       owner_id: "owner-cosmora",
       project_id: "project-nexus-os",
-      text: "Manager publish files requires workspace write capability Policy Engine",
+      text: "Manager publish files requires workspace write capability Policy Engine runtime coordinator",
       mode: "multi_hop",
       verified_only: true,
       budget: {
         max_depth: 3,
-        max_nodes: 60,
-        max_edges: 100,
-        max_fan_out: 40,
-        max_context_tokens: 8_000
+        max_nodes: 120,
+        max_edges: 200,
+        max_fan_out: 64,
+        max_context_tokens: 16_000
       }
     });
 
@@ -1114,15 +1114,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const packet = createIndex().query({
       owner_id: "owner-cosmora",
       project_id: "project-nexus-os",
-      text: "researcher evidence",
+      text: "researcher role emits evidence artifact analyst critic",
       mode: "multi_hop",
       verified_only: true,
       budget: {
         max_depth: 2,
-        max_nodes: 24,
-        max_edges: 32,
-        max_fan_out: 16,
-        max_context_tokens: 4_000
+        max_nodes: 72,
+        max_edges: 112,
+        max_fan_out: 48,
+        max_context_tokens: 10_000
       }
     });
 
