@@ -3120,6 +3120,27 @@ textarea:focus-visible {
   color: var(--muted);
   font-size: 0.75rem;
 }
+.manager-work-active-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.manager-work-active-hint button {
+  flex-shrink: 0;
+  padding: 0.36rem 0.55rem;
+  border: 1px solid var(--accent-line);
+  border-radius: 0.5rem;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.manager-work-active-hint button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
 .manager-work-plan,
 .manager-work-review,
 .manager-work-error {
@@ -3390,6 +3411,14 @@ textarea:focus-visible {
   }
   .manager-work-result-preview pre {
     max-height: 20rem;
+  }
+  .manager-work-active-hint {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .manager-work-active-hint button {
+    width: 100%;
+    min-height: 2.5rem;
   }
   .manager-work-panel .manager-work-submit,
   .manager-work-panel .manager-work-action,
