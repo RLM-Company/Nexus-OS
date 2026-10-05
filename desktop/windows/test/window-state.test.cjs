@@ -40,6 +40,22 @@ test("recenters a previously valid window that is now off-screen", () => {
   assert.equal(restored.bounds.y, 170);
 });
 
+test("fits a visible but oversized window to the current display", () => {
+  const restored = restoreWindowState(
+    {
+      schemaVersion: 1,
+      bounds: { x: 0, y: 0, width: 3000, height: 1800 },
+      maximized: false
+    },
+    [display]
+  );
+
+  assert.equal(restored.bounds.width, 1920);
+  assert.equal(restored.bounds.height, 1040);
+  assert.equal(restored.bounds.x, 0);
+  assert.equal(restored.bounds.y, 0);
+});
+
 test("uses safe defaults for malformed or incompatible state", () => {
   const restored = restoreWindowState(
     {
