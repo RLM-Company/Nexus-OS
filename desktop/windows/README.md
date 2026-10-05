@@ -307,6 +307,11 @@ The Windows workflows also cache only the large Electron and electron-builder/NS
 binaries under an exact Electron 44.5.1 / electron-builder 26.17.0 cache key. Source code,
 credentials and application artifacts are not part of this cache.
 
+The desktop installer packages only the files listed in `desktop/windows/package.json`; the hosted
+`apps/web` bundle is not embedded in the EXE. Therefore web-only pull requests are validated by the
+monorepo CI but do not trigger the expensive Windows NSIS/upgrade workflow. Desktop source or either
+Windows workflow file still triggers the full Windows lifecycle gate.
+
 ## Build the Windows installer
 
 The repository workflow `Windows desktop` uses `windows-latest`, Node 24,
