@@ -4,20 +4,35 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
+type WorkStage = "plan" | "draft" | "review" | "publish" | "done";
 type Work = {
   id: string;
-  request?: { goal: string };
+  request?: {
+    goal: string;
+    worker_role?: "analyst" | "architect";
+    max_model_requests?: number;
+    max_input_tokens?: number;
+    max_output_tokens?: number;
+  };
   version: number;
   status: string;
-  stage: string;
+  stage: WorkStage;
   pause_requested: boolean;
   model_requests: number;
   error_code: string | null;
   confirmation_id: string | null;
-  plan: { summary: string; instructions: string; complexity: string; needs_critic: boolean } | null;
+  plan: {
+    summary: string;
+    instructions: string;
+    complexity: string;
+    needs_critic: boolean;
+    requires_external_actions?: boolean;
+  } | null;
   draft: { files: { name: string; content: string }[] } | null;
   review: { verdict: string; reason: string } | null;
-  events: { sequence: number; message: string; at: string }[];
+  events: { sequence: number; stage?: WorkStage; message: string; at: string }[];
+  created_at?: string;
+  updated_at?: string;
 };
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
 const labels: Record<string, string> = {
@@ -30,6 +45,39 @@ const labels: Record<string, string> = {
   failed: "Остановлено с ошибкой",
   cancelled: "Отменено"
 };
+const stages: { id: WorkStage; label: string; description: string }[] = [
+  { id: "plan", label: "План", description: "Manager формирует способ выполнения" },
+  { id: "draft", label: "Черновик", description: "Исполнитель создаёт результат" },
+  { id: "review", label: "Проверка", description: "Результат проходит контроль" },
+  { id: "publish", label: "Подготовка", description: "Файлы готовятся к выдаче" },
+  { id: "done", label: "Готово", description: "Результат доступен в проекте" }
+];
+const stageLabels = Object.fromEntries(stages.map((stage) => [stage.id, stage.label])) as Record<
+  WorkStage,
+  string
+>;
+const roleLabels: Record<string, string> = {
+  analyst: "Аналитик",
+  architect: "Архитектор"
+};
+const stageState = (item: Work, stage: WorkStage) => {
+  const currentIndex = stages.findIndex((candidate) => candidate.id === item.stage);
+  const stageIndex = stages.findIndex((candidate) => candidate.id === stage);
+  if (item.status === "completed") return "done";
+  if (stageIndex < currentIndex) return "done";
+  if (stageIndex > currentIndex) return "pending";
+  if (item.status === "failed" || item.status === "cancelled") return "failed";
+  if (item.status === "blocked" || item.status === "awaiting_approval" || item.status === "paused")
+    return "attention";
+  return "current";
+};
+const eventTime = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+};
+
 const errors: Record<string, string> = {
   INVALID_MODEL_OUTPUT:
     "Модель вернула результат неподходящего формата. Автоматического платного повтора не будет.",
@@ -267,7 +315,10 @@ export function ManagerWorkPanel({
                 }}
               >
                 <span>{item.request?.goal ?? `Задача ${index + 1}`}</span>
-                <small>{labels[item.status] ?? "Состояние неизвестно"}</small>
+                <small>
+                  {labels[item.status] ?? "Состояние неизвестно"} ·{" "}
+                  {stageLabels[item.stage] ?? "Этап неизвестен"}
+                </small>
               </button>
             ))}
           </div>
@@ -278,7 +329,47 @@ export function ManagerWorkPanel({
       )}
       {work && (
         <>
-          <p className="manager-work-usage">Обращений к модели: {work.model_requests} / 3</p>
+          <div className="manager-work-overview" aria-label="Состояние выполнения Manager">
+            <div>
+              <small>Текущий этап</small>
+              <strong>{stageLabels[work.stage] ?? "Неизвестно"}</strong>
+            </div>
+            <div>
+              <small>Исполнитель</small>
+              <strong>
+                {roleLabels[work.request?.worker_role ?? role] ?? work.request?.worker_role ?? role}
+              </strong>
+            </div>
+            <div>
+              <small>Запросы модели</small>
+              <strong>
+                {work.model_requests} / {work.request?.max_model_requests ?? 3}
+              </strong>
+            </div>
+          </div>
+          <ol className="manager-work-phases" aria-label="Этапы задачи Manager">
+            {stages.map((stage, index) => {
+              const state = stageState(work, stage.id);
+              return (
+                <li
+                  key={stage.id}
+                  data-state={state}
+                  aria-current={state === "current" || state === "attention" ? "step" : undefined}
+                >
+                  <span className="manager-work-phase-index" aria-hidden="true">
+                    {index + 1}
+                  </span>
+                  <span className="manager-work-phase-copy">
+                    <strong>{stage.label}</strong>
+                    <small>{stage.description}</small>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          <p className="manager-work-usage">
+            Обращений к модели: {work.model_requests} / {work.request?.max_model_requests ?? 3}
+          </p>
           {work.plan && (
             <div className="manager-work-plan">
               <strong>{work.plan.summary}</strong>
@@ -295,9 +386,20 @@ export function ManagerWorkPanel({
             aria-live="polite"
             aria-relevant="additions"
           >
-            {work.events.map((e) => (
-              <li key={e.sequence}>{e.message}</li>
-            ))}
+            {work.events.map((e) => {
+              const time = eventTime(e.at);
+              return (
+                <li key={e.sequence}>
+                  <span className="manager-work-event-copy">
+                    <small>
+                      {stageLabels[e.stage ?? work.stage] ?? "Событие"}
+                      {time ? " · " + time : ""}
+                    </small>
+                    <span>{e.message}</span>
+                  </span>
+                </li>
+              );
+            })}
           </ol>
           {work.review && (
             <p className={`manager-work-review ${work.review.verdict.toLowerCase()}`}>
@@ -368,7 +470,8 @@ export function ManagerWorkPanel({
                       encodeURIComponent(file.name)
                     }
                   >
-                    {file.name}
+                    <span>{file.name}</span>
+                    <small>{file.content.length.toLocaleString("ru-RU")} симв.</small>
                   </a>
                 </li>
               ))}
