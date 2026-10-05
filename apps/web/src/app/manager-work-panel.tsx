@@ -17,7 +17,7 @@ type Work = {
   plan: { summary: string; instructions: string; complexity: string; needs_critic: boolean } | null;
   draft: { files: { name: string; content: string }[] } | null;
   review: { verdict: string; reason: string } | null;
-  events: { sequence: number; message: string; at: string }[];
+  events: { sequence: number; stage: string; message: string; at: string }[];
 };
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
 const labels: Record<string, string> = {
