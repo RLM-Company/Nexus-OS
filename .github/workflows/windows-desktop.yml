@@ -47,6 +47,26 @@ jobs:
             ~/AppData/Local/electron-builder/Cache
           key: windows-electron-packaging-v1-44.5.1-26.17.0
 
+      - name: Determine lifecycle mode
+        id: lifecycle
+        shell: pwsh
+        run: |
+          $currentVersion = node -p "require('./desktop/windows/package.json').version"
+          $mode = "fresh"
+          $baselineVersion = ""
+
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            $baselineVersion = node -p "require('./upgrade-baseline/desktop/windows/package.json').version"
+            if ($baselineVersion -ne $currentVersion) {
+              $mode = "upgrade"
+            }
+          }
+
+          "mode=$mode" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "current_version=$currentVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "baseline_version=$baselineVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Output "Lifecycle mode: $mode (baseline=$baselineVersion current=$currentVersion)"
+
       - name: Validate desktop syntax
         shell: pwsh
         run: |
@@ -87,17 +107,17 @@ jobs:
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
       - name: Build upgrade baseline installer
-        if: github.event_name == 'pull_request'
+        if: steps.lifecycle.outputs.mode == 'upgrade'
         working-directory: upgrade-baseline/desktop/windows
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
       - name: Test fresh installer lifecycle
-        if: github.event_name != 'pull_request'
+        if: steps.lifecycle.outputs.mode == 'fresh'
         shell: pwsh
         run: |
-          $version = node -p "require('./desktop/windows/package.json').version"
+          $version = "${{ steps.lifecycle.outputs.current_version }}"
           $installer = "desktop/windows/dist/Cosmora-Setup-$version-x64.exe"
           ./desktop/windows/ci/nsis-lifecycle.ps1 `
             -Mode Fresh `
@@ -106,15 +126,11 @@ jobs:
             -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-fresh-lifecycle")
 
       - name: Test upgrade lifecycle and persisted user data
-        if: github.event_name == 'pull_request'
+        if: steps.lifecycle.outputs.mode == 'upgrade'
         shell: pwsh
         run: |
-          $currentVersion = node -p "require('./desktop/windows/package.json').version"
-          $baselineVersion = node -p "require('./upgrade-baseline/desktop/windows/package.json').version"
-          if ($baselineVersion -eq $currentVersion) {
-            throw "Pull-request base version must differ from current desktop version for upgrade testing."
-          }
-
+          $currentVersion = "${{ steps.lifecycle.outputs.current_version }}"
+          $baselineVersion = "${{ steps.lifecycle.outputs.baseline_version }}"
           $currentInstaller = "desktop/windows/dist/Cosmora-Setup-$currentVersion-x64.exe"
           $baselineInstaller = "upgrade-baseline/desktop/windows/dist/Cosmora-Setup-$baselineVersion-x64.exe"
 
