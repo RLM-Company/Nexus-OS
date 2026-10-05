@@ -65,7 +65,10 @@ test("creates guarded mock files, survives reload and downloads the result", asy
   );
   await page.reload();
   await expect(history.getByRole("button")).toHaveCount(2);
-  await history.getByRole("button", { name: /краткий документ с планом запуска/ }).click();
+  const rememberedWork = history.getByRole("button", {
+    name: /краткий документ с планом запуска/
+  });
+  await expect(rememberedWork).toHaveAttribute("aria-pressed", "true");
   await expect(panel.getByRole("link", { name: "result.md", exact: true })).toHaveAttribute(
     "href",
     href!
