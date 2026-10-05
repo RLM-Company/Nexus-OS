@@ -91,12 +91,9 @@ test("rejects unreasonable dimensions", () => {
 });
 
 test("creates a normalized persisted state from normal bounds", () => {
-  assert.deepEqual(
-    createStoredWindowState({ x: 10, y: 20, width: 1440, height: 900 }, true),
-    {
-      schemaVersion: 1,
-      bounds: { x: 10, y: 20, width: 1440, height: 900 },
-      maximized: true
-    }
-  );
+  assert.deepEqual(createStoredWindowState({ x: 10, y: 20, width: 1440, height: 900 }, true), {
+    schemaVersion: 1,
+    bounds: { x: 10, y: 20, width: 1440, height: 900 },
+    maximized: true
+  });
 });
