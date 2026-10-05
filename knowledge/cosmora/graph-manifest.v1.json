@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 590,
-    "edges": 1767,
-    "records": 590
+    "nodes": 633,
+    "edges": 1896,
+    "records": 633
   },
   "layers": [
     {
@@ -155,6 +155,13 @@
       "edges": 51,
       "authority": "verified_usage_router_manager_budget_evidence",
       "semantics": "reservation_limits_cost_tokens_unknown_evidence"
+    },
+    {
+      "id": "configuration_secret_boundary",
+      "nodes": 43,
+      "edges": 129,
+      "authority": "verified_config_secret_and_runtime_evidence",
+      "semantics": "validated_keys_secret_resolver_fail_closed_runtime_binding"
     }
   ],
   "primary_relation_types": [
@@ -299,7 +306,12 @@
     "MAY_REVIEW_KIND",
     "EXPANSION_REQUIRES",
     "RESERVES_THROUGH",
-    "CONSISTENT_WITH"
+    "CONSISTENT_WITH",
+    "CONFIG_KEY_OF",
+    "GROUPED_UNDER",
+    "RESOLVES_SECRET_FOR",
+    "REQUIRES_CONFIG_KEY",
+    "CONFIGURES"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -331,7 +343,8 @@
     "packages/core/test/fixtures/cosmora-execution-recovery-graph.ts",
     "packages/core/test/fixtures/cosmora-identity-trust-graph.ts",
     "packages/core/test/fixtures/cosmora-data-lineage-graph.ts",
-    "packages/core/test/fixtures/cosmora-resource-budget-graph.ts"
+    "packages/core/test/fixtures/cosmora-resource-budget-graph.ts",
+    "packages/core/test/fixtures/cosmora-configuration-secret-boundary-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
