@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **590 nodes**;
-- **1767 typed edges**;
+- **633 nodes**;
+- **1896 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -598,3 +598,25 @@ active. Unknown pricing cannot satisfy a cost-limited route. Failed/cancelled at
 reserved upper bounds because provider failure does not prove that billing was refunded.
 
 All budget claims are joined to concrete usage/router/Manager regression tests.
+
+
+## Configuration & Secret Boundary Graph
+
+The unified graph now includes **43 configuration/security nodes** and **129 evidence-grounded
+relationships**.
+
+It materializes:
+
+- exactly 22 validated server configuration keys;
+- model-route and Model Gateway reliability controls;
+- bounded Manager timeout/output settings;
+- the fail-closed process Emergency Stop switch;
+- `MODEL_API_KEY` as a secret-name boundary, not a stored value;
+- canonical external-provider identity and URL rules;
+- complete external-provider configuration requirements;
+- active Model Registry route validation before adapter binding;
+- missing-secret failure before external provider use.
+
+The layer intentionally does not copy any secret value from tests, environment examples or runtime.
+Regression paths terminate in `config.test.ts`, `secrets.test.ts` and
+`model-runtime.test.ts`.
