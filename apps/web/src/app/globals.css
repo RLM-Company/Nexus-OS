@@ -2896,14 +2896,15 @@ textarea:focus-visible {
   border-radius: 0.68rem;
   background: var(--bg);
 }
-.manager-work-metrics small,
+.manager-work-metrics dt,
 .manager-work-now small,
 .manager-work-now span {
   color: var(--muted);
   font-size: 0.7rem;
 }
-.manager-work-metrics strong {
+.manager-work-metrics dd {
   overflow: hidden;
+  margin: 0;
   color: var(--text);
   font-size: 0.78rem;
   font-weight: 650;
