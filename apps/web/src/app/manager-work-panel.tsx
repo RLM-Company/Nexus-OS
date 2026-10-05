@@ -119,6 +119,7 @@ export function ManagerWorkPanel({
   const [work, setWork] = useState<Work | null>(null);
   const [works, setWorks] = useState<Work[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [runtime, setRuntime] = useState<{ mode: string; model: string } | null>(null);
   const executionGate = useExecutionGate(projectId);
@@ -205,6 +206,7 @@ export function ManagerWorkPanel({
         body: JSON.stringify(body)
       });
       setSelectedWorkId(updated.id);
+      setSelectedFileName(null);
       setWork(updated);
       setWorks((current) =>
         current.some((item) => item.id === updated.id)
@@ -221,6 +223,18 @@ export function ManagerWorkPanel({
   };
   const active = work && isActive(work);
   const projectHasActiveWork = Boolean(active) || works.some(isActive);
+  const selectedFile =
+    work?.draft?.files.find((file) => file.name === selectedFileName) ??
+    work?.draft?.files[0] ??
+    null;
+  const selectedFileHref =
+    work && selectedFile
+      ? base +
+        "/" +
+        encodeURIComponent(work.id) +
+        "/files/" +
+        encodeURIComponent(selectedFile.name)
+      : null;
   return (
     <section className="manager-demo manager-work-panel" aria-label="Выполнение задачи Manager">
       <header className="manager-work-header">
@@ -310,6 +324,7 @@ export function ManagerWorkPanel({
                 aria-pressed={item.id === (selectedWorkId ?? works[0]?.id)}
                 onClick={() => {
                   setSelectedWorkId(item.id);
+                  setSelectedFileName(null);
                   setWork(item);
                   setError("");
                 }}
@@ -458,27 +473,60 @@ export function ManagerWorkPanel({
               Разрешения проекта
             </Link>
           )}
-          {work.status === "completed" && (
-            <ul className="manager-work-files" aria-label="Готовые файлы">
-              {work.draft?.files.map((file) => (
-                <li key={file.name}>
-                  <a
-                    download
-                    href={
-                      base +
-                      "/" +
-                      encodeURIComponent(work.id) +
-                      "/files/" +
-                      encodeURIComponent(file.name)
-                    }
+          {work.status === "completed" && work.draft?.files.length ? (
+            <section className="manager-work-results" aria-label="Результаты задачи Manager">
+              <header>
+                <div>
+                  <small>Результат</small>
+                  <strong>
+                    {work.draft.files.length}{" "}
+                    {work.draft.files.length === 1 ? "файл" : "файла"}
+                  </strong>
+                </div>
+                <span>Текстовый предпросмотр · без выполнения кода</span>
+              </header>
+              <div className="manager-work-result-layout">
+                <div
+                  className="manager-work-result-tabs"
+                  role="tablist"
+                  aria-label="Файлы результата"
+                >
+                  {work.draft.files.map((file) => (
+                    <button
+                      type="button"
+                      role="tab"
+                      key={file.name}
+                      aria-selected={file.name === selectedFile?.name}
+                      onClick={() => setSelectedFileName(file.name)}
+                    >
+                      <span>{file.name}</span>
+                      <small>{file.content.length.toLocaleString("ru-RU")} симв.</small>
+                    </button>
+                  ))}
+                </div>
+                {selectedFile && selectedFileHref && (
+                  <div
+                    className="manager-work-result-preview"
+                    role="tabpanel"
+                    aria-label={"Предпросмотр " + selectedFile.name}
                   >
-                    <span>{file.name}</span>
-                    <small>{file.content.length.toLocaleString("ru-RU")} симв.</small>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
+                    <div className="manager-work-result-preview-head">
+                      <div>
+                        <strong>{selectedFile.name}</strong>
+                        <small>
+                          {selectedFile.content.length.toLocaleString("ru-RU")} символов
+                        </small>
+                      </div>
+                      <a download href={selectedFileHref}>
+                        {selectedFile.name}
+                      </a>
+                    </div>
+                    <pre>{selectedFile.content}</pre>
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
         </>
       )}
     </section>
