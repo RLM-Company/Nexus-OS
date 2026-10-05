@@ -4,11 +4,11 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 It deliberately reuses the current API, authentication, project storage, Manager runtime and result
 download endpoints instead of duplicating backend logic inside the desktop package.
 
-Version **0.10.0** adds an explicit secure install handoff on top of verified update downloads.
-Cosmora still never installs silently: after a verified download the user may choose Install, the
-client re-verifies the Downloads copy, copies it into a random private staging directory, verifies
-the staged copy again, shows a second confirmation with version/size/SHA-256, then performs one final
-size/hash verification immediately before handing that exact EXE to Windows.
+Version **0.11.0** adds desktop permission hardening and persistent window-state UX. The embedded
+Cosmora session now installs explicit permission request/check handlers and denies web/device
+permissions by default until a product feature intentionally enables a specific capability. Window
+position, normal bounds and maximized state persist between launches and are clamped into an
+available display work area when monitor geometry changes.
 
 ## Runtime model
 
@@ -246,6 +246,28 @@ credential-bearing URLs and common sensitive query parameters even if they accid
 future diagnostic record. The bundle contains only a boolean indicating whether protected
 credentials exist; it never exports the credential values themselves.
 
+## Window state
+
+Cosmora stores a small versioned `window-state.json` under Electron user data. It contains only the
+normal window bounds and maximized flag. On startup, the saved rectangle is matched to an available
+display and clamped into that display's work area, preventing stale multi-monitor coordinates from
+restoring the window off-screen.
+
+Move, resize, maximize and unmaximize events are debounced before persistence; close performs a final
+synchronous save. The window-state file contains no server, credential, chat or project data.
+
+## Web permission policy
+
+The persistent `persist:cosmora` Chromium session installs both Electron permission check and
+permission request handlers. The policy is fail-closed: browser permissions are denied by default,
+including media/camera/microphone, geolocation, notifications, HID, Serial, USB, MIDI, sensors,
+local-font access, idle detection, wake locks, window management and external-app permission
+requests. Persisted device permission checks are denied as well.
+
+Hardware device selection events for HID, Serial and USB are cancelled. If Cosmora later gains a
+feature that genuinely needs one of these capabilities, it must be added as an explicit
+origin-scoped policy rather than inheriting Electron defaults.
+
 ## Desktop security boundary
 
 - `contextIsolation: true`
@@ -261,6 +283,7 @@ credentials exist; it never exports the credential values themselves.
 - credentials in navigation URLs are rejected
 - server credentials are never supplied to proxy authentication challenges
 - a single application instance is enforced
+- Chromium web/device permissions are explicit default-deny
 
 ## Local policy tests
 
@@ -274,6 +297,7 @@ These tests cover origin policy, navigation policy, proxy-auth isolation, extern
 connection-state transitions, lifecycle recovery policy, reconnect backoff, update version/manifest
 validation, release metadata/integrity verification, signer pinning/EKU/timestamp policy, packaged smoke-mode
 policy, upgrade persistence across NSIS installs, verified update download size/hash/origin policy, secure install-handoff revalidation/staging,
+default-deny web/device permissions, safe multi-monitor window-state restore,
 support-bundle redaction, diagnostic URL redaction, download filenames and protected credential
 persistence. The
 Windows workflow also runs Node syntax checks against every packaged JavaScript entry point before
@@ -296,7 +320,7 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
 The installer is emitted under `desktop/windows/dist/` as
-`Cosmora-Setup-0.10.0-x64.exe`.
+`Cosmora-Setup-0.11.0-x64.exe`.
 
 The alpha remains unsigned, so Windows SmartScreen may display an unknown-publisher warning.
 
