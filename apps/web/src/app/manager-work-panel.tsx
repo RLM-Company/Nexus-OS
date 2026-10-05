@@ -113,6 +113,7 @@ export function ManagerWorkPanel({
   const [work, setWork] = useState<Work | null>(null);
   const [works, setWorks] = useState<Work[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
+  const [previewFileName, setPreviewFileName] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [runtime, setRuntime] = useState<{ mode: string; model: string } | null>(null);
   const executionGate = useExecutionGate(projectId);
@@ -216,7 +217,15 @@ export function ManagerWorkPanel({
   const active = work && isActive(work);
   const projectHasActiveWork = Boolean(active) || works.some(isActive);
   const latestEvent = work?.events[work.events.length - 1] ?? null;
-  const outputCount = work?.draft?.files.length ?? 0;
+  const outputFiles = work?.draft?.files ?? [];
+  const outputCount = outputFiles.length;
+  const previewFile =
+    outputFiles.find((file) => file.name === previewFileName) ?? outputFiles[0] ?? null;
+  const previewLimit = 12_000;
+  const previewTruncated = Boolean(previewFile && previewFile.content.length > previewLimit);
+  const previewContent = previewFile
+    ? previewFile.content.slice(0, previewLimit) + (previewTruncated ? "\n…" : "")
+    : "";
   return (
     <section className="manager-demo manager-work-panel" aria-label="Выполнение задачи Manager">
       <header className="manager-work-header">
@@ -358,6 +367,7 @@ export function ManagerWorkPanel({
                 onClick={() => {
                   setSelectedWorkId(item.id);
                   setWork(item);
+                  setPreviewFileName(null);
                   setError("");
                 }}
               >
@@ -461,25 +471,62 @@ export function ManagerWorkPanel({
               Разрешения проекта
             </Link>
           )}
-          {work.status === "completed" && (
-            <ul className="manager-work-files" aria-label="Готовые файлы">
-              {work.draft?.files.map((file) => (
-                <li key={file.name}>
-                  <a
-                    download
-                    href={
-                      base +
-                      "/" +
-                      encodeURIComponent(work.id) +
-                      "/files/" +
-                      encodeURIComponent(file.name)
-                    }
-                  >
-                    {file.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
+          {work.status === "completed" && outputFiles.length > 0 && (
+            <section className="manager-work-results" aria-label="Результат Manager">
+              <header className="manager-work-results-header">
+                <div>
+                  <small>Результат</small>
+                  <strong>{fileCountLabel(outputFiles.length)}</strong>
+                </div>
+                <span>Предпросмотр всегда текстовый — код не выполняется.</span>
+              </header>
+              <ul className="manager-work-files" aria-label="Готовые файлы">
+                {outputFiles.map((file) => (
+                  <li key={file.name}>
+                    <button
+                      type="button"
+                      aria-pressed={file.name === previewFile?.name}
+                      aria-label={"Предпросмотр " + file.name}
+                      onClick={() => setPreviewFileName(file.name)}
+                    >
+                      <span>{file.name}</span>
+                      <small>{file.content.length.toLocaleString("ru-RU")} симв.</small>
+                    </button>
+                    <a
+                      download
+                      href={
+                        base +
+                        "/" +
+                        encodeURIComponent(work.id) +
+                        "/files/" +
+                        encodeURIComponent(file.name)
+                      }
+                    >
+                      {file.name}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              {previewFile && (
+                <div
+                  className="manager-work-preview"
+                  role="region"
+                  aria-label={"Предпросмотр файла " + previewFile.name}
+                >
+                  <header>
+                    <code>{previewFile.name}</code>
+                    <span>Текстовый режим</span>
+                  </header>
+                  <pre>{previewContent}</pre>
+                  {previewTruncated && (
+                    <p>
+                      Показаны первые {previewLimit.toLocaleString("ru-RU")} символов. Полный файл
+                      доступен для скачивания.
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
           )}
         </>
       )}
