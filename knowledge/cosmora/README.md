@@ -288,7 +288,6 @@ The layer contains **18 nodes** and **51 relationships** covering:
 Project usage-limit expansion is linked to the existing Step-Up purpose instead of being treated as a
 normal unprivileged settings change.
 
-
 ## Configuration & Secret Boundary
 
 The graph models the validated server configuration surface without storing secret values.

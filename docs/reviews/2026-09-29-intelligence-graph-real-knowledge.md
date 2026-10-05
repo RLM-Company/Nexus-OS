@@ -599,7 +599,6 @@ reserved upper bounds because provider failure does not prove that billing was r
 
 All budget claims are joined to concrete usage/router/Manager regression tests.
 
-
 ## Configuration & Secret Boundary Graph
 
 The unified graph now includes **43 configuration/security nodes** and **129 evidence-grounded

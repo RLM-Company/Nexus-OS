@@ -129,10 +129,7 @@ const claimNodes = [
     "claim-config-provider-url-no-credentials",
     "packages/config/src/index.ts:providerBaseUrl username/password rejection"
   ),
-  claim(
-    "claim-config-reliability-bounded",
-    "packages/config/src/index.ts:boundedInteger"
-  ),
+  claim("claim-config-reliability-bounded", "packages/config/src/index.ts:boundedInteger"),
   claim(
     "claim-config-retry-order-valid",
     "packages/config/src/index.ts:modelRetryMaxDelayMs >= modelRetryBaseDelayMs"
@@ -573,13 +570,7 @@ const edges: IntelligenceGraphEdge[] = [
   })
 ];
 
-const nodes = [
-  ...configKeyNodes,
-  ...groupNodes,
-  serverConfig,
-  secretResolver,
-  ...claimNodes
-];
+const nodes = [...configKeyNodes, ...groupNodes, serverConfig, secretResolver, ...claimNodes];
 
 const records: IntelligenceGraphSearchRecord[] = [
   ...configKeyNodes.map((item) => ({
@@ -597,13 +588,15 @@ const records: IntelligenceGraphSearchRecord[] = [
   {
     node: { id: serverConfig.node_id, version: 1 },
     text: "server configuration validated canonical bounded environment settings",
-    excerpt: "ServerConfig is derived from validated environment keys without retaining raw secret values.",
+    excerpt:
+      "ServerConfig is derived from validated environment keys without retaining raw secret values.",
     estimated_tokens: 18
   },
   {
     node: { id: secretResolver.node_id, version: 1 },
     text: "environment secret resolver model api key composition boundary canonical",
-    excerpt: "MODEL_API_KEY is resolved only at the composition boundary and missing/non-canonical values fail closed.",
+    excerpt:
+      "MODEL_API_KEY is resolved only at the composition boundary and missing/non-canonical values fail closed.",
     estimated_tokens: 18
   },
   ...claimNodes.map((item) => ({

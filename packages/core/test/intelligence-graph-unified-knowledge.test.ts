@@ -365,9 +365,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       `claim-config-secret-values-not-persisted|VERIFIED_BY_TEST|${configTest}`
     );
-    expect(pairs).toContain(
-      `claim-config-secret-canonical-only|VERIFIED_BY_TEST|${secretsTest}`
-    );
+    expect(pairs).toContain(`claim-config-secret-canonical-only|VERIFIED_BY_TEST|${secretsTest}`);
     expect(
       graph.records.some(
         (record) =>
@@ -391,12 +389,8 @@ describe("unified Cosmora Intelligence Graph", () => {
     ]) {
       expect(pairs).toContain(`claim-config-runtime-route-active|REQUIRES_CONFIG_KEY|${key}`);
     }
-    expect(pairs).toContain(
-      "claim-config-runtime-route-active|REQUIRES|entity-model-registry"
-    );
-    expect(pairs).toContain(
-      `claim-config-runtime-route-active|VERIFIED_BY_TEST|${runtimeTest}`
-    );
+    expect(pairs).toContain("claim-config-runtime-route-active|REQUIRES|entity-model-registry");
+    expect(pairs).toContain(`claim-config-runtime-route-active|VERIFIED_BY_TEST|${runtimeTest}`);
     expect(pairs).toContain(
       `claim-config-missing-secret-fail-closed|VERIFIED_BY_TEST|${runtimeTest}`
     );
@@ -418,9 +412,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       "config-key-runtime-emergency-stop|CONFIGURES|claim-manager-emergency-stop"
     );
-    expect(pairs).toContain(
-      "claim-config-manager-limits-bounded|CONSTRAINS|entity-manager-work"
-    );
+    expect(pairs).toContain("claim-config-manager-limits-bounded|CONSTRAINS|entity-manager-work");
   });
 
   it("models Manager recovery without automatic replay", () => {
