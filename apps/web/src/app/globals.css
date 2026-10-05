@@ -2873,6 +2873,109 @@ textarea:focus-visible {
   color: var(--danger);
   background: var(--danger-soft);
 }
+.manager-work-cockpit {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.82rem;
+  background: var(--panel);
+}
+.manager-work-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.manager-work-metrics > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+  padding: 0.6rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 0.68rem;
+  background: var(--bg);
+}
+.manager-work-metrics dt,
+.manager-work-now small,
+.manager-work-now span {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+.manager-work-metrics dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.manager-work-stage-track {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.manager-work-stage-track li {
+  display: grid;
+  min-width: 0;
+  justify-items: center;
+  gap: 0.32rem;
+  color: var(--muted);
+  text-align: center;
+}
+.manager-work-stage-track li > span {
+  width: 0.72rem;
+  height: 0.72rem;
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--bg);
+}
+.manager-work-stage-track li small {
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.manager-work-stage-track li[data-state="complete"] > span {
+  border-color: var(--success);
+  background: var(--success);
+}
+.manager-work-stage-track li[data-state="complete"] {
+  color: var(--text);
+}
+.manager-work-stage-track li[data-state="current"] > span {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.manager-work-stage-track li[data-state="current"] {
+  color: var(--accent-strong);
+}
+.manager-work-stage-track li[data-state="interrupted"] > span {
+  border-color: var(--danger);
+  background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+.manager-work-stage-track li[data-state="interrupted"] {
+  color: var(--danger);
+}
+.manager-work-now {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.65rem 0.72rem;
+  border-left: 3px solid var(--accent-strong);
+  border-radius: 0.55rem;
+  background: var(--bg);
+}
+.manager-work-now strong {
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
 .manager-work-panel .manager-work-runtime {
   margin-top: 0.9rem;
   padding: 0.65rem 0.75rem;
@@ -3043,25 +3146,27 @@ textarea:focus-visible {
   gap: 0.45rem;
   padding: 0;
   margin: 0.7rem 0 0;
-  counter-reset: manager-work-step;
   list-style: none;
 }
 .manager-work-events li {
   display: grid;
-  grid-template-columns: 1.65rem minmax(0, 1fr);
-  align-items: center;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  align-items: start;
   gap: 0.55rem;
-  min-height: 2.45rem;
-  padding: 0.45rem 0.6rem;
+  min-height: 2.6rem;
+  padding: 0.5rem 0.6rem;
   border: 1px solid var(--line);
   border-radius: 0.7rem;
   color: var(--text);
   background: rgba(255, 255, 255, 0.8);
   font-size: 0.75rem;
   line-height: 1.45;
-  counter-increment: manager-work-step;
 }
-.manager-work-events li::before {
+.manager-work-events li[data-current="true"] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.manager-work-event-index {
   display: grid;
   width: 1.55rem;
   height: 1.55rem;
@@ -3069,9 +3174,26 @@ textarea:focus-visible {
   border-radius: 50%;
   color: var(--accent-strong);
   background: var(--accent-soft);
-  content: counter(manager-work-step);
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+.manager-work-events li[data-current="true"] .manager-work-event-index {
+  color: #fff;
+  background: var(--accent-strong);
+}
+.manager-work-event-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.16rem;
+}
+.manager-work-event-copy strong {
+  color: var(--text);
   font-size: 0.75rem;
   font-weight: 600;
+}
+.manager-work-event-copy small {
+  color: var(--muted);
+  font-size: 0.68rem;
 }
 .manager-work-review.pass {
   border-color: var(--success-line);
@@ -3147,6 +3269,15 @@ textarea:focus-visible {
   .manager-work-panel .manager-work-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .manager-work-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .manager-work-stage-track {
+    gap: 0.15rem;
+  }
+  .manager-work-stage-track li small {
+    font-size: 0.6rem;
   }
   .manager-work-panel .manager-work-submit,
   .manager-work-panel .manager-work-action,

@@ -17,7 +17,7 @@ type Work = {
   plan: { summary: string; instructions: string; complexity: string; needs_critic: boolean } | null;
   draft: { files: { name: string; content: string }[] } | null;
   review: { verdict: string; reason: string } | null;
-  events: { sequence: number; message: string; at: string }[];
+  events: { sequence: number; stage: string; message: string; at: string }[];
 };
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
 const labels: Record<string, string> = {
@@ -46,6 +46,48 @@ const errors: Record<string, string> = {
   EMERGENCY_STOP: "Работа прервана аварийной остановкой. Проверьте состояние в Центре управления.",
   DENIED: "Профиль проекта запрещает сохранение файлов.",
   WAITING_CONFIRMATION: "Подтвердите сохранение в центре управления, затем продолжите работу."
+};
+
+const workStages = [
+  { id: "plan", label: "План" },
+  { id: "draft", label: "Черновик" },
+  { id: "review", label: "Проверка" },
+  { id: "publish", label: "Сохранение" },
+  { id: "done", label: "Готово" }
+] as const;
+
+const stageLabel = (stage: string): string =>
+  workStages.find((candidate) => candidate.id === stage)?.label ?? "Неизвестный этап";
+
+const stageState = (
+  work: Work,
+  stage: (typeof workStages)[number]["id"]
+): "complete" | "current" | "interrupted" | "pending" => {
+  const current = workStages.findIndex((candidate) => candidate.id === work.stage);
+  const position = workStages.findIndex((candidate) => candidate.id === stage);
+  if (current < 0 || position < 0) return "pending";
+  if (position < current) return "complete";
+  if (position > current) return "pending";
+  if (work.status === "failed" || work.status === "cancelled") return "interrupted";
+  return "current";
+};
+
+const fileCountLabel = (count: number): string => {
+  const remainder100 = count % 100;
+  const remainder10 = count % 10;
+  if (remainder100 >= 11 && remainder100 <= 14) return `${count} файлов`;
+  if (remainder10 === 1) return `${count} файл`;
+  if (remainder10 >= 2 && remainder10 <= 4) return `${count} файла`;
+  return `${count} файлов`;
+};
+
+const eventTime = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
 };
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
@@ -173,6 +215,8 @@ export function ManagerWorkPanel({
   };
   const active = work && isActive(work);
   const projectHasActiveWork = Boolean(active) || works.some(isActive);
+  const latestEvent = work?.events[work.events.length - 1] ?? null;
+  const outputCount = work?.draft?.files.length ?? 0;
   return (
     <section className="manager-demo manager-work-panel" aria-label="Выполнение задачи Manager">
       <header className="manager-work-header">
@@ -184,16 +228,71 @@ export function ManagerWorkPanel({
           {work ? labels[work.status] : "Новая задача"}
         </span>
       </header>
-      <p className="manager-work-runtime">
-        {runtime?.mode === "mock"
-          ? "Демонстрационный режим: модели не вызываются, файлы помечены mock."
-          : runtime
-            ? "Модель: " + runtime.model
-            : "Проверка подключения…"}
-      </p>
+      {work ? (
+        <div
+          className="manager-work-cockpit"
+          role="group"
+          aria-label="Состояние выполнения Manager"
+        >
+          <dl className="manager-work-metrics">
+            <div>
+              <dt>Этап</dt>
+              <dd>{stageLabel(work.stage)}</dd>
+            </div>
+            <div>
+              <dt>Модель</dt>
+              <dd>{runtime?.mode === "mock" ? "Mock" : (runtime?.model ?? "Проверяется…")}</dd>
+            </div>
+            <div>
+              <dt>Запросы</dt>
+              <dd>{work.model_requests} / 3</dd>
+            </div>
+            <div>
+              <dt>Результат</dt>
+              <dd>{outputCount > 0 ? fileCountLabel(outputCount) : "—"}</dd>
+            </div>
+          </dl>
+          <ol className="manager-work-stage-track" aria-label="Этапы выполнения Manager">
+            {workStages.map((stage) => {
+              const state = stageState(work, stage.id);
+              return (
+                <li
+                  key={stage.id}
+                  data-state={state}
+                  aria-current={state === "current" || state === "interrupted" ? "step" : undefined}
+                >
+                  <span aria-hidden="true" />
+                  <small>{stage.label}</small>
+                </li>
+              );
+            })}
+          </ol>
+          {latestEvent && (
+            <div
+              className="manager-work-now"
+              aria-live="polite"
+              data-testid="manager-current-activity"
+            >
+              <small>Сейчас</small>
+              <strong>{latestEvent.message}</strong>
+              <span>
+                {stageLabel(latestEvent.stage)} · {eventTime(latestEvent.at)}
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="manager-work-runtime">
+          {runtime?.mode === "mock"
+            ? "Демонстрационный режим: модели не вызываются, файлы помечены mock."
+            : runtime
+              ? "Модель: " + runtime.model
+              : "Проверка подключения…"}
+        </p>
+      )}
       <p className="manager-work-boundary">
-        Manager → выбранный исполнитель → Критик по риску. Роли используют настроенную модель.
-        Результат — файлы для скачивания; запуск кода и публикация пока недоступны.
+        Manager → выбранный исполнитель → Критик по риску. Результат — файлы для скачивания; запуск
+        кода и публикация пока недоступны.
       </p>
       {executionGate !== "clear" && (
         <p className="manager-work-boundary" data-testid="manager-execution-gate">
@@ -278,7 +377,6 @@ export function ManagerWorkPanel({
       )}
       {work && (
         <>
-          <p className="manager-work-usage">Обращений к модели: {work.model_requests} / 3</p>
           {work.plan && (
             <div className="manager-work-plan">
               <strong>{work.plan.summary}</strong>
@@ -295,8 +393,21 @@ export function ManagerWorkPanel({
             aria-live="polite"
             aria-relevant="additions"
           >
-            {work.events.map((e) => (
-              <li key={e.sequence}>{e.message}</li>
+            {work.events.map((event, index) => (
+              <li
+                key={event.sequence}
+                data-current={index === work.events.length - 1 ? "true" : undefined}
+              >
+                <span className="manager-work-event-index" aria-hidden="true">
+                  {event.sequence}
+                </span>
+                <span className="manager-work-event-copy">
+                  <strong>{event.message}</strong>
+                  <small>
+                    {stageLabel(event.stage)} · {eventTime(event.at)}
+                  </small>
+                </span>
+              </li>
             ))}
           </ol>
           {work.review && (
