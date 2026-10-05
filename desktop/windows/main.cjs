@@ -13,6 +13,7 @@ const {
   Menu,
   powerMonitor,
   safeStorage,
+  screen,
   session,
   shell
 } = require("electron");
@@ -24,6 +25,16 @@ const {
 } = require("./connection-state.cjs");
 const { serializeSupportBundle } = require("./support-bundle.cjs");
 const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
+const {
+  isDesktopPermissionAllowed,
+  isDevicePermissionAllowed,
+  safePermissionName
+} = require("./permission-policy.cjs");
+const {
+  createStoredWindowState,
+  restoreWindowState,
+  validateStoredWindowState
+} = require("./window-state.cjs");
 const {
   MAX_MANIFEST_BYTES,
   updateManifestUrl,
@@ -50,6 +61,7 @@ const SESSION_PARTITION = "persist:cosmora";
 const CONNECTION_FILE = "connection.json";
 const CREDENTIAL_FILE = "credentials.bin";
 const DIAGNOSTIC_FILE = "cosmora-desktop.log";
+const WINDOW_STATE_FILE = "window-state.json";
 const HEALTH_TIMEOUT_MS = 6000;
 const UPDATE_CHECK_TIMEOUT_MS = 8000;
 const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -89,6 +101,43 @@ function credentialPath() {
 function diagnosticPath() {
   return path.join(app.getPath("logs"), DIAGNOSTIC_FILE);
 }
+
+function windowStatePath() {
+  return path.join(app.getPath("userData"), WINDOW_STATE_FILE);
+}
+
+function readSavedWindowState() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(windowStatePath(), "utf8"));
+    return validateStoredWindowState(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function writeWindowState(state) {
+  const target = windowStatePath();
+  const temporary = target + ".tmp";
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(temporary, JSON.stringify(state, null, 2) + "\n", {
+    encoding: "utf8",
+    mode: 0o600
+  });
+  fs.rmSync(target, { force: true });
+  fs.renameSync(temporary, target);
+}
+
+function saveMainWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    writeWindowState(
+      createStoredWindowState(mainWindow.getNormalBounds(), mainWindow.isMaximized())
+    );
+  } catch {
+    appendDiagnostic("window_state_save_failed");
+  }
+}
+
 
 function credentialStore() {
   return new CredentialStore({
@@ -309,6 +358,38 @@ async function hashFileSha256(filePath) {
     stream.on("data", (chunk) => digest.update(chunk));
     stream.on("end", () => resolve(digest.digest("hex")));
   });
+}
+
+function installPermissionPolicy(browserSession) {
+  browserSession.setPermissionCheckHandler(
+    (_webContents, permission, requestingOrigin) =>
+      isDesktopPermissionAllowed({
+        permission,
+        requestingUrl: requestingOrigin,
+        connectedOrigin: currentOrigin
+      })
+  );
+
+  browserSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const requestingUrl =
+      details?.requestingUrl ||
+      (webContents && typeof webContents.getURL === "function" ? webContents.getURL() : "");
+    const allowed = isDesktopPermissionAllowed({
+      permission,
+      requestingUrl,
+      connectedOrigin: currentOrigin
+    });
+
+    appendDiagnostic("permission_request", {
+      permission: safePermissionName(permission),
+      allowed
+    });
+    callback(allowed);
+  });
+
+  if (typeof browserSession.setDevicePermissionHandler === "function") {
+    browserSession.setDevicePermissionHandler(() => isDevicePermissionAllowed());
+  }
 }
 
 function installDownloadPolicy(browserSession) {
@@ -1146,10 +1227,15 @@ function createMenu() {
 async function createMainWindow() {
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
   installDownloadPolicy(browserSession);
+  installPermissionPolicy(browserSession);
+
+  const restoredWindowState = restoreWindowState(
+    readSavedWindowState(),
+    screen.getAllDisplays()
+  );
 
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    ...restoredWindowState.bounds,
     minWidth: 900,
     minHeight: 640,
     backgroundColor: "#ffffff",
@@ -1168,10 +1254,35 @@ async function createMainWindow() {
   });
 
   installNavigationGuards(mainWindow);
+
+  let windowStateTimer = null;
+  const scheduleWindowStateSave = () => {
+    if (windowStateTimer) clearTimeout(windowStateTimer);
+    windowStateTimer = setTimeout(() => {
+      windowStateTimer = null;
+      saveMainWindowState();
+    }, 350);
+  };
+
+  mainWindow.on("move", scheduleWindowStateSave);
+  mainWindow.on("resize", scheduleWindowStateSave);
+  mainWindow.on("maximize", scheduleWindowStateSave);
+  mainWindow.on("unmaximize", scheduleWindowStateSave);
+  mainWindow.on("close", () => {
+    if (windowStateTimer) {
+      clearTimeout(windowStateTimer);
+      windowStateTimer = null;
+    }
+    saveMainWindowState();
+  });
+
   mainWindow.once("ready-to-show", () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (restoredWindowState.maximized) mainWindow.maximize();
+    mainWindow.show();
   });
   mainWindow.on("closed", () => {
+    if (windowStateTimer) clearTimeout(windowStateTimer);
     stopHeartbeat();
     cancelRecovery();
     mainWindow = null;
