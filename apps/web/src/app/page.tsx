@@ -697,21 +697,21 @@ export default function Home() {
       demosResponse,
       managerWorkResponse
     ] = await Promise.all([
-        api<ProjectDetail>(`/api/v1/projects/${encodedProjectId}`),
-        api<{ profile: AutonomyProfile }>(
-          `/api/v1/projects/${encodedProjectId}/autonomy-profile`
-        ).catch(() => null),
-        api<{ items: PendingConfirmation[] }>(
-          `/api/v1/projects/${encodedProjectId}/confirmations?status=PENDING`
-        ).catch(() => null),
-        api<{ items: RecoveryRequiredOperation[] }>(
-          `/api/v1/projects/${encodedProjectId}/recovery-required?limit=50`
-        ).catch(() => null),
-        api<{ items: DemoManagerRun[] }>(
-          `/api/v1/projects/${encodedProjectId}/manager-demo-runs`
-        ).catch(() => null),
-        loadManagerWorkAttention(projectId)
-      ]);
+      api<ProjectDetail>(`/api/v1/projects/${encodedProjectId}`),
+      api<{ profile: AutonomyProfile }>(
+        `/api/v1/projects/${encodedProjectId}/autonomy-profile`
+      ).catch(() => null),
+      api<{ items: PendingConfirmation[] }>(
+        `/api/v1/projects/${encodedProjectId}/confirmations?status=PENDING`
+      ).catch(() => null),
+      api<{ items: RecoveryRequiredOperation[] }>(
+        `/api/v1/projects/${encodedProjectId}/recovery-required?limit=50`
+      ).catch(() => null),
+      api<{ items: DemoManagerRun[] }>(
+        `/api/v1/projects/${encodedProjectId}/manager-demo-runs`
+      ).catch(() => null),
+      loadManagerWorkAttention(projectId)
+    ]);
     if (
       epoch !== viewEpochRef.current ||
       projectId !== selectedProjectRef.current ||
