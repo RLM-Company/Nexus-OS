@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - "desktop/windows/**"
-      - "apps/web/**"
       - ".github/workflows/windows-desktop.yml"
       - ".github/workflows/windows-release.yml"
   workflow_dispatch:
@@ -38,6 +37,19 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+
+      - name: Detect desktop version change
+        id: desktop-version
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          $currentVersion = node -p "require('./desktop/windows/package.json').version"
+          $baselineVersion = node -p "require('./upgrade-baseline/desktop/windows/package.json').version"
+          $changed = if ($currentVersion -ne $baselineVersion) { "true" } else { "false" }
+          "changed=$changed" >> $env:GITHUB_OUTPUT
+          "current=$currentVersion" >> $env:GITHUB_OUTPUT
+          "baseline=$baselineVersion" >> $env:GITHUB_OUTPUT
+          Write-Host "Desktop version: $baselineVersion -> $currentVersion (changed=$changed)"
 
       - name: Restore Electron packaging cache
         uses: actions/cache@v4
@@ -87,14 +99,14 @@ jobs:
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
       - name: Build upgrade baseline installer
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.desktop-version.outputs.changed == 'true'
         working-directory: upgrade-baseline/desktop/windows
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
       - name: Test fresh installer lifecycle
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || steps.desktop-version.outputs.changed != 'true'
         shell: pwsh
         run: |
           $version = node -p "require('./desktop/windows/package.json').version"
@@ -106,7 +118,7 @@ jobs:
             -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-fresh-lifecycle")
 
       - name: Test upgrade lifecycle and persisted user data
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.desktop-version.outputs.changed == 'true'
         shell: pwsh
         run: |
           $currentVersion = node -p "require('./desktop/windows/package.json').version"
