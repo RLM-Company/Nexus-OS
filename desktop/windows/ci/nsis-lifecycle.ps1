@@ -33,9 +33,9 @@ function Resolve-NormalizedPath([string]$Value) {
 
 function Get-CosmoraUninstallEntries([string]$ExpectedVersion = "") {
   $roots = @(
-    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
-    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
-    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+    "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+    "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+    "HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
   )
   $entries = foreach ($registryRoot in $roots) {
     if (-not (Test-Path -LiteralPath $registryRoot)) { continue }
@@ -44,7 +44,9 @@ function Get-CosmoraUninstallEntries([string]$ExpectedVersion = "") {
         try { Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction Stop } catch { $null }
       } |
       Where-Object {
-        $_ -and $_.DisplayName -eq "Cosmora" -and (\n          [string]::IsNullOrWhiteSpace($ExpectedVersion) -or [string]$_.DisplayVersion -eq $ExpectedVersion\n        )
+        $_ -and $_.DisplayName -eq "Cosmora" -and (
+          [string]::IsNullOrWhiteSpace($ExpectedVersion) -or [string]$_.DisplayVersion -eq $ExpectedVersion
+        )
       }
   }
   return @($entries)
@@ -74,8 +76,9 @@ function Assert-ShellIntegration([string]$App, [string]$InstallDir, [string]$Ver
   Assert-ShortcutTarget $startMenuShortcut $App "Start Menu"
 
   $entries = Get-CosmoraUninstallEntries $Version
-  if ($entries.Count -ne 1) {
-    throw "Expected exactly one Cosmora uninstall registry entry for $Version; found $($entries.Count)."
+  $allEntries = Get-CosmoraUninstallEntries
+  if ($entries.Count -ne 1 -or $allEntries.Count -ne 1) {
+    throw "Expected exactly one current Cosmora uninstall registry entry for $Version with no stale versions; current=$($entries.Count), all=$($allEntries.Count)."
   }
   $entry = $entries[0]
   if ([string]::IsNullOrWhiteSpace([string]$entry.UninstallString)) {
@@ -93,7 +96,7 @@ function Assert-ShellIntegration([string]$App, [string]$InstallDir, [string]$Ver
   if ([string]$versionInfo.ProductName -ne "Cosmora") {
     throw "Installed executable ProductName is not Cosmora."
   }
-  $versionPattern = "^$([regex]::Escape($Version))(?:\.0)?$"
+  $versionPattern = "^$([regex]::Escape($Version))(?:\\.0)?$"
   if ([string]$versionInfo.ProductVersion -notmatch $versionPattern -and [string]$versionInfo.FileVersion -notmatch $versionPattern) {
     throw "Installed executable version metadata does not match $Version."
   }
@@ -103,7 +106,7 @@ function Assert-ShellIntegrationRemoved([string]$Version) {
   $desktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "Cosmora.lnk"
   $startMenuShortcut = Join-Path ([Environment]::GetFolderPath("Programs")) "Cosmora.lnk"
   for ($attempt = 0; $attempt -lt 20; $attempt++) {
-    $entries = Get-CosmoraUninstallEntries $Version
+    $entries = Get-CosmoraUninstallEntries
     if (-not (Test-Path -LiteralPath $desktopShortcut) -and -not (Test-Path -LiteralPath $startMenuShortcut) -and $entries.Count -eq 0) {
       return
     }
@@ -144,7 +147,7 @@ function Invoke-PackagedSmoke([string]$App, [string]$ExpectedVersion, [string]$I
   if (-not [string]::Equals($expectedExe, $actualExe, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Smoke executable path does not match the installed application."
   }
-  $expectedAsar = [IO.Path]::GetFullPath((Join-Path $InstallDir "resources\app.asar"))
+  $expectedAsar = [IO.Path]::GetFullPath((Join-Path $InstallDir "resources\\app.asar"))
   $actualAsar = [IO.Path]::GetFullPath([string]$record.appPath)
   if (-not [string]::Equals($expectedAsar, $actualAsar, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Smoke app path is not packaged app.asar."
@@ -180,7 +183,7 @@ try {
 
     New-Item -ItemType Directory -Path $userData -Force | Out-Null
     $connectionFile = Join-Path $userData "connection.json"
-    $sessionFile = Join-Path $userData "Partitions\cosmora\Network\upgrade-session.sentinel"
+    $sessionFile = Join-Path $userData "Partitions\\cosmora\\Network\\upgrade-session.sentinel"
     New-Item -ItemType Directory -Path (Split-Path $sessionFile -Parent) -Force | Out-Null
     Set-Content -LiteralPath $connectionFile -Value '{"origin":"https://upgrade-smoke.invalid"}' -Encoding utf8NoBOM
     Set-Content -LiteralPath $sessionFile -Value "cosmora-upgrade-session-sentinel-v1" -Encoding utf8NoBOM
