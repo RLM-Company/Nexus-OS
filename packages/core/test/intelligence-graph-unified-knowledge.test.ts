@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(730);
-    expect(graph.records).toHaveLength(730);
-    expect(graph.edges).toHaveLength(2233);
+    expect(graph.nodes).toHaveLength(789);
+    expect(graph.records).toHaveLength(789);
+    expect(graph.edges).toHaveLength(2387);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      730
+      789
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      2233
+      2387
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -1437,6 +1437,106 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "event-ci-fix-manager-demo-selector|VALIDATED_BY|evaluation-ci-1026-green"
+    );
+  });
+
+  it("preserves fixed Agent instruction authority precedence", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "instruction-authority-constitution|PRECEDES_IN_INSTRUCTION_AUTHORITY|instruction-authority-policy"
+    );
+    expect(pairs).toContain(
+      "instruction-authority-policy|PRECEDES_IN_INSTRUCTION_AUTHORITY|instruction-authority-function"
+    );
+    expect(pairs).toContain(
+      "instruction-authority-function|PRECEDES_IN_INSTRUCTION_AUTHORITY|instruction-authority-behavior"
+    );
+    expect(pairs).toContain(
+      "instruction-authority-behavior|PRECEDES_IN_INSTRUCTION_AUTHORITY|instruction-authority-task"
+    );
+    expect(pairs).toContain(
+      "claim-agent-instruction-plan-nonexecutable|CONSTRAINS|entity-agent-instruction-plan-contract"
+    );
+  });
+
+  it("models exact Agent scope, memory and instance status enums", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+
+    expect(
+      graph.nodes
+        .filter((node) => node.node_id.startsWith("agent-definition-scope-"))
+        .map((node) => node.node_id)
+        .sort()
+    ).toEqual(
+      [
+        "agent-definition-scope-owner",
+        "agent-definition-scope-product",
+        "agent-definition-scope-project"
+      ].sort()
+    );
+
+    expect(
+      graph.nodes.filter((node) => node.node_id.startsWith("agent-memory-read-"))
+    ).toHaveLength(4);
+    expect(
+      graph.nodes.filter((node) => node.node_id.startsWith("agent-memory-write-"))
+    ).toHaveLength(3);
+    expect(
+      graph.nodes.filter((node) => node.node_id.startsWith("agent-instance-status-"))
+    ).toHaveLength(7);
+  });
+
+  it("keeps Agent Blueprint composition explicit and bounded", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    for (const component of [
+      "entity-agent-function-definition-contract",
+      "entity-behavior-pattern-contract",
+      "entity-agent-model-profile-ref",
+      "entity-agent-grant-contract",
+      "entity-agent-memory-scope-contract"
+    ]) {
+      expect(pairs).toContain(`entity-agent-blueprint|COMPOSES_WITH|${component}`);
+    }
+
+    expect(pairs).toContain(
+      "claim-agent-pattern-function-compatible|CONSTRAINS|entity-agent-blueprint"
+    );
+    expect(pairs).toContain(
+      "claim-agent-grant-project-bound|CONSTRAINS|entity-agent-grant-contract"
+    );
+    expect(pairs).toContain(
+      "claim-agent-grant-unexpired|CONSTRAINS|entity-agent-grant-contract"
+    );
+  });
+
+  it("grounds Agent Studio operations, idempotency and delegated proposal safety", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const operations = graph.nodes.filter((node) => node.node_id.startsWith("agent-studio-op-"));
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(operations).toHaveLength(9);
+    expect(pairs).toContain(
+      "claim-agent-delegated-proposal-validator-required|REQUIRES|entity-agent-delegation-validator"
+    );
+    expect(pairs).toContain(
+      `claim-agent-studio-create-idempotent|VERIFIED_BY_TEST|${repositoryStructureFileId(
+        "packages/db/test/agent-studio-mutation-store.test.ts"
+      )}`
+    );
+    expect(pairs).toContain(
+      `claim-agent-instruction-precedence-fixed|VERIFIED_BY_TEST|${repositoryStructureFileId(
+        "packages/policy-engine/test/agent-instruction-plan.test.ts"
+      )}`
     );
   });
 
