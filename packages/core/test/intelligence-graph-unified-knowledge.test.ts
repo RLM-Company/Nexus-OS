@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(662);
-    expect(graph.records).toHaveLength(662);
-    expect(graph.edges).toHaveLength(1977);
+    expect(graph.nodes).toHaveLength(730);
+    expect(graph.records).toHaveLength(730);
+    expect(graph.edges).toHaveLength(2233);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      662
+      730
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1977
+      2233
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -1437,6 +1437,91 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "event-ci-fix-manager-demo-selector|VALIDATED_BY|evaluation-ci-1026-green"
+    );
+  });
+
+  it("models all 58 registered API routes with one public health exception", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const routes = graph.nodes.filter((node) => node.node_id.startsWith("api-route-"));
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(routes).toHaveLength(58);
+    expect(
+      graph.edges.filter(
+        (edge) => edge.type === "GATED_BY" && edge.to.id === "entity-api-owner-boundary"
+      )
+    ).toHaveLength(57);
+    expect(
+      graph.edges.filter(
+        (edge) => edge.type === "GATED_BY" && edge.to.id === "entity-api-public-health-boundary"
+      )
+    ).toHaveLength(1);
+    expect(pairs).toContain(
+      "api-route-get-api-v1-health|GATED_BY|entity-api-public-health-boundary"
+    );
+    expect(pairs).not.toContain(
+      "api-route-get-api-v1-health|GATED_BY|entity-api-owner-boundary"
+    );
+  });
+
+  it("keeps the exact project, step-up and Agent Studio idempotency route boundaries", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+
+    expect(
+      graph.edges.filter(
+        (edge) => edge.type === "GATED_BY" && edge.to.id === "entity-api-project-boundary"
+      )
+    ).toHaveLength(36);
+    expect(
+      graph.edges.filter(
+        (edge) => edge.type === "GATED_BY" && edge.to.id === "entity-api-step-up-boundary"
+      )
+    ).toHaveLength(4);
+    expect(
+      graph.edges.filter(
+        (edge) => edge.type === "GATED_BY" && edge.to.id === "entity-api-idempotency-boundary"
+      )
+    ).toHaveLength(5);
+  });
+
+  it("keeps General Chat message creation in the General Chat family", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    const routeId = "api-route-post-api-v1-chats-chatid-messages";
+
+    expect(pairs).toContain(`${routeId}|ROUTE_OF|entity-api-general-chat`);
+    expect(pairs).not.toContain(`${routeId}|ROUTE_OF|entity-api-project-model-runs`);
+  });
+
+  it("grounds owner, project, step-up and idempotency boundaries in API regression suites", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      `entity-api-owner-boundary|VERIFIED_BY_TEST|${repositoryStructureFileId(
+        "apps/api/test/identity-boundary.test.ts"
+      )}`
+    );
+    expect(pairs).toContain(
+      `entity-api-step-up-boundary|VERIFIED_BY_TEST|${repositoryStructureFileId(
+        "apps/api/test/emergency-stop-clearance.test.ts"
+      )}`
+    );
+    expect(pairs).toContain(
+      `entity-api-idempotency-boundary|VERIFIED_BY_TEST|${repositoryStructureFileId(
+        "apps/api/test/agent-studio-write-api.test.ts"
+      )}`
+    );
+    expect(pairs).toContain(
+      `entity-api-project-boundary|VERIFIED_BY_TEST|${repositoryStructureFileId(
+        "apps/api/test/manager-work.test.ts"
+      )}`
     );
   });
 
