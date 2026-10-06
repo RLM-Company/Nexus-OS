@@ -2,14 +2,20 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import {
+  managerWorkStageLabel,
+  managerWorkStatusLabel,
+  type ManagerWorkStage,
+  type ManagerWorkStatus
+} from "./manager-work-ui";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
 type Work = {
   id: string;
   request?: { goal: string };
   version: number;
-  status: string;
-  stage: string;
+  status: ManagerWorkStatus;
+  stage: ManagerWorkStage;
   pause_requested: boolean;
   model_requests: number;
   error_code: string | null;
@@ -20,33 +26,7 @@ type Work = {
   events: { sequence: number; message: string; at: string }[];
 };
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
-const labels: Record<string, string> = {
-  queued: "В очереди",
-  running: "Выполняется",
-  paused: "На паузе",
-  awaiting_approval: "Нужно подтверждение плана",
-  blocked: "Нужно разрешение",
-  completed: "Готово",
-  failed: "Остановлено с ошибкой",
-  cancelled: "Отменено"
-};
-const stageLabels: Record<string, string> = {
-  queued: "Подготовка",
-  plan: "План",
-  planning: "План",
-  draft: "Создание результата",
-  drafting: "Создание результата",
-  review: "Проверка Критиком",
-  publish: "Сохранение файлов",
-  done: "Готово",
-  completed: "Готово"
-};
 const progressStepLabels = ["Запрос", "План", "Результат", "Проверка", "Готово"];
-
-function workStageLabel(work: Work) {
-  if (work.status === "completed") return "Готово";
-  return stageLabels[work.stage] ?? work.stage.replaceAll("_", " ");
-}
 
 function workProgressIndex(work: Work) {
   if (work.status === "completed" || work.stage === "done") return 4;
@@ -215,7 +195,7 @@ export function ManagerWorkPanel({
           <strong>Создать результат с Manager</strong>
         </div>
         <span className={`manager-work-status ${work?.status ?? "new"}`} role="status">
-          {work ? labels[work.status] : "Новая задача"}
+          {work ? managerWorkStatusLabel(work.status) : "Новая задача"}
         </span>
       </header>
       <p className="manager-work-runtime">
@@ -301,7 +281,7 @@ export function ManagerWorkPanel({
                 }}
               >
                 <span>{item.request?.goal ?? `Задача ${index + 1}`}</span>
-                <small>{labels[item.status] ?? "Состояние неизвестно"}</small>
+                <small>{managerWorkStatusLabel(item.status)}</small>
               </button>
             ))}
           </div>
@@ -316,8 +296,10 @@ export function ManagerWorkPanel({
             <div className="manager-work-summary-grid">
               <article>
                 <small>Текущий этап</small>
-                <strong data-testid="manager-work-stage">{workStageLabel(work)}</strong>
-                <span>{labels[work.status] ?? "Состояние неизвестно"}</span>
+                <strong data-testid="manager-work-stage">
+                  {managerWorkStageLabel(work.stage, work.status)}
+                </strong>
+                <span>{managerWorkStatusLabel(work.status)}</span>
               </article>
               <article>
                 <small>Обращения к модели</small>

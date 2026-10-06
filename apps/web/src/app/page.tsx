@@ -6,6 +6,13 @@ import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./cha
 import { InstallApp } from "./install-app";
 import { ProjectContextPanel } from "./project-context-panel";
 import { ManagerWorkPanel } from "./manager-work-panel";
+import {
+  managerWorkNeedsAttention,
+  managerWorkStageLabel,
+  managerWorkStatusLabel,
+  type ManagerWorkStage,
+  type ManagerWorkStatus
+} from "./manager-work-ui";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 import { WorkspaceIcon } from "./workspace-icons";
 import { AccountMenu, MobileNavigation } from "./workspace-navigation";
@@ -166,6 +173,17 @@ type PolicySignals = {
   pendingConfirmations: PendingConfirmation[] | null;
   recoveryRequired: RecoveryRequiredOperation[] | null;
 };
+
+type ManagerWorkAttentionItem = {
+  id: string;
+  request: { goal: string };
+  status: ManagerWorkStatus;
+  stage: ManagerWorkStage;
+  error_code: string | null;
+  events: { sequence: number; stage: ManagerWorkStage; message: string; at: string }[];
+  updated_at: string;
+};
+
 
 type DemoManagerArtifact = {
   artifact_id: string;
@@ -419,6 +437,9 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [autonomyProfile, setAutonomyProfile] = useState<AutonomyProfile | null>(null);
   const [policySignals, setPolicySignals] = useState<PolicySignals>(EMPTY_POLICY_SIGNALS);
+  const [managerWorkAttention, setManagerWorkAttention] = useState<
+    ManagerWorkAttentionItem[] | null
+  >(null);
   const [demoRuns, setDemoRuns] = useState<DemoManagerRun[]>([]);
   const [demoActionPending, setDemoActionPending] = useState(false);
   const [draft, setDraft] = useState("");
@@ -652,26 +673,45 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [localChatMessages, messages]);
 
+  const loadManagerWorkAttention = useCallback(
+    async (projectId: string): Promise<ManagerWorkAttentionItem[] | null> => {
+      const response = await api<{ items: ManagerWorkAttentionItem[] }>(
+        `/api/v1/projects/${encodeURIComponent(projectId)}/work`
+      ).catch(() => null);
+      return response
+        ? response.items.filter((item) => managerWorkNeedsAttention(item.status))
+        : null;
+    },
+    []
+  );
+
   const loadProjectView = useCallback(async (projectId: string) => {
     const epoch = viewEpochRef.current;
     const requestId = ++viewRequestRef.current;
     const encodedProjectId = encodeURIComponent(projectId);
-    const [detail, profileResponse, confirmationsResponse, recoveryResponse, demosResponse] =
-      await Promise.all([
-        api<ProjectDetail>(`/api/v1/projects/${encodedProjectId}`),
-        api<{ profile: AutonomyProfile }>(
-          `/api/v1/projects/${encodedProjectId}/autonomy-profile`
-        ).catch(() => null),
-        api<{ items: PendingConfirmation[] }>(
-          `/api/v1/projects/${encodedProjectId}/confirmations?status=PENDING`
-        ).catch(() => null),
-        api<{ items: RecoveryRequiredOperation[] }>(
-          `/api/v1/projects/${encodedProjectId}/recovery-required?limit=50`
-        ).catch(() => null),
-        api<{ items: DemoManagerRun[] }>(
-          `/api/v1/projects/${encodedProjectId}/manager-demo-runs`
-        ).catch(() => null)
-      ]);
+    const [
+      detail,
+      profileResponse,
+      confirmationsResponse,
+      recoveryResponse,
+      demosResponse,
+      managerWorkResponse
+    ] = await Promise.all([
+      api<ProjectDetail>(`/api/v1/projects/${encodedProjectId}`),
+      api<{ profile: AutonomyProfile }>(
+        `/api/v1/projects/${encodedProjectId}/autonomy-profile`
+      ).catch(() => null),
+      api<{ items: PendingConfirmation[] }>(
+        `/api/v1/projects/${encodedProjectId}/confirmations?status=PENDING`
+      ).catch(() => null),
+      api<{ items: RecoveryRequiredOperation[] }>(
+        `/api/v1/projects/${encodedProjectId}/recovery-required?limit=50`
+      ).catch(() => null),
+      api<{ items: DemoManagerRun[] }>(
+        `/api/v1/projects/${encodedProjectId}/manager-demo-runs`
+      ).catch(() => null),
+      loadManagerWorkAttention(projectId)
+    ]);
     if (
       epoch !== viewEpochRef.current ||
       projectId !== selectedProjectRef.current ||
@@ -704,8 +744,9 @@ export default function Home() {
       pendingConfirmations: confirmationsResponse?.items ?? null,
       recoveryRequired: recoveryResponse?.items ?? null
     });
+    setManagerWorkAttention(managerWorkResponse);
     setDemoRuns(demosResponse?.items ?? []);
-  }, []);
+  }, [loadManagerWorkAttention]);
 
   const loadGeneralChatView = useCallback(async (generalChatId: string) => {
     const epoch = viewEpochRef.current;
@@ -758,6 +799,33 @@ export default function Home() {
   }, [activeProject, loadProjectView, runPhase]);
 
   useEffect(() => {
+    if (!activeProject || projectView !== "project") return;
+    const projectId = activeProject.id;
+    let cancelled = false;
+    let polling = false;
+
+    const refresh = () => {
+      if (polling) return;
+      polling = true;
+      void loadManagerWorkAttention(projectId)
+        .then((items) => {
+          if (!cancelled && selectedProjectRef.current === projectId) {
+            setManagerWorkAttention(items);
+          }
+        })
+        .finally(() => {
+          polling = false;
+        });
+    };
+
+    const timer = window.setInterval(refresh, 2_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeProject, loadManagerWorkAttention, projectView]);
+
+  useEffect(() => {
     if (
       activeProject ||
       !activeLocalChatId ||
@@ -799,6 +867,7 @@ export default function Home() {
       setLastCompletedRoute(null);
       setAutonomyProfile(null);
       setPolicySignals(EMPTY_POLICY_SIGNALS);
+      setManagerWorkAttention(null);
       setDemoRuns([]);
       setDemoActionPending(false);
       setError(null);
@@ -1935,6 +2004,16 @@ export default function Home() {
                 </strong>
               </span>
               <span>
+                <small>Manager Work</small>
+                <strong>
+                  {managerWorkAttention === null
+                    ? "Нет данных"
+                    : managerWorkAttention.length === 0
+                      ? "Без внимания"
+                      : `${managerWorkAttention.length} требует внимания`}
+                </strong>
+              </span>
+              <span>
                 <small>Обновлён</small>
                 <strong>
                   {new Date(activeProject.updated_at).toLocaleString("ru", {
@@ -1952,7 +2031,8 @@ export default function Home() {
             </section>
 
             {((policySignals.pendingConfirmations?.length ?? 0) > 0 ||
-              (policySignals.recoveryRequired?.length ?? 0) > 0) && (
+              (policySignals.recoveryRequired?.length ?? 0) > 0 ||
+              (managerWorkAttention?.length ?? 0) > 0) && (
               <section className="manager-attention" aria-label="Требуется внимание владельца">
                 <header>
                   <span className="attention-icon">
@@ -1999,6 +2079,27 @@ export default function Home() {
                       </Link>
                     </article>
                   ))}
+                  {managerWorkAttention?.slice(0, 1).map((item) => {
+                    const latestEvent = item.events[item.events.length - 1];
+                    return (
+                      <article className="attention-card manager-work" key={item.id}>
+                        <div>
+                          <small>Manager Work · {managerWorkAttention.length}</small>
+                          <strong>{item.request.goal}</strong>
+                          <p>
+                            {managerWorkStageLabel(item.stage, item.status)} ·{" "}
+                            {managerWorkStatusLabel(item.status)}
+                          </p>
+                          <span>
+                            {latestEvent?.message ?? item.error_code ?? "Требуется внимание"}
+                          </span>
+                        </div>
+                        <button type="button" onClick={() => selectProjectView("plan")}>
+                          Открыть задачу
+                        </button>
+                      </article>
+                    );
+                  })}
                 </div>
               </section>
             )}

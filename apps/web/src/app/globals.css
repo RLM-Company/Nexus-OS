@@ -844,19 +844,28 @@ svg {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.attention-card > a {
+.attention-card > a,
+.attention-card > button {
   flex: 0 0 auto;
   padding: 0.42rem 0.55rem;
   border: 1px solid rgba(179, 168, 255, 0.24);
   border-radius: 0.52rem;
   color: #d4ceff;
   background: rgba(138, 119, 255, 0.1);
+  font: inherit;
   font-size: 0.61rem;
   font-weight: 680;
+  cursor: pointer;
 }
-.attention-card > a:hover {
+.attention-card > a:hover,
+.attention-card > button:hover {
   border-color: rgba(179, 168, 255, 0.42);
   background: rgba(138, 119, 255, 0.16);
+}
+.attention-card > a:focus-visible,
+.attention-card > button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
 }
 .manager-demo {
   margin-top: 0.65rem;
