@@ -2952,6 +2952,127 @@ textarea:focus-visible {
   background: var(--surface);
   box-shadow: none;
 }
+.manager-work-overview {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+}
+.manager-work-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.manager-work-summary-grid article {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.25rem;
+  min-height: 6.25rem;
+  padding: 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 0.78rem;
+  background: #fff;
+}
+.manager-work-summary-grid small {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.manager-work-summary-grid strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+}
+.manager-work-summary-grid span {
+  margin-top: auto;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+}
+.manager-work-summary-grid progress {
+  width: 100%;
+  height: 0.35rem;
+  margin-top: auto;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  accent-color: var(--accent-strong);
+  background: var(--surface);
+}
+.manager-work-summary-grid progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: var(--surface);
+}
+.manager-work-summary-grid progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--accent-strong);
+}
+.manager-work-progress {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.manager-work-progress li {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.35rem;
+  padding: 0.42rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  color: var(--muted);
+  background: var(--panel);
+}
+.manager-work-progress li > span {
+  display: grid;
+  width: 1.35rem;
+  height: 1.35rem;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.manager-work-progress li > strong {
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.manager-work-progress li.done {
+  border-color: var(--success-line);
+  color: var(--success);
+  background: var(--success-soft);
+}
+.manager-work-progress li.done > span {
+  color: var(--success);
+  background: rgba(46, 142, 101, 0.12);
+}
+.manager-work-progress li.current {
+  border-color: var(--accent-line);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+.manager-work-progress li.current > span {
+  color: #fff;
+  background: var(--accent-strong);
+}
+
 .manager-work-usage {
   display: inline-flex;
   margin: 0.9rem 0 0;
@@ -3048,7 +3169,7 @@ textarea:focus-visible {
 }
 .manager-work-events li {
   display: grid;
-  grid-template-columns: 1.65rem minmax(0, 1fr);
+  grid-template-columns: 1.65rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.55rem;
   min-height: 2.45rem;
@@ -3061,6 +3182,15 @@ textarea:focus-visible {
   line-height: 1.45;
   counter-increment: manager-work-step;
 }
+.manager-work-events li > span {
+  min-width: 0;
+}
+.manager-work-events time {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .manager-work-events li::before {
   display: grid;
   width: 1.55rem;
@@ -3088,6 +3218,18 @@ textarea:focus-visible {
   font-size: 0.75rem;
   line-height: 1.5;
 }
+.manager-work-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+.manager-work-actions .manager-work-action,
+.manager-work-actions .manager-work-permissions {
+  margin: 0;
+}
+
 .manager-work-panel .manager-work-action,
 .manager-work-panel .manager-work-permissions {
   min-height: 2.75rem;
@@ -3143,6 +3285,25 @@ textarea:focus-visible {
   .manager-work-panel {
     padding: 0.8rem;
     border-radius: 0.9rem;
+  }
+  .manager-work-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .manager-work-progress {
+    grid-template-columns: 1fr;
+  }
+  .manager-work-progress li {
+    min-height: 2.5rem;
+  }
+  .manager-work-events li {
+    grid-template-columns: 1.65rem minmax(0, 1fr);
+  }
+  .manager-work-events time {
+    grid-column: 2;
+  }
+  .manager-work-actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
   .manager-work-panel .manager-work-header {
     align-items: flex-start;
