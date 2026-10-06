@@ -50,12 +50,12 @@ Linux / Node 22.16.0:
 
 ```text
 npm --prefix desktop/windows run check
-15 tests passed, 0 failed
+16 tests passed, 0 failed
 ```
 
 That command includes syntax checks for `main.cjs`, `preload.cjs`, `connection-policy.cjs`,
 `smoke-mode.cjs`, `connection.js`, plus all Node policy tests. Coverage includes origin and scheme
-policy, complete redirect-chain download policy, saved-server recovery state, latest-attempt race
+policy, complete redirect-chain and same-origin blob download policy, saved-server recovery state, latest-attempt race
 gating, packaged smoke policy, installer shell-integration coverage, and static Electron
 security-boundary invariants.
 
