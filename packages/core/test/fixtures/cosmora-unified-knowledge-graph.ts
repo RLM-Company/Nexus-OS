@@ -30,6 +30,7 @@ import { cosmoraResourceBudgetGraph } from "./cosmora-resource-budget-graph.js";
 import { cosmoraConfigurationSecretBoundaryGraph } from "./cosmora-configuration-secret-boundary-graph.js";
 import { cosmoraModelReliabilityGraph } from "./cosmora-model-reliability-graph.js";
 import { cosmoraApiBoundaryGraph } from "./cosmora-api-boundary-graph.js";
+import { cosmoraAgentCompositionGraph } from "./cosmora-agent-composition-graph.js";
 
 const recordedAt = "2026-09-29T20:00:00.000Z";
 
@@ -311,6 +312,7 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
   const configurationSecretBoundary = cosmoraConfigurationSecretBoundaryGraph();
   const modelReliability = cosmoraModelReliabilityGraph();
   const apiBoundary = cosmoraApiBoundaryGraph();
+  const agentComposition = cosmoraAgentCompositionGraph();
 
   const nodes = [
     ...semantic.nodes,
@@ -335,7 +337,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...resourceBudget.nodes,
     ...configurationSecretBoundary.nodes,
     ...modelReliability.nodes,
-    ...apiBoundary.nodes
+    ...apiBoundary.nodes,
+    ...agentComposition.nodes
   ];
   const records = [
     ...semantic.records,
@@ -361,7 +364,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...resourceBudget.records,
     ...configurationSecretBoundary.records,
     ...modelReliability.records,
-    ...apiBoundary.records
+    ...apiBoundary.records,
+    ...agentComposition.records
   ];
   const edges = [
     ...semantic.edges,
@@ -388,7 +392,8 @@ export const cosmoraUnifiedKnowledgeGraph = (): CompiledIntelligenceGraphFixture
     ...resourceBudget.edges,
     ...configurationSecretBoundary.edges,
     ...modelReliability.edges,
-    ...apiBoundary.edges
+    ...apiBoundary.edges,
+    ...agentComposition.edges
   ];
 
   const nodeKeys = nodes.map((node) => versionKey(node.node_id, node.node_version));
