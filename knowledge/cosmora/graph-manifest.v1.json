@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 730,
-    "edges": 2233,
-    "records": 730
+    "nodes": 789,
+    "edges": 2387,
+    "records": 789
   },
   "layers": [
     {
@@ -176,6 +176,13 @@
       "edges": 256,
       "authority": "verified_fastify_routes_and_api_regression_evidence",
       "semantics": "route_family_owner_project_step_up_idempotency"
+    },
+    {
+      "id": "agent_composition",
+      "nodes": 59,
+      "edges": 154,
+      "authority": "verified_agent_contract_store_policy_and_regression_evidence",
+      "semantics": "scope_versioning_blueprint_memory_instruction_delegation_idempotency"
     }
   ],
   "primary_relation_types": [
@@ -336,7 +343,17 @@
     "NORMALIZES_TO",
     "ALLOWS_PROBE_TO",
     "ROUTE_OF",
-    "GATED_BY"
+    "GATED_BY",
+    "COMPOSES_WITH",
+    "EMBEDS_BLUEPRINT",
+    "VISIBILITY_SCOPE_FOR",
+    "TEST_STATUS_FOR",
+    "READ_MODE_FOR",
+    "WRITE_BACK_MODE_FOR",
+    "AUTHORITY_LAYER_OF",
+    "PRECEDES_IN_INSTRUCTION_AUTHORITY",
+    "RECORDED_AS_OPERATION_BY",
+    "TARGETS_OBJECT_TYPE"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -371,7 +388,8 @@
     "packages/core/test/fixtures/cosmora-resource-budget-graph.ts",
     "packages/core/test/fixtures/cosmora-configuration-secret-boundary-graph.ts",
     "packages/core/test/fixtures/cosmora-model-reliability-graph.ts",
-    "packages/core/test/fixtures/cosmora-api-boundary-graph.ts"
+    "packages/core/test/fixtures/cosmora-api-boundary-graph.ts",
+    "packages/core/test/fixtures/cosmora-agent-composition-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
