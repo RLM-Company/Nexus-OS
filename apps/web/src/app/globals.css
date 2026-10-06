@@ -3097,11 +3097,55 @@ textarea:focus-visible {
   padding-top: 1rem;
   border-top: 1px solid var(--line);
 }
-.manager-work-history > strong {
-  display: block;
+.manager-work-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
   margin-bottom: 0.6rem;
+}
+.manager-work-history-heading > strong {
   font-size: 0.8rem;
   font-weight: 600;
+}
+.manager-work-history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem;
+}
+.manager-work-history-filters button {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: #fff;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+.manager-work-history-filters button[aria-pressed="true"] {
+  border-color: var(--accent-line);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+.manager-work-history-filters button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+.manager-work-history-filters small {
+  display: grid;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  place-items: center;
+  border-radius: 999px;
+  color: inherit;
+  background: rgba(127, 135, 153, 0.1);
+  font-size: 0.58rem;
+  font-variant-numeric: tabular-nums;
 }
 .manager-work-history-list {
   display: grid;
@@ -3143,6 +3187,17 @@ textarea:focus-visible {
   color: var(--muted);
   font-size: 0.72rem;
 }
+.manager-work-history-list .manager-work-history-empty {
+  margin: 0;
+  padding: 0.8rem;
+  border: 1px dashed var(--line);
+  border-radius: 0.65rem;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
 .manager-work-history > p {
   margin-top: 0.6rem;
   color: var(--muted);
@@ -3294,6 +3349,14 @@ textarea:focus-visible {
   .manager-work-panel {
     padding: 0.8rem;
     border-radius: 0.9rem;
+  }
+  .manager-work-history-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .manager-work-history-filters {
+    width: 100%;
+    justify-content: flex-start;
   }
   .manager-work-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
