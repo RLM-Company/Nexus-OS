@@ -16,12 +16,7 @@ const errorCodes = [
   "INTERRUPTED"
 ] as const;
 
-const eventTypes = [
-  "route.selected",
-  "route.failed",
-  "text.delta",
-  "response.completed"
-] as const;
+const eventTypes = ["route.selected", "route.failed", "text.delta", "response.completed"] as const;
 
 const circuitStates = ["closed", "open", "probe"] as const;
 
@@ -97,10 +92,7 @@ const claimNodes = [
     "claim-gateway-retryable-before-fallback",
     "packages/model-gateway/src/gateway.ts:retryable route failure before fallback"
   ),
-  claim(
-    "claim-gateway-nonretryable-no-retry",
-    "packages/model-gateway/src/gateway.ts:canRetry"
-  ),
+  claim("claim-gateway-nonretryable-no-retry", "packages/model-gateway/src/gateway.ts:canRetry"),
   claim(
     "claim-gateway-fallback-before-first-delta",
     "packages/model-gateway/src/gateway.ts:emittedText=false fallback boundary"
