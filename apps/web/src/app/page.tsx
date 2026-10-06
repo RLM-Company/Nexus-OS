@@ -8,6 +8,7 @@ import { ChatResponse } from "./chat-response";
 import { WebSearchPanel } from "./web-search-panel";
 import { ChatHistoryActions } from "./chat-history-actions";
 import { ChatArchivePanel } from "./chat-archive-panel";
+import { clearComposerDraft, readComposerDraft, saveComposerDraft } from "./composer-draft-storage";
 import { ProjectContextPanel } from "./project-context-panel";
 import { ProjectContextPreview } from "./project-context-preview";
 import { ManagerWorkPanel } from "./manager-work-panel";
@@ -155,10 +156,16 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
 const isProjectView = (value: string | null): value is ProjectView =>
   value === "chat" || value === "plan" || value === "project" || value === "context";
 
-const replaceConsoleRoute = (projectId: string | null, view: ProjectView = "chat"): void => {
+const replaceConsoleRoute = (
+  projectId: string | null,
+  view: ProjectView = "chat",
+  generalChatId: string | null = null
+): void => {
   let route = projectId
     ? `/?project=${encodeURIComponent(projectId)}&view=${encodeURIComponent(view)}`
-    : "/";
+    : generalChatId
+      ? `/?chat=${encodeURIComponent(generalChatId)}`
+      : "/";
   if (new URLSearchParams(window.location.search).get("context_preview") === "1")
     route += `${route.includes("?") ? "&" : "?"}context_preview=1`;
   window.history.replaceState(window.history.state, "", route);
@@ -450,7 +457,10 @@ export default function Home() {
   const [demoActionPending, setDemoActionPending] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftStorageReadyKey, setDraftStorageReadyKey] = useState<string | null>(null);
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  const [draftRecoveryNotice, setDraftRecoveryNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialRouteReady, setInitialRouteReady] = useState(false);
   const [sending, setSending] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -500,21 +510,32 @@ export default function Home() {
     : projects;
   const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
   const projectProposal = activeLocalChat?.projectProposal ?? null;
-  const composerDraftKey = composerDraftStorageKey(activeProject?.id ?? null, activeLocalChatId);
+  const composerDraftKey = composerDraftStorageKey(
+    activeProject?.id ?? selectedProjectRef.current,
+    activeLocalChatId
+  );
   const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
   const pendingComposeRef = useRef<{ prompt: string; files: ChatAttachment[] } | null>(null);
+  const draftRecoveryKeyRef = useRef<string | null>(null);
+  const attachmentScope = `${composerDraftKey}:${viewEpochRef.current}`;
 
   useEffect(() => {
     setDraftStorageReadyKey(null);
     try {
-      setDraft(window.localStorage.getItem(composerDraftKey) ?? "");
+      const saved = readComposerDraft(window.localStorage, composerDraftKey);
+      setDraft(saved.text);
+      chatAttachments.replace(saved.files);
+      const sameScope = draftRecoveryKeyRef.current === composerDraftKey;
+      draftRecoveryKeyRef.current = composerDraftKey;
+      // Strict-mode remount/reconciliation must not erase a recovery warning after
+      // the available text has already been saved without the damaged materials.
+      setDraftRecoveryNotice((current) => saved.notice ?? (sameScope ? current : null));
     } catch {
-      setDraft("");
+      setDraftRecoveryNotice("Сохранение черновика в этом браузере недоступно.");
     }
-    setDraftStorageReadyKey(composerDraftKey);
-  }, [composerDraftKey]);
+    setDraftStorageReadyKey(attachmentScope);
+  }, [attachmentScope]);
 
-  const attachmentScope = `${composerDraftKey}:${viewEpochRef.current}`;
   useEffect(() => {
     const pending = pendingComposeRef.current;
     if (!pending) return;
@@ -526,14 +547,15 @@ export default function Home() {
   }, [attachmentScope, chatAttachments]);
 
   useEffect(() => {
-    if (draftStorageReadyKey !== composerDraftKey) return;
+    if (draftStorageReadyKey !== attachmentScope) return;
     try {
-      if (draft) window.localStorage.setItem(composerDraftKey, draft);
-      else window.localStorage.removeItem(composerDraftKey);
+      setDraftNotice(
+        saveComposerDraft(window.localStorage, composerDraftKey, draft, chatAttachments.files)
+      );
     } catch {
-      // Draft remains available for the current session if persistent storage is unavailable.
+      setDraftNotice("Сохранение черновика в этом браузере недоступно.");
     }
-  }, [composerDraftKey, draft, draftStorageReadyKey]);
+  }, [attachmentScope, composerDraftKey, draft, draftStorageReadyKey, chatAttachments.files]);
 
   useEffect(() => {
     try {
@@ -754,10 +776,11 @@ export default function Home() {
 
   const loadGeneralChatView = useCallback(async (generalChatId: string) => {
     const epoch = viewEpochRef.current;
+    const requestId = ++viewRequestRef.current;
     const detail = await api<GeneralChatDetail>(
       `/api/v1/chats/${encodeURIComponent(generalChatId)}`
     );
-    if (epoch !== viewEpochRef.current) return;
+    if (epoch !== viewEpochRef.current || requestId !== viewRequestRef.current) return;
     const restoredRun = restoredRunState(detail.messages);
     if (restoredRun.activeRunId === null) {
       streamRef.current?.close();
@@ -771,7 +794,14 @@ export default function Home() {
           detail.messages[detail.messages.length - 1]?.content ??
           existing?.last_message_preview ??
           null,
-        messages: detail.messages,
+        messages: detail.messages.map((message) => {
+          const live = existing?.messages.find((candidate) => candidate.id === message.id);
+          return message.status === "streaming" &&
+            live &&
+            live.content.length > message.content.length
+            ? { ...message, content: live.content }
+            : message;
+        }),
         projectProposal: existing?.projectProposal ?? null
       };
       return [updated, ...current.filter((chat) => chat.id !== generalChatId)];
@@ -863,6 +893,7 @@ export default function Home() {
   useEffect(() => {
     if (loading || initialRouteHandledRef.current) return;
     initialRouteHandledRef.current = true;
+    setInitialRouteReady(true);
     const params = new URLSearchParams(window.location.search);
     const imported = params.get("github_import");
     if (imported && /^[a-f0-9-]{36}$/.test(imported)) {
@@ -888,7 +919,23 @@ export default function Home() {
       return;
     }
     const projectId = params.get("project");
-    if (!projectId) return;
+    if (!projectId) {
+      const generalChatId = params.get("chat");
+      if (generalChatId) {
+        setActiveLocalChatId(generalChatId);
+        setLoading(true);
+        const epoch = viewEpochRef.current;
+        void loadGeneralChatView(generalChatId)
+          .catch(() => {
+            if (epoch === viewEpochRef.current)
+              setError("Не удалось открыть чат. Повторите выбор в истории.");
+          })
+          .finally(() => {
+            if (epoch === viewEpochRef.current) setLoading(false);
+          });
+      }
+      return;
+    }
     const requestedView = params.get("view");
     void openProject(projectId, isProjectView(requestedView) ? requestedView : "chat");
   }, [loading, openProject]);
@@ -962,6 +1009,10 @@ export default function Home() {
       let streamContent = "";
       const isCurrent = (): boolean =>
         epoch === viewEpochRef.current && streamRef.current === source;
+
+      source.onopen = () => {
+        if (isCurrent()) setError(null);
+      };
 
       const closeSource = (): void => {
         source.close();
@@ -1066,7 +1117,8 @@ export default function Home() {
 
       source.onerror = () => {
         if (!isCurrent()) return;
-        closeSource();
+        // EventSource reconnects to this read-only observer; it never resubmits input.
+        if (source.readyState === EventSource.CLOSED) closeSource();
         if (!finished) {
           setError("Поток ответа прерван. Проверяю сохранённое состояние запуска на сервере.");
         }
@@ -1096,6 +1148,9 @@ export default function Home() {
       let finished = false;
       const isCurrent = (): boolean =>
         epoch === viewEpochRef.current && streamRef.current === source;
+      source.onopen = () => {
+        if (isCurrent()) setError(null);
+      };
       const closeSource = (): void => {
         source.close();
         if (streamRef.current === source) streamRef.current = null;
@@ -1152,6 +1207,7 @@ export default function Home() {
       });
       source.addEventListener("run.completed", (raw) => {
         if (!isCurrent()) return;
+        viewRequestRef.current += 1;
         const event = JSON.parse(String(raw.data)) as {
           data: { provider: string; model_resolved: string };
         };
@@ -1175,6 +1231,7 @@ export default function Home() {
       });
       source.addEventListener("run.failed", () => {
         if (!isCurrent()) return;
+        viewRequestRef.current += 1;
         finished = true;
         closeSource();
         setSending(false);
@@ -1185,6 +1242,7 @@ export default function Home() {
       });
       source.addEventListener("run.cancelled", () => {
         if (!isCurrent()) return;
+        viewRequestRef.current += 1;
         finished = true;
         closeSource();
         setSending(false);
@@ -1194,7 +1252,7 @@ export default function Home() {
       });
       source.onerror = () => {
         if (!isCurrent()) return;
-        closeSource();
+        if (source.readyState === EventSource.CLOSED) closeSource();
         if (!finished) {
           setError("Поток ответа прерван. Проверяю сохранённое состояние на сервере.");
         }
@@ -1242,6 +1300,7 @@ export default function Home() {
       return;
     }
     if (epoch !== viewEpochRef.current) return;
+    viewRequestRef.current += 1;
     streamRef.current?.close();
     streamRef.current = null;
     setSending(false);
@@ -1362,6 +1421,8 @@ export default function Home() {
       !content ||
       sending ||
       loading ||
+      !initialRouteReady ||
+      draftStorageReadyKey !== attachmentScope ||
       chatAttachments.reading ||
       submitPendingRef.current ||
       executionGate !== "clear"
@@ -1376,7 +1437,6 @@ export default function Home() {
         setRunPhase("queued");
         setError(null);
         setLastCompletedRoute(null);
-        setDraft("");
         try {
           const accepted = activeLocalChatId
             ? await api<GeneralChatAcceptedResponse>(
@@ -1398,11 +1458,18 @@ export default function Home() {
                   attachments: chatAttachments.files
                 })
               });
+          try {
+            clearComposerDraft(window.localStorage, composerDraftKey);
+          } catch {
+            /* Acceptance is authoritative. */
+          }
           if (epoch !== viewEpochRef.current) {
             void loadGeneralChats().catch(() => undefined);
             return;
           }
           chatAttachments.replace([]);
+          setDraft("");
+          viewRequestRef.current += 1;
           const materials = [
             ...localChatMessages
               .filter((message) => message.role === "user")
@@ -1424,11 +1491,12 @@ export default function Home() {
             return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
           });
           try {
-            window.localStorage.removeItem(composerDraftKey);
+            clearComposerDraft(window.localStorage, composerDraftKey);
           } catch {
             // Server acceptance is authoritative even when local draft cleanup is unavailable.
           }
           setActiveLocalChatId(accepted.chat.id);
+          replaceConsoleRoute(null, "chat", accepted.chat.id);
           followGeneralChatStream(accepted);
           void loadGeneralChats().catch(() => {
             if (epoch === viewEpochRef.current) {
@@ -1452,7 +1520,6 @@ export default function Home() {
       setRunPhase("queued");
       setError(null);
       setLastCompletedRoute(null);
-      setDraft("");
       try {
         const accepted = await api<AcceptedResponse>(
           `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
@@ -1466,12 +1533,18 @@ export default function Home() {
           }
         );
 
+        try {
+          clearComposerDraft(window.localStorage, composerDraftKey);
+        } catch {
+          /* Acceptance is authoritative. */
+        }
         if (epoch !== viewEpochRef.current) {
           void loadProjects().catch(() => undefined);
           return;
         }
         selectedProjectRef.current = accepted.project.id;
         chatAttachments.replace([]);
+        setDraft("");
         replaceConsoleRoute(accepted.project.id, "chat");
         // Invalidate snapshots fetched before server acceptance of this run.
         viewRequestRef.current += 1;
@@ -1598,10 +1671,21 @@ export default function Home() {
     setError(null);
     setLoading(false);
     if (rotate) rotateGreeting();
-    replaceConsoleRoute(null);
+    replaceConsoleRoute(null, "chat", chatId);
   };
 
-  const newChat = (): void => resetToLocalChat(null, true);
+  const newChat = (): void => {
+    // Explicitly starting afresh from the unnamed composer discards that draft.
+    // Named chats/projects retain their own draft when navigating away.
+    if (!activeProject && !selectedProjectRef.current && !activeLocalChatId) {
+      try {
+        clearComposerDraft(window.localStorage, composerDraftKey);
+      } catch {
+        /* Still clear the current view. */
+      }
+    }
+    resetToLocalChat(null, true);
+  };
 
   const openLocalChat = async (chatId: string): Promise<void> => {
     if (!localChats.some((chat) => chat.id === chatId)) return;
@@ -2400,14 +2484,19 @@ export default function Home() {
             id="task"
             ref={composerRef}
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraftRecoveryNotice(null);
+              setDraft(event.target.value);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            disabled={sending || loading}
+            disabled={
+              sending || loading || !initialRouteReady || draftStorageReadyKey !== attachmentScope
+            }
             placeholder={
               activeProject ? "Уточните задачу или добавьте требование…" : "Спросите что-нибудь…"
             }
@@ -2418,8 +2507,13 @@ export default function Home() {
                 <ChatAttachmentPicker
                   files={chatAttachments.files}
                   reading={chatAttachments.reading}
-                  error={chatAttachments.error}
-                  disabled={sending || loading}
+                  error={chatAttachments.error ?? draftNotice ?? draftRecoveryNotice}
+                  disabled={
+                    sending ||
+                    loading ||
+                    !initialRouteReady ||
+                    draftStorageReadyKey !== attachmentScope
+                  }
                   onAdd={(files) => void chatAttachments.add(files)}
                   onRemove={(index) =>
                     chatAttachments.replace(
@@ -2430,7 +2524,7 @@ export default function Home() {
               }
               <WebSearchPanel
                 scope={composerDraftKey}
-                disabled={sending || loading || chatAttachments.reading}
+                disabled={sending || loading || !initialRouteReady || chatAttachments.reading}
                 onAttach={(file) => {
                   const next = [...chatAttachments.files, file];
                   if (!isValidChatAttachments(next)) return false;

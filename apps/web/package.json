@@ -9,6 +9,7 @@
     "demo:lan": "node scripts/prepare-pdf-worker.mjs && next dev -H 0.0.0.0",
     "lint": "eslint src",
     "start": "next start -H 127.0.0.1",
+    "test": "vitest run src/app/composer-draft-storage.test.ts",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit"
   },
