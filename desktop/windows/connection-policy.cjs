@@ -51,9 +51,20 @@ function isSafeExternalUrl(value) {
   }
 }
 
+function isAllowedDownloadUrl(value, origin) {
+  if (isAllowedRemoteNavigation(value, origin)) return true;
+  if (!origin) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "blob:" && parsed.origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 function isAllowedDownload(urlChain, origin) {
   if (!origin || !Array.isArray(urlChain) || urlChain.length === 0) return false;
-  return urlChain.every((value) => isAllowedRemoteNavigation(value, origin));
+  return urlChain.every((value) => isAllowedDownloadUrl(value, origin));
 }
 
 function safeDownloadFilename(value) {
@@ -112,6 +123,7 @@ module.exports = {
   connectionViewState,
   createLatestAttemptGate,
   isAllowedDownload,
+  isAllowedDownloadUrl,
   isAllowedRemoteNavigation,
   isSafeExternalUrl,
   nextAvailableDownloadPath,
