@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - "desktop/windows/**"
-      - "apps/web/**"
       - ".github/workflows/windows-desktop.yml"
   workflow_dispatch:
 
@@ -17,13 +16,20 @@ concurrency:
 
 jobs:
   build:
-    name: Build NSIS installer
+    name: Test, build and lifecycle-test NSIS installer
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+
+      - name: Check out upgrade baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: upgrade-baseline
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -31,14 +37,71 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
-      - name: Test desktop policy
-        run: node --test desktop/windows/test/*.test.cjs
+      - name: Syntax and policy checks
+        working-directory: desktop/windows
+        shell: pwsh
+        run: |
+          npm run check
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "ci/nsis-lifecycle.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "NSIS lifecycle PowerShell syntax validation failed."
+          }
 
-      - name: Build Windows installer
+      - name: Build unsigned Windows installer
         working-directory: desktop/windows
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
+
+      - name: Build upgrade baseline installer
+        if: github.event_name == 'pull_request'
+        working-directory: upgrade-baseline/desktop/windows
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
+
+      - name: Verify fresh installer lifecycle
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          $version = node -p "require('./desktop/windows/package.json').version"
+          ./desktop/windows/ci/nsis-lifecycle.ps1 `
+            -Mode Fresh `
+            -CurrentInstaller "desktop/windows/dist/Cosmora-Setup-$version-x64.exe" `
+            -CurrentVersion $version `
+            -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-fresh-lifecycle")
+
+      - name: Verify upgrade and uninstall preserve user data
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          $currentVersion = node -p "require('./desktop/windows/package.json').version"
+          $baselineVersion = node -p "require('./upgrade-baseline/desktop/windows/package.json').version"
+          ./desktop/windows/ci/nsis-lifecycle.ps1 `
+            -Mode Upgrade `
+            -CurrentInstaller "desktop/windows/dist/Cosmora-Setup-$currentVersion-x64.exe" `
+            -CurrentVersion $currentVersion `
+            -BaselineInstaller "upgrade-baseline/desktop/windows/dist/Cosmora-Setup-$baselineVersion-x64.exe" `
+            -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-upgrade-lifecycle")
+
+      - name: Verify installer artifact
+        shell: pwsh
+        run: |
+          $version = node -p "require('./desktop/windows/package.json').version"
+          $installer = "desktop/windows/dist/Cosmora-Setup-$version-x64.exe"
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            throw "Expected installer was not produced: $installer"
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash.ToLowerInvariant()
+          Write-Host "Installer: $installer"
+          Write-Host "SHA-256: $hash"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
