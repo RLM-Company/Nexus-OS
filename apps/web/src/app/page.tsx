@@ -1678,6 +1678,8 @@ export default function Home() {
 
   const resetToLocalChat = (chatId: string | null, rotate = false): void => {
     viewEpochRef.current += 1;
+    // An explicit navigation replaces a still-pending initial route selection.
+    setInitialRouteReady(true);
     selectedProjectRef.current = null;
     streamRef.current?.close();
     streamRef.current = null;

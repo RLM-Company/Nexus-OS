@@ -4,6 +4,46 @@ const draftFiles = [
   { name: "draft.ts", mimeType: "text/plain", buffer: Buffer.from("export const saved = true;") }
 ];
 
+test("new chat during a delayed initial read stays usable and ignores the late response", async ({
+  page,
+  request
+}) => {
+  const response = await request.post("/api/v1/chats", {
+    data: { initial_message: "Delayed initial history", client_message_id: crypto.randomUUID() }
+  });
+  const { chat } = (await response.json()) as { chat: { id: string } };
+  let release!: () => void;
+  let intercepted!: () => void;
+  let completed!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    intercepted = resolve;
+  });
+  const finished = new Promise<void>((resolve) => {
+    completed = resolve;
+  });
+  await page.route(`**/api/v1/chats/${chat.id}`, async (route) => {
+    const detail = await route.fetch();
+    intercepted();
+    await held;
+    await route.fulfill({ response: detail });
+    completed();
+  });
+  await page.goto(`/?chat=${chat.id}`);
+  await started;
+  await expect(page.getByLabel("Сообщение Cosmora")).toBeDisabled();
+  await page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true }).click();
+  await expect(page.getByLabel("Сообщение Cosmora")).toBeEnabled();
+  await page.getByLabel("Сообщение Cosmora").fill("Текст нового чата");
+  release();
+  await finished;
+  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Текст нового чата");
+  await expect(page.locator(".message.user")).toHaveCount(0);
+  await expect(page).not.toHaveURL(/chat=/);
+});
+
 test("restores text and files after closing the tab, isolates chats, removes and clears accepted drafts", async ({
   page,
   context,
