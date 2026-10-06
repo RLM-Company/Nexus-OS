@@ -52,8 +52,17 @@ export function registerGithubRoutes(options: {
     }
   };
   app.get("/api/v1/github/status", (_request, reply) => handle(() => integration.status(), reply));
-  app.get("/api/v1/github/branches", (_request, reply) =>
-    handle(() => integration.branches(), reply)
+  app.get<{ Querystring: { page?: number } }>(
+    "/api/v1/github/branches",
+    {
+      schema: {
+        querystring: Type.Object(
+          { page: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })) },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => handle(() => integration.branches(request.query.page), reply)
   );
   app.get<{ Querystring: { ref: string } }>(
     "/api/v1/github/tree",
@@ -100,7 +109,13 @@ export function registerGithubRoutes(options: {
   );
   app.post<{
     Params: Params;
-    Body: { base_branch: string; base_sha: string; title: string; files: GithubFileChange[] };
+    Body: {
+      base_branch: string;
+      base_sha: string;
+      title: string;
+      files: GithubFileChange[];
+      workspace_scope?: string;
+    };
   }>(
     base,
     {
@@ -109,6 +124,7 @@ export function registerGithubRoutes(options: {
         body: Type.Object(
           {
             base_branch: Type.String({ minLength: 1, maxLength: 240 }),
+            workspace_scope: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
             base_sha: Type.String({ pattern: "^[a-f0-9]{40}$" }),
             title: Type.String({ minLength: 1, maxLength: 160 }),
             files: Type.Array(

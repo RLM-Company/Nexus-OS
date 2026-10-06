@@ -1,5 +1,10 @@
 # GitHub and Code personal MVP — 6 October 2026
 
+This is the first-stage record for `cec2d1e`. The daily-workflow continuation
+supersedes its branch-pagination and unreviewed-storage limits; see
+[daily workflow](GITHUB_CODE_DAILY_WORKFLOW_2026-10-06.md) and
+[integration dependencies](GITHUB_CODE_DEPENDENCIES_2026-10-06.md).
+
 Based on `523bdeec2cda01a367d97178c3cb3ec94f5933d3`, with PR base
 `codex/owner-form-login-20261004`. Work was done in a separate clone. The original
 checkout and the concurrent panel/Studio Files work were left untouched.
@@ -48,9 +53,9 @@ changed bases, malformed responses, lost PR responses and read-only recovery.
 The browser editor/review is checked at 390px width and inspected in desktop/mobile
 screenshots. Existing Code brief-to-chat behavior remains covered.
 
-Validation passed: formatting, secret scan, lint and strict TypeScript; 457 unit/API
-tests (including 20 GitHub tests); 23 selected Chromium scenarios, followed by all
-12 GitHub scenarios after the scoped styling change; nine package builds; 23 local
+Validation passed: formatting, secret scan, lint and strict TypeScript; the full
+workspace test command; 23 selected Chromium scenarios, followed by all 12 GitHub
+scenarios after the scoped styling change; nine package builds; 23 local
 deployment tests, 13 connection-check tests, six secret-scanner tests and the
 compatible-provider fixture. The browser fixture used dedicated loopback ports
 3300/3400 to avoid other chats' servers. The temporary port configuration was removed.
