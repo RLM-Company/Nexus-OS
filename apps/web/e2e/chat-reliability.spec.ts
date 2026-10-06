@@ -155,6 +155,72 @@ test("prepares a phone-sized JPEG, restores thumbnail and rejects unsafe dimensi
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
+test("keeps attachment controls keyboard reachable with clear names and thumbnail text", async ({
+  page
+}) => {
+  await page.goto("/");
+  const clip = page.getByRole("button", { name: "Прикрепить файл" });
+  await expect(clip).toBeEnabled();
+  await clip.focus();
+  await expect(clip).toBeFocused();
+  await expect(clip).toHaveAttribute("title", "Прикрепить файл или фото");
+  await page.getByLabel("Текстовые файлы и код").setInputFiles({
+    name: "accessible.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("keyboard")
+  });
+  const remove = page.getByRole("button", { name: "Удалить accessible.txt" });
+  await expect(remove).toHaveAttribute("title", "Удалить accessible.txt");
+  await remove.focus();
+  await expect(remove).toBeFocused();
+  await remove.press("Enter");
+  await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
+});
+
+test("announces rejected attachment type and keeps the draft editor usable", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Сообщение Cosmora").fill("Оставь этот текст");
+  await page.getByLabel("Текстовые файлы и код").setInputFiles({
+    name: "unsupported.exe",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("binary")
+  });
+  await expect(page.locator(".composer").getByRole("alert")).toContainText("Поддерживаются");
+  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Оставь этот текст");
+  await expect(page.getByRole("button", { name: "Прикрепить файл" })).toBeEnabled();
+});
+
+test("restored attachment drafts expose the image name to assistive technology", async ({
+  page
+}) => {
+  await page.goto("/");
+  await expect(page.getByLabel("Текстовые файлы и код")).toBeEnabled();
+  const data = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 8;
+    canvas.height = 8;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#2463eb";
+    context.fillRect(0, 0, 8, 8);
+    return canvas.toDataURL("image/png").split(",")[1]!;
+  });
+  await page.getByLabel("Текстовые файлы и код").setInputFiles({
+    name: "accessible.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(data, "base64")
+  });
+  await expect(page.locator(".attachment-thumbnail")).toHaveAttribute(
+    "alt",
+    "accessible.png миниатюра"
+  );
+  await page.reload();
+  await expect(page.locator(".attachment-thumbnail")).toHaveAttribute(
+    "alt",
+    "accessible.png миниатюра"
+  );
+  await expect(page.getByRole("button", { name: "Удалить accessible.png" })).toBeEnabled();
+});
+
 test("reload and lost network recover the same run without duplicate POSTs or messages", async ({
   page,
   context
