@@ -371,29 +371,19 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("preserves the Model Gateway circuit-breaker state machine", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "gateway-circuit-closed|FAILURE_THRESHOLD_OPENS_TO|gateway-circuit-open"
     );
-    expect(pairs).toContain(
-      "gateway-circuit-open|COOLDOWN_ALLOWS_PROBE_TO|gateway-circuit-probe"
-    );
-    expect(pairs).toContain(
-      "gateway-circuit-probe|SUCCESS_CLOSES_TO|gateway-circuit-closed"
-    );
-    expect(pairs).toContain(
-      "gateway-circuit-probe|FAILURE_REOPENS_TO|gateway-circuit-open"
-    );
+    expect(pairs).toContain("gateway-circuit-open|COOLDOWN_ALLOWS_PROBE_TO|gateway-circuit-probe");
+    expect(pairs).toContain("gateway-circuit-probe|SUCCESS_CLOSES_TO|gateway-circuit-closed");
+    expect(pairs).toContain("gateway-circuit-probe|FAILURE_REOPENS_TO|gateway-circuit-open");
   });
 
   it("keeps fallback before first delta and forbids fallback after partial output", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
     const gatewayTest = repositoryStructureFileId("packages/model-gateway/test/gateway.test.ts");
 
     expect(pairs).toContain(
@@ -412,9 +402,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("bridges Gateway unknown usage to persistent unknown-cost accounting", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "claim-gateway-unknown-usage-keeps-cost-unknown|CONSISTENT_WITH|claim-usage-unknown-cost-preserved"
@@ -426,16 +414,12 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("requires exactly-once terminal completion and fails truncated streams closed", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
     const streamTest = repositoryStructureFileId(
       "packages/model-gateway/test/stream-completion.test.ts"
     );
 
-    expect(pairs).toContain(
-      `claim-gateway-completion-exactly-once|VERIFIED_BY_TEST|${streamTest}`
-    );
+    expect(pairs).toContain(`claim-gateway-completion-exactly-once|VERIFIED_BY_TEST|${streamTest}`);
     expect(pairs).toContain(
       `claim-gateway-stream-without-completion-fails-closed|VERIFIED_BY_TEST|${streamTest}`
     );

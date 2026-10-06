@@ -620,7 +620,6 @@ The layer intentionally does not copy any secret value from tests, environment e
 Regression paths terminate in `config.test.ts`, `secrets.test.ts` and
 `model-runtime.test.ts`.
 
-
 ## Model Reliability Graph
 
 The unified graph now includes **29 Model Reliability nodes** and **81 relationships** derived from

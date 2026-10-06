@@ -306,7 +306,6 @@ The layer contains **43 nodes / 129 relationships**:
 from node text, excerpts and graph evidence. Tests connect the rule that config loading exposes only
 `modelApiKeyConfigured`, while the actual credential is resolved at the composition boundary.
 
-
 ## Model Reliability
 
 The graph now includes a dedicated **Model Reliability** layer with **29 nodes** and **81
