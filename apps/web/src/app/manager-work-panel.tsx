@@ -339,7 +339,7 @@ export function ManagerWorkPanel({
               </article>
               <article>
                 <small>Результаты</small>
-                <strong>{resultFileCount}</strong>
+                <strong data-testid="manager-work-file-count">{resultFileCount}</strong>
                 <span>{resultFileCount === 1 ? "готовый файл" : "готовых файлов"}</span>
               </article>
             </div>
