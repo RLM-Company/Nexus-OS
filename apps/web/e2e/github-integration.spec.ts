@@ -10,6 +10,8 @@ test("requires review approval before publishing the exact prepared GitHub draft
     status: "review",
     pr_url: null as string | null,
     plan: {
+      repository: "RLM-Company/Nexus-OS",
+      base_sha: "a".repeat(40),
       base_branch: "main",
       branch: "cosmora/change-review-one",
       review_hash: "f".repeat(64),
@@ -34,7 +36,12 @@ test("requires review approval before publishing the exact prepared GitHub draft
     else if (url.pathname === "/api/v1/projects")
       body = { items: [{ id: "github-project", title: "Код" }] };
     else if (url.pathname.endsWith("/status"))
-      body = { configured: true, repository: "RLM-Company/Nexus-OS", default_branch: "main" };
+      body = {
+        configured: true,
+        repository: "RLM-Company/Nexus-OS",
+        default_branch: "main",
+        workspace_scope: "1".repeat(64)
+      };
     else if (url.pathname.endsWith("/branches"))
       body = { items: [{ name: "main", sha: "a".repeat(40) }] };
     else if (url.pathname.endsWith("/tree"))
@@ -81,6 +88,8 @@ async function mockWorkspace(
     status: "review",
     pr_url: null as string | null,
     plan: {
+      repository: "RLM-Company/Nexus-OS",
+      base_sha: "a".repeat(40),
       base_branch: "main",
       branch: "cosmora/change-saved",
       review_hash: "f".repeat(64),
@@ -119,7 +128,12 @@ async function mockWorkspace(
     } else if (url.pathname === "/api/v1/projects")
       body = { items: [{ id: "github-project", title: "Код" }] };
     else if (url.pathname.endsWith("/status"))
-      body = { configured: true, repository: "RLM-Company/Nexus-OS", default_branch: "main" };
+      body = {
+        configured: true,
+        repository: "RLM-Company/Nexus-OS",
+        default_branch: "main",
+        workspace_scope: "1".repeat(64)
+      };
     else if (url.pathname.endsWith("/branches"))
       body = { items: [{ name: "main", sha: "a".repeat(40) }], limited: false };
     else if (url.pathname.endsWith("/tree"))
@@ -151,7 +165,8 @@ test("protects unstaged text and allows empty new files to be reviewed", async (
   await page.getByLabel("Содержимое файла").fill("unsaved text");
   await expect(page.getByRole("button", { name: "src/file-1.ts", exact: true })).toBeDisabled();
   await expect(page.getByLabel("Ветка репозитория")).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Обновить подключение" })).toBeDisabled();
+  await page.getByRole("button", { name: "Обновить подключение" }).click();
+  await expect(page.getByLabel("Содержимое файла")).toHaveValue("unsaved text");
   await expect(page.getByRole("button", { name: "Новый файл", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Отменить правки в редакторе" }).click();
   await expect(page.getByLabel("Содержимое файла")).toHaveValue("const value = 1;");
@@ -244,7 +259,12 @@ test("reads code into a chat draft and does not start a model request", async ({
   await page.route("**/api/v1/github/**", async (route) => {
     const url = new URL(route.request().url());
     const body = url.pathname.endsWith("/status")
-      ? { configured: true, repository: "RLM-Company/Nexus-OS", default_branch: "main" }
+      ? {
+          configured: true,
+          repository: "RLM-Company/Nexus-OS",
+          default_branch: "main",
+          workspace_scope: "1".repeat(64)
+        }
       : url.pathname.endsWith("/branches")
         ? { items: [{ name: "main", sha: "a".repeat(40) }] }
         : url.pathname.endsWith("/tree")

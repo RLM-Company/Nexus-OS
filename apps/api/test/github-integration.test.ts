@@ -14,7 +14,7 @@ const head = "a".repeat(40),
   blob = "c".repeat(40),
   commit = "d".repeat(40);
 function fixture() {
-  const calls: Array<{ path: string; method: string; body: unknown }> = [];
+  const calls: Array<{ path: string; method: string; body: unknown; search: string }> = [];
   let currentHead = head;
   let failPr = false;
   let prExists = false;
@@ -26,7 +26,14 @@ function fixture() {
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url
       ).pathname.replace("/repos/RLM-Company/Nexus-OS", "");
       const body = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : null;
-      calls.push({ path, method: init?.method ?? "GET", body });
+      calls.push({
+        path,
+        method: init?.method ?? "GET",
+        body,
+        search: new URL(
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+        ).search
+      });
       const data = path.startsWith("/git/ref/heads/")
         ? {
             ref: `refs/heads/${decodeURIComponent(path.slice("/git/ref/heads/".length))}`,
@@ -99,6 +106,196 @@ function fixture() {
 }
 
 describe("GitHub owner workflow", () => {
+  it("paginates bounded branch reads and rejects invalid pages before GitHub access", async () => {
+    const f = fixture();
+    f.respond((path) =>
+      path === "/branches"
+        ? new Response(
+            JSON.stringify(
+              new URLSearchParams(f.calls.at(-1)!.search).get("page") === "1"
+                ? Array.from({ length: 100 }, (_, i) => ({
+                    name: `branch-${i}`,
+                    commit: { sha: head }
+                  }))
+                : [{ name: "feature/after-100", commit: { sha: head } }]
+            )
+          )
+        : null
+    );
+    expect(await f.integration.branches()).toMatchObject({ page: 1, next_page: 2, limited: false });
+    expect(await f.integration.branches(2)).toEqual({
+      items: [{ name: "feature/after-100", sha: head }],
+      page: 2,
+      next_page: null,
+      limited: false
+    });
+    expect(f.calls.at(-1)!.search).toBe("?per_page=100&page=2");
+    const count = f.calls.length;
+    for (const page of [0, -1, 1.5, 1001, NaN])
+      await expect(f.integration.branches(page)).rejects.toThrow("GITHUB_INVALID_FILE");
+    expect(f.calls).toHaveLength(count);
+    const database = openDatabase(":memory:");
+    await runMigrations(database);
+    const app = buildApp({
+      config: loadServerConfig({ NODE_ENV: "test" }),
+      database,
+      githubIntegration: f.integration
+    });
+    try {
+      for (const query of ["page=0", "page=1.5", "page=1001"])
+        expect(
+          (await app.inject({ method: "GET", url: `/api/v1/github/branches?${query}` })).statusCode
+        ).toBe(400);
+      expect(
+        (await app.inject({ method: "GET", url: "/api/v1/github/branches?page=2" })).json()
+      ).toMatchObject({ page: 2, next_page: null });
+      // Fastify strips extra query fields; they cannot select another repository.
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/v1/github/branches?page=2&repository=Other/Repo"
+          })
+        ).json()
+      ).toMatchObject({ page: 2, next_page: null });
+      expect(f.integration.repository).toBe("RLM-Company/Nexus-OS");
+    } finally {
+      await app.close();
+      database.close();
+    }
+  });
+  it("binds recovery/reviews to owner, repository, token and effective permissions without exposing a credential", async () => {
+    const f = fixture();
+    const first = await f.integration.status();
+    expect(first.workspace_scope).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(first)).not.toContain("fixture-key");
+    expect((await f.integration.status()).workspace_scope).toBe(first.workspace_scope);
+    const statusFetch: typeof fetch = () =>
+      Promise.resolve(new Response(JSON.stringify({ default_branch: "main", private: true })));
+    for (const config of [
+      { ownerId: "other" },
+      { repository: "Other/Repo" },
+      { token: "other-key" }
+    ]) {
+      const other = new GithubIntegration({
+        token: "fixture-key",
+        fetchImplementation: statusFetch,
+        ...config
+      });
+      expect((await other.status()).workspace_scope).not.toBe(first.workspace_scope);
+    }
+    const plan = await f.integration.prepare("bound", {
+      base_branch: "main",
+      base_sha: head,
+      title: "Fix",
+      files: [{ path: "app.ts", content: "2" }],
+      workspace_scope: first.workspace_scope!
+    });
+    f.respond((path) =>
+      path === ""
+        ? new Response(
+            JSON.stringify({
+              default_branch: "main",
+              private: true,
+              permissions: { pull: true, push: false }
+            })
+          )
+        : null
+    );
+    await expect(
+      f.integration.prepare("bound", {
+        base_branch: "main",
+        base_sha: head,
+        title: "Fix",
+        files: [{ path: "app.ts", content: "2" }],
+        workspace_scope: first.workspace_scope!
+      })
+    ).rejects.toThrow("GITHUB_CONFLICT");
+    await expect(
+      f.integration.publish(
+        plan,
+        () => true,
+        () => {}
+      )
+    ).rejects.toThrow("GITHUB_CONFLICT");
+    expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("reviews multiple edits/new files as one immutable set and creates exactly one branch and draft PR", async () => {
+    const database = openDatabase(":memory:");
+    await runMigrations(database);
+    const f = fixture();
+    const drafts = new GithubDraftStore(database.sqlite);
+    const projects = new ProjectStore(database.sqlite);
+    const project = projects.createProject("Code", "multi-files").project.id;
+    const input = {
+      base_branch: "main",
+      base_sha: head,
+      title: "Several files",
+      files: [
+        { path: "app.ts", content: "2" },
+        { path: "src/new.ts", content: "new" },
+        { path: "src/empty.ts", content: "" }
+      ]
+    };
+    const draft = await drafts.create("local-owner", project, f.integration, input);
+    expect(draft.plan.files.map(({ path, before }) => ({ path, before }))).toEqual([
+      { path: "app.ts", before: "const value = 1;" },
+      { path: "src/new.ts", before: null },
+      { path: "src/empty.ts", before: null }
+    ]);
+    const altered = await f.integration.prepare(draft.id, {
+      ...input,
+      files: [...input.files.slice(0, 2), { path: "src/empty.ts", content: "changed" }]
+    });
+    expect(altered.review_hash).not.toBe(draft.plan.review_hash);
+    expect(() => drafts.claim(draft.id, "local-owner", altered.review_hash)).toThrow(
+      "GITHUB_CONFLICT"
+    );
+    await expect(
+      f.integration.prepare("duplicate", { ...input, files: [input.files[0]!, input.files[0]!] })
+    ).rejects.toThrow("GITHUB_INVALID_FILE");
+    await expect(
+      f.integration.prepare("too-big", {
+        ...input,
+        files: Array.from({ length: 4 }, (_, i) => ({
+          path: `${i}.ts`,
+          content: "a".repeat(40001)
+        }))
+      })
+    ).rejects.toThrow("GITHUB_INVALID_FILE");
+    const app = buildApp({
+      config: loadServerConfig({ NODE_ENV: "test" }),
+      database,
+      projectStore: projects,
+      githubDraftStore: drafts,
+      githubIntegration: f.integration,
+      emergencyStopStore: new EmergencyStopStore(database.sqlite)
+    });
+    try {
+      const responses = await Promise.all(
+        [1, 2].map(() =>
+          app.inject({
+            method: "POST",
+            url: `/api/v1/projects/${project}/github-drafts/${draft.id}/publish`,
+            payload: { approve: true, review_hash: draft.plan.review_hash }
+          })
+        )
+      );
+      expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+      const writes = f.calls.filter((call) => call.method === "POST");
+      expect(writes.map((call) => call.path)).toEqual([
+        "/git/trees",
+        "/git/commits",
+        "/git/refs",
+        "/pulls"
+      ]);
+      expect((writes[0]!.body as { tree: unknown[] }).tree).toHaveLength(3);
+      expect(drafts.get(draft.id, "local-owner")?.status).toBe("published");
+    } finally {
+      await app.close();
+      database.close();
+    }
+  });
   it("creates an empty new file, pins a slash-named base branch and reads it without writes", async () => {
     const f = fixture();
     const plan = await f.integration.prepare("new-file", {
@@ -111,6 +308,7 @@ describe("GitHub owner workflow", () => {
       { path: "src/empty.ts", content: "", before: null, mode: "100644" }
     ]);
     expect(f.calls.map((call) => call.path)).toEqual([
+      "",
       "/git/ref/heads/feature%2Fcode",
       `/commits/${head}`,
       `/git/trees/${tree}`
@@ -133,6 +331,17 @@ describe("GitHub owner workflow", () => {
     await expect(f.integration.status()).rejects.toThrow("GITHUB_UNAVAILABLE");
     await expect(f.integration.branches()).rejects.toThrow("GITHUB_UNAVAILABLE");
     await expect(f.integration.tree("main")).rejects.toThrow("GITHUB_UNAVAILABLE");
+    f.respond(
+      () =>
+        new Response(
+          JSON.stringify({
+            default_branch: "main",
+            private: true,
+            permissions: { push: "unexpected" }
+          })
+        )
+    );
+    await expect(f.integration.status()).rejects.toThrow("GITHUB_UNAVAILABLE");
     f.respond(() => new Response(JSON.stringify({ content: "!!!", encoding: "base64", size: 0 })));
     await expect(f.integration.file(blob)).rejects.toThrow("GITHUB_INVALID_FILE");
     f.respond(() => new Response(JSON.stringify({ content: "YQ==", encoding: "base64", size: 2 })));

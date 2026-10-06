@@ -1,4 +1,4 @@
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID, createHash, createHmac } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 export class GithubIntegrationError extends Error {
@@ -28,6 +28,7 @@ interface TreeEntry {
 }
 interface ChangePlan {
   repository: string;
+  workspace_scope: string;
   base_branch: string;
   base_sha: string;
   base_tree: string;
@@ -85,7 +86,10 @@ const validResponse = (path: string, body: unknown, value: unknown): boolean => 
       record(value) &&
       typeof value.default_branch === "string" &&
       value.default_branch.length > 0 &&
-      typeof value.private === "boolean"
+      typeof value.private === "boolean" &&
+      (value.permissions === undefined ||
+        (record(value.permissions) &&
+          Object.values(value.permissions).every((permission) => typeof permission === "boolean")))
     );
   if (path.startsWith("/branches?"))
     return (
@@ -227,23 +231,48 @@ export class GithubIntegration {
   }
   async status() {
     if (!this.configured)
-      return { configured: false, repository: this.repository, default_branch: null };
-    const repository = await this.#request<{ default_branch: string; private: boolean }>("");
+      return {
+        configured: false,
+        repository: this.repository,
+        default_branch: null,
+        workspace_scope: null
+      };
+    const repository = await this.#request<{
+      default_branch: string;
+      private: boolean;
+      permissions?: Record<string, boolean>;
+    }>("");
     return {
       configured: true,
       repository: this.repository,
       default_branch: repository.default_branch,
-      private: repository.private
+      private: repository.private,
+      // Opaque browser binding; never expose the token or use this as authentication.
+      workspace_scope: createHmac("sha256", this.#token)
+        .update(
+          JSON.stringify([
+            "github-workspace-v1",
+            this.ownerId,
+            this.repository,
+            ["pull", "push", "admin", "maintain", "triage"].map(
+              (key) => repository.permissions?.[key] ?? null
+            )
+          ])
+        )
+        .digest("hex")
     };
   }
-  async branches() {
-    const result =
-      await this.#request<Array<{ name: string; commit: { sha: string } }>>(
-        "/branches?per_page=100"
-      );
+  async branches(page = 1) {
+    if (!Number.isSafeInteger(page) || page < 1 || page > 1000)
+      throw new GithubIntegrationError("GITHUB_INVALID_FILE");
+    const result = await this.#request<Array<{ name: string; commit: { sha: string } }>>(
+      `/branches?per_page=100&page=${page}`
+    );
     return {
       items: result.map((item) => ({ name: item.name, sha: item.commit.sha })),
-      limited: result.length === 100
+      page,
+      next_page: result.length === 100 && page < 1000 ? page + 1 : null,
+      limited: result.length === 100 && page === 1000
     };
   }
   async tree(ref: string) {
@@ -278,7 +307,13 @@ export class GithubIntegration {
   }
   async prepare(
     id: string,
-    input: { base_branch: string; base_sha: string; title: string; files: GithubFileChange[] }
+    input: {
+      base_branch: string;
+      base_sha: string;
+      title: string;
+      files: GithubFileChange[];
+      workspace_scope?: string;
+    }
   ): Promise<ChangePlan> {
     if (!this.configured) throw new GithubIntegrationError("GITHUB_NOT_CONFIGURED");
     if (
@@ -300,6 +335,9 @@ export class GithubIntegration {
       )
         throw new GithubIntegrationError("GITHUB_INVALID_FILE");
     }
+    const context = await this.status();
+    if (input.workspace_scope && input.workspace_scope !== context.workspace_scope)
+      throw new GithubIntegrationError("GITHUB_CONFLICT");
     const tree = await this.#branchTree(input.base_branch);
     if (tree.sha !== input.base_sha) throw new GithubIntegrationError("GITHUB_BASE_CHANGED");
     if (tree.truncated) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
@@ -320,6 +358,7 @@ export class GithubIntegration {
     }
     const plan = {
       repository: this.repository,
+      workspace_scope: context.workspace_scope!,
       base_branch: input.base_branch,
       base_sha: input.base_sha,
       base_tree: tree.tree_sha,
@@ -339,6 +378,8 @@ export class GithubIntegration {
     onWrite: () => void = () => {}
   ): Promise<string> {
     if (plan.repository !== this.repository) throw new GithubIntegrationError("GITHUB_CONFLICT");
+    if (plan.workspace_scope && plan.workspace_scope !== (await this.status()).workspace_scope)
+      throw new GithubIntegrationError("GITHUB_CONFLICT");
     const head = await this.#branchTree(plan.base_branch);
     if (head.sha !== plan.base_sha) throw new GithubIntegrationError("GITHUB_BASE_CHANGED");
     const write = async <T>(path: string, body: unknown): Promise<T> => {
