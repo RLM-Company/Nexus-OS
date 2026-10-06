@@ -96,10 +96,16 @@ function Get-AppUninstallEntries([string]$InstallDir) {
   return @(Get-ChildItem -LiteralPath $registry | ForEach-Object {
     $entry = Get-ItemProperty -LiteralPath $_.PSPath
     if (($entry.PSObject.Properties.Name -contains "DisplayName") -and
-        ($entry.PSObject.Properties.Name -contains "InstallLocation") -and
-        $entry.DisplayName -like "Cosmora*" -and
-        [string]::Equals(([string]$entry.InstallLocation).TrimEnd('\'), $InstallDir.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
-      $entry
+        ($entry.PSObject.Properties.Name -contains "UninstallString") -and
+        $entry.DisplayName -like "Cosmora*") {
+      # NSIS stores InstallLocation in its application key, not the uninstall key.
+      # Bind this uninstall record to our actual quoted uninstaller path instead.
+      $match = [regex]::Match([string]$entry.UninstallString, '^"([^"]+)"')
+      if ($match.Success -and [string]::Equals(
+        [IO.Path]::GetDirectoryName($match.Groups[1].Value).TrimEnd('\'),
+        $InstallDir.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+        $entry
+      }
     }
   })
 }
@@ -124,7 +130,7 @@ function Assert-InstallMetadata([string]$App, [string]$InstallDir, [string]$Expe
   }
   $entries = @(Get-AppUninstallEntries $InstallDir)
   if ($entries.Count -ne 1 -or $entries[0].DisplayVersion -ne $ExpectedVersion) {
-    throw "Installed uninstall registry/version metadata is incorrect."
+    throw "Installed uninstall registry/version metadata is incorrect (matched records: $($entries.Count))."
   }
 }
 
