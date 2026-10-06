@@ -1,8 +1,8 @@
 import type { IntelligenceGraphVersionRef } from "@cosmora/contracts";
-import {
+import type {
   IntelligenceGraphIndex,
-  type IntelligenceGraphQueryBudget,
-  type IntelligenceGraphQueryMode
+  IntelligenceGraphQueryBudget,
+  IntelligenceGraphQueryMode
 } from "./intelligence-graph-retrieval.js";
 
 export interface IntelligenceGraphRetrievalEvaluationCase {
@@ -84,7 +84,7 @@ export const evaluateIntelligenceGraphRetrieval = (input: {
         project_id: input.projectId,
         text: evaluationCase.query,
         mode,
-        as_of: mode === "temporal" ? evaluationCase.as_of : null,
+        as_of: mode === "temporal" ? (evaluationCase.as_of ?? null) : null,
         verified_only: evaluationCase.verified_only ?? false,
         budget: evaluationCase.budget ?? {}
       });
@@ -118,9 +118,7 @@ export const evaluateIntelligenceGraphRetrieval = (input: {
       cases: results.length,
       mean_precision: mean(results.map((result) => result.precision)),
       mean_recall: mean(results.map((result) => result.recall)),
-      sufficient_evidence_rate: mean(
-        results.map((result) => (result.sufficient_evidence ? 1 : 0))
-      ),
+      sufficient_evidence_rate: mean(results.map((result) => (result.sufficient_evidence ? 1 : 0))),
       truncated_rate: mean(results.map((result) => (result.truncated ? 1 : 0)))
     };
   });

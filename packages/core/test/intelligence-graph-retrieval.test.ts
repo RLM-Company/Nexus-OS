@@ -1,12 +1,6 @@
-import type {
-  IntelligenceGraphEdge,
-  IntelligenceGraphNode
-} from "@cosmora/contracts";
+import type { IntelligenceGraphEdge, IntelligenceGraphNode } from "@cosmora/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  IntelligenceGraphIndex,
-  type IntelligenceGraphSearchRecord
-} from "../src/index.js";
+import { IntelligenceGraphIndex, type IntelligenceGraphSearchRecord } from "../src/index.js";
 
 const t0 = "2026-09-01T00:00:00.000Z";
 const t1 = "2026-09-10T23:59:59.000Z";
@@ -257,7 +251,11 @@ describe("Intelligence Graph retrieval", () => {
     });
 
     expect(packet.nodes.map(({ node }) => node.node_id)).toEqual(
-      expect.arrayContaining(["artifact-manager-runtime", "decision-storage", "source-decision-log"])
+      expect.arrayContaining([
+        "artifact-manager-runtime",
+        "decision-storage",
+        "source-decision-log"
+      ])
     );
     expect(packet.nodes.some(({ node }) => node.node_id === "claim-storage")).toBe(false);
   });

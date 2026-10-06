@@ -51,9 +51,7 @@ export const IntelligenceGraphProvenanceKindSchema = Type.Union([
   Type.Literal("deterministic_derivation"),
   Type.Literal("runtime_record")
 ]);
-export type IntelligenceGraphProvenanceKind = Static<
-  typeof IntelligenceGraphProvenanceKindSchema
->;
+export type IntelligenceGraphProvenanceKind = Static<typeof IntelligenceGraphProvenanceKindSchema>;
 
 export const IntelligenceGraphConfidenceMethodSchema = Type.Union([
   Type.Literal("none"),
@@ -88,10 +86,7 @@ export type IntelligenceGraphVersionRef = Static<typeof IntelligenceGraphVersion
 
 const nullableTime = Type.Union([IsoDateTimeSchema, Type.Null()]);
 const nullableVersionRef = Type.Union([IntelligenceGraphVersionRefSchema, Type.Null()]);
-const nullableExtractor = Type.Union([
-  Type.String({ minLength: 1, maxLength: 128 }),
-  Type.Null()
-]);
+const nullableExtractor = Type.Union([Type.String({ minLength: 1, maxLength: 128 }), Type.Null()]);
 
 export const IntelligenceGraphNodeSchema = Type.Object(
   {
@@ -151,9 +146,7 @@ export const IntelligenceGraphConflictStatusSchema = Type.Union([
   Type.Literal("open"),
   Type.Literal("resolved")
 ]);
-export type IntelligenceGraphConflictStatus = Static<
-  typeof IntelligenceGraphConflictStatusSchema
->;
+export type IntelligenceGraphConflictStatus = Static<typeof IntelligenceGraphConflictStatusSchema>;
 
 export const IntelligenceGraphConflictSchema = Type.Object(
   {
@@ -211,11 +204,7 @@ const validateTimeWindow = (input: {
   if (input.observedAt !== null && after(input.observedAt, input.createdAt)) {
     issues.push(`${input.label} was observed after its record was created`);
   }
-  if (
-    input.validFrom !== null &&
-    input.validTo !== null &&
-    after(input.validFrom, input.validTo)
-  ) {
+  if (input.validFrom !== null && input.validTo !== null && after(input.validFrom, input.validTo)) {
     issues.push(`${input.label} has an inverted validity interval`);
   }
   if (input.deletedAt !== null && before(input.deletedAt, input.createdAt)) {
@@ -274,6 +263,9 @@ export const validateIntelligenceGraphSnapshot = (input: {
     if (node.owner_id !== input.ownerId) {
       issues.push(`Node ${key} belongs to another owner`);
     }
+    if (node.sensitivity === "D4_PRIVATE_CHAT") {
+      issues.push(`Node ${key} cannot persist D4 private chat data`);
+    }
     if (node.scope === "project") {
       if (input.projectId === null || node.project_id !== input.projectId) {
         issues.push(`Node ${key} belongs to another project`);
@@ -318,6 +310,9 @@ export const validateIntelligenceGraphSnapshot = (input: {
 
     if (edge.owner_id !== input.ownerId) {
       issues.push(`Edge ${key} belongs to another owner`);
+    }
+    if (edge.sensitivity === "D4_PRIVATE_CHAT") {
+      issues.push(`Edge ${key} cannot persist D4 private chat data`);
     }
     if (edge.scope === "project") {
       if (input.projectId === null || edge.project_id !== input.projectId) {
@@ -475,7 +470,6 @@ export const validateIntelligenceGraphSnapshot = (input: {
   return [...new Set(issues)];
 };
 
-
 export const validateIntelligenceGraphConflict = (input: {
   ownerId: string;
   projectId: string | null;
@@ -500,7 +494,9 @@ export const validateIntelligenceGraphConflict = (input: {
       issues.push(`Owner-global conflict ${conflict.conflict_id} must not carry project_id`);
     }
     if (!allowOwnerGlobal) {
-      issues.push(`Owner-global conflict ${conflict.conflict_id} is not authorized for this request`);
+      issues.push(
+        `Owner-global conflict ${conflict.conflict_id} is not authorized for this request`
+      );
     }
   }
 
@@ -556,10 +552,7 @@ export const validateIntelligenceGraphConflict = (input: {
     }
   }
 
-  if (
-    conflict.resolved_at !== null &&
-    before(conflict.resolved_at, conflict.created_at)
-  ) {
+  if (conflict.resolved_at !== null && before(conflict.resolved_at, conflict.created_at)) {
     issues.push(`Conflict ${conflict.conflict_id} cannot resolve before it was created`);
   }
 
@@ -582,10 +575,7 @@ export const validateIntelligenceGraphConflict = (input: {
       if (before(resolution.created_at, conflict.created_at)) {
         issues.push(`Conflict ${conflict.conflict_id} resolution predates the conflict`);
       }
-      if (
-        conflict.resolved_at !== null &&
-        after(resolution.created_at, conflict.resolved_at)
-      ) {
+      if (conflict.resolved_at !== null && after(resolution.created_at, conflict.resolved_at)) {
         issues.push(`Conflict ${conflict.conflict_id} resolution was created after resolved_at`);
       }
     }

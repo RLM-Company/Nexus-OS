@@ -12,11 +12,11 @@ test("keeps the Manager demo usable without horizontal overflow on a phone viewp
   await page.getByRole("tab", { name: "План" }).click();
 
   await page.getByRole("button", { name: "Подготовить Manager plan" }).click();
-  const demo = page.locator(".manager-demo");
+  const demo = page.getByRole("region", { name: "Manager demo workflow" });
   await expect(demo).toBeVisible();
-  await expect(page.getByRole("button", { name: "Запустить безопасный шаг" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Остановить" })).toBeVisible();
-  await expect(page.locator(".demo-steps li")).toHaveCount(3);
+  await expect(demo.getByRole("button", { name: "Запустить безопасный шаг" })).toBeVisible();
+  await expect(demo.getByRole("button", { name: "Остановить" })).toBeVisible();
+  await expect(demo.locator(".demo-steps li")).toHaveCount(3);
 
   expect(
     await page.evaluate(
@@ -24,7 +24,7 @@ test("keeps the Manager demo usable without horizontal overflow on a phone viewp
     )
   ).toBe(true);
   expect(
-    await page
+    await demo
       .locator(".demo-steps")
       .evaluate((node) => getComputedStyle(node).gridTemplateColumns.trim().split(/\s+/).length)
   ).toBe(1);

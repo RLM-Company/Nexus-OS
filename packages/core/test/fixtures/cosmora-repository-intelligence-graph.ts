@@ -96,7 +96,8 @@ export const cosmoraRepositoryIntelligenceGraphFixture =
         text: "project context browser local preview not authoritative runtime memory",
         excerpt:
           "The Project Context surface is browser-local preview state and must not be interpreted as authoritative runtime context.",
-        location: "docs/contracts/project-context-web-contract-gap-2026-09-18.md:Current safe boundary",
+        location:
+          "docs/contracts/project-context-web-contract-gap-2026-09-18.md:Current safe boundary",
         created_at: recordedAt,
         observed_at: "2026-09-18T00:00:00.000Z",
         valid_from: "2026-09-18T00:00:00.000Z",
@@ -124,8 +125,7 @@ export const cosmoraRepositoryIntelligenceGraphFixture =
         id: "claim-main-durable-manager-runtime",
         kind: "Claim",
         text: "main durable manager work runtime connected coordinator routes",
-        excerpt:
-          "main@62bc523 adds a durable Manager work coordinator and Manager work routes.",
+        excerpt: "main@62bc523 adds a durable Manager work coordinator and Manager work routes.",
         location: "commit:62bc5234b24e3b0c10262b043063fd31be9732bd",
         created_at: recordedAt,
         observed_at: "2026-09-26T11:00:05.000Z",

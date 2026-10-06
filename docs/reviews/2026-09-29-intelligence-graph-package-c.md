@@ -103,14 +103,14 @@ global summarization on every message.
 - https://microsoft.github.io/graphrag/query/local_search/
 - https://microsoft.github.io/graphrag/query/drift_search/
 
-Gutiérrez et al., *From RAG to Memory: Non-Parametric Continual Learning for Large Language Models*
+Gutiérrez et al., _From RAG to Memory: Non-Parametric Continual Learning for Large Language Models_
 (ICML 2025), note that graph-structured retrieval approaches can improve associative/sense-making
 memory while some approaches regress simpler factual memory. Package C therefore keeps baseline
 retrieval as a mandatory comparison rather than assuming graph retrieval is always superior.
 
 - https://proceedings.mlr.press/v267/gutierrez25a.html
 
-Rasmussen et al., *Zep: A Temporal Knowledge Graph Architecture for Agent Memory* (2025), evaluate
+Rasmussen et al., _Zep: A Temporal Knowledge Graph Architecture for Agent Memory_ (2025), evaluate
 temporally aware graph memory for changing information and cross-session retrieval. Their reported
 results are not treated as Cosmora results. Package C uses only the architectural lesson that
 historical facts require explicit time-aware retrieval.
