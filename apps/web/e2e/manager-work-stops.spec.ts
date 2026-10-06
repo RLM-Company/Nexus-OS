@@ -166,6 +166,53 @@ test("blocks resume and plan approval while retaining cancellation", async ({ pa
   ).toBeEnabled();
 });
 
+test("shows blocked publish work as file-saving attention", async ({ page, request }) => {
+  const projectId = await createProject(request);
+  await page.route(`**/api/v1/projects/${projectId}/work`, (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: "fixture-blocked-publish",
+            version: 4,
+            status: "blocked",
+            stage: "publish",
+            pause_requested: false,
+            model_requests: 2,
+            error_code: "WAITING_CONFIRMATION",
+            confirmation_id: "confirmation-1",
+            plan: {
+              summary: "Подготовить файл",
+              instructions: "Создать результат и сохранить его в проекте",
+              complexity: "simple",
+              needs_critic: false
+            },
+            draft: { files: [{ name: "result.md", content: "# Result" }] },
+            review: null,
+            events: [
+              {
+                sequence: 1,
+                message: "Сохранение файлов ожидает разрешения",
+                at: "2026-10-06T07:00:00.000Z"
+              }
+            ],
+            request: { goal: "Сохранить готовый файл" }
+          }
+        ]
+      }
+    })
+  );
+
+  await page.goto(`/?project=${projectId}&view=plan`);
+  const workPanel = panel(page);
+  await expect(workPanel.getByTestId("manager-work-stage")).toHaveText("Сохранение файлов");
+  const progress = workPanel.getByRole("list", { name: "Прогресс выполнения" });
+  await expect(progress.getByRole("listitem").nth(3)).toHaveAttribute("aria-current", "step");
+  await expect(
+    workPanel.getByRole("link", { name: "Разрешения проекта", exact: true })
+  ).toBeVisible();
+});
+
 test("bounds a stalled project-stop check while retaining fail-closed launch controls", async ({
   page,
   request
