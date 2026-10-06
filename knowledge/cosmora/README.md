@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 730 nodes;
-- 2233 typed edges;
-- 730 retrieval records.
+- 789 nodes;
+- 2387 typed edges;
+- 789 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -345,3 +345,28 @@ Each route is linked to its route family and exact source file. Boundary hubs ke
 for retrieval without connecting every endpoint directly to the same global identity/policy node.
 Owner, project, Step-Up and idempotency behavior is grounded in the corresponding API regression
 suites.
+
+
+## Agent Composition
+
+The graph now models how an agent is composed instead of treating `AgentBlueprint` as an opaque
+blob.
+
+The **59-node / 154-edge** layer covers:
+
+- product / owner / project definition scopes;
+- immutable Agent Function and Behavior Pattern versions;
+- behavior test status and function compatibility;
+- Agent Grant project binding, expiry and bounded delegation;
+- memory read/write-back modes;
+- Agent Blueprint composition from function, behavior, model-profile reference, grant and memory
+  scope;
+- the fixed instruction precedence `constitution → policy → function → behavior → task`;
+- non-executable instruction plans with exact versioned sources;
+- Agent Instance statuses and proposal-only persistence;
+- all 9 Agent Studio decision operations and their four object types;
+- idempotent create mutations and content-minimized decision events;
+- delegated proposal fail-closed behavior when a Policy Engine validator is absent.
+
+The layer is grounded in the contracts, DB stores, Policy Engine composition code and their
+regression suites.
