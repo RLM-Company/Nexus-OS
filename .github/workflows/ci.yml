@@ -37,6 +37,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Show exact Manager attention Prettier diff
+        run: |
+          pnpm exec prettier --write apps/web/src/app/page.tsx
+          git diff -- apps/web/src/app/page.tsx
+
       - name: Install Playwright Chromium
         run: pnpm --filter @cosmora/web exec playwright install --with-deps chromium
 
