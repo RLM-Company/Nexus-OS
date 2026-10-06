@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **633 nodes**;
-- **1896 typed edges**;
+- **662 nodes**;
+- **1977 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -619,3 +619,26 @@ It materializes:
 The layer intentionally does not copy any secret value from tests, environment examples or runtime.
 Regression paths terminate in `config.test.ts`, `secrets.test.ts` and
 `model-runtime.test.ts`.
+
+
+## Model Reliability Graph
+
+The unified graph now includes **29 Model Reliability nodes** and **81 relationships** derived from
+the checked-in Model Gateway implementation and regression tests.
+
+The layer separates model **selection/intelligence** from model **runtime reliability**. It records:
+
+- 5 normalized gateway error codes;
+- 4 streaming event types;
+- the 3-state route circuit breaker;
+- bounded retry and cooldown controls;
+- fallback-before-first-delta and no-fallback-after-partial-output invariants;
+- cancellation and timeout normalization;
+- route-adapter consistency with Model Registry;
+- completion identity and token-usage validation;
+- exactly-once terminal completion;
+- fail-closed behavior for streams that end without a completion event.
+
+Every reliability claim is connected to the exact implementation/test evidence. Configurable retry,
+delay and circuit parameters reuse Configuration & Secret Boundary nodes rather than inventing new
+settings, and unknown usage is linked to the Resource Budget rule that preserves unknown cost.
