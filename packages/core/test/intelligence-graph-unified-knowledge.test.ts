@@ -1442,9 +1442,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("preserves fixed Agent instruction authority precedence", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       "instruction-authority-constitution|PRECEDES_IN_INSTRUCTION_AUTHORITY|instruction-authority-policy"
@@ -1492,9 +1490,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("keeps Agent Blueprint composition explicit and bounded", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     for (const component of [
       "entity-agent-function-definition-contract",
@@ -1512,17 +1508,13 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       "claim-agent-grant-project-bound|CONSTRAINS|entity-agent-grant-contract"
     );
-    expect(pairs).toContain(
-      "claim-agent-grant-unexpired|CONSTRAINS|entity-agent-grant-contract"
-    );
+    expect(pairs).toContain("claim-agent-grant-unexpired|CONSTRAINS|entity-agent-grant-contract");
   });
 
   it("grounds Agent Studio operations, idempotency and delegated proposal safety", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
     const operations = graph.nodes.filter((node) => node.node_id.startsWith("agent-studio-op-"));
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(operations).toHaveLength(9);
     expect(pairs).toContain(

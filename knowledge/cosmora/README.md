@@ -346,7 +346,6 @@ for retrieval without connecting every endpoint directly to the same global iden
 Owner, project, Step-Up and idempotency behavior is grounded in the corresponding API regression
 suites.
 
-
 ## Agent Composition
 
 The graph now models how an agent is composed instead of treating `AgentBlueprint` as an opaque

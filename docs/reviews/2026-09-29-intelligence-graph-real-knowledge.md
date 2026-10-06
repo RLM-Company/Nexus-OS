@@ -662,7 +662,6 @@ Studio, Projects, Usage, Autonomy/Policy, Project Model Runs, Manager Demo, Gene
 Work. General Chat message creation remains in the General Chat family rather than being
 misclassified as a project model-run route.
 
-
 ## Agent Composition Graph
 
 The unified graph now contains **59 Agent Composition nodes** and **154 relationships**.
