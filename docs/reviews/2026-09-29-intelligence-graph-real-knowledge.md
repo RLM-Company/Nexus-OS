@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **662 nodes**;
-- **1977 typed edges**;
+- **730 nodes**;
+- **2233 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -641,3 +641,24 @@ The layer separates model **selection/intelligence** from model **runtime reliab
 Every reliability claim is connected to the exact implementation/test evidence. Configurable retry,
 delay and circuit parameters reuse Configuration & Secret Boundary nodes rather than inventing new
 settings, and unknown usage is linked to the Resource Budget rule that preserves unknown cost.
+
+
+## API Boundary Graph
+
+The unified graph now includes **68 API Boundary nodes** and **256 typed relationships**.
+
+The source inventory contains exactly **58 registered Fastify routes** across `app.ts`,
+`general-chat-routes.ts`, and the dynamic Manager Work route base.
+
+Verified boundary counts:
+
+- 57 owner-gated routes;
+- 1 public health route;
+- 36 project-path-scoped routes;
+- 4 Step-Up-sensitive routes;
+- 5 Agent Studio create routes guarded by the idempotency-key contract.
+
+The graph also separates route families for Health, Identity, Operations, Model Runtime, Agent
+Studio, Projects, Usage, Autonomy/Policy, Project Model Runs, Manager Demo, General Chat and Manager
+Work. General Chat message creation remains in the General Chat family rather than being
+misclassified as a project model-run route.
