@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 633 nodes;
-- 1896 typed edges;
-- 633 retrieval records.
+- 662 nodes;
+- 1977 typed edges;
+- 662 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -305,3 +305,26 @@ The layer contains **43 nodes / 129 relationships**:
 `MODEL_API_KEY` is represented only as a **secret key name**. The raw value is deliberately absent
 from node text, excerpts and graph evidence. Tests connect the rule that config loading exposes only
 `modelApiKeyConfigured`, while the actual credential is resolved at the composition boundary.
+
+
+## Model Reliability
+
+The graph now includes a dedicated **Model Reliability** layer with **29 nodes** and **81
+evidence-grounded relationships**.
+
+It models the runtime behavior of `ModelGateway`, not just model metadata:
+
+- the 5 canonical gateway error codes;
+- the 4 stream event types;
+- circuit states `closed → open → probe` and their success/failure transitions;
+- bounded retries and fallback only before the first emitted text delta;
+- no fallback after partial output;
+- pre-abort dispatch prevention and provider-timeout normalization;
+- single-probe circuit recovery after cooldown;
+- adapter/Registry route matching;
+- completion provider/model identity checks;
+- non-negative token usage validation and unknown-cost preservation;
+- exactly-once terminal completion and fail-closed truncated streams.
+
+Reliability configuration is connected to the already verified configuration keys, while unknown
+usage is bridged to persistent unknown-cost accounting in the Resource Budget layer.
