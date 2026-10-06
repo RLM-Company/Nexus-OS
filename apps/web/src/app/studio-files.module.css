@@ -215,3 +215,134 @@
     border-radius: 14px;
   }
 }
+.searchNav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0;
+}
+.preview mark {
+  background: #f0df83;
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.preview mark.activeMatch {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.selectionToggle {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0 !important;
+}
+.selectionToggle input,
+.columnList input {
+  width: auto !important;
+}
+.coverage {
+  display: block;
+  margin: 0 0 12px;
+}
+.csvWorkspace {
+  display: grid;
+  gap: 20px;
+}
+.csvControls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(220px, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.csvControls fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.csvControls legend {
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+.csvControls select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: #faf9fc;
+  color: inherit;
+}
+.columnList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px 14px;
+  max-height: 220px;
+  overflow: auto;
+}
+.columnList label {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.numericStats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 12px 0;
+}
+.numericStats div {
+  padding: 10px;
+  border-radius: 10px;
+  background: #f5f3f8;
+}
+.numericStats dt {
+  color: var(--ui-muted);
+  font-size: 0.75rem;
+}
+.numericStats dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.tableWrap {
+  overflow: auto;
+  max-height: 520px;
+  margin-bottom: 10px;
+}
+.tableWrap table {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  font-size: 0.86rem;
+}
+.tableWrap :is(th, td) {
+  max-width: 320px;
+  padding: 9px 11px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tableWrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f1eff6;
+}
+.tableWrap tbody th {
+  background: #faf9fc;
+  color: var(--ui-muted);
+}
+@media (max-width: 700px) {
+  .csvControls {
+    grid-template-columns: 1fr;
+  }
+  .tableWrap {
+    max-height: 430px;
+  }
+}
