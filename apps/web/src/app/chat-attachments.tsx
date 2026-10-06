@@ -8,6 +8,7 @@ import {
   type ChatAttachment
 } from "@cosmora/contracts/chat-attachments";
 import { decodeChatAttachment } from "./decode-chat-attachment";
+import { prepareChatImage } from "./prepare-chat-image";
 import { WorkspaceIcon } from "./workspace-icons";
 
 export function useChatAttachments(scope: string) {
@@ -37,7 +38,15 @@ export function useChatAttachments(scope: string) {
       if (files.length + selected.length > CHAT_ATTACHMENT_LIMITS.files) {
         throw new Error("Можно прикрепить до 4 файлов.");
       }
-      const added = await Promise.all(selected.map(decodeChatAttachment));
+      const added: ChatAttachment[] = [];
+      for (const file of selected) {
+        if (scopeRef.current !== scope || operationRef.current !== operation) return;
+        added.push(
+          await (/\.(png|jpe?g)$/i.test(file.name)
+            ? prepareChatImage(file)
+            : decodeChatAttachment(file))
+        );
+      }
       const next = [...files, ...added];
       if (!isValidChatAttachments(next)) {
         throw new Error(
@@ -113,7 +122,11 @@ export function ChatAttachmentPicker({
       >
         <WorkspaceIcon name="paperclip" />
       </button>
-      {reading && <span role="status">Читаю файлы…</span>}
+      {reading && (
+        <span role="status" aria-live="polite">
+          Читаю файлы…
+        </span>
+      )}
       {files.length > 0 && (
         <ul aria-label="Прикреплённые файлы">
           {files.map((file, index) => (
@@ -121,7 +134,7 @@ export function ChatAttachmentPicker({
               {"kind" in file && file.kind === "image" && (
                 <img
                   src={`data:${file.media_type};base64,${file.data_base64}`}
-                  alt=""
+                  alt={`${file.name} миниатюра`}
                   className="attachment-thumbnail"
                 />
               )}
@@ -133,6 +146,7 @@ export function ChatAttachmentPicker({
                 type="button"
                 disabled={disabled || reading}
                 aria-label={`Удалить ${file.name}`}
+                title={`Удалить ${file.name}`}
                 onClick={() => onRemove(index)}
               >
                 ×
@@ -141,7 +155,11 @@ export function ChatAttachmentPicker({
           ))}
         </ul>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert" aria-live="assertive">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
