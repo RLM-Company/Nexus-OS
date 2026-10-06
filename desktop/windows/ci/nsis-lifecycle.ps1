@@ -31,7 +31,7 @@ function Resolve-NormalizedPath([string]$Value) {
   return [IO.Path]::GetFullPath($Value).TrimEnd([IO.Path]::DirectorySeparatorChar)
 }
 
-function Get-CosmoraUninstallEntries([string]$ExpectedVersion) {
+function Get-CosmoraUninstallEntries([string]$ExpectedVersion = "") {
   $roots = @(
     "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
     "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -44,7 +44,7 @@ function Get-CosmoraUninstallEntries([string]$ExpectedVersion) {
         try { Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction Stop } catch { $null }
       } |
       Where-Object {
-        $_ -and $_.DisplayName -eq "Cosmora" -and [string]$_.DisplayVersion -eq $ExpectedVersion
+        $_ -and $_.DisplayName -eq "Cosmora" -and (\n          [string]::IsNullOrWhiteSpace($ExpectedVersion) -or [string]$_.DisplayVersion -eq $ExpectedVersion\n        )
       }
   }
   return @($entries)
@@ -111,7 +111,7 @@ function Assert-ShellIntegrationRemoved([string]$Version) {
   }
   if (Test-Path -LiteralPath $desktopShortcut) { throw "NSIS uninstall left the Desktop shortcut behind." }
   if (Test-Path -LiteralPath $startMenuShortcut) { throw "NSIS uninstall left the Start Menu shortcut behind." }
-  if ((Get-CosmoraUninstallEntries $Version).Count -ne 0) { throw "NSIS uninstall left the Cosmora registry entry behind." }
+  if ((Get-CosmoraUninstallEntries).Count -ne 0) { throw "NSIS uninstall left a Cosmora registry entry behind." }
 }
 
 function Invoke-Installer([string]$Installer, [string]$InstallDir) {
