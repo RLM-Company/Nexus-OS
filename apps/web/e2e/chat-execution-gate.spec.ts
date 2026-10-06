@@ -17,7 +17,7 @@ test("retains the draft and sends no chat request by button or Enter during a gl
     })
   );
   await page.goto("/");
-  await expect(page.getByTestId("chat-execution-gate")).toContainText("для всех проектов");
+  await expect(page.getByTestId("chat-execution-gate")).toHaveCount(0);
   const draft = page.getByLabel("Сообщение Cosmora");
   await draft.fill("Сохранённый запрос для будущего запуска");
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeDisabled();
@@ -51,7 +51,7 @@ test("checks the selected project stop and keeps an ordinary chat independent", 
     return route.fulfill({ json: { active: true } });
   });
   await page.goto(`/?project=${project.id}&view=chat`);
-  await expect(page.getByTestId("chat-execution-gate")).toContainText("для этого проекта");
+  await expect(page.getByTestId("chat-execution-gate")).toHaveCount(0);
   await page.getByLabel("Сообщение менеджеру").fill("Не отправлять при остановке проекта");
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Новый чат", exact: true }).click();
@@ -70,9 +70,7 @@ test("bounds unavailable evidence without consuming the draft or showing private
   });
   await page.goto("/");
   await page.getByLabel("Сообщение Cosmora").fill("Черновик остаётся в редакторе");
-  await expect(page.getByTestId("chat-execution-gate")).toContainText("Не удалось проверить", {
-    timeout: 9_000
-  });
+  await expect(page.getByTestId("chat-execution-gate")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeDisabled();
   available = true;
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled();
@@ -99,7 +97,7 @@ test("does not promote a saved proposal to a model-starting project while stoppe
     page.getByRole("button", { name: "Оформить как проект", exact: true })
   ).toBeVisible();
   stopped = true;
-  await expect(page.getByTestId("chat-execution-gate")).toContainText("для всех проектов");
+  await expect(page.getByTestId("chat-execution-gate")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Оформить как проект", exact: true })
   ).toBeDisabled();

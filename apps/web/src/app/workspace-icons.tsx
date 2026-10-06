@@ -2,6 +2,8 @@ import type { SVGProps } from "react";
 
 export type IconName =
   | "cosmora"
+  | "files"
+  | "paperclip"
   | "chats"
   | "new-chat"
   | "projects"
@@ -27,6 +29,15 @@ export type IconName =
   | "check";
 
 const paths: Record<IconName, React.ReactNode> = {
+  paperclip: (
+    <path d="m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l10-10a2 2 0 0 1 3 3L6 15a1 1 0 0 0 2 2l9-9" />
+  ),
+  files: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 2v6h6M8 13h8M8 17h5" />
+    </>
+  ),
   cosmora: (
     <>
       <path d="M17.8 5.4a8.5 8.5 0 1 0 0 13.2" />

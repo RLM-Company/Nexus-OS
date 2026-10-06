@@ -3868,12 +3868,90 @@ body:has(.workspace-drawer[open]) {
   }
 }
 
+.composer-controls {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.composer-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.product-shell .composer-controls .composer-footer {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  max-width: 55%;
+}
+.composer-footer > span:empty {
+  display: none;
+}
 .chat-attachment-picker {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 8px 0;
+  padding: 0;
+}
+.chat-attachment-picker .attachment-clip,
+.composer-tools .web-search-panel summary {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ui-muted);
+  cursor: pointer;
+  list-style: none;
+}
+.composer-tools .web-search-panel summary::-webkit-details-marker {
+  display: none;
+}
+.attachment-clip svg,
+.composer-tools .web-search-panel summary svg {
+  width: 21px;
+  height: 21px;
+}
+.attachment-clip:hover:not(:disabled),
+.composer-tools .web-search-panel summary:hover {
+  background: #eeeaf5;
+  color: #665185;
+}
+.attachment-clip:focus-visible,
+.composer-tools .web-search-panel summary:focus-visible {
+  outline: 3px solid #9d85c6;
+  outline-offset: 2px;
+}
+.attachment-clip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.attachment-thumbnail {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.composer-tools .web-search-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.composer-tools .web-search-panel[open] {
+  flex-basis: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 .chat-attachment-picker > button,
 .chat-message-attachments button {

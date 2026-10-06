@@ -143,7 +143,7 @@ test("does not attach a file to another chat when decoding finishes after naviga
     mimeType: "text/plain",
     buffer: Buffer.from("Материал первого чата")
   });
-  await expect(page.getByRole("button", { name: "Читаю файлы…" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Читаю файлы…");
   await page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true }).click();
   await page.evaluate(() =>
     (window as unknown as { releaseAttachmentRead: () => void }).releaseAttachmentRead()

@@ -65,7 +65,8 @@ test("opens model connection details from the console status", async ({ page }) 
   await mockRuntimeRequest(page, disconnectedRuntime);
   await page.goto("/");
 
-  await page.getByRole("link", { name: "Модель не подключена" }).click();
+  await page.getByLabel("Аккаунт владельца").click();
+  await page.getByRole("link", { name: "Модель и API" }).click();
 
   await expect(page).toHaveURL(/\/model-status$/);
   await expect(page.getByRole("heading", { name: "Подключение модели" })).toBeVisible();

@@ -30,7 +30,7 @@ test("searches on request and attaches sources without submitting a model messag
   });
   await page.goto("/");
   expect(searches).toBe(0);
-  await page.getByText("Поиск в интернете", { exact: true }).click();
+  await page.getByLabel("Поиск", { exact: true }).click();
   await page.getByLabel("Поисковый запрос").fill("TypeScript documentation");
   await page.getByRole("button", { name: "Найти источники" }).click();
   await expect(page.getByRole("link", { name: "TypeScript", exact: true })).toBeVisible();

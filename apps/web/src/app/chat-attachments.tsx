@@ -8,6 +8,7 @@ import {
   type ChatAttachment
 } from "@cosmora/contracts/chat-attachments";
 import { decodeChatAttachment } from "./decode-chat-attachment";
+import { WorkspaceIcon } from "./workspace-icons";
 
 export function useChatAttachments(scope: string) {
   const scopeRef = useRef(scope);
@@ -103,19 +104,27 @@ export function ChatAttachmentPicker({
       />
       <button
         type="button"
+        className="attachment-clip"
+        aria-label="Прикрепить файл"
+        title={textOnly ? "Прикрепить файл" : "Прикрепить файл или фото"}
+        aria-busy={reading}
         disabled={disabled || reading || files.length >= CHAT_ATTACHMENT_LIMITS.files}
         onClick={() => inputRef.current?.click()}
       >
-        {reading ? "Читаю файлы…" : "Прикрепить файл"}
+        <WorkspaceIcon name="paperclip" />
       </button>
-      <small>
-        Текст, код, PDF, DOCX{textOnly ? "" : " и изображения"} · до 4 файлов · текст до 8 000
-        символов, документы до 2 МБ{textOnly ? "" : ", изображения до 1 МБ"}
-      </small>
+      {reading && <span role="status">Читаю файлы…</span>}
       {files.length > 0 && (
         <ul aria-label="Прикреплённые файлы">
           {files.map((file, index) => (
             <li key={`${index}:${file.name}`}>
+              {"kind" in file && file.kind === "image" && (
+                <img
+                  src={`data:${file.media_type};base64,${file.data_base64}`}
+                  alt=""
+                  className="attachment-thumbnail"
+                />
+              )}
               <span>
                 {file.name} ·{" "}
                 {"content" in file ? `${file.content.length} символов` : "изображение"}
