@@ -36,9 +36,9 @@ const stageLabels: Record<string, string> = {
   planning: "План",
   draft: "Создание результата",
   drafting: "Создание результата",
-  review: "Проверка",
-  critic: "Проверка Критиком",
-  finalize: "Финализация",
+  review: "Проверка Критиком",
+  publish: "Сохранение файлов",
+  done: "Готово",
   completed: "Готово"
 };
 const progressStepLabels = ["Запрос", "План", "Результат", "Проверка", "Готово"];
@@ -49,8 +49,8 @@ function workStageLabel(work: Work) {
 }
 
 function workProgressIndex(work: Work) {
-  if (work.status === "completed") return 4;
-  if (work.review) return 3;
+  if (work.status === "completed" || work.stage === "done") return 4;
+  if (work.stage === "publish" || work.review) return 3;
   if (work.draft) return 2;
   if (work.plan) return 1;
   return 0;
