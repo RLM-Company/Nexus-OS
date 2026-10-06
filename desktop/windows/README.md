@@ -11,7 +11,7 @@ Cosmora for Windows is a thin Electron shell around the existing hosted Cosmora 
 - Remote content runs with `nodeIntegration: false`, `contextIsolation: true` and `sandbox: true`. The preload bridge exposes connection controls only to the local `file:` connection screen.
 - Navigation remains on the selected Cosmora origin. Ordinary external HTTP(S) and `mailto:` links are delegated to the OS browser/client; dangerous/local schemes are ignored.
 - Permission requests from hosted content are denied by the shell. Add a narrowly scoped policy only if a future feature genuinely requires one.
-- Downloads are accepted only when the complete redirect chain remains on the active Cosmora origin. Filenames are sanitized and existing files are not overwritten.
+- Downloads are accepted only when the complete redirect chain remains on the active Cosmora origin. Same-origin `blob:` downloads created by the hosted UI are also allowed; foreign `blob:`, `data:` and `file:` downloads are rejected. Filenames are sanitized and existing files are not overwritten.
 - A second launch focuses the existing window instead of creating a second independent desktop session.
 
 ## First run and recovery
