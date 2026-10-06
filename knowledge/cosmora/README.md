@@ -13,9 +13,9 @@ Authoritative repository baseline:
 
 Current unified graph on the real-knowledge branch:
 
-- 662 nodes;
-- 1977 typed edges;
-- 662 retrieval records.
+- 730 nodes;
+- 2233 typed edges;
+- 730 retrieval records.
 
 Layer breakdown is recorded in `graph-manifest.v1.json`.
 
@@ -327,3 +327,22 @@ It models the runtime behavior of `ModelGateway`, not just model metadata:
 
 Reliability configuration is connected to the already verified configuration keys, while unknown
 usage is bridged to persistent unknown-cost accounting in the Resource Budget layer.
+
+
+## API Boundary
+
+The graph now materializes the actual HTTP boundary instead of treating the API as a single opaque
+service.
+
+The layer contains **68 nodes** and **256 relationships** built from **58 registered routes**:
+
+- 57 routes pass the verified-owner identity boundary;
+- `GET /api/v1/health` is the one public exception;
+- 36 routes are explicitly project-path scoped;
+- 4 sensitive routes may consume Step-Up proof;
+- 5 Agent Studio create routes require an idempotency key.
+
+Each route is linked to its route family and exact source file. Boundary hubs keep the graph useful
+for retrieval without connecting every endpoint directly to the same global identity/policy node.
+Owner, project, Step-Up and idempotency behavior is grounded in the corresponding API regression
+suites.
