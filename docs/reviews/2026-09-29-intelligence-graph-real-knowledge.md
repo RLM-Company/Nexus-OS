@@ -23,8 +23,8 @@ The semantic fixture compiles to:
 
 The unified semantic + repository-structure + work-experience graph now contains:
 
-- **730 nodes**;
-- **2233 typed edges**;
+- **789 nodes**;
+- **2387 typed edges**;
 - **0 generic `RELATES_TO` edges**;
 - every non-Source node has at least one graph relationship;
 - every node and edge points to a non-fixture repository evidence location.
@@ -661,3 +661,29 @@ The graph also separates route families for Health, Identity, Operations, Model 
 Studio, Projects, Usage, Autonomy/Policy, Project Model Runs, Manager Demo, General Chat and Manager
 Work. General Chat message creation remains in the General Chat family rather than being
 misclassified as a project model-run route.
+
+
+## Agent Composition Graph
+
+The unified graph now contains **59 Agent Composition nodes** and **154 relationships**.
+
+It explicitly represents the structure behind an Agent Blueprint: function definition, behavior
+pattern, model-profile reference, grant, memory scope and instruction plan. Visibility scopes,
+behavior test states, memory modes, instance statuses, decision operations and instruction
+authority layers are first-class graph nodes rather than strings hidden inside JSON.
+
+Runtime-backed safety rules include:
+
+- visible owner/project/product scope only;
+- append-only immutable versions;
+- selected function must be allowed by the behavior pattern;
+- archived behavior patterns cannot be newly composed;
+- grant project binding and future expiry;
+- exact versioned instruction sources;
+- fixed `constitution > policy > function > behavior > task` authority;
+- instruction plan remains non-executable;
+- delegated proposals require an explicit Policy Engine validator;
+- Agent Studio creates are idempotent and audit events do not store request content.
+
+This complements Agent Collaboration: Collaboration explains how roles exchange artifacts, while
+Composition explains what an individual agent definition is actually made of.
