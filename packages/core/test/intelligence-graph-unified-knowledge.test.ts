@@ -20,15 +20,15 @@ describe("unified Cosmora Intelligence Graph", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
 
     expect(COSMORA_UNIFIED_BRIDGE_COUNT).toBe(30);
-    expect(graph.nodes).toHaveLength(633);
-    expect(graph.records).toHaveLength(633);
-    expect(graph.edges).toHaveLength(1896);
+    expect(graph.nodes).toHaveLength(662);
+    expect(graph.records).toHaveLength(662);
+    expect(graph.edges).toHaveLength(1977);
 
     expect(new Set(graph.nodes.map((node) => `${node.node_id}@${node.node_version}`)).size).toBe(
-      633
+      662
     );
     expect(new Set(graph.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).size).toBe(
-      1896
+      1977
     );
 
     expect(() => createIndex()).not.toThrow();
@@ -336,6 +336,111 @@ describe("unified Cosmora Intelligence Graph", () => {
     );
     expect(pairs).toContain(
       "claim-router-cost-limit-needs-known-pricing|CONSISTENT_WITH|evaluation-model-vibecode-unknown-pricing"
+    );
+  });
+
+  it("models the exact five Model Gateway error codes and four stream event types", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const errors = graph.nodes
+      .filter((node) => node.node_id.startsWith("gateway-error-"))
+      .map((node) => node.node_id)
+      .sort();
+    const events = graph.nodes
+      .filter((node) => node.node_id.startsWith("gateway-event-"))
+      .map((node) => node.node_id)
+      .sort();
+
+    expect(errors).toEqual(
+      [
+        "gateway-error-circuit-open",
+        "gateway-error-interrupted",
+        "gateway-error-provider-error",
+        "gateway-error-provider-timeout",
+        "gateway-error-route-unavailable"
+      ].sort()
+    );
+    expect(events).toEqual(
+      [
+        "gateway-event-response-completed",
+        "gateway-event-route-failed",
+        "gateway-event-route-selected",
+        "gateway-event-text-delta"
+      ].sort()
+    );
+  });
+
+  it("preserves the Model Gateway circuit-breaker state machine", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "gateway-circuit-closed|FAILURE_THRESHOLD_OPENS_TO|gateway-circuit-open"
+    );
+    expect(pairs).toContain(
+      "gateway-circuit-open|COOLDOWN_ALLOWS_PROBE_TO|gateway-circuit-probe"
+    );
+    expect(pairs).toContain(
+      "gateway-circuit-probe|SUCCESS_CLOSES_TO|gateway-circuit-closed"
+    );
+    expect(pairs).toContain(
+      "gateway-circuit-probe|FAILURE_REOPENS_TO|gateway-circuit-open"
+    );
+  });
+
+  it("keeps fallback before first delta and forbids fallback after partial output", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    const gatewayTest = repositoryStructureFileId("packages/model-gateway/test/gateway.test.ts");
+
+    expect(pairs).toContain(
+      "claim-gateway-fallback-before-first-delta|CONSISTENT_WITH|decision-gateway-fallback-boundary"
+    );
+    expect(pairs).toContain(
+      "claim-gateway-no-fallback-after-partial-output|CONSISTENT_WITH|decision-gateway-fallback-boundary"
+    );
+    expect(pairs).toContain(
+      `claim-gateway-fallback-before-first-delta|VERIFIED_BY_TEST|${gatewayTest}`
+    );
+    expect(pairs).toContain(
+      `claim-gateway-no-fallback-after-partial-output|VERIFIED_BY_TEST|${gatewayTest}`
+    );
+  });
+
+  it("bridges Gateway unknown usage to persistent unknown-cost accounting", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+
+    expect(pairs).toContain(
+      "claim-gateway-unknown-usage-keeps-cost-unknown|CONSISTENT_WITH|claim-usage-unknown-cost-preserved"
+    );
+    expect(pairs).toContain(
+      "claim-gateway-unknown-usage-keeps-cost-unknown|ENFORCED_BY|entity-model-gateway-reliability"
+    );
+  });
+
+  it("requires exactly-once terminal completion and fails truncated streams closed", () => {
+    const graph = cosmoraUnifiedKnowledgeGraph();
+    const pairs = new Set(
+      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
+    );
+    const streamTest = repositoryStructureFileId(
+      "packages/model-gateway/test/stream-completion.test.ts"
+    );
+
+    expect(pairs).toContain(
+      `claim-gateway-completion-exactly-once|VERIFIED_BY_TEST|${streamTest}`
+    );
+    expect(pairs).toContain(
+      `claim-gateway-stream-without-completion-fails-closed|VERIFIED_BY_TEST|${streamTest}`
+    );
+    expect(pairs).toContain(
+      "claim-gateway-stream-without-completion-fails-closed|NORMALIZES_TO|gateway-error-provider-error"
     );
   });
 
