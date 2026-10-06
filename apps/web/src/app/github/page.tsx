@@ -29,7 +29,10 @@ const messages: Record<string, string> = {
   GITHUB_INVALID_FILE:
     "Нужен текст UTF-8 до 50 КБ. Изменение служебных файлов, секретов и настроек GitHub здесь недоступно.",
   EMERGENCY_STOP_ACTIVE: "Отправка в GitHub остановлена аварийным выключателем.",
-  GITHUB_NOT_CONFIGURED: "Подключение GitHub ещё не настроено на сервере."
+  GITHUB_NOT_CONFIGURED: "Подключение GitHub ещё не настроено на сервере.",
+  GITHUB_ACCESS_DENIED:
+    "GitHub отказал в доступе. Проверьте серверное подключение и разрешения репозитория.",
+  GITHUB_RATE_LIMITED: "Лимит запросов GitHub исчерпан. Повторите чтение позже."
 };
 async function api<T>(url: string, body?: unknown): Promise<T> {
   const response = await fetch(
@@ -60,6 +63,8 @@ export default function GithubPage() {
     default_branch: string | null;
   } | null>(null);
   const [branches, setBranches] = useState<Array<{ name: string; sha: string }>>([]);
+  const [branchesLimited, setBranchesLimited] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(500);
   const [branch, setBranch] = useState("");
   const [tree, setTree] = useState<Tree | null>(null);
   const [filter, setFilter] = useState("");
@@ -70,11 +75,30 @@ export default function GithubPage() {
     isNew?: boolean;
   } | null>(null);
   const [changes, setChanges] = useState<Array<{ path: string; content: string }>>([]);
+  const stagedFile = changes.find((item) => item.path === file?.path);
+  const dirty =
+    !!file &&
+    (file.isNew
+      ? !stagedFile || stagedFile.content !== file.content
+      : file.content !== (stagedFile?.content ?? file.original));
+  const filteredFiles =
+    tree?.items.filter(
+      (item) =>
+        item.type === "blob" &&
+        ["100644", "100755"].includes(item.mode) &&
+        item.path.toLowerCase().includes(filter.toLowerCase())
+    ) ?? [];
   const [projects, setProjects] = useState<Array<{ id: string; title: string }>>([]);
   const [project, setProject] = useState("");
   const [title, setTitle] = useState("");
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const unreviewed = changes.some(
+    (change) =>
+      !draft?.plan.files.some(
+        (item) => item.path === change.path && item.content === change.content
+      )
+  );
   const [approved, setApproved] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const pending = pendingCount > 0;
@@ -85,6 +109,15 @@ export default function GithubPage() {
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
   const projectRequest = useRef(0);
+  useEffect(() => {
+    if (!dirty && !unreviewed) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [dirty, unreviewed]);
   const load = async () => {
     const id = ++loadRequest.current;
     setPending(true);
@@ -95,11 +128,12 @@ export default function GithubPage() {
       setStatus(connected);
       if (!connected.configured) return;
       const [list, workspaces] = await Promise.all([
-        api<{ items: typeof branches }>("/api/v1/github/branches"),
+        api<{ items: typeof branches; limited?: boolean }>("/api/v1/github/branches"),
         api<{ items: typeof projects }>("/api/v1/projects")
       ]);
       if (id !== loadRequest.current) return;
       setBranches(list.items);
+      setBranchesLimited(list.limited ?? false);
       setProjects(workspaces.items);
       setBranch(connected.default_branch ?? "");
       setRefreshEpoch((epoch) => epoch + 1);
@@ -117,6 +151,7 @@ export default function GithubPage() {
     const id = ++requestId.current;
     setPending(true);
     setTree(null);
+    setVisibleCount(500);
     setFile(null);
     setChanges([]);
     setDraft(null);
@@ -191,6 +226,13 @@ export default function GithubPage() {
     if (!draft || (!reconcile && !approved)) return;
     setPending(true);
     setError(null);
+    setApproved(false);
+    // The POST can reach the server even if its response never reaches this tab.
+    if (!reconcile) {
+      const uncertain = { ...draft, status: "uncertain" };
+      setDraft(uncertain);
+      setDrafts((current) => current.map((item) => (item.id === draft.id ? uncertain : item)));
+    }
     try {
       const result = await api<Draft>(
         `/api/v1/projects/${encodeURIComponent(project)}/github-drafts/${draft.id}/${reconcile ? "reconcile" : "publish"}`,
@@ -204,7 +246,12 @@ export default function GithubPage() {
       const refreshed = await api<Draft>(
         `/api/v1/projects/${encodeURIComponent(project)}/github-drafts/${draft.id}`
       ).catch(() => null);
-      if (refreshed) setDraft(refreshed);
+      if (refreshed) {
+        setDraft(refreshed);
+        setDrafts((current) =>
+          current.map((item) => (item.id === refreshed.id ? refreshed : item))
+        );
+      }
     } finally {
       setPending(false);
     }
@@ -246,7 +293,7 @@ export default function GithubPage() {
             {error}
           </p>
         )}
-        {!status && <p role="status">Проверяю подключение…</p>}
+        {!status && pending && <p role="status">Проверяю подключение…</p>}
         {status && !status.configured && (
           <section className={styles.card}>
             <div className={styles.empty}>
@@ -255,16 +302,30 @@ export default function GithubPage() {
             </div>
           </section>
         )}
-        <button type="button" disabled={pending || changes.length > 0} onClick={() => void load()}>
+        <button
+          type="button"
+          disabled={pending || dirty || changes.length > 0}
+          onClick={() => void load()}
+        >
           Обновить подключение
         </button>
         {status?.configured && (
           <>
-            <p>Подключён {status.repository}</p>
+            <label className={styles.repository}>
+              Разрешённый репозиторий{" "}
+              <select aria-label="Разрешённый репозиторий" value={status.repository} disabled>
+                <option>{status.repository}</option>
+              </select>
+            </label>
+            <p>
+              Доступ ограничен этим репозиторием. Черновики файлов сохраняются после подготовки
+              просмотра.
+            </p>
+            {branchesLimited && <p role="status">Показаны первые 100 веток GitHub.</p>}
             <div className={styles.toolbar}>
               <button
                 type="button"
-                disabled={pending || !tree || changes.length >= 8}
+                disabled={pending || dirty || !tree || changes.length >= 8}
                 onClick={() => setFile({ path: "", original: "", content: "", isNew: true })}
               >
                 Новый файл
@@ -274,7 +335,7 @@ export default function GithubPage() {
                 <select
                   aria-label="Ветка репозитория"
                   value={branch}
-                  disabled={pending || changes.length > 0}
+                  disabled={pending || dirty || changes.length > 0}
                   onChange={(event) => setBranch(event.target.value)}
                 >
                   {!branches.some((item) => item.name === branch) && (
@@ -287,7 +348,13 @@ export default function GithubPage() {
               </label>
               <label>
                 Найти файл{" "}
-                <input value={filter} onChange={(event) => setFilter(event.target.value)} />
+                <input
+                  value={filter}
+                  onChange={(event) => {
+                    setFilter(event.target.value);
+                    setVisibleCount(500);
+                  }}
+                />
               </label>
             </div>
             {tree?.truncated && (
@@ -297,24 +364,23 @@ export default function GithubPage() {
             )}
             <div className={styles.explorer}>
               <nav aria-label="Файлы репозитория" className={styles.files}>
-                {tree?.items
-                  .filter(
-                    (item) =>
-                      item.type === "blob" &&
-                      ["100644", "100755"].includes(item.mode) &&
-                      item.path.toLowerCase().includes(filter.toLowerCase())
-                  )
-                  .slice(0, 500)
-                  .map((item) => (
-                    <button
-                      type="button"
-                      disabled={pending}
-                      key={item.path}
-                      onClick={() => void open(item)}
-                    >
-                      {item.path}
-                    </button>
-                  ))}
+                {filteredFiles.slice(0, visibleCount).map((item) => (
+                  <button
+                    type="button"
+                    disabled={pending || dirty}
+                    key={item.path}
+                    aria-pressed={file?.path === item.path}
+                    onClick={() => void open(item)}
+                  >
+                    {item.path}
+                  </button>
+                ))}
+                {tree && !filteredFiles.length && <p>Файлы не найдены.</p>}
+                {filteredFiles.length > visibleCount && (
+                  <button onClick={() => setVisibleCount((count) => count + 500)}>
+                    Показать ещё файлы ({filteredFiles.length - visibleCount})
+                  </button>
+                )}
               </nav>
               <section className={styles.editor} aria-label="Редактор файла">
                 {file ? (
@@ -348,7 +414,8 @@ export default function GithubPage() {
                         disabled={
                           pending ||
                           !file.path.trim() ||
-                          file.content === file.original ||
+                          (!file.isNew && file.content === file.original) ||
+                          (file.isNew && !!tree?.items.some((item) => item.path === file.path)) ||
                           (changes.length >= 8 && !changes.some((item) => item.path === file.path))
                         }
                         onClick={() => {
@@ -362,7 +429,29 @@ export default function GithubPage() {
                       >
                         Добавить изменение
                       </button>
+                      {dirty && (
+                        <button
+                          disabled={pending}
+                          onClick={() => {
+                            if (file.isNew && !stagedFile) setFile(null);
+                            else
+                              setFile({ ...file, content: stagedFile?.content ?? file.original });
+                          }}
+                        >
+                          Отменить правки в редакторе
+                        </button>
+                      )}
                     </div>
+                    {dirty && (
+                      <p role="status">
+                        Добавьте изменение или отмените правки, прежде чем менять файл или ветку.
+                      </p>
+                    )}
+                    {file.isNew && tree?.items.some((item) => item.path === file.path) && (
+                      <p role="alert">
+                        Этот путь уже существует. Откройте файл из списка для редактирования.
+                      </p>
+                    )}
                   </>
                 ) : (
                   <p>Выберите текстовый файл или исходный код.</p>
@@ -399,7 +488,16 @@ export default function GithubPage() {
               </label>
               {changes.map((item) => (
                 <div key={item.path}>
-                  {item.path}{" "}
+                  <button
+                    disabled={pending || dirty}
+                    onClick={() => {
+                      const entry = tree?.items.find((entry) => entry.path === item.path);
+                      if (entry) void open(entry);
+                      else setFile({ ...item, original: "", isNew: true });
+                    }}
+                  >
+                    {item.path}
+                  </button>{" "}
                   <button
                     disabled={pending}
                     onClick={() => {
@@ -413,8 +511,15 @@ export default function GithubPage() {
                 </div>
               ))}
               <button
+                className={styles.primary}
                 disabled={
-                  pending || !changes.length || !project || !title.trim() || tree?.truncated
+                  pending ||
+                  dirty ||
+                  !tree ||
+                  !changes.length ||
+                  !project ||
+                  !title.trim() ||
+                  tree.truncated
                 }
                 onClick={() => void prepare()}
               >
@@ -473,7 +578,11 @@ export default function GithubPage() {
                         />{" "}
                         Я просмотрел эти файлы и разрешаю создать отдельную ветку и черновик PR
                       </label>
-                      <button disabled={pending || !approved} onClick={() => void publish()}>
+                      <button
+                        className={styles.primary}
+                        disabled={pending || dirty || !approved}
+                        onClick={() => void publish()}
+                      >
                         Создать черновик PR в GitHub
                       </button>
                     </>

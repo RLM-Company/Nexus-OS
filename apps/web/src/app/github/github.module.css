@@ -10,6 +10,57 @@
   flex-wrap: wrap;
   gap: 1rem;
   margin: 1rem 0;
+  align-items: flex-start;
+}
+.page button {
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  min-height: 2.75rem;
+}
+.page button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.page button:not(:disabled):hover {
+  background: var(--surface-hover);
+}
+.page button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+.page input:not([type="checkbox"]),
+.page select,
+.page textarea {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  max-width: 100%;
+  min-width: 0;
+}
+.page :is(button, input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+.page button.primary {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: white;
+}
+.page button.primary:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+.repository,
+.editor label {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  width: fit-content;
+  max-width: 100%;
 }
 .toolbar label,
 .review > label {
@@ -28,6 +79,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  gap: 0.35rem;
+  padding: 0.25rem;
 }
 .files button {
   text-align: left;
@@ -36,6 +89,10 @@
 }
 .editor {
   min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
 }
 .editor h2 {
   overflow-wrap: anywhere;
@@ -49,6 +106,38 @@
 }
 .review {
   margin-top: 2rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+.review details {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.review summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.review input[type="checkbox"] {
+  accent-color: var(--accent-strong);
+}
+.review p {
+  overflow-wrap: anywhere;
+}
+.review a {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+.diff > div {
+  min-width: 0;
+}
+.diff > div:first-child pre {
+  background: var(--danger-soft);
+}
+.diff > div:last-child pre {
+  background: var(--success-soft);
 }
 .diff {
   display: grid;

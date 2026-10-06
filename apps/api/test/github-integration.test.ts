@@ -18,6 +18,7 @@ function fixture() {
   let currentHead = head;
   let failPr = false;
   let prExists = false;
+  let override: ((path: string, method: string, data: unknown) => Response | null) | null = null;
   const integration = new GithubIntegration({
     token: "fixture-key",
     fetchImplementation: (input, init) => {
@@ -26,42 +27,57 @@ function fixture() {
       ).pathname.replace("/repos/RLM-Company/Nexus-OS", "");
       const body = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : null;
       calls.push({ path, method: init?.method ?? "GET", body });
-      const data = path.startsWith("/commits/")
-        ? { sha: currentHead, commit: { tree: { sha: tree } } }
-        : path.startsWith("/git/trees/")
-          ? {
-              tree: [{ path: "app.ts", type: "blob", mode: "100755", sha: blob }],
-              truncated: false
-            }
-          : path.startsWith("/git/blobs/")
+      const data = path.startsWith("/git/ref/heads/")
+        ? {
+            ref: `refs/heads/${decodeURIComponent(path.slice("/git/ref/heads/".length))}`,
+            object: { type: "commit", sha: currentHead }
+          }
+        : path.startsWith("/commits/")
+          ? { sha: currentHead, commit: { tree: { sha: tree } } }
+          : path.startsWith("/git/trees/")
             ? {
-                content: Buffer.from("const value = 1;").toString("base64"),
-                encoding: "base64",
-                size: 16
+                tree: [{ path: "app.ts", type: "blob", mode: "100755", sha: blob }],
+                truncated: false
               }
-            : path === "/git/trees"
-              ? { sha: tree }
-              : path === "/git/commits"
-                ? { sha: commit }
-                : path === "/git/refs"
-                  ? {}
-                  : path === "/pulls" && init?.method === "POST"
-                    ? { html_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000" }
-                    : path === "/pulls"
-                      ? prExists
-                        ? [
-                            {
-                              html_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000",
-                              head: { sha: commit },
-                              base: { ref: "main" }
-                            }
-                          ]
-                        : []
-                      : { default_branch: "main", private: true };
+            : path.startsWith("/git/blobs/")
+              ? {
+                  content: Buffer.from("const value = 1;").toString("base64"),
+                  encoding: "base64",
+                  size: 16
+                }
+              : path === "/git/trees"
+                ? { sha: tree }
+                : path === "/git/commits"
+                  ? { sha: commit }
+                  : path === "/git/refs"
+                    ? {
+                        ref: (body as { ref: string }).ref,
+                        object: { type: "commit", sha: commit }
+                      }
+                    : path === "/pulls" && init?.method === "POST"
+                      ? {
+                          html_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000",
+                          draft: true,
+                          head: { sha: commit, ref: (body as { head: string }).head },
+                          base: { ref: (body as { base: string }).base }
+                        }
+                      : path === "/pulls"
+                        ? prExists
+                          ? [
+                              {
+                                html_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000",
+                                head: { sha: commit },
+                                base: { ref: "main" }
+                              }
+                            ]
+                          : []
+                        : { default_branch: "main", private: true };
       if (path === "/pulls" && init?.method === "POST") {
         prExists = true;
         if (failPr) throw new Error("Connection lost after GitHub accepted request: fixture-key");
       }
+      const overridden = override?.(path, init?.method ?? "GET", data);
+      if (overridden) return Promise.resolve(overridden);
       return Promise.resolve(
         new Response(JSON.stringify(data), { headers: { "content-type": "application/json" } })
       );
@@ -70,6 +86,9 @@ function fixture() {
   return {
     integration,
     calls,
+    respond: (handler: NonNullable<typeof override>) => {
+      override = handler;
+    },
     changeHead: () => {
       currentHead = "e".repeat(40);
     },
@@ -80,6 +99,163 @@ function fixture() {
 }
 
 describe("GitHub owner workflow", () => {
+  it("creates an empty new file, pins a slash-named base branch and reads it without writes", async () => {
+    const f = fixture();
+    const plan = await f.integration.prepare("new-file", {
+      base_branch: "feature/code",
+      base_sha: head,
+      title: "Add file",
+      files: [{ path: "src/empty.ts", content: "" }]
+    });
+    expect(plan.files).toEqual([
+      { path: "src/empty.ts", content: "", before: null, mode: "100644" }
+    ]);
+    expect(f.calls.map((call) => call.path)).toEqual([
+      "/git/ref/heads/feature%2Fcode",
+      `/commits/${head}`,
+      `/git/trees/${tree}`
+    ]);
+    expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it.each([
+    [401, {}, "GITHUB_ACCESS_DENIED"],
+    [403, {}, "GITHUB_ACCESS_DENIED"],
+    [403, { "x-ratelimit-remaining": "0" }, "GITHUB_RATE_LIMITED"],
+    [429, {}, "GITHUB_RATE_LIMITED"]
+  ])("returns a safe error for GitHub refusal %s", async (status, headers, code) => {
+    const f = fixture();
+    f.respond(() => new Response("fixture-key provider details", { status, headers }));
+    await expect(f.integration.status()).rejects.toThrow(code);
+  });
+  it("rejects malformed successful reads and inconsistent blob sizes", async () => {
+    const f = fixture();
+    f.respond(() => new Response("null"));
+    await expect(f.integration.status()).rejects.toThrow("GITHUB_UNAVAILABLE");
+    await expect(f.integration.branches()).rejects.toThrow("GITHUB_UNAVAILABLE");
+    await expect(f.integration.tree("main")).rejects.toThrow("GITHUB_UNAVAILABLE");
+    f.respond(() => new Response(JSON.stringify({ content: "!!!", encoding: "base64", size: 0 })));
+    await expect(f.integration.file(blob)).rejects.toThrow("GITHUB_INVALID_FILE");
+    f.respond(() => new Response(JSON.stringify({ content: "YQ==", encoding: "base64", size: 2 })));
+    await expect(f.integration.file(blob)).rejects.toThrow("GITHUB_INVALID_FILE");
+  });
+  it("does not create a PR after an ambiguous branch response", async () => {
+    const f = fixture();
+    const plan = await f.integration.prepare("id", {
+      base_branch: "main",
+      base_sha: head,
+      title: "Fix",
+      files: [{ path: "app.ts", content: "2" }]
+    });
+    f.respond((path) =>
+      path === "/git/refs"
+        ? new Response(
+            JSON.stringify({
+              ref: "refs/heads/wrong",
+              object: { type: "commit", sha: commit }
+            })
+          )
+        : null
+    );
+    const checkpoint: string[] = [];
+    await expect(
+      f.integration.publish(
+        plan,
+        () => true,
+        (sha) => checkpoint.push(sha)
+      )
+    ).rejects.toThrow("GITHUB_UNAVAILABLE");
+    expect(checkpoint).toEqual([commit]);
+    expect(f.calls.some((call) => call.path === "/pulls")).toBe(false);
+  });
+  it.each([
+    "invalid",
+    "https://github.com/RLM-Company/Nexus-OS/pull/not-a-pr",
+    "https://github.com/RLM-Company/Nexus-OS/pull/1000/other",
+    "https://example.org/pull/1000"
+  ])("keeps an invalid PR confirmation uncertain: %s", async (html_url) => {
+    const f = fixture();
+    const plan = await f.integration.prepare("id", {
+      base_branch: "main",
+      base_sha: head,
+      title: "Fix",
+      files: [{ path: "app.ts", content: "2" }]
+    });
+    f.respond((path, method, data) =>
+      path === "/pulls" && method === "POST"
+        ? new Response(JSON.stringify({ ...(data as object), html_url }))
+        : null
+    );
+    await expect(
+      f.integration.publish(
+        plan,
+        () => true,
+        () => {}
+      )
+    ).rejects.toThrow("GITHUB_UNAVAILABLE");
+    expect(f.calls.filter((call) => call.path === "/pulls" && call.method === "POST")).toHaveLength(
+      1
+    );
+  });
+  it("releases a draft when the base changed before any write", async () => {
+    const database = openDatabase(":memory:");
+    await runMigrations(database);
+    const f = fixture();
+    const projects = new ProjectStore(database.sqlite);
+    const project = projects.createProject("Code", "github-preflight").project.id;
+    const drafts = new GithubDraftStore(database.sqlite);
+    const draft = await drafts.create("local-owner", project, f.integration, {
+      base_branch: "main",
+      base_sha: head,
+      title: "Fix",
+      files: [{ path: "app.ts", content: "2" }]
+    });
+    f.changeHead();
+    const app = buildApp({
+      config: loadServerConfig({ NODE_ENV: "test" }),
+      database,
+      projectStore: projects,
+      githubIntegration: f.integration,
+      githubDraftStore: drafts,
+      emergencyStopStore: new EmergencyStopStore(database.sqlite)
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/projects/${project}/github-drafts/${draft.id}/publish`,
+        payload: { approve: true, review_hash: draft.plan.review_hash }
+      });
+      expect(response.statusCode).toBe(409);
+      expect(drafts.get(draft.id, "local-owner")?.status).toBe("review");
+      expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+    } finally {
+      await app.close();
+      database.close();
+    }
+  });
+  it.each([{ draft: false }, { head: { sha: head, ref: "wrong" } }, { base: { ref: "other" } }])(
+    "rejects a PR confirmation that differs from the reviewed publication: %j",
+    async (mismatch) => {
+      const f = fixture();
+      const plan = await f.integration.prepare("id", {
+        base_branch: "main",
+        base_sha: head,
+        title: "Fix",
+        files: [{ path: "app.ts", content: "2" }]
+      });
+      f.respond((path, method, data) =>
+        path === "/pulls" && method === "POST"
+          ? new Response(JSON.stringify({ ...(data as object), ...mismatch }))
+          : null
+      );
+      await expect(
+        f.integration.publish(
+          plan,
+          () => true,
+          () => {}
+        )
+      ).rejects.toThrow("GITHUB_UNAVAILABLE");
+    }
+  );
   it("binds repository reads to the configured owner without a GitHub request from another owner", async () => {
     const database = openDatabase(":memory:");
     await runMigrations(database);
