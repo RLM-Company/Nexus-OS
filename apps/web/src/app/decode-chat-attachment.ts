@@ -194,7 +194,7 @@ export async function decodeChatAttachment(file: File): Promise<ChatAttachment> 
 export async function decodeStudioDocument(
   file: File,
   signal: AbortSignal,
-  onProgress: (page: number, total: number) => void
+  onProgress: (current: number, total: number, unit?: "page" | "byte") => void
 ): Promise<string> {
   if (!isChatFilename(file.name)) throw new Error("Недопустимое имя файла.");
   const extension = file.name.toLowerCase().split(".").at(-1);
@@ -202,15 +202,38 @@ export async function decodeStudioDocument(
     throw new Error("Выберите PDF, DOCX, текст или файл с кодом.");
   if (file.size > 20_000_000) throw new Error("Выберите файл до 20 МБ.");
   signal.throwIfAborted();
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const reader = file.stream().getReader();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+  try {
+    while (true) {
+      signal.throwIfAborted();
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        loaded += value.length;
+        onProgress(loaded, file.size, "byte");
+      }
+    }
+  } finally {
+    if (signal.aborted) await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
   signal.throwIfAborted();
+  const bytes = new Uint8Array(loaded);
+  let byteOffset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, byteOffset);
+    byteOffset += chunk.length;
+  }
   const options: DocumentOptions = {
     characters: 2_000_000,
     pages: 500,
     xmlBytes: 8_000_000,
     timeoutMs: 60_000,
     signal,
-    onProgress
+    onProgress: (page, total) => onProgress(page, total, "page")
   };
   if (extension === "pdf") return pdfText(bytes, options);
   if (extension === "docx") return docxText(bytes, options);

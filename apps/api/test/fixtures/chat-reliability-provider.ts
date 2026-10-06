@@ -44,7 +44,7 @@ export function installChatReliabilityFixture(): void {
       yield {
         type: "text.delta",
         delta:
-          "# Результат\n\n```ts\nexport const value = 42;\n```\n\n| Этап | Статус |\n| --- | --- |\n| Код | Готов |\n\n![Пиксель](https://example.org/tracking.png)\n<script>alert(1)</script>"
+          "# Результат\n\n```ts\nexport const value = 42;\n```\n\n| Этап | Статус |\n| --- | --- |\n| Код | Готов |\n\n[Источник](https://example.org/docs)\n\n![Пиксель](https://example.org/tracking.png)\n<script>alert(1)</script>"
       };
     } else {
       yield* original.call(this, request, signal);

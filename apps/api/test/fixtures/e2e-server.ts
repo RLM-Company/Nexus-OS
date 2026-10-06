@@ -1,4 +1,5 @@
 import { MockProviderAdapter } from "@cosmora/model-gateway";
+import { installChatReliabilityFixture } from "./chat-reliability-provider.js";
 
 // Only the Playwright server imports this fixture. Keep the real HTTP server,
 // coordinator and SQLite lifecycle; hold this synthetic provider response until
@@ -34,4 +35,5 @@ MockProviderAdapter.prototype.stream = async function* (request, signal) {
   yield* stream(request, signal);
 };
 
+installChatReliabilityFixture();
 await import("../../src/server.js");

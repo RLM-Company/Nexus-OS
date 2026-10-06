@@ -55,7 +55,7 @@ test("finds and transfers a selected part of a large Unicode document without a 
   const download = await downloaded;
   expect(download.suggestedFilename()).toBe("research.md.txt");
   await page.getByLabel("Поиск по файлу").fill("Уникальная рекомендация");
-  await expect(page.getByRole("status")).toHaveText("Найдено частей: 1");
+  await expect(page.getByRole("status")).toHaveText("Найдено совпадений: 1");
   await page.getByRole("button", { name: /Часть \d+.*Уникальная рекомендация/s }).click();
   await expect(page.getByLabel("Содержимое документа").locator("pre")).toContainText(
     "Уникальная рекомендация"
@@ -148,4 +148,143 @@ test("keeps file analysis usable on mobile and restores the Studio section", asy
   await page.reload();
   await expect(page.getByRole("heading", { name: "Анализ крупных файлов" })).toBeVisible();
   await expect(page.getByLabel("Содержимое документа")).toHaveCount(0);
+});
+
+test("parses quoted multiline CSV, filters columns and prepares bounded rows", async ({ page }) => {
+  let posts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST") posts++;
+  });
+  await page.route("**/api/v1/operations/status", (route) =>
+    route.fulfill({ json: { process_stop: { active: true } } })
+  );
+  await page.goto("/?surface=files");
+  const csv = [
+    "name;note;score;empty",
+    'Alice;"line one\nline two";10;',
+    'Боб;"quoted ; delimiter";20,5;',
+    'Zoë;"says ""hello""";bad;value'
+  ].join("\r\n");
+  await page
+    .getByLabel("Крупный документ")
+    .setInputFiles({ name: "people.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await expect(page.getByRole("heading", { name: "people.csv" })).toBeVisible();
+  await expect(
+    page.getByLabel("Таблица CSV").getByRole("cell", { name: /line one/ })
+  ).toContainText("line two");
+  await expect(page.getByText("3", { exact: true }).first()).toBeVisible();
+  await page.getByLabel("Поиск / фильтр по выбранным столбцам").fill("боб");
+  await expect(page.getByRole("status")).toHaveText("После фильтра: 1 из 3 записей");
+  await expect(page.getByLabel("Таблица CSV")).toContainText("quoted ; delimiter");
+  await page.getByLabel("Числовая статистика").selectOption({ label: "score" });
+  await expect(page.getByText("Среднее", { exact: true }).locator("..")).toContainText("20,5");
+  await page.getByLabel("Что разобрать?").fill("Сравни выбранные строки");
+  await page.getByRole("button", { name: "Подготовить выборку в чате" }).click();
+  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue(/1 из 1 строк текущего фильтра/);
+  await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(
+    "csv-selection.csv"
+  );
+  expect(posts).toBe(0);
+});
+
+test("finds Unicode text across a part boundary and highlights the destination", async ({
+  page
+}) => {
+  await page.goto("/?surface=files");
+  const prefix = "x".repeat(4498);
+  const content = prefix + "Cafe\u0301 Москва конец";
+  await page
+    .getByLabel("Крупный документ")
+    .setInputFiles({ name: "boundary.txt", mimeType: "text/plain", buffer: Buffer.from(content) });
+  await page.getByLabel("Поиск по файлу").fill("CAFÉ МОСКВА");
+  await expect(page.getByRole("status")).toHaveText("Найдено совпадений: 1");
+  await page
+    .getByRole("button", { name: /Части 1–2/ })
+    .first()
+    .click();
+  await expect(page.locator("#studio-document-preview mark")).toHaveCount(1);
+  await page.getByRole("button", { name: "Следующее совпадение" }).click();
+  await expect(page.getByLabel("Часть документа")).toHaveValue("0");
+});
+
+test("handles about 200k short CSV rows without spreading the row array", async ({ page }) => {
+  await page.goto("/?surface=files");
+  const records = 200_000;
+  const csv =
+    "id,value\n" + Array.from({ length: records }, (_, index) => `${index % 10},x`).join("\n");
+  expect(csv.length).toBeLessThan(2_000_000);
+
+  await page.getByLabel("Крупный документ").setInputFiles({
+    name: "many-short-rows.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(csv)
+  });
+
+  await expect(page.getByRole("heading", { name: "many-short-rows.csv" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText(
+    /После фильтра: 200\s?000 из 200\s?000 записей/
+  );
+  await expect(page.getByLabel("Загрузка документа").getByRole("alert")).toHaveCount(0);
+});
+
+test("preserves empty CSV records, reports numeric coverage and rejects malformed quotes", async ({
+  page
+}) => {
+  await page.goto("/?surface=files");
+  const input = page.getByLabel("Крупный документ");
+  await input.setInputFiles({
+    name: "coverage.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("name;score;note\r\nAlice;10;ok\r\n;;\r\nБоб;20,5;ok\r\nZoë;bad;ok")
+  });
+  await expect(page.getByRole("heading", { name: "coverage.csv" })).toBeVisible();
+  await expect(page.getByText("4", { exact: true }).first()).toBeVisible();
+  await page.getByLabel("Числовая статистика").selectOption({ label: "score" });
+  await expect(page.getByText("15,25")).toBeVisible();
+  await expect(page.getByText("Нечисловых").locator("..")).toContainText("1");
+  await expect(page.getByText(/проверено 4 из 4 строк/i)).toBeVisible();
+
+  await input.setInputFiles({
+    name: "malformed.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from('name,note\nAlice,"ok"oops')
+  });
+  await expect(page.getByLabel("Загрузка документа").getByRole("alert")).toContainText(
+    "после закрывающей кавычки"
+  );
+  await expect(page.getByRole("heading", { name: "malformed.csv" })).toHaveCount(0);
+});
+
+test("replacing a pending large read cannot restore a stale document or stale error", async ({
+  page
+}) => {
+  await page.goto("/?surface=files");
+  const input = page.getByLabel("Крупный документ");
+  const oversizedText = Buffer.from("x".repeat(2_000_001));
+  await input.setInputFiles({ name: "old.txt", mimeType: "text/plain", buffer: oversizedText });
+  await input.setInputFiles({
+    name: "new.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Новый документ должен остаться активным.")
+  });
+  await expect(page.getByRole("heading", { name: "new.txt" })).toBeVisible();
+  await expect(page.getByLabel("Содержимое документа")).toContainText(
+    "Новый документ должен остаться активным."
+  );
+  await expect(page.getByRole("heading", { name: "old.txt" })).toHaveCount(0);
+  await expect(page.getByLabel("Загрузка документа").getByRole("alert")).toHaveCount(0);
+});
+
+test("moves the active highlight between multiple matches in the same part", async ({ page }) => {
+  await page.goto("/?surface=files");
+  await page.getByLabel("Крупный документ").setInputFiles({
+    name: "matches.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Цель один. Несколько слов между. ЦЕЛЬ два.")
+  });
+  await page.getByLabel("Поиск по файлу").fill("цель");
+  await expect(page.getByRole("status")).toHaveText("Найдено совпадений: 2");
+  await expect(page.locator("#studio-active-search-match")).toHaveText("Цель");
+  await page.getByRole("button", { name: "Следующее совпадение" }).click();
+  await expect(page.locator("#studio-active-search-match")).toHaveText("ЦЕЛЬ");
 });

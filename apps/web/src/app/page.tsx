@@ -516,6 +516,7 @@ export default function Home() {
   );
   const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
   const pendingComposeRef = useRef<{ prompt: string; files: ChatAttachment[] } | null>(null);
+  const pendingComposerFocusRef = useRef(false);
   const draftRecoveryKeyRef = useRef<string | null>(null);
   const attachmentScope = `${composerDraftKey}:${viewEpochRef.current}`;
 
@@ -542,9 +543,27 @@ export default function Home() {
     pendingComposeRef.current = null;
     setDraft(pending.prompt);
     chatAttachments.replace(pending.files);
-    window.requestAnimationFrame(() => composerRef.current?.focus());
+    pendingComposerFocusRef.current = true;
     // Consume only after the new chat scope and its draft hydration have settled.
   }, [attachmentScope, chatAttachments]);
+
+  useEffect(() => {
+    if (
+      !pendingComposerFocusRef.current ||
+      surface !== "manager" ||
+      loading ||
+      !initialRouteReady ||
+      draftStorageReadyKey !== attachmentScope
+    )
+      return;
+    const frame = window.requestAnimationFrame(() => {
+      const composer = composerRef.current;
+      if (!composer || composer.disabled) return;
+      composer.focus();
+      pendingComposerFocusRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [attachmentScope, draftStorageReadyKey, initialRouteReady, loading, surface]);
 
   useEffect(() => {
     if (draftStorageReadyKey !== attachmentScope) return;
@@ -893,7 +912,6 @@ export default function Home() {
   useEffect(() => {
     if (loading || initialRouteHandledRef.current) return;
     initialRouteHandledRef.current = true;
-    setInitialRouteReady(true);
     const params = new URLSearchParams(window.location.search);
     const imported = params.get("github_import");
     if (imported && /^[a-f0-9-]{36}$/.test(imported)) {
@@ -916,6 +934,7 @@ export default function Home() {
       } catch {
         setError("Не удалось открыть файл из GitHub. Прикрепите его к чату отдельно.");
       }
+      setInitialRouteReady(true);
       return;
     }
     const projectId = params.get("project");
@@ -931,13 +950,22 @@ export default function Home() {
               setError("Не удалось открыть чат. Повторите выбор в истории.");
           })
           .finally(() => {
-            if (epoch === viewEpochRef.current) setLoading(false);
+            if (epoch === viewEpochRef.current) {
+              setLoading(false);
+              setInitialRouteReady(true);
+            }
           });
+      } else {
+        setInitialRouteReady(true);
       }
       return;
     }
     const requestedView = params.get("view");
-    void openProject(projectId, isProjectView(requestedView) ? requestedView : "chat");
+    void openProject(projectId, isProjectView(requestedView) ? requestedView : "chat").finally(
+      () => {
+        setInitialRouteReady(true);
+      }
+    );
   }, [loading, openProject]);
 
   const selectProjectView = (view: ProjectView): void => {
