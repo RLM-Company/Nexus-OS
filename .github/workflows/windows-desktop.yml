@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - "desktop/windows/**"
-      - "apps/web/**"
       - ".github/workflows/windows-desktop.yml"
       - ".github/workflows/windows-release.yml"
   workflow_dispatch:
