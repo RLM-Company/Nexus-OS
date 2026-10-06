@@ -8,6 +8,7 @@ import {
   type ChatAttachment
 } from "@cosmora/contracts/chat-attachments";
 import { decodeChatAttachment } from "./decode-chat-attachment";
+import { prepareChatImage } from "./prepare-chat-image";
 import { WorkspaceIcon } from "./workspace-icons";
 
 export function useChatAttachments(scope: string) {
@@ -37,7 +38,15 @@ export function useChatAttachments(scope: string) {
       if (files.length + selected.length > CHAT_ATTACHMENT_LIMITS.files) {
         throw new Error("Можно прикрепить до 4 файлов.");
       }
-      const added = await Promise.all(selected.map(decodeChatAttachment));
+      const added: ChatAttachment[] = [];
+      for (const file of selected) {
+        if (scopeRef.current !== scope || operationRef.current !== operation) return;
+        added.push(
+          await (/\.(png|jpe?g)$/i.test(file.name)
+            ? prepareChatImage(file)
+            : decodeChatAttachment(file))
+        );
+      }
       const next = [...files, ...added];
       if (!isValidChatAttachments(next)) {
         throw new Error(
