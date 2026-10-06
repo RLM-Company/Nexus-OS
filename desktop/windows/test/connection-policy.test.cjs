@@ -1,9 +1,14 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const path = require("node:path");
 const test = require("node:test");
 const {
+  connectionViewState,
+  createLatestAttemptGate,
+  isAllowedDownload,
   isAllowedRemoteNavigation,
+  isSafeExternalUrl,
   nextAvailableDownloadPath,
   normalizeServerOrigin,
   safeDownloadFilename
@@ -15,25 +20,54 @@ test("allows HTTPS origins and loopback HTTP only", () => {
   assert.throws(() => normalizeServerOrigin("http://example.com"), /HTTPS/);
 });
 
-test("rejects credentials, paths and query strings in the server address", () => {
+test("rejects credentials, paths, query strings and fragments in the server address", () => {
   assert.throws(() => normalizeServerOrigin("https://user:secret@example.com"), /логин|пароль/);
   assert.throws(() => normalizeServerOrigin("https://example.com/app"), /origin/);
   assert.throws(() => normalizeServerOrigin("https://example.com/?token=secret"), /origin/);
+  assert.throws(() => normalizeServerOrigin("https://example.com/#token"), /origin/);
 });
 
 test("keeps in-app navigation on the connected origin", () => {
-  assert.equal(
-    isAllowedRemoteNavigation("https://cosmora.example/projects/1", "https://cosmora.example"),
-    true
-  );
+  assert.equal(isAllowedRemoteNavigation("https://cosmora.example/projects/1", "https://cosmora.example"), true);
   assert.equal(isAllowedRemoteNavigation("https://example.com/", "https://cosmora.example"), false);
+  assert.equal(isAllowedRemoteNavigation("javascript:alert(1)", "https://cosmora.example"), false);
+});
+
+test("opens only ordinary safe external schemes", () => {
+  assert.equal(isSafeExternalUrl("https://example.com/docs"), true);
+  assert.equal(isSafeExternalUrl("mailto:owner@example.com"), true);
+  assert.equal(isSafeExternalUrl("file:///C:/secret.txt"), false);
+  assert.equal(isSafeExternalUrl("javascript:alert(1)"), false);
+  assert.equal(isSafeExternalUrl("https://user:secret@example.com"), false);
+});
+
+test("download chain must remain entirely on the active Cosmora origin", () => {
+  assert.equal(isAllowedDownload(["https://cosmora.example/a", "https://cosmora.example/b"], "https://cosmora.example"), true);
+  assert.equal(isAllowedDownload(["https://cosmora.example/a", "https://cdn.example/b"], "https://cosmora.example"), false);
+  assert.equal(isAllowedDownload([], "https://cosmora.example"), false);
 });
 
 test("sanitizes downloads and avoids overwriting existing files", () => {
   assert.equal(safeDownloadFilename('report<final>:"?.md'), "report_final____.md");
-  const seen = new Set(["C:\\Downloads\\result.md", "C:\\Downloads\\result (1).md"]);
-  const chosen = nextAvailableDownloadPath("C:\\Downloads", "result.md", (value) =>
-    seen.has(value)
-  );
-  assert.equal(chosen, "C:\\Downloads\\result (2).md");
+  const seen = new Set([path.join("Downloads", "result.md"), path.join("Downloads", "result (1).md")]);
+  const chosen = nextAvailableDownloadPath("Downloads", "result.md", (value) => seen.has(value));
+  assert.equal(chosen, path.join("Downloads", "result (2).md"));
+});
+
+test("connection screen distinguishes first setup from saved-server recovery", () => {
+  assert.deepEqual(connectionViewState({ hasSavedOrigin: false }), { mode: "setup", message: "", connecting: false });
+  assert.deepEqual(connectionViewState({ hasSavedOrigin: true, message: "offline" }), { mode: "offline", message: "offline", connecting: false });
+});
+
+test("latest connection attempt wins and stale completion cannot clear busy state", () => {
+  const gate = createLatestAttemptGate();
+  const first = gate.begin();
+  const second = gate.begin();
+  assert.equal(gate.isCurrent(first), false);
+  assert.equal(gate.isCurrent(second), true);
+  assert.equal(gate.isInFlight(), true);
+  gate.finish(first);
+  assert.equal(gate.isInFlight(), true);
+  gate.finish(second);
+  assert.equal(gate.isInFlight(), false);
 });
