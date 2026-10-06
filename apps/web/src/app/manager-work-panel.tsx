@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
+  managerWorkNeedsAttention,
   managerWorkStageLabel,
   managerWorkStatusLabel,
   type ManagerWorkStage,
@@ -26,6 +27,22 @@ type Work = {
   events: { sequence: number; message: string; at: string }[];
 };
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
+type HistoryFilter = "all" | "active" | "attention" | "completed";
+
+const historyFilterLabels: Record<HistoryFilter, string> = {
+  all: "Все",
+  active: "Активные",
+  attention: "Внимание",
+  completed: "Готовые"
+};
+
+function matchesHistoryFilter(item: Work, filter: HistoryFilter): boolean {
+  if (filter === "active") return item.status === "queued" || item.status === "running";
+  if (filter === "attention") return managerWorkNeedsAttention(item.status);
+  if (filter === "completed") return item.status === "completed";
+  return true;
+}
+
 const progressStepLabels = ["Запрос", "План", "Результат", "Проверка", "Готово"];
 
 function workProgressIndex(work: Work) {
@@ -82,6 +99,7 @@ export function ManagerWorkPanel({
   const [work, setWork] = useState<Work | null>(null);
   const [works, setWorks] = useState<Work[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [runtime, setRuntime] = useState<{ mode: string; model: string } | null>(null);
   const executionGate = useExecutionGate(projectId);
@@ -104,11 +122,14 @@ export function ManagerWorkPanel({
           })
         ]);
         if (!controller.signal.aborted && epoch === mutationEpoch.current && !lock.current) {
-          const latest = selectedWorkId
-            ? (list.items.find((item) => item.id === selectedWorkId) ?? list.items[0] ?? null)
-            : (list.items[0] ?? null);
-          if (selectedWorkId && !list.items.some((item) => item.id === selectedWorkId))
-            setSelectedWorkId(null);
+          const filteredItems = list.items.filter((item) =>
+            matchesHistoryFilter(item, historyFilter)
+          );
+          const selected = selectedWorkId
+            ? filteredItems.find((item) => item.id === selectedWorkId)
+            : undefined;
+          const latest = selected ?? filteredItems[0] ?? null;
+          if (selectedWorkId && !selected) setSelectedWorkId(latest?.id ?? null);
           setWorks((current) =>
             list.items.map((item) => {
               const previous = current.find((candidate) => candidate.id === item.id);
@@ -135,7 +156,7 @@ export function ManagerWorkPanel({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [base, selectedWorkId]);
+  }, [base, historyFilter, selectedWorkId]);
   const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
     if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
       return;
@@ -184,6 +205,13 @@ export function ManagerWorkPanel({
   };
   const active = work && isActive(work);
   const projectHasActiveWork = Boolean(active) || works.some(isActive);
+  const visibleWorks = works.filter((item) => matchesHistoryFilter(item, historyFilter));
+  const historyCounts: Record<HistoryFilter, number> = {
+    all: works.length,
+    active: works.filter((item) => matchesHistoryFilter(item, "active")).length,
+    attention: works.filter((item) => matchesHistoryFilter(item, "attention")).length,
+    completed: works.filter((item) => matchesHistoryFilter(item, "completed")).length
+  };
   const progressIndex = work ? workProgressIndex(work) : 0;
   const latestEvent = work && work.events.length > 0 ? work.events[work.events.length - 1] : null;
   const resultFileCount = work?.draft?.files.length ?? 0;
@@ -263,13 +291,34 @@ export function ManagerWorkPanel({
       {error && <p role="alert">{error}</p>}
       {works.length > 0 && (
         <div className="manager-work-history">
-          <strong>Задачи проекта</strong>
+          <div className="manager-work-history-heading">
+            <strong>Задачи проекта</strong>
+            <div className="manager-work-history-filters" aria-label="Фильтр задач Manager">
+              {(Object.keys(historyFilterLabels) as HistoryFilter[]).map((filter) => (
+                <button
+                  type="button"
+                  key={filter}
+                  aria-pressed={historyFilter === filter}
+                  onClick={() => {
+                    setHistoryFilter(filter);
+                    const next = works.find((item) => matchesHistoryFilter(item, filter)) ?? null;
+                    setSelectedWorkId(next?.id ?? null);
+                    setWork(next);
+                    setError("");
+                  }}
+                >
+                  <span>{historyFilterLabels[filter]}</span>
+                  <small>{historyCounts[filter]}</small>
+                </button>
+              ))}
+            </div>
+          </div>
           <div
             className="manager-work-history-list"
             role="group"
             aria-label="История задач Manager"
           >
-            {works.map((item, index) => (
+            {visibleWorks.map((item, index) => (
               <button
                 type="button"
                 key={item.id}
@@ -284,6 +333,9 @@ export function ManagerWorkPanel({
                 <small>{managerWorkStatusLabel(item.status)}</small>
               </button>
             ))}
+            {visibleWorks.length === 0 && (
+              <p className="manager-work-history-empty">В этой категории пока нет задач.</p>
+            )}
           </div>
           {projectHasActiveWork && !active && (
             <p>Другая задача ещё выполняется. Откройте её в списке, чтобы увидеть шаги.</p>
