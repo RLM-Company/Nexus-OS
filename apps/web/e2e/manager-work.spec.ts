@@ -29,7 +29,7 @@ test("creates guarded mock files, survives reload and downloads the result", asy
   const progress = summary.getByRole("list", { name: "Прогресс выполнения" });
   await expect(progress.getByRole("listitem")).toHaveCount(5);
   await expect(progress.getByRole("listitem").last()).toHaveAttribute("aria-current", "step");
-  await expect(summary.getByText("1", { exact: true })).toBeVisible();
+  await expect(summary.getByTestId("manager-work-file-count")).toHaveText("1");
 
   const href = await panel
     .getByRole("link", { name: "result.md", exact: true })
