@@ -30,6 +30,37 @@ const labels: Record<string, string> = {
   failed: "Остановлено с ошибкой",
   cancelled: "Отменено"
 };
+const stageLabels: Record<string, string> = {
+  queued: "Подготовка",
+  plan: "План",
+  planning: "План",
+  draft: "Создание результата",
+  drafting: "Создание результата",
+  review: "Проверка",
+  critic: "Проверка Критиком",
+  finalize: "Финализация",
+  completed: "Готово"
+};
+const progressStepLabels = ["Запрос", "План", "Результат", "Проверка", "Готово"];
+
+function workStageLabel(work: Work) {
+  if (work.status === "completed") return "Готово";
+  return stageLabels[work.stage] ?? work.stage.replaceAll("_", " ");
+}
+
+function workProgressIndex(work: Work) {
+  if (work.status === "completed") return 4;
+  if (work.review) return 3;
+  if (work.draft) return 2;
+  if (work.plan) return 1;
+  return 0;
+}
+
+function eventClock(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
 const errors: Record<string, string> = {
   INVALID_MODEL_OUTPUT:
     "Модель вернула результат неподходящего формата. Автоматического платного повтора не будет.",
@@ -173,6 +204,9 @@ export function ManagerWorkPanel({
   };
   const active = work && isActive(work);
   const projectHasActiveWork = Boolean(active) || works.some(isActive);
+  const progressIndex = work ? workProgressIndex(work) : 0;
+  const latestEvent = work && work.events.length > 0 ? work.events[work.events.length - 1] : null;
+  const resultFileCount = work?.draft?.files.length ?? 0;
   return (
     <section className="manager-demo manager-work-panel" aria-label="Выполнение задачи Manager">
       <header className="manager-work-header">
@@ -278,6 +312,54 @@ export function ManagerWorkPanel({
       )}
       {work && (
         <>
+          <section className="manager-work-overview" aria-label="Сводка задачи">
+            <div className="manager-work-summary-grid">
+              <article>
+                <small>Текущий этап</small>
+                <strong data-testid="manager-work-stage">{workStageLabel(work)}</strong>
+                <span>{labels[work.status] ?? "Состояние неизвестно"}</span>
+              </article>
+              <article>
+                <small>Обращения к модели</small>
+                <strong>{work.model_requests} / 3</strong>
+                <progress
+                  aria-label="Использование лимита модели"
+                  max={3}
+                  value={Math.min(work.model_requests, 3)}
+                />
+              </article>
+              <article>
+                <small>Последний шаг</small>
+                <strong>{latestEvent ? latestEvent.message : "Ожидаем первый шаг"}</strong>
+                <span>
+                  {latestEvent && eventClock(latestEvent.at)
+                    ? "Обновлено " + eventClock(latestEvent.at)
+                    : work.events.length + " событий"}
+                </span>
+              </article>
+              <article>
+                <small>Результаты</small>
+                <strong>{resultFileCount}</strong>
+                <span>{resultFileCount === 1 ? "готовый файл" : "готовых файлов"}</span>
+              </article>
+            </div>
+            <ol className="manager-work-progress" aria-label="Прогресс выполнения">
+              {progressStepLabels.map((step, index) => {
+                const state =
+                  index < progressIndex ? "done" : index === progressIndex ? "current" : "pending";
+                return (
+                  <li
+                    className={state}
+                    key={step}
+                    aria-current={state === "current" ? "step" : undefined}
+                  >
+                    <span>{index + 1}</span>
+                    <strong>{step}</strong>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
           <p className="manager-work-usage">Обращений к модели: {work.model_requests} / 3</p>
           {work.plan && (
             <div className="manager-work-plan">
@@ -296,7 +378,10 @@ export function ManagerWorkPanel({
             aria-relevant="additions"
           >
             {work.events.map((e) => (
-              <li key={e.sequence}>{e.message}</li>
+              <li key={e.sequence}>
+                <span>{e.message}</span>
+                {eventClock(e.at) && <time dateTime={e.at}>{eventClock(e.at)}</time>}
+              </li>
             ))}
           </ol>
           {work.review && (
@@ -310,50 +395,52 @@ export function ManagerWorkPanel({
                 "Работа остановлена. Сохранённые этапы доступны; автоматического повтора нет."}
             </p>
           )}
-          {work.status === "awaiting_approval" && (
-            <button
-              className="manager-work-action primary"
-              disabled={busy || executionGate !== "clear"}
-              onClick={() => void act("approve")}
-            >
-              Подтвердить план
-            </button>
-          )}
-          {["running", "queued"].includes(work.status) && (
-            <button
-              className="manager-work-action"
-              disabled={busy || work.pause_requested}
-              onClick={() => void act("pause")}
-            >
-              {work.pause_requested ? "Ожидается пауза" : "Пауза"}
-            </button>
-          )}
-          {["paused", "blocked"].includes(work.status) && (
-            <button
-              className="manager-work-action primary"
-              disabled={busy || executionGate !== "clear"}
-              onClick={() => void act("resume")}
-            >
-              Продолжить
-            </button>
-          )}
-          {active && (
-            <button
-              className="manager-work-action"
-              disabled={busy}
-              onClick={() => void act("cancel")}
-            >
-              Остановить задачу
-            </button>
-          )}
-          {work.status === "blocked" && (
-            <Link
-              className="manager-work-permissions"
-              href={"/control-center?project=" + encodeURIComponent(projectId)}
-            >
-              Разрешения проекта
-            </Link>
-          )}
+          <div className="manager-work-actions" aria-label="Управление задачей">
+            {work.status === "awaiting_approval" && (
+              <button
+                className="manager-work-action primary"
+                disabled={busy || executionGate !== "clear"}
+                onClick={() => void act("approve")}
+              >
+                Подтвердить план
+              </button>
+            )}
+            {["running", "queued"].includes(work.status) && (
+              <button
+                className="manager-work-action"
+                disabled={busy || work.pause_requested}
+                onClick={() => void act("pause")}
+              >
+                {work.pause_requested ? "Ожидается пауза" : "Пауза"}
+              </button>
+            )}
+            {["paused", "blocked"].includes(work.status) && (
+              <button
+                className="manager-work-action primary"
+                disabled={busy || executionGate !== "clear"}
+                onClick={() => void act("resume")}
+              >
+                Продолжить
+              </button>
+            )}
+            {active && (
+              <button
+                className="manager-work-action"
+                disabled={busy}
+                onClick={() => void act("cancel")}
+              >
+                Остановить задачу
+              </button>
+            )}
+            {work.status === "blocked" && (
+              <Link
+                className="manager-work-permissions"
+                href={"/control-center?project=" + encodeURIComponent(projectId)}
+              >
+                Разрешения проекта
+              </Link>
+            )}
+          </div>
           {work.status === "completed" && (
             <ul className="manager-work-files" aria-label="Готовые файлы">
               {work.draft?.files.map((file) => (
