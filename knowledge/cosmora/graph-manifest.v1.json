@@ -8,9 +8,9 @@
     "observed_at": "2026-10-01T20:31:01.000Z"
   },
   "totals": {
-    "nodes": 633,
-    "edges": 1896,
-    "records": 633
+    "nodes": 662,
+    "edges": 1977,
+    "records": 662
   },
   "layers": [
     {
@@ -162,6 +162,13 @@
       "edges": 129,
       "authority": "verified_config_secret_and_runtime_evidence",
       "semantics": "validated_keys_secret_resolver_fail_closed_runtime_binding"
+    },
+    {
+      "id": "model_reliability",
+      "nodes": 29,
+      "edges": 81,
+      "authority": "verified_model_gateway_runtime_and_regression_evidence",
+      "semantics": "retry_fallback_timeout_circuit_stream_completion"
     }
   ],
   "primary_relation_types": [
@@ -311,7 +318,16 @@
     "GROUPED_UNDER",
     "RESOLVES_SECRET_FOR",
     "REQUIRES_CONFIG_KEY",
-    "CONFIGURES"
+    "CONFIGURES",
+    "ERROR_CODE_FOR",
+    "EMITTED_BY",
+    "PRODUCED_BY",
+    "FAILURE_THRESHOLD_OPENS_TO",
+    "COOLDOWN_ALLOWS_PROBE_TO",
+    "SUCCESS_CLOSES_TO",
+    "FAILURE_REOPENS_TO",
+    "NORMALIZES_TO",
+    "ALLOWS_PROBE_TO"
   ],
   "safety": {
     "private_chat_persistence": false,
@@ -344,7 +360,8 @@
     "packages/core/test/fixtures/cosmora-identity-trust-graph.ts",
     "packages/core/test/fixtures/cosmora-data-lineage-graph.ts",
     "packages/core/test/fixtures/cosmora-resource-budget-graph.ts",
-    "packages/core/test/fixtures/cosmora-configuration-secret-boundary-graph.ts"
+    "packages/core/test/fixtures/cosmora-configuration-secret-boundary-graph.ts",
+    "packages/core/test/fixtures/cosmora-model-reliability-graph.ts"
   ],
   "notes": [
     "The 2M synthetic scale benchmark is intentionally excluded from this knowledge manifest.",
