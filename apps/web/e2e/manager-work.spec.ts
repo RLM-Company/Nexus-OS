@@ -22,6 +22,15 @@ test("creates guarded mock files, survives reload and downloads the result", asy
   await panel.getByLabel("Задача для выполнения").fill("Создай краткий документ с планом запуска");
   await panel.getByRole("button", { name: "Создать файлы", exact: true }).click();
   await expect(panel.getByRole("link", { name: "result.md", exact: true })).toBeVisible();
+  const summary = panel.getByRole("region", { name: "Сводка задачи" });
+  await expect(summary).toBeVisible();
+  await expect(summary.getByTestId("manager-work-stage")).toHaveText("Готово");
+  await expect(summary.getByText("3 / 3", { exact: true })).toBeVisible();
+  const progress = summary.getByRole("list", { name: "Прогресс выполнения" });
+  await expect(progress.getByRole("listitem")).toHaveCount(5);
+  await expect(progress.getByRole("listitem").last()).toHaveAttribute("aria-current", "step");
+  await expect(summary.getByText("1", { exact: true })).toBeVisible();
+
   const href = await panel
     .getByRole("link", { name: "result.md", exact: true })
     .getAttribute("href");
