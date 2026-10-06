@@ -1443,9 +1443,7 @@ describe("unified Cosmora Intelligence Graph", () => {
   it("models all 58 registered API routes with one public health exception", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
     const routes = graph.nodes.filter((node) => node.node_id.startsWith("api-route-"));
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(routes).toHaveLength(58);
     expect(
@@ -1461,9 +1459,7 @@ describe("unified Cosmora Intelligence Graph", () => {
     expect(pairs).toContain(
       "api-route-get-api-v1-health|GATED_BY|entity-api-public-health-boundary"
     );
-    expect(pairs).not.toContain(
-      "api-route-get-api-v1-health|GATED_BY|entity-api-owner-boundary"
-    );
+    expect(pairs).not.toContain("api-route-get-api-v1-health|GATED_BY|entity-api-owner-boundary");
   });
 
   it("keeps the exact project, step-up and Agent Studio idempotency route boundaries", () => {
@@ -1488,9 +1484,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("keeps General Chat message creation in the General Chat family", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
     const routeId = "api-route-post-api-v1-chats-chatid-messages";
 
     expect(pairs).toContain(`${routeId}|ROUTE_OF|entity-api-general-chat`);
@@ -1499,9 +1493,7 @@ describe("unified Cosmora Intelligence Graph", () => {
 
   it("grounds owner, project, step-up and idempotency boundaries in API regression suites", () => {
     const graph = cosmoraUnifiedKnowledgeGraph();
-    const pairs = new Set(
-      graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`)
-    );
+    const pairs = new Set(graph.edges.map((edge) => `${edge.from.id}|${edge.type}|${edge.to.id}`));
 
     expect(pairs).toContain(
       `entity-api-owner-boundary|VERIFIED_BY_TEST|${repositoryStructureFileId(

@@ -642,7 +642,6 @@ Every reliability claim is connected to the exact implementation/test evidence. 
 delay and circuit parameters reuse Configuration & Secret Boundary nodes rather than inventing new
 settings, and unknown usage is linked to the Resource Budget rule that preserves unknown cost.
 
-
 ## API Boundary Graph
 
 The unified graph now includes **68 API Boundary nodes** and **256 typed relationships**.

@@ -328,7 +328,6 @@ It models the runtime behavior of `ModelGateway`, not just model metadata:
 Reliability configuration is connected to the already verified configuration keys, while unknown
 usage is bridged to persistent unknown-cost accounting in the Resource Budget layer.
 
-
 ## API Boundary
 
 The graph now materializes the actual HTTP boundary instead of treating the API as a single opaque
