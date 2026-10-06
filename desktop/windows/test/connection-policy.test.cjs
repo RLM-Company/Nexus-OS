@@ -7,6 +7,7 @@ const {
   connectionViewState,
   createLatestAttemptGate,
   isAllowedDownload,
+  isAllowedDownloadUrl,
   isAllowedRemoteNavigation,
   isSafeExternalUrl,
   nextAvailableDownloadPath,
@@ -45,6 +46,14 @@ test("download chain must remain entirely on the active Cosmora origin", () => {
   assert.equal(isAllowedDownload(["https://cosmora.example/a", "https://cosmora.example/b"], "https://cosmora.example"), true);
   assert.equal(isAllowedDownload(["https://cosmora.example/a", "https://cdn.example/b"], "https://cosmora.example"), false);
   assert.equal(isAllowedDownload([], "https://cosmora.example"), false);
+});
+
+test("allows same-origin blob downloads but rejects foreign/local schemes", () => {
+  assert.equal(isAllowedDownloadUrl("blob:https://cosmora.example/8f7b", "https://cosmora.example"), true);
+  assert.equal(isAllowedDownloadUrl("blob:https://evil.example/8f7b", "https://cosmora.example"), false);
+  assert.equal(isAllowedDownloadUrl("data:text/plain,secret", "https://cosmora.example"), false);
+  assert.equal(isAllowedDownloadUrl("file:///C:/secret.txt", "https://cosmora.example"), false);
+  assert.equal(isAllowedDownload(["https://cosmora.example/file", "blob:https://cosmora.example/8f7b"], "https://cosmora.example"), true);
 });
 
 test("sanitizes downloads and avoids overwriting existing files", () => {
