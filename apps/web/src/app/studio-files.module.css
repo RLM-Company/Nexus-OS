@@ -1,0 +1,217 @@
+.root {
+  max-width: 1100px;
+  margin: 0 auto;
+  color: var(--ui-text);
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 28px;
+}
+.header h2 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  margin: 5px 0 8px;
+}
+.header p {
+  color: var(--ui-muted);
+  margin: 0;
+}
+.icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: #f0edf8;
+  color: #655287;
+  flex-shrink: 0;
+}
+.icon svg {
+  width: 30px;
+  height: 30px;
+}
+.upload,
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: white;
+  padding: 24px;
+  min-width: 0;
+}
+.upload {
+  text-align: center;
+  border-style: dashed;
+}
+.root button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+  padding: 10px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+.root button:hover:not(:disabled) {
+  background: #f5f2fa;
+  border-color: #b5a6ce;
+}
+.root button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.root :is(button, input, textarea, select):focus-visible {
+  outline: 3px solid #9d85c6;
+  outline-offset: 3px;
+}
+.root button svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.root small {
+  color: var(--ui-muted);
+}
+.upload p {
+  margin: 14px 0 8px;
+}
+.reading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+.documentTitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0 18px;
+}
+.documentTitle h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 0 0 22px;
+}
+.stats div {
+  padding: 16px;
+  background: #f1eff6;
+  border-radius: 12px;
+}
+.stats dt {
+  color: var(--ui-muted);
+  font-size: 0.8rem;
+}
+.stats dd {
+  font-size: 1.2rem;
+  margin: 8px 0 0;
+}
+.layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 2.5fr);
+  gap: 20px;
+  align-items: start;
+}
+.panel label {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+}
+.panel :is(input, textarea) {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  font: inherit;
+  background: #faf9fc;
+  color: inherit;
+}
+.panel textarea {
+  resize: vertical;
+  min-height: 90px;
+  margin-bottom: 12px;
+}
+.matchList {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+  margin: 12px 0;
+}
+.matchList button {
+  display: block;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.matchList small {
+  display: block;
+  margin-top: 6px;
+}
+.partNav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.partNav label {
+  margin: 0;
+}
+.partNav select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px;
+  background: white;
+  color: inherit;
+}
+.preview {
+  max-height: 430px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    0.85rem/1.7 ui-monospace,
+    monospace;
+  background: #faf9fc;
+  padding: 16px;
+  border-radius: 10px;
+  margin: 18px 0 24px;
+}
+.root .primary {
+  background: #665185;
+  color: white;
+  border-color: #665185;
+}
+.root .primary:hover:not(:disabled) {
+  background: #594477;
+}
+@media (max-width: 700px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .panel,
+  .upload {
+    padding: 18px;
+  }
+  .header {
+    align-items: flex-start;
+  }
+  .icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+  }
+}

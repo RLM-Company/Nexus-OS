@@ -11,7 +11,7 @@ import { ChatArchivePanel } from "./chat-archive-panel";
 import { ProjectContextPanel } from "./project-context-panel";
 import { ProjectContextPreview } from "./project-context-preview";
 import { ManagerWorkPanel } from "./manager-work-panel";
-import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
+import { useExecutionGate } from "./use-execution-gate";
 import { WorkspaceIcon } from "./workspace-icons";
 import { AccountMenu, MobileNavigation } from "./workspace-navigation";
 import {
@@ -139,6 +139,7 @@ type WorkspaceSurface = "manager" | ToolSurface;
 const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
   manager: "Cosmora Manager",
   studio: "Cosmora Studio",
+  files: "Крупные файлы",
   skills: "Skills",
   code: "Code",
   work: "Work",
@@ -501,6 +502,7 @@ export default function Home() {
   const projectProposal = activeLocalChat?.projectProposal ?? null;
   const composerDraftKey = composerDraftStorageKey(activeProject?.id ?? null, activeLocalChatId);
   const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
+  const pendingComposeRef = useRef<{ prompt: string; files: ChatAttachment[] } | null>(null);
 
   useEffect(() => {
     setDraftStorageReadyKey(null);
@@ -511,6 +513,17 @@ export default function Home() {
     }
     setDraftStorageReadyKey(composerDraftKey);
   }, [composerDraftKey]);
+
+  const attachmentScope = `${composerDraftKey}:${viewEpochRef.current}`;
+  useEffect(() => {
+    const pending = pendingComposeRef.current;
+    if (!pending) return;
+    pendingComposeRef.current = null;
+    setDraft(pending.prompt);
+    chatAttachments.replace(pending.files);
+    window.requestAnimationFrame(() => composerRef.current?.focus());
+    // Consume only after the new chat scope and its draft hydration have settled.
+  }, [attachmentScope, chatAttachments]);
 
   useEffect(() => {
     if (draftStorageReadyKey !== composerDraftKey) return;
@@ -645,7 +658,7 @@ export default function Home() {
       const requestedSurface = new URLSearchParams(window.location.search).get("surface");
       if (isToolSurface(requestedSurface)) {
         setSurface(requestedSurface);
-        if (["studio", "images", "video", "sound"].includes(requestedSurface))
+        if (["studio", "files", "images", "video", "sound"].includes(requestedSurface))
           setStudioExpanded(true);
         setWorkspaceSurfaceHydrated(true);
         return;
@@ -653,7 +666,8 @@ export default function Home() {
       const savedSurface = window.localStorage.getItem(WORKSPACE_SURFACE_STORAGE_KEY);
       if (isToolSurface(savedSurface)) {
         setSurface(savedSurface);
-        if (["studio", "images", "video", "sound"].includes(savedSurface)) setStudioExpanded(true);
+        if (["studio", "files", "images", "video", "sound"].includes(savedSurface))
+          setStudioExpanded(true);
       }
     } catch {
       // Keep Manager as the safe default when local UI storage is unavailable.
@@ -1623,7 +1637,8 @@ export default function Home() {
 
   const selectSurface = (nextSurface: ToolSurface): void => {
     setSurface(nextSurface);
-    if (["studio", "images", "video", "sound"].includes(nextSurface)) setStudioExpanded(true);
+    if (["studio", "files", "images", "video", "sound"].includes(nextSurface))
+      setStudioExpanded(true);
     const route = new URL(window.location.href);
     route.searchParams.delete("project");
     route.searchParams.delete("view");
@@ -1779,9 +1794,16 @@ export default function Home() {
           <div className="sidebar-tools" aria-label="Рабочие области">
             {TOOL_ITEMS.filter(
               (item) =>
-                !["studio", "images", "video", "sound", "settings", "apps", "features"].includes(
-                  item.id
-                )
+                ![
+                  "studio",
+                  "files",
+                  "images",
+                  "video",
+                  "sound",
+                  "settings",
+                  "apps",
+                  "features"
+                ].includes(item.id)
             ).map((item) => (
               <button
                 key={item.id}
@@ -1888,25 +1910,6 @@ export default function Home() {
                 ? (activeProject?.title ?? "Новый чат")
                 : SURFACE_TITLE[surface]}
             </h1>
-          </div>
-          <div className="system-status" aria-label="Статус системы">
-            <Link
-              className="runtime-status-link"
-              data-connected={Boolean(
-                runtime && runtime.mode !== "mock" && runtime.credential_configured
-              )}
-              href="/model-status"
-              title="Открыть состояние подключения модели"
-            >
-              <i className="status-dot" />
-              {runtime && runtime.mode !== "mock" && runtime.credential_configured
-                ? "Провайдер настроен"
-                : "Модель не подключена"}
-            </Link>
-            <span className="privacy-badge">
-              <ShieldIcon />
-              {runtime && runtime.mode !== "mock" ? "Внешний провайдер" : "Локальные данные"}
-            </span>
           </div>
           <InstallApp />
         </header>
@@ -2390,12 +2393,6 @@ export default function Home() {
           }
           onSubmit={(event) => void submit(event)}
         >
-          {executionGate !== "clear" && (
-            <p className="composer-execution-state" data-testid="chat-execution-gate">
-              {executionGateLabels[executionGate]}{" "}
-              <Link href={controlCenterHref}>Центр управления</Link>
-            </p>
-          )}
           <label htmlFor="task">
             {activeProject ? "Сообщение менеджеру" : "Сообщение Cosmora"}
           </label>
@@ -2415,72 +2412,76 @@ export default function Home() {
               activeProject ? "Уточните задачу или добавьте требование…" : "Спросите что-нибудь…"
             }
           />
-          {
-            <ChatAttachmentPicker
-              files={chatAttachments.files}
-              reading={chatAttachments.reading}
-              error={chatAttachments.error}
-              disabled={sending || loading}
-              onAdd={(files) => void chatAttachments.add(files)}
-              onRemove={(index) =>
-                chatAttachments.replace(
-                  chatAttachments.files.filter((_, position) => position !== index)
-                )
-              }
-            />
-          }
-          <WebSearchPanel
-            scope={composerDraftKey}
-            disabled={sending || loading || chatAttachments.reading}
-            onAttach={(file) => {
-              const next = [...chatAttachments.files, file];
-              if (!isValidChatAttachments(next)) return false;
-              chatAttachments.replace(next);
-              return true;
-            }}
-          />
-          <div className="composer-footer">
-            <span role={error ? "alert" : undefined} aria-live={error ? "assertive" : "polite"}>
-              {error ??
-                (sending
-                  ? "Cosmora выполняет запуск…"
-                  : "Enter — отправить · Shift+Enter — новая строка")}
-            </span>
-            {sending ? (
-              <button
-                type="button"
-                className="cancel-run"
-                disabled={!activeRunId}
-                onClick={() => void cancelRun()}
-              >
-                <span className="stop-icon" /> Остановить
-              </button>
-            ) : (
-              <div className="composer-actions">
-                {error && (
-                  <button
-                    type="button"
-                    className="restore-run"
-                    onClick={() => void reloadShellData()}
-                  >
-                    ↻ Повторить
-                  </button>
-                )}
-                {recoverableMessage && !draft.trim() && (
-                  <button type="button" className="restore-run" onClick={restoreRunDraft}>
-                    ↻ Вернуть запрос в редактор
-                  </button>
-                )}
-                <button
-                  disabled={
-                    !draft.trim() || loading || chatAttachments.reading || executionGate !== "clear"
+          <div className="composer-controls">
+            <div className="composer-tools">
+              {
+                <ChatAttachmentPicker
+                  files={chatAttachments.files}
+                  reading={chatAttachments.reading}
+                  error={chatAttachments.error}
+                  disabled={sending || loading}
+                  onAdd={(files) => void chatAttachments.add(files)}
+                  onRemove={(index) =>
+                    chatAttachments.replace(
+                      chatAttachments.files.filter((_, position) => position !== index)
+                    )
                   }
-                  aria-label="Отправить"
+                />
+              }
+              <WebSearchPanel
+                scope={composerDraftKey}
+                disabled={sending || loading || chatAttachments.reading}
+                onAttach={(file) => {
+                  const next = [...chatAttachments.files, file];
+                  if (!isValidChatAttachments(next)) return false;
+                  chatAttachments.replace(next);
+                  return true;
+                }}
+              />
+            </div>
+            <div className="composer-footer">
+              <span role={error ? "alert" : undefined} aria-live={error ? "assertive" : "polite"}>
+                {error ?? (sending ? "Cosmora выполняет запуск…" : "")}
+              </span>
+              {sending ? (
+                <button
+                  type="button"
+                  className="cancel-run"
+                  disabled={!activeRunId}
+                  onClick={() => void cancelRun()}
                 >
-                  <SendIcon />
+                  <span className="stop-icon" /> Остановить
                 </button>
-              </div>
-            )}
+              ) : (
+                <div className="composer-actions">
+                  {error && (
+                    <button
+                      type="button"
+                      className="restore-run"
+                      onClick={() => void reloadShellData()}
+                    >
+                      ↻ Повторить
+                    </button>
+                  )}
+                  {recoverableMessage && !draft.trim() && (
+                    <button type="button" className="restore-run" onClick={restoreRunDraft}>
+                      ↻ Вернуть запрос в редактор
+                    </button>
+                  )}
+                  <button
+                    disabled={
+                      !draft.trim() ||
+                      loading ||
+                      chatAttachments.reading ||
+                      executionGate !== "clear"
+                    }
+                    aria-label="Отправить"
+                  >
+                    <SendIcon />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </form>
 
@@ -2497,10 +2498,9 @@ export default function Home() {
             onRetry={() => void reloadShellData()}
             onOpenProject={(id, view) => void openProject(id, view)}
             onNavigate={selectSurface}
-            onCompose={(prompt) => {
+            onCompose={(prompt, files = []) => {
+              pendingComposeRef.current = { prompt, files };
               newChat();
-              setDraft(prompt);
-              window.requestAnimationFrame(() => composerRef.current?.focus());
             }}
             preferences={preferences}
             onPreferences={updatePreferences}

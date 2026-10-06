@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { WorkspaceIcon } from "./workspace-icons";
 import type { ChatTextAttachment } from "@cosmora/contracts/chat-attachments";
 
 type Results = {
@@ -61,7 +62,9 @@ export function WebSearchPanel({
   };
   return (
     <details className="web-search-panel">
-      <summary>Поиск в интернете</summary>
+      <summary aria-label="Поиск" title="Поиск">
+        <WorkspaceIcon name="search" />
+      </summary>
       <p>
         Поисковым системам отправляется только введённый запрос. Выбранные ссылки и краткие выдержки
         можно приложить к сообщению. Полные страницы не загружаются.

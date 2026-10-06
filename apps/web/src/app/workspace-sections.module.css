@@ -569,6 +569,9 @@
     border-color 150ms ease,
     box-shadow 150ms ease;
 }
+.studioGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .studioCard:hover {
   border-color: var(--line-strong);
   box-shadow: 0 4px 16px #28272e08;

@@ -118,7 +118,7 @@ export function MobileNavigation({
     close();
     onNavigate(id);
   };
-  const studioActive = ["studio", "images", "video", "sound"].includes(surface);
+  const studioActive = ["studio", "files", "images", "video", "sound"].includes(surface);
   return (
     <>
       <nav className="mobile-nav" aria-label="Мобильная навигация">
@@ -194,22 +194,22 @@ export function MobileNavigation({
             />
           </label>
           <div className="drawer-links">
-            {TOOL_ITEMS.filter((item) => !["images", "video", "sound"].includes(item.id)).map(
-              (item) => (
-                <button
-                  type="button"
-                  key={item.id}
-                  onClick={() => navigate(item.id)}
-                  aria-current={surface === item.id ? "page" : undefined}
-                >
-                  <Icon name={item.id} />
-                  <span>
-                    <strong>{item.label}</strong>
-                    <small>{item.description}</small>
-                  </span>
-                </button>
-              )
-            )}
+            {TOOL_ITEMS.filter(
+              (item) => !["files", "images", "video", "sound"].includes(item.id)
+            ).map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                onClick={() => navigate(item.id)}
+                aria-current={surface === item.id ? "page" : undefined}
+              >
+                <Icon name={item.id} />
+                <span>
+                  <strong>{item.label}</strong>
+                  <small>{item.description}</small>
+                </span>
+              </button>
+            ))}
           </div>
           <section>
             <h3>Cosmora Studio</h3>

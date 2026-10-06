@@ -5,6 +5,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { WorkspaceIcon as Icon, type IconName } from "./workspace-icons";
 import { PLANNED_CAPABILITIES, type CapabilityArea } from "./workspace-capabilities";
 import styles from "./workspace-sections.module.css";
+import { StudioFiles } from "./studio-files";
+import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 
 export type ToolSurface =
   | "work"
@@ -12,6 +14,7 @@ export type ToolSurface =
   | "multi-agent"
   | "skills"
   | "studio"
+  | "files"
   | "images"
   | "video"
   | "sound"
@@ -24,6 +27,7 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "multi-agent", label: "Мультиагент", description: "Команда и роли" },
   { id: "skills", label: "Skills", description: "Навыки и специализации" },
   { id: "studio", label: "Cosmora Studio", description: "Изображения, видео и звук" },
+  { id: "files", label: "Крупные файлы", description: "Документы, данные и код" },
   { id: "images", label: "Изображения", description: "Кадр, стиль и композиция" },
   { id: "video", label: "Видео", description: "Сцена и движение" },
   { id: "sound", label: "Sound", description: "Голос, музыка и атмосфера" },
@@ -32,7 +36,7 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "settings", label: "Настройки", description: "Ваше пространство" }
 ];
 export const STUDIO_ITEMS = TOOL_ITEMS.filter((item) =>
-  ["images", "video", "sound"].includes(item.id)
+  ["files", "images", "video", "sound"].includes(item.id)
 );
 export type UiPreferences = { compact: boolean; largeText: boolean };
 type OwnerSessionView = {
@@ -106,7 +110,7 @@ type Props = {
   error: string | null;
   onRetry: () => void;
   onOpenProject: (id: string, view?: "chat" | "plan" | "project" | "context") => void;
-  onCompose: (prompt: string) => void;
+  onCompose: (prompt: string, files?: ChatAttachment[]) => void;
   onNavigate: (surface: ToolSurface) => void;
   agentStudioHref: string;
   controlCenterHref: string;
@@ -725,7 +729,7 @@ function Studio({ onNavigate }: Props) {
   return (
     <>
       <Header icon="studio" eyebrow="Творческое пространство" title="Cosmora Studio">
-        Одна идея. Три способа её выразить. Подготовьте запрос с нужным форматом и характером.
+        Работайте с документами, готовьте изображения, видео и звук.
       </Header>
       <div className={styles.studioGrid}>
         {STUDIO_ITEMS.map((item, i) => (
@@ -742,7 +746,7 @@ function Studio({ onNavigate }: Props) {
               <h3>{item.label}</h3>
               <p>{item.description}</p>
               <span>
-                Открыть редактор
+                {item.id === "files" ? "Открыть анализ" : "Открыть редактор"}
                 <Icon name="arrow" />
               </span>
             </div>
@@ -750,8 +754,8 @@ function Studio({ onNavigate }: Props) {
         ))}
       </div>
       <p className={styles.footnote}>
-        Сейчас доступны редакторы промптов и экспорт текста. Подключение генеративных моделей —
-        отдельный этап.
+        Документы: чтение, поиск и разбор частей в чате. Медиа: подготовка промптов и экспорт
+        текста.
       </p>
       <FutureHint onNavigate={onNavigate}>
         Презентации и генерация медиа находятся в планах Studio.
@@ -1349,6 +1353,9 @@ export function WorkspaceSections(props: Props) {
       break;
     case "studio":
       content = <Studio {...props} />;
+      break;
+    case "files":
+      content = <StudioFiles onCompose={props.onCompose} />;
       break;
     case "apps":
       content = <Apps {...props} />;
