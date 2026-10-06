@@ -678,7 +678,9 @@ export default function Home() {
       const response = await api<{ items: ManagerWorkAttentionItem[] }>(
         `/api/v1/projects/${encodeURIComponent(projectId)}/work`
       ).catch(() => null);
-      return response ? response.items.filter((item) => managerWorkNeedsAttention(item.status)) : null;
+      return response
+        ? response.items.filter((item) => managerWorkNeedsAttention(item.status))
+        : null;
     },
     []
   );
@@ -2088,7 +2090,9 @@ export default function Home() {
                             {managerWorkStageLabel(item.stage, item.status)} ·{" "}
                             {managerWorkStatusLabel(item.status)}
                           </p>
-                          <span>{latestEvent?.message ?? item.error_code ?? "Требуется внимание"}</span>
+                          <span>
+                            {latestEvent?.message ?? item.error_code ?? "Требуется внимание"}
+                          </span>
                         </div>
                         <button type="button" onClick={() => selectProjectView("plan")}>
                           Открыть задачу
