@@ -39,17 +39,30 @@ export function registerGithubRoutes(options: {
       const status =
         error.code === "GITHUB_INVALID_FILE"
           ? 400
-          : error.code === "GITHUB_BASE_CHANGED" || error.code === "GITHUB_CONFLICT"
-            ? 409
-            : 503;
+          : error.code === "GITHUB_ACCESS_DENIED"
+            ? 403
+            : error.code === "GITHUB_RATE_LIMITED"
+              ? 429
+              : error.code === "GITHUB_BASE_CHANGED" || error.code === "GITHUB_CONFLICT"
+                ? 409
+                : 503;
       return reply
         .code(status)
         .send({ error: { code: error.code, message: error.code, retryable: false } });
     }
   };
   app.get("/api/v1/github/status", (_request, reply) => handle(() => integration.status(), reply));
-  app.get("/api/v1/github/branches", (_request, reply) =>
-    handle(() => integration.branches(), reply)
+  app.get<{ Querystring: { page?: number } }>(
+    "/api/v1/github/branches",
+    {
+      schema: {
+        querystring: Type.Object(
+          { page: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })) },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => handle(() => integration.branches(request.query.page), reply)
   );
   app.get<{ Querystring: { ref: string } }>(
     "/api/v1/github/tree",
@@ -96,7 +109,13 @@ export function registerGithubRoutes(options: {
   );
   app.post<{
     Params: Params;
-    Body: { base_branch: string; base_sha: string; title: string; files: GithubFileChange[] };
+    Body: {
+      base_branch: string;
+      base_sha: string;
+      title: string;
+      files: GithubFileChange[];
+      workspace_scope?: string;
+    };
   }>(
     base,
     {
@@ -105,6 +124,7 @@ export function registerGithubRoutes(options: {
         body: Type.Object(
           {
             base_branch: Type.String({ minLength: 1, maxLength: 240 }),
+            workspace_scope: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
             base_sha: Type.String({ pattern: "^[a-f0-9]{40}$" }),
             title: Type.String({ minLength: 1, maxLength: 160 }),
             files: Type.Array(
@@ -163,14 +183,21 @@ export function registerGithubRoutes(options: {
         });
       return handle(async () => {
         const draft = drafts.claim(request.params.id, owner, request.body.review_hash);
+        let writeAttempted = false;
         try {
-          const url = await integration.publish(draft.plan, allowed, (commit) =>
-            drafts.checkpoint(draft.id, owner, commit)
+          const url = await integration.publish(
+            draft.plan,
+            allowed,
+            (commit) => drafts.checkpoint(draft.id, owner, commit),
+            () => {
+              writeAttempted = true;
+            }
           );
           drafts.finish(draft.id, owner, url);
           return drafts.get(draft.id, owner);
         } catch (error) {
-          drafts.finish(draft.id, owner, null);
+          if (writeAttempted) drafts.finish(draft.id, owner, null);
+          else drafts.release(draft.id, owner);
           throw error;
         }
       }, reply);

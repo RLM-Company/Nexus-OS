@@ -364,7 +364,7 @@ function Work({
   );
 }
 
-function Code({ onCompose, onNavigate }: Props) {
+function Code({ onCompose }: Props) {
   const [task, setTask] = useState("");
   const [kind, setKind] = useState("Новая функция");
   const [criteria, setCriteria] = useState("");
@@ -481,14 +481,12 @@ function Code({ onCompose, onNavigate }: Props) {
           </div>
           <div className={styles.note}>
             <Icon name="code" />
-            <strong>Среда выполнения ещё не подключена</strong>
+            <strong>Файлы и изменения в GitHub</strong>
             <p>
-              Здесь можно подготовить задание. Редактирование репозитория, запуск кода и публикация
-              пока недоступны.
+              Откройте разрешённый репозиторий, прочитайте или измените файлы и проверьте diff. По
+              вашему подтверждению Cosmora создаст отдельную ветку и черновик PR.
             </p>
-            <button className={styles.textButton} onClick={() => onNavigate("apps")}>
-              Открыть приложения →
-            </button>
+            <ActionLink href="/github">Открыть GitHub →</ActionLink>
           </div>
         </aside>
       </div>
@@ -895,7 +893,7 @@ function Apps({ onNavigate }: Props) {
       name: "GitHub",
       icon: "code",
       category: "Разработка",
-      text: "Предпросмотр репозитория и изменений на демонстрационных данных.",
+      text: "Чтение и редактирование файлов, проверка изменений и создание черновика PR.",
       available: true
     },
     {
@@ -936,7 +934,7 @@ function Apps({ onNavigate }: Props) {
         <div className={styles.segments} aria-label="Фильтр приложений">
           {[
             ["all", "Все"],
-            ["preview", "Доступен просмотр"]
+            ["preview", "Доступные"]
           ].map(([id, label]) => (
             <button key={id} aria-pressed={filter === id} onClick={() => setFilter(id ?? "all")}>
               {label}
@@ -952,14 +950,14 @@ function Apps({ onNavigate }: Props) {
                 <Icon name={app.icon as IconName} />
               </span>
               <span className={styles.badge}>
-                {app.available ? "Демо · без подключения" : "Запланировано"}
+                {app.available ? "Серверное подключение" : "Запланировано"}
               </span>
             </div>
             <h3>{app.name}</h3>
             <span className={styles.eyebrow}>{app.category}</span>
             <p>{app.text}</p>
             {app.available ? (
-              <ActionLink href="/github">Открыть preview</ActionLink>
+              <ActionLink href="/github">Открыть GitHub</ActionLink>
             ) : (
               <span className={styles.unavailable}>Интеграция ещё недоступна</span>
             )}
@@ -973,10 +971,10 @@ function Apps({ onNavigate }: Props) {
       )}
       <div className={styles.note}>
         <Icon name="shield" />
-        <strong>Подключённых внешних аккаунтов здесь пока нет</strong>
+        <strong>Доступ GitHub ограничен одним репозиторием</strong>
         <p>
-          GitHub preview использует демонстрационные данные. Вход в сервисы и выдача доступа ещё не
-          подключены.
+          Статус серверного подключения проверяется в модуле GitHub. Создание ветки и черновика PR
+          требует вашего подтверждения после просмотра изменений.
         </p>
       </div>
       <FutureHint onNavigate={onNavigate}>
