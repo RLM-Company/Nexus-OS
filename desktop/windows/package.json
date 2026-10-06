@@ -1,6 +1,6 @@
 {
   "name": "cosmora-windows-desktop",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Thin Windows desktop client for the hosted Cosmora workspace",
   "main": "main.cjs",
@@ -8,6 +8,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "test": "node --test test/*.test.cjs",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check connection-policy.cjs && node --check smoke-mode.cjs && node --check connection.js && node --test test/*.test.cjs",
     "pack:win": "electron-builder --win nsis --x64 --publish never"
   },
   "build": {
@@ -15,27 +16,21 @@
     "productName": "Cosmora",
     "electronVersion": "44.5.1",
     "asar": true,
-    "directories": {
-      "output": "dist"
-    },
+    "directories": { "output": "dist" },
     "files": [
       "main.cjs",
       "preload.cjs",
       "connection-policy.cjs",
+      "smoke-mode.cjs",
       "connection.html",
       "connection.js",
-      "connection.css"
+      "connection.css",
+      "build/icon.svg"
     ],
     "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "artifactName": "Cosmora-Setup-${version}-${arch}.${ext}"
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "Cosmora-Setup-${version}-${arch}.${ext}",
+      "icon": "build/icon.svg"
     },
     "nsis": {
       "oneClick": false,
@@ -44,7 +39,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Cosmora",
-      "uninstallDisplayName": "Cosmora"
+      "uninstallDisplayName": "Cosmora",
+      "deleteAppDataOnUninstall": false
     }
   }
 }
