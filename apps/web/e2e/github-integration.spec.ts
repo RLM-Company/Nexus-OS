@@ -4,6 +4,7 @@ test("requires review approval before publishing the exact prepared GitHub draft
   page
 }) => {
   let publications = 0;
+  const publishedPrUrl = "https://github.com/RLM-Company/Nexus-OS/pull/1000";
   const draft = {
     id: "review-one",
     project_id: "github-project",
@@ -29,7 +30,7 @@ test("requires review approval before publishing the exact prepared GitHub draft
         review_hash: draft.plan.review_hash
       });
       draft.status = "published";
-      draft.pr_url = "https://github.com/RLM-Company/Nexus-OS/pull/1000";
+      draft.pr_url = publishedPrUrl;
       body = draft;
     } else if (url.pathname.endsWith("/github-drafts"))
       body = route.request().method() === "POST" ? draft : { items: [] };
@@ -72,7 +73,7 @@ test("requires review approval before publishing the exact prepared GitHub draft
   await send.click();
   await expect(page.getByRole("link", { name: "Открыть созданный PR" })).toHaveAttribute(
     "href",
-    draft.pr_url!
+    publishedPrUrl
   );
   expect(publications).toBe(1);
 });

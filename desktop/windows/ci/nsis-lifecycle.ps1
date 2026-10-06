@@ -106,8 +106,15 @@ function Get-AppUninstallEntries([string]$InstallDir) {
 
 function Assert-InstallMetadata([string]$App, [string]$InstallDir, [string]$ExpectedVersion) {
   $info = (Get-Item -LiteralPath $App).VersionInfo
-  if ($info.ProductName -ne "Cosmora" -or $info.ProductVersion -ne $ExpectedVersion) {
-    throw "Installed product name/version metadata is incorrect."
+  $expected = [Version]$ExpectedVersion
+  Write-Host "Installed metadata: product=$($info.ProductName) version=$($info.ProductVersion)"
+  # Windows PE resources may display 0.9.0.0 for package version 0.9.0.
+  if ($info.ProductName -ne "Cosmora" -or
+      $info.ProductMajorPart -ne $expected.Major -or
+      $info.ProductMinorPart -ne $expected.Minor -or
+      $info.ProductBuildPart -ne $expected.Build -or
+      $info.ProductPrivatePart -ne [Math]::Max(0, $expected.Revision)) {
+    throw "Installed product name/version metadata is incorrect: $($info.ProductName) / $($info.ProductVersion)."
   }
   foreach ($shortcut in @(
     (Join-Path ([Environment]::GetFolderPath("DesktopDirectory")) "Cosmora.lnk"),
