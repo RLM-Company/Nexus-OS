@@ -9,6 +9,8 @@ export class GithubIntegrationError extends Error {
       | "GITHUB_INVALID_FILE"
       | "GITHUB_BASE_CHANGED"
       | "GITHUB_CONFLICT"
+      | "GITHUB_ACCESS_DENIED"
+      | "GITHUB_RATE_LIMITED"
   ) {
     super(code);
   }
@@ -72,6 +74,83 @@ const sha = (value: string): string => {
   if (!/^[a-f0-9]{40}$/.test(value)) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
   return value;
 };
+const record = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+const isSha = (value: unknown): boolean =>
+  typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
+// Treat malformed successful responses as unavailable, including after a write.
+const validResponse = (path: string, body: unknown, value: unknown): boolean => {
+  if (path === "")
+    return (
+      record(value) &&
+      typeof value.default_branch === "string" &&
+      value.default_branch.length > 0 &&
+      typeof value.private === "boolean"
+    );
+  if (path.startsWith("/branches?"))
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (item: unknown) =>
+          record(item) &&
+          typeof item.name === "string" &&
+          record(item.commit) &&
+          isSha(item.commit.sha)
+      )
+    );
+  if (path.startsWith("/pulls?") && body === undefined)
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (item: unknown) =>
+          record(item) &&
+          typeof item.html_url === "string" &&
+          record(item.head) &&
+          isSha(item.head.sha) &&
+          record(item.base) &&
+          typeof item.base.ref === "string"
+      )
+    );
+  if (!record(value)) return false;
+  if (path.startsWith("/commits/"))
+    return (
+      isSha(value.sha) &&
+      record(value.commit) &&
+      record(value.commit.tree) &&
+      isSha(value.commit.tree.sha)
+    );
+  if (path.startsWith("/git/trees/"))
+    return (
+      typeof value.truncated === "boolean" &&
+      Array.isArray(value.tree) &&
+      value.tree.every(
+        (item: unknown) =>
+          record(item) &&
+          typeof item.path === "string" &&
+          typeof item.type === "string" &&
+          typeof item.mode === "string" &&
+          isSha(item.sha)
+      )
+    );
+  if (path.startsWith("/git/blobs/"))
+    return (
+      typeof value.content === "string" &&
+      value.encoding === "base64" &&
+      typeof value.size === "number" &&
+      Number.isSafeInteger(value.size) &&
+      value.size >= 0
+    );
+  if (path.startsWith("/git/ref/") || path === "/git/refs")
+    return (
+      typeof value.ref === "string" &&
+      record(value.object) &&
+      value.object.type === "commit" &&
+      isSha(value.object.sha)
+    );
+  if (path === "/git/trees" || path === "/git/commits") return isSha(value.sha);
+  if (path === "/pulls") return typeof value.html_url === "string";
+  return false;
+};
 
 export class GithubIntegration {
   readonly repository: string;
@@ -111,6 +190,15 @@ export class GithubIntegration {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(15_000)
       });
+      if (response.status === 401 || response.status === 403) {
+        throw new GithubIntegrationError(
+          response.headers.get("x-ratelimit-remaining") === "0" ||
+            response.headers.has("retry-after")
+            ? "GITHUB_RATE_LIMITED"
+            : "GITHUB_ACCESS_DENIED"
+        );
+      }
+      if (response.status === 429) throw new GithubIntegrationError("GITHUB_RATE_LIMITED");
       if (!response.ok || !response.body) throw new Error("GitHub unavailable");
       const reader = response.body.getReader();
       const chunks: Uint8Array[] = [];
@@ -129,8 +217,11 @@ export class GithubIntegration {
       } finally {
         reader.releaseLock();
       }
-      return JSON.parse(Buffer.concat(chunks).toString("utf8")) as T;
-    } catch {
+      const result: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      if (!validResponse(path, body, result)) throw new Error("Invalid GitHub response");
+      return result as T;
+    } catch (error) {
+      if (error instanceof GithubIntegrationError) throw error;
       throw new GithubIntegrationError("GITHUB_UNAVAILABLE");
     }
   }
@@ -177,7 +268,12 @@ export class GithubIntegration {
     if (blob.encoding !== "base64" || blob.size > 50_000 || blob.content.length > 70_000)
       throw new GithubIntegrationError("GITHUB_INVALID_FILE");
     const bytes = Buffer.from(blob.content, "base64");
-    if (bytes.length > 50_000) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
+    if (
+      bytes.length > 50_000 ||
+      bytes.length !== blob.size ||
+      bytes.toString("base64") !== blob.content.replace(/[\r\n]/g, "")
+    )
+      throw new GithubIntegrationError("GITHUB_INVALID_FILE");
     return { sha: blobSha, content: text(bytes) };
   }
   async prepare(
@@ -204,7 +300,7 @@ export class GithubIntegration {
       )
         throw new GithubIntegrationError("GITHUB_INVALID_FILE");
     }
-    const tree = await this.tree(input.base_branch);
+    const tree = await this.#branchTree(input.base_branch);
     if (tree.sha !== input.base_sha) throw new GithubIntegrationError("GITHUB_BASE_CHANGED");
     if (tree.truncated) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
     const files: ChangePlan["files"] = [];
@@ -239,13 +335,15 @@ export class GithubIntegration {
   async publish(
     plan: ChangePlan,
     allowed: () => boolean,
-    onCommit: (sha: string) => void
+    onCommit: (sha: string) => void,
+    onWrite: () => void = () => {}
   ): Promise<string> {
     if (plan.repository !== this.repository) throw new GithubIntegrationError("GITHUB_CONFLICT");
-    const head = await this.tree(plan.base_branch);
+    const head = await this.#branchTree(plan.base_branch);
     if (head.sha !== plan.base_sha) throw new GithubIntegrationError("GITHUB_BASE_CHANGED");
     const write = async <T>(path: string, body: unknown): Promise<T> => {
       if (!allowed()) throw new GithubIntegrationError("GITHUB_CONFLICT");
+      onWrite();
       return this.#request<T>(path, body);
     };
     const tree = await write<{ sha: string }>("/git/trees", {
@@ -258,21 +356,32 @@ export class GithubIntegration {
       parents: [plan.base_sha]
     });
     onCommit(sha(commit.sha));
-    await write("/git/refs", { ref: `refs/heads/${plan.branch}`, sha: sha(commit.sha) });
-    const pr = await write<{ html_url: string }>("/pulls", {
+    const ref = await write<{ ref: string; object: { sha: string } }>("/git/refs", {
+      ref: `refs/heads/${plan.branch}`,
+      sha: sha(commit.sha)
+    });
+    if (ref.ref !== `refs/heads/${plan.branch}` || ref.object?.sha !== commit.sha)
+      throw new GithubIntegrationError("GITHUB_UNAVAILABLE");
+    const pr = await write<{
+      html_url: string;
+      draft: boolean;
+      head: { sha: string; ref: string };
+      base: { ref: string };
+    }>("/pulls", {
       title: plan.title,
       head: plan.branch,
       base: plan.base_branch,
       draft: true,
       body: "Изменения просмотрены и подтверждены владельцем в Cosmora.\n\nСоздана отдельная ветка. Требуется проверка перед слиянием."
     });
-    const url = new URL(pr.html_url);
     if (
-      url.origin !== "https://github.com" ||
-      !url.pathname.startsWith(`/${this.repository}/pull/`)
+      pr.draft !== true ||
+      pr.head?.sha !== commit.sha ||
+      pr.head?.ref !== plan.branch ||
+      pr.base?.ref !== plan.base_branch
     )
       throw new GithubIntegrationError("GITHUB_UNAVAILABLE");
-    return url.href;
+    return this.#prUrl(pr.html_url);
   }
   async reconcile(draft: GithubDraft): Promise<string | null> {
     if (draft.plan.repository !== this.repository)
@@ -286,13 +395,37 @@ export class GithubIntegration {
       (item) => item.head.sha === draft.published_sha && item.base.ref === draft.plan.base_branch
     );
     if (!pr) return null;
-    const url = new URL(pr.html_url);
-    if (
-      url.origin !== "https://github.com" ||
-      !url.pathname.startsWith(`/${this.repository}/pull/`)
-    )
+    return this.#prUrl(pr.html_url);
+  }
+  #prUrl(value: string): string {
+    try {
+      const url = new URL(value);
+      const prefix = `/${this.repository}/pull/`;
+      if (
+        url.origin !== "https://github.com" ||
+        url.username ||
+        url.password ||
+        !url.pathname.startsWith(prefix) ||
+        !/^[1-9][0-9]*$/.test(url.pathname.slice(prefix.length)) ||
+        url.search ||
+        url.hash
+      )
+        throw new Error("Invalid PR URL");
+      return url.href;
+    } catch {
       throw new GithubIntegrationError("GITHUB_UNAVAILABLE");
-    return url.href;
+    }
+  }
+  async #branchTree(branch: string) {
+    if (!branch || branch.length > 240) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
+    const ref = await this.#request<{ ref: string; object: { type: string; sha: string } }>(
+      `/git/ref/heads/${encodeURIComponent(branch)}`
+    );
+    if (ref.ref !== `refs/heads/${branch}` || ref.object?.type !== "commit")
+      throw new GithubIntegrationError("GITHUB_UNAVAILABLE");
+    const tree = await this.tree(sha(ref.object.sha));
+    if (tree.sha !== ref.object.sha) throw new GithubIntegrationError("GITHUB_UNAVAILABLE");
+    return tree;
   }
 }
 
@@ -350,6 +483,13 @@ export class GithubDraftStore {
         "UPDATE github_change_drafts SET status = ?, pr_url = ?, updated_at = ? WHERE id = ? AND owner_id = ? AND status = 'publishing'"
       )
       .run(url ? "published" : "uncertain", url, new Date().toISOString(), id, owner);
+  }
+  release(id: string, owner: string): void {
+    this.sqlite
+      .prepare(
+        "UPDATE github_change_drafts SET status = 'review', updated_at = ? WHERE id = ? AND owner_id = ? AND status = 'publishing' AND published_sha IS NULL"
+      )
+      .run(new Date().toISOString(), id, owner);
   }
   checkpoint(id: string, owner: string, commit: string): void {
     this.sqlite

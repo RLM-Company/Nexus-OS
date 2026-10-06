@@ -39,9 +39,13 @@ export function registerGithubRoutes(options: {
       const status =
         error.code === "GITHUB_INVALID_FILE"
           ? 400
-          : error.code === "GITHUB_BASE_CHANGED" || error.code === "GITHUB_CONFLICT"
-            ? 409
-            : 503;
+          : error.code === "GITHUB_ACCESS_DENIED"
+            ? 403
+            : error.code === "GITHUB_RATE_LIMITED"
+              ? 429
+              : error.code === "GITHUB_BASE_CHANGED" || error.code === "GITHUB_CONFLICT"
+                ? 409
+                : 503;
       return reply
         .code(status)
         .send({ error: { code: error.code, message: error.code, retryable: false } });
@@ -163,14 +167,21 @@ export function registerGithubRoutes(options: {
         });
       return handle(async () => {
         const draft = drafts.claim(request.params.id, owner, request.body.review_hash);
+        let writeAttempted = false;
         try {
-          const url = await integration.publish(draft.plan, allowed, (commit) =>
-            drafts.checkpoint(draft.id, owner, commit)
+          const url = await integration.publish(
+            draft.plan,
+            allowed,
+            (commit) => drafts.checkpoint(draft.id, owner, commit),
+            () => {
+              writeAttempted = true;
+            }
           );
           drafts.finish(draft.id, owner, url);
           return drafts.get(draft.id, owner);
         } catch (error) {
-          drafts.finish(draft.id, owner, null);
+          if (writeAttempted) drafts.finish(draft.id, owner, null);
+          else drafts.release(draft.id, owner);
           throw error;
         }
       }, reply);
