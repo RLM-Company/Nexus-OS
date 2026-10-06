@@ -195,7 +195,7 @@ export function ManagerWorkPanel({
           <strong>Создать результат с Manager</strong>
         </div>
         <span className={`manager-work-status ${work?.status ?? "new"}`} role="status">
-          {work ? labels[work.status] : "Новая задача"}
+          {work ? managerWorkStatusLabel(work.status) : "Новая задача"}
         </span>
       </header>
       <p className="manager-work-runtime">
@@ -281,7 +281,7 @@ export function ManagerWorkPanel({
                 }}
               >
                 <span>{item.request?.goal ?? `Задача ${index + 1}`}</span>
-                <small>{labels[item.status] ?? "Состояние неизвестно"}</small>
+                <small>{managerWorkStatusLabel(item.status)}</small>
               </button>
             ))}
           </div>
