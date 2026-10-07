@@ -1,6 +1,6 @@
 # Model Gateway
 
-Provider-neutral streaming gateway for Cosmora OS.
+Provider-neutral streaming gateway for Kosmora OS.
 
 Implemented adapters:
 

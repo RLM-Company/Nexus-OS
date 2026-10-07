@@ -12,7 +12,7 @@ export default function SkillsPreviewPage() {
       <div className={styles.shell}>
         <header className={styles.header}>
           <Link className={styles.backLink} href="/">
-            ← Назад в Cosmora
+            ← Назад в Kosmora
           </Link>
           <div>
             <p className={styles.eyebrow}>Safe preview</p>

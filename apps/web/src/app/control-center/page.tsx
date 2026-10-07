@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { safeApiError } from "../safe-api-error";
-import { CosmoraBrandMark } from "../cosmora-brand";
+import { KosmoraBrandMark } from "../kosmora-brand";
 import RuntimeOverview from "./runtime-overview";
 import styles from "./control-center.module.css";
 
@@ -1039,10 +1039,10 @@ export default function ControlCenterPage() {
       <header className={styles.topbar}>
         <div className={styles.brand}>
           <span className={styles.orbit} aria-hidden="true">
-            <CosmoraBrandMark />
+            <KosmoraBrandMark />
           </span>
           <div>
-            <span>Cosmora</span>
+            <span>Kosmora</span>
             <strong>Autonomy Control Center</strong>
           </div>
         </div>

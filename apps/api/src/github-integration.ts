@@ -362,7 +362,7 @@ export class GithubIntegration {
       base_branch: input.base_branch,
       base_sha: input.base_sha,
       base_tree: tree.tree_sha,
-      branch: `cosmora/change-${id}`,
+      branch: `kosmora/change-${id}`,
       title: input.title.trim(),
       files
     };
@@ -413,7 +413,7 @@ export class GithubIntegration {
       head: plan.branch,
       base: plan.base_branch,
       draft: true,
-      body: "Изменения просмотрены и подтверждены владельцем в Cosmora.\n\nСоздана отдельная ветка. Требуется проверка перед слиянием."
+      body: "Изменения просмотрены и подтверждены владельцем в Kosmora.\n\nСоздана отдельная ветка. Требуется проверка перед слиянием."
     });
     if (
       pr.draft !== true ||

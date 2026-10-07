@@ -203,7 +203,7 @@ test("shows a readable API failure and preserves the unsent message", async ({ p
   });
 
   await page.goto("/");
-  const composer = page.getByLabel("Сообщение Cosmora");
+  const composer = page.getByLabel("Сообщение Kosmora");
   await composer.fill("Сообщение, которое нельзя потерять");
   await page.getByRole("button", { name: "Отправить" }).click();
 

@@ -8,8 +8,8 @@ const test = require("node:test");
 const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("../smoke-mode.cjs");
 
 test("smoke mode is explicit and packaged-only", () => {
-  assert.equal(isSmokeMode(["Cosmora.exe", "--cosmora-smoke-test"]), true);
-  assert.equal(isSmokeMode(["Cosmora.exe"]), false);
+  assert.equal(isSmokeMode(["Kosmora.exe", "--cosmora-smoke-test"]), true);
+  assert.equal(isSmokeMode(["Kosmora.exe"]), false);
   assert.throws(() => createSmokePayload({ isPackaged: false }), /packaged/);
 });
 
@@ -18,7 +18,7 @@ test("smoke payload includes the actual user-data path", () => {
   const payload = createSmokePayload({
     version: "0.3.0",
     isPackaged: true,
-    execPath: path.join(root, "Cosmora.exe"),
+    execPath: path.join(root, "Kosmora.exe"),
     appPath: path.join(root, "resources", "app.asar"),
     resourcesPath: path.join(root, "resources"),
     userDataPath: path.join(root, "user-data"),

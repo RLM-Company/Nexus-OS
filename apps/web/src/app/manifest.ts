@@ -3,9 +3,9 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Cosmora AI",
-    short_name: "Cosmora",
-    description: "Обычные чаты, проекты и безопасные рабочие области Cosmora.",
+    name: "Kosmora AI",
+    short_name: "Kosmora",
+    description: "Обычные чаты, проекты и безопасные рабочие области Kosmora.",
     start_url: "/",
     scope: "/",
     display: "standalone",
@@ -37,7 +37,7 @@ export default function manifest(): MetadataRoute.Manifest {
       {
         name: "Новый чат",
         short_name: "Новый чат",
-        description: "Открыть обычный чат Cosmora",
+        description: "Открыть обычный чат Kosmora",
         url: "/"
       },
       {

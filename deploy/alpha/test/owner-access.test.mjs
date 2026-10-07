@@ -37,7 +37,7 @@ test("unauthed navigation goes to an ordinary form; API stays closed without a B
   const form = await f.request("/login");
   assert.equal(form.status, 200);
   assert.equal(form.headers.get("referrer-policy"), "same-origin");
-  assert.match(await form.text(), /Войти в Cosmora/u);
+  assert.match(await form.text(), /Войти в Kosmora/u);
   assert.match(form.headers.get("content-security-policy"), /frame-ancestors 'none'/u);
 });
 test("valid login creates a bounded secure session; invalid and duplicate cookies stay closed", async (t) => {

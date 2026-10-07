@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kosmora — выбранный логотип</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 32px;
+      font-family: Arial, sans-serif;
+      background: #f1f1f6;
+      color: #202123;
+    }
+    h1 {
+      margin: 0 0 10px;
+    }
+    p {
+      color: #73737d;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    article {
+      background: white;
+      border-radius: 24px;
+      padding: 24px;
+      text-align: center;
+    }
+    article.dark {
+      background: #272431;
+      color: white;
+    }
+    .lockup {
+      width: 360px;
+      max-width: 100%;
+      display: block;
+      margin: auto;
+    }
+    .symbol {
+      width: 260px;
+      height: 260px;
+      object-fit: contain;
+      display: block;
+      margin: 30px auto 16px;
+    }
+    strong {
+      display: block;
+      font-size: 30px;
+      letter-spacing: 0.08em;
+    }
+    .sizes {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      justify-content: center;
+      margin-top: 28px;
+    }
+    .sizes img {
+      background: #6552b8;
+      border-radius: 20%;
+    }
+    @media (max-width: 700px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <h1>Kosmora</h1>
+  <p>Выбранный белый шлем с чёрным визором и орбитой</p>
+  <main>
+    <article><img class="lockup" src="kosmora-lockup.png" alt="Логотип KOSMORA" /></article>
+    <article class="dark">
+      <img class="symbol" src="kosmora-symbol.png" alt="Белый шлем и чёрная орбита" /><strong
+        >KOSMORA</strong
+      >
+      <div class="sizes">
+        <img src="kosmora-app-icon.svg" width="32" height="32" alt="Иконка 32" /><img
+          src="kosmora-app-icon.svg"
+          width="64"
+          height="64"
+          alt="Иконка 64"
+        /><img src="kosmora-app-icon.svg" width="96" height="96" alt="Иконка 96" />
+      </div>
+    </article>
+  </main>
+</html>

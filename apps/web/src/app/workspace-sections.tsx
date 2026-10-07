@@ -26,7 +26,7 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "code", label: "Code", description: "Задачи разработки" },
   { id: "multi-agent", label: "Мультиагент", description: "Команда и роли" },
   { id: "skills", label: "Skills", description: "Навыки и специализации" },
-  { id: "studio", label: "Cosmora Studio", description: "Изображения, видео и звук" },
+  { id: "studio", label: "Kosmora Studio", description: "Изображения, видео и звук" },
   { id: "files", label: "Крупные файлы", description: "Документы, данные и код" },
   { id: "images", label: "Изображения", description: "Кадр, стиль и композиция" },
   { id: "video", label: "Видео", description: "Сцена и движение" },
@@ -261,7 +261,7 @@ function Work({
           </button>
         }
       >
-        Всё, что вы создаёте с Cosmora: проекты, контекст и следующие шаги.
+        Всё, что вы создаёте с Kosmora: проекты, контекст и следующие шаги.
       </Header>
       <div className={styles.metrics}>
         <div>
@@ -354,7 +354,7 @@ function Work({
         >
           {projects.length
             ? "Попробуйте другое название или фильтр."
-            : "Опишите цель в чате. Cosmora предложит создать проект, когда потребуется совместная работа над задачей."}
+            : "Опишите цель в чате. Kosmora предложит создать проект, когда потребуется совместная работа над задачей."}
         </Empty>
       )}
       <p className={styles.footnote}>
@@ -460,7 +460,7 @@ function Code({ onCompose }: Props) {
                 : "Сохранение недоступно. Откроется новый чат."}
             </span>
             <button className={styles.primary} disabled={!task.trim()}>
-              Обсудить с Cosmora
+              Обсудить с Kosmora
               <Icon name="arrow" />
             </button>
           </div>
@@ -488,7 +488,7 @@ function Code({ onCompose }: Props) {
             <strong>Файлы и изменения в GitHub</strong>
             <p>
               Откройте разрешённый репозиторий, прочитайте или измените файлы и проверьте diff. По
-              вашему подтверждению Cosmora создаст отдельную ветку и черновик PR.
+              вашему подтверждению Kosmora создаст отдельную ветку и черновик PR.
             </p>
             <ActionLink href="/github">Открыть GitHub →</ActionLink>
           </div>
@@ -583,7 +583,7 @@ function Media({ surface }: { surface: MediaSurface }) {
   };
   return (
     <>
-      <Header icon={surface} eyebrow="Cosmora Studio / Редактор промпта" title={config.title}>
+      <Header icon={surface} eyebrow="Kosmora Studio / Редактор промпта" title={config.title}>
         {config.hint}
       </Header>
       <div className={styles.split}>
@@ -689,7 +689,7 @@ function Media({ surface }: { surface: MediaSurface }) {
                       );
                       const link = document.createElement("a");
                       link.href = url;
-                      link.download = `cosmora-${surface}-prompt.txt`;
+                      link.download = `kosmora-${surface}-prompt.txt`;
                       link.click();
                       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
                       setNotice("Промпт подготовлен для скачивания.");
@@ -726,7 +726,7 @@ function Media({ surface }: { surface: MediaSurface }) {
 function Studio({ onNavigate }: Props) {
   return (
     <>
-      <Header icon="studio" eyebrow="Творческое пространство" title="Cosmora Studio">
+      <Header icon="studio" eyebrow="Творческое пространство" title="Kosmora Studio">
         Работайте с документами, готовьте изображения, видео и звук.
       </Header>
       <div className={styles.studioGrid}>
@@ -922,7 +922,7 @@ function Apps({ onNavigate }: Props) {
   );
   return (
     <>
-      <Header icon="apps" eyebrow="Cosmora и ваши инструменты" title="Приложения">
+      <Header icon="apps" eyebrow="Kosmora и ваши инструменты" title="Приложения">
         Подключения, их возможности и статус — в одном месте.
       </Header>
       <div className={styles.toolbar}>
@@ -1161,7 +1161,7 @@ function Settings({
   return (
     <>
       <Header icon="settings" eyebrow="Ваше пространство" title="Настройки">
-        Внешний вид, модель и управление работой Cosmora.
+        Внешний вид, модель и управление работой Kosmora.
       </Header>
       <div className={styles.settingsLayout}>
         <nav className={styles.settingsNav} aria-label="Категории настроек">

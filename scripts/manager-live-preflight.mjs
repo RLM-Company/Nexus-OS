@@ -65,8 +65,8 @@ const assertWebSurfaces = async (origin) => {
   ]);
 
   const manifest = await fetchJson(origin, "/manifest.webmanifest", "PWA manifest");
-  assert(manifest.name === "Cosmora AI", "PWA manifest has an unexpected app name");
-  assert(manifest.short_name === "Cosmora", "PWA manifest has an unexpected short name");
+  assert(manifest.name === "Kosmora AI", "PWA manifest has an unexpected app name");
+  assert(manifest.short_name === "Kosmora", "PWA manifest has an unexpected short name");
   assert(manifest.start_url === "/", "PWA manifest has an unexpected start URL");
   assert(manifest.scope === "/", "PWA manifest has an unexpected scope");
   assert(manifest.display === "standalone", "PWA manifest is not standalone");
@@ -157,7 +157,7 @@ const main = async () => {
 
   const web = await fetchResponse(webOrigin, "/", "Manager Console");
   const html = await web.text();
-  assert(html.includes("Cosmora OS"), "Manager Console HTML is not the expected Cosmora page");
+  assert(html.includes("Kosmora OS"), "Manager Console HTML is not the expected Kosmora page");
   await assertWebSurfaces(webOrigin);
 
   const proxiedHealth = await fetchJson(webOrigin, "/api/v1/health", "Web-to-API proxy");

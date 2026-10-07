@@ -2,10 +2,10 @@ import { expect, test } from "@playwright/test";
 
 test("restores an unsent ordinary-chat draft after reload", async ({ page }) => {
   await page.goto("/");
-  const composer = page.getByLabel("Сообщение Cosmora");
+  const composer = page.getByLabel("Сообщение Kosmora");
   await composer.fill("Черновик, который должен пережить перезапуск");
   await page.reload();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue(
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue(
     "Черновик, который должен пережить перезапуск"
   );
 });

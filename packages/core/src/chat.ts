@@ -12,7 +12,7 @@ import { conversationWindow } from "./conversation-window.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
-export const DEFAULT_CHAT_SYSTEM_PROMPT = `Ты — Cosmora, обычный диалоговый ИИ-ассистент.
+export const DEFAULT_CHAT_SYSTEM_PROMPT = `Ты — Kosmora, обычный диалоговый ИИ-ассистент.
 
 Правила:
 1. Отвечай на языке пользователя ясно и по существу.

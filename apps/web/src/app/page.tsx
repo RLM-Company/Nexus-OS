@@ -138,8 +138,8 @@ const PROJECT_VIEW_ORDER: ProjectView[] = ["chat", "plan", "project", "context"]
 type WorkspaceSurface = "manager" | ToolSurface;
 
 const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
-  manager: "Cosmora Manager",
-  studio: "Cosmora Studio",
+  manager: "Kosmora Manager",
+  studio: "Kosmora Studio",
   files: "Крупные файлы",
   skills: "Skills",
   code: "Code",
@@ -651,7 +651,7 @@ export default function Home() {
         api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
       ]);
     } catch {
-      setError("API Cosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
+      setError("API Kosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
     } finally {
       setLoading(false);
     }
@@ -1773,7 +1773,7 @@ export default function Home() {
           <span className="brand-mark">
             <SparkIcon />
           </span>
-          <span>Cosmora</span>
+          <span>Kosmora</span>
         </div>
 
         <button className="new-project" onClick={newChat}>
@@ -1942,7 +1942,7 @@ export default function Home() {
                 }}
               >
                 <ToolIcon kind="studio" />
-                <span>Cosmora Studio</span>
+                <span>Kosmora Studio</span>
                 <span className="section-chevron" aria-hidden="true">
                   ›
                 </span>
@@ -2017,7 +2017,7 @@ export default function Home() {
                 ? activeProject
                   ? "Активный проект"
                   : "Обычный чат"
-                : "Cosmora workspace"}
+                : "Kosmora workspace"}
             </span>
             <h1>
               {surface === "manager"
@@ -2351,7 +2351,7 @@ export default function Home() {
                 <SparkIcon />
               </span>
               <div>
-                <strong>Cosmora Manager</strong>
+                <strong>Kosmora Manager</strong>
                 <span className="project-mode-label">Менеджер · мультиагентный проект</span>
                 <small>
                   {lastCompletedRoute
@@ -2373,7 +2373,7 @@ export default function Home() {
                   </span>
                   <div>
                     <header>
-                      <strong>{message.role === "user" ? "Вы" : "Cosmora Manager"}</strong>
+                      <strong>{message.role === "user" ? "Вы" : "Kosmora Manager"}</strong>
                       <time>
                         {new Date(message.created_at).toLocaleTimeString("ru", {
                           hour: "2-digit",
@@ -2394,7 +2394,7 @@ export default function Home() {
             </div>
           </section>
         ) : localChatMessages.length > 0 ? (
-          <section className="chat-panel general-chat-panel" aria-label="Обычный чат Cosmora">
+          <section className="chat-panel general-chat-panel" aria-label="Обычный чат Kosmora">
             {activeLocalChat && (
               <ChatHistoryActions
                 key={activeLocalChat.id}
@@ -2419,7 +2419,7 @@ export default function Home() {
             )}
             <div className="chat-heading general-chat-heading">
               <div>
-                <strong>Cosmora</strong>
+                <strong>Kosmora</strong>
                 <small>
                   {lastCompletedRoute
                     ? `${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
@@ -2440,7 +2440,7 @@ export default function Home() {
                   </span>
                   <div>
                     <header>
-                      <strong>{message.role === "user" ? "Вы" : "Cosmora"}</strong>
+                      <strong>{message.role === "user" ? "Вы" : "Kosmora"}</strong>
                       <time>
                         {new Date(message.created_at).toLocaleTimeString("ru", {
                           hour: "2-digit",
@@ -2508,7 +2508,7 @@ export default function Home() {
           onSubmit={(event) => void submit(event)}
         >
           <label htmlFor="task">
-            {activeProject ? "Сообщение менеджеру" : "Сообщение Cosmora"}
+            {activeProject ? "Сообщение менеджеру" : "Сообщение Kosmora"}
           </label>
           <textarea
             id="task"
@@ -2565,7 +2565,7 @@ export default function Home() {
             </div>
             <div className="composer-footer">
               <span role={error ? "alert" : undefined} aria-live={error ? "assertive" : "polite"}>
-                {error ?? (sending ? "Cosmora выполняет запуск…" : "")}
+                {error ?? (sending ? "Kosmora выполняет запуск…" : "")}
               </span>
               {sending ? (
                 <button

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { zipSync, strToU8 } from "fflate";
 
 function pdfFixture(): Buffer {
-  const stream = "BT /F1 12 Tf 20 80 Td (Cosmora project brief) Tj ET";
+  const stream = "BT /F1 12 Tf 20 80 Td (Kosmora project brief) Tj ET";
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -31,7 +31,7 @@ test("extracts real PDF and DOCX locally, sends their text and restores it from 
   await expect(page.getByRole("button", { name: "Прикрепить файл", exact: true })).toBeEnabled();
   const docx = zipSync({
     "word/document.xml": strToU8(
-      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Требования Cosmora &amp; код</w:t></w:r></w:p></w:body></w:document>'
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Требования Kosmora &amp; код</w:t></w:r></w:p></w:body></w:document>'
     )
   });
   await page.getByLabel("Текстовые файлы и код").setInputFiles([
@@ -47,7 +47,7 @@ test("extracts real PDF and DOCX locally, sends their text and restores it from 
     "requirements.docx"
   );
   const question = `Объясни документы ${crypto.randomUUID()}`;
-  await page.getByLabel("Сообщение Cosmora").fill(question);
+  await page.getByLabel("Сообщение Kosmora").fill(question);
   const accepted = page.waitForResponse(
     (response) => response.url().endsWith("/api/v1/chats") && response.request().method() === "POST"
   );
@@ -55,8 +55,8 @@ test("extracts real PDF and DOCX locally, sends their text and restores it from 
   const response = await accepted;
   expect(response.status()).toBe(201);
   expect(response.request().postDataJSON().attachments).toEqual([
-    { name: "brief.pdf", source_type: "pdf", content: "Cosmora project brief" },
-    { name: "requirements.docx", source_type: "docx", content: "Требования Cosmora & код" }
+    { name: "brief.pdf", source_type: "pdf", content: "Kosmora project brief" },
+    { name: "requirements.docx", source_type: "docx", content: "Требования Kosmora & код" }
   ]);
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
   await page.reload();
@@ -68,7 +68,7 @@ test("extracts real PDF and DOCX locally, sends their text and restores it from 
   const files = page.getByLabel("Файлы сообщения");
   await files.locator("summary").filter({ hasText: "brief.pdf" }).click();
   await expect(files.locator("details").filter({ hasText: "brief.pdf" }).locator("pre")).toHaveText(
-    "Cosmora project brief"
+    "Kosmora project brief"
   );
   const downloaded = page.waitForEvent("download");
   await page.getByRole("button", { name: "Скачать brief.pdf" }).click();
@@ -115,7 +115,7 @@ test("stores a real PNG with a multimodal payload, preserving the image when the
     buffer: Buffer.from(data, "base64")
   });
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("square.png");
-  await page.getByLabel("Сообщение Cosmora").fill("Посмотри изображение");
+  await page.getByLabel("Сообщение Kosmora").fill("Посмотри изображение");
   const accepted = page.waitForResponse(
     (response) => response.url().endsWith("/api/v1/chats") && response.request().method() === "POST"
   );

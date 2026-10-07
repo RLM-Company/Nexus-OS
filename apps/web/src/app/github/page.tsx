@@ -52,7 +52,7 @@ const messages: Record<string, string> = {
   GITHUB_ACCESS_DENIED:
     "GitHub отказал в доступе. Проверьте серверное подключение и разрешения репозитория.",
   GITHUB_RATE_LIMITED: "Лимит запросов GitHub исчерпан. Повторите чтение позже.",
-  UNAUTHORIZED: "Вход владельца истёк. Войдите в Cosmora и обновите подключение.",
+  UNAUTHORIZED: "Вход владельца истёк. Войдите в Kosmora и обновите подключение.",
   PROJECT_NOT_FOUND: "Сохранённый проект больше недоступен. Ваши файлы остаются в текущей вкладке.",
   DRAFT_NOT_FOUND:
     "Сохранённый review больше недоступен. Проверьте результат отправки в GitHub вручную."
@@ -70,7 +70,7 @@ async function api<T>(url: string, body?: unknown): Promise<T> {
         }
   ).catch(() => {
     throw new Error(
-      "Не удалось связаться с сервером Cosmora. Проверьте соединение и повторите чтение."
+      "Не удалось связаться с сервером Kosmora. Проверьте соединение и повторите чтение."
     );
   });
   if (!response.ok) {
@@ -641,7 +641,7 @@ export default function GithubPage() {
     const url = URL.createObjectURL(new Blob([material], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = "cosmora-github-changes.json";
+    link.download = "kosmora-github-changes.json";
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -671,7 +671,7 @@ export default function GithubPage() {
     <main className={styles.page}>
       <div className={styles.shell}>
         <header className={styles.header}>
-          <Link href="/">← Назад в Cosmora</Link>
+          <Link href="/">← Назад в Kosmora</Link>
           <h1>GitHub</h1>
           <p className={styles.lead}>
             Код проекта, редактирование файлов и отправка проверенных изменений в отдельный черновик
@@ -941,7 +941,7 @@ export default function GithubPage() {
                 </section>
               )}
               <label>
-                Проект Cosmora{" "}
+                Проект Kosmora{" "}
                 <select
                   aria-label="Проект для изменений"
                   disabled={pending}
@@ -959,7 +959,7 @@ export default function GithubPage() {
                   ))}
                 </select>
               </label>
-              {projects.length === 0 && <p>Сначала создайте проект в чате Cosmora.</p>}
+              {projects.length === 0 && <p>Сначала создайте проект в чате Kosmora.</p>}
               <label>
                 Описание изменения{" "}
                 <input

@@ -59,7 +59,7 @@ export function AccountMenu({
       <div className="account-menu" id={id} aria-label="Меню аккаунта">
         <div className="account-menu-heading">
           <strong>Ваше пространство</strong>
-          <small>Cosmora · локальный профиль</small>
+          <small>Kosmora · локальный профиль</small>
         </div>
         <button
           type="button"
@@ -170,7 +170,7 @@ export function MobileNavigation({
         <div className="drawer-content">
           <header>
             <div>
-              <small>Cosmora</small>
+              <small>Kosmora</small>
               <h2 id={titleId}>Ваше пространство</h2>
             </div>
             <button type="button" aria-label="Закрыть меню" onClick={close}>
@@ -212,7 +212,7 @@ export function MobileNavigation({
             ))}
           </div>
           <section>
-            <h3>Cosmora Studio</h3>
+            <h3>Kosmora Studio</h3>
             <div className="drawer-studio">
               {STUDIO_ITEMS.map((item) => (
                 <button type="button" key={item.id} onClick={() => navigate(item.id)}>

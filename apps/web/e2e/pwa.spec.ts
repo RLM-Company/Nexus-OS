@@ -14,8 +14,8 @@ test("publishes an installable standalone app manifest and icons", async ({ requ
     icons: Array<{ src: string; sizes: string; type: string; purpose?: string }>;
   };
   expect(manifest).toMatchObject({
-    name: "Cosmora AI",
-    short_name: "Cosmora",
+    name: "Kosmora AI",
+    short_name: "Kosmora",
     start_url: "/",
     scope: "/",
     display: "standalone"
@@ -35,12 +35,12 @@ test("publishes an installable standalone app manifest and icons", async ({ requ
   }
 });
 
-test("keeps the Cosmora chat usable at a smartphone viewport", async ({ page }) => {
+test("keeps the Kosmora chat usable at a smartphone viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
   await expect(page.getByRole("navigation", { name: "Мобильная навигация" })).toBeVisible();
-  await expect(page.getByLabel("Сообщение Cosmora")).toBeVisible();
+  await expect(page.getByLabel("Сообщение Kosmora")).toBeVisible();
   await expect(page.getByRole("button", { name: "Отправить" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true
@@ -71,15 +71,15 @@ test("keeps an ordinary chat separate from projects", async ({ page }) => {
   await expect(page.locator(".hero p")).toHaveCount(0);
   await expect(page.locator(".foundation-grid")).toHaveCount(0);
   await expect(page.locator("#next-logo")).toHaveCount(0);
-  const composer = page.getByLabel("Сообщение Cosmora");
+  const composer = page.getByLabel("Сообщение Kosmora");
   const ordinaryMessage = `Привет! Как ты? ${Date.now()}`;
   await composer.fill(ordinaryMessage);
   await page.getByRole("button", { name: "Отправить" }).click();
 
-  await expect(page.getByRole("region", { name: "Обычный чат Cosmora" })).toContainText(
+  await expect(page.getByRole("region", { name: "Обычный чат Kosmora" })).toContainText(
     "проект не создан"
   );
-  await expect(page.getByRole("region", { name: "Обычный чат Cosmora" })).toContainText(
+  await expect(page.getByRole("region", { name: "Обычный чат Kosmora" })).toContainText(
     "Запрос обычного чата"
   );
   await expect(page.getByRole("status")).toContainText("Ответ получен");
@@ -106,7 +106,7 @@ test("keeps an ordinary chat separate from projects", async ({ page }) => {
   await expect(projectsToggle).toHaveAttribute("aria-expanded", "false");
   await chatsToggle.click();
   await page.locator("#sidebar-chat-list").getByRole("button", { name: ordinaryMessage }).click();
-  await expect(page.getByRole("region", { name: "Обычный чат Cosmora" })).toContainText(
+  await expect(page.getByRole("region", { name: "Обычный чат Kosmora" })).toContainText(
     ordinaryMessage
   );
 });
@@ -123,7 +123,7 @@ test("suggests a project for a complex task and creates it only after confirmati
   await page.goto("/");
   const task =
     "Создай проект: сначала разработай приложение с API и базой данных, затем добавь интерфейс и e2e-тесты";
-  await page.getByLabel("Сообщение Cosmora").fill(task);
+  await page.getByLabel("Сообщение Kosmora").fill(task);
   await page.getByRole("button", { name: "Отправить" }).click();
 
   const proposal = page.getByRole("complementary", { name: "Предложение создать проект" });
@@ -154,7 +154,7 @@ test("opens the image workspace and keeps generation local until a model is conn
   for (const name of ["Work", "Code", "Мультиагент", "Skills", "Приложения"]) {
     await expect(tools.getByRole("button", { name, exact: true })).toBeVisible();
   }
-  const studio = tools.getByRole("button", { name: /Cosmora Studio/ });
+  const studio = tools.getByRole("button", { name: /Kosmora Studio/ });
   await expect(studio).toHaveAttribute("aria-expanded", "false");
   await studio.click();
   await expect(studio).toHaveAttribute("aria-expanded", "true");
@@ -195,12 +195,12 @@ test("offers the browser install action when the platform exposes it", async ({ 
         });
         window.dispatchEvent(event);
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        return Boolean(document.querySelector('[aria-label="Установить Cosmora"]'));
+        return Boolean(document.querySelector('[aria-label="Установить Kosmora"]'));
       })
     )
     .toBe(true);
 
-  const install = page.getByRole("button", { name: "Установить Cosmora" });
+  const install = page.getByRole("button", { name: "Установить Kosmora" });
   await expect(install).toBeVisible();
   await install.click();
   expect(

@@ -12,7 +12,7 @@ const lead = document.querySelector("#lead");
 function setBusy(value) {
   button.disabled = value;
   retry.disabled = value;
-  button.textContent = value ? "Подключение…" : "Открыть Cosmora";
+  button.textContent = value ? "Подключение…" : "Открыть Kosmora";
   retry.textContent = value ? "Проверка…" : "Повторить";
 }
 
@@ -24,10 +24,10 @@ async function render() {
   form.hidden = offline;
   retry.hidden = !offline;
   change.hidden = !offline;
-  title.textContent = offline ? "Cosmora сейчас недоступна" : "Подключение к Cosmora";
+  title.textContent = offline ? "Kosmora сейчас недоступна" : "Подключение к Kosmora";
   lead.textContent = offline
     ? "Сохранённый сервер не ответил. Можно повторить попытку или изменить адрес — текущий выбор останется сохранённым до успешного подключения к новому серверу."
-    : "Укажите HTTPS-сервер Cosmora. После проверки откроется обычная страница входа Cosmora — пароль в оболочку Windows вводить не нужно.";
+    : "Укажите HTTPS-сервер Kosmora. После проверки откроется обычная страница входа Kosmora — пароль в оболочку Windows вводить не нужно.";
 }
 
 form.addEventListener("submit", async (event) => {
@@ -38,7 +38,7 @@ form.addEventListener("submit", async (event) => {
     const result = await window.cosmoraDesktop.connect({ origin: origin.value });
     if (!result.ok) error.textContent = result.message;
   } catch {
-    error.textContent = "Не удалось открыть Cosmora. Проверьте соединение и повторите попытку.";
+    error.textContent = "Не удалось открыть Kosmora. Проверьте соединение и повторите попытку.";
   } finally {
     setBusy(false);
   }
@@ -61,7 +61,7 @@ change.addEventListener("click", () => {
   form.hidden = false;
   retry.hidden = true;
   change.hidden = true;
-  title.textContent = "Сменить сервер Cosmora";
+  title.textContent = "Сменить сервер Kosmora";
   lead.textContent =
     "Новый адрес сохранится только после успешной HTTPS-проверки. Текущий сервер пока остаётся сохранённым.";
   error.textContent = "";

@@ -7,7 +7,7 @@ function pdfFixture(pages: number): Buffer {
     `<< /Type /Pages /Kids [${Array.from({ length: pages }, (_, i) => `${i + 5} 0 R`).join(" ")}] /Count ${pages} >>`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
   ];
-  const stream = "BT /F1 12 Tf 20 80 Td (Cosmora document page) Tj ET";
+  const stream = "BT /F1 12 Tf 20 80 Td (Kosmora document page) Tj ET";
   objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
   for (let i = 0; i < pages; i++)
     objects.push(
@@ -42,7 +42,7 @@ test("finds and transfers a selected part of a large Unicode document without a 
   const content =
     "# Начало\n" +
     "Большой документ с данными. 😀\n".repeat(3_000) +
-    "\n# Итоги\nУникальная рекомендация Cosmora\n";
+    "\n# Итоги\nУникальная рекомендация Kosmora\n";
   await page.getByLabel("Крупный документ").setInputFiles({
     name: "research.md",
     mimeType: "text/markdown",
@@ -62,7 +62,7 @@ test("finds and transfers a selected part of a large Unicode document without a 
   );
   await page.getByLabel("Что разобрать?").fill("Проверь рекомендацию");
   await page.getByRole("button", { name: "Разобрать эту часть в чате" }).click();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue(/Проверь рекомендацию/);
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue(/Проверь рекомендацию/);
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(
     "document-part-"
   );
@@ -83,9 +83,9 @@ test("extracts a PDF over the chat page limit and a large real DOCX", async ({ p
   });
   await expect(page.getByRole("heading", { name: "report.pdf" })).toBeVisible();
   await expect(page.getByLabel("Содержимое документа").locator("pre")).toContainText(
-    "Cosmora document page"
+    "Kosmora document page"
   );
-  const text = "Требования к проекту Cosmora. ".repeat(1_000);
+  const text = "Требования к проекту Kosmora. ".repeat(1_000);
   const zip = zipSync({
     "word/document.xml": strToU8(
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`
@@ -180,7 +180,7 @@ test("parses quoted multiline CSV, filters columns and prepares bounded rows", a
   await expect(page.getByText("Среднее", { exact: true }).locator("..")).toContainText("20,5");
   await page.getByLabel("Что разобрать?").fill("Сравни выбранные строки");
   await page.getByRole("button", { name: "Подготовить выборку в чате" }).click();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue(/1 из 1 строк текущего фильтра/);
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue(/1 из 1 строк текущего фильтра/);
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(
     "csv-selection.csv"
   );

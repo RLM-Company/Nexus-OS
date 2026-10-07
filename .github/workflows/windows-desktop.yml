@@ -75,7 +75,7 @@ jobs:
           $version = node -p "require('./desktop/windows/package.json').version"
           ./desktop/windows/ci/nsis-lifecycle.ps1 `
             -Mode Fresh `
-            -CurrentInstaller "desktop/windows/dist/Cosmora-Setup-$version-x64.exe" `
+            -CurrentInstaller "desktop/windows/dist/Kosmora-Setup-$version-x64.exe" `
             -CurrentVersion $version `
             -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-fresh-lifecycle")
 
@@ -87,16 +87,16 @@ jobs:
           $baselineVersion = node -p "require('./upgrade-baseline/desktop/windows/package.json').version"
           ./desktop/windows/ci/nsis-lifecycle.ps1 `
             -Mode Upgrade `
-            -CurrentInstaller "desktop/windows/dist/Cosmora-Setup-$currentVersion-x64.exe" `
+            -CurrentInstaller "desktop/windows/dist/Kosmora-Setup-$currentVersion-x64.exe" `
             -CurrentVersion $currentVersion `
-            -BaselineInstaller "upgrade-baseline/desktop/windows/dist/Cosmora-Setup-$baselineVersion-x64.exe" `
+            -BaselineInstaller "upgrade-baseline/desktop/windows/dist/Kosmora-Setup-$baselineVersion-x64.exe" `
             -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-upgrade-lifecycle")
 
       - name: Verify installer artifact
         shell: pwsh
         run: |
           $version = node -p "require('./desktop/windows/package.json').version"
-          $installer = "desktop/windows/dist/Cosmora-Setup-$version-x64.exe"
+          $installer = "desktop/windows/dist/Kosmora-Setup-$version-x64.exe"
           if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
             throw "Expected installer was not produced: $installer"
           }
@@ -107,7 +107,7 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: cosmora-windows-x64
-          path: desktop/windows/dist/Cosmora-Setup-*.exe
+          name: kosmora-windows-x64
+          path: desktop/windows/dist/Kosmora-Setup-*.exe
           if-no-files-found: error
           retention-days: 14

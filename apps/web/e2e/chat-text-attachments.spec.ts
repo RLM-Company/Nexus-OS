@@ -18,7 +18,7 @@ test("attaches code, removes a file, persists history and downloads the source",
   await page.getByRole("button", { name: "Удалить remove.txt" }).click();
   await expect(page.getByRole("button", { name: "Удалить remove.txt" })).toHaveCount(0);
   const question = `Объясни функцию сложения ${crypto.randomUUID()}`;
-  await page.getByLabel("Сообщение Cosmora").fill(question);
+  await page.getByLabel("Сообщение Kosmora").fill(question);
   const acceptedResponse = page.waitForResponse(
     (response) => response.url().endsWith("/api/v1/chats") && response.request().method() === "POST"
   );
@@ -49,7 +49,7 @@ test("attaches code, removes a file, persists history and downloads the source",
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Скачать example.ts" }).click();
   expect((await downloadPromise).suggestedFilename()).toBe("example.ts");
-  await page.getByLabel("Сообщение Cosmora").fill("Как протестировать эту функцию?");
+  await page.getByLabel("Сообщение Kosmora").fill("Как протестировать эту функцию?");
   const followUp = page.waitForResponse(
     (response) =>
       /\/chats\/[^/]+\/messages$/.test(response.url()) && response.request().method() === "POST"
@@ -114,10 +114,10 @@ test("keeps files in the draft after a rejected send and fits a mobile screen", 
       })
     });
   });
-  await page.getByLabel("Сообщение Cosmora").fill("Объясни файл");
+  await page.getByLabel("Сообщение Kosmora").fill("Объясни файл");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.locator(".composer").getByRole("alert")).toBeVisible();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Объясни файл");
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Объясни файл");
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
@@ -149,7 +149,7 @@ test("does not attach a file to another chat when decoding finishes after naviga
     (window as unknown as { releaseAttachmentRead: () => void }).releaseAttachmentRead()
   );
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
-  await page.getByLabel("Сообщение Cosmora").fill("Второй чат без файлов");
+  await page.getByLabel("Сообщение Kosmora").fill("Второй чат без файлов");
   const responsePromise = page.waitForResponse(
     (response) => response.url().endsWith("/api/v1/chats") && response.request().method() === "POST"
   );

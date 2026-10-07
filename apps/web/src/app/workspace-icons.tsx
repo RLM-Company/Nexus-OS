@@ -1,5 +1,5 @@
 import type { SVGProps } from "react";
-import { CosmoraBrandMark } from "./cosmora-brand";
+import { KosmoraBrandMark } from "./kosmora-brand";
 
 export type IconName =
   | "cosmora"
@@ -152,7 +152,7 @@ const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
 };
 
 export function WorkspaceIcon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
-  if (name === "cosmora") return <CosmoraBrandMark width="20" height="20" {...props} />;
+  if (name === "cosmora") return <KosmoraBrandMark width="20" height="20" {...props} />;
   return (
     <svg
       viewBox="0 0 24 24"

@@ -291,7 +291,7 @@ test("reads code into a chat draft and does not start a model request", async ({
   await page.getByRole("button", { name: "src/example.ts", exact: true }).click();
   await expect(page.getByLabel("Содержимое файла")).toHaveValue("export const value = 42;");
   await page.getByRole("button", { name: "Открыть файл в чате" }).click();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue(/src\/example.ts/);
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue(/src\/example.ts/);
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("example.ts");
   expect(sends).toBe(0);
 });

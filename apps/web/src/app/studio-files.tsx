@@ -346,7 +346,7 @@ export function StudioFiles({
           <Icon name="files" />
         </span>
         <div>
-          <p>Cosmora Studio</p>
+          <p>Kosmora Studio</p>
           <h2>Анализ крупных файлов</h2>
           <p>Документы, данные и код — локально в одном рабочем окне.</p>
         </div>

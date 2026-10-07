@@ -41,11 +41,11 @@ function Resolve-ExistingFile([string]$Value, [string]$Label) {
   return $resolved.Path
 }
 
-function Invoke-Installer([string]$Installer, [string]$InstallDir) {
+function Invoke-Installer([string]$Installer, [string]$InstallDir, [string]$ProductName = "Kosmora") {
   $process = Start-Process -FilePath $Installer -ArgumentList @("/S", "/D=$InstallDir") -WindowStyle Hidden -Wait -PassThru
   if ($process.ExitCode -ne 0) { throw "NSIS install failed with exit code $($process.ExitCode)." }
-  $app = Join-Path $InstallDir "Cosmora.exe"
-  if (-not (Test-Path -LiteralPath $app -PathType Leaf)) { throw "Installed Cosmora.exe was not found." }
+  $app = Join-Path $InstallDir "$ProductName.exe"
+  if (-not (Test-Path -LiteralPath $app -PathType Leaf)) { throw "Installed $ProductName.exe was not found." }
   $uninstaller = Get-ChildItem -LiteralPath $InstallDir -Filter "Uninstall*.exe" -File | Select-Object -First 1
   if (-not $uninstaller) { throw "NSIS uninstaller was not found." }
   return @{ App = $app; Uninstaller = $uninstaller.FullName }
@@ -59,7 +59,7 @@ function Invoke-PackagedSmoke([string]$App, [string]$ExpectedVersion, [string]$I
   } finally {
     Remove-Item Env:COSMORA_SMOKE_OUTPUT -ErrorAction SilentlyContinue
   }
-  if ($process.ExitCode -ne 0) { throw "Installed Cosmora smoke process failed." }
+  if ($process.ExitCode -ne 0) { throw "Installed Kosmora smoke process failed." }
   if (-not (Test-Path -LiteralPath $Marker -PathType Leaf)) { throw "Smoke marker was not produced." }
   $record = Get-Content -LiteralPath $Marker -Raw | ConvertFrom-Json
   if ($record.schemaVersion -ne 1 -or $record.version -ne $ExpectedVersion -or $record.isPackaged -ne $true) {
@@ -97,7 +97,7 @@ function Get-AppUninstallEntries([string]$InstallDir) {
     $entry = Get-ItemProperty -LiteralPath $_.PSPath
     if (($entry.PSObject.Properties.Name -contains "DisplayName") -and
         ($entry.PSObject.Properties.Name -contains "UninstallString") -and
-        $entry.DisplayName -like "Cosmora*") {
+        ($entry.DisplayName -like "Kosmora*" -or $entry.DisplayName -like "Cosmora*")) {
       # NSIS stores InstallLocation in its application key, not the uninstall key.
       # Bind this uninstall record to our actual quoted uninstaller path instead.
       $match = [regex]::Match([string]$entry.UninstallString, '^"([^"]+)"')
@@ -115,7 +115,7 @@ function Assert-InstallMetadata([string]$App, [string]$InstallDir, [string]$Expe
   $expected = [Version]$ExpectedVersion
   Write-Host "Installed metadata: product=$($info.ProductName) version=$($info.ProductVersion)"
   # Windows PE resources may display 0.9.0.0 for package version 0.9.0.
-  if ($info.ProductName -ne "Cosmora" -or
+  if ($info.ProductName -ne "Kosmora" -or
       $info.ProductMajorPart -ne $expected.Major -or
       $info.ProductMinorPart -ne $expected.Minor -or
       $info.ProductBuildPart -ne $expected.Build -or
@@ -123,8 +123,8 @@ function Assert-InstallMetadata([string]$App, [string]$InstallDir, [string]$Expe
     throw "Installed product name/version metadata is incorrect: $($info.ProductName) / $($info.ProductVersion)."
   }
   foreach ($shortcut in @(
-    (Join-Path ([Environment]::GetFolderPath("DesktopDirectory")) "Cosmora.lnk"),
-    (Join-Path ([Environment]::GetFolderPath("Programs")) "Cosmora.lnk")
+    (Join-Path ([Environment]::GetFolderPath("DesktopDirectory")) "Kosmora.lnk"),
+    (Join-Path ([Environment]::GetFolderPath("Programs")) "Kosmora.lnk")
   )) {
     if (-not (Test-Path -LiteralPath $shortcut -PathType Leaf)) { throw "Expected shortcut is missing: $shortcut" }
   }
@@ -147,7 +147,7 @@ Remove-Item -LiteralPath $userData -Recurse -Force -ErrorAction SilentlyContinue
 try {
   if ($Mode -eq "Upgrade") {
     $baseline = Resolve-ExistingFile $BaselineInstaller "Baseline installer"
-    Invoke-Installer $baseline $installDir | Out-Null
+    Invoke-Installer $baseline $installDir "Cosmora" | Out-Null
 
     New-Item -ItemType Directory -Path $userData -Force | Out-Null
     $connectionFile = Join-Path $userData "connection.json"
@@ -178,8 +178,8 @@ try {
   Wait-DirectoryRemoved $installDir
   if (@(Get-AppUninstallEntries $installDir).Count -ne 0) { throw "Uninstall registry entry remains." }
   foreach ($shortcut in @(
-    (Join-Path ([Environment]::GetFolderPath("DesktopDirectory")) "Cosmora.lnk"),
-    (Join-Path ([Environment]::GetFolderPath("Programs")) "Cosmora.lnk")
+    (Join-Path ([Environment]::GetFolderPath("DesktopDirectory")) "Kosmora.lnk"),
+    (Join-Path ([Environment]::GetFolderPath("Programs")) "Kosmora.lnk")
   )) {
     if (Test-Path -LiteralPath $shortcut) { throw "Uninstall left a shortcut behind: $shortcut" }
   }

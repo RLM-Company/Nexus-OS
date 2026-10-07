@@ -239,7 +239,7 @@ test("preserves an accepted run when only the sidebar refresh fails", async ({ p
   const state = await fixture(page);
   state.alpha = detail("alpha", "", "streaming");
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Оформи новую задачу как проект");
+  await page.getByLabel("Сообщение Kosmora").fill("Оформи новую задачу как проект");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await page.getByRole("button", { name: "Оформить как проект" }).click();
   await expect(page.getByText("Проект создан. Не удалось обновить список проектов.")).toBeVisible();
@@ -257,7 +257,7 @@ test("keeps the project stream when an old ordinary-chat refresh completes after
     release = resolve;
   });
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Оформи новую задачу как проект");
+  await page.getByLabel("Сообщение Kosmora").fill("Оформи новую задачу как проект");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
   const oldRead = page.waitForRequest("**/api/v1/chats/general-alpha");

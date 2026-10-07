@@ -45,7 +45,7 @@ test("opens only ordinary safe external schemes", () => {
   assert.equal(isSafeExternalUrl("https://user:secret@example.com"), false);
 });
 
-test("download chain must remain entirely on the active Cosmora origin", () => {
+test("download chain must remain entirely on the active Kosmora origin", () => {
   assert.equal(
     isAllowedDownload(
       ["https://cosmora.example/a", "https://cosmora.example/b"],

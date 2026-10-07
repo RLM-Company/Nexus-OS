@@ -1,6 +1,6 @@
-# Cosmora OS
+# Kosmora OS
 
-Cosmora OS is an owner-controlled, policy-gated AI project workspace. This repository contains the
+Kosmora OS is an owner-controlled, policy-gated AI project workspace. This repository contains the
 integrated product and safety foundations and a bounded, durable Manager work runtime for creating
 downloadable files. The private MVP also provides owner-operated GitHub and web search integrations.
 The AI executor does not execute arbitrary code or external actions.
@@ -164,7 +164,7 @@ in `docs/handoff/SUNDAY_MANAGER_DEMO_RUNBOOK_2026-09-11.md`.
 
 ## Install the Manager Console as an app
 
-Cosmora ships an installable PWA manifest, desktop/mobile app icons, standalone display metadata
+Kosmora ships an installable PWA manifest, desktop/mobile app icons, standalone display metadata
 and safe-area-aware layouts. On the local laptop, start `pnpm demo`, open
 `http://127.0.0.1:3000`, then use the visible **Install** action or the browser's install control.
 The installed app opens in its own window while continuing to use the same local API and SQLite
@@ -232,7 +232,7 @@ Docker also excludes `.env` files from build contexts. See the
 remaining release gates.
 
 An OpenAI-compatible provider must expose streaming `POST /chat/completions`; an
-Anthropic-compatible provider must expose streaming `POST /messages`. Cosmora does not expose the
+Anthropic-compatible provider must expose streaming `POST /messages`. Kosmora does not expose the
 key through its health or runtime-status APIs. If the provider fails before the first response
 token, optional mock fallback keeps the local workflow usable; after output begins, the gateway
 fails the run instead of mixing responses from two models.
@@ -250,7 +250,7 @@ only for requests without a hard cost limit; unknown privacy never qualifies for
 routing. A configured project ceiling is checked atomically against committed usage and active
 reservations before a new route reservation is created; missing token/cost evidence or a currency
 mismatch fails closed. There is no automatic top-up. External route metadata must be backed by
-dated evidence; Cosmora does not infer model capabilities or silently substitute another model.
+dated evidence; Kosmora does not infer model capabilities or silently substitute another model.
 
 `loadServerConfig` validates that a credential exists but discards its value after parsing. The API
 composition root resolves `MODEL_API_KEY` asynchronously immediately before constructing the

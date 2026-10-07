@@ -4,7 +4,7 @@ test("shows a visible keyboard focus ring on media prompt textareas", async ({ p
   await page.goto("/");
   await page
     .locator(".sidebar-tools")
-    .getByRole("button", { name: /Cosmora Studio/ })
+    .getByRole("button", { name: /Kosmora Studio/ })
     .click();
   await page.getByRole("button", { name: "Изображения", exact: true }).click();
 
