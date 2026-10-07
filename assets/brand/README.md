@@ -20,7 +20,7 @@ The generator trims transparent canvas padding and creates the shared 256px
 symbol, React SVG image wrapper, standalone owner-login wrapper, 512px app tile
 and Windows ICO with 16/24/32/48/64/128/256px entries. SVG files contain embedded
 PNG artwork; they are not vector tracings. All outputs preserve the white helmet
-and black visor. The tile uses the existing violet accent, `#6552b8`, with the
+and black visor. The tile uses a neutral light gray background, `#f5f5f5`, with the
 whole symbol inside the central maskable safe circle. Web `/icon` and
 `/apple-icon` render at their declared sizes. The owner-login artwork is embedded
 in its existing script, so its standalone mount needs no additional asset path.
@@ -38,3 +38,7 @@ partition. The installer upgrade identity remains `com.cosmora.desktop`.
 Earlier logo comparison images under `docs/design` are historical explorations,
 not the selected mark. Validation and rollout evidence are recorded separately;
 the assets alone do not establish a production release or owner installation.
+
+The owner also requested a monochrome interface. Web and Windows surfaces,
+buttons, focus rings, native control accents and the owner-login page use neutral
+grays. Status meanings remain expressed through labels, icons and alerts.

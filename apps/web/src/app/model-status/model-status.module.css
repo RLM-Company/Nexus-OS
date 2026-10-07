@@ -86,12 +86,12 @@
 .errorState,
 .disconnectedState {
   border-bottom: 1px solid var(--line);
-  background: rgba(237, 122, 95, 0.07);
+  background: rgba(144, 144, 144, 0.07);
 }
 
 .readyState {
   border-bottom: 1px solid var(--line);
-  background: rgba(22, 134, 111, 0.08);
+  background: rgba(109, 109, 109, 0.08);
 }
 
 .statusIcon {
@@ -112,7 +112,7 @@
 
 .disconnectedState .statusIcon,
 .errorState .statusIcon {
-  color: #a54f3a;
+  color: #606060;
 }
 
 .readyState strong,

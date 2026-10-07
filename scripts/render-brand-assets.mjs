@@ -17,7 +17,7 @@ const symbol = await sharp(source)
   .png()
   .toBuffer();
 const symbolData = `data:image/png;base64,${symbol.toString("base64")}`;
-const color = "#6552b8";
+const color = "#f5f5f5";
 const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32" aria-hidden="true"><image href="${symbolData}" width="64" height="64"/></svg>`;
 // The 288px foreground square fits in the central maskable safe circle:
 // sqrt(144^2 + 144^2) < 512 * 0.4. No ring or helmet is clipped by masking.

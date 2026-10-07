@@ -23,8 +23,8 @@
   width: 64px;
   height: 64px;
   border-radius: 20px;
-  background: #f0edf8;
-  color: #655287;
+  background: #efefef;
+  color: #5a5a5a;
   flex-shrink: 0;
 }
 .icon svg {
@@ -50,22 +50,22 @@
   gap: 8px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #fff;
+  background: #ffffff;
   color: inherit;
   padding: 10px 14px;
   font: inherit;
   cursor: pointer;
 }
 .root button:hover:not(:disabled) {
-  background: #f5f2fa;
-  border-color: #b5a6ce;
+  background: #f3f3f3;
+  border-color: #acacac;
 }
 .root button:disabled {
   opacity: 0.45;
   cursor: default;
 }
 .root :is(button, input, textarea, select):focus-visible {
-  outline: 3px solid #9d85c6;
+  outline: 3px solid #8f8f8f;
   outline-offset: 3px;
 }
 .root button svg {
@@ -106,7 +106,7 @@
 }
 .stats div {
   padding: 16px;
-  background: #f1eff6;
+  background: #f0f0f0;
   border-radius: 12px;
 }
 .stats dt {
@@ -134,7 +134,7 @@
   border-radius: 10px;
   padding: 12px;
   font: inherit;
-  background: #faf9fc;
+  background: #f9f9f9;
   color: inherit;
 }
 .panel textarea {
@@ -182,18 +182,18 @@
   font:
     0.85rem/1.7 ui-monospace,
     monospace;
-  background: #faf9fc;
+  background: #f9f9f9;
   padding: 16px;
   border-radius: 10px;
   margin: 18px 0 24px;
 }
 .root .primary {
-  background: #665185;
+  background: #595959;
   color: white;
-  border-color: #665185;
+  border-color: #595959;
 }
 .root .primary:hover:not(:disabled) {
-  background: #594477;
+  background: #4c4c4c;
 }
 @media (max-width: 700px) {
   .layout {
@@ -223,7 +223,7 @@
   margin: 10px 0;
 }
 .preview mark {
-  background: #f0df83;
+  background: #dcdcdc;
   color: inherit;
   border-radius: 3px;
   padding: 0 1px;
@@ -271,7 +271,7 @@
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px;
-  background: #faf9fc;
+  background: #f9f9f9;
   color: inherit;
 }
 .columnList {
@@ -297,7 +297,7 @@
 .numericStats div {
   padding: 10px;
   border-radius: 10px;
-  background: #f5f3f8;
+  background: #f4f4f4;
 }
 .numericStats dt {
   color: var(--ui-muted);
@@ -332,10 +332,10 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f1eff6;
+  background: #f0f0f0;
 }
 .tableWrap tbody th {
-  background: #faf9fc;
+  background: #f9f9f9;
   color: var(--ui-muted);
 }
 @media (max-width: 700px) {

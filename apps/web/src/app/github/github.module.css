@@ -248,11 +248,11 @@
 }
 
 .warning {
-  background: rgba(218, 163, 67, 0.12);
+  background: rgba(168, 168, 168, 0.12);
 }
 
 .error {
-  background: rgba(237, 122, 95, 0.1);
+  background: rgba(144, 144, 144, 0.1);
 }
 
 .warning button,
@@ -284,7 +284,7 @@
 .readonlyBadge {
   padding: 0.25rem 0.55rem;
   border-radius: 999px;
-  background: rgba(22, 134, 111, 0.12);
+  background: rgba(109, 109, 109, 0.12);
   color: var(--green);
   font-size: 0.75rem;
   font-weight: 600;

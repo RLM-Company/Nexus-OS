@@ -105,14 +105,14 @@
   border: 1px solid var(--ui-line);
   border-radius: var(--radius-sm);
   color: var(--ui-ink);
-  background: #fff;
+  background: #ffffff;
   font-size: 0.8125rem !important;
   font-weight: 600 !important;
   text-decoration: none;
   line-height: 1.4;
 }
 .primary {
-  color: #fff;
+  color: #ffffff;
   border-color: var(--ui-accent);
   background: var(--ui-accent);
 }
@@ -186,7 +186,7 @@
   padding: 0.55rem 0.8rem;
   border: 1px solid var(--ui-line);
   border-radius: var(--radius-sm);
-  background: #fff;
+  background: #ffffff;
   color: var(--ui-muted);
   min-height: 2.75rem;
 }
@@ -229,8 +229,8 @@
 }
 .segments button[aria-pressed="true"] {
   color: var(--text);
-  background: #fff;
-  box-shadow: 0 1px 5px #2425350e;
+  background: #ffffff;
+  box-shadow: 0 1px 5px #2626260e;
 }
 .projectList {
   display: grid;
@@ -243,7 +243,7 @@
   align-items: center;
   gap: 0.85rem;
   padding: 1.2rem 1.25rem;
-  background: #fff;
+  background: #ffffff;
 }
 .project + .project {
   border-top: 1px solid var(--ui-line);
@@ -371,7 +371,7 @@
   padding: 1.5rem;
   border: 1px solid var(--ui-line);
   border-radius: var(--radius-md);
-  background: #fff;
+  background: #ffffff;
 }
 .panel > p {
   margin-top: 0.65rem;
@@ -530,7 +530,7 @@
   border-radius: 0.7rem;
   overflow: auto;
   color: var(--text);
-  background: #fff;
+  background: #ffffff;
   font:
     0.8rem/1.75 ui-sans-serif,
     system-ui,
@@ -563,7 +563,7 @@
   border-radius: var(--radius-md);
   overflow: hidden;
   color: var(--ui-ink);
-  background: #fff;
+  background: #ffffff;
   text-align: left;
   transition:
     border-color 150ms ease,
@@ -574,7 +574,7 @@
 }
 .studioCard:hover {
   border-color: var(--line-strong);
-  box-shadow: 0 4px 16px #28272e08;
+  box-shadow: 0 4px 16px #28282808;
 }
 .studioArt {
   position: relative;
@@ -582,19 +582,19 @@
   height: 12rem;
   place-items: center;
   overflow: hidden;
-  background: #f2eff7;
+  background: #f0f0f0;
 }
 .studio1 .studioArt {
-  background: #eef3f5;
+  background: #f2f2f2;
 }
 .studio2 .studioArt {
-  background: #f6f2ec;
+  background: #f2f2f2;
 }
 .studioArt::after {
   position: absolute;
   width: 12rem;
   height: 12rem;
-  border: 1px solid #28272e0c;
+  border: 1px solid #2828280c;
   border-radius: 50%;
   content: "";
   transform: translate(45%, -35%);
@@ -602,14 +602,14 @@
 .studioArt svg {
   width: 3rem;
   height: 3rem;
-  color: #453c69;
+  color: #414141;
   stroke-width: 1.2;
 }
 .studio1 .studioArt svg {
-  color: #31586c;
+  color: #515151;
 }
 .studio2 .studioArt svg {
-  color: #73512b;
+  color: #555555;
 }
 .studioArt > span {
   position: absolute;
@@ -657,7 +657,7 @@
   border: 1px solid var(--ui-line);
   border-radius: var(--radius-md);
   color: var(--ui-ink);
-  background: #fff;
+  background: #ffffff;
   text-decoration: none;
 }
 .roleTop {
@@ -774,7 +774,7 @@
   border: 1px solid var(--ui-line);
   border-radius: var(--radius-md);
   color: var(--ui-ink);
-  background: #fff;
+  background: #ffffff;
   text-align: left;
 }
 .featureQuick:hover {
@@ -826,7 +826,7 @@
   border: 1px solid var(--ui-line);
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: #fff;
+  background: #ffffff;
 }
 .featureItem + .featureItem {
   border-top: 1px solid var(--ui-line);

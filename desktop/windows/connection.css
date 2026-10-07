@@ -8,8 +8,8 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  background: #f6f7f9;
-  color: #111318;
+  background: #f7f7f7;
+  color: #131313;
 }
 
 * {
@@ -37,10 +37,10 @@ input {
 .card {
   width: min(560px, 100%);
   padding: 36px;
-  border: 1px solid #e2e5ea;
+  border: 1px solid #e5e5e5;
   border-radius: 24px;
   background: #ffffff;
-  box-shadow: 0 20px 60px rgb(20 24 33 / 8%);
+  box-shadow: 0 20px 60px rgb(24 24 24 / 8%);
 }
 
 .mark {
@@ -49,7 +49,7 @@ input {
   height: 46px;
   place-items: center;
   border-radius: 14px;
-  background: #6552b8;
+  background: #f5f5f5;
   color: #ffffff;
   font-size: 22px;
   font-weight: 700;
@@ -63,7 +63,7 @@ input {
 
 .eyebrow {
   margin: 28px 0 8px;
-  color: #747b89;
+  color: #7b7b7b;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -79,7 +79,7 @@ h1 {
 
 .lead,
 .hint {
-  color: #626a78;
+  color: #696969;
   line-height: 1.55;
 }
 
@@ -100,7 +100,7 @@ label {
 }
 
 label span {
-  color: #858c98;
+  color: #8b8b8b;
   font-size: 12px;
   font-weight: 500;
 }
@@ -109,14 +109,14 @@ input {
   width: 100%;
   min-height: 46px;
   padding: 11px 13px;
-  border: 1px solid #d8dce3;
+  border: 1px solid #dcdcdc;
   border-radius: 12px;
   outline: none;
 }
 
 input:focus {
-  border-color: #79808c;
-  box-shadow: 0 0 0 3px rgb(17 19 24 / 8%);
+  border-color: #7f7f7f;
+  box-shadow: 0 0 0 3px rgb(19 19 19 / 8%);
 }
 
 .credentials {
@@ -129,7 +129,7 @@ button {
   min-height: 48px;
   border: 0;
   border-radius: 12px;
-  background: #111318;
+  background: #131313;
   color: #ffffff;
   cursor: pointer;
   font-weight: 700;
@@ -143,7 +143,7 @@ button:disabled {
 .error {
   min-height: 20px;
   margin: 0;
-  color: #b42318;
+  color: #414141;
   font-size: 13px;
 }
 
@@ -178,6 +178,6 @@ button:disabled {
 }
 
 button.secondary {
-  background: #eef1f6;
-  color: #202631;
+  background: #f1f1f1;
+  color: #262626;
 }
