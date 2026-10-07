@@ -17,7 +17,7 @@ Kosmora for Windows is a thin Electron shell around the existing hosted Kosmora 
 ## First run and recovery
 
 1. Launch Kosmora and enter the HTTPS origin.
-2. The app performs a bounded `/api/v1/health` request. A failed TLS certificate is treated as a failed connection; it is never bypassed.
+2. The app performs a bounded `/api/v1/health` request. If the owner gateway requires sign-in (HTTP 401), it checks the public `/login` page within the same timeout before opening the ordinary login flow. A failed TLS certificate is treated as a failed connection; it is never bypassed.
 3. On success, the origin is saved and the hosted Kosmora UI opens. Sign in with the normal owner login shown by Kosmora.
 4. If the server later becomes unavailable, the connection screen offers **Повторить** and **Сменить адрес**. The saved origin remains intact while retrying and while an unverified replacement address is being edited.
 5. Use **Kosmora → Сменить сервер…** (`Ctrl+Shift+K`) to return to the local connection screen.

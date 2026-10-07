@@ -86,12 +86,18 @@ async function probeServer(browserSession, origin) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
   try {
-    const response = await browserSession.fetch(origin + "/api/v1/health", {
+    const requestOptions = {
       method: "GET",
       cache: "no-store",
       redirect: "manual",
       signal: controller.signal
-    });
+    };
+    let response = await browserSession.fetch(origin + "/api/v1/health", requestOptions);
+    // The owner gateway protects the health route before the first sign-in.
+    // Confirm its public login page is reachable, then let ordinary login proceed.
+    if (response.status === 401) {
+      response = await browserSession.fetch(origin + "/login", requestOptions);
+    }
     if (response.status >= 300 && response.status < 400) {
       return {
         ok: false,
