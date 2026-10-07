@@ -88,7 +88,7 @@ jobs:
             -Mode Upgrade `
             -CurrentInstaller "desktop/windows/dist/Kosmora-Setup-$currentVersion-x64.exe" `
             -CurrentVersion $currentVersion `
-            -BaselineInstaller "upgrade-baseline/desktop/windows/dist/Kosmora-Setup-$baselineVersion-x64.exe" `
+            -BaselineInstaller "upgrade-baseline/desktop/windows/dist/Cosmora-Setup-$baselineVersion-x64.exe" `
             -WorkRoot (Join-Path $env:RUNNER_TEMP "cosmora-upgrade-lifecycle")
 
       - name: Verify installer artifact
