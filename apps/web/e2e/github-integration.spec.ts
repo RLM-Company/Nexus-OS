@@ -224,11 +224,11 @@ test("reveals files past the first 500 and reports a GitHub read refusal", async
 
 test("Code opens the real repository workspace", async ({ page }) => {
   await page.goto("/?surface=code");
-  await expect(page.getByRole("link", { name: "Открыть GitHub →" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Открыть GitHub" })).toHaveAttribute(
     "href",
     "/github"
   );
-  await page.getByRole("link", { name: "Открыть GitHub →" }).click();
+  await page.getByRole("link", { name: "Открыть GitHub" }).click();
   await expect(page.getByRole("heading", { name: "GitHub ещё не подключён" })).toBeVisible();
 });
 test("keeps the live editor and reviewed diff within a mobile viewport", async ({ page }) => {

@@ -27,4 +27,6 @@ Initial local gate: production build, web lint/typecheck, 13 unit tests, 8 owner
 
 Final audit fixes: project/view scope survives mode reload; the Code GitHub action occupies the text column instead of the icon column; login microcopy contrast is increased. An additional 27 Chromium tests passed for project draft restoration, context isolation/dialogs, invalid routes, files/CSV and workspace modes.
 
+The production preview was inspected at desktop and 390px mobile widths. A duplicate arrow on the Code GitHub action was removed. The older PWA and keyboard audits now exercise the brand disclosure, including Enter/Tab selection, focus return and the absence of Work/Code in ordinary tools. Those two audits and the Code-to-GitHub navigation test passed together.
+
 This is a presentation/design update. Live paid model tests and provider funding remain deferred. Authentication, persistent data, GitHub permissions and the server's model execution stop must remain intact during rollout.

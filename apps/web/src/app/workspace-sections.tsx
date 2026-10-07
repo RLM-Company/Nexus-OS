@@ -494,7 +494,7 @@ function Code({ onCompose }: Props) {
               Откройте разрешённый репозиторий, прочитайте или измените файлы и проверьте diff. По
               вашему подтверждению Kosmora создаст отдельную ветку и черновик PR.
             </p>
-            <ActionLink href="/github">Открыть GitHub →</ActionLink>
+            <ActionLink href="/github">Открыть GitHub</ActionLink>
           </div>
         </aside>
       </div>

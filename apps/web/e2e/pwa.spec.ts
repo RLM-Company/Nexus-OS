@@ -151,7 +151,17 @@ test("opens the image workspace and keeps generation local until a model is conn
   await page.goto("/");
 
   const tools = page.locator(".sidebar-tools");
-  for (const name of ["Work", "Code", "Мультиагент", "Skills", "Приложения"]) {
+  const modeTrigger = page.getByLabel("Режимы Kosmora", { exact: true });
+  const modeMenu = page.locator(".workspace-mode-menu");
+  await modeTrigger.click();
+  for (const name of ["Work", "Code"]) {
+    await expect(modeMenu.getByRole("button", { name, exact: true })).toBeVisible();
+    await expect(tools.getByRole("button", { name, exact: true })).toHaveCount(0);
+  }
+  await modeTrigger.click();
+  await expect(modeMenu).not.toHaveAttribute("open");
+
+  for (const name of ["Мультиагент", "Skills", "Приложения"]) {
     await expect(tools.getByRole("button", { name, exact: true })).toBeVisible();
   }
   const studio = tools.getByRole("button", { name: /Kosmora Studio/ });
