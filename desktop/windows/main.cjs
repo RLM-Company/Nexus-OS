@@ -21,7 +21,10 @@ const CONNECTION_FILE = "connection.json";
 const HEALTH_TIMEOUT_MS = 6000;
 
 // Keep the existing profile and Chromium partition across the product rename.
-app.setPath("userData", path.join(app.getPath("appData"), "cosmora-windows-desktop"));
+const profileDirectory = path.join(app.getPath("appData"), "cosmora-windows-desktop");
+fs.mkdirSync(profileDirectory, { recursive: true });
+app.setPath("userData", profileDirectory);
+app.setPath("sessionData", profileDirectory);
 app.setName("Kosmora");
 
 let mainWindow = null;
