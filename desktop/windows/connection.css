@@ -49,10 +49,16 @@ input {
   height: 46px;
   place-items: center;
   border-radius: 14px;
-  background: #111318;
+  background: #6552b8;
   color: #ffffff;
   font-size: 22px;
   font-weight: 700;
+}
+
+.mark img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
 }
 
 .eyebrow {

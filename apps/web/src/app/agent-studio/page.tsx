@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { safeApiError } from "../safe-api-error";
+import { CosmoraBrandMark } from "../cosmora-brand";
 import BlueprintControls from "./blueprint-controls";
 import CatalogControls from "./catalog-controls";
 import ProposalControls from "./proposal-controls";
@@ -165,7 +166,9 @@ export default function AgentStudioPage() {
     <main className={styles.shell}>
       <header className={styles.topbar}>
         <div className={styles.brand}>
-          <span className={styles.orbit} aria-hidden="true" />
+          <span className={styles.orbit} aria-hidden="true">
+            <CosmoraBrandMark />
+          </span>
           <div>
             <span>Cosmora</span>
             <strong>Agent Studio</strong>

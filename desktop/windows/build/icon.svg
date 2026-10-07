@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cosmora">
-  <defs>
-    <linearGradient id="cosmora-bg" x1="38" y1="8" x2="474" y2="506" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0b0c0f"/><stop offset="0.58" stop-color="#161329"/><stop offset="1" stop-color="#312768"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" fill="url(#cosmora-bg)"/>
-  <rect x="108" y="108" width="296" height="296" rx="95" fill="#7f67ff" fill-opacity="0.18" stroke="#c3b9ff" stroke-opacity="0.72" stroke-width="10"/>
-  <path d="M 335 184 C 314 160 286 148 256 148 C 196 148 148 196 148 256 C 148 316 196 364 256 364 C 286 364 314 352 335 328" fill="none" stroke="#f6f4ff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cosmora"><rect width="512" height="512" fill="#6552b8"/><g transform="translate(48 48) scale(6.5)" fill="#ffffff"><path d="M50.3 18A23 23 0 1 0 50.3 46L43.1 40.4A14 14 0 1 1 43.1 23.6Z M56 32A4.5 4.5 0 1 1 47 32A4.5 4.5 0 1 1 56 32Z"/></g></svg>

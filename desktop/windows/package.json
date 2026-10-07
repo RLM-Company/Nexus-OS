@@ -27,7 +27,8 @@
       "connection.html",
       "connection.js",
       "connection.css",
-      "build/icon.ico"
+      "build/icon.ico",
+      "build/icon.svg"
     ],
     "win": {
       "target": [

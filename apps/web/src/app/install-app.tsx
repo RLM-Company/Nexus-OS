@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CosmoraBrandMark } from "./cosmora-brand";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -128,7 +129,7 @@ export function InstallApp() {
             }}
           >
             <span className="brand-mark" aria-hidden="true">
-              C
+              <CosmoraBrandMark />
             </span>
             <div>
               <h2 id="install-title">Добавить Cosmora на экран «Домой»</h2>
