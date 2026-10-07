@@ -81,3 +81,37 @@ test("mobile mode drawer returns to the existing chat draft", async ({ page }) =
     true
   );
 });
+
+test("mode reload preserves the selected project and its unsent chat draft", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a local fixture project for restoring workspace modes.",
+      client_message_id: crypto.randomUUID()
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+  await page.goto(`/?project=${encodeURIComponent(projectId)}&view=chat`);
+  const composer = page.getByLabel("Сообщение менеджеру", { exact: true });
+  await expect(composer).toBeEnabled();
+  const draft = "Сохранить черновик в выбранном проекте после смены режимов";
+  await composer.fill(draft);
+
+  await desktopMode(page, "Work");
+  expect(new URL(page.url()).searchParams.get("project")).toBe(projectId);
+  await desktopMode(page, "Code");
+  await expect(page.locator(".topbar h1")).toHaveText("Code");
+  await page.reload();
+  await expect(page.locator(".topbar h1")).toHaveText("Code");
+  expect(new URL(page.url()).searchParams.get("project")).toBe(projectId);
+  expect(new URL(page.url()).searchParams.get("surface")).toBe("code");
+
+  await desktopMode(page, "Чат");
+  await expect(composer).toHaveValue(draft);
+  expect(new URL(page.url()).searchParams.get("project")).toBe(projectId);
+  expect(new URL(page.url()).searchParams.get("view")).toBe("chat");
+  expect(new URL(page.url()).searchParams.get("surface")).toBeNull();
+});

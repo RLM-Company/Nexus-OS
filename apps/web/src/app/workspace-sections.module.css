@@ -521,13 +521,20 @@
   font-weight: 600;
 }
 .note p,
-.note button {
+.note button,
+.note a {
   grid-column: 2;
   font-size: 0.75rem;
 }
 .note button {
   justify-self: start;
   margin-left: -0.55rem;
+}
+.note a {
+  width: fit-content;
+  max-width: 100%;
+  justify-self: start;
+  white-space: nowrap;
 }
 .resultPanel {
   background: #fafafa;

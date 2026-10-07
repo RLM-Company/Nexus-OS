@@ -38,7 +38,7 @@ input:focus-visible{outline:none}
 .secondary{margin-top:10px;background:#fff;color:#555;border-color:#e3e3e3}
 .secondary:hover{background:#f7f7f7;border-color:#ccc}
 .error{margin:18px 0 4px;padding:10px 12px;border:1px solid #d8d8d8;border-radius:10px;background:#f7f7f7;color:#333;font-size:13px}
-small{display:block;margin-top:24px;padding-top:20px;border-top:1px solid #eee;color:#808080;font-size:12px;line-height:1.6}
+small{display:block;margin-top:24px;padding-top:20px;border-top:1px solid #eee;color:#686868;font-size:12px;line-height:1.6}
 @media(max-width:480px){body{padding:20px 16px}main{padding:26px 24px;border-radius:18px}.brand{margin-bottom:24px}}
 @media(prefers-reduced-motion:reduce){input,button,.link{transition:none}button:active,.link:active{transform:none}}
 `;

@@ -25,4 +25,6 @@ The implementation uses Kosmora's selected helmet artwork and neutral grays. No 
 
 Initial local gate: production build, web lint/typecheck, 13 unit tests, 8 owner-access tests, desktop checks, secret scan and 45 targeted Chromium tests passed. New mode tests cover Escape/focus, draft preservation, reload and mobile navigation.
 
+Final audit fixes: project/view scope survives mode reload; the Code GitHub action occupies the text column instead of the icon column; login microcopy contrast is increased. An additional 27 Chromium tests passed for project draft restoration, context isolation/dialogs, invalid routes, files/CSV and workspace modes.
+
 This is a presentation/design update. Live paid model tests and provider funding remain deferred. Authentication, persistent data, GitHub permissions and the server's model execution stop must remain intact during rollout.

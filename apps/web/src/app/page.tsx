@@ -874,11 +874,24 @@ export default function Home() {
   }, [activeLocalChatId, activeProject, loadGeneralChatView, runPhase]);
 
   const openProject = useCallback(
-    async (projectId: string, view: ProjectView = "chat"): Promise<void> => {
+    async (
+      projectId: string,
+      view: ProjectView = "chat",
+      restoredSurface: WorkspaceSurface = "manager"
+    ): Promise<void> => {
       const epoch = ++viewEpochRef.current;
-      setSurface("manager");
+      setSurface(restoredSurface);
       selectedProjectRef.current = projectId;
       replaceConsoleRoute(projectId, view);
+      if (restoredSurface !== "manager") {
+        const route = new URL(window.location.href);
+        route.searchParams.set("surface", restoredSurface);
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${route.pathname}${route.search}${route.hash}`
+        );
+      }
       streamRef.current?.close();
       streamRef.current = null;
       setActiveRunId(null);
@@ -961,11 +974,14 @@ export default function Home() {
       return;
     }
     const requestedView = params.get("view");
-    void openProject(projectId, isProjectView(requestedView) ? requestedView : "chat").finally(
-      () => {
-        setInitialRouteReady(true);
-      }
-    );
+    const requestedSurface = params.get("surface");
+    void openProject(
+      projectId,
+      isProjectView(requestedView) ? requestedView : "chat",
+      isToolSurface(requestedSurface) ? requestedSurface : "manager"
+    ).finally(() => {
+      setInitialRouteReady(true);
+    });
   }, [loading, openProject]);
 
   const selectProjectView = (view: ProjectView): void => {
@@ -1752,14 +1768,16 @@ export default function Home() {
   const selectSurface = (nextSurface: WorkspaceSurface): void => {
     setSurface(nextSurface);
     if (nextSurface === "manager") {
-      replaceConsoleRoute(activeProject?.id ?? null, projectView, activeLocalChatId);
+      replaceConsoleRoute(
+        activeProject?.id ?? selectedProjectRef.current,
+        projectView,
+        activeLocalChatId
+      );
       return;
     }
     if (["studio", "files", "images", "video", "sound"].includes(nextSurface))
       setStudioExpanded(true);
     const route = new URL(window.location.href);
-    route.searchParams.delete("project");
-    route.searchParams.delete("view");
     route.searchParams.set("surface", nextSurface);
     window.history.replaceState(
       window.history.state,
