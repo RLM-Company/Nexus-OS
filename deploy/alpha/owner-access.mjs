@@ -51,7 +51,7 @@ export function createOwnerAccess({ origin, passwordHash, now = Date.now }) {
     "cache-control": "no-store",
     "x-content-type-options": "nosniff",
     "referrer-policy": "same-origin",
-    "content-security-policy": `default-src 'none'; style-src 'sha256-${createHash("sha256").update(style).digest("base64")}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`
+    "content-security-policy": `default-src 'none'; img-src data:; style-src 'sha256-${createHash("sha256").update(style).digest("base64")}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`
   };
   const html = (response, status, message = "", loggedIn = false) => {
     response.writeHead(status, { ...headers, "content-type": "text/html; charset=utf-8" });
