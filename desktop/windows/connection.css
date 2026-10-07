@@ -149,6 +149,28 @@ input:focus {
   box-shadow: 0 0 0 3px rgb(0 0 0 / 6%);
 }
 
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  background-color: #ffffff;
+  color: #171717;
+  -webkit-text-fill-color: #171717;
+  caret-color: #171717;
+  box-shadow: 0 0 0 1000px #ffffff inset;
+}
+
+input:-webkit-autofill:focus {
+  border-color: #555555;
+  box-shadow:
+    0 0 0 1000px #ffffff inset,
+    0 0 0 3px rgb(0 0 0 / 6%);
+}
+
+input:-webkit-autofill:focus-visible {
+  outline: 2px solid #555555;
+  outline-offset: 3px;
+}
+
 .credentials {
   display: grid;
   grid-template-columns: 1fr 1fr;

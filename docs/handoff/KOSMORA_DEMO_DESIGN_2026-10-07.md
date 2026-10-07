@@ -29,4 +29,6 @@ Final audit fixes: project/view scope survives mode reload; the Code GitHub acti
 
 The production preview was inspected at desktop and 390px mobile widths. A duplicate arrow on the Code GitHub action was removed. The older PWA and keyboard audits now exercise the brand disclosure, including Enter/Tab selection, focus return and the absence of Work/Code in ordinary tools. Those two audits and the Code-to-GitHub navigation test passed together.
 
+The full design passed GitHub CI (179 Chromium tests, 473 Vitest tests and the deployment/profile gates) and the Windows install/upgrade lifecycle. The live rollout confirmed owner access, SQLite health and paused model execution. Live visual inspection then identified Chrome's blue autofill background; login and desktop connection styles now cover autofill, hover and focus with neutral fills while retaining keyboard focus. The follow-up passed 8 owner-access and 15 desktop checks.
+
 This is a presentation/design update. Live paid model tests and provider funding remain deferred. Authentication, persistent data, GitHub permissions and the server's model execution stop must remain intact during rollout.

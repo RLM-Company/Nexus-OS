@@ -35,6 +35,11 @@ button:hover,.link:hover{background:#333;border-color:#333}
 button:active,.link:active{transform:translateY(1px)}
 :focus-visible{outline:2px solid #555;outline-offset:3px}
 input:focus-visible{outline:none}
+input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus{background-color:#fff;color:#171717;-webkit-text-fill-color:#171717;caret-color:#171717;box-shadow:0 0 0 1000px #fff inset}
+input[readonly]:-webkit-autofill,input[readonly]:-webkit-autofill:hover,input[readonly]:-webkit-autofill:focus{background-color:#f7f7f7;color:#686868;-webkit-text-fill-color:#686868;box-shadow:0 0 0 1000px #f7f7f7 inset}
+input:-webkit-autofill:focus{border-color:#555;box-shadow:0 0 0 1000px #fff inset,0 0 0 3px rgb(0 0 0 / 6%)}
+input[readonly]:-webkit-autofill:focus{box-shadow:0 0 0 1000px #f7f7f7 inset,0 0 0 3px rgb(0 0 0 / 6%)}
+input:-webkit-autofill:focus-visible{outline:2px solid #555;outline-offset:3px}
 .secondary{margin-top:10px;background:#fff;color:#555;border-color:#e3e3e3}
 .secondary:hover{background:#f7f7f7;border-color:#ccc}
 .error{margin:18px 0 4px;padding:10px 12px;border:1px solid #d8d8d8;border-radius:10px;background:#f7f7f7;color:#333;font-size:13px}
