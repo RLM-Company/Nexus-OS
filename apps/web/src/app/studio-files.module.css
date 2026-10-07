@@ -1,47 +1,60 @@
 .root {
-  max-width: 1100px;
+  max-width: 992px;
   margin: 0 auto;
-  color: var(--ui-text);
+  color: var(--text);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.root *,
+.root *::before,
+.root *::after {
+  box-sizing: border-box;
 }
 .header {
   display: flex;
   align-items: center;
-  gap: 18px;
-  margin-bottom: 28px;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
 }
 .header h2 {
-  font-size: clamp(1.5rem, 3vw, 2rem);
-  margin: 5px 0 8px;
+  font-size: clamp(1.375rem, 2.3vw, 1.75rem);
+  font-weight: 550;
+  line-height: 1.3;
+  letter-spacing: -0.035em;
+  margin: 2px 0 8px;
 }
 .header p {
-  color: var(--ui-muted);
+  color: var(--muted);
   margin: 0;
 }
 .icon {
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 20px;
-  background: #efefef;
-  color: #5a5a5a;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
   flex-shrink: 0;
 }
 .icon svg {
-  width: 30px;
-  height: 30px;
+  width: 20px;
+  height: 20px;
 }
 .upload,
 .panel {
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 14px;
   background: white;
-  padding: 24px;
+  padding: 20px;
   min-width: 0;
 }
 .upload {
   text-align: center;
-  border-style: dashed;
+  padding: 32px 20px;
+  background: #fafafa;
 }
 .root button {
   display: inline-flex;
@@ -49,12 +62,18 @@
   justify-content: center;
   gap: 8px;
   border: 1px solid var(--line);
+  min-height: 40px;
   border-radius: 10px;
   background: #ffffff;
   color: inherit;
-  padding: 10px 14px;
+  padding: 8px 12px;
   font: inherit;
   cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
 }
 .root button:hover:not(:disabled) {
   background: #f3f3f3;
@@ -65,7 +84,7 @@
   cursor: default;
 }
 .root :is(button, input, textarea, select):focus-visible {
-  outline: 3px solid #8f8f8f;
+  outline: 2px solid var(--text);
   outline-offset: 3px;
 }
 .root button svg {
@@ -74,7 +93,7 @@
   flex-shrink: 0;
 }
 .root small {
-  color: var(--ui-muted);
+  color: var(--muted);
 }
 .upload p {
   margin: 14px 0 8px;
@@ -101,41 +120,52 @@
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: 0;
   margin: 0 0 22px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
 }
 .stats div {
-  padding: 16px;
-  background: #f0f0f0;
-  border-radius: 12px;
+  padding: 0 16px;
+  min-width: 0;
+}
+.stats div:first-child {
+  padding-left: 0;
+}
+.stats div + div {
+  border-left: 1px solid var(--line);
 }
 .stats dt {
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 0.8rem;
 }
 .stats dd {
-  font-size: 1.2rem;
-  margin: 8px 0 0;
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
 }
 .layout {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(0, 2.5fr);
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 2.25fr);
   gap: 20px;
   align-items: start;
 }
 .panel label {
   display: block;
-  font-size: 0.9rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
   margin-bottom: 10px;
 }
 .panel :is(input, textarea) {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 12px;
+  padding: 10px 12px;
   font: inherit;
-  background: #f9f9f9;
+  background: #ffffff;
   color: inherit;
+  transition: border-color 160ms ease;
 }
 .panel textarea {
   resize: vertical;
@@ -153,6 +183,7 @@
   display: block;
   text-align: left;
   overflow-wrap: anywhere;
+  background: #fafafa;
 }
 .matchList small {
   display: block;
@@ -169,8 +200,9 @@
 }
 .partNav select {
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px;
+  border-radius: 8px;
+  min-height: 36px;
+  padding: 6px 8px;
   background: white;
   color: inherit;
 }
@@ -180,7 +212,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font:
-    0.85rem/1.7 ui-monospace,
+    0.8125rem/1.7 ui-monospace,
     monospace;
   background: #f9f9f9;
   padding: 16px;
@@ -188,12 +220,12 @@
   margin: 18px 0 24px;
 }
 .root .primary {
-  background: #595959;
+  background: #202020;
   color: white;
-  border-color: #595959;
+  border-color: #202020;
 }
 .root .primary:hover:not(:disabled) {
-  background: #4c4c4c;
+  background: #3a3a3a;
 }
 @media (max-width: 700px) {
   .layout {
@@ -201,6 +233,13 @@
   }
   .stats {
     grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  .stats div {
+    padding: 0;
+  }
+  .stats div + div {
+    border-left: 0;
   }
   .panel,
   .upload {
@@ -210,9 +249,9 @@
     align-items: flex-start;
   }
   .icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 14px;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
   }
 }
 .searchNav {
@@ -241,6 +280,7 @@
 .selectionToggle input,
 .columnList input {
   width: auto !important;
+  accent-color: var(--text);
 }
 .coverage {
   display: block;
@@ -270,8 +310,9 @@
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 10px;
-  background: #f9f9f9;
+  min-height: 40px;
+  padding: 8px 12px;
+  background: #ffffff;
   color: inherit;
 }
 .columnList {
@@ -296,11 +337,11 @@
 }
 .numericStats div {
   padding: 10px;
-  border-radius: 10px;
-  background: #f4f4f4;
+  border-radius: 8px;
+  background: #fafafa;
 }
 .numericStats dt {
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 0.75rem;
 }
 .numericStats dd {
@@ -336,7 +377,20 @@
 }
 .tableWrap tbody th {
   background: #f9f9f9;
-  color: var(--ui-muted);
+  color: var(--muted);
+}
+@media (pointer: coarse) {
+  .root :is(button, select) {
+    min-height: 44px;
+  }
+  .root :is(input:not([type="checkbox"]), textarea, select) {
+    font-size: 1rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .root :is(button, input, textarea, select) {
+    transition: none;
+  }
 }
 @media (max-width: 700px) {
   .csvControls {

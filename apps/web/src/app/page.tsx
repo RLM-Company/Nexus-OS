@@ -14,7 +14,7 @@ import { ProjectContextPreview } from "./project-context-preview";
 import { ManagerWorkPanel } from "./manager-work-panel";
 import { useExecutionGate } from "./use-execution-gate";
 import { WorkspaceIcon } from "./workspace-icons";
-import { AccountMenu, MobileNavigation } from "./workspace-navigation";
+import { AccountMenu, MobileNavigation, WorkspaceModeMenu } from "./workspace-navigation";
 import {
   ChatAttachmentPicker,
   ChatMessageAttachments,
@@ -1749,8 +1749,12 @@ export default function Home() {
     ? `/agent-studio?project=${encodeURIComponent(activeProject.id)}`
     : "/agent-studio";
 
-  const selectSurface = (nextSurface: ToolSurface): void => {
+  const selectSurface = (nextSurface: WorkspaceSurface): void => {
     setSurface(nextSurface);
+    if (nextSurface === "manager") {
+      replaceConsoleRoute(activeProject?.id ?? null, projectView, activeLocalChatId);
+      return;
+    }
     if (["studio", "files", "images", "video", "sound"].includes(nextSurface))
       setStudioExpanded(true);
     const route = new URL(window.location.href);
@@ -1769,12 +1773,7 @@ export default function Home() {
       className={`app-shell product-shell${preferences.compact ? " compact-navigation" : ""}${preferences.largeText ? " large-text" : ""}`}
     >
       <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">
-            <SparkIcon />
-          </span>
-          <span>Kosmora</span>
-        </div>
+        <WorkspaceModeMenu surface={surface} onNavigate={selectSurface} />
 
         <button className="new-project" onClick={newChat}>
           <span>
@@ -1909,6 +1908,8 @@ export default function Home() {
             {TOOL_ITEMS.filter(
               (item) =>
                 ![
+                  "work",
+                  "code",
                   "studio",
                   "files",
                   "images",

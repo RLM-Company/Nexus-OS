@@ -13,8 +13,10 @@
   <body>
     <main class="shell">
       <section class="card" aria-labelledby="title">
-        <div class="mark" aria-hidden="true"><img src="./build/icon.svg" alt="" /></div>
-        <p class="eyebrow">Kosmora for Windows</p>
+        <div class="brand">
+          <div class="mark" aria-hidden="true"><img src="./build/icon.svg" alt="" /></div>
+          <p class="eyebrow">Kosmora <span>для Windows</span></p>
+        </div>
         <h1 id="title">Подключение к Kosmora</h1>
         <p id="lead" class="lead"></p>
 
@@ -41,9 +43,7 @@
           <button id="change" class="secondary" type="button" hidden>Сменить адрес</button>
         </div>
 
-        <p class="hint">
-          Удалённые адреса работают только по HTTPS. Проверка сертификата не отключается.
-        </p>
+        <p class="hint">После подключения войдите в своё рабочее пространство.</p>
       </section>
     </main>
     <script src="./connection.js"></script>

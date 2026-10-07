@@ -21,9 +21,15 @@ test("keeps every main workspace usable at 390x844", async ({ page }) => {
   await expect(mobileNav).toBeVisible();
 
   for (const workspace of mobileWorkspaces) {
-    await mobileNav.getByRole("button", { name: "Все разделы" }).click();
+    const isMode = workspace.button === "Code" || workspace.button === "Work";
+    await mobileNav
+      .getByRole("button", { name: isMode ? "Режимы" : "Все разделы", exact: true })
+      .click();
     const menu = page.getByRole("dialog", { name: "Ваше пространство" });
-    await menu.getByRole("button", { name: new RegExp(`^${workspace.button}(?:\\s|$)`) }).click();
+    const destinations = isMode ? menu.locator(".drawer-modes") : menu;
+    await destinations
+      .getByRole("button", { name: new RegExp(`^${workspace.button}(?:\\s|$)`) })
+      .click();
     await expect(menu).not.toBeVisible();
     await expect(page.locator(".topbar h1")).toHaveText(workspace.button);
     await expect(

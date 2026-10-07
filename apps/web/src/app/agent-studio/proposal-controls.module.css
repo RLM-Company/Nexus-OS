@@ -9,15 +9,15 @@
   gap: 1rem;
   margin-bottom: 0.7rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid var(--success-line);
-  border-radius: 0.65rem;
-  background: var(--success-soft);
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--panel);
 }
 .boundary strong {
-  color: var(--success);
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 .boundary span {
   color: var(--muted);
@@ -35,9 +35,9 @@
   min-width: 0;
   flex-direction: column;
   gap: 0.42rem;
-  padding: 0.72rem;
-  border: 1px solid var(--line);
-  border-radius: 0.7rem;
+  padding: 0.875rem;
+  border: 0;
+  border-radius: 0.625rem;
   background: var(--panel);
 }
 .formHeading {
@@ -49,28 +49,27 @@
 }
 .formHeading span {
   color: var(--accent-strong);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 .formHeading strong {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
 }
 .forms label {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 .forms select {
   width: 100%;
   min-width: 0;
   padding: 0.62rem 0.65rem;
   border: 1px solid var(--line);
-  border-radius: 0.58rem;
+  border-radius: 0.5rem;
   outline: 0;
   color: var(--text);
   background: var(--bg);
-  font-size: 0.75rem;
+  font-size: 0.875rem;
 }
 .forms select:focus {
   border-color: var(--accent-strong);
@@ -79,11 +78,11 @@
   margin-top: 0.18rem;
   padding: 0.62rem 0.7rem;
   border: 0;
-  border-radius: 0.58rem;
+  border-radius: 0.5rem;
   color: #ffffff;
   background: var(--accent-strong);
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 .forms button:disabled,
 .forms select:disabled {
@@ -125,4 +124,13 @@
   .boundary span {
     text-align: left;
   }
+}
+
+.forms button:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+
+.controls :is(button, select):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
 }

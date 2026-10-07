@@ -1,9 +1,11 @@
 .shell {
   min-height: 100vh;
-  padding: 1.5rem clamp(1rem, 4vw, 4rem) 5rem;
+  min-height: 100dvh;
+  padding: 1.25rem clamp(1rem, 3vw, 2rem) 3rem;
   background: var(--bg);
   color: var(--text);
-  line-height: 1.6;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .topbar {
@@ -11,9 +13,9 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 1rem;
-  max-width: 76rem;
+  max-width: 70rem;
   margin: 0 auto;
-  padding-bottom: 1.1rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid var(--line);
 }
 .brand {
@@ -42,19 +44,19 @@
   place-items: center;
   flex: 0 0 2rem;
   color: var(--text);
-  background: #f5f5f5;
-  border: 1px solid var(--line-strong);
-  border-radius: 0.65rem;
+  background: var(--panel);
+  border: 0;
+  border-radius: 0.5rem;
 }
 .safety {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.45rem 0.7rem;
-  border: 1px solid var(--success-line);
+  padding: 0.375rem 0.625rem;
+  border: 0;
   border-radius: 999px;
-  color: var(--success);
-  background: var(--success-soft);
+  color: var(--muted);
+  background: var(--panel);
   font-size: 0.75rem;
 }
 .safety i {
@@ -66,7 +68,9 @@
 .back {
   justify-self: end;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: color 140ms ease;
 }
 .back:hover {
   color: var(--text);
@@ -74,45 +78,44 @@
 
 .hero {
   display: grid;
-  max-width: 76rem;
-  margin: 3rem auto 2.5rem;
+  max-width: 70rem;
+  margin: 1.75rem auto 1.5rem;
   grid-template-columns: minmax(0, 1.3fr) minmax(18rem, 0.7fr);
   align-items: end;
-  gap: 2rem;
+  gap: 1.5rem;
 }
 .eyebrow {
-  color: var(--accent-strong);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 .hero h1 {
   max-width: 44rem;
-  margin: 0.7rem 0 1rem;
-  font-size: clamp(1.75rem, 3vw, 2.5rem);
-  font-weight: 500;
-  letter-spacing: -0.04em;
-  line-height: 1.15;
+  margin: 0.5rem 0 0.6rem;
+  font-size: clamp(1.5rem, 2.5vw, 1.875rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
 }
 .hero p {
   max-width: 44rem;
   margin: 0;
   color: var(--muted);
-  font-size: 0.9375rem;
-  line-height: 1.65;
+  font-size: 0.875rem;
+  line-height: 1.6;
 }
 .projectForm {
   padding: 1rem;
-  border: 1px solid var(--accent-line);
-  border-radius: 1rem;
-  background: var(--bg);
+  border: 0;
+  border-radius: 0.75rem;
+  background: var(--panel);
 }
 .projectForm label {
   display: block;
   margin-bottom: 0.55rem;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 .projectForm div {
   display: flex;
@@ -121,14 +124,14 @@
 .projectForm input {
   min-width: 0;
   flex: 1;
-  padding: 0.7rem;
+  padding: 0.625rem 0.75rem;
   border: 1px solid var(--line);
-  border-radius: 0.65rem;
+  border-radius: 0.5rem;
   outline: 0;
   color: var(--text);
   background: var(--bg);
-  font-size: 0.9375rem;
-  min-height: 2.75rem;
+  font-size: 0.875rem;
+  min-height: 2.5rem;
 }
 .projectForm input:focus {
   border-color: var(--accent-strong);
@@ -136,7 +139,7 @@
 .projectForm button,
 .refresh {
   border: 0;
-  border-radius: 0.65rem;
+  border-radius: 0.5rem;
   color: #ffffff;
   background: var(--accent-strong);
   font-weight: 600;
@@ -149,7 +152,7 @@
   opacity: 0.5;
 }
 .error {
-  max-width: 76rem;
+  max-width: 70rem;
   margin: 0 auto 1rem;
   padding: 0.8rem 1rem;
   border: 1px solid var(--danger-line);
@@ -160,31 +163,33 @@
 }
 
 .emptyState {
-  max-width: 76rem;
+  max-width: 70rem;
   margin: 1rem auto;
-  padding: 5rem 1rem;
-  border: 1px dashed var(--line);
-  border-radius: 1rem;
+  padding: 3rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
   text-align: center;
 }
 .emptyState span {
   color: var(--accent-strong);
   font-size: 0.75rem;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.025em;
 }
 .emptyState h2 {
   margin: 0.65rem 0;
-  font-size: 1.2rem;
+  font-size: 1.125rem;
+  font-weight: 500;
 }
 .emptyState p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
 }
 
 .metrics {
   display: grid;
-  max-width: 76rem;
+  max-width: 70rem;
   margin: 0 auto 0.8rem;
   grid-template-columns: repeat(4, 1fr);
   gap: 0.8rem;
@@ -193,10 +198,10 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  min-height: 6rem;
-  padding: 1rem;
+  min-height: 4.75rem;
+  padding: 0.875rem 1rem;
   border: 1px solid var(--line);
-  border-radius: 0.85rem;
+  border-radius: 0.75rem;
   background: var(--bg);
 }
 .metrics span {
@@ -205,22 +210,22 @@
 }
 .metrics strong {
   color: var(--text);
-  font-size: 2rem;
+  font-size: 1.5rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .grid {
   display: grid;
-  max-width: 76rem;
+  max-width: 70rem;
   margin: 0 auto 0.8rem;
   grid-template-columns: 1fr 1fr;
   gap: 0.8rem;
 }
 .panel {
   min-width: 0;
-  padding: 1rem;
+  padding: 1.125rem;
   border: 1px solid var(--line);
-  border-radius: 0.9rem;
+  border-radius: 0.75rem;
   background: var(--bg);
 }
 .panel > header {
@@ -228,7 +233,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding-bottom: 0.9rem;
+  padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--line);
 }
 .panel h2 {
@@ -255,10 +260,10 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 0.7rem;
-  background: var(--panel);
+  padding: 0.75rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
 }
 .proposalMark {
   display: grid;
@@ -275,7 +280,7 @@
   display: block;
 }
 .proposal strong {
-  font-size: 0.76rem;
+  font-size: 0.8125rem;
 }
 .proposal span {
   margin-top: 0.15rem;
@@ -316,12 +321,12 @@
   display: block;
 }
 .timeline strong {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 .timeline span {
   margin-top: 0.18rem;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 .timeline small {
   margin-top: 0.2rem;
@@ -343,15 +348,14 @@
 .catalogColumns h3 {
   margin: 0 0 0.55rem;
   color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 .catalogItem {
-  padding: 0.7rem;
-  border: 1px solid var(--line);
-  border-radius: 0.65rem;
+  padding: 0.75rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
 }
 .catalogItem + .catalogItem {
   margin-top: 0.45rem;
@@ -362,12 +366,12 @@
   display: block;
 }
 .catalogItem strong {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 .catalogItem span {
   margin-top: 0.25rem;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   line-height: 1.45;
 }
 .catalogItem small {
@@ -376,9 +380,10 @@
   font-size: 0.75rem;
 }
 .blueprint {
-  padding: 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 0.7rem;
+  padding: 0.875rem;
+  border: 0;
+  border-radius: 0.625rem;
+  background: var(--panel);
 }
 .blueprint > div {
   display: flex;
@@ -426,7 +431,7 @@
   .hero {
     grid-template-columns: 1fr;
     gap: 1.4rem;
-    margin-top: 2.5rem;
+    margin-top: 1.5rem;
   }
   .metrics {
     grid-template-columns: 1fr 1fr;
@@ -443,7 +448,7 @@
     font-size: 0.75rem;
   }
   .hero h1 {
-    font-size: 2.15rem;
+    font-size: 1.5rem;
   }
   .projectForm div {
     flex-direction: column;
@@ -471,7 +476,17 @@
 }
 
 .shell :is(button, input:not([type="checkbox"]), select) {
-  min-height: 2.75rem;
+  min-height: 2.5rem;
+}
+.shell :is(button, a, input, select, textarea) {
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+.projectForm button:not(:disabled):hover,
+.refresh:not(:disabled):hover {
+  background: var(--accent-hover);
 }
 .shell :is(button, a, input, select, textarea):focus-visible {
   outline: 2px solid var(--accent-strong);
@@ -481,7 +496,17 @@
   color: var(--muted);
 }
 @media (pointer: coarse) {
+  .shell :is(button, input:not([type="checkbox"]), select) {
+    min-height: 2.75rem;
+  }
+
   .shell :is(input:not([type="checkbox"]), select, textarea) {
     font-size: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell :is(button, a, input, select, textarea) {
+    transition: none;
   }
 }

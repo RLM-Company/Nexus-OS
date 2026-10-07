@@ -10,6 +10,79 @@ import {
   type WorkspaceProject
 } from "./workspace-sections";
 
+const WORKSPACE_MODES = [
+  { id: "manager", label: "Чат", icon: "chats", description: "Диалоги и идеи" },
+  { id: "work", label: "Work", icon: "work", description: "Задачи и материалы" },
+  { id: "code", label: "Code", icon: "code", description: "Код и репозитории" }
+] as const;
+
+type Surface = "manager" | ToolSurface;
+
+export function WorkspaceModeMenu({
+  surface,
+  onNavigate
+}: {
+  surface: Surface;
+  onNavigate: (surface: Surface) => void;
+}) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  const id = useId();
+  const mode = surface === "work" || surface === "code" ? surface : "manager";
+  return (
+    <details
+      className="workspace-mode-menu"
+      ref={ref}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && ref.current?.open) {
+          event.preventDefault();
+          ref.current.open = false;
+          ref.current.querySelector("summary")?.focus();
+        }
+      }}
+    >
+      <summary className="brand" aria-label="Режимы Kosmora" aria-controls={id}>
+        <span className="brand-mark">
+          <Icon name="cosmora" />
+        </span>
+        <span className="brand-name">Kosmora</span>
+        <svg className="brand-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="m7 10 5 5 5-5"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </summary>
+      <nav className="workspace-modes" id={id} aria-label="Режимы работы">
+        {WORKSPACE_MODES.map((item) => (
+          <button
+            type="button"
+            key={item.id}
+            aria-label={item.label}
+            aria-current={mode === item.id ? "page" : undefined}
+            onClick={() => {
+              onNavigate(item.id);
+              if (ref.current) {
+                ref.current.open = false;
+                ref.current.querySelector("summary")?.focus();
+              }
+            }}
+          >
+            <Icon name={item.icon} />
+            <span>
+              <strong>{item.label}</strong>
+              <small>{item.description}</small>
+            </span>
+            {mode === item.id && <Icon name="check" />}
+          </button>
+        ))}
+      </nav>
+    </details>
+  );
+}
+
 export function AccountMenu({
   onSettings,
   controlCenterHref
@@ -87,7 +160,7 @@ export function AccountMenu({
 type MobileProps = {
   surface: "manager" | ToolSurface;
   onNewChat: () => void;
-  onNavigate: (surface: ToolSurface) => void;
+  onNavigate: (surface: Surface) => void;
   chats: { id: string; title: string }[];
   projects: WorkspaceProject[];
   onOpenChat: (id: string) => void;
@@ -114,7 +187,7 @@ export function MobileNavigation({
     ? projects.filter((project) => project.title.toLocaleLowerCase("ru").includes(search))
     : projects.slice(0, 6);
   const close = () => dialog.current?.close();
-  const navigate = (id: ToolSurface) => {
+  const navigate = (id: Surface) => {
     close();
     onNavigate(id);
   };
@@ -131,7 +204,19 @@ export function MobileNavigation({
           <Icon name="new-chat" />
           <span>Новый чат</span>
         </button>
-        {(["work", "code", "studio"] as const).map((id) => {
+        <button
+          type="button"
+          aria-label="Режимы"
+          aria-haspopup="dialog"
+          aria-controls={menuId}
+          className={surface === "work" || surface === "code" ? "active" : ""}
+          aria-current={surface === "work" || surface === "code" ? "page" : undefined}
+          onClick={() => dialog.current?.showModal()}
+        >
+          <Icon name={surface === "code" ? "code" : "work"} />
+          <span>Режимы</span>
+        </button>
+        {(["studio"] as const).map((id) => {
           const active = id === "studio" ? studioActive : surface === id;
           return (
             <button
@@ -142,7 +227,7 @@ export function MobileNavigation({
               onClick={() => onNavigate(id)}
             >
               <Icon name={id} />
-              <span>{id === "studio" ? "Studio" : id === "work" ? "Work" : "Code"}</span>
+              <span>Studio</span>
             </button>
           );
         })}
@@ -193,9 +278,31 @@ export function MobileNavigation({
               }}
             />
           </label>
+          <section className="drawer-modes" aria-label="Режимы работы">
+            <h3>Режим работы</h3>
+            {WORKSPACE_MODES.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                aria-label={item.label}
+                aria-current={
+                  (surface === "work" || surface === "code" ? surface : "manager") === item.id
+                    ? "page"
+                    : undefined
+                }
+                onClick={() => navigate(item.id)}
+              >
+                <Icon name={item.icon} />
+                <span>
+                  <strong>{item.label}</strong>
+                  <small>{item.description}</small>
+                </span>
+              </button>
+            ))}
+          </section>
           <div className="drawer-links">
             {TOOL_ITEMS.filter(
-              (item) => !["files", "images", "video", "sound"].includes(item.id)
+              (item) => !["work", "code", "files", "images", "video", "sound"].includes(item.id)
             ).map((item) => (
               <button
                 type="button"

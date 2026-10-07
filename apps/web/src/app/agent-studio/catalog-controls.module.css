@@ -9,15 +9,15 @@
   gap: 1rem;
   margin-bottom: 0.7rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid var(--accent-line);
-  border-radius: 0.65rem;
-  background: var(--accent-soft);
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--panel);
 }
 .boundary strong {
-  color: var(--accent-strong);
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 .boundary span {
   color: var(--muted);
@@ -35,9 +35,9 @@
   min-width: 0;
   flex-direction: column;
   gap: 0.42rem;
-  padding: 0.72rem;
-  border: 1px solid var(--line);
-  border-radius: 0.7rem;
+  padding: 0.875rem;
+  border: 0;
+  border-radius: 0.625rem;
   background: var(--panel);
 }
 .heading {
@@ -49,18 +49,17 @@
 }
 .heading span {
   color: var(--accent-strong);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 .heading strong {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
 }
 .forms label,
 .forms legend {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 .forms input,
 .forms textarea,
@@ -70,12 +69,12 @@
   min-width: 0;
   padding: 0.62rem 0.65rem;
   border: 1px solid var(--line);
-  border-radius: 0.58rem;
+  border-radius: 0.5rem;
   outline: 0;
   color: var(--text);
   background: var(--bg);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.875rem;
 }
 .forms textarea {
   resize: vertical;
@@ -92,8 +91,8 @@
   gap: 0.38rem;
   margin: 0;
   padding: 0.6rem;
-  border: 1px solid var(--line);
-  border-radius: 0.58rem;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
 .check {
   display: flex;
@@ -103,6 +102,7 @@
 .check input {
   width: auto;
   margin: 0;
+  accent-color: var(--accent-strong);
 }
 .check span {
   color: var(--muted);
@@ -113,11 +113,11 @@
   margin-top: 0.18rem;
   padding: 0.62rem 0.7rem;
   border: 0;
-  border-radius: 0.58rem;
+  border-radius: 0.5rem;
   color: #ffffff;
   background: var(--accent-strong);
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 .forms button:disabled,
 .forms input:disabled,
@@ -140,9 +140,9 @@
   align-items: end;
   gap: 0.65rem;
   margin-top: 0.65rem;
-  padding: 0.72rem;
+  padding: 0.875rem;
   border: 1px solid var(--danger-line);
-  border-radius: 0.7rem;
+  border-radius: 0.625rem;
   background: var(--danger-soft);
 }
 .archive > div {
@@ -201,4 +201,17 @@
   .archive button {
     width: 100%;
   }
+}
+
+.forms button:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+
+.archive button:not(:disabled):hover {
+  background: var(--surface-hover);
+}
+
+.editor :is(button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
 }

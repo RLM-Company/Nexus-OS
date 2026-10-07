@@ -135,17 +135,19 @@ function Header({
 }) {
   return (
     <header className={styles.hero}>
-      <div className={styles.heading}>
-        <span className={styles.heroIcon}>
-          <Icon name={icon} />
-        </span>
-        <div>
-          <p className={styles.eyebrow}>{eyebrow}</p>
-          <h2>{title}</h2>
+      <div className={styles.heroTop}>
+        <div className={styles.heading}>
+          <span className={styles.heroIcon} aria-hidden="true">
+            <Icon name={icon} />
+          </span>
+          <div>
+            <p className={styles.eyebrow}>{eyebrow}</p>
+            <h2>{title}</h2>
+          </div>
         </div>
+        {action && <div className={styles.heroAction}>{action}</div>}
       </div>
       <p className={styles.lead}>{children}</p>
-      {action && <div className={styles.heroAction}>{action}</div>}
     </header>
   );
 }
@@ -209,8 +211,10 @@ function ResourceCard({
       <span className={styles.cardIcon}>
         <Icon name={icon} />
       </span>
-      <h3>{title}</h3>
-      <p>{text}</p>
+      <div className={styles.resourceCopy}>
+        <h3>{title}</h3>
+        <p>{text}</p>
+      </div>
       <span className={styles.cardLink}>
         {label}
         <Icon name="arrow" />
@@ -730,15 +734,10 @@ function Studio({ onNavigate }: Props) {
         Работайте с документами, готовьте изображения, видео и звук.
       </Header>
       <div className={styles.studioGrid}>
-        {STUDIO_ITEMS.map((item, i) => (
-          <button
-            className={`${styles.studioCard} ${styles[`studio${i}`]}`}
-            key={item.id}
-            onClick={() => onNavigate(item.id)}
-          >
-            <div className={styles.studioArt}>
+        {STUDIO_ITEMS.map((item) => (
+          <button className={styles.studioCard} key={item.id} onClick={() => onNavigate(item.id)}>
+            <div className={styles.studioArt} aria-hidden="true">
               <Icon name={item.id} />
-              <span>0{i + 1}</span>
             </div>
             <div className={styles.studioCopy}>
               <h3>{item.label}</h3>
@@ -854,7 +853,7 @@ function Skills({ agentStudioHref, controlCenterHref }: Props) {
       <Header icon="skills" eyebrow="Специализации вашей команды" title="Skills">
         Выбирайте навыки для задачи и проверяйте, какие действия они запрашивают.
       </Header>
-      <div className={styles.threeColumns}>
+      <div className={styles.resourceList}>
         <ResourceCard
           icon="skills"
           title="Каталог Skills"
@@ -946,25 +945,27 @@ function Apps({ onNavigate }: Props) {
           ))}
         </div>
       </div>
-      <div className={styles.threeColumns}>
+      <div className={styles.appList}>
         {items.map((app) => (
           <article className={styles.appCard} key={app.name}>
-            <div className={styles.roleTop}>
-              <span className={styles.cardIcon}>
-                <Icon name={app.icon as IconName} />
-              </span>
+            <span className={styles.cardIcon} aria-hidden="true">
+              <Icon name={app.icon as IconName} />
+            </span>
+            <div className={styles.appCopy}>
+              <h3>{app.name}</h3>
+              <span className={styles.eyebrow}>{app.category}</span>
+              <p>{app.text}</p>
+            </div>
+            <div className={styles.appStatus}>
               <span className={styles.badge}>
                 {app.available ? "Серверное подключение" : "Запланировано"}
               </span>
+              {app.available ? (
+                <ActionLink href="/github">Открыть GitHub</ActionLink>
+              ) : (
+                <span className={styles.unavailable}>Интеграция ещё недоступна</span>
+              )}
             </div>
-            <h3>{app.name}</h3>
-            <span className={styles.eyebrow}>{app.category}</span>
-            <p>{app.text}</p>
-            {app.available ? (
-              <ActionLink href="/github">Открыть GitHub</ActionLink>
-            ) : (
-              <span className={styles.unavailable}>Интеграция ещё недоступна</span>
-            )}
           </article>
         ))}
       </div>

@@ -9,17 +9,24 @@
     "Segoe UI",
     sans-serif;
   background: #f7f7f7;
-  color: #131313;
+  color: #171717;
 }
 
 * {
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -31,28 +38,33 @@ input {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 32px;
+  padding: 32px 20px;
 }
 
 .card {
-  width: min(560px, 100%);
-  padding: 36px;
-  border: 1px solid #e5e5e5;
-  border-radius: 24px;
+  width: min(440px, 100%);
+  padding: 32px;
+  border: 1px solid #e6e6e6;
+  border-radius: 20px;
   background: #ffffff;
-  box-shadow: 0 20px 60px rgb(24 24 24 / 8%);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 3%);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
 }
 
 .mark {
   display: grid;
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   place-items: center;
-  border-radius: 14px;
-  background: #f5f5f5;
-  color: #ffffff;
-  font-size: 22px;
-  font-weight: 700;
+  border-radius: 11px;
+  background: #f7f7f7;
+  color: #171717;
 }
 
 .mark img {
@@ -62,41 +74,50 @@ input {
 }
 
 .eyebrow {
-  margin: 28px 0 8px;
-  color: #7b7b7b;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  margin: 0;
+  color: #171717;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.eyebrow span {
+  display: block;
+  color: #808080;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 h1 {
   margin: 0;
-  font-size: clamp(30px, 6vw, 44px);
-  line-height: 1.05;
-  letter-spacing: -0.04em;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.035em;
 }
 
 .lead,
 .hint {
-  color: #696969;
-  line-height: 1.55;
+  color: #686868;
+  line-height: 1.6;
 }
 
 .lead {
-  margin: 16px 0 28px;
+  margin: 10px 0 24px;
 }
 
 form {
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 label {
   display: grid;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 650;
+  gap: 7px;
+  color: #404040;
+  font-size: 13px;
+  font-weight: 550;
 }
 
 label span {
@@ -107,16 +128,25 @@ label span {
 
 input {
   width: 100%;
-  min-height: 46px;
-  padding: 11px 13px;
-  border: 1px solid #dcdcdc;
-  border-radius: 12px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #d8d8d8;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #171717;
   outline: none;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+input:hover {
+  border-color: #b4b4b4;
 }
 
 input:focus {
-  border-color: #7f7f7f;
-  box-shadow: 0 0 0 3px rgb(19 19 19 / 8%);
+  border-color: #555555;
+  box-shadow: 0 0 0 3px rgb(0 0 0 / 6%);
 }
 
 .credentials {
@@ -126,13 +156,33 @@ input:focus {
 }
 
 button {
-  min-height: 48px;
-  border: 0;
-  border-radius: 12px;
-  background: #131313;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid #171717;
+  border-radius: 10px;
+  background: #171717;
   color: #ffffff;
   cursor: pointer;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 550;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+button:hover:not(:disabled) {
+  border-color: #333333;
+  background: #333333;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:focus-visible {
+  outline: 2px solid #555555;
+  outline-offset: 3px;
 }
 
 button:disabled {
@@ -141,24 +191,38 @@ button:disabled {
 }
 
 .error {
-  min-height: 20px;
   margin: 0;
-  color: #414141;
+  color: #333333;
   font-size: 13px;
+  line-height: 1.5;
+}
+
+.error:empty {
+  display: none;
+}
+
+.error:not(:empty) {
+  padding: 10px 12px;
+  border: 1px solid #d8d8d8;
+  border-radius: 10px;
+  background: #f7f7f7;
 }
 
 .hint {
-  margin: 22px 0 0;
+  margin: 24px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid #eeeeee;
+  color: #808080;
   font-size: 12px;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 480px) {
   .shell {
-    padding: 16px;
+    padding: 20px 16px;
   }
 
   .card {
-    padding: 24px;
+    padding: 26px 24px;
     border-radius: 18px;
   }
 
@@ -178,6 +242,27 @@ button:disabled {
 }
 
 button.secondary {
-  background: #f1f1f1;
-  color: #262626;
+  border-color: #e3e3e3;
+  background: #ffffff;
+  color: #555555;
+}
+
+button.secondary:hover:not(:disabled) {
+  border-color: #cccccc;
+  background: #f7f7f7;
+}
+
+.recovery-actions:not(:has(button:not([hidden]))) {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input,
+  button {
+    transition: none;
+  }
+
+  button:active:not(:disabled) {
+    transform: none;
+  }
 }

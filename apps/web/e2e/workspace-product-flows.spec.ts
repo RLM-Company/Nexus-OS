@@ -153,12 +153,16 @@ test("transfers a Code brief into an unsent chat draft", async ({ page }) => {
     if (request.method() === "POST") writes.push(request.url());
   });
   await page.goto("/");
-  const tools = page.locator(".sidebar-tools");
-  await tools.getByRole("button", { name: "Code", exact: true }).click();
+  const modeTrigger = page.getByLabel("Режимы Kosmora", { exact: true });
+  const modeMenu = page.locator(".workspace-mode-menu");
+  await modeTrigger.click();
+  await modeMenu.getByRole("button", { name: /^Code(?:\s|$)/ }).click();
   await page.getByLabel("Описание задачи разработки").fill("Добавить поиск по названиям проектов");
   await page.getByLabel(/Критерии готовности/).fill("Поиск не зависит от регистра");
-  await tools.getByRole("button", { name: "Work", exact: true }).click();
-  await tools.getByRole("button", { name: "Code", exact: true }).click();
+  await modeTrigger.click();
+  await modeMenu.getByRole("button", { name: /^Work(?:\s|$)/ }).click();
+  await modeTrigger.click();
+  await modeMenu.getByRole("button", { name: /^Code(?:\s|$)/ }).click();
   await expect(page.getByLabel("Описание задачи разработки")).toHaveValue(
     "Добавить поиск по названиям проектов"
   );
