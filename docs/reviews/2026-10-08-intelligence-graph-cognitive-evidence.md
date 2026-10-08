@@ -10,7 +10,7 @@ The project graph already distinguishes verified facts, hypotheses, discovered p
 and versioned history. The retrieval layer previously applied `verified_only` to
 **nodes**, not to **edges**. If two verified nodes were linked by a discovered
 or model-only relationship, that relation could still enter a verified-only packet.
-Because traversal fan-out was limited *before* edge verification, untrusted edges
+Because traversal fan-out was limited _before_ edge verification, untrusted edges
 could also crowd out verified ones. This must fail closed before using graph
 output to inform decisions.
 

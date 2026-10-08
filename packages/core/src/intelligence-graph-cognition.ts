@@ -14,10 +14,7 @@ import {
  * "grounded_context" means the retrieved context passed provenance checks;
  * it does not imply that every answer inferred from that context is true.
  */
-export type IntelligenceGraphContextReadiness =
-  | "grounded_context"
-  | "review_required"
-  | "abstain";
+export type IntelligenceGraphContextReadiness = "grounded_context" | "review_required" | "abstain";
 
 export type IntelligenceGraphEvidenceConcern =
   | "NO_VERIFIED_NODES"

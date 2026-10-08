@@ -483,9 +483,24 @@ describe("Intelligence Graph retrieval", () => {
         makeEdge("zzz-verified", "SUPPORTED_BY", root, validated)
       ],
       records: [
-        { node: { id: root.node_id, version: 1 }, text: "unique root evidence", excerpt: "Root.", estimated_tokens: 2 },
-        { node: { id: proposed.node_id, version: 1 }, text: "proposed item", excerpt: "Proposed.", estimated_tokens: 2 },
-        { node: { id: validated.node_id, version: 1 }, text: "validated item", excerpt: "Validated.", estimated_tokens: 2 }
+        {
+          node: { id: root.node_id, version: 1 },
+          text: "unique root evidence",
+          excerpt: "Root.",
+          estimated_tokens: 2
+        },
+        {
+          node: { id: proposed.node_id, version: 1 },
+          text: "proposed item",
+          excerpt: "Proposed.",
+          estimated_tokens: 2
+        },
+        {
+          node: { id: validated.node_id, version: 1 },
+          text: "validated item",
+          excerpt: "Validated.",
+          estimated_tokens: 2
+        }
       ]
     });
     const packet = index.query({
@@ -497,13 +512,9 @@ describe("Intelligence Graph retrieval", () => {
       budget: { max_fan_out: 1 }
     });
     expect(packet.edges.map((edge) => edge.edge_id)).toEqual(["zzz-verified"]);
-    expect(packet.nodes.map(({ node }) => node.node_id)).toEqual([
-      "trust-root",
-      "trust-validated"
-    ]);
+    expect(packet.nodes.map(({ node }) => node.node_id)).toEqual(["trust-root", "trust-validated"]);
     expect(packet.budget.truncated).toBe(false);
   });
-
 
   it("permits historically verified superseded edges only in temporal queries", () => {
     const data = fixture();
@@ -545,12 +556,11 @@ describe("Intelligence Graph retrieval", () => {
       mode: "local",
       verified_only: true
     });
-    expect(
-      currentPacket.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)
-    ).toContain("edge-old-storage-source@2");
-    expect(
-      currentPacket.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)
-    ).not.toContain("edge-old-storage-source@1");
+    expect(currentPacket.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).toContain(
+      "edge-old-storage-source@2"
+    );
+    expect(currentPacket.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).not.toContain(
+      "edge-old-storage-source@1"
+    );
   });
-
 });

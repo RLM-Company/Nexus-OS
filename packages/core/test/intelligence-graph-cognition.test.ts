@@ -67,9 +67,24 @@ const makeIndex = () => {
   const source = node("source");
   const candidate = node("candidate", "discovered");
   const records: IntelligenceGraphSearchRecord[] = [
-    { node: { id: "claim", version: 1 }, text: "checkpoint proof", excerpt: "Checkpoint is sourced.", estimated_tokens: 4 },
-    { node: { id: "source", version: 1 }, text: "reference record", excerpt: "A source.", estimated_tokens: 3 },
-    { node: { id: "candidate", version: 1 }, text: "future proposal", excerpt: "Proposal not merged.", estimated_tokens: 4 }
+    {
+      node: { id: "claim", version: 1 },
+      text: "checkpoint proof",
+      excerpt: "Checkpoint is sourced.",
+      estimated_tokens: 4
+    },
+    {
+      node: { id: "source", version: 1 },
+      text: "reference record",
+      excerpt: "A source.",
+      estimated_tokens: 3
+    },
+    {
+      node: { id: "candidate", version: 1 },
+      text: "future proposal",
+      excerpt: "Proposal not merged.",
+      estimated_tokens: 4
+    }
   ];
   return new IntelligenceGraphIndex({
     ownerId: "owner-1",
