@@ -13,7 +13,7 @@ Three bounded requests were sent through the actual hosted interface:
 3. An artificial PNG with three circles, uploaded through the paperclip: correct answer `3`;
    321 input and five output tokens. No personal photographs were used.
 
-All three usage rows committed successfully: 1,223 input plus 446 output = 1,669 model tokens.
+The first three usage rows committed successfully: 1,223 input plus 446 output = 1,669 model tokens.
 Saved chat history survived reload. Copying the plan worked and its Markdown was saved locally.
 Live download capture timed out in the in-app browser; it is not claimed as a confirmed live
 download. The normal Chromium export scenarios passed locally, including complete long-answer
@@ -71,6 +71,34 @@ validates MIME and same-origin boundaries, and rechecks unauthenticated root/API
 asset loading. Three new regression scenarios cover missing/wrong/redirected assets, off-origin
 credential isolation and authentication failure only during concurrent loading; 41 deployment
 tests passed locally. A repeated live concurrent probe remains part of the final server check.
+
+### Final live checks and recovery
+
+The patched proxy passed 160 concurrent authenticated asset/navigation/API and unauthenticated
+boundary checks, plus 30 separate unauthenticated checks. The strengthened access verifier passed
+against the actual hosted site and replaced the runtime verifier hook. Fresh browser inspection
+confirmed correct chat titles and a configured GitHub repository with its branches and file tree.
+A verified private SQLite snapshot was copied off the VPS into an owner/SYSTEM-only directory;
+its checksum matched the manifest.
+
+One final multi-turn request failed with `PROVIDER_ERROR` and no text. No unobserved token usage
+is inferred for that failed request. Automatic approval review initially blocked a diagnostic
+replay; the owner then explicitly authorized further tests. One replay of the exact synthetic
+conversation, capped at 128 output tokens, returned HTTP 200, valid SSE, a stop marker and the
+correct eight-character answer (285 input plus six output tokens). Restoring and sending the
+request through the actual UI then succeeded with 308 input plus six output tokens and retained
+the original conversation context. The failure did not reproduce; its exact cause remains
+unconfirmed rather than being attributed to a specific provider defect.
+
+Four successful application requests total 1,531 input plus 452 output = 1,983 model tokens.
+Including the single successful diagnostic replay gives 2,274 confirmed model tokens across five
+successful generations. There was one additional failed application request whose usage was not
+reported. Keep these counts separate from weighted provider balance units.
+
+Gateway errors now expose only allowlisted HTTP-status/protocol diagnostic codes in operator
+logs. Arbitrary provider messages, request contents and exception causes remain unlogged.
+Sixty-five gateway tests, the gateway build and API typecheck passed. No automatic paid retries
+or mock substitutions were enabled.
 
 The existing local Windows 0.10.0 installer opens the hosted UI; it needs no rebuild for these
 server and frontend changes. Media-generation sections remain prompt editors, not tested image,
