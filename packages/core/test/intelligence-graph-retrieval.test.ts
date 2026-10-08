@@ -504,4 +504,53 @@ describe("Intelligence Graph retrieval", () => {
     expect(packet.budget.truncated).toBe(false);
   });
 
+
+  it("permits historically verified superseded edges only in temporal queries", () => {
+    const data = fixture();
+    const source = data.nodes.find((node) => node.node_id === "source-decision-log")!;
+    const current = data.nodes.find(
+      (node) => node.node_id === "claim-storage" && node.node_version === 2
+    )!;
+    const oldEdge = data.edges.find((edge) => edge.edge_id === "edge-old-storage-source")!;
+    oldEdge.verification_status = "superseded";
+    data.edges.push(
+      makeEdge("edge-old-storage-source", "SUPPORTED_BY", current, source, {
+        edge_version: 2,
+        created_at: t2,
+        observed_at: t2,
+        valid_from: t2,
+        supersedes: { id: oldEdge.edge_id, version: 1 }
+      })
+    );
+    const index = new IntelligenceGraphIndex({
+      ownerId: "owner-1",
+      projectId: "project-1",
+      ...data
+    });
+    const history = index.query({
+      owner_id: "owner-1",
+      project_id: "project-1",
+      text: "storage architecture choice in memory for early prototype",
+      mode: "temporal",
+      as_of: "2026-09-05T00:00:00.000Z",
+      verified_only: true
+    });
+    expect(history.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).toContain(
+      "edge-old-storage-source@1"
+    );
+    const currentPacket = index.query({
+      owner_id: "owner-1",
+      project_id: "project-1",
+      text: "storage architecture choice sqlite durable project state",
+      mode: "local",
+      verified_only: true
+    });
+    expect(
+      currentPacket.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)
+    ).toContain("edge-old-storage-source@2");
+    expect(
+      currentPacket.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)
+    ).not.toContain("edge-old-storage-source@1");
+  });
+
 });
