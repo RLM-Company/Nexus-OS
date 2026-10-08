@@ -426,4 +426,82 @@ describe("Intelligence Graph retrieval", () => {
     expect(packet.budget.estimated_context_tokens).toBeLessThanOrEqual(22);
     expect(packet.budget.truncated).toBe(true);
   });
+
+  it("does not treat candidate or model-only edges between verified nodes as verified evidence", () => {
+    const data = fixture();
+    const artifact = data.nodes.find((node) => node.node_id === "artifact-manager-runtime")!;
+    const goal = data.nodes.find((node) => node.node_id === "goal-safe-alpha")!;
+    data.edges.push(
+      makeEdge("aaa-candidate-bridge", "PROPOSES_CHANGE_TO", artifact, goal, {
+        verification_status: "discovered"
+      }),
+      makeEdge("aab-model-bridge", "QUESTIONS", artifact, goal, {
+        verification_status: "hypothesis",
+        provenance_kind: "model_inference",
+        confidence_method: "model_only"
+      })
+    );
+    const index = new IntelligenceGraphIndex({
+      ownerId: "owner-1",
+      projectId: "project-1",
+      ...data
+    });
+    const strict = index.query({
+      owner_id: "owner-1",
+      project_id: "project-1",
+      text: "manager runtime implementation artifact",
+      mode: "local",
+      verified_only: true
+    });
+    expect(strict.edges.map((edge) => edge.edge_id)).not.toContain("aaa-candidate-bridge");
+    expect(strict.edges.map((edge) => edge.edge_id)).not.toContain("aab-model-bridge");
+    expect(strict.nodes.map(({ node }) => node.node_id)).not.toContain("goal-safe-alpha");
+
+    const exploratory = index.query({
+      owner_id: "owner-1",
+      project_id: "project-1",
+      text: "manager runtime implementation artifact",
+      mode: "local",
+      verified_only: false
+    });
+    expect(exploratory.edges.map((edge) => edge.edge_id)).toContain("aaa-candidate-bridge");
+    expect(exploratory.edges.map((edge) => edge.edge_id)).toContain("aab-model-bridge");
+  });
+
+  it("filters unverified edges before applying fan-out budget", () => {
+    const root = makeNode("trust-root", "Claim");
+    const proposed = makeNode("trust-proposed", "Claim");
+    const validated = makeNode("trust-validated", "Claim");
+    const index = new IntelligenceGraphIndex({
+      ownerId: "owner-1",
+      projectId: "project-1",
+      nodes: [root, proposed, validated],
+      edges: [
+        makeEdge("aaa-unverified", "PROPOSES", root, proposed, {
+          verification_status: "discovered"
+        }),
+        makeEdge("zzz-verified", "SUPPORTED_BY", root, validated)
+      ],
+      records: [
+        { node: { id: root.node_id, version: 1 }, text: "unique root evidence", excerpt: "Root.", estimated_tokens: 2 },
+        { node: { id: proposed.node_id, version: 1 }, text: "proposed item", excerpt: "Proposed.", estimated_tokens: 2 },
+        { node: { id: validated.node_id, version: 1 }, text: "validated item", excerpt: "Validated.", estimated_tokens: 2 }
+      ]
+    });
+    const packet = index.query({
+      owner_id: "owner-1",
+      project_id: "project-1",
+      text: "unique root evidence",
+      mode: "local",
+      verified_only: true,
+      budget: { max_fan_out: 1 }
+    });
+    expect(packet.edges.map((edge) => edge.edge_id)).toEqual(["zzz-verified"]);
+    expect(packet.nodes.map(({ node }) => node.node_id)).toEqual([
+      "trust-root",
+      "trust-validated"
+    ]);
+    expect(packet.budget.truncated).toBe(false);
+  });
+
 });
