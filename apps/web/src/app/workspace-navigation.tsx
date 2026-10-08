@@ -27,19 +27,28 @@ export function WorkspaceModeMenu({
 }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const id = useId();
-  const mode = surface === "work" || surface === "code" ? surface : "manager";
+  const mode = ["manager", "work", "code"].includes(surface) ? surface : null;
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (ref.current?.open && event.target instanceof Node && !ref.current.contains(event.target))
+        ref.current.open = false;
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && ref.current?.open) {
+        event.preventDefault();
+        ref.current.open = false;
+        ref.current.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, []);
   return (
-    <details
-      className="workspace-mode-menu"
-      ref={ref}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && ref.current?.open) {
-          event.preventDefault();
-          ref.current.open = false;
-          ref.current.querySelector("summary")?.focus();
-        }
-      }}
-    >
+    <details className="workspace-mode-menu" ref={ref}>
       <summary className="brand" aria-label="Режимы Kosmora" aria-controls={id}>
         <span className="brand-mark">
           <Icon name="cosmora" />

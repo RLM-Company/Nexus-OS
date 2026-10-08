@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { isValidChatAttachments } from "@cosmora/contracts/chat-attachments";
+import { WorkspaceIcon } from "../workspace-icons";
 import styles from "./github.module.css";
 import {
   readWorkspace,
@@ -671,11 +672,25 @@ export default function GithubPage() {
     <main className={styles.page}>
       <div className={styles.shell}>
         <header className={styles.header}>
-          <Link href="/">← Назад в Kosmora</Link>
-          <h1>GitHub</h1>
+          <Link className={styles.backLink} href="/">
+            ← Назад в Kosmora
+          </Link>
+          <div className={styles.headerBody}>
+            <div className={styles.heading}>
+              <span className={styles.headerIcon} aria-hidden="true">
+                <WorkspaceIcon name="code" />
+              </span>
+              <div>
+                <p className={styles.eyebrow}>Рабочее пространство</p>
+                <h1>GitHub</h1>
+              </div>
+            </div>
+            <button type="button" disabled={pending} onClick={() => void load()}>
+              Обновить подключение
+            </button>
+          </div>
           <p className={styles.lead}>
-            Код проекта, редактирование файлов и отправка проверенных изменений в отдельный черновик
-            PR.
+            Читайте код, готовьте правки и проверяйте изменения перед отправкой.
           </p>
         </header>
         {error && (
@@ -683,7 +698,11 @@ export default function GithubPage() {
             {error}
           </p>
         )}
-        {!status && pending && <p role="status">Проверяю подключение…</p>}
+        {!status && pending && (
+          <p role="status" className={styles.loading}>
+            Проверяю подключение…
+          </p>
+        )}
         {status && !status.configured && (
           <section className={styles.card}>
             <div className={styles.empty}>
@@ -692,29 +711,40 @@ export default function GithubPage() {
             </div>
           </section>
         )}
-        <button type="button" disabled={pending} onClick={() => void load()}>
-          Обновить подключение
-        </button>
         {status?.configured && (
           <>
-            {recoveryNotice && <p role="status">{recoveryNotice}</p>}
-            {storageNotice && <p role="alert">{storageNotice}</p>}
-            <label className={styles.repository}>
-              Разрешённый репозиторий{" "}
-              <select aria-label="Разрешённый репозиторий" value={status.repository} disabled>
-                <option>{status.repository}</option>
-              </select>
-            </label>
-            <p>
-              Правки сохраняются в этой вкладке на 7 дней. Review сохраняется на сервере. До 8
-              файлов, 50 КБ на файл и 160 КБ на набор.
+            {recoveryNotice && (
+              <p role="status" className={styles.notice}>
+                {recoveryNotice}
+              </p>
+            )}
+            {storageNotice && (
+              <p role="alert" className={styles.notice}>
+                {storageNotice}
+              </p>
+            )}
+            <div className={styles.repositoryBar}>
+              <label className={styles.repository}>
+                Разрешённый репозиторий{" "}
+                <select aria-label="Разрешённый репозиторий" value={status.repository} disabled>
+                  <option>{status.repository}</option>
+                </select>
+              </label>
+              <span className={styles.repositoryState}>
+                <span aria-hidden="true" />
+                Подключение настроено
+              </span>
+            </div>
+            <p className={styles.infoLine}>
+              Правки в этой вкладке — 7 дней · Review — на сервере · До 8 файлов, 50 КБ на файл и
+              160 КБ на набор
             </p>
             {branchesLimited && (
               <p role="status">
                 Достигнут предел 100 000 веток. Чтение следующих страниц недоступно.
               </p>
             )}
-            <div className={styles.toolbar} aria-label="Страницы веток">
+            <div className={`${styles.toolbar} ${styles.branchPages}`} aria-label="Страницы веток">
               <button
                 disabled={pending || branchPage === 1}
                 onClick={() => void loadBranches(branchPage - 1)}
@@ -729,7 +759,7 @@ export default function GithubPage() {
                 Следующие ветки
               </button>
             </div>
-            <div className={styles.toolbar}>
+            <div className={`${styles.toolbar} ${styles.fileToolbar}`}>
               <button
                 type="button"
                 disabled={pending || dirty || !tree || changes.length >= 8 || !!rebase}
@@ -756,7 +786,7 @@ export default function GithubPage() {
                   ))}
                 </select>
               </label>
-              <label>
+              <label className={styles.fileSearch}>
                 Найти файл{" "}
                 <input
                   value={filter}
@@ -773,29 +803,44 @@ export default function GithubPage() {
               </p>
             )}
             <div className={styles.explorer}>
-              <nav aria-label="Файлы репозитория" className={styles.files}>
-                {filteredFiles.slice(0, visibleCount).map((item) => (
-                  <button
-                    type="button"
-                    disabled={pending || dirty || !!rebase}
-                    key={item.path}
-                    aria-pressed={file?.path === item.path}
-                    onClick={() => void open(item)}
-                  >
-                    {item.path}
-                  </button>
-                ))}
-                {tree && !filteredFiles.length && <p>Файлы не найдены.</p>}
-                {filteredFiles.length > visibleCount && (
-                  <button onClick={() => setVisibleCount((count) => count + 500)}>
-                    Показать ещё файлы ({filteredFiles.length - visibleCount})
-                  </button>
-                )}
-              </nav>
-              <section className={styles.editor} aria-label="Редактор файла">
+              <aside className={styles.filePane}>
+                <div className={styles.panelHeading}>
+                  <strong>Файлы</strong>
+                  <span>{filteredFiles.length}</span>
+                </div>
+                <nav aria-label="Файлы репозитория" aria-busy={pending} className={styles.files}>
+                  {!tree && pending && (
+                    <p role="status" className={styles.fileLoading}>
+                      Загружаю список файлов…
+                    </p>
+                  )}
+                  {filteredFiles.slice(0, visibleCount).map((item) => (
+                    <button
+                      type="button"
+                      disabled={pending || dirty || !!rebase}
+                      key={item.path}
+                      aria-pressed={file?.path === item.path}
+                      onClick={() => void open(item)}
+                    >
+                      <WorkspaceIcon name="files" aria-hidden="true" />
+                      <span>{item.path}</span>
+                    </button>
+                  ))}
+                  {tree && !filteredFiles.length && <p>Файлы не найдены.</p>}
+                  {filteredFiles.length > visibleCount && (
+                    <button onClick={() => setVisibleCount((count) => count + 500)}>
+                      Показать ещё файлы ({filteredFiles.length - visibleCount})
+                    </button>
+                  )}
+                </nav>
+              </aside>
+              <section className={styles.editor} aria-label="Редактор файла" aria-busy={pending}>
                 {file ? (
                   <>
-                    <h2>{file.path}</h2>
+                    <div className={styles.editorHeading}>
+                      <WorkspaceIcon name="files" aria-hidden="true" />
+                      <h2>{file.path || "Новый файл"}</h2>
+                    </div>
                     {file.isNew && (
                       <label>
                         Путь нового файла
@@ -827,6 +872,7 @@ export default function GithubPage() {
                         Открыть файл в чате
                       </button>
                       <button
+                        className={styles.primary}
                         disabled={
                           pending ||
                           !!rebase ||
@@ -874,12 +920,22 @@ export default function GithubPage() {
                     )}
                   </>
                 ) : (
-                  <p>Выберите текстовый файл или исходный код.</p>
+                  <div className={styles.editorEmpty}>
+                    <span aria-hidden="true">
+                      <WorkspaceIcon name="code" />
+                    </span>
+                    <h2>Ваш код, под рукой</h2>
+                    <p>Выберите текстовый файл или исходный код.</p>
+                    <small>Правки можно собрать в набор и проверить перед созданием PR.</small>
+                  </div>
                 )}
               </section>
             </div>
             <section className={styles.review}>
-              <h2>Подготовка изменений</h2>
+              <div className={styles.reviewHeading}>
+                <h2>Подготовка изменений</h2>
+                <span>{changes.length} / 8 файлов</span>
+              </div>
               <p>
                 База: {branch} · <code>{baseSha}</code>. Файлов: {changes.length}/8 ·{" "}
                 {changeBytes(changes).toLocaleString("ru-RU")} / 160 000 байт.
@@ -940,40 +996,44 @@ export default function GithubPage() {
                     ))}
                 </section>
               )}
-              <label>
-                Проект Kosmora{" "}
-                <select
-                  aria-label="Проект для изменений"
-                  disabled={pending}
-                  value={project}
-                  onChange={(event) => {
-                    invalidateReview();
-                    setProject(event.target.value);
-                  }}
-                >
-                  <option value="">Выберите проект</option>
-                  {projects.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {projects.length === 0 && <p>Сначала создайте проект в чате Kosmora.</p>}
-              <label>
-                Описание изменения{" "}
-                <input
-                  value={title}
-                  maxLength={160}
-                  disabled={pending}
-                  onChange={(event) => {
-                    setTitle(event.target.value);
-                    invalidateReview();
-                  }}
-                />
-              </label>
+              <div className={styles.reviewFields}>
+                <div>
+                  <label>
+                    Проект Kosmora{" "}
+                    <select
+                      aria-label="Проект для изменений"
+                      disabled={pending}
+                      value={project}
+                      onChange={(event) => {
+                        invalidateReview();
+                        setProject(event.target.value);
+                      }}
+                    >
+                      <option value="">Выберите проект</option>
+                      {projects.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {projects.length === 0 && <p>Сначала создайте проект в чате Kosmora.</p>}
+                </div>
+                <label>
+                  Описание изменения{" "}
+                  <input
+                    value={title}
+                    maxLength={160}
+                    disabled={pending}
+                    onChange={(event) => {
+                      setTitle(event.target.value);
+                      invalidateReview();
+                    }}
+                  />
+                </label>
+              </div>
               {changes.map((item) => (
-                <div key={item.path}>
+                <div className={styles.changeRow} key={item.path}>
                   <button
                     disabled={pending || dirty || !!rebase}
                     onClick={() => {
@@ -1043,7 +1103,7 @@ export default function GithubPage() {
                 </label>
               )}
               {draft && (
-                <section aria-label="Проверка изменений">
+                <section className={styles.draftReview} aria-label="Проверка изменений">
                   <h3>{draft.plan.title}</h3>
                   <p>
                     {draft.plan.repository ?? status.repository} · {draft.plan.base_branch} ·{" "}
@@ -1073,7 +1133,7 @@ export default function GithubPage() {
                           просмотр изменений.
                         </p>
                       )}
-                      <label>
+                      <label className={styles.approval}>
                         <input
                           type="checkbox"
                           checked={approved}
@@ -1125,7 +1185,7 @@ export default function GithubPage() {
             </section>
           </>
         )}
-        <p>
+        <p className={styles.previewLink}>
           <Link href="/github/preview">Посмотреть демонстрацию интерфейса</Link>
         </p>
       </div>

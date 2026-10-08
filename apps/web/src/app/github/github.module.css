@@ -1,7 +1,7 @@
 .page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: clamp(1.25rem, 3vw, 2rem);
+  padding: clamp(1.25rem, 3vw, 2rem) clamp(1rem, 3vw, 2rem) 3rem;
   background: var(--bg);
   color: var(--text);
   font-size: 0.875rem;
@@ -12,7 +12,7 @@
   flex-wrap: wrap;
   gap: 0.75rem;
   margin: 1rem 0;
-  align-items: flex-start;
+  align-items: flex-end;
 }
 .page button {
   padding: 0.6rem 0.85rem;
@@ -59,6 +59,9 @@
   outline: 2px solid var(--accent-strong);
   outline-offset: 3px;
 }
+.page :is(input, select, textarea):focus-visible {
+  outline-offset: 1px;
+}
 .page button.primary {
   background: var(--accent-strong);
   border-color: var(--accent-strong);
@@ -71,42 +74,74 @@
 .editor label {
   display: grid;
   gap: 0.5rem;
-  margin: 1rem 0;
+  margin: 0;
   width: fit-content;
   max-width: 100%;
 }
 .toolbar label,
-.review > label {
+.review > label,
+.reviewFields label {
   display: grid;
   gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin: 0;
   min-width: 0;
   max-width: 100%;
 }
 .explorer {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) minmax(0, 3fr);
-  gap: 1rem;
+  grid-template-columns: minmax(13rem, 0.85fr) minmax(0, 2.8fr);
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  background: var(--bg);
 }
 .files {
-  max-height: 35rem;
+  max-height: 36rem;
   overflow: auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0.125rem;
   padding: 0.375rem;
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
-  background: var(--panel);
+  border: 0;
+  background: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 .files button {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
   text-align: left;
   overflow-wrap: anywhere;
   flex-shrink: 0;
   border-color: transparent;
   background: transparent;
   padding-inline: 0.625rem;
+  min-height: 2.25rem;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+.files button > svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.files button > span {
+  min-width: 0;
+  line-height: 1.55;
+}
+.files > p {
+  padding: 0.5rem 0.625rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.fileLoading {
+  line-height: 1.6;
 }
 .files button[aria-pressed="true"] {
   border-color: transparent;
@@ -114,30 +149,35 @@
 }
 .editor {
   min-width: 0;
-  padding: 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  padding: 0;
+  border: 0;
   background: var(--bg);
 }
 .editor h2 {
   overflow-wrap: anywhere;
-  font-size: 1rem;
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 .editor textarea {
-  width: 100%;
-  min-height: 24rem;
+  display: block;
+  width: calc(100% - 2rem);
+  min-height: 25rem;
+  margin: 1rem;
   resize: vertical;
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
   font-size: 0.8125rem;
   line-height: 1.65;
   tab-size: 2;
-  background: var(--panel);
+  background: #fcfcfc;
+  border-radius: 0.5rem;
 }
 .review {
-  margin-top: 1.25rem;
-  padding: 1rem;
+  margin-top: 1.5rem;
+  padding: 1.25rem;
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: 0.875rem;
+  background: var(--bg);
 }
 .review details {
   margin: 1rem 0;
@@ -152,12 +192,16 @@
 .review input[type="checkbox"] {
   accent-color: var(--accent-strong);
 }
+.review code {
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
 .review p {
   overflow-wrap: anywhere;
   line-height: 1.6;
 }
 .review h2 {
-  margin: 0 0 0.875rem;
+  margin: 0;
   font-size: 1rem;
   font-weight: 600;
 }
@@ -189,7 +233,12 @@
   font-size: 0.8125rem;
   line-height: 1.6;
 }
-@media (max-width: 650px) {
+.diff strong {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+@media (max-width: 42rem) {
   .explorer,
   .diff {
     grid-template-columns: minmax(0, 1fr);
@@ -206,7 +255,7 @@
 
 .header {
   display: grid;
-  gap: 1.5rem;
+  gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
@@ -232,7 +281,7 @@
 
 .header h1 {
   margin: 0;
-  font-size: clamp(1.5rem, 2.5vw, 1.875rem);
+  font-size: 1.5rem;
   letter-spacing: -0.035em;
   line-height: 1.2;
   font-weight: 600;
@@ -240,7 +289,7 @@
 
 .lead {
   max-width: 42rem;
-  margin: 0.6rem 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 0.875rem;
   line-height: 1.6;
@@ -264,6 +313,9 @@
 
 .loading {
   color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--panel);
 }
 
 .empty,
@@ -288,6 +340,11 @@
 
 .error {
   background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--text);
+  border-radius: 0.625rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .warning button,
@@ -382,6 +439,262 @@
   font-size: 0.78rem;
 }
 
+.headerBody,
+.heading,
+.repositoryBar,
+.repositoryState,
+.panelHeading,
+.editorHeading,
+.reviewHeading,
+.changeRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.headerBody,
+.repositoryBar,
+.panelHeading,
+.reviewHeading {
+  justify-content: space-between;
+}
+.headerIcon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.headerIcon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.heading .eyebrow {
+  margin: 0 0 0.15rem;
+  font-size: 0.75rem;
+}
+.repositoryBar {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--bg);
+}
+.repository {
+  min-width: 0;
+  flex: 1;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.repository select {
+  padding: 0;
+  min-height: 1.5rem;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  opacity: 1;
+  appearance: none;
+}
+.repositoryState {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  gap: 0.4rem;
+}
+.repositoryState > span {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--text);
+}
+.infoLine,
+.previewLink {
+  margin: 0.75rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.branchPages {
+  justify-content: flex-end;
+  align-items: center;
+  margin: 0.75rem 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.branchPages button {
+  min-height: 2rem;
+  padding: 0.375rem 0.625rem;
+  background: transparent;
+  font-size: 0.75rem;
+}
+.fileToolbar {
+  padding: 0.875rem 1rem;
+  margin: 0.75rem 0;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--panel);
+}
+.fileToolbar label {
+  gap: 0.25rem;
+  flex: 1;
+  font-size: 0.75rem;
+}
+.fileToolbar .fileSearch {
+  flex: 1.5;
+}
+.fileToolbar > button {
+  flex-shrink: 0;
+  background: var(--bg);
+}
+.filePane {
+  min-width: 0;
+  background: #fafafa;
+  border-right: 1px solid var(--line);
+}
+.panelHeading,
+.editorHeading {
+  min-height: 3rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.8125rem;
+}
+.panelHeading strong {
+  font-weight: 500;
+}
+.panelHeading > span,
+.reviewHeading > span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.editorHeading svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.editor > label {
+  padding: 1rem 1rem 0;
+}
+.editor > .toolbar {
+  padding: 0 1rem;
+}
+.editor > p {
+  padding: 0 1rem;
+  font-size: 0.8125rem;
+}
+.editorEmpty {
+  display: grid;
+  min-height: 27rem;
+  align-content: center;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted);
+}
+.editorEmpty > span {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0.5rem;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  background: var(--panel);
+}
+.editorEmpty h2 {
+  color: var(--text);
+  font-size: 1rem;
+}
+.editorEmpty p {
+  margin: 0;
+}
+.editorEmpty small {
+  max-width: 22rem;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.reviewFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 1rem;
+  margin: 1.25rem 0;
+}
+.reviewFields > div {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.5rem;
+}
+.reviewFields p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.changeRow {
+  padding: 0.625rem 0;
+  border-top: 1px solid var(--line);
+}
+.changeRow button:first-child {
+  flex: 1;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+.changeRow + .primary,
+.review > .primary {
+  margin: 0.875rem 0;
+}
+.draftReview {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+.draftReview h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.draftReview > p {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.approval {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin: 1rem 0;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.approval input {
+  flex-shrink: 0;
+  margin-top: 0.25rem;
+}
+.notice {
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  border: 1px solid var(--line);
+  border-radius: 0.625rem;
+  background: var(--panel);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.previewLink {
+  margin-top: 1.5rem;
+}
+.previewLink a:hover {
+  color: var(--text);
+}
+
 @media (max-width: 42rem) {
   .page {
     padding: max(1rem, env(safe-area-inset-top)) max(0.9rem, env(safe-area-inset-right))
@@ -391,6 +704,37 @@
   .sections {
     grid-template-columns: minmax(0, 1fr);
   }
+  .headerBody,
+  .repositoryBar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .fileToolbar {
+    align-items: stretch;
+  }
+  .fileToolbar label {
+    flex-basis: 100%;
+  }
+  .fileToolbar .fileSearch {
+    flex-basis: 100%;
+  }
+  .filePane {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .reviewFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .review {
+    padding: 1rem;
+  }
+  .editorEmpty {
+    min-height: 16rem;
+    padding: 1.5rem;
+  }
+  .editor textarea {
+    min-height: 20rem;
+  }
 }
 
 @media (pointer: coarse) {
@@ -398,6 +742,10 @@
   .page input:not([type="checkbox"]),
   .page select {
     min-height: 2.75rem;
+  }
+  .repository select {
+    min-height: 1.5rem;
+    font-size: 0.875rem;
   }
 
   .page input:not([type="checkbox"]),

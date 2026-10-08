@@ -32,3 +32,9 @@ The production preview was inspected at desktop and 390px mobile widths. A dupli
 The full design passed GitHub CI (179 Chromium tests, 473 Vitest tests and the deployment/profile gates) and the Windows install/upgrade lifecycle. The live rollout confirmed owner access, SQLite health and paused model execution. Live visual inspection then identified Chrome's blue autofill background; login and desktop connection styles now cover autofill, hover and focus with neutral fills while retaining keyboard focus. The follow-up passed 8 owner-access and 15 desktop checks.
 
 This is a presentation/design update. Live paid model tests and provider funding remain deferred. Authentication, persistent data, GitHub permissions and the server's model execution stop must remain intact during rollout.
+
+## Basic design completion — 2026-10-08
+
+Studio now prioritizes local file analysis alongside three clearly labelled media prompt editors. Work and Code offer local examples that prepare their forms without sending model requests. The GitHub workspace uses an integrated file tree/editor and a clearer review area; file analysis has compact upload, preview and table layouts. Mode disclosure handles outside clicks and Escape while preserving draft and focus.
+
+Production web build, formatting and secret scan passed. A focused Chromium run passed 42 tests covering mode navigation, mobile workspaces, GitHub read/edit/review/recovery and local file/CSV handling. The larger chat enhancement pass was deferred at the owner's request to preserve model quota for a funded live demonstration.
