@@ -237,6 +237,12 @@ const RUN_PHASE_LABEL: Record<RunPhase, string> = {
   cancelled: "Остановлен"
 };
 
+const CHAT_RUN_PHASE_LABEL: Record<RunPhase, string> = {
+  ...RUN_PHASE_LABEL,
+  running: "Kosmora отвечает",
+  streaming: "Kosmora отвечает · поток"
+};
+
 const PROJECT_STATUS_LABEL: Record<Project["status"], string> = {
   DRAFT: "Черновик",
   ACTIVE: "Активен",
@@ -2040,7 +2046,7 @@ export default function Home() {
             </span>
             <h1>
               {surface === "manager"
-                ? (activeProject?.title ?? "Новый чат")
+                ? (activeProject?.title ?? activeLocalChat?.title ?? "Новый чат")
                 : SURFACE_TITLE[surface]}
             </h1>
           </div>
@@ -2448,7 +2454,7 @@ export default function Home() {
                 </small>
               </div>
               <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">
-                <i /> {RUN_PHASE_LABEL[runPhase]}
+                <i /> {CHAT_RUN_PHASE_LABEL[runPhase]}
               </span>
             </div>
             <div className="messages" aria-live="polite">
