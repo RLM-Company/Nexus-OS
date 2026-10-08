@@ -101,7 +101,11 @@ docker compose -f compose.yaml run --rm --no-deps \
 Run it after deployment, credential/session rotation and during manual maintenance checks. It
 requires unauthenticated interface requests to redirect to `/login` and health requests to return
 401 without a Basic challenge, then verifies a form login and authenticated
-interface access, healthy SQLite, exactly one current hosted owner session and global stop status.
+interface access, concurrent same-origin script/style loading with correct MIME types,
+healthy SQLite, exactly one current hosted owner session and global stop status. Unauthenticated
+navigation and API boundaries are checked again while assets are fetched. This catches the
+wrong-upstream authentication race that simple sequential checks missed; Caddy is pinned to
+the patched 2.11.7 release. Asset redirects and off-origin asset credentials are rejected.
 A session with 24 hours or less remaining fails with a rotation reminder. This catches an expired
 bearer session even when the public API health check still returns 200. Redirects are never
 followed, TLS certificate validation stays enabled, and failure output excludes response bodies

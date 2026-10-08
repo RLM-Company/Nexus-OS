@@ -84,7 +84,43 @@ export async function verifyAccess({ origin, password, now = Date.now(), authMod
       await (await request(path, false, 401)).body?.cancel();
     }
   }
-  await (await request("/", true, 200)).body?.cancel();
+  const interfaceResponse = await request("/", true, 200);
+  const markup = await interfaceResponse.text();
+  const assets = new Set();
+  for (const match of markup.matchAll(/\b(?:src|href)=["']([^"']+)["']/gu)) {
+    const asset = new URL(match[1], base);
+    if (!asset.pathname.startsWith("/_next/static/")) continue;
+    requireState(
+      asset.origin === base.origin && !asset.username && !asset.password,
+      "Interface assets must use the same protected origin"
+    );
+    if (/\.(?:js|css)$/u.test(asset.pathname)) assets.add(asset.pathname + asset.search);
+  }
+  requireState(
+    assets.size <= 32 &&
+      [...assets].some((path) => path.split("?")[0].endsWith(".js")) &&
+      [...assets].some((path) => path.split("?")[0].endsWith(".css")),
+    "Interface script or stylesheet references are missing"
+  );
+  // Browsers fetch these concurrently. Sequential health checks missed a proxy
+  // race that sent forward_auth checks to the API instead of the login service.
+  await Promise.all([
+    ...[...assets].map(async (path) => {
+      const response = await request(path, true, 200);
+      const type = response.headers.get("content-type")?.split(";")[0].trim();
+      await response.body?.cancel();
+      requireState(
+        path.split("?")[0].endsWith(".css")
+          ? type === "text/css"
+          : ["application/javascript", "text/javascript"].includes(type),
+        "Interface asset content type is invalid"
+      );
+    }),
+    request("/", false, authMode === "form" ? 303 : 401).then((response) =>
+      response.body?.cancel()
+    ),
+    request("/api/v1/health", false, 401).then((response) => response.body?.cancel())
+  ]);
   const health = await json("/api/v1/health");
   requireState(health?.status === "ok" && health.database === "ok", "SQLite is not healthy");
   const sessions = await json("/api/v1/identity/sessions");

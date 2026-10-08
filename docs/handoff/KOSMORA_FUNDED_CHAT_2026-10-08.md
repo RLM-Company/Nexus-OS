@@ -65,8 +65,12 @@ which affects versions below 2.11.5. Temporarily restoring frontend 61bd267 did 
 proxy failure. Deployment now pins the current stable
 [Caddy 2.11.7](https://github.com/caddyserver/caddy/releases/tag/v2.11.7), which also fixes later
 HTTP/2 and idle-stream regressions. Authentication routes, HTTPS settings, volumes and owner
-permissions stay unchanged. The patched proxy and final frontend require a fresh browser check
-and repeated concurrent authenticated/unauthenticated route checks before final readiness.
+permissions stay unchanged. The patched proxy and final frontend loaded the chat successfully
+in a fresh browser session. The access verifier now fetches referenced scripts/styles concurrently,
+validates MIME and same-origin boundaries, and rechecks unauthenticated root/API access during
+asset loading. Three new regression scenarios cover missing/wrong/redirected assets, off-origin
+credential isolation and authentication failure only during concurrent loading; 41 deployment
+tests passed locally. A repeated live concurrent probe remains part of the final server check.
 
 The existing local Windows 0.10.0 installer opens the hosted UI; it needs no rebuild for these
 server and frontend changes. Media-generation sections remain prompt editors, not tested image,
