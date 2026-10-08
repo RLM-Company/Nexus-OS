@@ -3,9 +3,9 @@ import type {
   IntelligenceGraphVersionRef,
   IntelligenceGraphVerificationStatus
 } from "@cosmora/contracts";
-import {
-  type IntelligenceGraphEvidencePacket,
-  type IntelligenceGraphQuery,
+import type {
+  IntelligenceGraphEvidencePacket,
+  IntelligenceGraphQuery,
   IntelligenceGraphIndex
 } from "./intelligence-graph-retrieval.js";
 
