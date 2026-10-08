@@ -186,9 +186,12 @@ const edgeVisibleAt = (edge: IntelligenceGraphEdge, asOf: string | null): boolea
   return edge.verification_status !== "deleted";
 };
 
-const verifiedEnough = (node: IntelligenceGraphNode, asOf: string | null): boolean =>
-  node.verification_status === "verified" ||
-  (asOf !== null && node.verification_status === "superseded");
+const verifiedEnough = (
+  record: { verification_status: IntelligenceGraphNode["verification_status"] },
+  asOf: string | null
+): boolean =>
+  record.verification_status === "verified" ||
+  (asOf !== null && record.verification_status === "superseded");
 
 export class IntelligenceGraphIndex {
   readonly #ownerId: string;
@@ -354,7 +357,10 @@ export class IntelligenceGraphIndex {
         if (current.depth >= budget.max_depth) continue;
 
         const adjacent = (this.#adjacency.get(current.key) ?? [])
-          .filter((edge) => edgeVisibleAt(edge, asOf))
+          .filter(
+            (edge) =>
+              edgeVisibleAt(edge, asOf) && (!query.verified_only || verifiedEnough(edge, asOf))
+          )
           .sort((left, right) => left.edge_id.localeCompare(right.edge_id));
 
         if (adjacent.length > budget.max_fan_out) truncated = true;
