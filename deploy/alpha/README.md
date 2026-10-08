@@ -1,10 +1,14 @@
 # Private hosted alpha
 
 This stack runs the actual Next interface and Node API on a single VPS. Caddy terminates HTTPS,
-serves an ordinary owner login form and checks an eight-hour, revocable, HttpOnly cookie before
+serves an ordinary owner login form and checks a revocable, HttpOnly cookie before
 serving private routes. An internal gateway verifies the existing password with scrypt, bounds
-login attempts and rejects cross-site form submissions. It stores session digests in memory;
-restarting the gateway requires another login. Caddy supplies the short-lived server-side bearer
+login attempts and rejects cross-site form submissions. The checked-by-default “Remember me for
+30 days” option retains sign-in across client and gateway restarts; unchecking it keeps the
+eight-hour session. Session digests persist in the dedicated `owner_sessions` volume with a
+private, atomically replaced file. Neither passwords nor raw cookies are stored there. Logout
+revokes the device session, and a changed password hash or HTTPS origin invalidates saved
+sessions. An invalid store fails closed. Caddy supplies the short-lived server-side bearer
 session before proxying `/api/*`; that token never reaches the browser. Only ports 80 and 443 are
 published; the API and web server share a private Docker network. SQLite and Caddy certificates
 use persistent volumes. This is an owner-only alpha, not a multi-user deployment.

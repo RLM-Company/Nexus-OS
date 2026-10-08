@@ -52,6 +52,12 @@ Version 0.10.0 renames the product to Kosmora and uses the owner's white helmet
 logo. The existing application ID, `cosmora-windows-desktop` profile directory
 and `persist:cosmora` session partition are kept for upgrade compatibility.
 
+The hosted login now defaults to “Запомнить меня на 30 дней”. Its secure HttpOnly cookie is kept
+in the existing Chromium partition, so reopening the installed app retains sign-in until
+expiry or explicit logout. The owner gateway also persists session digests across restarts.
+Unchecking the option uses an eight-hour session. No password is stored or injected by the app,
+and the 0.10.0 installer does not need rebuilding for this server-side change.
+
 ## Installation boundary
 
 Do not install the package automatically as part of tests. After a Windows CI/local build succeeds, the owner may manually run the generated installer. The current build is unsigned unless a separately authorized signing workflow is used, so Windows may show an unknown-publisher warning.

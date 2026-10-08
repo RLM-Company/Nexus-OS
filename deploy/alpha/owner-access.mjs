@@ -1,9 +1,11 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
+import { createOwnerSessionStore } from "./owner-session-store.mjs";
 
 const COOKIE = "__Host-cosmora-owner";
 const TTL = 8 * 60 * 60 * 1000;
+const REMEMBER_TTL = 30 * 24 * 60 * 60 * 1000;
 const WINDOW = 15 * 60 * 1000;
 const scryptOptions = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 // BEGIN GENERATED COSMORA BRAND
@@ -28,6 +30,8 @@ label{display:block;margin:18px 0 7px;font-size:13px;font-weight:550;color:#4040
 input,button,a{font:inherit}
 input{display:block;width:100%;min-height:44px;padding:10px 12px;border:1px solid #d8d8d8;border-radius:10px;background:#fff;color:#171717;outline:none;transition:border-color 140ms ease,box-shadow 140ms ease}
 input[readonly]{background:#f7f7f7;color:#686868}
+.remember{display:flex;align-items:center;gap:9px;margin:18px 0 0;font-weight:400;color:#555;cursor:pointer}
+.remember input{width:16px;height:16px;min-height:0;margin:0;padding:0;accent-color:#171717;flex:none}
 input:hover:not([readonly]){border-color:#b4b4b4}
 input:focus{border-color:#555;box-shadow:0 0 0 3px rgb(0 0 0 / 6%)}
 button,.link{display:flex;align-items:center;justify-content:center;min-height:44px;width:100%;margin-top:24px;padding:10px 16px;border:1px solid #171717;border-radius:10px;background:#171717;color:#fff;font-size:14px;font-weight:550;text-align:center;text-decoration:none;cursor:pointer;transition:background 140ms ease,border-color 140ms ease,transform 140ms ease}
@@ -48,17 +52,25 @@ small{display:block;margin-top:24px;padding-top:20px;border-top:1px solid #eee;c
 @media(prefers-reduced-motion:reduce){input,button,.link{transition:none}button:active,.link:active{transform:none}}
 `;
 const page = (message = "", authenticated = false) =>
-  `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f7"><title>Вход — Kosmora</title><style>${style}</style></head><body><main aria-labelledby="title"><div class="brand">${brandSymbol}<span>Kosmora</span></div><h1 id="title">${authenticated ? "Ваше пространство готово" : "С возвращением"}</h1><p>${authenticated ? "Продолжите работу с ИИ, кодом и проектами." : "Войдите в своё рабочее пространство."}</p>${message ? `<p class="error" role="alert">${message}</p>` : ""}${authenticated ? '<a class="link" href="/">Открыть Kosmora</a><form method="post" action="/__owner/logout"><button class="secondary" type="submit">Выйти из аккаунта</button></form>' : '<form method="post" action="/__owner/login"><label for="username">Логин</label><input id="username" name="username" value="owner" autocomplete="username" required readonly><label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="512" autofocus><button type="submit">Войти в Kosmora</button></form><small>Личное пространство Kosmora. Доступ по паролю владельца.</small>'}</main></body></html>`;
+  `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f7"><title>Вход — Kosmora</title><style>${style}</style></head><body><main aria-labelledby="title"><div class="brand">${brandSymbol}<span>Kosmora</span></div><h1 id="title">${authenticated ? "Ваше пространство готово" : "С возвращением"}</h1><p>${authenticated ? "Продолжите работу с ИИ, кодом и проектами." : "Войдите в своё рабочее пространство."}</p>${message ? `<p class="error" role="alert">${message}</p>` : ""}${authenticated ? '<a class="link" href="/">Открыть Kosmora</a><form method="post" action="/__owner/logout"><button class="secondary" type="submit">Выйти из аккаунта</button></form>' : '<form method="post" action="/__owner/login"><label for="username">Логин</label><input id="username" name="username" value="owner" autocomplete="username" required readonly><label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="512" autofocus><label class="remember"><input type="checkbox" name="remember" checked>Запомнить меня на 30 дней</label><button type="submit">Войти в Kosmora</button></form><small>Личное пространство Kosmora. Доступ по паролю владельца.</small>'}</main></body></html>`;
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
-export function createOwnerAccess({ origin, passwordHash, now = Date.now }) {
+export function createOwnerAccess({ origin, passwordHash, sessionFile, now = Date.now }) {
   const base = new URL(origin);
   if (base.protocol !== "https:" || base.origin !== origin || base.username || base.password)
     throw new Error("Owner origin must be an exact HTTPS origin");
   if (!/^scrypt:[a-f0-9]{32}:[a-f0-9]{64}$/.test(passwordHash ?? ""))
     throw new Error("Owner password hash is missing or invalid");
   const [, salt, stored] = passwordHash.split(":");
-  const sessions = new Map();
+  const store = createOwnerSessionStore({
+    file: sessionFile,
+    scope: digest(`${origin}\n${passwordHash}`)
+  });
+  let sessions = store.read();
+  const saveSessions = (next) => {
+    store.save(next);
+    sessions = next;
+  };
   const attempts = new Map();
   const prune = () => {
     for (const [key, expiry] of sessions) if (expiry <= now()) sessions.delete(key);
@@ -144,7 +156,14 @@ export function createOwnerAccess({ origin, passwordHash, now = Date.now }) {
         return;
       }
       if (path === "/__owner/logout") {
-        sessions.delete(tokenFor(request));
+        const next = new Map(sessions);
+        next.delete(tokenFor(request));
+        try {
+          saveSessions(next);
+        } catch {
+          html(response, 503, "Не удалось завершить выход. Повторите попытку.");
+          return;
+        }
         redirect(response, "/login", { "set-cookie": cookie("", 0) });
         return;
       }
@@ -183,11 +202,21 @@ export function createOwnerAccess({ origin, passwordHash, now = Date.now }) {
           html(response, 422, "Неверный логин или пароль владельца Kosmora.");
           return;
         }
-        if (sessions.size >= 128) sessions.delete(sessions.keys().next().value);
-        sessions.delete(tokenFor(request));
+        if (
+          form.getAll("remember").length > 1 ||
+          (form.has("remember") && form.get("remember") !== "on")
+        ) {
+          html(response, 400, "Не удалось обработать форму входа.");
+          return;
+        }
+        const ttl = form.get("remember") === "on" ? REMEMBER_TTL : TTL;
+        const next = new Map(sessions);
+        if (next.size >= 128) next.delete(next.keys().next().value);
+        next.delete(tokenFor(request));
         const token = randomBytes(32).toString("hex");
-        sessions.set(digest(token), now() + TTL);
-        redirect(response, "/", { "set-cookie": cookie(token, TTL / 1000) });
+        next.set(digest(token), now() + ttl);
+        saveSessions(next);
+        redirect(response, "/", { "set-cookie": cookie(token, ttl / 1000) });
       } catch {
         if (!response.headersSent) html(response, 400, "Не удалось обработать форму входа.");
       }
@@ -203,7 +232,8 @@ export function createOwnerAccess({ origin, passwordHash, now = Date.now }) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const server = createOwnerAccess({
     origin: `https://${process.env.COSMORA_DEMO_DOMAIN}`,
-    passwordHash: process.env.COSMORA_OWNER_PASSWORD_HASH
+    passwordHash: process.env.COSMORA_OWNER_PASSWORD_HASH,
+    sessionFile: process.env.COSMORA_OWNER_SESSION_FILE
   });
   server.listen(3080, "0.0.0.0", () => console.log("Owner form login ready"));
 }
