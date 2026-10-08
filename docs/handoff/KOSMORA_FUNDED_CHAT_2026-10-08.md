@@ -54,6 +54,20 @@ monorepo gate passed for `93ce43e`. Windows syntax/build/install/upgrade/uninsta
 only uploading the installer artifact failed. Final frontend/registry commit CI must be checked
 separately.
 
+### Deployment proxy regression
+
+Final live inspection exposed blank/unstyled pages despite healthy containers and individually
+successful asset requests. The API log showed a public root request arriving as
+`GET /__owner/verify` at the API, even though Caddy's active configuration sent that path to the
+separate login service. The current Caddy 2.11.4 symptoms match the official
+[wrong-upstream connection advisory](https://github.com/caddyserver/caddy/security/advisories/GHSA-6365-7ppr-5r92),
+which affects versions below 2.11.5. Temporarily restoring frontend 61bd267 did not remove the
+proxy failure. Deployment now pins the current stable
+[Caddy 2.11.7](https://github.com/caddyserver/caddy/releases/tag/v2.11.7), which also fixes later
+HTTP/2 and idle-stream regressions. Authentication routes, HTTPS settings, volumes and owner
+permissions stay unchanged. The patched proxy and final frontend require a fresh browser check
+and repeated concurrent authenticated/unauthenticated route checks before final readiness.
+
 The existing local Windows 0.10.0 installer opens the hosted UI; it needs no rebuild for these
 server and frontend changes. Media-generation sections remain prompt editors, not tested image,
 video or audio generation services. Manager routing passed the no-generation preflight; a full
