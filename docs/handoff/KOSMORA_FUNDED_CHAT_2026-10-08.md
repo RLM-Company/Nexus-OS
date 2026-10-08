@@ -34,12 +34,15 @@ Registry evidence now expires on 15 October at 14:14 UTC; it must be refreshed b
 
 The internal server bearer was rotated using the existing seven-day issuer, with unchanged
 owner permissions. It expires on 15 October at 14:25 UTC. This is separate from browser login;
-no timer or automatic renewal is installed. Browser login still lasts eight hours.
+no timer or automatic renewal is installed. Remembered browser login lasts thirty days;
+unchecking the option retains the eight-hour limit.
 
-The prepared thirty-day remembered login in `bc16fe0` is **not deployed**. Automatic approval
-review rejected its deployment pending explicit owner confirmation of the duration and login
-service restart. Do not apply its prepared override without that confirmation. Native app
-inspection also timed out at the computer-use approval boundary; no native login was automated.
+The owner explicitly approved thirty-day remembered login and its service restart. The `bc16fe0`
+login service update is now deployed with a dedicated persistent session-digest volume. Actual
+restart tests confirmed remembered-cookie validity, logout revocation and continued revocation
+after another restart; directory/file permissions are 0700/0600. A normal browser login with the
+checked option succeeded, and opening a fresh tab did not request the password. Native app
+inspection timed out at the computer-use approval boundary; no native login was automated.
 
 ## Final interface fixes and checks
 
@@ -85,7 +88,7 @@ One final multi-turn request failed with `PROVIDER_ERROR` and no text. No unobse
 is inferred for that failed request. Automatic approval review initially blocked a diagnostic
 replay; the owner then explicitly authorized further tests. One replay of the exact synthetic
 conversation, capped at 128 output tokens, returned HTTP 200, valid SSE, a stop marker and the
-correct eight-character answer (285 input plus six output tokens). Restoring and sending the
+eight-character text response (285 input plus six output tokens). Restoring and sending the
 request through the actual UI then succeeded with 308 input plus six output tokens and retained
 the original conversation context. The failure did not reproduce; its exact cause remains
 unconfirmed rather than being attributed to a specific provider defect.
@@ -99,6 +102,13 @@ Gateway errors now expose only allowlisted HTTP-status/protocol diagnostic codes
 logs. Arbitrary provider messages, request contents and exception causes remain unlogged.
 Sixty-five gateway tests, the gateway build and API typecheck passed. No automatic paid retries
 or mock substitutions were enabled.
+
+The final API image is `cosmora-alpha-app:611896f`, the frontend is
+`cosmora-alpha-app:cd3c877`, the login service runs the `bc16fe0` modules on the original app
+base, and edge is Caddy 2.11.7. The full monorepo gate passed for `611896f` (CI 1291). Windows
+build/install/upgrade/uninstall checks passed; its artifact-upload step alone failed. The existing
+local 0.10.0 installer remains usable. The source and deployment retain the protected provider
+and GitHub credentials. No main merge occurred.
 
 The existing local Windows 0.10.0 installer opens the hosted UI; it needs no rebuild for these
 server and frontend changes. Media-generation sections remain prompt editors, not tested image,
