@@ -177,6 +177,21 @@ in `pnpm check`.
 
 ## Private MVP integrations
 
+### First funded start from the environment pause
+
+The environment pause cannot be cleared by the browser or ordinary clearance API. Offline
+operator recovery uses `recover-environment-stop.mjs` after a fresh verified SQLite backup,
+confirmed absence of active/queued work, stopping the API, and setting
+`RUNTIME_EMERGENCY_STOP=false` in the protected runtime file. The CLI requires
+`COSMORA_API_STOPPED=1`, `COSMORA_RECOVERY_ACK="CLEAR ENVIRONMENT STOP OFFLINE"`, the exact
+`COSMORA_RECOVERY_ACTIVATION`, registered active `COSMORA_RECOVERY_OWNER`, a nonblank
+`COSMORA_RECOVERY_REASON`, and `COSMORA_RECOVERY_BACKUP` under `/run/cosmora-backups/` less than
+one hour old. It clears only that environment-triggered process activation and atomically
+appends its original activation facts and operator reason to the immutable clearance audit.
+Owner-triggered stops still use their existing bound step-up recovery. Restart the API and
+verify authenticated health, clear execution status, disabled mock fallback and one route
+attempt before a short live request. Keep the old protected environment file for rollback.
+
 Set `GITHUB_TOKEN`, `GITHUB_REPOSITORY` and `GITHUB_OWNER_ID` in the private API `model.env`.
 The configured owner ID must match the authenticated hosted owner. Missing owner binding disables
 GitHub in production. Use a fine-grained, expiring token scoped to one repository with Contents and
