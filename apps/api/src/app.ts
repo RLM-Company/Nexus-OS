@@ -146,6 +146,8 @@ import type { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
 import type { ManagerWorkStore } from "@cosmora/db";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { registerManagerWorkRoutes } from "./manager-work-routes.js";
+import { registerIntelligenceGraphWorkspaceRoutes } from "./intelligence-graph-workspace-routes.js";
+import type { IntelligenceGraphWorkspaceService } from "@cosmora/core";
 import {
   autonomyProfileStepUpChallenge,
   projectUsageLimitStepUpChallenge
