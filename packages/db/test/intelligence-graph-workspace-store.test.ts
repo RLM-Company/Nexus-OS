@@ -86,6 +86,8 @@ describe("SQLite intelligence graph workspace store", () => {
       store.save({ ...original, project_id: "project-b", revision: 2 }, 1, "forge")
     ).toBeNull();
     expect(store.get("owner-a", "project-a", original.graph_id)).toEqual(original);
+    db.prepare("UPDATE projects SET status = 'ARCHIVED' WHERE id = ?").run("project-a");
+    expect(store.save({ ...original, revision: 2 }, 1, "archived write")).toBeNull();
     db.close();
   });
 
