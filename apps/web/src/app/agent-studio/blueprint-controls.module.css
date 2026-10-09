@@ -11,16 +11,16 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid var(--accent-line);
-  border-radius: 0.65rem;
-  background: var(--accent-soft);
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--panel);
 }
 
 .boundary strong {
-  color: var(--accent-strong);
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .boundary span {
@@ -42,7 +42,7 @@
 .form label > span,
 .form legend {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 
 .mode select,
@@ -53,12 +53,12 @@
   min-width: 0;
   padding: 0.62rem 0.65rem;
   border: 1px solid var(--line);
-  border-radius: 0.58rem;
+  border-radius: 0.5rem;
   outline: 0;
   color: var(--text);
   background: var(--bg);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.875rem;
 }
 
 .form textarea {
@@ -76,9 +76,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
-  padding: 0.72rem;
-  border: 1px solid var(--line);
-  border-radius: 0.7rem;
+  padding: 0.875rem;
+  border: 0;
+  border-radius: 0.625rem;
   background: var(--panel);
 }
 
@@ -104,8 +104,8 @@
 .form fieldset {
   margin: 0;
   padding: 0.65rem;
-  border: 1px solid var(--line);
-  border-radius: 0.58rem;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
 
 .capabilities {
@@ -125,6 +125,7 @@
 .check input {
   width: auto;
   margin: 0;
+  accent-color: var(--accent-strong);
 }
 
 .check span {
@@ -137,11 +138,11 @@
 .form button {
   padding: 0.65rem 0.75rem;
   border: 0;
-  border-radius: 0.58rem;
-  color: #fff;
+  border-radius: 0.5rem;
+  color: #ffffff;
   background: var(--accent-strong);
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 
 .form button:disabled,
@@ -204,4 +205,13 @@
   .capabilities {
     grid-template-columns: 1fr;
   }
+}
+
+.form button:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+
+.composer :is(button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
 }

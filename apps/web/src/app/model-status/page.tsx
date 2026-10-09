@@ -111,7 +111,7 @@ export default function ModelStatusPage() {
       <div className={styles.shell}>
         <header className={styles.header}>
           <Link className={styles.backLink} href="/">
-            ← Назад в Cosmora
+            ← Назад в Kosmora
           </Link>
           <div>
             <p className={styles.eyebrow}>Model runtime</p>

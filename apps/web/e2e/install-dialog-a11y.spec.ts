@@ -18,11 +18,11 @@ test("keeps the iOS install help keyboard-accessible", async ({ page }) => {
 
   await page.goto("/");
 
-  const install = page.getByRole("button", { name: "Установить Cosmora" });
+  const install = page.getByRole("button", { name: "Установить Kosmora" });
   await expect(install).toBeVisible();
   await install.click();
 
-  const dialog = page.getByRole("dialog", { name: "Добавить Cosmora на экран «Домой»" });
+  const dialog = page.getByRole("dialog", { name: "Добавить Kosmora на экран «Домой»" });
   const understood = dialog.getByRole("button", { name: "Понятно" });
   await expect(understood).toBeFocused();
 

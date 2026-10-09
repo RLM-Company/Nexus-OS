@@ -4,7 +4,7 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   const initialTask = "Оформи как проект: B0.1 — проверь сохранение после перезапуска";
 
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill(initialTask);
+  await page.getByLabel("Сообщение Kosmora").fill(initialTask);
   const createProject = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/v1/projects") && response.request().method() === "POST"
@@ -191,7 +191,7 @@ test("surfaces server-confirmed owner decisions and recovery in the Manager Cons
 
   await page.goto("/");
   await page
-    .getByLabel("Сообщение Cosmora")
+    .getByLabel("Сообщение Kosmora")
     .fill("Оформи как проект: Project Alpha — проверь карточки решений");
   const createdProject = page.waitForResponse(
     (response) =>

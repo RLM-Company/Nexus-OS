@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "registry_version": "cheapvibecode-manager-work-candidate-2026-10-03",
-  "generated_at": "2026-10-03T07:01:39.000Z",
+  "registry_version": "cheapvibecode-manager-work-candidate-2026-10-08",
+  "generated_at": "2026-10-08T14:14:41.000Z",
   "entries": [
     {
       "provider_id": "mock",
@@ -56,7 +56,7 @@
         "streaming": true,
         "structured_output": false,
         "tool_calling": false,
-        "vision": false
+        "vision": true
       },
       "context_window_tokens": 32000,
       "max_output_tokens": 1200,
@@ -70,8 +70,8 @@
       },
       "source": {
         "kind": "authorized_discovery",
-        "verified_at": "2026-10-03T07:01:39.000Z",
-        "valid_until": "2026-10-10T07:01:39.000Z",
+        "verified_at": "2026-10-08T14:14:41.000Z",
+        "valid_until": "2026-10-15T14:14:41.000Z",
         "reference": "https://ru.cheapvibecode.ru/v1/models"
       }
     }

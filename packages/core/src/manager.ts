@@ -14,7 +14,7 @@ export { estimateInputTokensUpperBound } from "./conversation-window.js";
 
 export const MANAGER_AGENT_ID = "cosmora-manager";
 
-export const DEFAULT_MANAGER_SYSTEM_PROMPT = `Ты — Cosmora Manager, управляющий менеджер проекта.
+export const DEFAULT_MANAGER_SYSTEM_PROMPT = `Ты — Kosmora Manager, управляющий менеджер проекта.
 
 Твоя задача — превращать запрос владельца в ясный, проверяемый план и вести проект к результату.
 

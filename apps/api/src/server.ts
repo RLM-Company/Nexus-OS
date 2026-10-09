@@ -50,7 +50,7 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     process.exitCode = 0;
     return;
   }
-  app.log.info({ signal }, "Shutting down Cosmora API");
+  app.log.info({ signal }, "Shutting down Kosmora API");
   await Promise.all([
     managerBackgroundCoordinator?.stop(),
     generalChatBackgroundCoordinator?.stop(),
@@ -168,11 +168,11 @@ try {
     managerWorkCoordinator?.stop()
   ]);
   if (app) {
-    app.log.error(error, "Failed to start Cosmora API");
+    app.log.error(error, "Failed to start Kosmora API");
     await app.close();
   } else {
     database.close();
-    process.stderr.write("Failed to start Cosmora API\n");
+    process.stderr.write("Failed to start Kosmora API\n");
   }
   process.exitCode = 1;
 }

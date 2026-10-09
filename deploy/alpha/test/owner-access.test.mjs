@@ -1,22 +1,29 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createOwnerAccess, hashOwnerPassword } from "../owner-access.mjs";
 
 const password = "fixture-owner-password";
 const passwordHash = hashOwnerPassword(password);
 const origin = "https://cosmora.example";
-async function fixture(t) {
+async function fixture(t, options = {}) {
   let clock = 100000;
-  const server = createOwnerAccess({ origin, passwordHash, now: () => clock });
+  const server = createOwnerAccess({ origin, passwordHash, now: () => clock, ...options });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
   const request = (path, options = {}) => fetch(base + path, { redirect: "manual", ...options });
-  const login = (value = password, headers = {}) =>
+  const login = (value = password, headers = {}, remember = false) =>
     request("/__owner/login", {
       method: "POST",
       headers: { origin, "content-type": "application/x-www-form-urlencoded", ...headers },
-      body: new URLSearchParams({ username: "owner", password: value })
+      body: new URLSearchParams({
+        username: "owner",
+        password: value,
+        ...(remember ? { remember: "on" } : {})
+      })
     });
   const verify = (cookie, path = "/") =>
     request("/__owner/verify", {
@@ -37,8 +44,109 @@ test("unauthed navigation goes to an ordinary form; API stays closed without a B
   const form = await f.request("/login");
   assert.equal(form.status, 200);
   assert.equal(form.headers.get("referrer-policy"), "same-origin");
-  assert.match(await form.text(), /Войти в Cosmora/u);
+  assert.match(await form.text(), /Войти в Kosmora/u);
   assert.match(form.headers.get("content-security-policy"), /frame-ancestors 'none'/u);
+});
+
+function sessionFileFor(t) {
+  const dir = mkdtempSync(join(tmpdir(), "kosmora-owner-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return join(dir, "sessions.json");
+}
+
+test("remembered login survives a service restart and expires after thirty days", async (t) => {
+  const sessionFile = sessionFileFor(t);
+  const first = await fixture(t, { sessionFile });
+  const cookie = (await first.login(password, {}, true)).headers.get("set-cookie");
+  assert.match(cookie, /Max-Age=2592000$/u);
+  const saved = readFileSync(sessionFile, "utf8");
+  assert.ok(!saved.includes(password));
+  assert.ok(!saved.includes(cookie.split(";")[0].split("=")[1]));
+  const restarted = await fixture(t, { sessionFile });
+  restarted.advance(29 * 24 * 60 * 60 * 1000);
+  assert.equal((await restarted.verify(cookie)).status, 204);
+  restarted.advance(24 * 60 * 60 * 1000);
+  assert.equal((await restarted.verify(cookie)).status, 303);
+});
+
+test("short login stays bounded even when persisted; form remembers by default", async (t) => {
+  const sessionFile = sessionFileFor(t);
+  const first = await fixture(t, { sessionFile });
+  const html = await (await first.request("/login")).text();
+  assert.match(html, /name="remember" checked>Запомнить меня на 30 дней/u);
+  const cookie = (await first.login()).headers.get("set-cookie");
+  const restarted = await fixture(t, { sessionFile });
+  assert.equal((await restarted.verify(cookie)).status, 204);
+  restarted.advance(8 * 60 * 60 * 1000);
+  assert.equal((await restarted.verify(cookie)).status, 303);
+});
+
+test("logout and relogin remain revoked across service restarts", async (t) => {
+  const sessionFile = sessionFileFor(t);
+  const first = await fixture(t, { sessionFile });
+  const old = (await first.login(password, {}, true)).headers.get("set-cookie");
+  const current = (await first.login(password, { cookie: old }, true)).headers.get("set-cookie");
+  const restarted = await fixture(t, { sessionFile });
+  assert.equal((await restarted.verify(old)).status, 303);
+  assert.equal((await restarted.verify(current)).status, 204);
+  assert.equal(
+    (
+      await restarted.request("/__owner/logout", {
+        method: "POST",
+        headers: { origin, cookie: current }
+      })
+    ).status,
+    303
+  );
+  const afterLogout = await fixture(t, { sessionFile });
+  assert.equal((await afterLogout.verify(current)).status, 303);
+});
+
+test("a changed password or origin invalidates remembered devices", async (t) => {
+  const sessionFile = sessionFileFor(t);
+  const first = await fixture(t, { sessionFile });
+  const cookie = (await first.login(password, {}, true)).headers.get("set-cookie");
+  const changed = await fixture(t, {
+    sessionFile,
+    passwordHash: hashOwnerPassword("different-password")
+  });
+  assert.equal((await changed.verify(cookie)).status, 303);
+  const moved = await fixture(t, { sessionFile, origin: "https://kosmora-other.example" });
+  assert.equal((await moved.verify(cookie)).status, 303);
+});
+
+test("a corrupt persistent store fails closed; a failed write does not issue a cookie", async (t) => {
+  const sessionFile = sessionFileFor(t);
+  writeFileSync(sessionFile, "invalid");
+  assert.throws(() => createOwnerAccess({ origin, passwordHash, sessionFile }));
+  writeFileSync(
+    sessionFile,
+    JSON.stringify({ version: 1, scope: "test", sessions: [["bad", -1]] })
+  );
+  assert.throws(() => createOwnerAccess({ origin, passwordHash, sessionFile }));
+  rmSync(sessionFile);
+  const f = await fixture(t, { sessionFile });
+  mkdirSync(sessionFile);
+  const failed = await f.login(password, {}, true);
+  assert.equal(failed.status, 400);
+  assert.equal(failed.headers.get("set-cookie"), null);
+  assert.equal((await f.verify()).status, 303);
+});
+
+test("duplicate remember fields cannot issue a remembered session", async (t) => {
+  const f = await fixture(t);
+  const response = await f.request("/__owner/login", {
+    method: "POST",
+    headers: { origin, "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams([
+      ["username", "owner"],
+      ["password", password],
+      ["remember", "on"],
+      ["remember", "on"]
+    ])
+  });
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get("set-cookie"), null);
 });
 test("valid login creates a bounded secure session; invalid and duplicate cookies stay closed", async (t) => {
   const f = await fixture(t);

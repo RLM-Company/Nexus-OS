@@ -19,5 +19,5 @@ test("installer remains an explicit unsigned local build", () => {
     packageJson.scripts["pack:win"],
     "electron-builder --win nsis --x64 --publish never"
   );
-  assert.match(packageJson.build.win.artifactName, /^Cosmora-Setup-/);
+  assert.match(packageJson.build.win.artifactName, /^Kosmora-Setup-/);
 });

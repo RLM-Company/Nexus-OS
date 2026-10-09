@@ -548,7 +548,7 @@ describe("GitHub owner workflow", () => {
         base_tree: tree,
         tree: [{ mode: "100755", content: "const value = 2;" }]
       });
-      expect(writes[2]?.body).toMatchObject({ ref: `refs/heads/cosmora/change-${draft.id}` });
+      expect(writes[2]?.body).toMatchObject({ ref: `refs/heads/kosmora/change-${draft.id}` });
       expect(writes[3]?.body).toMatchObject({ draft: true, base: "main" });
     } finally {
       await app.close();

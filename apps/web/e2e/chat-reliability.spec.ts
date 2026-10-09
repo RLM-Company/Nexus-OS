@@ -33,13 +33,13 @@ test("new chat during a delayed initial read stays usable and ignores the late r
   });
   await page.goto(`/?chat=${chat.id}`);
   await started;
-  await expect(page.getByLabel("Сообщение Cosmora")).toBeDisabled();
+  await expect(page.getByLabel("Сообщение Kosmora")).toBeDisabled();
   await page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true }).click();
-  await expect(page.getByLabel("Сообщение Cosmora")).toBeEnabled();
-  await page.getByLabel("Сообщение Cosmora").fill("Текст нового чата");
+  await expect(page.getByLabel("Сообщение Kosmora")).toBeEnabled();
+  await page.getByLabel("Сообщение Kosmora").fill("Текст нового чата");
   release();
   await finished;
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Текст нового чата");
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Текст нового чата");
   await expect(page.locator(".message.user")).toHaveCount(0);
   await expect(page).not.toHaveURL(/chat=/);
 });
@@ -54,10 +54,10 @@ test("restores text and files after closing the tab, isolates chats, removes and
   });
   const { chat } = (await response.json()) as { chat: { id: string } };
   await page.goto(`/?chat=${chat.id}`);
-  await page.getByLabel("Сообщение Cosmora").fill("Несохранённый текст");
+  await page.getByLabel("Сообщение Kosmora").fill("Несохранённый текст");
   await page.getByLabel("Текстовые файлы и код").setInputFiles(draftFiles);
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("draft.ts");
-  expect(await page.getByLabel("Сообщение Cosmora").inputValue()).toBe("Несохранённый текст");
+  expect(await page.getByLabel("Сообщение Kosmora").inputValue()).toBe("Несохранённый текст");
   expect(
     await page.evaluate((id) => localStorage.getItem(`cosmora:composer-draft:chat:${id}`), chat.id)
   ).toBe("Несохранённый текст");
@@ -65,7 +65,7 @@ test("restores text and files after closing the tab, isolates chats, removes and
   await page.close();
   const reopened = await context.newPage();
   await reopened.goto(url);
-  await expect(reopened.getByLabel("Сообщение Cosmora")).toHaveValue("Несохранённый текст");
+  await expect(reopened.getByLabel("Сообщение Kosmora")).toHaveValue("Несохранённый текст");
   await expect(reopened.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(
     "draft.ts"
   );
@@ -73,7 +73,7 @@ test("restores text and files after closing the tab, isolates chats, removes and
     .locator(".sidebar")
     .getByRole("button", { name: "Новый чат", exact: true })
     .click();
-  await expect(reopened.getByLabel("Сообщение Cosmora")).toHaveValue("");
+  await expect(reopened.getByLabel("Сообщение Kosmora")).toHaveValue("");
   await expect(reopened.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
   await reopened.goto(url);
   await reopened.getByRole("button", { name: "Удалить draft.ts" }).click();
@@ -83,7 +83,7 @@ test("restores text and files after closing the tab, isolates chats, removes and
   await reopened.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(reopened.getByRole("status")).toHaveText(/Ответ получен/);
   await reopened.reload();
-  await expect(reopened.getByLabel("Сообщение Cosmora")).toHaveValue("");
+  await expect(reopened.getByLabel("Сообщение Kosmora")).toHaveValue("");
   await expect(reopened.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
   await expect(reopened.locator(".message.user")).toHaveCount(2);
 });
@@ -105,7 +105,7 @@ test("retains project materials across reload without leaking into the new-chat 
   await expect(page.getByLabel("Сообщение менеджеру")).toHaveValue("Материалы проекта");
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("draft.ts");
   await page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true }).click();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("");
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("");
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
 });
 
@@ -123,7 +123,7 @@ test("recovers text with invalid saved materials and retains a draft on rejected
     );
   });
   await page.reload();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Доступный текст");
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Доступный текст");
   await expect(page.locator(".composer").getByRole("alert")).toContainText(
     "Доступный текст сохранён"
   );
@@ -135,9 +135,9 @@ test("recovers text with invalid saved materials and retains a draft on rejected
     else await route.continue();
   });
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
-  await expect(page.getByLabel("Сообщение Cosmora")).toBeEnabled();
+  await expect(page.getByLabel("Сообщение Kosmora")).toBeEnabled();
   await page.reload();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Доступный текст");
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Доступный текст");
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("draft.ts");
 });
 
@@ -219,14 +219,14 @@ test("keeps attachment controls keyboard reachable with clear names and thumbnai
 
 test("announces rejected attachment type and keeps the draft editor usable", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Оставь этот текст");
+  await page.getByLabel("Сообщение Kosmora").fill("Оставь этот текст");
   await page.getByLabel("Текстовые файлы и код").setInputFiles({
     name: "unsupported.exe",
     mimeType: "application/octet-stream",
     buffer: Buffer.from("binary")
   });
   await expect(page.locator(".composer").getByRole("alert")).toContainText("Поддерживаются");
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Оставь этот текст");
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Оставь этот текст");
   await expect(page.getByRole("button", { name: "Прикрепить файл" })).toBeEnabled();
 });
 
@@ -274,7 +274,7 @@ test("reload and lost network recover the same run without duplicate POSTs or me
       posts++;
   });
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Надёжность: восстановление потока");
+  await page.getByLabel("Сообщение Kosmora").fill("Надёжность: восстановление потока");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.locator(".message.assistant")).toContainText("Начало ответа.");
   const url = page.url();
@@ -296,7 +296,7 @@ test("reload and lost network recover the same run without duplicate POSTs or me
 
 test("late history and stream cannot affect the newly selected chat", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Надёжность: восстановление потока");
+  await page.getByLabel("Сообщение Kosmora").fill("Надёжность: восстановление потока");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.locator(".message.assistant")).toContainText("Начало ответа.");
   let release!: () => void;
@@ -319,10 +319,10 @@ test("late history and stream cannot affect the newly selected chat", async ({ p
   });
   await started;
   await page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true }).click();
-  await page.getByLabel("Сообщение Cosmora").fill("Новый черновик");
+  await page.getByLabel("Сообщение Kosmora").fill("Новый черновик");
   release();
   await page.waitForTimeout(1100);
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Новый черновик");
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Новый черновик");
   await expect(page.locator(".message")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled();
 });
@@ -333,7 +333,7 @@ test("long Markdown and code copy and download retain the complete answer", asyn
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Надёжность: длинный Markdown");
+  await page.getByLabel("Сообщение Kosmora").fill("Надёжность: длинный Markdown");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
   const reply = page.locator(".message.assistant");
@@ -349,7 +349,7 @@ test("long Markdown and code copy and download retain the complete answer", asyn
   const downloaded = page.waitForEvent("download");
   await reply.getByRole("button", { name: "Скачать ответ", exact: true }).click();
   const download = await downloaded;
-  expect(download.suggestedFilename()).toBe("cosmora-answer.md");
+  expect(download.suggestedFilename()).toBe("kosmora-answer.md");
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk as Buffer));
@@ -360,7 +360,7 @@ test("ordinary-chat cancellation after reload restores a request without sending
   page
 }) => {
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Останови этот тестовый запуск");
+  await page.getByLabel("Сообщение Kosmora").fill("Останови этот тестовый запуск");
   await page.getByLabel("Текстовые файлы и код").setInputFiles(draftFiles);
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("draft.ts");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
@@ -376,14 +376,14 @@ test("ordinary-chat cancellation after reload restores a request without sending
     if (request.method() === "POST") posts++;
   });
   await page.getByRole("button", { name: "Вернуть запрос в редактор" }).click();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Останови этот тестовый запуск");
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Останови этот тестовый запуск");
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("draft.ts");
   expect(posts).toBe(0);
 });
 
 test("a pre-completion history snapshot cannot reopen a completed run", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Надёжность: восстановление потока");
+  await page.getByLabel("Сообщение Kosmora").fill("Надёжность: восстановление потока");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.locator(".message.assistant")).toContainText("Начало ответа.");
   let release!: () => void;
@@ -412,6 +412,6 @@ test("a pre-completion history snapshot cannot reopen a completed run", async ({
   await page.waitForTimeout(1100);
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
   await expect(page.getByRole("button", { name: "Остановить", exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Сообщение Cosmora")).toBeEnabled();
+  await expect(page.getByLabel("Сообщение Kosmora")).toBeEnabled();
   await expect(page.locator(".message.assistant")).toHaveCount(1);
 });

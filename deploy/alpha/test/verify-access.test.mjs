@@ -16,6 +16,7 @@ const currentSession = {
 
 async function fixture(t, overrides = {}) {
   const requests = [];
+  let unauthenticatedNavigations = 0;
   const authorization = `Basic ${Buffer.from(`owner:${password}`).toString("base64")}`;
   const server = createServer((request, response) => {
     requests.push({ path: request.url, authorization: request.headers.authorization });
@@ -49,9 +50,13 @@ async function fixture(t, overrides = {}) {
         return;
       }
       if (request.headers.cookie !== "__Host-cosmora-owner=" + "a".repeat(64)) {
+        if (request.url === "/") unauthenticatedNavigations += 1;
         response
           .writeHead(
-            request.url === "/" ? 303 : 401,
+            request.url === "/" &&
+              !(overrides.concurrentAuthFailure && unauthenticatedNavigations > 1)
+              ? 303
+              : 401,
             request.url === "/" ? { location: "/login" } : {}
           )
           .end();
@@ -71,7 +76,27 @@ async function fixture(t, overrides = {}) {
       return;
     }
     if (request.url === "/") {
-      response.writeHead(200).end("Owner interface");
+      response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(
+          overrides.markup ??
+            '<link rel="stylesheet" href="/_next/static/chunks/app.css"><script src="/_next/static/chunks/app.js"></script>Owner interface'
+        );
+      return;
+    }
+    if (request.url.startsWith("/_next/static/")) {
+      response
+        .writeHead(
+          overrides.assetStatus ?? 200,
+          overrides.assetRedirect
+            ? { location: "/redirect-target" }
+            : {
+                "content-type":
+                  overrides.assetType ??
+                  (request.url.endsWith(".css") ? "text/css" : "application/javascript")
+              }
+        )
+        .end("fixture asset");
       return;
     }
     const bodies = {
@@ -103,12 +128,43 @@ test("verifies password protection, current owner expiry and stop without model 
     session_expires_at: currentSession.expires_at.replace("Z", ".000Z"),
     model_requests_paused: true
   });
-  assert.equal(requests.length, 6);
+  assert.equal(requests.length, 10);
   assert.deepEqual(
     requests.slice(0, 2).map((request) => request.authorization),
     [undefined, undefined]
   );
   assert.ok(requests.every((request) => !/chat|work|run/u.test(request.path)));
+});
+
+test("asset verification rejects missing references, wrong MIME and redirects without following them", async (t) => {
+  for (const overrides of [
+    { markup: "Bare HTML with no client assets" },
+    { assetStatus: 404 },
+    { assetType: "text/html" },
+    { assetStatus: 302, assetRedirect: true }
+  ]) {
+    const f = await fixture(t, overrides);
+    await assert.rejects(verifyAccess({ origin: f.origin, password, now }));
+    assert.ok(f.requests.every((request) => request.path !== "/redirect-target"));
+  }
+});
+
+test("asset references cannot send owner credentials to another origin", async (t) => {
+  const f = await fixture(t, {
+    markup:
+      '<script src="https://other.example/_next/static/chunks/app.js"></script><link href="/_next/static/chunks/app.css">'
+  });
+  await assert.rejects(verifyAccess({ origin: f.origin, password, now }), /same protected origin/);
+  assert.ok(f.requests.every((request) => !request.path.startsWith("/_next/static/")));
+});
+
+test("concurrent asset loading rechecks the unauthenticated navigation boundary", async (t) => {
+  const f = await fixture(t, { form: true, concurrentAuthFailure: true });
+  await assert.rejects(
+    verifyAccess({ origin: f.origin, password, now, authMode: "form" }),
+    /password protection failed/
+  );
+  assert.ok(f.requests.some((request) => request.path.endsWith(".css")));
 });
 
 test("verifies the form session without following login redirects or exposing Basic credentials", async (t) => {

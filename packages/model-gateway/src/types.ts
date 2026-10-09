@@ -72,6 +72,7 @@ export class GatewayRunError extends Error {
   readonly code: GatewayErrorCode;
   readonly provider: string;
   readonly retryable: boolean;
+  readonly diagnostic: string | undefined;
 
   constructor(
     code: GatewayErrorCode,
@@ -85,5 +86,25 @@ export class GatewayRunError extends Error {
     this.code = code;
     this.provider = provider;
     this.retryable = retryable;
+    // Error.message is deliberately not serialized by the runtime logger. Keep
+    // an allowlisted operator hint without logging provider bodies or secrets.
+    const httpStatus = /^Provider returned HTTP ([45]\d{2})$/u.exec(message)?.[1];
+    const protocolReasons: Record<string, string> = {
+      "Provider returned an empty body": "EMPTY_BODY",
+      "Provider returned invalid streaming JSON": "INVALID_STREAM_JSON",
+      "Invalid provider stream event": "INVALID_STREAM_EVENT",
+      "Invalid text delta": "INVALID_TEXT_DELTA",
+      "Text after finish reason": "TEXT_AFTER_FINISH",
+      "Provider stream did not finish a non-empty text response": "INCOMPLETE_TEXT_RESPONSE",
+      "Provider stream ended without completion": "MISSING_COMPLETION"
+    };
+    this.diagnostic =
+      code === "PROVIDER_ERROR"
+        ? httpStatus
+          ? `HTTP_${httpStatus}`
+          : Object.hasOwn(protocolReasons, message)
+            ? protocolReasons[message]
+            : undefined
+        : undefined;
   }
 }

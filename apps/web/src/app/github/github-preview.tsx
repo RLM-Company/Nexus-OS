@@ -42,13 +42,13 @@ export default function GitHubReadonlyPage() {
       <div className={styles.shell}>
         <header className={styles.header}>
           <Link className={styles.backLink} href="/">
-            ← Назад в Cosmora
+            ← Назад в Kosmora
           </Link>
           <div>
             <p className={styles.eyebrow}>Integration preview</p>
             <h1>GitHub</h1>
             <p className={styles.lead}>
-              Безопасный read-only preview для Cosmora. Внешнее подключение, OAuth и операции записи
+              Безопасный read-only preview для Kosmora. Внешнее подключение, OAuth и операции записи
               не выполняются.
             </p>
           </div>

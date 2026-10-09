@@ -203,7 +203,7 @@ test("shows a readable API failure and preserves the unsent message", async ({ p
   });
 
   await page.goto("/");
-  const composer = page.getByLabel("Сообщение Cosmora");
+  const composer = page.getByLabel("Сообщение Kosmora");
   await composer.fill("Сообщение, которое нельзя потерять");
   await page.getByRole("button", { name: "Отправить" }).click();
 
@@ -222,6 +222,26 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   const newChat = sidebar.getByRole("button", { name: "Новый чат" });
   const chats = sidebar.getByRole("button", { name: /Чаты/ });
   const projects = sidebar.getByRole("button", { name: /Проекты/ });
+  const modeTrigger = sidebar.getByLabel("Режимы Kosmora", { exact: true });
+  const modeMenu = sidebar.locator(".workspace-mode-menu");
+
+  for (const name of ["Work", "Code"]) {
+    await expect(
+      sidebar.locator(".sidebar-tools").getByRole("button", { name, exact: true })
+    ).toHaveCount(0);
+    await modeTrigger.focus();
+    await page.keyboard.press("Enter");
+    await expect(modeMenu).toHaveAttribute("open", "");
+    const destinations = name === "Work" ? ["Чат", "Work"] : ["Чат", "Work", "Code"];
+    for (const destination of destinations) {
+      await page.keyboard.press("Tab");
+      await expect(modeMenu.getByRole("button", { name: destination, exact: true })).toBeFocused();
+    }
+    await page.keyboard.press("Enter");
+    await expect(modeMenu).not.toHaveAttribute("open");
+    await expect(modeTrigger).toBeFocused();
+    await expect(page.locator(".topbar h1")).toHaveText(name);
+  }
 
   await newChat.focus();
   await page.keyboard.press("Tab");
@@ -240,7 +260,7 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   await expect(projects).toBeFocused();
   await expect(projects).toHaveAttribute("aria-expanded", "false");
 
-  for (const name of ["Work", "Code", "Мультиагент", "Skills"]) {
+  for (const name of ["Мультиагент", "Skills"]) {
     const destination = page.locator(".sidebar-tools").getByRole("button", { name, exact: true });
     await page.keyboard.press("Tab");
     await expect(destination).toBeFocused();

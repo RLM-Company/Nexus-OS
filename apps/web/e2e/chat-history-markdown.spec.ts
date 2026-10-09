@@ -6,9 +6,12 @@ test("renders safe Markdown, downloads code, renames and restores an archived ch
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Покажи тестовый Markdown");
+  await page.getByLabel("Сообщение Kosmora").fill("Покажи тестовый Markdown");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  await expect(page.locator(".topbar").getByRole("heading", { level: 1 })).toHaveText(
+    "Покажи тестовый Markdown"
+  );
   const reply = page.locator(".message.assistant");
   await expect(reply.getByRole("heading", { name: "Результат" })).toBeVisible();
   await expect(reply.locator("table")).toContainText("Готов");
@@ -19,15 +22,20 @@ test("renders safe Markdown, downloads code, renames and restores an archived ch
   );
   const downloaded = page.waitForEvent("download");
   await reply.getByRole("button", { name: "Скачать код" }).click();
-  expect((await downloaded).suggestedFilename()).toBe("cosmora-code.ts");
+  expect((await downloaded).suggestedFilename()).toBe("kosmora-code.ts");
   await page.getByText("Управление чатом", { exact: true }).click();
   const title = `Мой чат ${crypto.randomUUID().slice(0, 8)}`;
   await page.getByLabel("Название чата").fill(title);
   await page.getByRole("button", { name: "Сохранить название" }).click();
   await expect(page.locator(".sidebar strong").filter({ hasText: title })).toBeVisible();
+  await expect(page.locator(".topbar").getByRole("heading", { level: 1 })).toHaveText(title);
   await page.getByRole("button", { name: "Убрать чат в архив" }).click();
   await expect(page.locator(".sidebar strong").filter({ hasText: title })).toHaveCount(0);
+  await expect(page.locator(".topbar").getByRole("heading", { level: 1 })).toHaveText("Новый чат");
   await page.getByText("Архив чатов", { exact: true }).click();
   await page.getByRole("button", { name: `Восстановить ${title}`, exact: true }).click();
   await expect(page.locator(".sidebar strong").filter({ hasText: title })).toBeVisible();
+  await page.locator(".sidebar").getByRole("button", { name: title, exact: true }).click();
+  await page.reload();
+  await expect(page.locator(".topbar").getByRole("heading", { level: 1 })).toHaveText(title);
 });

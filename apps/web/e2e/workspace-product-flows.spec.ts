@@ -56,7 +56,7 @@ test("opens the Studio overview directly from a shared preview link", async ({ p
   await page.addInitScript(() => localStorage.setItem("cosmora:workspace-surface", "code"));
   await page.goto("/?surface=studio");
   await expect(
-    page.locator(".capability-workspace").getByRole("heading", { name: "Cosmora Studio" })
+    page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Изображения" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Видео" })).toBeVisible();
@@ -83,7 +83,7 @@ test("shows a searchable plan with real entry points and honest future requireme
   await page.getByRole("textbox", { name: "Поиск возможностей" }).fill("");
   await page.getByRole("button", { name: /Studio.*Редакторы промптов/ }).click();
   await expect(
-    page.locator(".capability-workspace").getByRole("heading", { name: "Cosmora Studio" })
+    page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
   ).toBeVisible();
   await expect(page).toHaveURL(/surface=studio/);
 });
@@ -92,15 +92,15 @@ test("opens Studio from its sidebar folder and keeps a shareable surface URL", a
   await page.goto("/?surface=work");
   await page
     .locator(".sidebar-tools")
-    .getByRole("button", { name: /Cosmora Studio/ })
+    .getByRole("button", { name: /Kosmora Studio/ })
     .click();
   await expect(
-    page.locator(".capability-workspace").getByRole("heading", { name: "Cosmora Studio" })
+    page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
   ).toBeVisible();
   await expect(page).toHaveURL(/surface=studio/);
   await page.reload();
   await expect(
-    page.locator(".capability-workspace").getByRole("heading", { name: "Cosmora Studio" })
+    page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
   ).toBeVisible();
 });
 
@@ -111,7 +111,7 @@ test("exports the selected Studio parameters and restores isolated drafts", asyn
   });
   await page.goto("/");
   const sidebar = page.locator(".sidebar-tools");
-  await sidebar.getByRole("button", { name: /Cosmora Studio/ }).click();
+  await sidebar.getByRole("button", { name: /Kosmora Studio/ }).click();
   await sidebar.getByRole("button", { name: "Sound", exact: true }).click();
   await expect(page.getByRole("button", { name: "Короткий", exact: true })).toHaveAttribute(
     "aria-pressed",
@@ -127,7 +127,7 @@ test("exports the selected Studio parameters and restores isolated drafts", asyn
   const downloadEvent = page.waitForEvent("download");
   await page.getByRole("button", { name: "Скачать .txt" }).click();
   const download = await downloadEvent;
-  expect(download.suggestedFilename()).toBe("cosmora-sound-prompt.txt");
+  expect(download.suggestedFilename()).toBe("kosmora-sound-prompt.txt");
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
@@ -153,17 +153,21 @@ test("transfers a Code brief into an unsent chat draft", async ({ page }) => {
     if (request.method() === "POST") writes.push(request.url());
   });
   await page.goto("/");
-  const tools = page.locator(".sidebar-tools");
-  await tools.getByRole("button", { name: "Code", exact: true }).click();
+  const modeTrigger = page.getByLabel("Режимы Kosmora", { exact: true });
+  const modeMenu = page.locator(".workspace-mode-menu");
+  await modeTrigger.click();
+  await modeMenu.getByRole("button", { name: /^Code(?:\s|$)/ }).click();
   await page.getByLabel("Описание задачи разработки").fill("Добавить поиск по названиям проектов");
   await page.getByLabel(/Критерии готовности/).fill("Поиск не зависит от регистра");
-  await tools.getByRole("button", { name: "Work", exact: true }).click();
-  await tools.getByRole("button", { name: "Code", exact: true }).click();
+  await modeTrigger.click();
+  await modeMenu.getByRole("button", { name: /^Work(?:\s|$)/ }).click();
+  await modeTrigger.click();
+  await modeMenu.getByRole("button", { name: /^Code(?:\s|$)/ }).click();
   await expect(page.getByLabel("Описание задачи разработки")).toHaveValue(
     "Добавить поиск по названиям проектов"
   );
-  await page.getByRole("button", { name: "Обсудить с Cosmora" }).click();
-  const composer = page.getByLabel("Сообщение Cosmora");
+  await page.getByRole("button", { name: "Обсудить с Kosmora" }).click();
+  const composer = page.getByLabel("Сообщение Kosmora");
   await expect(composer).toHaveValue(/Добавить поиск по названиям проектов/);
   await expect(composer).toHaveValue(/Поиск не зависит от регистра/);
   await expect(composer).toBeFocused();

@@ -6,14 +6,14 @@ import { drizzle, type RemoteCallback, type SqliteRemoteDatabase } from "drizzle
 import { migrate, type ProxyMigrator } from "drizzle-orm/sqlite-proxy/migrator";
 import * as schema from "./schema.js";
 
-export type CosmoraDatabase = SqliteRemoteDatabase<typeof schema>;
+export type KosmoraDatabase = SqliteRemoteDatabase<typeof schema>;
 
 export interface DatabaseHealth {
   ping(): void;
 }
 
 export interface DatabaseHandle extends DatabaseHealth {
-  db: CosmoraDatabase;
+  db: KosmoraDatabase;
   sqlite: DatabaseSync;
   close(): void;
 }

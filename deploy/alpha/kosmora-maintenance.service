@@ -1,0 +1,11 @@
+[Unit]
+Description=Kosmora private runtime credential and catalog maintenance
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/cosmora/runtime/maintenance.sh
+TimeoutStartSec=10min
+UMask=0077

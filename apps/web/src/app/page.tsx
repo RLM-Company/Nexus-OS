@@ -14,7 +14,7 @@ import { ProjectContextPreview } from "./project-context-preview";
 import { ManagerWorkPanel } from "./manager-work-panel";
 import { useExecutionGate } from "./use-execution-gate";
 import { WorkspaceIcon } from "./workspace-icons";
-import { AccountMenu, MobileNavigation } from "./workspace-navigation";
+import { AccountMenu, MobileNavigation, WorkspaceModeMenu } from "./workspace-navigation";
 import {
   ChatAttachmentPicker,
   ChatMessageAttachments,
@@ -138,8 +138,8 @@ const PROJECT_VIEW_ORDER: ProjectView[] = ["chat", "plan", "project", "context"]
 type WorkspaceSurface = "manager" | ToolSurface;
 
 const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
-  manager: "Cosmora Manager",
-  studio: "Cosmora Studio",
+  manager: "Kosmora Manager",
+  studio: "Kosmora Studio",
   files: "Крупные файлы",
   skills: "Skills",
   code: "Code",
@@ -235,6 +235,12 @@ const RUN_PHASE_LABEL: Record<RunPhase, string> = {
   completed: "Ответ получен",
   failed: "Ошибка запуска",
   cancelled: "Остановлен"
+};
+
+const CHAT_RUN_PHASE_LABEL: Record<RunPhase, string> = {
+  ...RUN_PHASE_LABEL,
+  running: "Kosmora отвечает",
+  streaming: "Kosmora отвечает · поток"
 };
 
 const PROJECT_STATUS_LABEL: Record<Project["status"], string> = {
@@ -651,7 +657,7 @@ export default function Home() {
         api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
       ]);
     } catch {
-      setError("API Cosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
+      setError("API Kosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
     } finally {
       setLoading(false);
     }
@@ -874,11 +880,24 @@ export default function Home() {
   }, [activeLocalChatId, activeProject, loadGeneralChatView, runPhase]);
 
   const openProject = useCallback(
-    async (projectId: string, view: ProjectView = "chat"): Promise<void> => {
+    async (
+      projectId: string,
+      view: ProjectView = "chat",
+      restoredSurface: WorkspaceSurface = "manager"
+    ): Promise<void> => {
       const epoch = ++viewEpochRef.current;
-      setSurface("manager");
+      setSurface(restoredSurface);
       selectedProjectRef.current = projectId;
       replaceConsoleRoute(projectId, view);
+      if (restoredSurface !== "manager") {
+        const route = new URL(window.location.href);
+        route.searchParams.set("surface", restoredSurface);
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${route.pathname}${route.search}${route.hash}`
+        );
+      }
       streamRef.current?.close();
       streamRef.current = null;
       setActiveRunId(null);
@@ -961,11 +980,14 @@ export default function Home() {
       return;
     }
     const requestedView = params.get("view");
-    void openProject(projectId, isProjectView(requestedView) ? requestedView : "chat").finally(
-      () => {
-        setInitialRouteReady(true);
-      }
-    );
+    const requestedSurface = params.get("surface");
+    void openProject(
+      projectId,
+      isProjectView(requestedView) ? requestedView : "chat",
+      isToolSurface(requestedSurface) ? requestedSurface : "manager"
+    ).finally(() => {
+      setInitialRouteReady(true);
+    });
   }, [loading, openProject]);
 
   const selectProjectView = (view: ProjectView): void => {
@@ -1749,13 +1771,19 @@ export default function Home() {
     ? `/agent-studio?project=${encodeURIComponent(activeProject.id)}`
     : "/agent-studio";
 
-  const selectSurface = (nextSurface: ToolSurface): void => {
+  const selectSurface = (nextSurface: WorkspaceSurface): void => {
     setSurface(nextSurface);
+    if (nextSurface === "manager") {
+      replaceConsoleRoute(
+        activeProject?.id ?? selectedProjectRef.current,
+        projectView,
+        activeLocalChatId
+      );
+      return;
+    }
     if (["studio", "files", "images", "video", "sound"].includes(nextSurface))
       setStudioExpanded(true);
     const route = new URL(window.location.href);
-    route.searchParams.delete("project");
-    route.searchParams.delete("view");
     route.searchParams.set("surface", nextSurface);
     window.history.replaceState(
       window.history.state,
@@ -1769,12 +1797,7 @@ export default function Home() {
       className={`app-shell product-shell${preferences.compact ? " compact-navigation" : ""}${preferences.largeText ? " large-text" : ""}`}
     >
       <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">
-            <SparkIcon />
-          </span>
-          <span>Cosmora</span>
-        </div>
+        <WorkspaceModeMenu surface={surface} onNavigate={selectSurface} />
 
         <button className="new-project" onClick={newChat}>
           <span>
@@ -1909,6 +1932,8 @@ export default function Home() {
             {TOOL_ITEMS.filter(
               (item) =>
                 ![
+                  "work",
+                  "code",
                   "studio",
                   "files",
                   "images",
@@ -1942,7 +1967,7 @@ export default function Home() {
                 }}
               >
                 <ToolIcon kind="studio" />
-                <span>Cosmora Studio</span>
+                <span>Kosmora Studio</span>
                 <span className="section-chevron" aria-hidden="true">
                   ›
                 </span>
@@ -2017,11 +2042,11 @@ export default function Home() {
                 ? activeProject
                   ? "Активный проект"
                   : "Обычный чат"
-                : "Cosmora workspace"}
+                : "Kosmora workspace"}
             </span>
             <h1>
               {surface === "manager"
-                ? (activeProject?.title ?? "Новый чат")
+                ? (activeProject?.title ?? activeLocalChat?.title ?? "Новый чат")
                 : SURFACE_TITLE[surface]}
             </h1>
           </div>
@@ -2351,7 +2376,7 @@ export default function Home() {
                 <SparkIcon />
               </span>
               <div>
-                <strong>Cosmora Manager</strong>
+                <strong>Kosmora Manager</strong>
                 <span className="project-mode-label">Менеджер · мультиагентный проект</span>
                 <small>
                   {lastCompletedRoute
@@ -2373,7 +2398,7 @@ export default function Home() {
                   </span>
                   <div>
                     <header>
-                      <strong>{message.role === "user" ? "Вы" : "Cosmora Manager"}</strong>
+                      <strong>{message.role === "user" ? "Вы" : "Kosmora Manager"}</strong>
                       <time>
                         {new Date(message.created_at).toLocaleTimeString("ru", {
                           hour: "2-digit",
@@ -2394,7 +2419,7 @@ export default function Home() {
             </div>
           </section>
         ) : localChatMessages.length > 0 ? (
-          <section className="chat-panel general-chat-panel" aria-label="Обычный чат Cosmora">
+          <section className="chat-panel general-chat-panel" aria-label="Обычный чат Kosmora">
             {activeLocalChat && (
               <ChatHistoryActions
                 key={activeLocalChat.id}
@@ -2419,7 +2444,7 @@ export default function Home() {
             )}
             <div className="chat-heading general-chat-heading">
               <div>
-                <strong>Cosmora</strong>
+                <strong>Kosmora</strong>
                 <small>
                   {lastCompletedRoute
                     ? `${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
@@ -2429,7 +2454,7 @@ export default function Home() {
                 </small>
               </div>
               <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">
-                <i /> {RUN_PHASE_LABEL[runPhase]}
+                <i /> {CHAT_RUN_PHASE_LABEL[runPhase]}
               </span>
             </div>
             <div className="messages" aria-live="polite">
@@ -2440,7 +2465,7 @@ export default function Home() {
                   </span>
                   <div>
                     <header>
-                      <strong>{message.role === "user" ? "Вы" : "Cosmora"}</strong>
+                      <strong>{message.role === "user" ? "Вы" : "Kosmora"}</strong>
                       <time>
                         {new Date(message.created_at).toLocaleTimeString("ru", {
                           hour: "2-digit",
@@ -2508,7 +2533,7 @@ export default function Home() {
           onSubmit={(event) => void submit(event)}
         >
           <label htmlFor="task">
-            {activeProject ? "Сообщение менеджеру" : "Сообщение Cosmora"}
+            {activeProject ? "Сообщение менеджеру" : "Сообщение Kosmora"}
           </label>
           <textarea
             id="task"
@@ -2565,7 +2590,7 @@ export default function Home() {
             </div>
             <div className="composer-footer">
               <span role={error ? "alert" : undefined} aria-live={error ? "assertive" : "polite"}>
-                {error ?? (sending ? "Cosmora выполняет запуск…" : "")}
+                {error ?? (sending ? "Kosmora выполняет запуск…" : "")}
               </span>
               {sending ? (
                 <button

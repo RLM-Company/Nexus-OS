@@ -9,8 +9,11 @@ test("persists a selected workspace across reload without creating a project", a
   });
 
   await page.goto("/");
-  const sidebar = page.locator(".sidebar-tools");
-  await sidebar.getByRole("button", { name: "Work", exact: true }).click();
+  await page.getByLabel("Режимы Kosmora", { exact: true }).click();
+  await page
+    .locator(".workspace-mode-menu")
+    .getByRole("button", { name: /^Work(?:\s|$)/ })
+    .click();
   await expect(page.locator(".topbar h1")).toHaveText("Work");
 
   await page.reload();
@@ -23,7 +26,12 @@ test("keeps the persisted workspace usable at 390x844", async ({ page }) => {
   await page.goto("/");
 
   const mobileNav = page.getByRole("navigation", { name: "Мобильная навигация" });
-  await mobileNav.getByRole("button", { name: "Code", exact: true }).click();
+  await mobileNav.getByRole("button", { name: "Режимы", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Ваше пространство" })
+    .locator(".drawer-modes")
+    .getByRole("button", { name: /^Code(?:\s|$)/ })
+    .click();
   await expect(page.locator(".topbar h1")).toHaveText("Code");
 
   await page.reload();

@@ -3,14 +3,14 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Cosmora OS",
-  description: "Чаты, проекты и рабочие области Cosmora",
-  applicationName: "Cosmora",
+  title: "Kosmora OS",
+  description: "Чаты, проекты и рабочие области Kosmora",
+  applicationName: "Kosmora",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Cosmora"
+    title: "Kosmora"
   },
   formatDetection: {
     telephone: false
@@ -28,7 +28,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="ru">
+    <html lang="ru" data-scroll-behavior="smooth">
       <body>{children}</body>
     </html>
   );

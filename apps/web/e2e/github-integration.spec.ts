@@ -224,11 +224,11 @@ test("reveals files past the first 500 and reports a GitHub read refusal", async
 
 test("Code opens the real repository workspace", async ({ page }) => {
   await page.goto("/?surface=code");
-  await expect(page.getByRole("link", { name: "Открыть GitHub →" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Открыть GitHub" })).toHaveAttribute(
     "href",
     "/github"
   );
-  await page.getByRole("link", { name: "Открыть GitHub →" }).click();
+  await page.getByRole("link", { name: "Открыть GitHub" }).click();
   await expect(page.getByRole("heading", { name: "GitHub ещё не подключён" })).toBeVisible();
 });
 test("keeps the live editor and reviewed diff within a mobile viewport", async ({ page }) => {
@@ -291,7 +291,7 @@ test("reads code into a chat draft and does not start a model request", async ({
   await page.getByRole("button", { name: "src/example.ts", exact: true }).click();
   await expect(page.getByLabel("Содержимое файла")).toHaveValue("export const value = 42;");
   await page.getByRole("button", { name: "Открыть файл в чате" }).click();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue(/src\/example.ts/);
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue(/src\/example.ts/);
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("example.ts");
   expect(sends).toBe(0);
 });

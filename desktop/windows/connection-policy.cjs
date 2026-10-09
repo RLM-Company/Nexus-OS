@@ -7,14 +7,14 @@ const EXTERNAL_PROTOCOLS = new Set(["https:", "http:", "mailto:"]);
 
 function normalizeServerOrigin(value) {
   if (typeof value !== "string" || value.trim() === "") {
-    throw new Error("Укажите адрес Cosmora.");
+    throw new Error("Укажите адрес Kosmora.");
   }
 
   let parsed;
   try {
     parsed = new URL(value.trim());
   } catch {
-    throw new Error("Адрес Cosmora имеет неверный формат.");
+    throw new Error("Адрес Kosmora имеет неверный формат.");
   }
 
   const isSecureRemote = parsed.protocol === "https:";

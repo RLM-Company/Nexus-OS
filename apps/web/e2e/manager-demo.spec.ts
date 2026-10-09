@@ -5,7 +5,7 @@ test("persists the visible Manager demo plan through reload and executes it expl
 }) => {
   const goal = "Оформи как проект: подготовь план улучшения документации";
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill(goal);
+  await page.getByLabel("Сообщение Kosmora").fill(goal);
   const createdProject = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/v1/projects") && response.request().method() === "POST"

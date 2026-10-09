@@ -45,7 +45,7 @@ function CodeBlock({ children, node }: ComponentProps<"pre"> & ExtraProps) {
       <div className="response-actions">
         <span>{name}</span>
         <CopyButton content={content} label="Копировать код" />
-        <button type="button" onClick={() => downloadText(content, `cosmora-code.${name}`)}>
+        <button type="button" onClick={() => downloadText(content, `kosmora-code.${name}`)}>
           Скачать код
         </button>
       </div>
@@ -98,7 +98,7 @@ export function ChatResponse({
       {complete && (
         <div className="response-actions">
           <CopyButton content={content} label="Копировать ответ" />
-          <button type="button" onClick={() => downloadText(content, "cosmora-answer.md")}>
+          <button type="button" onClick={() => downloadText(content, "kosmora-answer.md")}>
             Скачать ответ
           </button>
         </div>

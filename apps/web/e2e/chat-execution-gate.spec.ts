@@ -18,7 +18,7 @@ test("retains the draft and sends no chat request by button or Enter during a gl
   );
   await page.goto("/");
   await expect(page.getByTestId("chat-execution-gate")).toHaveCount(0);
-  const draft = page.getByLabel("Сообщение Cosmora");
+  const draft = page.getByLabel("Сообщение Kosmora");
   await draft.fill("Сохранённый запрос для будущего запуска");
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeDisabled();
   await draft.press("Enter");
@@ -56,7 +56,7 @@ test("checks the selected project stop and keeps an ordinary chat independent", 
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Новый чат", exact: true }).click();
   await page
-    .getByLabel("Сообщение Cosmora")
+    .getByLabel("Сообщение Kosmora")
     .fill("Обычный чат не относится к остановленному проекту");
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled();
 });
@@ -69,12 +69,12 @@ test("bounds unavailable evidence without consuming the draft or showing private
     if (available) await route.fulfill({ json: { process_stop: null } });
   });
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Черновик остаётся в редакторе");
+  await page.getByLabel("Сообщение Kosmora").fill("Черновик остаётся в редакторе");
   await expect(page.getByTestId("chat-execution-gate")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeDisabled();
   available = true;
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled();
-  await expect(page.getByLabel("Сообщение Cosmora")).toHaveValue("Черновик остаётся в редакторе");
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Черновик остаётся в редакторе");
 });
 
 test("does not promote a saved proposal to a model-starting project while stopped", async ({
@@ -90,7 +90,7 @@ test("does not promote a saved proposal to a model-starting project while stoppe
   });
   await page.goto("/");
   await page
-    .getByLabel("Сообщение Cosmora")
+    .getByLabel("Сообщение Kosmora")
     .fill("Оформи как проект: подготовь план запуска продукта");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(

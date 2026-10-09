@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { KosmoraBrandMark } from "./kosmora-brand";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -80,7 +81,7 @@ export function InstallApp() {
       setInstallPrompt(null);
     } catch {
       setInstallError(
-        "Не удалось открыть установку Cosmora. Используйте меню браузера и повторите попытку."
+        "Не удалось открыть установку Kosmora. Используйте меню браузера и повторите попытку."
       );
     } finally {
       installPendingRef.current = false;
@@ -94,7 +95,7 @@ export function InstallApp() {
         ref={installButtonRef}
         type="button"
         className="app-install-button"
-        aria-label="Установить Cosmora"
+        aria-label="Установить Kosmora"
         disabled={installPending}
         onClick={() => void install()}
       >
@@ -128,10 +129,10 @@ export function InstallApp() {
             }}
           >
             <span className="brand-mark" aria-hidden="true">
-              C
+              <KosmoraBrandMark />
             </span>
             <div>
-              <h2 id="install-title">Добавить Cosmora на экран «Домой»</h2>
+              <h2 id="install-title">Добавить Kosmora на экран «Домой»</h2>
               <p>В Safari нажмите «Поделиться», затем выберите «На экран Домой».</p>
             </div>
             <button type="button" autoFocus onClick={closeIosHelp}>

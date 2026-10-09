@@ -1,4 +1,5 @@
 import type { SVGProps } from "react";
+import { KosmoraBrandMark } from "./kosmora-brand";
 
 export type IconName =
   | "cosmora"
@@ -28,7 +29,7 @@ export type IconName =
   | "more"
   | "check";
 
-const paths: Record<IconName, React.ReactNode> = {
+const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
   paperclip: (
     <path d="m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l10-10a2 2 0 0 1 3 3L6 15a1 1 0 0 0 2 2l9-9" />
   ),
@@ -36,13 +37,6 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
       <path d="M14 2v6h6M8 13h8M8 17h5" />
-    </>
-  ),
-  cosmora: (
-    <>
-      <path d="M17.8 5.4a8.5 8.5 0 1 0 0 13.2" />
-      <ellipse cx="12" cy="12" rx="10" ry="3.6" transform="rotate(-40 12 12)" />
-      <circle cx="18.6" cy="6.5" r="1.5" fill="currentColor" stroke="none" />
     </>
   ),
   chats: <path d="M21 11.5a8 8 0 0 1-8 8H7l-4 2V11.5a9 9 0 0 1 18 0Z" />,
@@ -158,6 +152,7 @@ const paths: Record<IconName, React.ReactNode> = {
 };
 
 export function WorkspaceIcon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
+  if (name === "cosmora") return <KosmoraBrandMark width="20" height="20" {...props} />;
   return (
     <svg
       viewBox="0 0 24 24"

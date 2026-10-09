@@ -20,6 +20,13 @@ const SESSION_PARTITION = "persist:cosmora";
 const CONNECTION_FILE = "connection.json";
 const HEALTH_TIMEOUT_MS = 6000;
 
+// Keep the existing profile and Chromium partition across the product rename.
+const profileDirectory = path.join(app.getPath("appData"), "cosmora-windows-desktop");
+fs.mkdirSync(profileDirectory, { recursive: true });
+app.setPath("userData", profileDirectory);
+app.setPath("sessionData", profileDirectory);
+app.setName("Kosmora");
+
 let mainWindow = null;
 let currentOrigin = null;
 let connectionMessage = "";
@@ -79,32 +86,38 @@ async function probeServer(browserSession, origin) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
   try {
-    const response = await browserSession.fetch(origin + "/api/v1/health", {
+    const requestOptions = {
       method: "GET",
       cache: "no-store",
       redirect: "manual",
       signal: controller.signal
-    });
+    };
+    let response = await browserSession.fetch(origin + "/api/v1/health", requestOptions);
+    // The owner gateway protects the health route before the first sign-in.
+    // Confirm its public login page is reachable, then let ordinary login proceed.
+    if (response.status === 401) {
+      response = await browserSession.fetch(origin + "/login", requestOptions);
+    }
     if (response.status >= 300 && response.status < 400) {
       return {
         ok: false,
-        message: "Сервер перенаправил проверку подключения. Проверьте адрес Cosmora."
+        message: "Сервер перенаправил проверку подключения. Проверьте адрес Kosmora."
       };
     }
     if (!response.ok) {
       return {
         ok: false,
-        message: `Cosmora ответила ошибкой HTTP ${response.status}. Повторите попытку позже.`
+        message: `Kosmora ответила ошибкой HTTP ${response.status}. Повторите попытку позже.`
       };
     }
     return { ok: true };
   } catch (cause) {
     if (cause && cause.name === "AbortError") {
-      return { ok: false, message: "Сервер Cosmora не ответил за 6 секунд." };
+      return { ok: false, message: "Сервер Kosmora не ответил за 6 секунд." };
     }
     return {
       ok: false,
-      message: "Не удалось подключиться к Cosmora. Проверьте сеть и TLS-сертификат."
+      message: "Не удалось подключиться к Kosmora. Проверьте сеть и TLS-сертификат."
     };
   } finally {
     clearTimeout(timeout);
@@ -136,10 +149,10 @@ async function openOrigin(origin, { persist = false } = {}) {
     } catch {
       if (connectionAttemptGate.isCurrent(generation)) {
         await showConnection(
-          "Сервер доступен, но интерфейс Cosmora не открылся. Повторите попытку."
+          "Сервер доступен, но интерфейс Kosmora не открылся. Повторите попытку."
         );
       }
-      return { ok: false, message: "Сервер доступен, но интерфейс Cosmora не открылся." };
+      return { ok: false, message: "Сервер доступен, но интерфейс Kosmora не открылся." };
     }
   } finally {
     connectionAttemptGate.finish(generation);
@@ -173,7 +186,7 @@ function installNavigationGuards(window) {
     (_event, errorCode, _description, validatedURL, isMainFrame) => {
       if (!isMainFrame || errorCode === -3 || !currentOrigin) return;
       if (isAllowedRemoteNavigation(validatedURL, currentOrigin)) {
-        void showConnection("Соединение с Cosmora потеряно. Сохранённый адрес не изменён.");
+        void showConnection("Соединение с Kosmora потеряно. Сохранённый адрес не изменён.");
       }
     }
   );
@@ -206,7 +219,7 @@ function installSessionPolicy(browserSession) {
 function createMenu() {
   const template = [
     {
-      label: "Cosmora",
+      label: "Kosmora",
       submenu: [
         { label: "Сменить сервер…", accelerator: "Ctrl+Shift+K", click: () => showConnection() },
         { type: "separator" },
@@ -241,7 +254,7 @@ async function createMainWindow() {
     minHeight: 640,
     backgroundColor: "#ffffff",
     show: false,
-    title: "Cosmora",
+    title: "Kosmora",
     webPreferences: {
       partition: SESSION_PARTITION,
       preload: path.join(__dirname, "preload.cjs"),
@@ -289,7 +302,7 @@ ipcMain.handle("cosmora:connect", async (event, payload) => {
   } catch (cause) {
     return {
       ok: false,
-      message: cause instanceof Error ? cause.message : "Адрес Cosmora имеет неверный формат."
+      message: cause instanceof Error ? cause.message : "Адрес Kosmora имеет неверный формат."
     };
   }
   return openOrigin(origin, { persist: true });
@@ -299,7 +312,7 @@ ipcMain.handle("cosmora:retry", async (event) => {
   if (!isTrustedConnectionEvent(event))
     return { ok: false, message: "Недоверенный источник запроса." };
   const saved = readSavedOrigin();
-  if (!saved.saved) return { ok: false, message: "Сначала укажите сервер Cosmora." };
+  if (!saved.saved) return { ok: false, message: "Сначала укажите сервер Kosmora." };
   currentOrigin = saved.origin;
   return openOrigin(saved.origin);
 });

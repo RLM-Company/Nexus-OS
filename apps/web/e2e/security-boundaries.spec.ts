@@ -16,7 +16,7 @@ test("redacts internal API error details and offers retry", async ({ page }) => 
   });
 
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Проверка безопасной ошибки");
+  await page.getByLabel("Сообщение Kosmora").fill("Проверка безопасной ошибки");
   await page.getByRole("button", { name: "Отправить" }).click();
 
   const alert = page.getByRole("alert").filter({ hasText: "Сервис временно недоступен" });
@@ -63,7 +63,7 @@ test("fails closed when the API returns an external stream URL", async ({ page }
   });
 
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Проверка URL");
+  await page.getByLabel("Сообщение Kosmora").fill("Проверка URL");
   await page.getByRole("button", { name: "Отправить" }).click();
 
   await expect(
@@ -90,7 +90,7 @@ test("prevents rapid duplicate project confirmation", async ({ page }) => {
 
   await page.goto("/");
   await page
-    .getByLabel("Сообщение Cosmora")
+    .getByLabel("Сообщение Kosmora")
     .fill("Создай проект: разработай приложение с API, базой данных, интерфейсом и e2e-тестами");
   await page.getByRole("button", { name: "Отправить" }).click();
 

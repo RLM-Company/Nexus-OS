@@ -5,7 +5,7 @@ test("keeps the Manager demo usable without horizontal overflow on a phone viewp
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Оформи как проект: подготовь план демо");
+  await page.getByLabel("Сообщение Kosmora").fill("Оформи как проект: подготовь план демо");
   await page.getByRole("button", { name: "Отправить" }).click();
   await page.getByRole("button", { name: "Оформить как проект" }).click();
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);

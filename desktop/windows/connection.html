@@ -7,15 +7,17 @@
       content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Подключение к Cosmora</title>
+    <title>Подключение к Kosmora</title>
     <link rel="stylesheet" href="./connection.css" />
   </head>
   <body>
     <main class="shell">
       <section class="card" aria-labelledby="title">
-        <div class="mark" aria-hidden="true">C</div>
-        <p class="eyebrow">Cosmora for Windows</p>
-        <h1 id="title">Подключение к Cosmora</h1>
+        <div class="brand">
+          <div class="mark" aria-hidden="true"><img src="./build/icon.svg" alt="" /></div>
+          <p class="eyebrow">Kosmora <span>для Windows</span></p>
+        </div>
+        <h1 id="title">Подключение к Kosmora</h1>
         <p id="lead" class="lead"></p>
 
         <form id="connection-form" autocomplete="off">
@@ -33,7 +35,7 @@
           </label>
 
           <p id="error" class="error" role="alert" aria-live="assertive"></p>
-          <button id="connect" type="submit">Открыть Cosmora</button>
+          <button id="connect" type="submit">Открыть Kosmora</button>
         </form>
 
         <div class="recovery-actions">
@@ -41,9 +43,7 @@
           <button id="change" class="secondary" type="button" hidden>Сменить адрес</button>
         </div>
 
-        <p class="hint">
-          Удалённые адреса работают только по HTTPS. Проверка сертификата не отключается.
-        </p>
+        <p class="hint">После подключения войдите в своё рабочее пространство.</p>
       </section>
     </main>
     <script src="./connection.js"></script>

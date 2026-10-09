@@ -63,8 +63,8 @@ export function ChatHistoryActions({
         disabled={disabled || pending}
         onClick={() =>
           downloadText(
-            `# ${title}\n\n${messages.map((message) => `## ${message.role === "user" ? "Вы" : "Cosmora"}\n\n${message.content}`).join("\n\n")}`,
-            "cosmora-chat.md"
+            `# ${title}\n\n${messages.map((message) => `## ${message.role === "user" ? "Вы" : "Kosmora"}\n\n${message.content}`).join("\n\n")}`,
+            "kosmora-chat.md"
           )
         }
       >

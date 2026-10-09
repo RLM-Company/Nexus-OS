@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { WorkspaceIcon as Icon, type IconName } from "./workspace-icons";
 import { PLANNED_CAPABILITIES, type CapabilityArea } from "./workspace-capabilities";
 import styles from "./workspace-sections.module.css";
@@ -26,7 +26,7 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "code", label: "Code", description: "Задачи разработки" },
   { id: "multi-agent", label: "Мультиагент", description: "Команда и роли" },
   { id: "skills", label: "Skills", description: "Навыки и специализации" },
-  { id: "studio", label: "Cosmora Studio", description: "Изображения, видео и звук" },
+  { id: "studio", label: "Kosmora Studio", description: "Изображения, видео и звук" },
   { id: "files", label: "Крупные файлы", description: "Документы, данные и код" },
   { id: "images", label: "Изображения", description: "Кадр, стиль и композиция" },
   { id: "video", label: "Видео", description: "Сцена и движение" },
@@ -135,17 +135,19 @@ function Header({
 }) {
   return (
     <header className={styles.hero}>
-      <div className={styles.heading}>
-        <span className={styles.heroIcon}>
-          <Icon name={icon} />
-        </span>
-        <div>
-          <p className={styles.eyebrow}>{eyebrow}</p>
-          <h2>{title}</h2>
+      <div className={styles.heroTop}>
+        <div className={styles.heading}>
+          <span className={styles.heroIcon} aria-hidden="true">
+            <Icon name={icon} />
+          </span>
+          <div>
+            <p className={styles.eyebrow}>{eyebrow}</p>
+            <h2>{title}</h2>
+          </div>
         </div>
+        {action && <div className={styles.heroAction}>{action}</div>}
       </div>
       <p className={styles.lead}>{children}</p>
-      {action && <div className={styles.heroAction}>{action}</div>}
     </header>
   );
 }
@@ -209,8 +211,10 @@ function ResourceCard({
       <span className={styles.cardIcon}>
         <Icon name={icon} />
       </span>
-      <h3>{title}</h3>
-      <p>{text}</p>
+      <div className={styles.resourceCopy}>
+        <h3>{title}</h3>
+        <p>{text}</p>
+      </div>
       <span className={styles.cardLink}>
         {label}
         <Icon name="arrow" />
@@ -237,6 +241,8 @@ function Work({
 }: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [idea, setIdea] = useState("");
+  const ideaInput = useRef<HTMLTextAreaElement>(null);
   const items = projects
     .filter(
       (p) =>
@@ -249,7 +255,7 @@ function Work({
     <>
       <Header
         icon="work"
-        eyebrow="От замысла к результату"
+        eyebrow="Рабочее пространство"
         title="Work"
         action={
           <button
@@ -261,7 +267,7 @@ function Work({
           </button>
         }
       >
-        Всё, что вы создаёте с Cosmora: проекты, контекст и следующие шаги.
+        Проекты, материалы и следующие шаги — в одном месте.
       </Header>
       <div className={styles.metrics}>
         <div>
@@ -347,23 +353,73 @@ function Work({
             </article>
           ))}
         </div>
-      ) : (
-        <Empty
-          icon="projects"
-          title={projects.length ? "Ничего не найдено" : "Здесь начнётся ваш первый проект"}
-        >
-          {projects.length
-            ? "Попробуйте другое название или фильтр."
-            : "Опишите цель в чате. Cosmora предложит создать проект, когда потребуется совместная работа над задачей."}
+      ) : projects.length ? (
+        <Empty icon="projects" title="Ничего не найдено">
+          Попробуйте другое название или фильтр.
         </Empty>
+      ) : (
+        <form
+          className={styles.workStart}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!idea.trim()) return;
+            onCompose(
+              `Помоги подготовить проект.\n\n${idea.trim()}\n\nСначала уточни недостающие детали и предложи план и следующие шаги.`
+            );
+          }}
+        >
+          <span className={styles.workStartIcon} aria-hidden="true">
+            <Icon name="projects" />
+          </span>
+          <div className={styles.workStartCopy}>
+            <h3>Здесь начнётся ваш первый проект</h3>
+            <p>Начните с цели. Материалы, решения и ход работы будут собраны вокруг задачи.</p>
+          </div>
+          <label className={styles.workIdea}>
+            Цель первого проекта
+            <textarea
+              ref={ideaInput}
+              value={idea}
+              onChange={(event) => setIdea(event.target.value)}
+              maxLength={4000}
+              rows={3}
+              placeholder="Что хотите получить? Опишите задачу в нескольких предложениях…"
+            />
+          </label>
+          <div className={styles.workIdeaActions}>
+            <button
+              type="button"
+              className={styles.textButton}
+              disabled={Boolean(idea.trim())}
+              onClick={() => {
+                setIdea("Цель: подготовить план проекта.\nРезультат: \nСрок и ограничения: ");
+                ideaInput.current?.focus();
+              }}
+            >
+              Подставить пример
+            </button>
+            <button type="submit" className={styles.primary} disabled={!idea.trim()}>
+              Обсудить проект
+              <Icon name="arrow" />
+            </button>
+          </div>
+          <div className={styles.workStartTools}>
+            <button type="button" onClick={() => onNavigate("files")}>
+              <Icon name="files" />
+              Разобрать документ
+              <Icon name="arrow" />
+            </button>
+            <button type="button" onClick={() => onNavigate("code")}>
+              <Icon name="code" />
+              Подготовить задачу разработки
+              <Icon name="arrow" />
+            </button>
+          </div>
+        </form>
       )}
       <p className={styles.footnote}>
-        Кнопка «Начать с идеи» открывает черновик сообщения. Проект создаётся после вашего
-        подтверждения.
+        Откроется черновик чата. Проект создаётся после вашего подтверждения.
       </p>
-      <FutureHint onNavigate={onNavigate}>
-        Глубинное исследование и переход обычного чата в Work предусмотрены в следующих этапах.
-      </FutureHint>
     </>
   );
 }
@@ -374,6 +430,15 @@ function Code({ onCompose }: Props) {
   const [criteria, setCriteria] = useState("");
   const [draftReady, setDraftReady] = useState(false);
   const [draftStorage, setDraftStorage] = useState(true);
+  const taskInput = useRef<HTMLTextAreaElement>(null);
+  const taskExamples: Record<string, string> = {
+    "Новая функция":
+      "Добавить поиск по названиям проектов. Поиск должен работать без учёта регистра, а пустой запрос — показывать все проекты.",
+    Исправление:
+      "Найти и исправить причину ошибки при сохранении формы. Проверить обязательные поля, обработку ответа сервера и сообщение об ошибке.",
+    "Разбор кода":
+      "Разобрать структуру проекта: найти основные модули, объяснить связи между ними и предложить улучшения без изменения файлов."
+  };
   useEffect(() => {
     try {
       const raw = window.sessionStorage.getItem("cosmora:code-brief");
@@ -406,12 +471,12 @@ function Code({ onCompose }: Props) {
   }, [draftReady, task, criteria, kind]);
   return (
     <>
-      <Header icon="code" eyebrow="Разработка с ясным результатом" title="Code">
-        Соберите задание: что изменить, какие ограничения учесть и как проверить результат.
+      <Header icon="code" eyebrow="Рабочее пространство" title="Code">
+        От задачи к проверенным изменениям. Начните с того, что нужно сделать.
       </Header>
       <div className={styles.split}>
         <form
-          className={styles.panel}
+          className={`${styles.panel} ${styles.codeBrief}`}
           onSubmit={(e) => {
             e.preventDefault();
             if (task.trim())
@@ -421,8 +486,8 @@ function Code({ onCompose }: Props) {
           }}
         >
           <div className={styles.panelHeading}>
-            <span className={styles.badge}>01 / Задание</span>
-            <h3>Что создаём?</h3>
+            <h3>Задание для Kosmora</h3>
+            <span className={styles.eyebrow}>Черновик</span>
           </div>
           <div className={styles.segments} aria-label="Тип задачи">
             {["Новая функция", "Исправление", "Разбор кода"].map((v) => (
@@ -435,16 +500,34 @@ function Code({ onCompose }: Props) {
             Описание задачи
             <textarea
               aria-label="Описание задачи разработки"
+              ref={taskInput}
               disabled={!draftReady}
               value={task}
               onChange={(e) => setTask(e.target.value)}
               maxLength={8000}
               placeholder="Например: добавить поиск по проектам с фильтром по статусу…"
-              rows={7}
+              rows={6}
             />
           </label>
+          <div className={styles.briefTools}>
+            <button
+              type="button"
+              className={styles.textButton}
+              disabled={!draftReady || Boolean(task.trim())}
+              onClick={() => {
+                setTask(taskExamples[kind] ?? taskExamples["Новая функция"] ?? "");
+                taskInput.current?.focus();
+              }}
+            >
+              <Icon name="new-chat" />
+              Подставить пример
+            </button>
+            <span>{task.length.toLocaleString("ru")} / 8 000</span>
+          </div>
           <label className={styles.field}>
-            Критерии готовности <span>Необязательно</span>
+            <span className={styles.fieldTitle}>
+              Критерии готовности <small>Необязательно</small>
+            </span>
             <textarea
               value={criteria}
               onChange={(e) => setCriteria(e.target.value)}
@@ -456,18 +539,18 @@ function Code({ onCompose }: Props) {
           <div className={styles.formFooter}>
             <span>
               {draftStorage
-                ? "Черновик хранится в этой вкладке. Откроется новый чат."
+                ? "Откроется черновик чата. Без автоматической отправки."
                 : "Сохранение недоступно. Откроется новый чат."}
             </span>
             <button className={styles.primary} disabled={!task.trim()}>
-              Обсудить с Cosmora
+              Обсудить с Kosmora
               <Icon name="arrow" />
             </button>
           </div>
         </form>
-        <aside className={styles.aside}>
+        <aside className={`${styles.aside} ${styles.codeAside}`}>
           <div className={styles.panel}>
-            <h3>Рабочий процесс</h3>
+            <h3>Как строится работа</h3>
             <ol className={styles.steps}>
               <li>
                 <strong>Задача</strong>
@@ -487,10 +570,10 @@ function Code({ onCompose }: Props) {
             <Icon name="code" />
             <strong>Файлы и изменения в GitHub</strong>
             <p>
-              Откройте разрешённый репозиторий, прочитайте или измените файлы и проверьте diff. По
-              вашему подтверждению Cosmora создаст отдельную ветку и черновик PR.
+              Файлы разрешённого репозитория и просмотр diff. Создание ветки и черновика PR — после
+              вашего подтверждения.
             </p>
-            <ActionLink href="/github">Открыть GitHub →</ActionLink>
+            <ActionLink href="/github">Открыть GitHub</ActionLink>
           </div>
         </aside>
       </div>
@@ -583,7 +666,7 @@ function Media({ surface }: { surface: MediaSurface }) {
   };
   return (
     <>
-      <Header icon={surface} eyebrow="Cosmora Studio / Редактор промпта" title={config.title}>
+      <Header icon={surface} eyebrow="Kosmora Studio / Редактор промпта" title={config.title}>
         {config.hint}
       </Header>
       <div className={styles.split}>
@@ -689,7 +772,7 @@ function Media({ surface }: { surface: MediaSurface }) {
                       );
                       const link = document.createElement("a");
                       link.href = url;
-                      link.download = `cosmora-${surface}-prompt.txt`;
+                      link.download = `kosmora-${surface}-prompt.txt`;
                       link.click();
                       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
                       setNotice("Промпт подготовлен для скачивания.");
@@ -724,40 +807,74 @@ function Media({ surface }: { surface: MediaSurface }) {
 }
 
 function Studio({ onNavigate }: Props) {
+  const tools = {
+    files: {
+      description: "Читайте документы, находите нужные фрагменты и готовьте выборку для чата.",
+      action: "Открыть анализ",
+      status: "Локальный анализ"
+    },
+    images: {
+      description: "Соберите композицию, стиль и формат будущего изображения.",
+      action: "Открыть редактор",
+      status: "Редактор промпта"
+    },
+    video: {
+      description: "Опишите сцену, движение и последовательность кадров.",
+      action: "Открыть редактор",
+      status: "Редактор промпта"
+    },
+    sound: {
+      description: "Задайте звучание, темп и атмосферу.",
+      action: "Открыть редактор",
+      status: "Редактор промпта"
+    }
+  } as const;
   return (
     <>
-      <Header icon="studio" eyebrow="Творческое пространство" title="Cosmora Studio">
-        Работайте с документами, готовьте изображения, видео и звук.
+      <Header icon="studio" eyebrow="Файлы и медиа" title="Kosmora Studio">
+        Разберите документ или подготовьте идею для следующей работы.
       </Header>
       <div className={styles.studioGrid}>
-        {STUDIO_ITEMS.map((item, i) => (
-          <button
-            className={`${styles.studioCard} ${styles[`studio${i}`]}`}
-            key={item.id}
-            onClick={() => onNavigate(item.id)}
-          >
-            <div className={styles.studioArt}>
-              <Icon name={item.id} />
-              <span>0{i + 1}</span>
-            </div>
-            <div className={styles.studioCopy}>
-              <h3>{item.label}</h3>
-              <p>{item.description}</p>
-              <span>
-                {item.id === "files" ? "Открыть анализ" : "Открыть редактор"}
-                <Icon name="arrow" />
-              </span>
-            </div>
-          </button>
-        ))}
+        {STUDIO_ITEMS.map((item) => {
+          const detail = tools[item.id as keyof typeof tools];
+          const featured = item.id === "files";
+          return (
+            <button
+              type="button"
+              className={`${styles.studioCard}${featured ? ` ${styles.studioFeatured}` : ""}`}
+              key={item.id}
+              onClick={() => onNavigate(item.id)}
+            >
+              <div className={styles.studioArt} aria-hidden="true">
+                <Icon name={item.id} />
+              </div>
+              <div className={styles.studioCopy}>
+                <span className={styles.studioStatus}>{detail.status}</span>
+                <h3>{item.label}</h3>
+                <p>{detail.description}</p>
+                {featured && (
+                  <div className={styles.studioFormats} aria-hidden="true">
+                    <span>PDF</span>
+                    <span>DOCX</span>
+                    <span>CSV</span>
+                    <span>Текст и код</span>
+                  </div>
+                )}
+                <span className={styles.studioAction}>
+                  {detail.action}
+                  <Icon name="arrow" />
+                </span>
+              </div>
+            </button>
+          );
+        })}
       </div>
-      <p className={styles.footnote}>
-        Документы: чтение, поиск и разбор частей в чате. Медиа: подготовка промптов и экспорт
-        текста.
-      </p>
-      <FutureHint onNavigate={onNavigate}>
-        Презентации и генерация медиа находятся в планах Studio.
-      </FutureHint>
+      <div className={styles.studioFooter}>
+        <p>Медиа-редакторы готовят и экспортируют текст. Генерация медиа пока не подключена.</p>
+        <button type="button" onClick={() => onNavigate("features")}>
+          Возможности Studio <Icon name="arrow" />
+        </button>
+      </div>
     </>
   );
 }
@@ -854,7 +971,7 @@ function Skills({ agentStudioHref, controlCenterHref }: Props) {
       <Header icon="skills" eyebrow="Специализации вашей команды" title="Skills">
         Выбирайте навыки для задачи и проверяйте, какие действия они запрашивают.
       </Header>
-      <div className={styles.threeColumns}>
+      <div className={styles.resourceList}>
         <ResourceCard
           icon="skills"
           title="Каталог Skills"
@@ -922,7 +1039,7 @@ function Apps({ onNavigate }: Props) {
   );
   return (
     <>
-      <Header icon="apps" eyebrow="Cosmora и ваши инструменты" title="Приложения">
+      <Header icon="apps" eyebrow="Kosmora и ваши инструменты" title="Приложения">
         Подключения, их возможности и статус — в одном месте.
       </Header>
       <div className={styles.toolbar}>
@@ -946,25 +1063,27 @@ function Apps({ onNavigate }: Props) {
           ))}
         </div>
       </div>
-      <div className={styles.threeColumns}>
+      <div className={styles.appList}>
         {items.map((app) => (
           <article className={styles.appCard} key={app.name}>
-            <div className={styles.roleTop}>
-              <span className={styles.cardIcon}>
-                <Icon name={app.icon as IconName} />
-              </span>
+            <span className={styles.cardIcon} aria-hidden="true">
+              <Icon name={app.icon as IconName} />
+            </span>
+            <div className={styles.appCopy}>
+              <h3>{app.name}</h3>
+              <span className={styles.eyebrow}>{app.category}</span>
+              <p>{app.text}</p>
+            </div>
+            <div className={styles.appStatus}>
               <span className={styles.badge}>
                 {app.available ? "Серверное подключение" : "Запланировано"}
               </span>
+              {app.available ? (
+                <ActionLink href="/github">Открыть GitHub</ActionLink>
+              ) : (
+                <span className={styles.unavailable}>Интеграция ещё недоступна</span>
+              )}
             </div>
-            <h3>{app.name}</h3>
-            <span className={styles.eyebrow}>{app.category}</span>
-            <p>{app.text}</p>
-            {app.available ? (
-              <ActionLink href="/github">Открыть GitHub</ActionLink>
-            ) : (
-              <span className={styles.unavailable}>Интеграция ещё недоступна</span>
-            )}
           </article>
         ))}
       </div>
@@ -1161,7 +1280,7 @@ function Settings({
   return (
     <>
       <Header icon="settings" eyebrow="Ваше пространство" title="Настройки">
-        Внешний вид, модель и управление работой Cosmora.
+        Внешний вид, модель и управление работой Kosmora.
       </Header>
       <div className={styles.settingsLayout}>
         <nav className={styles.settingsNav} aria-label="Категории настроек">

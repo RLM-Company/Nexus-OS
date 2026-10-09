@@ -1,10 +1,14 @@
 # Private hosted alpha
 
 This stack runs the actual Next interface and Node API on a single VPS. Caddy terminates HTTPS,
-serves an ordinary owner login form and checks an eight-hour, revocable, HttpOnly cookie before
+serves an ordinary owner login form and checks a revocable, HttpOnly cookie before
 serving private routes. An internal gateway verifies the existing password with scrypt, bounds
-login attempts and rejects cross-site form submissions. It stores session digests in memory;
-restarting the gateway requires another login. Caddy supplies the short-lived server-side bearer
+login attempts and rejects cross-site form submissions. The checked-by-default “Remember me for
+30 days” option retains sign-in across client and gateway restarts; unchecking it keeps the
+eight-hour session. Session digests persist in the dedicated `owner_sessions` volume with a
+private, atomically replaced file. Neither passwords nor raw cookies are stored there. Logout
+revokes the device session, and a changed password hash or HTTPS origin invalidates saved
+sessions. An invalid store fails closed. Caddy supplies the short-lived server-side bearer
 session before proxying `/api/*`; that token never reaches the browser. Only ports 80 and 443 are
 published; the API and web server share a private Docker network. SQLite and Caddy certificates
 use persistent volumes. This is an owner-only alpha, not a multi-user deployment.
@@ -97,7 +101,11 @@ docker compose -f compose.yaml run --rm --no-deps \
 Run it after deployment, credential/session rotation and during manual maintenance checks. It
 requires unauthenticated interface requests to redirect to `/login` and health requests to return
 401 without a Basic challenge, then verifies a form login and authenticated
-interface access, healthy SQLite, exactly one current hosted owner session and global stop status.
+interface access, concurrent same-origin script/style loading with correct MIME types,
+healthy SQLite, exactly one current hosted owner session and global stop status. Unauthenticated
+navigation and API boundaries are checked again while assets are fetched. This catches the
+wrong-upstream authentication race that simple sequential checks missed; Caddy is pinned to
+the patched 2.11.7 release. Asset redirects and off-origin asset credentials are rejected.
 A session with 24 hours or less remaining fails with a rotation reminder. This catches an expired
 bearer session even when the public API health check still returns 200. Redirects are never
 followed, TLS certificate validation stays enabled, and failure output excludes response bodies
@@ -172,6 +180,21 @@ permissions, directory boundaries, container health and owner access verificatio
 in `pnpm check`.
 
 ## Private MVP integrations
+
+### First funded start from the environment pause
+
+The environment pause cannot be cleared by the browser or ordinary clearance API. Offline
+operator recovery uses `recover-environment-stop.mjs` after a fresh verified SQLite backup,
+confirmed absence of active/queued work, stopping the API, and setting
+`RUNTIME_EMERGENCY_STOP=false` in the protected runtime file. The CLI requires
+`COSMORA_API_STOPPED=1`, `COSMORA_RECOVERY_ACK="CLEAR ENVIRONMENT STOP OFFLINE"`, the exact
+`COSMORA_RECOVERY_ACTIVATION`, registered active `COSMORA_RECOVERY_OWNER`, a nonblank
+`COSMORA_RECOVERY_REASON`, and `COSMORA_RECOVERY_BACKUP` under `/run/cosmora-backups/` less than
+one hour old. It clears only that environment-triggered process activation and atomically
+appends its original activation facts and operator reason to the immutable clearance audit.
+Owner-triggered stops still use their existing bound step-up recovery. Restart the API and
+verify authenticated health, clear execution status, disabled mock fallback and one route
+attempt before a short live request. Keep the old protected environment file for rollback.
 
 Set `GITHUB_TOKEN`, `GITHUB_REPOSITORY` and `GITHUB_OWNER_ID` in the private API `model.env`.
 The configured owner ID must match the authenticated hosted owner. Missing owner binding disables
