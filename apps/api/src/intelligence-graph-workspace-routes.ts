@@ -1,7 +1,6 @@
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
   IntelligenceGraphWorkspaceError,
-  type IntelligenceGraphEdit,
   type IntelligenceGraphWorkspaceService
 } from "@cosmora/core";
 import type { ProjectStore } from "@cosmora/db";
@@ -228,7 +227,7 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
           request.params.projectId,
           request.params.graphId,
           request.body.expected_revision,
-          request.body.operation as IntelligenceGraphEdit
+          request.body.operation
         );
       } catch (error) {
         return handleFailure(reply, error);
