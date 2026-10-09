@@ -153,6 +153,11 @@ import {
   projectUsageLimitStepUpChallenge
 } from "./step-up-challenge.js";
 import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-routes.js";
+import { registerCodeAgentRoutes } from "./code-agent/routes.js";
+import { CodeAgentService } from "./code-agent/service.js";
+import { CodeAgentStore } from "./code-agent/store.js";
+import type { CodeAgentWorkspaceRunner } from "@cosmora/tool-runtime";
+import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
 import { GithubIntegration, type GithubDraftStore } from "./github-integration.js";
 import { registerGithubRoutes } from "./github-routes.js";
 import { WebSearch, registerWebSearchRoutes } from "./web-search.js";
@@ -194,6 +199,7 @@ export interface AppDependencies {
   runtimeMetrics?: RuntimeMetrics;
   managerRunExecutionMode?: "stream" | "background";
   generalChatRunExecutionMode?: "stream" | "background";
+  codeAgentRunner?: CodeAgentWorkspaceRunner;
   githubIntegration?: GithubIntegration;
   githubDraftStore?: GithubDraftStore;
   webSearch?: WebSearch;
@@ -648,6 +654,31 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     ...(dependencies.projectStore ? { projects: dependencies.projectStore } : {}),
     ...(dependencies.emergencyStopStore ? { emergency: dependencies.emergencyStopStore } : {})
   });
+  if (
+    dependencies.githubIntegration &&
+    dependencies.githubDraftStore &&
+    dependencies.projectStore &&
+    dependencies.policyStore &&
+    dependencies.emergencyStopStore &&
+    dependencies.modelGateway &&
+    dependencies.manager
+  ) {
+    registerCodeAgentRoutes(
+      app,
+      new CodeAgentService({
+        store: new CodeAgentStore(dependencies.githubDraftStore.sqlite),
+        github: dependencies.githubIntegration,
+        drafts: dependencies.githubDraftStore,
+        projects: dependencies.projectStore,
+        policy: dependencies.policyStore,
+        emergency: dependencies.emergencyStopStore,
+        gateway: dependencies.modelGateway,
+        manager: dependencies.manager,
+        runner: dependencies.codeAgentRunner ?? configuredCodeAgentExecutor()
+      }),
+      identityFor
+    );
+  }
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
   if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
     const coordinator = registerResearchRoutes({
@@ -2847,7 +2878,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                   delta: event.delta
                 }
               });
-            } else {
+            } else if (event.type === "response.completed") {
               completed = event;
             }
           }

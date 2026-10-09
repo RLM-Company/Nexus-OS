@@ -37,7 +37,10 @@ function isAllowedRemoteNavigation(value, origin) {
   try {
     const parsed = new URL(value);
     return (
-      (parsed.protocol === "https:" || parsed.protocol === "http:") && parsed.origin === origin
+      (parsed.protocol === "https:" || parsed.protocol === "http:") &&
+      !parsed.username &&
+      !parsed.password &&
+      parsed.origin === origin
     );
   } catch {
     return false;

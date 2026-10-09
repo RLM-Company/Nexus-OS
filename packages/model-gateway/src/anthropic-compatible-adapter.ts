@@ -1,4 +1,5 @@
 import type { ModelMessage, ModelRequest } from "@cosmora/contracts";
+import { usesTools } from "./tool-transcript.js";
 import { GatewayRunError, type ModelProviderAdapter, type ProviderStreamEvent } from "./types.js";
 
 export interface AnthropicCompatibleAdapterOptions {
@@ -55,6 +56,14 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncGenerator<ProviderStreamEvent> {
+    if (usesTools(request)) {
+      throw new GatewayRunError(
+        "PROVIDER_ERROR",
+        this.id,
+        "Anthropic-compatible tools are not supported yet",
+        false
+      );
+    }
     const { system, messages } = this.#translateMessages(request.messages);
     const body: {
       model: string;

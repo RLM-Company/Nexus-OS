@@ -95,6 +95,7 @@ try {
   const managerWorkStore = new ManagerWorkStore(database.sqlite);
   const policyStore = new PolicyStore(database.sqlite);
   managerWorkCoordinator = new ManagerWorkCoordinator({
+    ownerBudget: accountStore,
     store: managerWorkStore,
     projects: projectStore,
     policy: policyStore,

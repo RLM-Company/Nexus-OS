@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { WorkManagerProgress } from "./work-manager-progress";
+import { WorkManagerMemory } from "./work-manager-memory";
 import { useEffect, useRef, useState } from "react";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
@@ -35,12 +37,16 @@ const errors: Record<string, string> = {
     "Модель вернула результат неподходящего формата. Автоматического платного повтора не будет.",
   EXECUTION_BUDGET_EXCEEDED: "Достигнут заданный предел запросов или токенов.",
   PROJECT_TOKEN_LIMIT_EXCEEDED: "Достигнут лимит токенов проекта.",
+  USAGE_LIMIT_EXCEEDED: "Достигнут личный лимит токенов. Проверьте расходы и лимиты аккаунта.",
   PROJECT_COST_LIMIT_EXCEEDED: "Достигнут денежный лимит проекта.",
   PROJECT_USAGE_EVIDENCE_MISSING:
     "Не хватает подтверждённых данных о расходах. Новый запрос не отправлен.",
   CRITIC_REJECTED: "Критик не принял черновик. Файлы не опубликованы.",
   RECOVERY_REQUIRED:
     "Запрос был прерван. Чтобы не списать токены повторно, он не отправлен заново.",
+  GRAPH_UNAVAILABLE:
+    "Подключённый граф не вернул допустимый контекст. Запрос к модели не отправлен.",
+  INVALID_ARTIFACT_CONTENT: "Файл JSON не прошёл проверку формата. Сохранение остановлено.",
   UNSUPPORTED_ACTION: "План требует недоступных действий. Сейчас поддерживается создание файлов.",
   ROUTE_UNAVAILABLE: "Настроенная модель недоступна для этой роли или задачи.",
   EMERGENCY_STOP: "Работа прервана аварийной остановкой. Проверьте состояние в Центре управления.",
@@ -49,7 +55,13 @@ const errors: Record<string, string> = {
 };
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...init, cache: "no-store" });
+  const response = await fetch(url, {
+    ...init,
+    cache: "no-store",
+    signal: init?.signal
+      ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)])
+      : AbortSignal.timeout(15000)
+  });
   if (!response.ok)
     throw new Error(
       response.status === 409
@@ -161,11 +173,17 @@ export function ManagerWorkPanel({
       setWorks((current) =>
         current.some((item) => item.id === updated.id)
           ? current.map((item) => (item.id === updated.id ? updated : item))
-          : [updated, ...current].slice(0, 30)
+          : [updated, ...current].slice(0, 80)
       );
       if (!action) pending.current = null;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Не удалось выполнить действие");
+      setError(
+        cause instanceof Error && cause.name === "TimeoutError"
+          ? "Ответ задерживается. Проверьте задачи проекта: сервер мог уже принять действие."
+          : cause instanceof Error
+            ? cause.message
+            : "Не удалось выполнить действие"
+      );
     } finally {
       lock.current = false;
       setBusy(false);
@@ -211,7 +229,7 @@ export function ManagerWorkPanel({
           maxLength={8000}
           rows={4}
           onChange={(e) => setGoal(e.target.value)}
-          disabled={projectHasActiveWork || busy || !historyLoaded}
+          disabled={busy || !historyLoaded}
         />
       </label>
       <label className="manager-work-field">
@@ -220,27 +238,20 @@ export function ManagerWorkPanel({
           aria-label="Исполнитель задачи"
           value={role}
           onChange={(e) => setRole(e.target.value)}
-          disabled={projectHasActiveWork || busy || !historyLoaded}
+          disabled={busy || !historyLoaded}
         >
           <option value="analyst">Аналитик</option>
           <option value="architect">Архитектор</option>
         </select>
       </label>
       <p className="manager-work-limits">
-        Предел на задачу: 3 обращения к модели, 32 000 входных и 6 000 выходных токенов. Повторы
-        тоже входят в предел. Автономность наследуется от проекта.
+        Предел на задачу: 3 обращения к модели, 32 000 входных и 6 000 выходных токенов.
+        Автоматических платных повторов нет. Автономность наследуется от проекта.
       </p>
       <button
         type="button"
         className="manager-work-submit"
-        disabled={
-          busy ||
-          projectHasActiveWork ||
-          !goal.trim() ||
-          !runtime ||
-          !historyLoaded ||
-          executionGate !== "clear"
-        }
+        disabled={busy || !goal.trim() || !runtime || !historyLoaded || executionGate !== "clear"}
         onClick={() => void act()}
       >
         Создать файлы
@@ -276,8 +287,10 @@ export function ManagerWorkPanel({
           )}
         </div>
       )}
+      <WorkManagerMemory key={projectId} projectId={projectId} />
       {work && (
         <>
+          <WorkManagerProgress projectId={projectId} workId={work.id} version={work.version} />
           <p className="manager-work-usage">Обращений к модели: {work.model_requests} / 3</p>
           {work.plan && (
             <div className="manager-work-plan">

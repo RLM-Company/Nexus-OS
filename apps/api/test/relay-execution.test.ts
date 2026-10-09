@@ -49,7 +49,8 @@ const fixture = async () => {
 const gateway = (
   transform: (request: ModelRequest) => string,
   seen: ModelRequest[],
-  finish = "stop"
+  finish = "stop",
+  toolCall = false
 ) =>
   ({
     async *stream(request: ModelRequest): AsyncGenerator<ModelGatewayStreamEvent> {
@@ -66,6 +67,13 @@ const gateway = (
         estimated_cost: null
       };
       yield { type: "route.selected", route };
+      if (toolCall)
+        yield {
+          type: "tool.call",
+          id: "translation-tool",
+          name: "invalid_translation_tool",
+          arguments: "{}"
+        };
       yield { type: "text.delta", delta: transform(request) };
       yield {
         type: "response.completed",
@@ -80,6 +88,25 @@ const gateway = (
   }) as unknown as ModelGateway;
 
 describe("English Relay integration with canonical account schema", () => {
+  it("fails closed on the newly integrated tool-call event instead of treating it as completion", async () => {
+    const { store, request, chatId, runId } = await fixture();
+    const relay = new RelayExecution(
+      store,
+      gateway(() => "Hello", [], "stop", true)
+    );
+    await expect(
+      relay.translate(
+        "owner",
+        chatId,
+        runId,
+        request,
+        "Привет",
+        "to_en",
+        new AbortController().signal
+      )
+    ).rejects.toBeInstanceOf(RelayUnavailableError);
+    expect(store.usage("owner").rows[0]).toMatchObject({ status: "uncertain" });
+  });
   it("starts OFF and does not invoke a translator", async () => {
     const { store, request, chatId, runId } = await fixture();
     const seen: ModelRequest[] = [];

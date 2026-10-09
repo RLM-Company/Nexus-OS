@@ -35,6 +35,13 @@ test("keeps in-app navigation on the connected origin", () => {
   );
   assert.equal(isAllowedRemoteNavigation("https://example.com/", "https://cosmora.example"), false);
   assert.equal(isAllowedRemoteNavigation("javascript:alert(1)", "https://cosmora.example"), false);
+  assert.equal(
+    isAllowedRemoteNavigation(
+      "https://user:pass@cosmora.example/github",
+      "https://cosmora.example"
+    ),
+    false
+  );
 });
 
 test("opens only ordinary safe external schemes", () => {

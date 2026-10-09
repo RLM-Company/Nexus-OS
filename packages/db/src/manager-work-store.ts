@@ -1,12 +1,46 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { CreateManagerWork, ManagerWork, ManagerWorkFiles } from "@cosmora/contracts";
+import { ProjectMemoryStore } from "./project-memory-store.js";
+import { WorkRuntimeStore } from "./work-runtime-store.js";
 import { ProjectStore } from "./project-store.js";
 
 export class ManagerWorkConflict extends Error {}
 
 export class ManagerWorkStore {
-  constructor(private readonly sqlite: DatabaseSync) {}
+  readonly memory: ProjectMemoryStore;
+  readonly runtime: WorkRuntimeStore;
+  constructor(private readonly sqlite: DatabaseSync) {
+    this.memory = new ProjectMemoryStore(sqlite);
+    this.runtime = new WorkRuntimeStore(sqlite);
+  }
+
+  private transaction<T>(execute: () => T): T {
+    this.sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const result = execute();
+      this.sqlite.exec("COMMIT");
+      return result;
+    } catch (error) {
+      this.sqlite.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  // SQLite CAS also excludes a second active work item in the same project.
+  claim(state: ManagerWork): ManagerWork | null {
+    return this.transaction(() => {
+      const busy = this.sqlite
+        .prepare(
+          "SELECT id FROM manager_work WHERE project_id = ? AND id != ? AND json_extract(state_json, '$.status') = 'running' LIMIT 1"
+        )
+        .get(state.project_id, state.id);
+      const latest = this.get(state.id, state.owner_id);
+      if (busy || !latest || latest.version !== state.version || latest.status !== "queued")
+        return null;
+      return this.persist({ ...latest, status: "running" });
+    });
+  }
 
   create(
     projectId: string,
@@ -31,6 +65,12 @@ export class ManagerWorkStore {
         throw new ManagerWorkConflict("IDEMPOTENCY_CONFLICT");
       return state;
     }
+    const outstanding = this.sqlite
+      .prepare(
+        "SELECT COUNT(*) AS count FROM manager_work WHERE project_id = ? AND owner_id = ? AND json_extract(state_json, '$.status') NOT IN ('completed', 'failed', 'cancelled')"
+      )
+      .get(projectId, ownerId) as { count: number };
+    if (outstanding.count >= 50) throw new ManagerWorkConflict("WORK_QUEUE_LIMIT");
     const at = new Date().toISOString();
     const materials = new ProjectStore(this.sqlite).getMaterials(projectId, ownerId);
     const state: ManagerWork = {
@@ -44,6 +84,7 @@ export class ManagerWorkStore {
             materials: { instructions: materials.instructions, attachments: materials.attachments }
           }
         : {}),
+      memory_snapshot: this.memory.snapshot(projectId, ownerId),
       status: "queued",
       stage: "plan",
       version: 1,
@@ -62,11 +103,14 @@ export class ManagerWorkStore {
       created_at: at,
       updated_at: at
     };
-    this.sqlite
-      .prepare(
-        "INSERT INTO manager_work (id, project_id, owner_id, client_request_id, version, state_json) VALUES (?, ?, ?, ?, 1, ?)"
-      )
-      .run(state.id, projectId, ownerId, request.client_request_id, JSON.stringify(state));
+    this.transaction(() => {
+      this.sqlite
+        .prepare(
+          "INSERT INTO manager_work (id, project_id, owner_id, client_request_id, version, state_json) VALUES (?, ?, ?, ?, 1, ?)"
+        )
+        .run(state.id, projectId, ownerId, request.client_request_id, JSON.stringify(state));
+      this.runtime.checkpoint(state);
+    });
     return state;
   }
 
@@ -83,7 +127,7 @@ export class ManagerWorkStore {
     return (
       this.sqlite
         .prepare(
-          "SELECT id FROM manager_work WHERE project_id = ? AND owner_id = ? ORDER BY rowid DESC LIMIT 30"
+          "SELECT id FROM manager_work WHERE project_id = ? AND owner_id = ? ORDER BY CASE WHEN json_extract(state_json, '$.status') NOT IN ('completed', 'failed', 'cancelled') THEN 0 ELSE 1 END, rowid DESC LIMIT 80"
         )
         .all(projectId, ownerId) as { id: string }[]
     ).flatMap((row) => this.get(row.id, ownerId) ?? []);
@@ -93,13 +137,17 @@ export class ManagerWorkStore {
     return (
       this.sqlite
         .prepare(
-          "SELECT state_json FROM manager_work WHERE json_extract(state_json, '$.status') = 'queued' ORDER BY rowid LIMIT 4"
+          "SELECT state_json FROM manager_work WHERE json_extract(state_json, '$.status') = 'queued' AND NOT EXISTS (SELECT 1 FROM manager_work r WHERE r.project_id = manager_work.project_id AND json_extract(r.state_json, '$.status') = 'running') ORDER BY rowid LIMIT 50"
         )
         .all() as { state_json: string }[]
     ).map((row) => JSON.parse(row.state_json) as ManagerWork);
   }
 
   save(state: ManagerWork, message?: string): ManagerWork {
+    return this.transaction(() => this.persist(state, message));
+  }
+
+  private persist(state: ManagerWork, message?: string): ManagerWork {
     const next = structuredClone(state);
     next.version++;
     next.updated_at = new Date().toISOString();
@@ -116,6 +164,7 @@ export class ManagerWorkStore {
       )
       .run(next.version, JSON.stringify(next), state.id, state.owner_id, state.version);
     if (Number(result.changes) !== 1) throw new ManagerWorkConflict("STALE_EXECUTION");
+    this.runtime.checkpoint(next);
     return next;
   }
 
@@ -159,6 +208,7 @@ export class ManagerWorkStore {
           )
           .run(id, file.name, file.content);
       }
+      this.runtime.markPublished(id);
       this.sqlite.exec("COMMIT");
       return files.files.map((file) => file.name);
     } catch (error) {
@@ -187,6 +237,15 @@ export class ManagerWorkStore {
       // An interrupted provider/tool operation must never be submitted twice.
       state.status = state.inflight_run_id || state.stage === "publish" ? "failed" : "paused";
       state.error_code = state.status === "failed" ? "RECOVERY_REQUIRED" : null;
+      if (state.task_graph) {
+        for (const task of state.task_graph.tasks) {
+          if (task.stage === state.stage && task.status === "running")
+            task.status = state.status === "failed" ? "failed" : "waiting";
+        }
+        state.task_graph.waiting_decision = state.status === "failed" ? "recovery" : "resume";
+        state.task_graph.next_task_id =
+          state.status === "failed" ? null : state.id + ":" + state.stage;
+      }
       this.save(state, "Процесс был прерван; автоматический повтор отключён");
     }
     return states.length;

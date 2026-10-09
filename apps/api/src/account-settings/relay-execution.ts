@@ -83,7 +83,9 @@ export class RelayExecution {
         } else if (event.type === "text.delta") {
           translation += event.delta;
           if (translation.length > 12000) throw new RelayProtectionError("Translation too long");
-        } else completed = event;
+        } else if (event.type === "response.completed") completed = event;
+        else if (event.type === "tool.call")
+          throw new RelayUnavailableError("Tool calls are unsupported in translation");
       }
       if (!completed || !translation.trim())
         throw new RelayUnavailableError("Translation provider did not complete");

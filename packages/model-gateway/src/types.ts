@@ -5,7 +5,16 @@ export interface ProviderUsage {
   outputTokens: number | null;
 }
 
+/** A complete validated call, never an executable partial argument delta. */
+export interface ModelToolCallEvent {
+  type: "tool.call";
+  id: string;
+  name: string;
+  arguments: string;
+}
+
 export type ProviderStreamEvent =
+  | ModelToolCallEvent
   | { type: "text.delta"; delta: string }
   | {
       type: "response.completed";
@@ -32,6 +41,7 @@ export interface ModelRouteAttempt {
 }
 
 export type ModelGatewayStreamEvent =
+  | ModelToolCallEvent
   | { type: "text.delta"; delta: string }
   | { type: "route.selected"; route: ModelRouteAttempt }
   | {

@@ -1,4 +1,10 @@
 import type { Currency, ModelRequest, ModelRouteRequest } from "@cosmora/contracts";
+import {
+  assertToolCall,
+  assertToolTranscript,
+  MAX_TOOL_CALLS,
+  usesTools
+} from "./tool-transcript.js";
 import { ModelRouteError, type ModelRoute, type ModelRouter } from "./router.js";
 import {
   GatewayRunError,
@@ -102,6 +108,7 @@ export class ModelGateway {
 
   /** Validate the primary registry route without dispatching or touching circuits. */
   assertRoute(request: ModelRequest): void {
+    assertToolTranscript(request, request.routing.preferred_provider);
     const resolved = this.#resolveAttempt(request, request.routing.preferred_provider, 0, true);
     if (resolved instanceof GatewayRunError) throw resolved;
   }
@@ -110,6 +117,10 @@ export class ModelGateway {
     request: ModelRequest,
     externalSignal?: AbortSignal
   ): AsyncGenerator<ModelGatewayStreamEvent> {
+    const toolNames = assertToolTranscript(request, request.routing.preferred_provider);
+    const previousToolIds = new Set(
+      request.messages.flatMap((message) => message.tool_calls?.map((call) => call.id) ?? [])
+    );
     const providerIds = [
       request.routing.preferred_provider,
       ...(request.routing.fallback_allowed ? this.#fallbackOrder : [])
@@ -151,7 +162,8 @@ export class ModelGateway {
           break;
         }
 
-        let emittedText = false;
+        let emittedOutput = false;
+        const toolIds = new Set<string>();
         let completed = false;
         let circuitRecorded = false;
         try {
@@ -170,7 +182,31 @@ export class ModelGateway {
                   false
                 );
               }
-              emittedText = true;
+              emittedOutput = true;
+              yield event;
+              continue;
+            }
+            if (event.type === "tool.call") {
+              try {
+                if (
+                  completed ||
+                  toolIds.has(event.id) ||
+                  previousToolIds.has(event.id) ||
+                  toolIds.size >= MAX_TOOL_CALLS
+                )
+                  throw new Error("Invalid call order");
+                assertToolCall(event.id, event.name, event.arguments, toolNames);
+              } catch (cause) {
+                throw new GatewayRunError(
+                  "PROVIDER_ERROR",
+                  providerId,
+                  "Invalid structured tool call",
+                  false,
+                  { cause }
+                );
+              }
+              toolIds.add(event.id);
+              emittedOutput = true;
               yield event;
               continue;
             }
@@ -201,7 +237,16 @@ export class ModelGateway {
                 false
               );
             }
+            if ((event.finishReason === "tool_calls") !== toolIds.size > 0) {
+              throw new GatewayRunError(
+                "PROVIDER_ERROR",
+                providerId,
+                "Invalid structured tool completion",
+                false
+              );
+            }
             completed = true;
+            emittedOutput = true;
             yield {
               ...event,
               route,
@@ -229,7 +274,7 @@ export class ModelGateway {
             errorCode: normalized.code,
             retryable: normalized.retryable
           };
-          if (emittedText || normalized.code === "INTERRUPTED") throw normalized;
+          if (emittedOutput || normalized.code === "INTERRUPTED") throw normalized;
           lastError = normalized;
 
           const canRetry =
@@ -274,7 +319,9 @@ export class ModelGateway {
       task_type: request.task_type,
       preferred_provider: providerId,
       preferred_model_alias: primaryProvider ? request.routing.preferred_model_alias : null,
-      required_features: request.routing.required_features,
+      required_features: usesTools(request)
+        ? [...new Set([...request.routing.required_features, "tool_calling" as const])]
+        : request.routing.required_features,
       confidential: request.routing.confidential,
       estimated_input_tokens: request.routing.estimated_input_tokens,
       max_output_tokens: request.constraints.max_output_tokens,

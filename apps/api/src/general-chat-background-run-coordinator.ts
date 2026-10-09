@@ -271,7 +271,7 @@ export class GeneralChatBackgroundRunCoordinator {
         } else if (event.type === "text.delta") {
           if (prepared.relay) pendingEnglish += event.delta;
           else this.#store.appendAssistantDelta(assistant.id, event.delta);
-        } else {
+        } else if (event.type === "response.completed") {
           completed = event;
         }
       }

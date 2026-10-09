@@ -1,6 +1,6 @@
 {
   "name": "cosmora-windows-desktop",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "description": "Thin Windows desktop client for the hosted Kosmora workspace",
   "main": "main.cjs",
@@ -8,7 +8,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "test": "node --test test/*.test.cjs",
-    "check": "node --check main.cjs && node --check preload.cjs && node --check connection-policy.cjs && node --check smoke-mode.cjs && node --check connection.js && node --test test/*.test.cjs",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check connection-policy.cjs && node --check smoke-mode.cjs && node --check connection.js && node --check desktop-state.cjs && node --check update-policy.cjs && node --check update-service.cjs && node --check ci/create-signed-update.cjs && node --test test/*.test.cjs",
     "pack:win": "electron-builder --win nsis --x64 --publish never"
   },
   "build": {
@@ -16,6 +16,14 @@
     "productName": "Kosmora",
     "electronVersion": "44.5.1",
     "asar": true,
+    "protocols": [
+      {
+        "name": "Kosmora deep links",
+        "schemes": [
+          "kosmora"
+        ]
+      }
+    ],
     "directories": {
       "output": "dist"
     },
@@ -24,6 +32,10 @@
       "preload.cjs",
       "connection-policy.cjs",
       "smoke-mode.cjs",
+      "desktop-state.cjs",
+      "update-policy.cjs",
+      "update-service.cjs",
+      "update-trust.json",
       "connection.html",
       "connection.js",
       "connection.css",

@@ -257,7 +257,7 @@ export class ManagerBackgroundRunCoordinator {
           );
         } else if (event.type === "text.delta") {
           this.#store.appendAssistantDelta(assistant.id, event.delta);
-        } else {
+        } else if (event.type === "response.completed") {
           completed = event;
         }
       }

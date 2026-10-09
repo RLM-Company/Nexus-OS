@@ -1,3 +1,4 @@
+export * from "./code-agent-workspace.js";
 import { randomUUID } from "node:crypto";
 import type {
   CapabilityId,

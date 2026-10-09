@@ -42,7 +42,7 @@ npm run check
 npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 ```
 
-The expected artifact is `desktop/windows/dist/Kosmora-Setup-0.10.0-x64.exe`. `CSC_IDENTITY_AUTO_DISCOVERY=false` is used in CI so the ordinary build does not accidentally discover a signing identity. No code-signing success is claimed by this module. The Windows mark is a native ICO generated from the selected helmet PNG by `node scripts/render-windows-icon.mjs` at the repository root; its SVG preview embeds raster artwork.
+The expected artifact is `desktop/windows/dist/Kosmora-Setup-0.11.0-x64.exe`. `CSC_IDENTITY_AUTO_DISCOVERY=false` is used in CI so the ordinary build does not accidentally discover a signing identity. No code-signing success is claimed by this module. The Windows mark is a native ICO generated from the selected helmet PNG by `node scripts/render-windows-icon.mjs` at the repository root; its SVG preview embeds raster artwork.
 
 The NSIS installer is per-user, creates Start Menu/Desktop shortcuts and explicitly keeps Electron user data on uninstall (`deleteAppDataOnUninstall: false`). That preserves the selected server and the persistent Chromium session across upgrade/uninstall according to the existing Windows policy.
 
@@ -118,3 +118,15 @@ npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
 Do not treat an unsigned build as code-signed. Installation on the owner's real machine is a separate
 manual acceptance step and is not performed by these tests.
+
+## Desktop release 0.11.0 (blocks 17–19)
+
+The 0.11.0 **feature sources** are integrated into the same existing Electron shell. No second Electron app, Electron updater dependency, API routes, server bearer, or production data changes are involved. See [INTEGRATION_0.11.0.md](./INTEGRATION_0.11.0.md) for a complete main-chat handoff and signing protocol.
+
+- **Window/session:** Native window position, size and maximized state persist in `desktop-preferences.json`; off-screen bounds reset safely after monitor changes. Only a known UI path without a query, token or fragment can be remembered. The existing profile `cosmora-windows-desktop`, persistent `persist:cosmora` Chromium cookie partition, and 30-day server-controlled browser login are unchanged.
+- **Deep links:** The installer registers `kosmora://`. Only `kosmora://open?path=%2Fgithub` and the other statically allowlisted local UI paths are recognized. Untrusted external URLs, server overrides, deep-linked credentials and arbitrary routes cannot be opened by deep link. Startup/second-instance routing is supported without storing query strings.
+- **Files:** The hosted web UI's existing native file input/upload continues working; no binary file is sent through privileged desktop IPC. Native **Файлы → Выбрать папку загрузок…** selects the destination, and **Спрашивать, куда сохранить** switches to an OS Save dialog. Existing same-origin URL/redirect-chain/blob enforcement and filename collision checks remain; foreign origins and local schemes cannot download through the Electron session policy.
+- **Tray:** Disabled by default. When enabled via **Настройки**, closing the window hides it; use the tray menu or double-click to restore it, and explicit **Выход** to stop the process.
+- **Updates:** Checks-on-start and OS notifications are **opt-in**. The built-in Ed25519 verification requires a release public key pinned in the packaged `update-trust.json`. This source snapshot ships **without a configured key**, so the updater is disabled until an owner-configured publisher key is supplied. The release manifest must be same-origin, unexpired and signed; the installer stream must match its signed SHA-256 and size. The application never executes downloaded installers. The rollback menu reveals an earlier _previously staged and re-verified_ release for **manual** installation; it cannot conjure an installer for the installed 0.10.0 or automatically roll back Windows.
+
+Nothing in 0.11.0 asserts Authenticode signature, Windows SmartScreen trust, an installed certificate, a published release endpoint, a successful NSIS install, or a deployed server change. The CI workflow continues to build **unsigned** NSIS installers pending a separate owner-managed signing process.

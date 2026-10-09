@@ -476,6 +476,9 @@ function Code({ onCompose }: Props) {
       <Header icon="code" eyebrow="Рабочее пространство" title="Code">
         От задачи к проверенным изменениям. Начните с того, что нужно сделать.
       </Header>
+      <Link href="/code-agent" className={styles.primary}>
+        Открыть Code-агента: diff, проверка и draft PR
+      </Link>
       <div className={styles.split}>
         <form
           className={`${styles.panel} ${styles.codeBrief}`}

@@ -181,7 +181,6 @@ export const pinnedTransport: Transport = (url, address, limit, signal) =>
       {
         hostname: url.hostname,
         family: address.family,
-        autoSelectFamily: false,
         port: url.port || (url.protocol === "https:" ? 443 : 80),
         path: url.pathname + url.search,
         method: "GET",

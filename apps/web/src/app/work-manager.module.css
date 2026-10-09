@@ -1,0 +1,139 @@
+.panel {
+  border: 1px solid #bbb;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+  background: #fff;
+  color: #111;
+}
+.panel h3 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+.panel p {
+  color: #444;
+  line-height: 1.5;
+}
+.panel progress {
+  width: 100%;
+  height: 10px;
+  accent-color: #111;
+}
+.tasks {
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.tasks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border-bottom: 1px solid #ddd;
+}
+.tasks small {
+  display: block;
+  margin-top: 4px;
+  color: #555;
+}
+.panel button {
+  background: #fff;
+  color: #111;
+  border: 1px solid #999;
+  border-radius: 7px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.panel button:focus-visible,
+.panel input:focus-visible,
+.panel textarea:focus-visible,
+.panel select:focus-visible {
+  outline: 2px solid #111;
+  outline-offset: 2px;
+}
+.panel input,
+.panel textarea,
+.panel select {
+  box-sizing: border-box;
+  width: 100%;
+  color: #111;
+  background: #fff;
+  border: 1px solid #999;
+  border-radius: 7px;
+  padding: 9px;
+  font: inherit;
+}
+.panel label {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+}
+.panel label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+}
+.panel input[type="checkbox"] {
+  width: auto;
+  accent-color: #111;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.entries {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.entry {
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+.entry p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.entry small {
+  display: block;
+  color: #555;
+  overflow-wrap: anywhere;
+}
+.error {
+  color: #111;
+  border-left: 3px solid #111;
+  padding-left: 10px;
+}
+.artifacts {
+  list-style: none;
+  padding: 0;
+}
+.artifacts li {
+  padding: 8px 0;
+  border-bottom: 1px solid #ddd;
+}
+.artifacts a {
+  color: #111;
+  text-decoration: underline;
+}
+.checkpoint {
+  font-size: 13px;
+  color: #555;
+}
+@media (max-width: 600px) {
+  .panel {
+    padding: 12px;
+  }
+  .tasks li {
+    flex-direction: column;
+    gap: 4px;
+  }
+}

@@ -1,3 +1,5 @@
+import { registerProjectMemoryRoutes } from "./project-memory-routes.js";
+import { registerWorkRuntimeRoutes } from "./work-runtime-routes.js";
 import {
   CreateManagerWorkSchema,
   type CreateManagerWork,
@@ -16,6 +18,8 @@ export function registerManagerWorkRoutes(options: {
   identityFor: (request: FastifyRequest) => IdentityContext;
 }): void {
   const { app, store, projects, coordinator, identityFor } = options;
+  registerProjectMemoryRoutes({ app, memory: store.memory, projects, identityFor });
+  registerWorkRuntimeRoutes({ app, store, projects, identityFor });
   const base = "/api/v1/projects/:projectId/work";
   const params = Type.Object(
     {

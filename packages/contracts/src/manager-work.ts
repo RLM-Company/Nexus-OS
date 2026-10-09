@@ -1,3 +1,4 @@
+import type { ProjectMemorySnapshot, WorkRuntimeProgress } from "./work-runtime.js";
 import type { ChatTextAttachment } from "./chat-attachments.js";
 import { Type, type Static } from "typebox";
 import { EntityIdSchema } from "./primitives.js";
@@ -79,6 +80,9 @@ export interface ManagerWork {
     instructions: string;
     attachments: ChatTextAttachment[];
   };
+  memory_snapshot?: ProjectMemorySnapshot;
+  graph_context?: ProjectMemorySnapshot;
+  task_graph?: WorkRuntimeProgress;
   status: ManagerWorkStatus;
   stage: ManagerWorkStage;
   version: number;

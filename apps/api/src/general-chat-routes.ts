@@ -591,7 +591,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
                 delta: event.delta
               }
             });
-          } else {
+          } else if (event.type === "response.completed") {
             completed = event;
           }
         }

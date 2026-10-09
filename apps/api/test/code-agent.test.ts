@@ -1,0 +1,945 @@
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import Fastify from "fastify";
+import { loadServerConfig } from "@cosmora/config";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AutonomyLevel, ModelRegistryDocument, ModelRegistryEntry } from "@cosmora/contracts";
+import { ManagerService } from "@cosmora/core";
+import {
+  EmergencyStopStore,
+  PolicyStore,
+  ProjectStore,
+  openDatabase,
+  runMigrations
+} from "@cosmora/db";
+import {
+  ModelGateway,
+  ModelRegistry,
+  ModelRouter,
+  OpenAICompatibleAdapter
+} from "@cosmora/model-gateway";
+import {
+  computeCodeAgentSnapshotDigest,
+  type CodeAgentWorkspaceRunner,
+  type CodeAgentWorkspaceRunInput
+} from "@cosmora/tool-runtime";
+import { CodeAgentService } from "../src/code-agent/service.js";
+import { CodeAgentStore } from "../src/code-agent/store.js";
+import { registerCodeAgentRoutes } from "../src/code-agent/routes.js";
+import { GithubDraftStore, GithubIntegration } from "../src/github-integration.js";
+import { LOCAL_DEVELOPMENT_IDENTITY } from "../src/identity.js";
+import { buildApp } from "../src/app.js";
+
+const owner = "local-owner",
+  head = "a".repeat(40),
+  tree = "b".repeat(40),
+  commit = "d".repeat(40);
+const originals: Record<string, string> = {
+  "src/add.js": "export const add = (a,b) => a-b;\n",
+  "src/add.test.js": "import {add} from './add.js';\n"
+};
+const changes = [
+  { path: "src/add.js", content: "export const add = (a,b) => a+b;\n" },
+  {
+    path: "src/add.test.js",
+    content:
+      "import {add} from './add.js';\nimport assert from 'node:assert/strict';\nassert.equal(add(2,3),5);\n"
+  }
+];
+const resources: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  for (const close of resources.splice(0)) await close();
+});
+const sse = (...events: unknown[]) =>
+  events.map((e) => `data: ${typeof e === "string" ? e : JSON.stringify(e)}\n\n`).join("");
+const toolResponse = (name: string, args: unknown, id: string) =>
+  sse(
+    {
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id,
+                type: "function",
+                function: { name, arguments: JSON.stringify(args) }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    { choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
+    { choices: [], usage: { prompt_tokens: 100, completion_tokens: 40 } },
+    "[DONE]"
+  );
+const proposalResponse = () =>
+  toolResponse(
+    "propose_patch",
+    { summary: "Исправлено сложение и добавлена проверка", files: changes },
+    "patch"
+  );
+const entry = (toolCalling: boolean): ModelRegistryEntry => ({
+  provider_id: "fixture",
+  model_id: "fixture-code",
+  aliases: [],
+  protocol: "openai-compatible",
+  status: "active",
+  roles: ["analyst"],
+  task_types: ["manager_work_draft"],
+  capabilities: {
+    streaming: true,
+    structured_output: false,
+    tool_calling: toolCalling,
+    vision: false
+  },
+  context_window_tokens: 64000,
+  max_output_tokens: 2000,
+  quality_tier: 1,
+  latency_tier: 1,
+  pricing: null,
+  privacy: { confidential_compatible: false, training_usage: "unknown", retention: "unknown" },
+  source: {
+    kind: "authorized_discovery",
+    verified_at: "2026-10-08T00:00:00.000Z",
+    valid_until: "2099-10-08T00:00:00.000Z",
+    reference: "deterministic transport fixture"
+  }
+});
+
+async function fixture(
+  options: {
+    level?: AutonomyLevel;
+    toolCalling?: boolean;
+    responses?: string[];
+    runner?: CodeAgentWorkspaceRunner;
+    onGithub?: (path: string, method: string) => void;
+    registry?: ModelRegistryDocument;
+  } = {}
+) {
+  const database = openDatabase(":memory:");
+  await runMigrations(database);
+  const projects = new ProjectStore(database.sqlite),
+    policy = new PolicyStore(database.sqlite),
+    emergency = new EmergencyStopStore(database.sqlite),
+    store = new CodeAgentStore(database.sqlite),
+    drafts = new GithubDraftStore(database.sqlite);
+  const project = projects.createProject("Code agent integration", "code-agent-test").project.id;
+  policy.ensureProfile(project);
+  policy.updateProfile({
+    projectId: project,
+    baseLevel: options.level ?? "A2",
+    overrides: [],
+    expectedVersion: 1
+  });
+  const githubCalls: Array<{ path: string; method: string; body: Record<string, unknown> | null }> =
+    [];
+  let loseResponse = false,
+    prExists = false;
+  const github = new GithubIntegration({
+    token: "fixture-token",
+    fetchImplementation: (input, init) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      );
+      expect(url.origin).toBe("https://api.github.com");
+      expect(url.pathname.startsWith("/repos/RLM-Company/Nexus-OS")).toBe(true);
+      const path = url.pathname.replace("/repos/RLM-Company/Nexus-OS", ""),
+        method = init?.method ?? "GET",
+        body =
+          typeof init?.body === "string"
+            ? (JSON.parse(init.body) as Record<string, unknown>)
+            : null;
+      githubCalls.push({ path, method, body });
+      options.onGithub?.(path, method);
+      let value: unknown;
+      if (path.startsWith("/git/ref/heads/"))
+        value = {
+          ref: `refs/heads/${decodeURIComponent(path.slice(15))}`,
+          object: { type: "commit", sha: head }
+        };
+      else if (path.startsWith("/commits/")) value = { sha: head, commit: { tree: { sha: tree } } };
+      else if (path.startsWith("/git/trees/"))
+        value = {
+          truncated: false,
+          tree: Object.keys(originals).map((path, i) => ({
+            path,
+            type: "blob",
+            mode: "100644",
+            sha: String(i + 1).repeat(40)
+          }))
+        };
+      else if (path.startsWith("/git/blobs/")) {
+        const content = Object.values(originals)[Number(path.at(-1)) - 1]!;
+        value = {
+          encoding: "base64",
+          content: Buffer.from(content).toString("base64"),
+          size: Buffer.byteLength(content)
+        };
+      } else if (path === "/git/trees") value = { sha: tree };
+      else if (path === "/git/commits") value = { sha: commit };
+      else if (path === "/git/refs")
+        value = { ref: body!.ref, object: { type: "commit", sha: commit } };
+      else if (path === "/pulls" && method === "POST") {
+        prExists = true;
+        if (loseResponse) throw new Error("Accepted PR but transport response lost");
+        value = {
+          html_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000",
+          draft: true,
+          head: { sha: commit, ref: body!.head },
+          base: { ref: body!.base }
+        };
+      } else if (path === "/pulls")
+        value = prExists
+          ? [
+              {
+                html_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000",
+                head: { sha: commit },
+                base: { ref: "main" }
+              }
+            ]
+          : [];
+      else value = { default_branch: "main", private: true };
+      return Promise.resolve(
+        new Response(JSON.stringify(value), {
+          headers: { "content-type": "application/json" }
+        })
+      );
+    }
+  });
+  const providerCalls: Array<Record<string, unknown>> = [];
+  const responses = options.responses ?? [
+    toolResponse("list_files", {}, "list"),
+    toolResponse("read_file", { path: "src/add.test.js" }, "read"),
+    proposalResponse()
+  ];
+  const modelEntry =
+    options.registry?.entries.find((e) => e.provider_id === "cheapvibecode") ??
+    entry(options.toolCalling ?? true);
+  const adapter = new OpenAICompatibleAdapter({
+    id: modelEntry.provider_id,
+    model: modelEntry.model_id,
+    apiKey: "deterministic-fixture",
+    baseUrl: "https://unused.invalid",
+    fetchImplementation: (_input, init) => {
+      if (typeof init?.body !== "string") throw new Error("Missing JSON request");
+      providerCalls.push(JSON.parse(init.body) as Record<string, unknown>);
+      const response = responses[providerCalls.length - 1];
+      if (!response) throw new Error("Unexpected provider turn");
+      return Promise.resolve(
+        new Response(response, { headers: { "content-type": "text/event-stream" } })
+      );
+    }
+  });
+  const gateway = new ModelGateway(
+    [adapter],
+    new ModelRouter(
+      new ModelRegistry(
+        options.registry ?? {
+          schema_version: 1,
+          registry_version: "code-fixture",
+          generated_at: "2026-10-08T00:00:00.000Z",
+          entries: [modelEntry]
+        }
+      )
+    ),
+    [],
+    { maxAttemptsPerRoute: 1 }
+  );
+  const manager = new ManagerService({
+    preferredProvider: modelEntry.provider_id,
+    preferredModelAlias: modelEntry.model_id,
+    fallbackAllowed: false,
+    maxOutputTokens: 1000,
+    timeoutMs: 2000
+  });
+  const checked: CodeAgentWorkspaceRunInput[] = [];
+  // Intentionally synthetic runner result: these tests exercise API orchestration; the isolated
+  // OCI executor has its own tests and no host-shell execution happens in this fixture.
+  const runner: CodeAgentWorkspaceRunner = options.runner ?? {
+    run(input) {
+      checked.push(input);
+      expect(input.expectedDigest).toBe(computeCodeAgentSnapshotDigest(input.files));
+      return Promise.resolve({
+        status: "passed",
+        cleanupVerified: true,
+        snapshotDigest: input.expectedDigest!,
+        exitCode: 0,
+        stdout: "synthetic API fixture",
+        stderr: "",
+        truncated: false,
+        journal: [
+          { at: new Date().toISOString(), event: "finished", detail: "synthetic API fixture" }
+        ]
+      });
+    }
+  };
+  const service = new CodeAgentService({
+    store,
+    github,
+    drafts,
+    projects,
+    policy,
+    emergency,
+    gateway,
+    manager,
+    runner
+  });
+  let requestOwner = owner;
+  const app = Fastify();
+  registerCodeAgentRoutes(app, service, () => ({
+    ...LOCAL_DEVELOPMENT_IDENTITY,
+    owner_id: requestOwner,
+    actor_id: requestOwner
+  }));
+  resources.push(async () => {
+    await app.close();
+    database.close();
+  });
+  const get = (id: string) => store.get(id, owner)!;
+  const wait = async (id: string, status: string) => {
+    await expect.poll(() => get(id).status, { timeout: 3000 }).toBe(status);
+    return get(id);
+  };
+  const start = () => {
+    const run = service.create(project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Исправь баг в src/add.js",
+      base_branch: "main",
+      files: ["src/add.js"]
+    });
+    return Promise.resolve(run.id);
+  };
+  const review = async (id: string, files = changes) => {
+    const run = get(id).status === "running" ? await wait(id, "proposed") : get(id);
+    return service.review(id, owner, { proposal_hash: run.proposal_hash!, files });
+  };
+  const check = async (id: string, reviewHash: string) => {
+    service.check(id, owner, { review_hash: reviewHash, check: "node-test", approve: true });
+    return wait(id, "checked");
+  };
+  return {
+    database,
+    app,
+    service,
+    store,
+    drafts,
+    project,
+    projects,
+    policy,
+    emergency,
+    githubCalls,
+    providerCalls,
+    checked,
+    get,
+    wait,
+    start,
+    review,
+    check,
+    base: `/api/v1/projects/${project}/code-agent`,
+    losePrResponse: () => {
+      loseResponse = true;
+    },
+    requestOwner: (value: string) => {
+      requestOwner = value;
+    }
+  };
+}
+
+describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("reads immutable source, carries authoritative tools through gateway, edits selection, checks exact snapshot and creates confirmed draft PR", async () => {
+    const f = await fixture(),
+      id = await f.start(),
+      proposal = await f.wait(id, "proposed");
+    expect(proposal.base_sha).toBe(head);
+    expect(proposal.proposal).toHaveLength(2);
+    expect(f.githubCalls.some((c) => c.method !== "GET")).toBe(false);
+    const last = f.providerCalls.at(-1)!,
+      messages = last.messages as Array<Record<string, unknown>>;
+    expect(messages.filter((m) => m.role === "tool")).toEqual([
+      {
+        role: "tool",
+        tool_call_id: "list",
+        content: JSON.stringify({ files: Object.keys(originals) })
+      },
+      {
+        role: "tool",
+        tool_call_id: "read",
+        content: JSON.stringify({ path: "src/add.test.js", content: originals["src/add.test.js"] })
+      }
+    ]);
+    expect(messages.some((m) => m.role === "assistant" && Array.isArray(m.tool_calls))).toBe(true);
+    const selected = [{ path: "src/add.js", content: "export const add = (a,b) => a + b;\n" }];
+    const review = await f.review(id, selected),
+      reviewHash = review.draft!.plan.review_hash;
+    expect(review.draft!.plan.files.map((file) => file.path)).toEqual(["src/add.js"]);
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: reviewHash,
+        publication_token: f.get(id).publication_token ?? randomUUID(),
+        approve: true
+      })
+    ).rejects.toThrow("CHECK_REQUIRED");
+    await f.check(id, reviewHash);
+    expect(f.checked).toHaveLength(1);
+    expect(f.checked[0]!.files.find((file) => file.path === "src/add.js")!.content).toBe(
+      selected[0]!.content
+    );
+    const response = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/publish`,
+      payload: {
+        review_hash: reviewHash,
+        publication_token: f.get(id).publication_token ?? randomUUID(),
+        approve: true
+      }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: "published",
+      draft: { status: "published", pr_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000" }
+    });
+    expect(f.githubCalls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual([
+      "/git/trees",
+      "/git/commits",
+      "/git/refs",
+      "/pulls"
+    ]);
+    expect(
+      f.githubCalls.find((c) => c.path === "/pulls" && c.method === "POST")!.body
+    ).toMatchObject({ draft: true, base: "main" });
+    expect(f.githubCalls.find((c) => c.path === "/git/refs")!.body!.ref).toMatch(
+      /^refs\/heads\/kosmora\/change-/
+    );
+  });
+
+  it("reconciles a lost publication response by reading GitHub without repeating writes", async () => {
+    const f = await fixture(),
+      id = await f.start(),
+      review = await f.review(id),
+      hash = review.draft!.plan.review_hash;
+    await f.check(id, hash);
+    f.losePrResponse();
+    expect(
+      (
+        await f.service.publish(id, owner, {
+          review_hash: hash,
+          publication_token: f.get(id).publication_token ?? randomUUID(),
+          approve: true
+        })
+      ).status
+    ).toBe("uncertain");
+    const writes = f.githubCalls.filter((c) => c.method === "POST").length;
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: hash,
+        publication_token: f.get(id).publication_token ?? randomUUID(),
+        approve: true
+      })
+    ).rejects.toThrow("STALE_REVIEW");
+    expect((await f.service.reconcile(id, owner)).status).toBe("published");
+    expect(f.githubCalls.filter((c) => c.method === "POST")).toHaveLength(writes);
+    expect(f.githubCalls.at(-1)).toMatchObject({ path: "/pulls", method: "GET" });
+  });
+
+  it("uses strict text JSON fallback through actual gateway when registry forbids tool calling", async () => {
+    const response = sse(
+      {
+        choices: [
+          {
+            delta: { content: JSON.stringify({ summary: "Fix", files: [changes[0]] }) },
+            finish_reason: null
+          }
+        ]
+      },
+      { choices: [{ delta: {}, finish_reason: "stop" }] },
+      "[DONE]"
+    );
+    const f = await fixture({ toolCalling: false, responses: [response] }),
+      id = await f.start();
+    await f.wait(id, "proposed");
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.providerCalls[0]!.tools).toBeUndefined();
+    const reviewed = await f.review(id, [changes[0]!]);
+    const reviewHash = reviewed.draft!.plan.review_hash;
+    await f.check(id, reviewHash);
+    const published = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/publish`,
+      payload: {
+        review_hash: reviewHash,
+        publication_token: f.get(id).publication_token,
+        approve: true
+      }
+    });
+    expect(published.statusCode).toBe(200);
+    expect(published.json()).toMatchObject({
+      status: "published",
+      draft: { pr_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000" }
+    });
+    expect(f.githubCalls.find((call) => call.path === "/pulls")!.body).toMatchObject({
+      draft: true,
+      base: "main"
+    });
+  });
+
+  it("A0 denies reads and A1 permits proposal but denies workspace writes", async () => {
+    const a0 = await fixture({ level: "A0" }),
+      a0id = await a0.start();
+    expect((await a0.wait(a0id, "failed")).error).toBe("POLICY_DENIED");
+    expect(a0.githubCalls).toHaveLength(0);
+    const a1 = await fixture({ level: "A1" }),
+      a1id = await a1.start(),
+      proposal = await a1.wait(a1id, "proposed");
+    await expect(
+      a1.service.review(a1id, owner, { proposal_hash: proposal.proposal_hash!, files: changes })
+    ).rejects.toThrow("POLICY_DENIED");
+    expect(a1.githubCalls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("rejects traversal and secret paths before GitHub access and does not accept arbitrary command strings", async () => {
+    const f = await fixture();
+    for (const path of [
+      "../outside.js",
+      "/etc/passwd",
+      "src\\bad.js",
+      ".env",
+      ".github/workflows/pwn.yml",
+      "credentials.json"
+    ])
+      expect(() =>
+        f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+          task: "Fix",
+          base_branch: "main",
+          files: [path]
+        })
+      ).toThrow("INVALID_INPUT");
+    expect(f.githubCalls).toHaveLength(0);
+    const id = await f.start(),
+      review = await f.review(id),
+      hash = review.draft!.plan.review_hash;
+    for (const payload of [
+      { review_hash: hash, check: "sh -c curl attacker", approve: true },
+      { review_hash: hash, check: "syntax", approve: false }
+    ])
+      expect(
+        (await f.app.inject({ method: "POST", url: `${f.base}/${id}/check`, payload })).statusCode
+      ).toBe(400);
+    expect(f.checked).toHaveLength(0);
+  });
+
+  it("requires current proposal/review hash and invalidates successful checks after edited review", async () => {
+    const f = await fixture(),
+      id = await f.start(),
+      proposal = await f.wait(id, "proposed");
+    await expect(
+      f.service.review(id, owner, { proposal_hash: "0".repeat(64), files: changes })
+    ).rejects.toThrow("STALE_REVIEW");
+    await expect(
+      f.service.review(id, owner, {
+        proposal_hash: proposal.proposal_hash!,
+        files: [{ path: "other.js", content: "x" }]
+      })
+    ).rejects.toThrow("STALE_REVIEW");
+    const first = await f.review(id),
+      hash = first.draft!.plan.review_hash;
+    await f.check(id, hash);
+    const second = await f.review(id, [
+      { path: "src/add.js", content: "export const add=(a,b)=>Number(a)+Number(b);\n" }
+    ]);
+    expect(second.check).toBeUndefined();
+    expect(second.draft!.plan.review_hash).not.toBe(hash);
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: hash,
+        publication_token: f.get(id).publication_token ?? randomUUID(),
+        approve: true
+      })
+    ).rejects.toThrow("STALE_REVIEW");
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: second.draft!.plan.review_hash,
+        publication_token: f.get(id).publication_token ?? randomUUID(),
+        approve: true
+      })
+    ).rejects.toThrow("CHECK_REQUIRED");
+  });
+
+  it("route publication requires explicit confirmation and exact hash", async () => {
+    const f = await fixture(),
+      id = await f.start(),
+      review = await f.review(id),
+      hash = review.draft!.plan.review_hash;
+    await f.check(id, hash);
+    for (const payload of [{ review_hash: hash }, { review_hash: hash, approve: false }])
+      expect(
+        (await f.app.inject({ method: "POST", url: `${f.base}/${id}/publish`, payload })).statusCode
+      ).toBe(400);
+    expect(
+      (
+        await f.app.inject({
+          method: "POST",
+          url: `${f.base}/${id}/publish`,
+          payload: {
+            review_hash: "0".repeat(64),
+            publication_token: f.get(id).publication_token ?? randomUUID(),
+            approve: true
+          }
+        })
+      ).statusCode
+    ).toBe(409);
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("binds routes to project and owner and omits immutable file contents from views", async () => {
+    const f = await fixture(),
+      id = await f.start();
+    await f.wait(id, "proposed");
+    const view = (await f.app.inject({ url: `${f.base}/${id}` })).json<Record<string, unknown>>();
+    expect(view.snapshot).toBeUndefined();
+    expect(view.workspace_scope).toBeUndefined();
+    expect(view.owner_id).toBeUndefined();
+    const other = f.projects.createProject("Other", randomUUID()).project.id;
+    expect(
+      (await f.app.inject({ url: `/api/v1/projects/${other}/code-agent/${id}` })).statusCode
+    ).toBe(404);
+    f.requestOwner("someone-else");
+    expect((await f.app.inject({ url: `${f.base}/${id}` })).statusCode).toBe(404);
+    expect(f.store.get(id, "someone-else")).toBeNull();
+  });
+
+  it("cancels an in-flight approved check without a late-result overwrite or GitHub write", async () => {
+    let entered = false,
+      aborted = false;
+    const runner: CodeAgentWorkspaceRunner = {
+      async run(input) {
+        entered = true;
+        await new Promise<void>((resolve) => {
+          input.signal!.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              resolve();
+            },
+            { once: true }
+          );
+        });
+        return {
+          status: "cancelled",
+          snapshotDigest: input.expectedDigest!,
+          exitCode: null,
+          stdout: "",
+          stderr: "",
+          truncated: false,
+          journal: []
+        };
+      }
+    };
+    const f = await fixture({ runner }),
+      id = await f.start(),
+      review = await f.review(id);
+    f.service.check(id, owner, {
+      review_hash: review.draft!.plan.review_hash,
+      check: "node-test",
+      approve: true
+    });
+    await expect.poll(() => entered).toBe(true);
+    f.service.cancel(id, owner);
+    await f.service.stop();
+    expect(aborted).toBe(true);
+    expect(f.get(id).status).toBe("cancelled");
+    expect(f.get(id).check).toBeUndefined();
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("rejects model attempts to use an unregistered tool and modifications of unread existing files", async () => {
+    const badTool = await fixture({
+        responses: [toolResponse("root_shell", { command: "rm -rf /" }, "illegal")]
+      }),
+      badId = await badTool.start();
+    expect(["PROVIDER_ERROR", "RECONCILIATION_REQUIRED"]).toContain(
+      (await badTool.wait(badId, "failed")).error
+    );
+    expect(badTool.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    const unread = await fixture({ responses: [proposalResponse()] }),
+      id = await unread.start();
+    expect((await unread.wait(id, "failed")).error).toBe("FILE_NOT_READ");
+    expect(unread.githubCalls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("revokes policy during a GitHub write and stops before branch or PR publication", async () => {
+    let revoke = () => {};
+    const f = await fixture({
+        onGithub: (path, method) => {
+          if (path === "/git/trees" && method === "POST") revoke();
+        }
+      }),
+      id = await f.start(),
+      review = await f.review(id),
+      hash = review.draft!.plan.review_hash;
+    await f.check(id, hash);
+    revoke = () => {
+      f.policy.updateProfile({
+        projectId: f.project,
+        baseLevel: "A0",
+        overrides: [],
+        expectedVersion: f.policy.getProfile(f.project)!.version
+      });
+    };
+    expect(
+      (
+        await f.service.publish(id, owner, {
+          review_hash: hash,
+          publication_token: f.get(id).publication_token!,
+          approve: true
+        })
+      ).status
+    ).toBe("uncertain");
+    expect(f.githubCalls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual([
+      "/git/trees"
+    ]);
+  });
+
+  it("invalidates delayed publication approval during reconciliation and accepts a fresh confirmation", async () => {
+    const f = await fixture(),
+      id = await f.start(),
+      review = await f.review(id),
+      hash = review.draft!.plan.review_hash;
+    const checked = await f.check(id, hash),
+      oldToken = checked.publication_token!;
+    const reconciled = await f.service.reconcile(id, owner);
+    expect(reconciled.status).toBe("checked");
+    expect(reconciled.publication_token).not.toBe(oldToken);
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: hash,
+        publication_token: oldToken,
+        approve: true
+      })
+    ).rejects.toThrow("CHECK_REQUIRED");
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+    const published = await f.service.publish(id, owner, {
+      review_hash: hash,
+      publication_token: reconciled.publication_token!,
+      approve: true
+    });
+    expect(published.status).toBe("published");
+    const count = f.githubCalls.length;
+    expect((await f.service.reconcile(id, owner)).status).toBe("published");
+    expect(f.githubCalls).toHaveLength(count);
+  });
+
+  it("does not accept a passed check whose container cleanup or snapshot identity was not verified", async () => {
+    for (const mismatch of [false, true]) {
+      const runner: CodeAgentWorkspaceRunner = {
+        run: (input) =>
+          Promise.resolve({
+            status: "passed",
+            snapshotDigest: mismatch ? "0".repeat(64) : input.expectedDigest!,
+            cleanupVerified: mismatch,
+            exitCode: 0,
+            stdout: "fixture",
+            stderr: "",
+            truncated: false,
+            journal: []
+          })
+      };
+      const f = await fixture({ runner }),
+        id = await f.start(),
+        review = await f.review(id),
+        hash = review.draft!.plan.review_hash;
+      f.service.check(id, owner, { review_hash: hash, check: "syntax", approve: true });
+      expect((await f.wait(id, "failed")).error).toBe("CHECK_SNAPSHOT_MISMATCH");
+      await expect(
+        f.service.publish(id, owner, {
+          review_hash: hash,
+          publication_token: randomUUID(),
+          approve: true
+        })
+      ).rejects.toThrow("CHECK_REQUIRED");
+      expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+    }
+  });
+
+  it("registers the feature in the actual API application with its existing dependencies", async () => {
+    const f = await fixture();
+    const app = buildApp({
+      config: loadServerConfig({ NODE_ENV: "test" }),
+      database: f.database,
+      projectStore: f.projects,
+      policyStore: f.policy,
+      emergencyStopStore: f.emergency,
+      modelGateway: f.service.deps.gateway,
+      manager: f.service.deps.manager,
+      githubIntegration: f.service.deps.github,
+      githubDraftStore: f.drafts,
+      codeAgentRunner: f.service.deps.runner
+    });
+    try {
+      expect((await app.inject({ url: f.base })).statusCode).toBe(200);
+      const response = await app.inject({
+        method: "POST",
+        url: f.base,
+        payload: { task: "Fix src/add.js", base_branch: "main", files: ["src/add.js"] }
+      });
+      expect(response.statusCode).toBe(200);
+      const id = response.json<{ id: string }>().id;
+      await f.wait(id, "proposed");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("runs the same approved check again after unavailable executor provisioning instead of replaying its old result", async () => {
+    let provisioned = false,
+      calls = 0;
+    const runner: CodeAgentWorkspaceRunner = {
+      run(input) {
+        calls++;
+        return Promise.resolve({
+          status: provisioned ? "passed" : "unavailable",
+          snapshotDigest: input.expectedDigest!,
+          cleanupVerified: provisioned,
+          exitCode: provisioned ? 0 : null,
+          stdout: "fixture",
+          stderr: "",
+          truncated: false,
+          journal: []
+        });
+      }
+    };
+    const f = await fixture({ runner }),
+      id = await f.start(),
+      review = await f.review(id),
+      hash = review.draft!.plan.review_hash;
+    const first = await f.check(id, hash);
+    expect(first.check!.status).toBe("unavailable");
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: hash,
+        publication_token: first.publication_token!,
+        approve: true
+      })
+    ).rejects.toThrow("CHECK_REQUIRED");
+    provisioned = true;
+    const second = await f.check(id, hash);
+    expect(calls).toBe(2);
+    expect(second.check!.status).toBe("passed");
+    expect(second.publication_token).not.toBe(first.publication_token);
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("routes the real funded registry through permitted analyst drafting and strict JSON fallback without network access", async () => {
+    const registry = JSON.parse(
+      readFileSync(
+        new URL(
+          "../../../config/model-registry.cheapvibecode.manager-work-preview.v1.json",
+          import.meta.url
+        ),
+        "utf8"
+      )
+    ) as ModelRegistryDocument;
+    const response = sse(
+      {
+        choices: [
+          {
+            index: 0,
+            delta: { content: JSON.stringify({ summary: "Fix", files: [changes[0]] }) },
+            finish_reason: null
+          }
+        ]
+      },
+      { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+      "[DONE]"
+    );
+    const f = await fixture({ registry, responses: [response] }),
+      assertRoute = vi.spyOn(f.service.deps.gateway, "assertRoute"),
+      id = await f.start();
+    const run = await f.wait(id, "proposed");
+    expect(assertRoute.mock.calls[0]![0]).toMatchObject({
+      role: "analyst",
+      task_type: "manager_work_draft",
+      agent_id: "kosmora-code-agent",
+      routing: {
+        preferred_provider: "cheapvibecode",
+        preferred_model_alias: "gpt-5.5",
+        fallback_allowed: false
+      }
+    });
+    expect(assertRoute.mock.results[0]!.type).toBe("throw");
+    expect(assertRoute.mock.results[1]!.type).toBe("return");
+    expect(assertRoute.mock.calls[0]![0].tools).toBeDefined();
+    expect(assertRoute.mock.calls[1]![0].tools).toBeUndefined();
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.providerCalls[0]!.model).toBe("gpt-5.5");
+    expect(f.providerCalls[0]!.tools).toBeUndefined();
+    expect(run.proposal?.map((file) => file.path)).toEqual(["src/add.js"]);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+
+  it("selects relevant existing files through the text-only route and reads their immutable content before drafting", async () => {
+    const jsonResponse = (value: unknown) =>
+      sse(
+        { choices: [{ index: 0, delta: { content: JSON.stringify(value) }, finish_reason: null }] },
+        { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+        "[DONE]"
+      );
+    const readTurns: number[] = [];
+    let providerCalls: Array<Record<string, unknown>> = [];
+    const f = await fixture({
+      toolCalling: false,
+      responses: [
+        jsonResponse({ paths: ["src/add.js"] }),
+        jsonResponse({ summary: "Fix addition", files: [changes[0]] })
+      ],
+      onGithub: (path) => {
+        if (path.startsWith("/git/blobs/")) readTurns.push(providerCalls.length);
+      }
+    });
+    providerCalls = f.providerCalls;
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Fix addition bug",
+      base_branch: "main"
+    }).id;
+    const run = await f.wait(id, "proposed");
+    expect(providerCalls).toHaveLength(2);
+    expect(readTurns).toEqual([1]);
+    expect(run.snapshot).toEqual([{ path: "src/add.js", content: originals["src/add.js"] }]);
+    expect(run.proposal?.[0]?.before).toBe(originals["src/add.js"]);
+    const messages = providerCalls[1]!.messages as Array<{ role: string; content: string }>;
+    expect(
+      JSON.parse(messages.find((message) => message.role === "user")!.content) as unknown
+    ).toMatchObject({
+      commit: head,
+      files: [{ path: "src/add.js", content: originals["src/add.js"] }]
+    });
+    expect(providerCalls.every((call) => call.tools === undefined)).toBe(true);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+
+  it("rejects invented or unsafe text-only file selection before reading blobs or asking for a patch", async () => {
+    for (const path of ["../outside.js", "src/missing.js", ".env"]) {
+      const response = sse(
+        {
+          choices: [
+            { index: 0, delta: { content: JSON.stringify({ paths: [path] }) }, finish_reason: null }
+          ]
+        },
+        { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+        "[DONE]"
+      );
+      const f = await fixture({ toolCalling: false, responses: [response] });
+      const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+        task: "Fix addition bug",
+        base_branch: "main"
+      }).id;
+      expect((await f.wait(id, "failed")).error).toBe("INVALID_FILE_SELECTION");
+      expect(f.providerCalls).toHaveLength(1);
+      expect(f.githubCalls.some((call) => call.path.startsWith("/git/blobs/"))).toBe(false);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+      expect(f.checked).toHaveLength(0);
+    }
+  });
+});

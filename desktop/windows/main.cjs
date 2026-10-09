@@ -3,7 +3,26 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow, ipcMain, Menu, session, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  Notification,
+  screen,
+  session,
+  shell,
+  Tray
+} = require("electron");
+const {
+  cleanRoute,
+  createPreferenceStore,
+  deepLinkFromArgv,
+  restoredBounds
+} = require("./desktop-state.cjs");
+const { createUpdateService } = require("./update-service.cjs");
+const updateTrust = require("./update-trust.json");
 const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
 const {
   connectionViewState,
@@ -27,9 +46,15 @@ app.setPath("userData", profileDirectory);
 app.setPath("sessionData", profileDirectory);
 app.setName("Kosmora");
 
+const preferences = createPreferenceStore(profileDirectory);
 let mainWindow = null;
+let tray = null;
+let saveWindowTimer = null;
+let pendingDeepLink = deepLinkFromArgv(process.argv);
+let updates = null;
 let currentOrigin = null;
 let connectionMessage = "";
+let restoringInitialPage = false;
 let isQuitting = false;
 let downloadPolicyInstalled = false;
 const connectionAttemptGate = createLatestAttemptGate();
@@ -62,6 +87,173 @@ function saveOrigin(origin) {
     mode: 0o600
   });
   fs.renameSync(temporary, target);
+}
+
+function saveWindowState() {
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.isMinimized() ||
+    mainWindow.isFullScreen()
+  )
+    return;
+  try {
+    preferences.update({
+      bounds: mainWindow.isMaximized() ? mainWindow.getNormalBounds() : mainWindow.getBounds(),
+      maximized: mainWindow.isMaximized()
+    });
+  } catch {
+    /* never block a window close because of profile I/O */
+  }
+}
+
+function deferWindowState() {
+  clearTimeout(saveWindowTimer);
+  saveWindowTimer = setTimeout(saveWindowState, 350);
+}
+
+function persistRoute(url) {
+  if (restoringInitialPage || !currentOrigin || !isAllowedRemoteNavigation(url, currentOrigin))
+    return;
+  try {
+    const parsed = new URL(url);
+    const route = cleanRoute(parsed.pathname);
+    if (route && !parsed.search && !parsed.hash && route !== preferences.get().lastPath) {
+      preferences.update({ lastPath: route });
+    }
+  } catch {
+    /* ignore invalid/temporary navigation */
+  }
+}
+
+function revealWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+async function openRoute(route) {
+  const safe = cleanRoute(route);
+  if (!safe || !currentOrigin || !mainWindow || mainWindow.isDestroyed()) return false;
+  if (mainWindow.webContents.getURL() === localConnectionUrl()) {
+    pendingDeepLink = safe;
+    return false;
+  }
+  await mainWindow.loadURL(currentOrigin + safe);
+  return true;
+}
+
+function refreshTray() {
+  if (!preferences.get().trayEnabled) {
+    if (tray) {
+      tray.destroy();
+      tray = null;
+    }
+    return;
+  }
+  if (!tray) {
+    tray = new Tray(path.join(__dirname, "build", "icon.ico"));
+    tray.setToolTip("Kosmora");
+    tray.on("double-click", revealWindow);
+  }
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Открыть Kosmora", click: revealWindow },
+      {
+        label: "Выход",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        }
+      }
+    ])
+  );
+}
+
+function notifyUpdate(version) {
+  if (!preferences.get().notifyUpdates || !Notification.isSupported()) return;
+  new Notification({
+    title: "Kosmora",
+    body: `Доступна проверенная версия ${version}. Установка только вручную.`
+  }).show();
+}
+
+async function checkUpdates({ interactive = false } = {}) {
+  if (!updates) return;
+  try {
+    const result = await updates.check();
+    if (result.status === "available") {
+      if (interactive) {
+        const choice = await dialog.showMessageBox(mainWindow, {
+          type: "info",
+          title: "Обновление Kosmora",
+          message: `Версия ${result.version} имеет действительную подпись манифеста.`,
+          detail:
+            "Установщик будет только скачан и проверен по SHA-256. Автоматического запуска или установки нет. Windows Authenticode этим не подтверждается.",
+          buttons: ["Скачать и проверить", "Отмена"],
+          cancelId: 1,
+          defaultId: 1,
+          noLink: true
+        });
+        if (choice.response === 0) {
+          const staged = await updates.stage();
+          await dialog.showMessageBox(mainWindow, {
+            type: "info",
+            title: "Kosmora",
+            message: `Версия ${staged.version} сохранена.`,
+            detail:
+              "Файл проверен по подписанному SHA-256. Перед установкой вручную проверьте издателя в Windows. Текущая версия остаётся установленной."
+          });
+          shell.showItemInFolder(staged.file);
+        }
+      } else notifyUpdate(result.version);
+    } else if (interactive) {
+      await dialog.showMessageBox(mainWindow, {
+        type: "info",
+        title: "Обновления Kosmora",
+        message:
+          result.status === "current"
+            ? "Установлена актуальная версия."
+            : result.message || "Обновления недоступны."
+      });
+    }
+  } catch (error) {
+    if (interactive)
+      await dialog.showMessageBox(mainWindow, {
+        type: "warning",
+        title: "Обновление не подтверждено",
+        message: error instanceof Error ? error.message : "Проверка обновления не удалась."
+      });
+  }
+}
+
+async function showRollbackCandidate() {
+  try {
+    const candidate = await updates.previousVerified();
+    if (!candidate) {
+      await dialog.showMessageBox(mainWindow, {
+        type: "info",
+        title: "Откат Kosmora",
+        message: "Ранее проверенного установщика старой версии нет.",
+        detail: "Первоначальный установщик 0.10.0 автоматически не архивировался."
+      });
+      return;
+    }
+    await dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "Откат Kosmora",
+      message: `Найдена проверенная версия ${candidate.version}.`,
+      detail:
+        "Автоматического отката нет. Переустановка выполняется владельцем вручную после проверки подписи Windows."
+    });
+    shell.showItemInFolder(candidate.file);
+  } catch {
+    await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      message: "Не удалось проверить предыдущий установщик."
+    });
+  }
 }
 
 function localConnectionUrl() {
@@ -137,17 +329,34 @@ async function openOrigin(origin, { persist = false } = {}) {
       return probe;
     }
 
+    const previousOrigin = currentOrigin;
+    const requestedRoute =
+      pendingDeepLink ||
+      (preferences.get().restorePage && previousOrigin === origin
+        ? preferences.get().lastPath
+        : "/");
     currentOrigin = origin;
+    restoringInitialPage = true;
     try {
       await mainWindow.loadURL(origin);
       if (!connectionAttemptGate.isCurrent(generation)) {
         return { ok: false, stale: true, message: "Эта попытка подключения уже заменена новой." };
       }
-      if (persist) saveOrigin(origin);
+      if (persist) {
+        saveOrigin(origin);
+        if (previousOrigin !== origin) preferences.update({ lastPath: "/" });
+      }
       connectionMessage = "";
+      pendingDeepLink = null;
+      if (requestedRoute !== "/") {
+        const opened = await openRoute(requestedRoute).catch(() => false);
+        if (opened && preferences.get().lastPath !== requestedRoute)
+          preferences.update({ lastPath: requestedRoute });
+      }
       return { ok: true };
     } catch {
       if (connectionAttemptGate.isCurrent(generation)) {
+        currentOrigin = previousOrigin;
         await showConnection(
           "Сервер доступен, но интерфейс Kosmora не открылся. Повторите попытку."
         );
@@ -155,6 +364,7 @@ async function openOrigin(origin, { persist = false } = {}) {
       return { ok: false, message: "Сервер доступен, но интерфейс Kosmora не открылся." };
     }
   } finally {
+    if (connectionAttemptGate.isCurrent(generation)) restoringInitialPage = false;
     connectionAttemptGate.finish(generation);
   }
 }
@@ -174,6 +384,10 @@ function installNavigationGuards(window) {
     event.preventDefault();
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
   });
+
+  window.webContents.on("will-attach-webview", (event) => event.preventDefault());
+  window.webContents.on("did-navigate", (_event, url) => persistRoute(url));
+  window.webContents.on("did-navigate-in-page", (_event, url) => persistRoute(url));
 
   window.webContents.on("will-redirect", (event, url) => {
     if (isAllowedRemoteNavigation(url, currentOrigin)) return;
@@ -201,29 +415,134 @@ function installSessionPolicy(browserSession) {
   );
   browserSession.setPermissionCheckHandler(() => false);
 
-  browserSession.on("will-download", (event, item) => {
+  browserSession.on("will-download", (event, item, sourceContents) => {
     const chain = item.getURLChain();
-    if (!isAllowedDownload(chain.length ? chain : [item.getURL()], currentOrigin)) {
+    if (
+      !mainWindow ||
+      mainWindow.isDestroyed() ||
+      sourceContents !== mainWindow.webContents ||
+      !isAllowedRemoteNavigation(sourceContents.getURL(), currentOrigin) ||
+      !isAllowedDownload(chain.length ? chain : [item.getURL()], currentOrigin)
+    ) {
       event.preventDefault();
       return;
     }
-    const target = nextAvailableDownloadPath(
-      app.getPath("downloads"),
-      item.getFilename(),
-      fs.existsSync
-    );
-    item.setSavePath(target);
+    const prefs = preferences.get();
+    const directory =
+      prefs.downloadDirectory &&
+      fs.existsSync(prefs.downloadDirectory) &&
+      fs.statSync(prefs.downloadDirectory).isDirectory()
+        ? prefs.downloadDirectory
+        : app.getPath("downloads");
+    const target = nextAvailableDownloadPath(directory, item.getFilename(), fs.existsSync);
+    if (prefs.askWhereToSave) {
+      item.setSaveDialogOptions({ title: "Сохранить файл Kosmora", defaultPath: target });
+    } else {
+      item.setSavePath(target);
+    }
   });
 }
 
 function createMenu() {
+  const pref = preferences.get();
+  const toggle = (key, value) => {
+    preferences.update({ [key]: value });
+    if (key === "trayEnabled") refreshTray();
+    createMenu();
+  };
   const template = [
     {
       label: "Kosmora",
       submenu: [
-        { label: "Сменить сервер…", accelerator: "Ctrl+Shift+K", click: () => showConnection() },
+        {
+          label: "Сменить сервер…",
+          accelerator: "Ctrl+Shift+K",
+          click: () => void showConnection()
+        },
         { type: "separator" },
-        { role: "quit", label: "Выход" }
+        {
+          label: "Выход",
+          click: () => {
+            isQuitting = true;
+            app.quit();
+          }
+        }
+      ]
+    },
+    {
+      label: "Файлы",
+      submenu: [
+        {
+          label: "Выбрать папку загрузок…",
+          click: async () => {
+            const choice = await dialog.showOpenDialog(mainWindow, {
+              title: "Папка загрузок Kosmora",
+              properties: ["openDirectory", "createDirectory"],
+              defaultPath: pref.downloadDirectory || app.getPath("downloads")
+            });
+            if (!choice.canceled && choice.filePaths[0])
+              preferences.update({ downloadDirectory: choice.filePaths[0] });
+          }
+        },
+        {
+          label: "Вернуть стандартную папку загрузок",
+          click: () => preferences.update({ downloadDirectory: null })
+        },
+        {
+          label: "Спрашивать, куда сохранить",
+          type: "checkbox",
+          checked: pref.askWhereToSave,
+          click: (item) => toggle("askWhereToSave", item.checked)
+        },
+        { type: "separator" },
+        {
+          label: "Открыть папку загрузок",
+          click: () =>
+            shell.openPath(preferences.get().downloadDirectory || app.getPath("downloads"))
+        }
+      ]
+    },
+    {
+      label: "Настройки",
+      submenu: [
+        {
+          label: "Восстанавливать последнюю страницу",
+          type: "checkbox",
+          checked: pref.restorePage,
+          click: (item) => toggle("restorePage", item.checked)
+        },
+        {
+          label: "Оставлять Kosmora в трее при закрытии",
+          type: "checkbox",
+          checked: pref.trayEnabled,
+          click: (item) => toggle("trayEnabled", item.checked)
+        },
+        {
+          label: "Проверять обновления при запуске",
+          type: "checkbox",
+          checked: pref.checkUpdatesOnStart,
+          click: (item) => toggle("checkUpdatesOnStart", item.checked)
+        },
+        {
+          label: "Уведомлять об обновлениях",
+          type: "checkbox",
+          checked: pref.notifyUpdates,
+          click: (item) => toggle("notifyUpdates", item.checked)
+        }
+      ]
+    },
+    {
+      label: "Обновления",
+      submenu: [
+        { label: `Версия ${app.getVersion()}`, enabled: false },
+        {
+          label: "Проверить подписанный релиз…",
+          click: () => void checkUpdates({ interactive: true })
+        },
+        {
+          label: "Показать предыдущий проверенный установщик…",
+          click: () => void showRollbackCandidate()
+        }
       ]
     },
     {
@@ -247,9 +566,10 @@ async function createMainWindow() {
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
   installSessionPolicy(browserSession);
 
+  const savedWindow = preferences.get();
+  const windowBounds = restoredBounds(savedWindow.bounds, screen.getAllDisplays());
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    ...(windowBounds || { width: 1440, height: 900 }),
     minWidth: 900,
     minHeight: 640,
     backgroundColor: "#ffffff",
@@ -261,12 +581,27 @@ async function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      navigateOnDragDrop: false,
       spellcheck: true
     }
   });
 
   installNavigationGuards(mainWindow);
+  if (savedWindow.maximized) mainWindow.maximize();
   mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.on("resize", deferWindowState);
+  mainWindow.on("move", deferWindowState);
+  mainWindow.on("close", (event) => {
+    clearTimeout(saveWindowTimer);
+    saveWindowState();
+    if (preferences.get().trayEnabled && !isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -318,11 +653,30 @@ ipcMain.handle("cosmora:retry", async (event) => {
 });
 
 if (gotSingleInstanceLock) {
-  app.on("second-instance", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+  app.on("second-instance", (_event, commandLine) => {
+    const route = deepLinkFromArgv(commandLine);
+    if (route) {
+      pendingDeepLink = route;
+      void openRoute(route)
+        .then((opened) => {
+          if (opened) pendingDeepLink = null;
+        })
+        .catch(() => {});
+    }
+    revealWindow();
+  });
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    const route = deepLinkFromArgv([url]);
+    if (route) {
+      pendingDeepLink = route;
+      void openRoute(route)
+        .then((opened) => {
+          if (opened) pendingDeepLink = null;
+        })
+        .catch(() => {});
+    }
+    revealWindow();
   });
 
   app.whenReady().then(async () => {
@@ -354,8 +708,19 @@ if (gotSingleInstanceLock) {
       }
     }
 
+    if (app.isPackaged) app.setAsDefaultProtocolClient("kosmora");
+    const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
+    updates = createUpdateService({
+      fetcher: (url, options) => browserSession.fetch(url, options),
+      origin: () => currentOrigin,
+      currentVersion: () => app.getVersion(),
+      userData: app.getPath("userData"),
+      publicKeyPem: updateTrust.publicKeyPem
+    });
     createMenu();
+    refreshTray();
     await createMainWindow();
+    if (preferences.get().checkUpdatesOnStart && currentOrigin) void checkUpdates();
   });
 
   app.on("activate", () => {
