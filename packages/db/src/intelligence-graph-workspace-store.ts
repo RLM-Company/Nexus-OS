@@ -10,9 +10,7 @@ import type {
  * runtime code. Do not instantiate until the migration is installed.
  * All reads/writes are fenced by BOTH owner and project.
  */
-export class SqliteIntelligenceGraphWorkspaceRepository
-  implements IntelligenceGraphWorkspaceRepository
-{
+export class SqliteIntelligenceGraphWorkspaceRepository implements IntelligenceGraphWorkspaceRepository {
   constructor(private readonly sqlite: DatabaseSync) {}
 
   private projectExists(ownerId: string, projectId: string): boolean {
@@ -45,8 +43,13 @@ export class SqliteIntelligenceGraphWorkspaceRepository
            VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
-          record.graph_id, record.owner_id, record.project_id,
-          record.title, record.revision, record.created_at, record.updated_at
+          record.graph_id,
+          record.owner_id,
+          record.project_id,
+          record.title,
+          record.revision,
+          record.created_at,
+          record.updated_at
         );
       this.sqlite
         .prepare(
@@ -54,7 +57,13 @@ export class SqliteIntelligenceGraphWorkspaceRepository
             (graph_id, revision, snapshot_json, summary, restored_from_revision, created_at)
            VALUES (?, ?, ?, ?, NULL, ?)`
         )
-        .run(record.graph_id, record.revision, JSON.stringify(record), "Graph created", record.created_at);
+        .run(
+          record.graph_id,
+          record.revision,
+          JSON.stringify(record),
+          "Graph created",
+          record.created_at
+        );
       return structuredClone(record);
     });
   }
@@ -87,7 +96,10 @@ export class SqliteIntelligenceGraphWorkspaceRepository
   }
 
   getRevision(
-    ownerId: string, projectId: string, graphId: string, revision: number
+    ownerId: string,
+    projectId: string,
+    graphId: string,
+    revision: number
   ): IntelligenceGraphWorkspace | null {
     const row = this.sqlite
       .prepare(
@@ -101,7 +113,10 @@ export class SqliteIntelligenceGraphWorkspaceRepository
   }
 
   listRevisions(
-    ownerId: string, projectId: string, graphId: string, limit: number
+    ownerId: string,
+    projectId: string,
+    graphId: string,
+    limit: number
   ): IntelligenceGraphRevisionInfo[] {
     return this.sqlite
       .prepare(
@@ -130,8 +145,13 @@ export class SqliteIntelligenceGraphWorkspaceRepository
                          WHERE p.id = project_id AND p.owner_id = owner_id)`
         )
         .run(
-          record.revision, record.title, record.updated_at,
-          record.graph_id, record.owner_id, record.project_id, expectedRevision
+          record.revision,
+          record.title,
+          record.updated_at,
+          record.graph_id,
+          record.owner_id,
+          record.project_id,
+          expectedRevision
         );
       if (Number(changed.changes) !== 1) return null;
       this.sqlite
@@ -141,8 +161,12 @@ export class SqliteIntelligenceGraphWorkspaceRepository
            VALUES (?, ?, ?, ?, ?, ?)`
         )
         .run(
-          record.graph_id, record.revision, JSON.stringify(record),
-          summary, record.restored_from_revision, record.updated_at
+          record.graph_id,
+          record.revision,
+          JSON.stringify(record),
+          summary,
+          record.restored_from_revision,
+          record.updated_at
         );
       return structuredClone(record);
     });

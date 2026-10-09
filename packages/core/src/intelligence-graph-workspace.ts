@@ -11,11 +11,7 @@ import { IntelligenceGraphIndex } from "./intelligence-graph-retrieval.js";
 import { runIntelligenceGraphCognitiveCycle } from "./intelligence-graph-cognition.js";
 
 export type IntelligenceGraphLinkType =
-  | "SUPPORTS"
-  | "CONTRADICTS"
-  | "DEPENDS_ON"
-  | "IMPLEMENTS"
-  | "REFERENCES";
+  "SUPPORTS" | "CONTRADICTS" | "DEPENDS_ON" | "IMPLEMENTS" | "REFERENCES";
 
 export type IntelligenceGraphEdit =
   | {
@@ -52,8 +48,7 @@ const MAX_NODES = 150;
 const MAX_EDGES = 300;
 const MAX_RECORDS = 150;
 const refKey = (ref: IntelligenceGraphVersionRef): string => `${ref.id}@${ref.version}`;
-const current = (status: string): boolean =>
-  status !== "deleted" && status !== "superseded";
+const current = (status: string): boolean => status !== "deleted" && status !== "superseded";
 const invalid = (message: string): never => {
   throw new IntelligenceGraphWorkspaceError("BAD_INPUT", message);
 };
@@ -85,11 +80,14 @@ const ensureLimits = (graph: IntelligenceGraphWorkspace): void => {
     edges: graph.edges
   });
   if (issues.length > 0) return invalid(`Invalid graph: ${issues[0]}`);
-  const ids = new Set(graph.nodes.map((node) => refKey({ id: node.node_id, version: node.node_version })));
+  const ids = new Set(
+    graph.nodes.map((node) => refKey({ id: node.node_id, version: node.node_version }))
+  );
   const records = new Set<string>();
   for (const record of graph.records) {
     const key = refKey(record.node);
-    if (!ids.has(key) || records.has(key)) return invalid("Missing or duplicate graph search record");
+    if (!ids.has(key) || records.has(key))
+      return invalid("Missing or duplicate graph search record");
     if (!record.text.trim() || !record.excerpt.trim()) return invalid("Empty graph search record");
     records.add(key);
   }
@@ -199,7 +197,9 @@ export class IntelligenceGraphWorkspaceService {
         activeNode(graph, operation.from);
         activeNode(graph, operation.to);
         const id = randomUUID();
-        graph.edges.push(this.link(graph, id, 1, operation.relation, operation.from, operation.to, at));
+        graph.edges.push(
+          this.link(graph, id, 1, operation.relation, operation.from, operation.to, at)
+        );
         summary = "Created an owner-entered unverified relation";
         break;
       }
@@ -213,8 +213,13 @@ export class IntelligenceGraphWorkspaceService {
         old.verification_status = "superseded";
         old.valid_to = at;
         const next = this.link(
-          graph, old.edge_id, old.edge_version + 1, old.type as IntelligenceGraphLinkType,
-          operation.from, operation.to, at
+          graph,
+          old.edge_id,
+          old.edge_version + 1,
+          old.type as IntelligenceGraphLinkType,
+          operation.from,
+          operation.to,
+          at
         );
         next.supersedes = { id: old.edge_id, version: old.edge_version };
         graph.edges.push(next);
@@ -266,8 +271,11 @@ export class IntelligenceGraphWorkspaceService {
     };
     ensureLimits(restored);
     return (
-      this.repository.save(restored, expectedRevision, `Restored workspace revision ${fromRevision}`) ??
-      this.conflict()
+      this.repository.save(
+        restored,
+        expectedRevision,
+        `Restored workspace revision ${fromRevision}`
+      ) ?? this.conflict()
     );
   }
 
@@ -280,7 +288,11 @@ export class IntelligenceGraphWorkspaceService {
       graph.nodes.map((node) => [refKey({ id: node.node_id, version: node.node_version }), node])
     );
     const index = new IntelligenceGraphIndex({
-      ownerId, projectId, nodes: graph.nodes, edges: graph.edges, records: graph.records
+      ownerId,
+      projectId,
+      nodes: graph.nodes,
+      edges: graph.edges,
+      records: graph.records
     });
     const result = runIntelligenceGraphCognitiveCycle(index, {
       owner_id: ownerId,
@@ -303,14 +315,17 @@ export class IntelligenceGraphWorkspaceService {
       return {
         edge_id: edge.edge_id,
         version: edge.edge_version,
-        from, to, relation: edge.type,
+        from,
+        to,
+        relation: edge.type,
         description: `${from} — ${label[edge.type] ?? edge.type} — ${to}`,
         verified: edge.verification_status === "verified",
         status: edge.verification_status,
         source: edge.evidence_ref,
-        note: edge.verification_status === "verified"
-          ? "Graph relation marked verified; check primary evidence independently"
-          : "Owner-entered or proposed relationship, not independently verified"
+        note:
+          edge.verification_status === "verified"
+            ? "Graph relation marked verified; check primary evidence independently"
+            : "Owner-entered or proposed relationship, not independently verified"
       };
     });
     return {
@@ -323,7 +338,9 @@ export class IntelligenceGraphWorkspaceService {
         version: node.node_version,
         kind: node.kind,
         status: node.verification_status,
-        label: records.get(refKey({ id: node.node_id, version: node.node_version }))?.text ?? node.node_id,
+        label:
+          records.get(refKey({ id: node.node_id, version: node.node_version }))?.text ??
+          node.node_id,
         detail: excerpt,
         source: node.source_ref,
         known: vertices.has(refKey({ id: node.node_id, version: node.node_version }))
@@ -340,23 +357,39 @@ export class IntelligenceGraphWorkspaceService {
   }
 
   private link(
-    graph: IntelligenceGraphWorkspace, id: string, version: number,
-    relation: IntelligenceGraphLinkType, from: IntelligenceGraphVersionRef,
-    to: IntelligenceGraphVersionRef, at: string
+    graph: IntelligenceGraphWorkspace,
+    id: string,
+    version: number,
+    relation: IntelligenceGraphLinkType,
+    from: IntelligenceGraphVersionRef,
+    to: IntelligenceGraphVersionRef,
+    at: string
   ): IntelligenceGraphEdge {
     const allowed = ["SUPPORTS", "CONTRADICTS", "DEPENDS_ON", "IMPLEMENTS", "REFERENCES"];
     if (!allowed.includes(relation)) return invalid("Unsupported relation type");
     if (refKey(from) === refKey(to)) return invalid("Self-link is not supported");
     return {
       contract_version: 1,
-      edge_id: id, edge_version: version, type: relation,
-      from: structuredClone(from), to: structuredClone(to),
-      owner_id: graph.owner_id, project_id: graph.project_id, scope: "project",
-      created_at: at, observed_at: at, valid_from: at, valid_to: null,
-      verification_status: "discovered", sensitivity: "D1_PROJECT",
+      edge_id: id,
+      edge_version: version,
+      type: relation,
+      from: structuredClone(from),
+      to: structuredClone(to),
+      owner_id: graph.owner_id,
+      project_id: graph.project_id,
+      scope: "project",
+      created_at: at,
+      observed_at: at,
+      valid_from: at,
+      valid_to: null,
+      verification_status: "discovered",
+      sensitivity: "D1_PROJECT",
       evidence_ref: { source_id: id, source_version: version, location: "owner_input" },
-      provenance_kind: "owner_assertion", confidence_method: "owner_direct",
-      extractor_version: "graph-workspace-v1", supersedes: null, deleted_at: null
+      provenance_kind: "owner_assertion",
+      confidence_method: "owner_direct",
+      extractor_version: "graph-workspace-v1",
+      supersedes: null,
+      deleted_at: null
     };
   }
 
@@ -364,6 +397,9 @@ export class IntelligenceGraphWorkspaceService {
     throw new IntelligenceGraphWorkspaceError("NOT_FOUND", "Graph or project not found");
   }
   private conflict(): never {
-    throw new IntelligenceGraphWorkspaceError("REVISION_CONFLICT", "Graph revision changed; reload before saving");
+    throw new IntelligenceGraphWorkspaceError(
+      "REVISION_CONFLICT",
+      "Graph revision changed; reload before saving"
+    );
   }
 }

@@ -56,15 +56,15 @@ The owner_id is **always resolved server-side** from the authenticated
 identity; all storage accesses additionally fence on both owner and project.
 404 responses hide foreign projects/graphs.
 
-| Method | Suffix | Input | Response |
-| --- | --- | --- | --- |
-| GET | `/` | `?limit=1..20` | `{items: Graph[]}` |
-| POST | `/` | `{title: string<=80}` | Created empty Graph, 201 |
-| GET | `/:graphId` | — | Exact current Graph revision |
-| GET | `/:graphId/revisions` | `?limit=1..50` | Bounded revision metadata |
-| POST | `/:graphId/edits` | `{expected_revision,operation}` | Updated Graph |
-| POST | `/:graphId/restore` | `{expected_revision,from_revision}` | Restored Graph, new revision |
-| GET | `/:graphId/explain` | `?q=string<=500` | Evidence readiness and actual matched relationships |
+| Method | Suffix                | Input                               | Response                                            |
+| ------ | --------------------- | ----------------------------------- | --------------------------------------------------- |
+| GET    | `/`                   | `?limit=1..20`                      | `{items: Graph[]}`                                  |
+| POST   | `/`                   | `{title: string<=80}`               | Created empty Graph, 201                            |
+| GET    | `/:graphId`           | —                                   | Exact current Graph revision                        |
+| GET    | `/:graphId/revisions` | `?limit=1..50`                      | Bounded revision metadata                           |
+| POST   | `/:graphId/edits`     | `{expected_revision,operation}`     | Updated Graph                                       |
+| POST   | `/:graphId/restore`   | `{expected_revision,from_revision}` | Restored Graph, new revision                        |
+| GET    | `/:graphId/explain`   | `?q=string<=500`                    | Evidence readiness and actual matched relationships |
 
 Mutations return `409 REVISION_CONFLICT` on stale optimistic revisions;
 invalid requests return 400, oversize graphs 413, and unauthorized/unknown
@@ -73,12 +73,13 @@ a workspace, and the cognitive retrieval is bounded to 24 nodes / 40 edges /
 depth 2 / fan-out 8 per request.
 
 Supported edit variants:
+
 - `add_node`: `node_kind`, `label`, `detail`; generated node ID, `discovered` status.
 - `add_edge`: typed relation `SUPPORTS|CONTRADICTS|DEPENDS_ON|IMPLEMENTS|REFERENCES`,
   `from:{id,version}`, `to:{id,version}`; generated edge ID, discovered state.
 - `revise_edge`: `edge_id`, updated `from`, `to`; prior version superseded.
 - `remove_edge`: `edge_id`; tombstone retained in current workspace.
-No patch can arbitrarily set `verified`, `owner_id`, or billing fields.
+  No patch can arbitrarily set `verified`, `owner_id`, or billing fields.
 
 ## SQLite migration proposal / reserved slot handoff
 

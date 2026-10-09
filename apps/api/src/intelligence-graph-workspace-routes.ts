@@ -15,34 +15,44 @@ const Ref = Type.Object(
   { additionalProperties: false }
 );
 const Scope = Type.Object({ projectId: Id }, { additionalProperties: false });
-const GraphScope = Type.Object(
-  { projectId: Id, graphId: Id },
-  { additionalProperties: false }
-);
+const GraphScope = Type.Object({ projectId: Id, graphId: Id }, { additionalProperties: false });
 const Revision = Type.Integer({ minimum: 1 });
 const Edit = Type.Union([
-  Type.Object({
-    kind: Type.Literal("add_node"),
-    node_kind: Type.Union(["Claim", "Entity", "Source", "Document", "Decision", "Goal", "Task"].map(
-      (kind) => Type.Literal(kind)
-    )),
-    label: Type.String({ minLength: 1, maxLength: 120 }),
-    detail: Type.String({ minLength: 1, maxLength: 1000 })
-  }, { additionalProperties: false }),
-  Type.Object({
-    kind: Type.Literal("add_edge"),
-    relation: Type.Union(["SUPPORTS", "CONTRADICTS", "DEPENDS_ON", "IMPLEMENTS", "REFERENCES"].map(
-      (relation) => Type.Literal(relation)
-    )),
-    from: Ref,
-    to: Ref
-  }, { additionalProperties: false }),
-  Type.Object({
-    kind: Type.Literal("revise_edge"),
-    edge_id: Id,
-    from: Ref,
-    to: Ref
-  }, { additionalProperties: false }),
+  Type.Object(
+    {
+      kind: Type.Literal("add_node"),
+      node_kind: Type.Union(
+        ["Claim", "Entity", "Source", "Document", "Decision", "Goal", "Task"].map((kind) =>
+          Type.Literal(kind)
+        )
+      ),
+      label: Type.String({ minLength: 1, maxLength: 120 }),
+      detail: Type.String({ minLength: 1, maxLength: 1000 })
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("add_edge"),
+      relation: Type.Union(
+        ["SUPPORTS", "CONTRADICTS", "DEPENDS_ON", "IMPLEMENTS", "REFERENCES"].map((relation) =>
+          Type.Literal(relation)
+        )
+      ),
+      from: Ref,
+      to: Ref
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("revise_edge"),
+      edge_id: Id,
+      from: Ref,
+      to: Ref
+    },
+    { additionalProperties: false }
+  ),
   Type.Object({ kind: Type.Literal("remove_edge"), edge_id: Id }, { additionalProperties: false })
 ]);
 
@@ -92,102 +102,198 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
     return actor.owner_id;
   };
 
-  route.get("/api/v1/projects/:projectId/intelligence-graphs", {
-    schema: { params: Scope, querystring: Type.Object({
-      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, default: 20 }))
-    }, { additionalProperties: false }) }
-  }, async (request, reply) => {
-    const owner = await authenticate(request, reply, request.params.projectId);
-    if (!owner) return;
-    try {
-      return { items: dependencies.service.list(owner, request.params.projectId, request.query.limit ?? 20) };
-    } catch (error) { return handleFailure(reply, error); }
-  });
-
-  route.post("/api/v1/projects/:projectId/intelligence-graphs", {
-    schema: {
-      params: Scope,
-      body: Type.Object(
-        { title: Type.String({ minLength: 1, maxLength: 80 }) },
-        { additionalProperties: false }
-      )
+  route.get(
+    "/api/v1/projects/:projectId/intelligence-graphs",
+    {
+      schema: {
+        params: Scope,
+        querystring: Type.Object(
+          {
+            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, default: 20 }))
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    async (request, reply) => {
+      const owner = await authenticate(request, reply, request.params.projectId);
+      if (!owner) return;
+      try {
+        return {
+          items: dependencies.service.list(
+            owner,
+            request.params.projectId,
+            request.query.limit ?? 20
+          )
+        };
+      } catch (error) {
+        return handleFailure(reply, error);
+      }
     }
-  }, async (request, reply) => {
-    const owner = await authenticate(request, reply, request.params.projectId);
-    if (!owner) return;
-    try {
-      const graph = dependencies.service.create(owner, request.params.projectId, request.body.title);
-      return reply.status(201).send(graph);
-    } catch (error) { return handleFailure(reply, error); }
-  });
+  );
 
-  route.get("/api/v1/projects/:projectId/intelligence-graphs/:graphId", {
-    schema: { params: GraphScope }
-  }, async (request, reply) => {
-    const owner = await authenticate(request, reply, request.params.projectId);
-    if (!owner) return;
-    try {
-      return dependencies.service.get(owner, request.params.projectId, request.params.graphId);
-    } catch (error) { return handleFailure(reply, error); }
-  });
+  route.post(
+    "/api/v1/projects/:projectId/intelligence-graphs",
+    {
+      schema: {
+        params: Scope,
+        body: Type.Object(
+          { title: Type.String({ minLength: 1, maxLength: 80 }) },
+          { additionalProperties: false }
+        )
+      }
+    },
+    async (request, reply) => {
+      const owner = await authenticate(request, reply, request.params.projectId);
+      if (!owner) return;
+      try {
+        const graph = dependencies.service.create(
+          owner,
+          request.params.projectId,
+          request.body.title
+        );
+        return reply.status(201).send(graph);
+      } catch (error) {
+        return handleFailure(reply, error);
+      }
+    }
+  );
 
-  route.get("/api/v1/projects/:projectId/intelligence-graphs/:graphId/revisions", {
-    schema: { params: GraphScope, querystring: Type.Object({
-      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, default: 20 }))
-    }, { additionalProperties: false }) }
-  }, async (request, reply) => {
-    const owner = await authenticate(request, reply, request.params.projectId);
-    if (!owner) return;
-    try {
-      return { items: dependencies.service.revisions(
-        owner, request.params.projectId, request.params.graphId, request.query.limit ?? 20
-      ) };
-    } catch (error) { return handleFailure(reply, error); }
-  });
+  route.get(
+    "/api/v1/projects/:projectId/intelligence-graphs/:graphId",
+    {
+      schema: { params: GraphScope }
+    },
+    async (request, reply) => {
+      const owner = await authenticate(request, reply, request.params.projectId);
+      if (!owner) return;
+      try {
+        return dependencies.service.get(owner, request.params.projectId, request.params.graphId);
+      } catch (error) {
+        return handleFailure(reply, error);
+      }
+    }
+  );
 
-  route.post("/api/v1/projects/:projectId/intelligence-graphs/:graphId/edits", {
-    schema: { params: GraphScope, body: Type.Object({
-      expected_revision: Revision,
-      operation: Edit
-    }, { additionalProperties: false }) }
-  }, async (request, reply) => {
-    const owner = await authenticate(request, reply, request.params.projectId);
-    if (!owner) return;
-    try {
-      return dependencies.service.edit(
-        owner, request.params.projectId, request.params.graphId,
-        request.body.expected_revision, request.body.operation as IntelligenceGraphEdit
-      );
-    } catch (error) { return handleFailure(reply, error); }
-  });
+  route.get(
+    "/api/v1/projects/:projectId/intelligence-graphs/:graphId/revisions",
+    {
+      schema: {
+        params: GraphScope,
+        querystring: Type.Object(
+          {
+            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, default: 20 }))
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    async (request, reply) => {
+      const owner = await authenticate(request, reply, request.params.projectId);
+      if (!owner) return;
+      try {
+        return {
+          items: dependencies.service.revisions(
+            owner,
+            request.params.projectId,
+            request.params.graphId,
+            request.query.limit ?? 20
+          )
+        };
+      } catch (error) {
+        return handleFailure(reply, error);
+      }
+    }
+  );
 
-  route.post("/api/v1/projects/:projectId/intelligence-graphs/:graphId/restore", {
-    schema: { params: GraphScope, body: Type.Object({
-      expected_revision: Revision,
-      from_revision: Revision
-    }, { additionalProperties: false }) }
-  }, async (request, reply) => {
-    const owner = await authenticate(request, reply, request.params.projectId);
-    if (!owner) return;
-    try {
-      return dependencies.service.restore(
-        owner, request.params.projectId, request.params.graphId,
-        request.body.expected_revision, request.body.from_revision
-      );
-    } catch (error) { return handleFailure(reply, error); }
-  });
+  route.post(
+    "/api/v1/projects/:projectId/intelligence-graphs/:graphId/edits",
+    {
+      schema: {
+        params: GraphScope,
+        body: Type.Object(
+          {
+            expected_revision: Revision,
+            operation: Edit
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    async (request, reply) => {
+      const owner = await authenticate(request, reply, request.params.projectId);
+      if (!owner) return;
+      try {
+        return dependencies.service.edit(
+          owner,
+          request.params.projectId,
+          request.params.graphId,
+          request.body.expected_revision,
+          request.body.operation as IntelligenceGraphEdit
+        );
+      } catch (error) {
+        return handleFailure(reply, error);
+      }
+    }
+  );
 
-  route.get("/api/v1/projects/:projectId/intelligence-graphs/:graphId/explain", {
-    schema: { params: GraphScope, querystring: Type.Object({
-      q: Type.String({ minLength: 1, maxLength: 500 })
-    }, { additionalProperties: false }) }
-  }, async (request, reply) => {
-    const owner = await authenticate(request, reply, request.params.projectId);
-    if (!owner) return;
-    try {
-      return dependencies.service.explain(
-        owner, request.params.projectId, request.params.graphId, request.query.q
-      );
-    } catch (error) { return handleFailure(reply, error); }
-  });
+  route.post(
+    "/api/v1/projects/:projectId/intelligence-graphs/:graphId/restore",
+    {
+      schema: {
+        params: GraphScope,
+        body: Type.Object(
+          {
+            expected_revision: Revision,
+            from_revision: Revision
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    async (request, reply) => {
+      const owner = await authenticate(request, reply, request.params.projectId);
+      if (!owner) return;
+      try {
+        return dependencies.service.restore(
+          owner,
+          request.params.projectId,
+          request.params.graphId,
+          request.body.expected_revision,
+          request.body.from_revision
+        );
+      } catch (error) {
+        return handleFailure(reply, error);
+      }
+    }
+  );
+
+  route.get(
+    "/api/v1/projects/:projectId/intelligence-graphs/:graphId/explain",
+    {
+      schema: {
+        params: GraphScope,
+        querystring: Type.Object(
+          {
+            q: Type.String({ minLength: 1, maxLength: 500 })
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    async (request, reply) => {
+      const owner = await authenticate(request, reply, request.params.projectId);
+      if (!owner) return;
+      try {
+        return dependencies.service.explain(
+          owner,
+          request.params.projectId,
+          request.params.graphId,
+          request.query.q
+        );
+      } catch (error) {
+        return handleFailure(reply, error);
+      }
+    }
+  );
 };
