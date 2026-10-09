@@ -603,6 +603,16 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     requestIdentities.set(request, identity);
   });
 
+  if (dependencies.intelligenceGraphWorkspace?.enabled) {
+    if (!dependencies.projectStore) throw new Error("Graph workspace requires ProjectStore");
+    registerIntelligenceGraphWorkspaceRoutes(app, {
+      enabled: true,
+      service: dependencies.intelligenceGraphWorkspace.service,
+      projects: dependencies.projectStore,
+      identity: identityResolver
+    });
+  }
+
   app.get(
     "/api/v1/health",
     { schema: { response: { 200: HealthResponseSchema, 503: HealthResponseSchema } } },
