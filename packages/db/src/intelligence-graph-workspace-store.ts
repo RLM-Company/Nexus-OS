@@ -3,7 +3,7 @@ import type {
   IntelligenceGraphRevisionInfo,
   IntelligenceGraphWorkspace,
   IntelligenceGraphWorkspaceRepository
-} from "@cosmora/core";
+} from "@cosmora/contracts";
 
 /**
  * SQLite adapter. Tables are owned by a managed migration, never created by
