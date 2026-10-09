@@ -125,7 +125,7 @@ describe("graph workspace HTTP integration boundary", () => {
       }
     });
     expect(added.statusCode).toBe(200);
-    expect((added.json<IntelligenceGraphWorkspace>()).nodes[0]?.verification_status).toBe(
+    expect(added.json<IntelligenceGraphWorkspace>().nodes[0]?.verification_status).toBe(
       "discovered"
     );
     const explain = await app.inject({
