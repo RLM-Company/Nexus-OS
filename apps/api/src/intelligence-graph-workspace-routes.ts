@@ -1,4 +1,4 @@
-import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
+import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
   IntelligenceGraphWorkspaceError,
   type IntelligenceGraphEdit,
@@ -86,7 +86,6 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
 ): void => {
   if (!dependencies.enabled) return;
   const route = app.withTypeProvider<TypeBoxTypeProvider>();
-  route.setValidatorCompiler(TypeBoxValidatorCompiler);
 
   const authenticate = async (request: FastifyRequest, reply: FastifyReply, projectId: string) => {
     const actor = await dependencies.identity.resolve(request).catch(() => null);
