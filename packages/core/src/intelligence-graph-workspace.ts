@@ -3,58 +3,12 @@ import {
   validateIntelligenceGraphSnapshot,
   type IntelligenceGraphEdge,
   type IntelligenceGraphNode,
-  type IntelligenceGraphVersionRef
+  type IntelligenceGraphVersionRef,
+  type IntelligenceGraphWorkspace,
+  type IntelligenceGraphWorkspaceRepository
 } from "@cosmora/contracts";
-import {
-  IntelligenceGraphIndex,
-  type IntelligenceGraphSearchRecord
-} from "./intelligence-graph-retrieval.js";
+import { IntelligenceGraphIndex } from "./intelligence-graph-retrieval.js";
 import { runIntelligenceGraphCognitiveCycle } from "./intelligence-graph-cognition.js";
-
-export interface IntelligenceGraphWorkspace {
-  graph_id: string;
-  owner_id: string;
-  project_id: string;
-  title: string;
-  revision: number;
-  created_at: string;
-  updated_at: string;
-  restored_from_revision: number | null;
-  nodes: IntelligenceGraphNode[];
-  edges: IntelligenceGraphEdge[];
-  records: IntelligenceGraphSearchRecord[];
-}
-
-export interface IntelligenceGraphRevisionInfo {
-  revision: number;
-  created_at: string;
-  summary: string;
-  restored_from_revision: number | null;
-}
-
-/** Persistence adapter must enforce owner AND project scope on every operation. */
-export interface IntelligenceGraphWorkspaceRepository {
-  create(record: IntelligenceGraphWorkspace): IntelligenceGraphWorkspace | null;
-  get(ownerId: string, projectId: string, graphId: string): IntelligenceGraphWorkspace | null;
-  list(ownerId: string, projectId: string, limit: number): IntelligenceGraphWorkspace[];
-  getRevision(
-    ownerId: string,
-    projectId: string,
-    graphId: string,
-    revision: number
-  ): IntelligenceGraphWorkspace | null;
-  listRevisions(
-    ownerId: string,
-    projectId: string,
-    graphId: string,
-    limit: number
-  ): IntelligenceGraphRevisionInfo[];
-  save(
-    record: IntelligenceGraphWorkspace,
-    expectedRevision: number,
-    summary: string
-  ): IntelligenceGraphWorkspace | null;
-}
 
 export type IntelligenceGraphLinkType =
   | "SUPPORTS"
