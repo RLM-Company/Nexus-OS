@@ -83,6 +83,11 @@ export class ManagerBackgroundRunCoordinator {
     this.#pollTimer.unref?.();
   }
 
+  async quiesceOwner(ownerId:string):Promise<void> {
+    const active=[...this.#activeRuns.values()].filter(run=>run.ownerId===ownerId);
+    for(const run of active) run.controller.abort(new Error('OWNER_PRIVACY_QUIESCE'));
+    await Promise.allSettled(active.map(run=>run.task));
+  }
   async stop(): Promise<void> {
     this.#stopping = true;
     if (this.#pollTimer !== null) {
@@ -211,7 +216,9 @@ export class ManagerBackgroundRunCoordinator {
             },
             "Background Manager route attempt selected"
           );
-          const hold = this.#accountStore?.reserve(
+          // Missing global budget must never fall through to paid gateway dispatch.
+          if (!this.#accountStore) throw new Error("OWNER_BUDGET_UNAVAILABLE");
+          const hold = this.#accountStore.reserve(
             queued.owner_id,
             queued.run_id,
             event.route.attempt,

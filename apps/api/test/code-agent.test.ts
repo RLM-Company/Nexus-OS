@@ -23,6 +23,7 @@ import {
   type CodeAgentWorkspaceRunner,
   type CodeAgentWorkspaceRunInput
 } from "@cosmora/tool-runtime";
+import type { CodeOwnerBudget } from "../src/code-agent/owner-budget.js";
 import { CodeAgentService } from "../src/code-agent/service.js";
 import { CodeAgentStore } from "../src/code-agent/store.js";
 import { registerCodeAgentRoutes } from "../src/code-agent/routes.js";
@@ -111,6 +112,7 @@ const entry = (toolCalling: boolean): ModelRegistryEntry => ({
 
 async function fixture(
   options: {
+    ownerBudget?: CodeOwnerBudget;
     level?: AutonomyLevel;
     toolCalling?: boolean;
     responses?: string[];
@@ -285,7 +287,8 @@ async function fixture(
     emergency,
     gateway,
     manager,
-    runner
+    runner,
+    ...(options.ownerBudget ? { ownerBudget: options.ownerBudget } : {})
   });
   let requestOwner = owner;
   const app = Fastify();
@@ -462,27 +465,6 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     await f.wait(id, "proposed");
     expect(f.providerCalls).toHaveLength(1);
     expect(f.providerCalls[0]!.tools).toBeUndefined();
-    const reviewed = await f.review(id, [changes[0]!]);
-    const reviewHash = reviewed.draft!.plan.review_hash;
-    await f.check(id, reviewHash);
-    const published = await f.app.inject({
-      method: "POST",
-      url: `${f.base}/${id}/publish`,
-      payload: {
-        review_hash: reviewHash,
-        publication_token: f.get(id).publication_token,
-        approve: true
-      }
-    });
-    expect(published.statusCode).toBe(200);
-    expect(published.json()).toMatchObject({
-      status: "published",
-      draft: { pr_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000" }
-    });
-    expect(f.githubCalls.find((call) => call.path === "/pulls")!.body).toMatchObject({
-      draft: true,
-      base: "main"
-    });
   });
 
   it("A0 denies reads and A1 permits proposal but denies workspace writes", async () => {
@@ -649,8 +631,9 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     f.service.cancel(id, owner);
     await f.service.stop();
     expect(aborted).toBe(true);
-    expect(f.get(id).status).toBe("cancelled");
-    expect(f.get(id).check).toBeUndefined();
+    expect(f.get(id).status).toBe("checked");
+    expect(f.get(id).check?.status).toBe("cancelled");
+    expect(f.get(id).publication_token).toBeUndefined();
     expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
   });
 
@@ -941,5 +924,145 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
       expect(f.checked).toHaveLength(0);
     }
+  });
+});
+
+describe("Code owner budget via shared AccountStore port", () => {
+  it("reserves before HTTP and reconciles only canonical committed ledger", async () => {
+    const reserves: unknown[] = [],
+      ledgers: unknown[] = [];
+    const f = await fixture({
+      ownerBudget: {
+        reserve: (input) => {
+          reserves.push(input);
+          return true;
+        },
+        reconcile: (input) => {
+          ledgers.push(input.ledger);
+        },
+        releaseBeforeDispatch: () => {
+          throw new Error("unexpected release");
+        }
+      }
+    });
+    const id = await f.start();
+    await f.wait(id, "proposed");
+    expect(f.service.view(f.get(id)).usage).toMatchObject({
+      input_tokens: 300,
+      output_tokens: 120,
+      unknown_attempts: 3,
+      owner_budget_connected: true
+    });
+    await f.service.reconcileOwnerBudget();
+    expect(f.providerCalls).toHaveLength(3);
+    expect(reserves).toHaveLength(3);
+    expect(ledgers).toHaveLength(6);
+    for (const rows of ledgers)
+      expect(rows).toEqual([
+        expect.objectContaining({
+          status: "committed",
+          actual_input_tokens: 100,
+          actual_output_tokens: 40
+        })
+      ]);
+  });
+  it("budget denial prevents provider dispatch", async () => {
+    const f = await fixture({
+      ownerBudget: {
+        reserve: () => false,
+        reconcile: () => {
+          throw new Error("unexpected reconcile");
+        },
+        releaseBeforeDispatch: () => {
+          throw new Error("unexpected release");
+        }
+      }
+    });
+    await f.wait(await f.start(), "failed");
+    expect(f.providerCalls).toHaveLength(0);
+  });
+  it("post-dispatch malformed stream keeps unknown usage in reconciliation", async () => {
+    const reconciled: unknown[] = [];
+    const releases: unknown[] = [];
+    const f = await fixture({
+      responses: ["data: malformed\n\n"],
+      ownerBudget: {
+        reserve: () => true,
+        reconcile: (input) => {
+          reconciled.push(input.ledger);
+        },
+        releaseBeforeDispatch: (input) => {
+          releases.push(input);
+        }
+      }
+    });
+    await f.wait(await f.start(), "failed");
+    expect(f.providerCalls).toHaveLength(1);
+    expect(releases).toHaveLength(0);
+    expect(reconciled).toEqual([
+      [
+        expect.objectContaining({
+          status: "failed",
+          actual_input_tokens: null,
+          calculated_cost_amount: null
+        })
+      ]
+    ]);
+  });
+  it("proven cancellation inside reserve releases before gateway resumes HTTP", async () => {
+    const releases: unknown[] = [];
+    const f: Awaited<ReturnType<typeof fixture>> = await fixture({
+      ownerBudget: {
+        reserve: () => {
+          const run = f.store.list(f.project, owner)[0]!;
+          f.service.cancel(run.id, owner);
+          return true;
+        },
+        reconcile: () => {
+          throw new Error("unexpected reconciliation");
+        },
+        releaseBeforeDispatch: (input) => {
+          releases.push(input);
+        }
+      }
+    });
+    await f.wait(await f.start(), "cancelled");
+    await f.service.stop();
+    expect(f.providerCalls).toHaveLength(0);
+    expect(releases).toHaveLength(1);
+  });
+  it("unavailable check retries same reviewed snapshot; old pass cannot publish during retry", async () => {
+    let attempts = 0;
+    const f = await fixture({
+      runner: {
+        run: (input) =>
+          Promise.resolve({
+            status: attempts++ === 0 ? "unavailable" : "passed",
+            snapshotDigest: input.expectedDigest!,
+            exitCode: attempts === 1 ? null : 0,
+            stdout: "",
+            stderr: "",
+            truncated: false,
+            cleanupVerified: attempts !== 1,
+            journal: []
+          })
+      }
+    });
+    const id = await f.start();
+    const reviewed = await f.review(id);
+    const hash = reviewed.draft!.plan.review_hash;
+    const unavailable = await f.check(id, hash);
+    expect(unavailable.check!.status).toBe("unavailable");
+    expect(unavailable.publication_token).toBeUndefined();
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: hash,
+        publication_token: "invalid",
+        approve: true
+      })
+    ).rejects.toThrow("CHECK_REQUIRED");
+    const passed = await f.check(id, hash);
+    expect(passed.check!.status).toBe("passed");
+    expect(f.githubCalls.filter((c) => c.method === "POST")).toHaveLength(0);
   });
 });

@@ -1,6 +1,9 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
 import {
   AgentBlueprintStore,
+  DocumentLibraryStore,
+  DocumentAnswerStore,
+  ChatHistorySearchStore,
   AgentInstanceStore,
   AgentStudioMutationStore,
   DemoManagerStore,
@@ -36,6 +39,19 @@ import { AccountStore } from "./account-settings/account-store.js";
 import { loadModelRegistryDocument } from "./model-runtime.js";
 import { ResearchStore } from "./research/research-store.js";
 import { MediaService } from "./media/media-service.js";
+import { resolve } from "node:path";
+import { SharedOwnerBudget } from "./account-settings/shared-owner-budget.js";
+import { OwnerPrivacyCoordinator } from "./account-settings/privacy/coordinator.js";
+import { AccountCorePrivacyAdapter } from "./account-settings/privacy/account-core-adapter.js";
+import { DocumentsPrivacyAdapter, WorkPrivacyAdapter, ResearchIntegratedPrivacyAdapter,
+  MediaIntegratedPrivacyAdapter, CodeIntegratedPrivacyAdapter, AgentStudioPrivacyAdapter,
+  PolicyProjectsPrivacyAdapter } from "./account-settings/privacy/integrated-adapters.js";
+import { DocumentAnswerService } from "./document-answer-service.js";
+import { ProjectResearchOwnerBudget } from "./research/research-synthesis.js";
+import type { ResearchCoordinator } from "./research/research-coordinator.js";
+import { CodeAgentService } from "./code-agent/service.js";
+import { CodeAgentStore } from "./code-agent/store.js";
+import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
@@ -44,6 +60,7 @@ let managerBackgroundCoordinator: ManagerBackgroundRunCoordinator | undefined;
 let generalChatBackgroundCoordinator: GeneralChatBackgroundRunCoordinator | undefined;
 let managerWorkCoordinator: ManagerWorkCoordinator | undefined;
 let shuttingDown = false;
+let researchCoordinator: ResearchCoordinator | null = null;
 
 const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   if (shuttingDown) return;
@@ -58,7 +75,8 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   await Promise.all([
     managerBackgroundCoordinator?.stop(),
     generalChatBackgroundCoordinator?.stop(),
-    managerWorkCoordinator?.stop()
+    managerWorkCoordinator?.stop(),
+    researchCoordinator?.stop()
   ]);
   await app.close();
   process.exitCode = 0;
@@ -70,16 +88,27 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 try {
   await runMigrations(database);
   const accountStore = new AccountStore(database.sqlite);
+  const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
   const modelRuntime = await buildModelRuntime(config, {
     secretResolver: new EnvironmentSecretResolver()
   });
   const projectStore = new ManagerRuntimeProjectStore(database.sqlite);
   const generalChatStore = new GeneralChatRuntimeStore(database.sqlite);
+  const sharedBudget = new SharedOwnerBudget(accountStore, projectStore);
+  const documentLibrary = new DocumentLibraryStore(database.sqlite);
+  const documentAnswerStore = new DocumentAnswerStore(database.sqlite);
+  const documentAnswerService = new DocumentAnswerService(documentLibrary, documentAnswerStore,
+    modelRuntime.gateway, modelRuntime.chat, sharedBudget);
+  documentAnswerStore.recoverInterrupted();
+  const chatHistorySearchStore = new ChatHistorySearchStore(database.sqlite);
+  const researchStore = new ResearchStore(database.sqlite);
+  const ownerPrivacy = new OwnerPrivacyCoordinator(database.sqlite);
   const demoManagerStore = new DemoManagerStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
   const stepUpProofStore = new StepUpProofStore(database.sqlite);
   const runtimeMetrics = new RuntimeMetrics();
+  if (recoveredAccountHolds > 0) process.stdout.write(`Reconciled ${recoveredAccountHolds} verified owner holds after restart\n`);
   const identityResolver =
     config.nodeEnv === "production"
       ? new BearerSessionIdentityResolver(identityStore)
@@ -103,29 +132,57 @@ try {
     gateway: modelRuntime.gateway,
     manager: modelRuntime.manager
   });
+  const githubIntegration = new GithubIntegration({
+    ownerId: process.env.GITHUB_OWNER_ID ?? (config.nodeEnv === "production" ? "" : "local-owner"),
+    ...(process.env.GITHUB_TOKEN ? { token: process.env.GITHUB_TOKEN } : {}),
+    ...(process.env.GITHUB_REPOSITORY ? { repository: process.env.GITHUB_REPOSITORY } : {})
+  });
+  const githubDraftStore = new GithubDraftStore(database.sqlite);
+  const codeAgentService = new CodeAgentService({
+    store: new CodeAgentStore(database.sqlite),
+    github: githubIntegration, drafts: githubDraftStore,
+    projects: projectStore, policy: policyStore, emergency: emergencyStopStore,
+    gateway: modelRuntime.gateway, manager: modelRuntime.manager,
+    runner: configuredCodeAgentExecutor(), ownerBudget: sharedBudget
+  });
   const mediaService = new MediaService({
     ...(process.env.KOSMORA_MEDIA_DIR
       ? { directory: process.env.KOSMORA_MEDIA_DIR }
       : config.nodeEnv === "production"
         ? { directory: "/var/lib/cosmora/media" }
-        : {}),
+        : { directory: resolve(process.cwd(), ".data/media") }),
     ...(process.env.KOSMORA_MEDIA_OPENAI_API_KEY
       ? { apiKey: process.env.KOSMORA_MEDIA_OPENAI_API_KEY }
       : {}),
     paidEnabled: process.env.KOSMORA_MEDIA_PAID_ENABLED === "true",
-    emergencyStopped: () => emergencyStopStore.getProcessStop() !== null
+    emergencyStopped: () => emergencyStopStore.getProcessStop() !== null,
+    ownerActive: (ownerId) => ownerPrivacy.overview(ownerId).lifecycle === "active"
   });
+  ownerPrivacy.register(new AccountCorePrivacyAdapter(database.sqlite, async (owner) => {
+    await Promise.all([
+      managerBackgroundCoordinator?.quiesceOwner(owner),
+      generalChatBackgroundCoordinator?.quiesceOwner(owner)
+    ]);
+  }));
+  ownerPrivacy.register(new DocumentsPrivacyAdapter(database.sqlite, documentLibrary,
+    documentAnswerStore, documentAnswerService));
+  ownerPrivacy.register(new WorkPrivacyAdapter(database.sqlite, managerWorkCoordinator));
+  ownerPrivacy.register(new ResearchIntegratedPrivacyAdapter(database.sqlite, researchStore,
+    () => researchCoordinator));
+  ownerPrivacy.register(new MediaIntegratedPrivacyAdapter(mediaService));
+  ownerPrivacy.register(new CodeIntegratedPrivacyAdapter(database.sqlite, codeAgentService));
+  ownerPrivacy.register(new AgentStudioPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new PolicyProjectsPrivacyAdapter(database.sqlite));
   app = buildApp({
-    researchStore: new ResearchStore(database.sqlite),
+    researchStore,
+    researchBudget: new ProjectResearchOwnerBudget(database.sqlite, projectStore, accountStore),
+    researchCoordinatorCreated: coordinator => { researchCoordinator = coordinator; },
+    documentLibrary, documentAnswerService, chatHistorySearchStore,
+    ownerPrivacy, ownerBudget: sharedBudget, codeAgentService,
     mediaService,
     webSearch: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
-    githubIntegration: new GithubIntegration({
-      ownerId:
-        process.env.GITHUB_OWNER_ID ?? (config.nodeEnv === "production" ? "" : "local-owner"),
-      ...(process.env.GITHUB_TOKEN ? { token: process.env.GITHUB_TOKEN } : {}),
-      ...(process.env.GITHUB_REPOSITORY ? { repository: process.env.GITHUB_REPOSITORY } : {})
-    }),
-    githubDraftStore: new GithubDraftStore(database.sqlite),
+    githubIntegration,
+    githubDraftStore,
     config,
     database,
     accountStore,
@@ -203,7 +260,8 @@ try {
   await Promise.all([
     managerBackgroundCoordinator?.stop(),
     generalChatBackgroundCoordinator?.stop(),
-    managerWorkCoordinator?.stop()
+    managerWorkCoordinator?.stop(),
+    researchCoordinator?.stop()
   ]);
   if (app) {
     app.log.error(error, "Failed to start Kosmora API");

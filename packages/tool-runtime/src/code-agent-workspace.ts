@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { isAbsolute } from "node:path";
+import { codeAgentSnapshotArchive, redactCodeAgentOutput } from "./code-agent-snapshot.js";
 
 export interface CodeAgentWorkspaceFile {
   path: string;
@@ -232,185 +231,184 @@ export function createCodeAgentWorkspaceRunner(
         log("cancelled", "before_start");
         return cancelledResult();
       }
-      const directory = await mkdtemp(join(tmpdir(), "kosmora-check-"));
       const name = `kosmora-check-${randomUUID()}`;
-      try {
-        const workspace = join(directory, "workspace");
-        await mkdir(workspace, { mode: 0o755 });
-        for (const file of files) {
-          const target = join(workspace, file.path);
-          await mkdir(dirname(target), { recursive: true, mode: 0o755 });
-          await writeFile(target, file.content, { encoding: "utf8", mode: 0o444, flag: "wx" });
-          await chmod(target, 0o444);
-        }
-        if (input.signal?.aborted) {
-          log("cancelled", "before_start");
-          return cancelledResult();
-        }
-        if (quarantined) return quarantinedResult();
-        const args = [
-          "create",
-          "--pull=never",
-          "--name",
-          name,
-          "--network=none",
-          "--read-only",
-          "--cap-drop=ALL",
-          "--security-opt=no-new-privileges",
-          "--user=65534:65534",
-          `--pids-limit=${pids}`,
-          `--memory=${memoryMb}m`,
-          `--memory-swap=${memoryMb}m`,
-          `--cpus=${cpus}`,
-          "--ipc=none",
-          "--log-driver=none",
-          "--restart=no",
-          "--ulimit=nofile=128:128",
-          "--ulimit=fsize=16777216:16777216",
-          "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
-          "--workdir=/workspace",
-          "--mount",
-          `type=bind,source=${workspace},target=/workspace,readonly`,
-          "--env=HOME=/tmp",
-          "--env=NODE_OPTIONS=",
-          "--entrypoint=node",
-          image,
-          "--max-old-space-size=128",
-          "-e",
-          CHECK_PROGRAM,
-          input.check
-        ];
-        log("started", `${input.check}:oci:no-network:non-root:read-only`);
-        return await new Promise<CodeAgentWorkspaceResult>((resolve) => {
-          // Inherit no credentials, proxy settings, NODE_OPTIONS, or Docker remote endpoint.
-          const environment = {
-            PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            HOME: "/nonexistent"
-          };
-          let child: ReturnType<typeof spawn> | undefined;
-          const stdout: Buffer[] = [];
-          const stderr: Buffer[] = [];
-          let retained = 0;
-          let truncated = false;
-          let stopped: "cancelled" | "timed_out" | "failed" | undefined;
-          let settled = false;
-          let termination: Promise<boolean> | undefined;
-          const removeContainer = () =>
-            new Promise<boolean>((done) => {
-              const removal = spawn(executable, ["rm", "--force", name], {
-                shell: false,
-                stdio: "ignore",
-                env: environment
-              });
-              const timer = setTimeout(() => {
-                removal.kill("SIGKILL");
-                done(false);
-              }, 2_000);
-              const finish = (success: boolean) => {
-                clearTimeout(timer);
-                done(success);
-              };
-              removal.once("error", () => finish(false));
-              removal.once("close", (code) => finish(code === 0));
-            });
-          const kill = (status: "cancelled" | "timed_out" | "failed") => {
-            if (stopped || settled) return;
-            stopped = status;
-            // Create and start are separate. An uncertain create response can leave only a
-            // stopped container; it can never launch repository code after cancellation.
-            // Explicit daemon removal also stops descendants even after the CLI is killed.
-            termination = removeContainer();
-            if (child?.pid) {
-              try {
-                process.kill(-child.pid, "SIGKILL");
-              } catch {
-                child.kill("SIGKILL");
-              }
-            }
-          };
-          const collect = (output: Buffer[], chunk: Buffer) => {
-            const remaining = Math.max(0, outputBytes - retained);
-            if (remaining) {
-              output.push(chunk.subarray(0, remaining));
-              retained += Math.min(chunk.length, remaining);
-            }
-            if (chunk.length > remaining && !truncated) {
-              truncated = true;
-              log("output_limit", String(outputBytes));
-              kill("failed");
-            }
-          };
-          const cancel = () => {
-            log("cancelled", "requested");
-            kill("cancelled");
-          };
-          input.signal?.addEventListener("abort", cancel, { once: true });
-          const timer = setTimeout(() => {
-            log("timeout", String(timeoutMs));
-            kill("timed_out");
-          }, timeoutMs);
-          if (input.signal?.aborted) cancel();
-          const finish = async (exitCode: number | null, unavailable: boolean) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            input.signal?.removeEventListener("abort", cancel);
-            const earlyCleanup = await termination;
-            // Normal completion also removes the stopped container. Never retain a snapshot
-            // mount after this request, and retry removal after an interrupted create/start.
-            const cleanupVerified = (await removeContainer()) || earlyCleanup === true;
-            if (!cleanupVerified) {
-              quarantined = true;
-              log("unavailable", "container_cleanup_unverified");
-            }
-            const status = !cleanupVerified
-              ? "unavailable"
-              : (stopped ??
-                (unavailable || exitCode === 125 || exitCode === 126 || exitCode === 127
-                  ? "unavailable"
-                  : exitCode === 0
-                    ? "passed"
-                    : "failed"));
-            log(
-              status === "unavailable" ? "unavailable" : "finished",
-              `${status}:${exitCode ?? "none"}`
-            );
-            resolve({
-              status,
-              snapshotDigest,
-              exitCode,
-              stdout: boundedUtf8(stdout),
-              stderr: boundedUtf8(stderr),
-              truncated,
-              journal,
-              cleanupVerified
-            });
-          };
-          const launch = (arguments_: string[], creating: boolean) => {
-            child = spawn(executable, arguments_, {
+      const args = [
+        "create",
+        "--pull=never",
+        "--name",
+        name,
+        "--network=none",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--user=65534:65534",
+        `--pids-limit=${pids}`,
+        `--memory=${memoryMb}m`,
+        `--memory-swap=${memoryMb}m`,
+        `--cpus=${cpus}`,
+        "--ipc=none",
+        "--log-driver=none",
+        "--restart=no",
+        "--ulimit=nofile=128:128",
+        "--ulimit=fsize=16777216:16777216",
+        "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
+        "--workdir=/workspace",
+        "--label=kosmora.code-executor=true",
+        "--env=HOME=/tmp",
+        "--env=NODE_OPTIONS=",
+        "--entrypoint=node",
+        image,
+        "--max-old-space-size=128",
+        "-e",
+        CHECK_PROGRAM,
+        input.check
+      ];
+      log("started", `${input.check}:oci:no-network:non-root:read-only`);
+      return await new Promise<CodeAgentWorkspaceResult>((resolve) => {
+        // Inherit no credentials, proxy settings, NODE_OPTIONS, or Docker remote endpoint.
+        const environment = {
+          PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          HOME: "/nonexistent"
+        };
+        let child: ReturnType<typeof spawn> | undefined;
+        const stdout: Buffer[] = [];
+        const stderr: Buffer[] = [];
+        let retained = 0;
+        let truncated = false;
+        let stopped: "cancelled" | "timed_out" | "failed" | undefined;
+        let settled = false;
+        let termination: Promise<boolean> | undefined;
+        const removeContainer = () =>
+          new Promise<boolean>((done) => {
+            const removal = spawn(executable, ["rm", "--force", name], {
               shell: false,
-              detached: true,
-              stdio: ["ignore", "pipe", "pipe"],
+              stdio: "ignore",
               env: environment
             });
-            child.stdout!.on("data", (chunk: Buffer) => {
-              if (!creating) collect(stdout, chunk);
+            const timer = setTimeout(() => {
+              removal.kill("SIGKILL");
+              done(false);
+            }, 2_000);
+            const finish = (success: boolean) => {
+              clearTimeout(timer);
+              done(success);
+            };
+            removal.once("error", () => finish(false));
+            removal.once("close", (code) => finish(code === 0));
+          });
+        const kill = (status: "cancelled" | "timed_out" | "failed") => {
+          if (stopped || settled) return;
+          stopped = status;
+          // Create and start are separate. An uncertain create response can leave only a
+          // stopped container; it can never launch repository code after cancellation.
+          // Explicit daemon removal also stops descendants even after the CLI is killed.
+          termination = removeContainer();
+          if (child?.pid) {
+            try {
+              process.kill(-child.pid, "SIGKILL");
+            } catch {
+              child.kill("SIGKILL");
+            }
+          }
+        };
+        const collect = (output: Buffer[], chunk: Buffer) => {
+          const remaining = Math.max(0, outputBytes - retained);
+          if (remaining) {
+            output.push(chunk.subarray(0, remaining));
+            retained += Math.min(chunk.length, remaining);
+          }
+          if (chunk.length > remaining && !truncated) {
+            truncated = true;
+            log("output_limit", String(outputBytes));
+            kill("failed");
+          }
+        };
+        const cancel = () => {
+          log("cancelled", "requested");
+          kill("cancelled");
+        };
+        input.signal?.addEventListener("abort", cancel, { once: true });
+        const timer = setTimeout(() => {
+          log("timeout", String(timeoutMs));
+          kill("timed_out");
+        }, timeoutMs);
+        if (input.signal?.aborted) cancel();
+        const finish = async (exitCode: number | null, unavailable: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          input.signal?.removeEventListener("abort", cancel);
+          const earlyCleanup = await termination;
+          // Normal completion also removes the stopped container. Never retain a snapshot
+          // mount after this request, and retry removal after an interrupted create/start.
+          const cleanupVerified = (await removeContainer()) || earlyCleanup === true;
+          if (!cleanupVerified) {
+            quarantined = true;
+            log("unavailable", "container_cleanup_unverified");
+          }
+          const status = !cleanupVerified
+            ? "unavailable"
+            : (stopped ??
+              (unavailable || exitCode === 125 || exitCode === 126 || exitCode === 127
+                ? "unavailable"
+                : exitCode === 0
+                  ? "passed"
+                  : "failed"));
+          log(
+            status === "unavailable" ? "unavailable" : "finished",
+            `${status}:${exitCode ?? "none"}`
+          );
+          const safeStdout = boundedUtf8([
+            Buffer.from(redactCodeAgentOutput(boundedUtf8(stdout))).subarray(0, outputBytes)
+          ]);
+          const safeStderr = boundedUtf8([
+            Buffer.from(redactCodeAgentOutput(boundedUtf8(stderr))).subarray(
+              0,
+              outputBytes - Buffer.byteLength(safeStdout)
+            )
+          ]);
+          resolve({
+            status,
+            snapshotDigest,
+            exitCode,
+            stdout: safeStdout,
+            stderr: safeStderr,
+            truncated,
+            journal,
+            cleanupVerified
+          });
+        };
+        const launch = (arguments_: string[], stage: "create" | "copy" | "start") => {
+          child = spawn(executable, arguments_, {
+            shell: false,
+            detached: true,
+            stdio: [stage === "copy" ? "pipe" : "ignore", "pipe", "pipe"],
+            env: environment
+          });
+          child.stdout!.on("data", (chunk: Buffer) => {
+            if (stage === "start") collect(stdout, chunk);
+          });
+          child.stderr!.on("data", (chunk: Buffer) => collect(stderr, chunk));
+          child.once("error", () => {
+            void finish(null, true);
+          });
+          child.once("close", (code) => {
+            if (code === 0 && !stopped && stage === "create")
+              launch(["cp", "-", `${name}:/`], "copy");
+            else if (code === 0 && !stopped && stage === "copy")
+              launch(["start", "--attach", name], "start");
+            else void finish(code, stage !== "start");
+          });
+          if (stage === "copy") {
+            child.stdin!.on("error", () => {
+              /* close/error determines cleanup */
             });
-            child.stderr!.on("data", (chunk: Buffer) => collect(stderr, chunk));
-            child.once("error", () => {
-              void finish(null, true);
-            });
-            child.once("close", (code) => {
-              if (creating && code === 0 && !stopped) launch(["start", "--attach", name], false);
-              else void finish(code, false);
-            });
-          };
-          if (!stopped) launch(args, true);
-          else void finish(null, false);
-        });
-      } finally {
-        await rm(directory, { recursive: true, force: true });
-      }
+            child.stdin!.end(codeAgentSnapshotArchive(files));
+          }
+        };
+        if (!stopped) launch(args, "create");
+        else void finish(null, false);
+      });
     }
   };
 }

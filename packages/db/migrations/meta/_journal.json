@@ -178,6 +178,13 @@
       "breakpoints": true
     },
     {
+      "idx": 25,
+      "version": "6",
+      "when": 1791489600000,
+      "tag": "0025_document_library",
+      "breakpoints": true
+    },
+    {
       "idx": 26,
       "version": "6",
       "when": 1791580800001,
@@ -196,6 +203,27 @@
       "version": "6",
       "when": 1791580800003,
       "tag": "0028_research_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1791580800005,
+      "tag": "0030_owner_privacy_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1791580800007,
+      "tag": "0032_document_answers",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1791580800009,
+      "tag": "0034_chat_history_search",
       "breakpoints": true
     }
   ]

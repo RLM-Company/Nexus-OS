@@ -87,6 +87,11 @@ export class GeneralChatBackgroundRunCoordinator {
     this.#pollTimer.unref?.();
   }
 
+  async quiesceOwner(ownerId:string):Promise<void> {
+    const active=[...this.#activeRuns.values()].filter(run=>run.ownerId===ownerId);
+    for(const run of active) run.controller.abort(new Error('OWNER_PRIVACY_QUIESCE'));
+    await Promise.allSettled(active.map(run=>run.task));
+  }
   async stop(): Promise<void> {
     this.#stopping = true;
     if (this.#pollTimer !== null) {
@@ -225,7 +230,8 @@ export class GeneralChatBackgroundRunCoordinator {
             },
             "Background general chat route attempt selected"
           );
-          if (this.#accountStore) {
+          if (!this.#accountStore) throw new Error("OWNER_BUDGET_UNAVAILABLE");
+          {
             const hold = this.#accountStore.reserve(
               queued.owner_id,
               queued.run_id,
@@ -238,18 +244,21 @@ export class GeneralChatBackgroundRunCoordinator {
             );
             mainHolds.set(event.route.attempt, hold);
           }
-          const reserved = this.#store.reserveModelUsage(
-            queued.run_id,
-            event.route,
-            queued.owner_id
-          );
+          // Canonical denial (or local SQL failure) happened BEFORE dispatch:
+          // release only this proven pre-dispatch hold, not an uncertain charge.
+          let reserved: ReturnType<GeneralChatRuntimeStore["reserveModelUsage"]>;
+          try {
+            reserved = this.#store.reserveModelUsage(queued.run_id, event.route, queued.owner_id);
+          } catch (error) {
+            const hold = mainHolds.get(event.route.attempt);
+            if (hold) { this.#accountStore.releaseBeforeDispatch(hold); mainHolds.delete(event.route.attempt); }
+            throw error;
+          }
           if (!reserved) {
-            throw new GatewayRunError(
-              "ROUTE_UNAVAILABLE",
-              event.route.provider_id,
-              "Chat run cannot reserve the selected model route",
-              false
-            );
+            const hold = mainHolds.get(event.route.attempt);
+            if (hold) { this.#accountStore.releaseBeforeDispatch(hold); mainHolds.delete(event.route.attempt); }
+            throw new GatewayRunError("ROUTE_UNAVAILABLE", event.route.provider_id,
+              "Chat run cannot reserve the selected model route", false);
           }
         } else if (event.type === "route.failed") {
           this.#runtimeMetrics.routeFailed(event.errorCode);

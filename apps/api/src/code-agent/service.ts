@@ -19,6 +19,7 @@ import {
   type GithubDraftStore,
   type GithubFileChange
 } from "../github-integration.js";
+import type { CodeOwnerBudget, CodeOwnerBudgetKey } from "./owner-budget.js";
 import { CodeAgentError, type CodeAgentStore, type CodeAgentRun } from "./store.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -104,6 +105,7 @@ export interface CodeAgentDependencies {
   gateway: ModelGateway;
   manager: ManagerService;
   runner: CodeAgentWorkspaceRunner;
+  ownerBudget?: CodeOwnerBudget;
 }
 export class CodeAgentService {
   private authorityChecks = new Map<string, Set<() => boolean>>();
@@ -122,12 +124,53 @@ export class CodeAgentService {
     void owner_id;
     void actor_id;
     void workspace_scope;
+    const ledger = (run.model_run_ids ?? []).flatMap((id) =>
+      this.deps.projects.getModelUsageForRun(id, run.owner_id)
+    );
+    const knownCosts = new Map<string, number>();
+    for (const row of ledger)
+      if (row.status === "committed" && row.calculated_cost_amount !== null && row.currency)
+        knownCosts.set(
+          row.currency,
+          (knownCosts.get(row.currency) ?? 0) + row.calculated_cost_amount
+        );
     return {
       ...visible,
+      usage: {
+        input_tokens: ledger.reduce((n, row) => n + (row.actual_input_tokens ?? 0), 0),
+        output_tokens: ledger.reduce((n, row) => n + (row.actual_output_tokens ?? 0), 0),
+        known_costs: [...knownCosts].map(([currency, amount]) => ({ currency, amount })),
+        unknown_attempts: ledger.filter(
+          (row) =>
+            row.status !== "committed" ||
+            row.actual_input_tokens === null ||
+            row.actual_output_tokens === null ||
+            row.calculated_cost_amount === null
+        ).length,
+        owner_budget_connected: !!this.deps.ownerBudget
+      },
       ...(run.draft_id
         ? { draft: this.deps.drafts.get(run.draft_id, run.owner_id) ?? undefined }
         : {})
     };
+  }
+  async reconcileOwnerBudget(): Promise<void> {
+    if (!this.deps.ownerBudget) return;
+    for (const ref of this.deps.store.modelRunReferences()) {
+      const ledger = this.deps.projects.getModelUsageForRun(ref.id, ref.owner);
+      for (const row of ledger)
+        await this.deps.ownerBudget.reconcile({
+          ownerId: ref.owner,
+          runId: ref.id,
+          attempt: row.attempt,
+          ledger
+        });
+    }
+  }
+  async quiesceOwner(ownerId:string):Promise<void> {
+    const owned=[...this.active.entries()].filter(([id])=>Boolean(this.deps.store.get(id,ownerId)));
+    for(const [,active] of owned) active.controller.abort();
+    await Promise.allSettled(owned.map(([,active])=>active.done));
   }
   private stopped(run: CodeAgentRun) {
     return (
@@ -136,7 +179,8 @@ export class CodeAgentService {
     );
   }
   private live(run: CodeAgentRun, signal?: AbortSignal) {
-    if (this.stopped(run) || signal?.aborted || run.status === "cancelled")
+    if (this.deps.store.sqlite.prepare("SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id=? AND state<>'active'").get(run.owner_id) ||
+        this.stopped(run) || signal?.aborted || run.status === "cancelled")
       throw new CodeAgentError("EXECUTION_STOPPED");
     if (
       this.authorityChecks.get(run.id) &&
@@ -155,6 +199,7 @@ export class CodeAgentService {
     const runtime = new GuardedToolRuntime(this.deps.policy);
     const objects = [`github:${run.repository}`];
     const beforeProfile = this.deps.policy.getProfile(run.project_id);
+    let executionError: unknown;
     runtime.register<null, T>({
       id: action,
       resolveCapabilities: () => capabilities,
@@ -219,6 +264,9 @@ export class CodeAgentService {
         this.authorityChecks.set(run.id, checks);
         try {
           return await execute();
+        } catch (error) {
+          executionError = error;
+          throw error;
         } finally {
           checks.delete(authority);
           if (checks.size === 0) this.authorityChecks.delete(run.id);
@@ -249,6 +297,8 @@ export class CodeAgentService {
         );
       result = await runtime.invoke<null, T>(invocation);
     }
+    if (result.status === "RECOVERY_REQUIRED" && executionError instanceof CodeAgentError)
+      throw executionError;
     if (result.status !== "EXECUTED")
       throw new CodeAgentError(
         result.status === "WAITING_CONFIRMATION"
@@ -343,6 +393,13 @@ export class CodeAgentService {
     if (["publishing", "uncertain", "published"].includes(run.status))
       throw new CodeAgentError("RECONCILIATION_REQUIRED");
     this.active.get(id)?.controller.abort();
+    if (run.status === "checking")
+      return this.view(
+        this.deps.store.save(
+          { ...run, error: "EXECUTION_CANCELLING" },
+          "Отмена проверки запрошена; ожидается остановка контейнера"
+        )
+      );
     return this.view(
       this.deps.store.save({ ...run, status: "cancelled" }, "Остановлено владельцем")
     );
@@ -388,12 +445,27 @@ export class CodeAgentService {
     let content = "",
       completion: Completion | undefined;
     const calls: Array<Extract<ModelGatewayStreamEvent, { type: "tool.call" }>> = [];
+    let ownerReservation: CodeOwnerBudgetKey | undefined;
+    let dispatchPossible = false;
+    let selected = false;
     try {
       for await (const event of this.deps.gateway.stream(req, signal)) {
-        this.live(this.current(run.id, run.owner_id), signal);
         if (event.type === "route.selected") {
+          this.live(this.current(run.id, run.owner_id), signal);
+          if (selected) throw new CodeAgentError("MODEL_RETRY_REQUIRES_CONFIRMATION");
+          selected = true;
+          // Global reservation MUST precede canonical project reservation and gateway dispatch.
+          // Otherwise the owner's global quota would count the same pending call twice.
+          if (!this.deps.ownerBudget) throw new CodeAgentError('OWNER_BUDGET_UNAVAILABLE');
+          const key = { ownerId: run.owner_id, runId: id, attempt: event.route.attempt };
+          if (!(await this.deps.ownerBudget.reserve({ ...key, projectId: run.project_id, route: event.route })))
+            throw new CodeAgentError('OWNER_BUDGET_LIMIT');
+          ownerReservation = key;
           if (!this.deps.projects.reserveModelUsage(id, event.route, run.owner_id))
-            throw new CodeAgentError("USAGE_LIMIT");
+            throw new CodeAgentError('USAGE_LIMIT');
+          this.live(this.current(run.id, run.owner_id), signal);
+          // Next iterator advance can send HTTP. Any subsequent unknown error retains reserve.
+          dispatchPossible = true;
         } else if (event.type === "route.failed")
           this.deps.projects.failModelUsage(id, event.route.attempt, event.errorCode);
         else if (event.type === "text.delta") {
@@ -414,6 +486,19 @@ export class CodeAgentService {
         error instanceof GatewayRunError ? error.code : "CODE_AGENT_INTERRUPTED"
       );
       throw error;
+    } finally {
+      if (ownerReservation && this.deps.ownerBudget) {
+        if (!dispatchPossible)
+          await this.deps.ownerBudget.releaseBeforeDispatch({
+            ...ownerReservation,
+            reason: "local_before_dispatch"
+          });
+        else
+          await this.deps.ownerBudget.reconcile({
+            ...ownerReservation,
+            ledger: this.deps.projects.getModelUsageForRun(id, run.owner_id)
+          });
+      }
     }
   }
   private async propose(id: string, owner: string, signal: AbortSignal) {
@@ -648,7 +733,7 @@ export class CodeAgentService {
   ) {
     const run = this.current(id, owner);
     if (
-      !["proposed", "review", "checked"].includes(run.status) ||
+      !["proposed", "review", "checked", "failed"].includes(run.status) ||
       input.proposal_hash !== run.proposal_hash ||
       !run.proposal ||
       !validFiles(input.files) ||
@@ -671,7 +756,7 @@ export class CodeAgentService {
     );
     const latest = this.current(id, owner);
     if (
-      !["proposed", "review", "checked"].includes(latest.status) ||
+      !["proposed", "review", "checked", "failed"].includes(latest.status) ||
       latest.version !== run.version
     )
       throw new CodeAgentError("STALE_REVIEW");
@@ -697,12 +782,19 @@ export class CodeAgentService {
     input: { review_hash: string; check: "node-test" | "syntax"; approve: true }
   ) {
     const run = this.current(id, owner);
-    if (!["review", "checked"].includes(run.status)) throw new CodeAgentError("STALE_REVIEW");
+    if (!["review", "checked", "failed"].includes(run.status))
+      throw new CodeAgentError("STALE_REVIEW");
     this.reviewed(run, input.review_hash);
     this.live(run);
     if (this.active.size >= 2 || this.active.has(id)) throw new CodeAgentError("WORKSPACE_BUSY");
     const next = this.deps.store.save(
-      { ...run, status: "checking" },
+      {
+        ...run,
+        status: "checking",
+        check: undefined,
+        publication_token: undefined,
+        error: undefined
+      },
       "Запущена подтверждённая проверка без сети: " + input.check
     );
     this.launch(next, async (signal) => {
@@ -726,7 +818,7 @@ export class CodeAgentService {
         input.approve
       );
       const latest = this.current(id, owner);
-      this.live(latest, signal);
+      if (!signal.aborted) this.live(latest, signal);
       this.reviewed(latest, input.review_hash);
       if (
         check.snapshotDigest !== digest ||
@@ -737,10 +829,16 @@ export class CodeAgentService {
         {
           ...latest,
           status: "checked",
-          publication_token: randomUUID(),
-          check: { ...check, review_hash: input.review_hash }
+          publication_token:
+            check.status === "passed" && !signal.aborted ? randomUUID() : undefined,
+          error: undefined,
+          check: {
+            ...check,
+            ...(signal.aborted ? { status: "cancelled" as const } : {}),
+            review_hash: input.review_hash
+          }
         },
-        check.status === "passed"
+        check.status === "passed" && !signal.aborted
           ? "Проверка завершена успешно"
           : "Проверка не подтвердила исправление: " + check.status
       );

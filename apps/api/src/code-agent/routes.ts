@@ -170,5 +170,6 @@ export function registerCodeAgentRoutes(
   app.post<{ Params: Params }>(base + "/:id/reconcile", { schema: { params } }, (request, reply) =>
     handle(() => service.reconcile(request.params.id, owned(request).owner_id), reply)
   );
+  app.addHook("onReady", () => service.reconcileOwnerBudget());
   app.addHook("onClose", () => service.stop());
 }

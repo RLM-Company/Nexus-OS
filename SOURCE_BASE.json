@@ -1,0 +1,4 @@
+{
+  "commit": "76e44320f20ae4cdc70f5202ac9e77d30c34eef7",
+  "scope": "tracked code; excludes secrets, env, databases and historical handoffs"
+}

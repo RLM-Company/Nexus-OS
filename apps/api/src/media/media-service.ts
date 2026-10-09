@@ -1,134 +1,178 @@
-import {
-  MediaCapabilityRegistry,
-  MediaProviderError,
-  OpenAIMediaAdapter,
-  type MediaCapability
-} from "@cosmora/model-gateway";
+import { MediaCapabilityRegistry, MediaProviderError, OpenAIMediaAdapter, type MediaCapability } from "@cosmora/model-gateway";
+import { canonicalUsage, type CanonicalMediaUsage, type MediaKind, type OwnerMediaBudget } from "./media-budget.js";
 import { MediaFileStore, type MediaJob } from "./media-store.js";
 
+type AudioMime = "audio/webm" | "audio/wav" | "audio/mp4" | "audio/mpeg";
+type GeneratedBinary = Awaited<ReturnType<OpenAIMediaAdapter["generateImage"]>> & { usage?: CanonicalMediaUsage };
+type MediaAdapter = {
+  generateImage(prompt: string, model: "gpt-image-1", signal: AbortSignal): Promise<GeneratedBinary>;
+  speak(text: string, model: "gpt-4o-mini-tts", signal: AbortSignal): Promise<GeneratedBinary>;
+  transcribe(bytes: Uint8Array, mime: AudioMime, model: "gpt-4o-mini-transcribe", signal: AbortSignal): Promise<string>;
+  /** Optional: canonical provider usage for transcription when provider returns it. */
+  transcribeWithUsage?(bytes: Uint8Array, mime: AudioMime, model: "gpt-4o-mini-transcribe", signal: AbortSignal): Promise<{ text: string; usage?: CanonicalMediaUsage }>;
+};
 export interface MediaOptions {
   directory?: string;
   apiKey?: string;
   paidEnabled?: boolean;
-  adapter?: Pick<OpenAIMediaAdapter, "generateImage" | "speak" | "transcribe">;
+  adapter?: MediaAdapter;
+  ownerBudget?: OwnerMediaBudget;
   registry?: MediaCapabilityRegistry;
   emergencyStopped?: () => boolean;
+  ownerActive?: (ownerId:string)=>boolean;
 }
+
+const MAX_RECORDING_BYTES = 1_500_000;
+const MAX_MS = 60_000;
+const validRecording = (bytes: Uint8Array, mime: AudioMime): boolean =>
+  mime === "audio/webm" ? [0x1a, 0x45, 0xdf, 0xa3].every((v, i) => bytes[i] === v) :
+  mime === "audio/wav" ? Buffer.from(bytes.subarray(0, 4)).toString() === "RIFF" :
+  mime === "audio/mp4" ? Buffer.from(bytes.subarray(4, 8)).toString() === "ftyp" :
+  (bytes[0] === 0xff || Buffer.from(bytes.subarray(0, 3)).toString() === "ID3");
 
 export class MediaService {
   private readonly store: MediaFileStore | null;
-  private readonly adapter: MediaOptions["adapter"];
+  private readonly adapter: MediaAdapter | undefined;
   private readonly registry: MediaCapabilityRegistry;
-  private readonly running = new Map<string, { owner: string; controller: AbortController }>();
+  private readonly budget: OwnerMediaBudget | undefined;
+  private readonly running = new Map<string, { owner: string; controller: AbortController; task: Promise<void> }>();
+  private readonly closedOwners = new Set<string>();
+  private closed = false;
   private readonly paidEnabled: boolean;
-  private readonly transcriptions = new Map<string, AbortController>();
   private readonly emergencyStopped: () => boolean;
+  private readonly ownerActive: (ownerId:string)=>boolean;
 
   constructor(options: MediaOptions = {}) {
     this.store = options.directory ? new MediaFileStore(options.directory) : null;
     this.paidEnabled = options.paidEnabled === true;
     this.registry = options.registry ?? new MediaCapabilityRegistry();
-    this.adapter =
-      options.adapter ?? (options.apiKey ? new OpenAIMediaAdapter(options.apiKey) : undefined);
+    this.adapter = options.adapter ?? (options.apiKey ? new OpenAIMediaAdapter(options.apiKey) : undefined);
     this.emergencyStopped = options.emergencyStopped ?? (() => false);
+    this.ownerActive = options.ownerActive ?? (() => true);
+    this.budget = options.ownerBudget;
+    // Crash recovery never dispatches again. A pre-existing reservation remains
+    // held until canonical ownerBudget explicitly reconciles it.
+    if (this.store && this.budget) {
+      for (const job of this.store.recovered()) if (job.budget_state === "reserved") {
+        void this.budget.uncertain({ ownerId: job.owner_id, operationId: job.id, reason: "INTERRUPTED" })
+          .then(() => { this.store?.budget(job.id, job.owner_id, "uncertain"); })
+          .catch(() => { /* A reserved hold MUST NOT be cleared on ledger error. */ });
+      }
+    }
   }
-  capabilities(): Record<
-    MediaCapability,
-    { ready: boolean; model: string | null; reason: string | null }
-  > {
+  capabilities(): Record<MediaCapability, { ready: boolean; model: string | null; reason: string | null }> {
     const result = {} as ReturnType<MediaService["capabilities"]>;
     for (const capability of ["image_generation", "transcription", "speech"] as const) {
       const route = this.registry.route(capability);
-      const reason = !route
-        ? "REGISTRY_UNAVAILABLE"
-        : !this.store
-          ? "STORAGE_UNAVAILABLE"
-          : !this.adapter
-            ? "CREDENTIAL_UNAVAILABLE"
-            : !this.paidEnabled
-              ? "PAID_EXECUTION_DISABLED"
-              : this.emergencyStopped()
-                ? "EMERGENCY_STOP"
-                : null;
+      const reason = !route ? "REGISTRY_UNAVAILABLE" : !this.store ? "STORAGE_UNAVAILABLE" :
+        !this.adapter ? "CREDENTIAL_UNAVAILABLE" : !this.paidEnabled ? "PAID_EXECUTION_DISABLED" :
+        !this.budget ? "BUDGET_UNAVAILABLE" : this.emergencyStopped() ? "EMERGENCY_STOP" :
+        this.closed ? "MEDIA_STOPPED" : null;
       result[capability] = { ready: reason === null, model: route?.model ?? null, reason };
     }
     return result;
   }
-  private check(capability: MediaCapability, consent: boolean): void {
-    if (this.capabilities()[capability].ready !== true) throw new Error("MEDIA_UNAVAILABLE");
+  private check(capability: MediaCapability, consent: boolean, ownerId: string): void {
+    if (!this.capabilities()[capability].ready || this.closedOwners.has(ownerId) || !this.ownerActive(ownerId)) throw new Error("MEDIA_UNAVAILABLE");
     if (!consent) throw new Error("CONSENT_REQUIRED");
   }
-  list(ownerId: string): MediaJob[] {
-    return this.store?.list(ownerId) ?? [];
-  }
-  get(id: string, ownerId: string): MediaJob | null {
-    return this.store?.get(id, ownerId) ?? null;
-  }
-  asset(id: string, ownerId: string) {
-    return this.store?.asset(id, ownerId) ?? null;
-  }
+  storageReady():boolean { return this.store!==null; }
+  list(ownerId: string): MediaJob[] { return this.store?.list(ownerId) ?? []; }
+  get(id: string, ownerId: string): MediaJob | null { return this.store?.get(id, ownerId) ?? null; }
+  asset(id: string, ownerId: string) { return this.store?.asset(id, ownerId) ?? null; }
 
-  delete(id: string, ownerId: string): boolean {
-    return this.store?.delete(id, ownerId) ?? false;
-  }
-  enqueue(ownerId: string, kind: "image" | "speech", value: string, consent: boolean): MediaJob {
-    const capability = kind === "image" ? "image_generation" : "speech";
-    this.check(capability, consent);
-    if (
-      this.running.size >= 4 ||
-      [...this.running.values()].some((entry) => entry.owner === ownerId) ||
-      this.list(ownerId).some((job) => job.status === "queued" || job.status === "running")
-    )
-      throw new Error("MEDIA_BUSY");
-    const store = this.store!;
-    const job = store.create(ownerId, kind);
+  private submit(ownerId: string, kind: MediaKind, consent: boolean,
+    work: (signal: AbortSignal) => Promise<{ binary?: GeneratedBinary; text?: string; usage?: CanonicalMediaUsage }>): MediaJob {
+    const capability = kind === "image" ? "image_generation" : kind === "speech" ? "speech" : "transcription";
+    this.check(capability, consent, ownerId);
+    if (this.running.size >= 4 || [...this.running.values()].some((entry) => entry.owner === ownerId) ||
+      this.list(ownerId).some((job) => job.status === "queued" || job.status === "running")) throw new Error("MEDIA_BUSY");
+    const job = this.store!.create(ownerId, kind);
     const controller = new AbortController();
-    this.running.set(job.id, { owner: ownerId, controller });
-    queueMicrotask(() => {
-      void this.execute(job, value, controller);
+    const task = new Promise<void>((resolve) => {
+      queueMicrotask(() => { void this.execute(job, controller, work).finally(resolve); });
     });
+    this.running.set(job.id, { owner: ownerId, controller, task });
     return job;
   }
-  private async execute(job: MediaJob, value: string, controller: AbortController): Promise<void> {
+  enqueue(ownerId: string, kind: "image" | "speech", value: string, consent: boolean): MediaJob {
+    const route = this.registry.route(kind === "image" ? "image_generation" : "speech");
+    if (!route || !this.adapter) throw new Error("MEDIA_UNAVAILABLE");
+    return this.submit(ownerId, kind, consent, async (signal) => ({ binary: kind === "image" ?
+      await this.adapter!.generateImage(value, "gpt-image-1", signal) :
+      await this.adapter!.speak(value, "gpt-4o-mini-tts", signal) }));
+  }
+  enqueueTranscription(ownerId: string, bytes: Uint8Array, mime: AudioMime, consent: boolean): MediaJob {
+    this.check("transcription", consent, ownerId);
+    if (!bytes.length || bytes.length > MAX_RECORDING_BYTES) throw new Error("AUDIO_SIZE_INVALID");
+    if (!validRecording(bytes, mime)) throw new Error("AUDIO_FORMAT_INVALID");
+    // Copy only into bounded transient memory, NEVER write the microphone recording to storage.
+    const recording = Uint8Array.from(bytes);
+    return this.submit(ownerId, "transcription", consent, async (signal) => {
+      if (this.adapter!.transcribeWithUsage) {
+        const result = await this.adapter!.transcribeWithUsage(recording, mime, "gpt-4o-mini-transcribe", signal);
+        return { text: result.text, ...(result.usage ? { usage: result.usage } : {}) };
+      }
+      return { text: await this.adapter!.transcribe(recording, mime, "gpt-4o-mini-transcribe", signal) };
+    });
+  }
+  private async execute(job: MediaJob, controller: AbortController,
+    work: (signal: AbortSignal) => Promise<{ binary?: GeneratedBinary; text?: string; usage?: CanonicalMediaUsage }>): Promise<void> {
     const store = this.store!;
-    const timeout = setTimeout(() => controller.abort(), 120_000);
+    const timeout = setTimeout(() => controller.abort(), MAX_MS);
     timeout.unref?.();
-    const stopPoll = setInterval(() => {
-      if (this.emergencyStopped()) controller.abort();
-    }, 250);
-    stopPoll.unref?.();
+    let dispatched = false;
+    let reserved = false;
+    let ledgerSettled = false;
     try {
-      if (this.emergencyStopped()) {
-        store.transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
-        return;
+      if (controller.signal.aborted || (this.closedOwners.has(job.owner_id) || !this.ownerActive(job.owner_id)) || this.emergencyStopped()) {
+        store.transition(job.id, job.owner_id, "cancelled"); return;
       }
-      if (!store.transition(job.id, job.owner_id, "running")) return;
-      const route = this.registry.route(job.kind === "image" ? "image_generation" : "speech");
-      if (!route || !this.adapter) throw new Error("MEDIA_UNAVAILABLE");
-      const output =
-        job.kind === "image"
-          ? await this.adapter.generateImage(value, "gpt-image-1", controller.signal)
-          : await this.adapter.speak(value, "gpt-4o-mini-tts", controller.signal);
-      if (controller.signal.aborted || this.emergencyStopped()) {
-        store.transition(job.id, job.owner_id, "cancelled");
-        return;
+      const capability = job.kind === "image" ? "image_generation" : job.kind === "speech" ? "speech" : "transcription";
+      const model = this.registry.route(capability)?.model;
+      if (!model || !this.budget) throw new Error("BUDGET_UNAVAILABLE");
+      // The shared ledger MUST reserve idempotently using this exact job id, before any provider dispatch.
+      await this.budget.reserve({ ownerId: job.owner_id, operationId: job.id, kind: job.kind, model });
+      reserved = true;
+      store.budget(job.id, job.owner_id, "reserved");
+      if (controller.signal.aborted || (this.closedOwners.has(job.owner_id) || !this.ownerActive(job.owner_id)) || this.emergencyStopped() ||
+          !store.transition(job.id, job.owner_id, "running")) return;
+      dispatched = true;
+      const output = await work(controller.signal);
+      if (controller.signal.aborted || (this.closedOwners.has(job.owner_id) || !this.ownerActive(job.owner_id)) || this.emergencyStopped() ||
+          store.get(job.id, job.owner_id)?.status !== "running") return;
+      const usage = canonicalUsage(output.usage ?? output.binary?.usage);
+      // Canonical provider evidence alone allows reconciliation. No fake token-price conversion.
+      if (usage) {
+        await this.budget.reconcile({ ownerId: job.owner_id, operationId: job.id, usage });
+        ledgerSettled = true;
+        store.budget(job.id, job.owner_id, "reconciled");
+      } else {
+        await this.budget.uncertain({ ownerId: job.owner_id, operationId: job.id, reason: "NO_CANONICAL_USAGE" });
+        ledgerSettled = true;
+        store.budget(job.id, job.owner_id, "uncertain");
       }
-      store.complete(job.id, job.owner_id, output);
+      if (controller.signal.aborted || (this.closedOwners.has(job.owner_id) || !this.ownerActive(job.owner_id)) || this.emergencyStopped() ||
+          store.get(job.id, job.owner_id)?.status !== "running") return;
+      if (job.kind === "transcription" && typeof output.text === "string") {
+        store.completeTranscript(job.id, job.owner_id, output.text, usage ? "reconciled" : "uncertain");
+      } else if (output.binary && job.kind !== "transcription") {
+        store.complete(job.id, job.owner_id, output.binary, usage ? "reconciled" : "uncertain");
+      } else throw new Error("INVALID_MEDIA_RESULT");
     } catch (error) {
-      store.transition(
-        job.id,
-        job.owner_id,
-        controller.signal.aborted ? "cancelled" : "failed",
-        controller.signal.aborted
-          ? null
-          : error instanceof MediaProviderError
-            ? error.code
-            : "MEDIA_FAILURE"
-      );
+      store.transition(job.id, job.owner_id, controller.signal.aborted ? "cancelled" : "failed",
+        controller.signal.aborted ? null : error instanceof MediaProviderError ? error.code : "MEDIA_FAILURE");
     } finally {
+      if (reserved && !ledgerSettled) {
+        try {
+          await this.budget?.uncertain({ ownerId: job.owner_id, operationId: job.id,
+            reason: dispatched ? "DISPATCH_OUTCOME_UNKNOWN" : "RESERVED_BEFORE_DISPATCH" });
+          ledgerSettled = true;
+          store.budget(job.id, job.owner_id, "uncertain");
+        } catch { /* Keep reserved hold; never claim refund. */ }
+      }
       clearTimeout(timeout);
       this.running.delete(job.id);
-      clearInterval(stopPoll);
     }
   }
   cancel(id: string, ownerId: string): MediaJob | null {
@@ -136,64 +180,43 @@ export class MediaService {
     if (!job) return null;
     if (job.status === "queued" || job.status === "running") {
       this.running.get(id)?.controller.abort();
-      return this.store?.transition(id, ownerId, "cancelled") ?? null;
+      return this.store?.transition(id, ownerId, "cancelled") ?? this.get(id, ownerId);
     }
     return job;
   }
-  async transcribe(
-    ownerId: string,
-    bytes: Uint8Array,
-    mime: "audio/webm" | "audio/wav" | "audio/mp4" | "audio/mpeg",
-    consent: boolean,
-    signal?: AbortSignal
-  ): Promise<string> {
-    this.check("transcription", consent);
-    if (this.transcriptions.has(ownerId) || this.transcriptions.size >= 4)
-      throw new Error("MEDIA_BUSY");
-    if (!bytes.length || bytes.length > 1_500_000) throw new Error("AUDIO_SIZE_INVALID");
-    const valid =
-      mime === "audio/webm"
-        ? [0x1a, 0x45, 0xdf, 0xa3].every((v, i) => bytes[i] === v)
-        : mime === "audio/wav"
-          ? Buffer.from(bytes.subarray(0, 4)).toString() === "RIFF"
-          : mime === "audio/mp4"
-            ? Buffer.from(bytes.subarray(4, 8)).toString() === "ftyp"
-            : bytes[0] === 0xff || Buffer.from(bytes.subarray(0, 3)).toString() === "ID3";
-    if (!valid) throw new Error("AUDIO_FORMAT_INVALID");
-    const controller = new AbortController();
-    this.transcriptions.set(ownerId, controller);
-    const timeout = setTimeout(() => controller.abort(), 60_000);
-    timeout.unref?.();
-    const stopPoll = setInterval(() => {
-      if (this.emergencyStopped()) controller.abort();
-    }, 250);
-    stopPoll.unref?.();
-    const onAbort = () => controller.abort();
-    signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) controller.abort();
-    try {
-      if (!this.adapter) throw new Error("MEDIA_UNAVAILABLE");
-      const text = await this.adapter.transcribe(
-        bytes,
-        mime,
-        "gpt-4o-mini-transcribe",
-        controller.signal
-      );
-      if (this.emergencyStopped() || controller.signal.aborted)
-        throw new Error("MEDIA_UNAVAILABLE");
-      return text;
-    } finally {
-      clearTimeout(timeout);
-      this.transcriptions.delete(ownerId);
-      clearInterval(stopPoll);
-      signal?.removeEventListener("abort", onAbort);
-    }
+  /** Explicit deletion; cancelling alone preserves history and accounting. */
+  async delete(id: string, ownerId: string): Promise<boolean> {
+    if (!this.get(id, ownerId)) return false;
+    this.cancel(id, ownerId);
+    return this.store?.delete(id, ownerId) ?? false;
   }
-  stop(): void {
-    for (const [id, { owner, controller }] of this.running) {
-      controller.abort();
-      this.store?.transition(id, owner, "cancelled");
+  /** Fences future dispatch and commits, aborts in-flight tasks, never releases usage holds. */
+  async quiesce(ownerId: string): Promise<void> {
+    this.closedOwners.add(ownerId);
+    const tasks: Promise<void>[] = [];
+    for (const [id, active] of this.running) if (active.owner === ownerId) {
+      active.controller.abort();
+      this.store?.transition(id, ownerId, "cancelled");
+      tasks.push(active.task);
     }
-    for (const controller of this.transcriptions.values()) controller.abort();
+    // Abort-ignoring provider clients cannot block privacy deletion forever.
+    // The closedOwners fence also prevents their eventual late writes.
+    await Promise.allSettled(tasks);
   }
+  resume(ownerId: string): void { if (!this.closed) this.closedOwners.delete(ownerId); }
+  exportOwner(ownerId: string): { jobs: MediaJob[]; assets: Array<{ id: string; url: string; mime: string; bytes: number; sha256: string | null; auth: "owner_session" }> } {
+    const jobs = this.list(ownerId);
+    return { jobs, assets: jobs.filter((job) => job.status === "done" && job.asset && this.asset(job.id, ownerId)).map((job) => ({
+      id: job.id, url: `/api/v1/media/assets/${job.id}?download=1`, mime: job.asset!.mime,
+      bytes: job.asset!.bytes, sha256: job.asset!.sha256 ?? null, auth: "owner_session" as const
+    })) };
+  }
+  /** Caller must quiesce owner before invoking; usage ledger is deliberately untouched. */
+  async deleteOwner(ownerId: string): Promise<{ deleted_jobs: number }> {
+    await this.quiesce(ownerId);
+    return { deleted_jobs: this.store?.deleteOwner(ownerId) ?? 0 };
+  }
+  stop(): void { this.closed = true; for (const [id, active] of this.running) {
+    active.controller.abort(); this.store?.transition(id, active.owner, "cancelled");
+  } }
 }

@@ -1,9 +1,7 @@
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SpawnOptions } from "node:child_process";
-import type * as ChildProcess from "node:child_process";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   computeCodeAgentSnapshotDigest,
   createCodeAgentWorkspaceRunner
@@ -14,24 +12,10 @@ const files = [
   { path: "src/example.test.mjs", content: "import test from 'node:test'; test('ok', () => {});" }
 ];
 const directories: string[] = [];
-const transportScripts = vi.hoisted(() => new Set<string>());
-// Windows cannot execute a shebang script with shell:false. Adapt only registered
-// fixture executables to Node, retaining real subprocesses and all runtime arguments.
-vi.mock("node:child_process", async () => {
-  const actual = await vi.importActual<typeof ChildProcess>("node:child_process");
-  return {
-    ...actual,
-    spawn: (command: string, args: readonly string[], options: SpawnOptions) =>
-      process.platform === "win32" && transportScripts.has(command)
-        ? actual.spawn(process.execPath, [command, ...args], options)
-        : actual.spawn(command, args, options)
-  };
-});
 afterEach(async () => {
   await Promise.all(
     directories.splice(0).map((path) => rm(path, { recursive: true, force: true }))
   );
-  transportScripts.clear();
 });
 
 // This executable is a transport fixture, NEVER a sandbox fallback. It does not execute
@@ -40,7 +24,6 @@ async function fixture(mode: "success" | "flood" | "wait" | "unavailable" | "cle
   const directory = await mkdtemp(join(tmpdir(), "kosmora-oci-transport-test-"));
   directories.push(directory);
   const executable = join(directory, "oci-fixture");
-  transportScripts.add(executable);
   const record = join(directory, "calls.jsonl");
   await writeFile(
     executable,
@@ -50,6 +33,7 @@ const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify({ args, env: process.env }) + '\\n');
 if (args[0] === 'rm') process.exit(${JSON.stringify(mode)} === 'cleanup-fail' ? 1 : 0);
 if (${JSON.stringify(mode)} === 'unavailable') process.exit(125);
+if (args[0] === 'cp') { process.stdin.resume(); process.stdin.on('end', () => process.exit(0)); return; }
 if (args[0] === 'create') { process.stdout.write('fixture-container-id'); process.exit(0); }
 if (${JSON.stringify(mode)} === 'wait' || ${JSON.stringify(mode)} === 'cleanup-fail') setInterval(() => {}, 1000);
 else if (${JSON.stringify(mode)} === 'flood') { setInterval(() => process.stdout.write('x'.repeat(8192)), 1); }
@@ -164,10 +148,9 @@ describe("CodeAgent workspace boundary", () => {
     expect(call.env).not.toHaveProperty("DOCKER_HOST");
     expect(call.env).not.toHaveProperty("NODE_OPTIONS");
     expect(call.args).not.toContain("sh");
-    expect((await transport.calls())[1]!.args.slice(0, 2)).toEqual(["start", "--attach"]);
-    const mount = call.args[call.args.indexOf("--mount") + 1]!;
-    const source = mount.slice("type=bind,source=".length).split(",target=")[0]!;
-    await expect(access(source)).rejects.toThrow();
+    expect(call.args).not.toContain("--mount");
+    expect((await transport.calls())[1]!.args.slice(0, 2)).toEqual(["cp", "-"]);
+    expect((await transport.calls())[2]!.args.slice(0, 2)).toEqual(["start", "--attach"]);
     expect(result.journal.map((entry) => entry.event)).toEqual(["snapshot", "started", "finished"]);
   });
 

@@ -1,0 +1,37 @@
+# Merge with deploy/alpha/compose.yaml. Relative paths resolve from deploy/alpha.
+services:
+  api:
+    environment:
+      CODE_AGENT_EXECUTOR_URL: http://code-executor:3210
+      CODE_AGENT_EXECUTOR_TOKEN_FILE: /run/secrets/code_executor_token
+    secrets: [code_executor_token]
+    networks: [internal, code_executor]
+  code-executor:
+    image: kosmora-code-executor:local
+    build:
+      context: ../..
+      dockerfile: deploy/code-agent/Dockerfile
+      args:
+        OCI_CLI_IMAGE: ${CODE_AGENT_OCI_CLI_IMAGE:?Set immutable locally provisioned docker CLI build image}
+        BUILD_NODE_IMAGE: ${CODE_AGENT_BUILD_NODE_IMAGE:?Set immutable locally provisioned node build image}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+    stop_grace_period: 20s
+    environment:
+      CODE_AGENT_SANDBOX_IMAGE: ${CODE_AGENT_SANDBOX_IMAGE:?Set locally provisioned immutable sha256 image ID}
+    secrets: [code_executor_token]
+    # Only sidecar sees daemon socket. Job containers receive neither socket nor host mount.
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    networks: [code_executor]
+networks:
+  code_executor:
+    internal: true
+secrets:
+  code_executor_token:
+    file: ./private/code-executor-token

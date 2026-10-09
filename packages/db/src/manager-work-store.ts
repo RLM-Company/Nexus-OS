@@ -15,6 +15,13 @@ export class ManagerWorkStore {
     this.runtime = new WorkRuntimeStore(sqlite);
   }
 
+  /** Durable privacy fence: prevents a queued Work task from starting during export/delete. */
+  ownerWritable(ownerId: string): boolean {
+    return !this.sqlite.prepare(
+      "SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id=? AND state<>'active'"
+    ).get(ownerId);
+  }
+
   private transaction<T>(execute: () => T): T {
     this.sqlite.exec("BEGIN IMMEDIATE");
     try {

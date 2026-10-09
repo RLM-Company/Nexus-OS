@@ -74,6 +74,8 @@ export interface ManagerWorkDependencies {
 
 export class ManagerWorkCoordinator {
   private readonly active = new Map<string, { controller: AbortController; done: Promise<void> }>();
+  /** Owner-scoped in-process fence while a privacy snapshot is being drained. */
+  private readonly quiescedOwners = new Set<string>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopping = false;
   private readonly tools: GuardedToolRuntime;
@@ -108,7 +110,8 @@ export class ManagerWorkCoordinator {
     this.timer = setInterval(() => {
       if (this.stopping) return;
       for (const work of this.dependencies.store.pending()) {
-        if (this.active.has(work.id) || this.active.size >= 2) continue;
+        if (this.quiescedOwners.has(work.owner_id) || this.isOwnerFenced(work.owner_id) ||
+            this.active.has(work.id) || this.active.size >= 2) continue;
         const controller = new AbortController();
         const done = this.execute(work.id, work.owner_id, controller.signal)
           .catch(() => undefined)
@@ -118,6 +121,16 @@ export class ManagerWorkCoordinator {
     }, 200);
   }
 
+  async quiesceOwner(ownerId:string):Promise<void> {
+    this.quiescedOwners.add(ownerId);
+    const owned=[...this.active.entries()].filter(([id])=>Boolean(this.dependencies.store.get(id,ownerId)));
+    for(const [,active] of owned) active.controller.abort();
+    await Promise.allSettled(owned.map(([,active])=>active.done));
+  }
+  resumeOwner(ownerId:string):void { this.quiescedOwners.delete(ownerId); }
+  private isOwnerFenced(ownerId:string):boolean {
+    return this.quiescedOwners.has(ownerId) || !this.dependencies.store.ownerWritable(ownerId);
+  }
   async stop(): Promise<void> {
     this.stopping = true;
     clearInterval(this.timer);
@@ -174,6 +187,7 @@ export class ManagerWorkCoordinator {
 
   private isStopped(work: ManagerWork): boolean {
     return Boolean(
+      this.isOwnerFenced(work.owner_id) ||
       this.dependencies.projects.getProject(work.project_id, work.owner_id)?.status !== "ACTIVE" ||
       this.dependencies.emergency.getProcessStop() ||
       this.dependencies.emergency.getProjectStop(work.project_id, work.owner_id)
@@ -228,6 +242,8 @@ export class ManagerWorkCoordinator {
   private async model(work: ManagerWork, signal: AbortSignal): Promise<string> {
     const { store, projects, gateway } = this.dependencies;
     if (signal.aborted || this.isStopped(work)) throw new Error("EMERGENCY_STOP");
+    // Every provider dispatch requires the shared AccountStore, even in demo paths.
+    if (!this.dependencies.ownerBudget) throw new Error("OWNER_BUDGET_UNAVAILABLE");
     if (work.model_requests >= work.request.max_model_requests)
       throw new Error("EXECUTION_BUDGET_EXCEEDED");
     if (this.dependencies.graph) {
@@ -293,7 +309,7 @@ export class ManagerWorkCoordinator {
               work.request.max_output_tokens
           )
             throw new Error("EXECUTION_BUDGET_EXCEEDED");
-          ownerReservation = this.dependencies.ownerBudget?.reserve(
+          ownerReservation = this.dependencies.ownerBudget.reserve(
             work.owner_id,
             runId,
             event.route.attempt,
@@ -358,7 +374,7 @@ export class ManagerWorkCoordinator {
   async execute(id: string, ownerId: string, signal = new AbortController().signal): Promise<void> {
     const { store, policy } = this.dependencies;
     let work = this.current(id, ownerId);
-    if (work.status !== "queued") return;
+    if (work.status !== "queued" || this.isOwnerFenced(ownerId)) return;
     try {
       const claimed = store.claim(work);
       if (!claimed) return;

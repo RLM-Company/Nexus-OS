@@ -317,3 +317,6 @@ export class GuardedToolRuntime {
     }
   }
 }
+export * from "./code-agent-http-client.js";
+export * from "./code-agent-sidecar.js";
+export * from "./code-agent-snapshot.js";

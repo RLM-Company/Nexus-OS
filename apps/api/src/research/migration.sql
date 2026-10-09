@@ -1,5 +1,6 @@
--- Research v1 additive table. ResearchStore bootstraps this idempotently on the shared SQLite connection.
--- Optional for migration-aware deployments: execute after core migrations, before starting API.
+-- REFERENCE ONLY: install through existing managed migration 0028 (idx28).
+-- ResearchStore never runs DDL on startup. Do NOT install this file at runtime.
+-- New synthesis/accounting state is JSON in existing payload_json; no 0033 required.
 CREATE TABLE IF NOT EXISTS research_v1_runs (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL,

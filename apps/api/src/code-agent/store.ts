@@ -28,26 +28,23 @@ export interface CodeAgentRun {
   repository: string;
   requested_files: string[];
   snapshot: GithubFileChange[];
+  model_run_ids?: string[];
   proposal?: Array<GithubFileChange & { before: string | null }>;
   proposal_hash?: string;
   summary?: string;
   draft_id?: string;
   draft?: GithubDraft;
-  publication_token?: string;
-  check?: CodeAgentCheckResult & { review_hash: string };
-  error?: string;
+  publication_token?: string | undefined;
+  check?: (CodeAgentCheckResult & { review_hash: string }) | undefined;
+  error?: string | undefined;
   log: Array<{ at: string; event: string }>;
   created_at: string;
 }
 export class CodeAgentError extends Error {}
 export class CodeAgentStore {
   constructor(readonly sqlite: DatabaseSync) {
-    // Dedicated feature table; no mutation of the shared schema/migrations.
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS code_agent_runs (
-      id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
-      owner_id TEXT NOT NULL, version INTEGER NOT NULL, state_json TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    ); CREATE INDEX IF NOT EXISTS code_agent_project ON code_agent_runs(project_id, owner_id, created_at);`);
+    // Managed schema migration 0030 creates the existing feature table; no runtime DDL.
+
   }
   create(input: Omit<CodeAgentRun, "id" | "version" | "created_at" | "log">): CodeAgentRun {
     if (
@@ -126,6 +123,18 @@ export class CodeAgentStore {
         "INSERT INTO runs (id,project_id,chat_id,status,created_at,updated_at) VALUES (?,?,?,'running',?,?)"
       )
       .run(id, run.project_id, String(chat.id), at, at);
+    const current = this.get(run.id, run.owner_id);
+    if (!current) throw new CodeAgentError("RUN_NOT_FOUND");
+    this.save({ ...current, model_run_ids: [...(current.model_run_ids ?? []), id] });
     return id;
+  }
+  modelRunReferences(): Array<{ owner: string; id: string }> {
+    return this.sqlite
+      .prepare("SELECT state_json FROM code_agent_runs")
+      .all()
+      .flatMap((row) => {
+        const run = JSON.parse(String(row.state_json)) as CodeAgentRun;
+        return (run.model_run_ids ?? []).map((id) => ({ owner: run.owner_id, id }));
+      });
   }
 }

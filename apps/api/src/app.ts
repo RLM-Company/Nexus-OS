@@ -163,7 +163,16 @@ import { registerGithubRoutes } from "./github-routes.js";
 import { WebSearch, registerWebSearchRoutes } from "./web-search.js";
 import { registerProjectMaterialsRoutes } from "./project-materials-routes.js";
 import { registerAccountRoutes } from "./account-settings/routes.js";
+import { registerPrivacyRoutes } from "./account-settings/privacy/routes.js";
+import type { OwnerPrivacyCoordinator } from "./account-settings/privacy/coordinator.js";
+import { registerDocumentLibraryRoutes } from "./document-library-routes.js";
+import { registerDocumentAnswerRoutes } from "./document-answer-routes.js";
+import type { DocumentAnswerService } from "./document-answer-service.js";
+import { registerChatHistorySearchRoutes } from "./chat-history-search-routes.js";
+import type { ResearchOwnerBudget } from "./research/research-synthesis.js";
+import type { CodeOwnerBudget } from "./code-agent/owner-budget.js";
 import type { AccountStore } from "./account-settings/account-store.js";
+import type { DocumentLibraryStore, ChatHistorySearchStore } from "@cosmora/db";
 import { QuotaExceededError } from "./account-settings/account-store.js";
 import { registerResearchRoutes } from "./research/research-routes.js";
 import type { ResearchStore } from "./research/research-store.js";
@@ -173,6 +182,14 @@ import type { MediaService } from "./media/media-service.js";
 export interface AppDependencies {
   config: ServerConfig;
   accountStore?: AccountStore;
+  ownerPrivacy?: OwnerPrivacyCoordinator;
+  documentLibrary?: DocumentLibraryStore;
+  documentAnswerService?: DocumentAnswerService;
+  chatHistorySearchStore?: ChatHistorySearchStore;
+  researchBudget?: ResearchOwnerBudget;
+  ownerBudget?: CodeOwnerBudget;
+  codeAgentService?: CodeAgentService;
+  researchCoordinatorCreated?: (coordinator: import("./research/research-coordinator.js").ResearchCoordinator) => void;
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   identityStore?: IdentityStore;
@@ -665,7 +682,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   ) {
     registerCodeAgentRoutes(
       app,
-      new CodeAgentService({
+      (dependencies.codeAgentService ?? new CodeAgentService({
         store: new CodeAgentStore(dependencies.githubDraftStore.sqlite),
         github: dependencies.githubIntegration,
         drafts: dependencies.githubDraftStore,
@@ -674,22 +691,30 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         emergency: dependencies.emergencyStopStore,
         gateway: dependencies.modelGateway,
         manager: dependencies.manager,
-        runner: dependencies.codeAgentRunner ?? configuredCodeAgentExecutor()
-      }),
+        runner: dependencies.codeAgentRunner ?? configuredCodeAgentExecutor(),
+        ...(dependencies.ownerBudget ? { ownerBudget: dependencies.ownerBudget } : {})
+      })),
       identityFor
     );
   }
+  if (dependencies.documentLibrary) registerDocumentLibraryRoutes(app, dependencies.documentLibrary, identityFor);
+  if (dependencies.documentAnswerService) registerDocumentAnswerRoutes(app, dependencies.documentAnswerService, identityFor);
+  if (dependencies.chatHistorySearchStore) registerChatHistorySearchRoutes(app, dependencies.chatHistorySearchStore, identityFor);
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
   if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
     const coordinator = registerResearchRoutes({
       app,
       store: dependencies.researchStore,
+      ...(dependencies.modelGateway ? { gateway: dependencies.modelGateway } : {}),
+      ...(dependencies.manager ? { manager: dependencies.manager } : {}),
+      ...(dependencies.researchBudget ? { ownerBudget: dependencies.researchBudget } : {}),
       search: dependencies.webSearch ?? new WebSearch(),
       projects: dependencies.projectStore,
       policy: dependencies.policyStore,
       identityFor,
       ...(dependencies.emergencyStopStore ? { emergency: dependencies.emergencyStopStore } : {})
     });
+    dependencies.researchCoordinatorCreated?.(coordinator);
     app.addHook("onClose", () => coordinator.stop());
   }
   if (dependencies.mediaService) registerMediaRoutes(app, dependencies.mediaService, identityFor);
@@ -1066,6 +1091,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
 
   if (dependencies.accountStore && dependencies.accountModel)
     registerAccountRoutes(app, dependencies.accountStore, identityFor, dependencies.accountModel);
+  if (dependencies.accountStore && dependencies.ownerPrivacy)
+    registerPrivacyRoutes(app, dependencies.ownerPrivacy, dependencies.accountStore, identityFor);
 
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerGeneralChatRoutes({

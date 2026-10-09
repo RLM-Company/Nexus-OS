@@ -21,6 +21,7 @@ import {
 } from "./studio-csv";
 import { WorkspaceIcon as Icon } from "./workspace-icons";
 import styles from "./studio-files.module.css";
+import { StudioDocumentLibrary } from "./studio-files-library";
 
 type DocumentState = {
   name: string;
@@ -150,9 +151,11 @@ function HighlightedPart({
 }
 
 export function StudioFiles({
-  onCompose
+  onCompose,
+  projectId
 }: {
   onCompose: (prompt: string, files?: ChatAttachment[]) => void;
+  projectId: string | null;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const operation = useRef<AbortController | null>(null);
@@ -351,6 +354,7 @@ export function StudioFiles({
           <p>Документы, данные и код — локально в одном рабочем окне.</p>
         </div>
       </header>
+      <StudioDocumentLibrary projectId={projectId} onCompose={onCompose} />
       <section className={styles.upload} aria-label="Загрузка документа">
         <input
           ref={input}

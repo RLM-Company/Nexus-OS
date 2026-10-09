@@ -1481,7 +1481,7 @@ export function WorkspaceSections(props: Props) {
       content = <Studio {...props} />;
       break;
     case "files":
-      content = <StudioFiles onCompose={props.onCompose} />;
+      content = <StudioFiles key={props.activeProjectId ?? "no-project"} projectId={props.activeProjectId} onCompose={props.onCompose} />;
       break;
     case "apps":
       content = <Apps {...props} />;

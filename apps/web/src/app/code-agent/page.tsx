@@ -37,6 +37,13 @@ type Run = {
     journal?: unknown;
     snapshotDigest?: string;
   };
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    unknown_attempts: number;
+    known_costs: Array<{ currency: string; amount: number }>;
+    owner_budget_connected: boolean;
+  };
   log: Array<{ at: string; event: string }>;
 };
 type Edit = FileChange & { selected: boolean };
@@ -53,6 +60,9 @@ const labels: Record<string, string> = {
   cancelled: "Отменено"
 };
 const errors: Record<string, string> = {
+  OWNER_BUDGET_LIMIT:
+    "Общий бюджет владельца не разрешает новый запрос. Проверьте расходы и удержанные резервы.",
+  EXECUTION_CANCELLING: "Останавливаем проверку. Дождитесь подтверждения остановки контейнера.",
   POLICY_DENIED: "Политика проекта запрещает это действие на текущем уровне автономии.",
   UNAUTHORIZED: "Вход истёк. Войдите в Kosmora и обновите страницу.",
   GITHUB_NOT_CONFIGURED: "GitHub ещё не подключён на сервере.",
@@ -288,7 +298,10 @@ export default function CodeAgentPage() {
     run.check.review_hash === review?.review_hash &&
     matchesReview;
   const editable =
-    !!run && ["proposed", "review", "checked"].includes(run.status) && !unknownPublish && !busy;
+    !!run &&
+    ["proposed", "review", "checked", "failed"].includes(run.status) &&
+    !unknownPublish &&
+    !busy;
   const needsReconciliation =
     !!run && (unknownPublish || ["uncertain", "publishing"].includes(run.status));
   function edit(index: number, update: Partial<Edit>) {
@@ -435,7 +448,17 @@ export default function CodeAgentPage() {
               Основа: {run.base_branch} · {run.base_sha || "ожидает чтения"}
             </p>
             {run.summary && <p>{run.summary}</p>}
-            {run.error && <p role="alert">{run.error}</p>}
+            {run.usage && (
+              <p className={styles.muted}>
+                Учтённые токены: {run.usage.input_tokens} входящих / {run.usage.output_tokens}{" "}
+                исходящих.
+                {run.usage.known_costs.map((cost) => ` Расход: ${cost.amount} ${cost.currency}.`)}
+                {run.usage.unknown_attempts > 0 &&
+                  ` Расход не подтверждён для ${run.usage.unknown_attempts} запросов; резерв сохраняется при подключённом общем бюджете.`}
+                {!run.usage.owner_budget_connected && " Общий бюджет владельца пока не подключён."}
+              </p>
+            )}
+            {run.error && <p role="alert">{errors[run.error] ?? run.error}</p>}
           </section>
 
           {edits.length > 0 && (
@@ -552,7 +575,9 @@ export default function CodeAgentPage() {
                   )
                 }
               >
-                Запустить проверку
+                {run.check && run.check.status !== "passed"
+                  ? "Повторить проверку"
+                  : "Запустить проверку"}
               </button>
               {run.check && (
                 <div aria-label="Результат проверки">
@@ -562,7 +587,13 @@ export default function CodeAgentPage() {
                       ? "Успешно"
                       : run.check.status === "failed"
                         ? "Ошибка"
-                        : run.check.status}
+                        : run.check.status === "unavailable"
+                          ? "Исполнитель недоступен. Проверьте подключение и повторите проверку."
+                          : run.check.status === "timed_out"
+                            ? "Превышен лимит времени. Можно повторить проверку с новым подтверждением."
+                            : run.check.status === "cancelled"
+                              ? "Проверка отменена. Можно повторить её с новым подтверждением."
+                              : run.check.status}
                   </p>
                   <pre>{run.check.stdout || "Нет стандартного вывода"}</pre>
                   {run.check.stderr && <pre>{run.check.stderr}</pre>}

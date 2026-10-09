@@ -8,3 +8,4 @@ export * from "./demo-manager-plan.js";
 export * from "./research/index.js";
 export * from "./work-runtime/index.js";
 export * from "./project-memory/index.js";
+export * from "./document-library.js";
