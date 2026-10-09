@@ -107,7 +107,7 @@ describe("graph workspace HTTP integration boundary", () => {
     const base = "/api/v1/projects/project-a/intelligence-graphs";
     const created = await app.inject({ method: "POST", url: base, payload: { title: "Graph" } });
     expect(created.statusCode).toBe(201);
-    const g = created.json() as IntelligenceGraphWorkspace;
+    const g = created.json<IntelligenceGraphWorkspace>();
     expect(g.nodes).toEqual([]);
     const read = await app.inject({ method: "GET", url: `${base}/${g.graph_id}` });
     expect(read.statusCode).toBe(200);
@@ -125,7 +125,7 @@ describe("graph workspace HTTP integration boundary", () => {
       }
     });
     expect(added.statusCode).toBe(200);
-    expect((added.json() as IntelligenceGraphWorkspace).nodes[0]?.verification_status).toBe(
+    expect((added.json<IntelligenceGraphWorkspace>()).nodes[0]?.verification_status).toBe(
       "discovered"
     );
     const explain = await app.inject({
@@ -133,7 +133,7 @@ describe("graph workspace HTTP integration boundary", () => {
       url: `${base}/${g.graph_id}/explain?q=Human`
     });
     expect(explain.statusCode).toBe(200);
-    expect(explain.json().readiness).toBe("abstain");
+    expect(explain.json<{ readiness: string }>().readiness).toBe("abstain");
     const stale = await app.inject({
       method: "POST",
       url: `${base}/${g.graph_id}/edits`,
