@@ -51,7 +51,9 @@ describe("SQLite intelligence graph workspace store", () => {
     const original = graph("graph-a");
     expect(store.create(original)).toEqual(original);
     const updated: IntelligenceGraphWorkspace = {
-      ...original, revision: 2, title: "Updated",
+      ...original,
+      revision: 2,
+      title: "Updated",
       updated_at: "2026-10-09T01:00:00.000Z"
     };
     expect(store.save(updated, 1, "Edited")).toEqual(updated);
@@ -61,11 +63,10 @@ describe("SQLite intelligence graph workspace store", () => {
     const nextStore = new SqliteIntelligenceGraphWorkspaceRepository(reopened);
     expect(nextStore.get("owner-a", "project-a", "graph-a")).toEqual(updated);
     expect(nextStore.getRevision("owner-a", "project-a", "graph-a", 1)).toEqual(original);
-    expect(nextStore.listRevisions("owner-a", "project-a", "graph-a", 20))
-      .toEqual([
-        expect.objectContaining({ revision: 2, summary: "Edited" }),
-        expect.objectContaining({ revision: 1, summary: "Graph created" })
-      ]);
+    expect(nextStore.listRevisions("owner-a", "project-a", "graph-a", 20)).toEqual([
+      expect.objectContaining({ revision: 2, summary: "Edited" }),
+      expect.objectContaining({ revision: 1, summary: "Graph created" })
+    ]);
     reopened.close();
   });
 
@@ -78,14 +79,12 @@ describe("SQLite intelligence graph workspace store", () => {
     expect(store.list("owner-b", "project-a", 20)).toEqual([]);
     expect(store.listRevisions("owner-b", "project-a", original.graph_id, 20)).toEqual([]);
     expect(store.getRevision("owner-b", "project-a", original.graph_id, 1)).toBeNull();
-    expect(store.create({ ...original, graph_id: "invalid", project_id: "project-b" }))
-      .toBeNull();
-    expect(store.create({ ...original, graph_id: "inactive", project_id: "archived" }))
-      .toBeNull();
-    expect(store.save({ ...original, owner_id: "owner-b", revision: 2 }, 1, "forge"))
-      .toBeNull();
-    expect(store.save({ ...original, project_id: "project-b", revision: 2 }, 1, "forge"))
-      .toBeNull();
+    expect(store.create({ ...original, graph_id: "invalid", project_id: "project-b" })).toBeNull();
+    expect(store.create({ ...original, graph_id: "inactive", project_id: "archived" })).toBeNull();
+    expect(store.save({ ...original, owner_id: "owner-b", revision: 2 }, 1, "forge")).toBeNull();
+    expect(
+      store.save({ ...original, project_id: "project-b", revision: 2 }, 1, "forge")
+    ).toBeNull();
     expect(store.get("owner-a", "project-a", original.graph_id)).toEqual(original);
     db.close();
   });
@@ -96,8 +95,7 @@ describe("SQLite intelligence graph workspace store", () => {
     store.create(original);
     const updated = { ...original, revision: 2 };
     expect(store.save(updated, 1, "first")).toEqual(updated);
-    expect(store.save({ ...original, revision: 2, title: "stale" }, 1, "late"))
-      .toBeNull();
+    expect(store.save({ ...original, revision: 2, title: "stale" }, 1, "late")).toBeNull();
     expect(store.listRevisions("owner-a", "project-a", "cas", 50)).toHaveLength(2);
     db.close();
   });
