@@ -55,10 +55,14 @@ const invalid = (message: string): never => {
 const requireText = (value: string, max: number, field: string): string => {
   if (typeof value !== "string") return invalid(`${field} must be text`);
   const text = value.trim();
-  if (!text || text.length > max || [...text].some((char) => {
-    const code = char.charCodeAt(0);
-    return code < 32 && code !== 9 && code !== 10 && code !== 13;
-  }))
+  if (
+    !text ||
+    text.length > max ||
+    [...text].some((char) => {
+      const code = char.charCodeAt(0);
+      return code < 32 && code !== 9 && code !== 10 && code !== 13;
+    })
+  )
     return invalid(`${field} must be 1-${max} safe characters`);
   return text;
 };
