@@ -3,7 +3,7 @@ name: Temporary graph format
 on:
   push:
     branches:
-      - codex/intelligence-graph-real-knowledge-20260929
+      - codex/intelligence-graph-workspace-20261009
 
 permissions:
   contents: write
@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Format graph files
-        run: pnpm exec prettier --write docs/reviews/2026-09-29-intelligence-graph-real-knowledge.md knowledge/cosmora/README.md knowledge/cosmora/graph-manifest.v1.json packages/core/test/fixtures/cosmora-api-boundary-graph.ts packages/core/test/fixtures/cosmora-agent-composition-graph.ts packages/core/test/fixtures/cosmora-unified-knowledge-graph.ts packages/core/test/intelligence-graph-unified-knowledge.test.ts
+        run: pnpm exec prettier --write packages/core/src/intelligence-graph-workspace.ts packages/core/test/intelligence-graph-workspace.test.ts packages/db/src/intelligence-graph-workspace-store.ts packages/contracts/src/intelligence-graph-workspace.ts apps/api/src/intelligence-graph-workspace-routes.ts apps/api/src/app.ts apps/web/src/app/graph-workspace/page.tsx docs/handoff/INTELLIGENCE_GRAPH_WORKSPACE_2026-10-09.md
       - name: Commit formatting only
         shell: bash
         run: |
@@ -39,6 +39,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/reviews/2026-09-29-intelligence-graph-real-knowledge.md knowledge/cosmora/README.md knowledge/cosmora/graph-manifest.v1.json packages/core/test/fixtures/cosmora-api-boundary-graph.ts packages/core/test/fixtures/cosmora-agent-composition-graph.ts packages/core/test/fixtures/cosmora-unified-knowledge-graph.ts packages/core/test/intelligence-graph-unified-knowledge.test.ts
-          git commit -m "style(graph): format API and agent composition layers"
+          git add packages/core/src/intelligence-graph-workspace.ts packages/core/test/intelligence-graph-workspace.test.ts packages/db/src/intelligence-graph-workspace-store.ts packages/contracts/src/intelligence-graph-workspace.ts apps/api/src/intelligence-graph-workspace-routes.ts apps/api/src/app.ts apps/web/src/app/graph-workspace/page.tsx docs/handoff/INTELLIGENCE_GRAPH_WORKSPACE_2026-10-09.md
+          git commit -m "style(graph): format workspace slice"
           git push origin "HEAD:${GITHUB_REF_NAME}"
