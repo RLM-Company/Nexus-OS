@@ -1,0 +1,96 @@
+.page {
+  min-height: 100vh;
+  background: #fff;
+  color: #111;
+  max-width: 960px;
+  margin: auto;
+  padding: 42px 22px;
+  font:
+    16px/1.5 system-ui,
+    sans-serif;
+}
+.page a {
+  color: #222;
+}
+.page h1 {
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: -0.04em;
+}
+.page h2 {
+  font-size: 21px;
+}
+.page h3 {
+  font-size: 16px;
+}
+.page section {
+  border-top: 1px solid #d6d6d6;
+  padding: 24px 0;
+}
+.page label {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  font-weight: 550;
+}
+.page select,
+.page input:not([type="checkbox"]) {
+  width: 100%;
+  max-width: 600px;
+  border: 1px solid #aaa;
+  border-radius: 8px;
+  padding: 11px;
+  background: #fff;
+  color: #111;
+  font: inherit;
+}
+.page button,
+.download {
+  display: inline-block;
+  padding: 10px 16px;
+  border: 1px solid #222;
+  border-radius: 8px;
+  color: #111;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  margin: 5px 10px 5px 0;
+  text-decoration: none;
+}
+.page button:hover,
+.download:hover {
+  background: #eee;
+}
+.page button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.muted {
+  color: #666;
+}
+.check {
+  display: flex !important;
+  align-items: center;
+  gap: 12px !important;
+}
+.check input {
+  accent-color: #111;
+  width: 18px;
+  height: 18px;
+}
+.scroll {
+  overflow-x: auto;
+}
+.scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.scroll td,
+.scroll th {
+  border-bottom: 1px solid #ddd;
+  padding: 9px;
+}
+.danger {
+  border-color: #555 !important;
+}

@@ -5,8 +5,11 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
 import { InstallApp } from "./install-app";
 import { ChatResponse } from "./chat-response";
+import { VoiceComposer } from "./voice/voice-composer";
+import { VoicePlayback } from "./voice/voice-playback";
 import { WebSearchPanel } from "./web-search-panel";
 import { ChatHistoryActions } from "./chat-history-actions";
+import { RelaySwitch } from "./personal-settings/relay-switch";
 import { ChatArchivePanel } from "./chat-archive-panel";
 import { clearComposerDraft, readComposerDraft, saveComposerDraft } from "./composer-draft-storage";
 import { ProjectContextPanel } from "./project-context-panel";
@@ -1279,15 +1282,22 @@ export default function Home() {
           );
         });
       });
-      source.addEventListener("run.failed", () => {
+      source.addEventListener("run.failed", (raw) => {
         if (!isCurrent()) return;
+        const failure = JSON.parse(String(raw.data)) as { data: { error_code: string } };
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
         setSending(false);
         setActiveRunId(null);
         setRunPhase("failed");
-        setError("Ответ завершился с ошибкой. Внутренние детали скрыты.");
+        setError(
+          failure.data.error_code === "RELAY_UNAVAILABLE"
+            ? "Перевод не выполнен. Запрос не отправлен без English Relay. Можно выключить перевод и отправить исходный запрос вручную."
+            : failure.data.error_code === "USAGE_LIMIT_EXCEEDED"
+              ? "Лимит токенов достигнут. Измените квоту в персональных настройках."
+              : "Ответ завершился с ошибкой. Внутренние детали скрыты."
+        );
         void refreshGeneralChat(chatIdForRun).catch(() => undefined);
       });
       source.addEventListener("run.cancelled", () => {
@@ -2411,6 +2421,9 @@ export default function Home() {
                       assistant={message.role === "assistant"}
                       complete={message.status === "completed"}
                     />
+                    {message.role === "assistant" && message.status === "completed" && (
+                      <VoicePlayback text={message.content} />
+                    )}
                     <ChatMessageAttachments files={message.attachments ?? []} />
                   </div>
                 </article>
@@ -2478,6 +2491,9 @@ export default function Home() {
                       assistant={message.role === "assistant"}
                       complete={message.status === "completed"}
                     />
+                    {message.role === "assistant" && message.status === "completed" && (
+                      <VoicePlayback text={message.content} />
+                    )}
                     <ChatMessageAttachments files={message.attachments ?? []} />
                   </div>
                 </article>
@@ -2556,6 +2572,9 @@ export default function Home() {
               activeProject ? "Уточните задачу или добавьте требование…" : "Спросите что-нибудь…"
             }
           />
+          {!activeProject && (
+            <RelaySwitch chatId={activeLocalChatId} error={error} onRecover={restoreRunDraft} />
+          )}
           <div className="composer-controls">
             <div className="composer-tools">
               {
@@ -2577,6 +2596,10 @@ export default function Home() {
                   }
                 />
               }
+              <VoiceComposer
+                disabled={sending || loading || !initialRouteReady}
+                onInsert={(text) => setDraft((current) => (current ? `${current} ${text}` : text))}
+              />
               <WebSearchPanel
                 scope={composerDraftKey}
                 disabled={sending || loading || !initialRouteReady || chatAttachments.reading}

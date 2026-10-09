@@ -17,6 +17,7 @@ import type {
 } from "./manager-runtime-project-store.js";
 import { EmergencyStopActivatedError } from "./operations.js";
 import type { RuntimeMetrics } from "./operations.js";
+import { QuotaExceededError, type AccountStore } from "./account-settings/account-store.js";
 
 export interface ManagerBackgroundRunCoordinatorOptions {
   store: ManagerRuntimeProjectStore;
@@ -28,6 +29,7 @@ export interface ManagerBackgroundRunCoordinatorOptions {
   pollIntervalMs?: number;
   controlPollIntervalMs?: number;
   maxConcurrentRuns?: number;
+  accountStore?: AccountStore;
 }
 
 type ActiveRun = {
@@ -46,6 +48,7 @@ export class ManagerBackgroundRunCoordinator {
   readonly #manager: ManagerService;
   readonly #runtimeMetrics: RuntimeMetrics;
   readonly #emergencyStopStore: EmergencyStopStore | undefined;
+  readonly #accountStore: AccountStore | undefined;
   readonly #logger: Pick<FastifyBaseLogger, "info" | "warn" | "error"> | undefined;
   readonly #pollIntervalMs: number;
   readonly #controlPollIntervalMs: number;
@@ -61,6 +64,7 @@ export class ManagerBackgroundRunCoordinator {
     this.#manager = options.manager;
     this.#runtimeMetrics = options.runtimeMetrics;
     this.#emergencyStopStore = options.emergencyStopStore;
+    this.#accountStore = options.accountStore;
     this.#logger = options.logger;
     this.#pollIntervalMs = positiveInteger(options.pollIntervalMs, 100);
     this.#controlPollIntervalMs = positiveInteger(options.controlPollIntervalMs, 50);
@@ -167,6 +171,7 @@ export class ManagerBackgroundRunCoordinator {
     }, this.#controlPollIntervalMs);
     controlTimer.unref?.();
 
+    const accountHolds = new Map<number, string>();
     try {
       const conversation = this.#store.getConversationForRun(queued.run_id, queued.owner_id);
       if (conversation.length === 0) {
@@ -206,12 +211,26 @@ export class ManagerBackgroundRunCoordinator {
             },
             "Background Manager route attempt selected"
           );
-          const reserved = this.#store.reserveModelUsage(
+          const hold = this.#accountStore?.reserve(
+            queued.owner_id,
             queued.run_id,
-            event.route,
-            queued.owner_id
+            event.route.attempt,
+            event.route.estimated_input_tokens + event.route.max_output_tokens,
+            "main",
+            queued.project_id,
+            event.route.provider_id,
+            event.route.model_id
           );
+          if (hold) accountHolds.set(event.route.attempt, hold);
+          let reserved: ReturnType<ManagerRuntimeProjectStore["reserveModelUsage"]>;
+          try {
+            reserved = this.#store.reserveModelUsage(queued.run_id, event.route, queued.owner_id);
+          } catch (error) {
+            if (hold) this.#accountStore?.releaseBeforeDispatch(hold);
+            throw error;
+          }
           if (!reserved) {
+            if (hold) this.#accountStore?.releaseBeforeDispatch(hold);
             throw new GatewayRunError(
               "ROUTE_UNAVAILABLE",
               event.route.provider_id,
@@ -222,6 +241,8 @@ export class ManagerBackgroundRunCoordinator {
         } else if (event.type === "route.failed") {
           this.#runtimeMetrics.routeFailed(event.errorCode);
           this.#store.failModelUsage(queued.run_id, event.route.attempt, event.errorCode);
+          const hold = accountHolds.get(event.route.attempt);
+          if (hold) this.#accountStore?.uncertainReservation(hold, "main");
           this.#logger?.warn(
             {
               runId: queued.run_id,
@@ -254,6 +275,14 @@ export class ManagerBackgroundRunCoordinator {
         attempt: completed.route.attempt,
         calculatedCost: completed.calculatedCost
       });
+      const hold = accountHolds.get(completed.route.attempt);
+      if (hold)
+        this.#accountStore?.completeReservation(
+          hold,
+          "main",
+          completed.usage.inputTokens,
+          completed.usage.outputTokens
+        );
       this.#runtimeMetrics.runCompleted();
       this.#logger?.info(
         {
@@ -293,7 +322,7 @@ export class ManagerBackgroundRunCoordinator {
         );
         return;
       }
-      if (error instanceof ProjectUsageLimitExceededError) {
+      if (error instanceof ProjectUsageLimitExceededError || error instanceof QuotaExceededError) {
         this.#store.failRun(queued.run_id, error.code);
         this.#runtimeMetrics.runFailed("USAGE_LIMIT_EXCEEDED");
         this.#logger?.warn(
@@ -323,6 +352,8 @@ export class ManagerBackgroundRunCoordinator {
         "Background Manager provider run failed"
       );
     } finally {
+      for (const hold of accountHolds.values())
+        this.#accountStore?.uncertainReservation(hold, "main");
       clearInterval(controlTimer);
     }
   }

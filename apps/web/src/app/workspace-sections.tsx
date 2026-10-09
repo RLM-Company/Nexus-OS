@@ -6,6 +6,8 @@ import { WorkspaceIcon as Icon, type IconName } from "./workspace-icons";
 import { PLANNED_CAPABILITIES, type CapabilityArea } from "./workspace-capabilities";
 import styles from "./workspace-sections.module.css";
 import { StudioFiles } from "./studio-files";
+import { MediaGenerationPanel } from "./media-generation/media-panel";
+import { SpeechStudio } from "./voice/voice-playback";
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 
 export type ToolSurface =
@@ -794,14 +796,18 @@ function Media({ surface }: { surface: MediaSurface }) {
           </div>
           <div className={styles.note}>
             <Icon name="shield" />
-            <strong>Внешняя модель не подключена</strong>
+            <strong>Редактор промпта</strong>
             <p>
-              Изображение, видео или аудио здесь не генерируются. Подготовка промпта не вызывает
-              модель.
+              Подготовка промпта работает локально и не вызывает модель. Реальная генерация
+              изображений и голоса доступна отдельно ниже, только при разрешённой конфигурации.
             </p>
           </div>
         </aside>
       </div>
+      {surface === "images" && (
+        <MediaGenerationPanel prompt={`Формат: ${format}; стиль: ${style}. ${prompt}`} />
+      )}
+      {surface === "sound" && <SpeechStudio />}
     </>
   );
 }

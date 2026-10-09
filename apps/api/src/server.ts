@@ -32,6 +32,10 @@ import { buildModelRuntime } from "./model-runtime.js";
 import { RuntimeMetrics } from "./operations.js";
 import { GithubIntegration, GithubDraftStore } from "./github-integration.js";
 import { WebSearch } from "./web-search.js";
+import { AccountStore } from "./account-settings/account-store.js";
+import { loadModelRegistryDocument } from "./model-runtime.js";
+import { ResearchStore } from "./research/research-store.js";
+import { MediaService } from "./media/media-service.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
@@ -65,6 +69,7 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
 try {
   await runMigrations(database);
+  const accountStore = new AccountStore(database.sqlite);
   const modelRuntime = await buildModelRuntime(config, {
     secretResolver: new EnvironmentSecretResolver()
   });
@@ -97,7 +102,21 @@ try {
     gateway: modelRuntime.gateway,
     manager: modelRuntime.manager
   });
+  const mediaService = new MediaService({
+    ...(process.env.KOSMORA_MEDIA_DIR
+      ? { directory: process.env.KOSMORA_MEDIA_DIR }
+      : config.nodeEnv === "production"
+        ? { directory: "/var/lib/cosmora/media" }
+        : {}),
+    ...(process.env.KOSMORA_MEDIA_OPENAI_API_KEY
+      ? { apiKey: process.env.KOSMORA_MEDIA_OPENAI_API_KEY }
+      : {}),
+    paidEnabled: process.env.KOSMORA_MEDIA_PAID_ENABLED === "true",
+    emergencyStopped: () => emergencyStopStore.getProcessStop() !== null
+  });
   app = buildApp({
+    researchStore: new ResearchStore(database.sqlite),
+    mediaService,
     webSearch: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
     githubIntegration: new GithubIntegration({
       ownerId:
@@ -108,6 +127,22 @@ try {
     githubDraftStore: new GithubDraftStore(database.sqlite),
     config,
     database,
+    accountStore,
+    accountModel: (() => {
+      const entry = loadModelRegistryDocument(
+        config.modelRegistryPath ?? "config/model-registry.v1.json"
+      ).entries.find(
+        (e) => e.provider_id === config.modelProviderId && e.model_id === config.modelName
+      );
+      return {
+        provider: config.modelProviderId,
+        model: config.modelName,
+        capabilities: {
+          streaming: Boolean(entry?.capabilities.streaming),
+          vision: Boolean(entry?.capabilities.vision)
+        }
+      };
+    })(),
     identityStore,
     generalChatStore,
     projectStore,
@@ -136,6 +171,7 @@ try {
     closeDatabase: () => database.close()
   });
   managerBackgroundCoordinator = new ManagerBackgroundRunCoordinator({
+    accountStore,
     store: projectStore,
     modelGateway: modelRuntime.gateway,
     manager: modelRuntime.manager,
@@ -149,7 +185,8 @@ try {
     chat: modelRuntime.chat,
     runtimeMetrics,
     emergencyStopStore,
-    logger: app.log
+    logger: app.log,
+    accountStore
   });
   if (recoveredRuns > 0) {
     app.log.warn({ recoveredRuns }, "Recovered interrupted runs after restart");

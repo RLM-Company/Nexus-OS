@@ -1,0 +1,93 @@
+.panel {
+  margin-top: 24px;
+  padding: 22px;
+  border: 1px solid #777;
+  border-radius: 16px;
+  background: #111;
+  color: #f5f5f5;
+  display: grid;
+  gap: 12px;
+}
+.panel h3,
+.panel h4 {
+  margin: 0;
+}
+.panel p {
+  margin: 0;
+  color: #d6d6d6;
+  line-height: 1.55;
+}
+.status {
+  padding: 10px 12px;
+  border: 1px solid #555;
+  border-radius: 8px;
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+.check input {
+  margin-top: 4px;
+  accent-color: #fff;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.actions button,
+.history button {
+  background: #f6f6f6;
+  color: #101010;
+  border: 1px solid #999;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.asset {
+  display: grid;
+  gap: 12px;
+}
+.asset img {
+  max-width: 100%;
+  max-height: 600px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid #777;
+  border-radius: 8px;
+}
+.asset a {
+  color: #fff;
+  text-decoration: underline;
+}
+.history {
+  display: grid;
+  gap: 8px;
+}
+.history button {
+  background: #202020;
+  color: #f6f6f6;
+  text-align: left;
+}
+@media (prefers-color-scheme: light) {
+  .panel {
+    background: #fff;
+    color: #111;
+  }
+  .panel p {
+    color: #444;
+  }
+  .status {
+    border-color: #bbb;
+  }
+  .asset a {
+    color: #111;
+  }
+}

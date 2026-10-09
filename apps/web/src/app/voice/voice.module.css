@@ -1,0 +1,91 @@
+.voice {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid #777;
+  border-radius: 10px;
+  color: inherit;
+  background: transparent;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.row button,
+.review button,
+.playback > button {
+  padding: 7px 10px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #888;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.row button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.row a {
+  color: inherit;
+  text-decoration: underline;
+}
+.review,
+.studio label {
+  display: grid;
+  gap: 8px;
+}
+.review textarea,
+.studio textarea {
+  border: 1px solid #888;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  border-radius: 7px;
+  padding: 10px;
+  width: 100%;
+}
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+.consent input {
+  accent-color: #fff;
+}
+.voice small {
+  line-height: 1.5;
+}
+.voice audio {
+  max-width: 100%;
+}
+.playback {
+  margin-top: 10px;
+}
+.studio {
+  margin-top: 24px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid #777;
+  border-radius: 12px;
+  padding: 20px;
+}
+.studio h3,
+.studio p {
+  margin: 0;
+}
+
+.saved {
+  display: grid;
+  gap: 12px;
+}
+.saved h4 {
+  margin: 0;
+}
+.saved a {
+  color: inherit;
+  text-decoration: underline;
+}

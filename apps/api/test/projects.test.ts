@@ -3,6 +3,8 @@ import { EmergencyStopStore, openDatabase, ProjectStore, runMigrations } from "@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
+import { AccountStore } from "../src/account-settings/account-store.js";
+import { MockProviderAdapter } from "@cosmora/model-gateway";
 
 describe("project chat API", () => {
   const config = loadServerConfig({
@@ -14,6 +16,7 @@ describe("project chat API", () => {
   let projectStore: ProjectStore;
   let emergencyStopStore: EmergencyStopStore;
   let app: ReturnType<typeof buildApp>;
+  let accountStore: AccountStore;
 
   beforeEach(async () => {
     database = openDatabase(":memory:");
@@ -21,19 +24,22 @@ describe("project chat API", () => {
     const runtime = await buildModelRuntime(config);
     projectStore = new ProjectStore(database.sqlite);
     emergencyStopStore = new EmergencyStopStore(database.sqlite);
+    accountStore = new AccountStore(database.sqlite);
     app = buildApp({
       config,
       database,
       projectStore,
       emergencyStopStore,
       modelGateway: runtime.gateway,
-      manager: runtime.manager
+      manager: runtime.manager,
+      accountStore
     });
   });
 
   afterEach(async () => {
     await app.close();
     database.close();
+    vi.restoreAllMocks();
   });
 
   it("creates a project and reuses the idempotent request", async () => {
@@ -57,6 +63,29 @@ describe("project chat API", () => {
     });
     expect(conflict.statusCode).toBe(409);
     expect(conflict.json<{ error: { code: string } }>().error.code).toBe("IDEMPOTENCY_CONFLICT");
+  });
+  it("enforces owner quota on the inline project chat path before provider dispatch", async () => {
+    accountStore.update("local-owner", {
+      ...accountStore.get("local-owner"),
+      expected_version: 0,
+      max_total_tokens: 1
+    });
+    const dispatch = vi.spyOn(MockProviderAdapter.prototype, "stream");
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: {
+        initial_message: "Не отправляй платный запрос сверх квоты",
+        client_message_id: "owner-budget-inline"
+      }
+    });
+    const stream = await app.inject({
+      method: "GET",
+      url: created.json<{ stream_url: string }>().stream_url
+    });
+    expect(stream.body).toContain("USAGE_LIMIT_EXCEEDED");
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(accountStore.summary("local-owner").total_counted_tokens).toBe(0);
   });
 
   it("streams and persists the mock manager response", async () => {
@@ -101,6 +130,27 @@ describe("project chat API", () => {
     const preview = projects.json<{ items: Array<{ last_message_preview: string | null }> }>()
       .items[0]?.last_message_preview;
     expect(preview?.length).toBeLessThanOrEqual(240);
+  });
+  it("releases only a proven local pre-dispatch rejection from the project quota", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: {
+        initial_message: "Проверь две независимые квоты",
+        client_message_id: "project-quota-inline"
+      }
+    });
+    const body = created.json<{ stream_url: string; project: { id: string } }>();
+    database.sqlite
+      .prepare(
+        "INSERT INTO project_usage_limits(project_id,owner_id,version,max_total_tokens,created_at,updated_at) VALUES(?,'local-owner',1,1,?,?) ON CONFLICT(project_id) DO UPDATE SET max_total_tokens=1"
+      )
+      .run(body.project.id, new Date().toISOString(), new Date().toISOString());
+    const dispatch = vi.spyOn(MockProviderAdapter.prototype, "stream");
+    const stream = await app.inject({ method: "GET", url: body.stream_url });
+    expect(stream.body).toContain("PROJECT_TOKEN_LIMIT_EXCEEDED");
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(accountStore.summary("local-owner").total_counted_tokens).toBe(0);
   });
 
   it("persists every retry as a separate failed Usage Ledger attempt", async () => {

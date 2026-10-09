@@ -157,9 +157,18 @@ import { GithubIntegration, type GithubDraftStore } from "./github-integration.j
 import { registerGithubRoutes } from "./github-routes.js";
 import { WebSearch, registerWebSearchRoutes } from "./web-search.js";
 import { registerProjectMaterialsRoutes } from "./project-materials-routes.js";
+import { registerAccountRoutes } from "./account-settings/routes.js";
+import type { AccountStore } from "./account-settings/account-store.js";
+import { QuotaExceededError } from "./account-settings/account-store.js";
+import { registerResearchRoutes } from "./research/research-routes.js";
+import type { ResearchStore } from "./research/research-store.js";
+import { registerMediaRoutes } from "./media/media-routes.js";
+import type { MediaService } from "./media/media-service.js";
 
 export interface AppDependencies {
   config: ServerConfig;
+  accountStore?: AccountStore;
+  accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   identityStore?: IdentityStore;
   generalChatStore?: GeneralChatStore;
@@ -188,6 +197,8 @@ export interface AppDependencies {
   githubIntegration?: GithubIntegration;
   githubDraftStore?: GithubDraftStore;
   webSearch?: WebSearch;
+  researchStore?: ResearchStore;
+  mediaService?: MediaService;
   now?: () => string;
 }
 
@@ -638,6 +649,19 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     ...(dependencies.emergencyStopStore ? { emergency: dependencies.emergencyStopStore } : {})
   });
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
+  if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
+    const coordinator = registerResearchRoutes({
+      app,
+      store: dependencies.researchStore,
+      search: dependencies.webSearch ?? new WebSearch(),
+      projects: dependencies.projectStore,
+      policy: dependencies.policyStore,
+      identityFor,
+      ...(dependencies.emergencyStopStore ? { emergency: dependencies.emergencyStopStore } : {})
+    });
+    app.addHook("onClose", () => coordinator.stop());
+  }
+  if (dependencies.mediaService) registerMediaRoutes(app, dependencies.mediaService, identityFor);
   if (dependencies.projectStore)
     registerProjectMaterialsRoutes(app, dependencies.projectStore, identityFor);
 
@@ -1009,12 +1033,16 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     });
   }
 
+  if (dependencies.accountStore && dependencies.accountModel)
+    registerAccountRoutes(app, dependencies.accountStore, identityFor, dependencies.accountModel);
+
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerGeneralChatRoutes({
       app,
       store: dependencies.generalChatStore,
       modelGateway: dependencies.modelGateway,
       chat: dependencies.chat,
+      ...(dependencies.accountStore ? { accountStore: dependencies.accountStore } : {}),
       runtimeMetrics,
       activeRuns,
       runObservers,
@@ -2741,6 +2769,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         const controller = new AbortController();
         activeRuns.set(run.id, { projectId: run.project_id, ownerId, controller });
         runtimeMetrics.runStarted();
+        const accountHolds = new Map<number, string>();
         try {
           const modelRequest = manager.buildRequest({
             projectId: run.project_id,
@@ -2762,8 +2791,26 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                 },
                 "Model route attempt selected"
               );
-              const reserved = store.reserveModelUsage(run.id, event.route, ownerId);
+              const hold = dependencies.accountStore?.reserve(
+                ownerId,
+                run.id,
+                event.route.attempt,
+                event.route.estimated_input_tokens + event.route.max_output_tokens,
+                "main",
+                run.project_id,
+                event.route.provider_id,
+                event.route.model_id
+              );
+              if (hold) accountHolds.set(event.route.attempt, hold);
+              let reserved: ReturnType<ProjectStore["reserveModelUsage"]>;
+              try {
+                reserved = store.reserveModelUsage(run.id, event.route, ownerId);
+              } catch (error) {
+                if (hold) dependencies.accountStore?.releaseBeforeDispatch(hold);
+                throw error;
+              }
               if (!reserved) {
+                if (hold) dependencies.accountStore?.releaseBeforeDispatch(hold);
                 throw new GatewayRunError(
                   "ROUTE_UNAVAILABLE",
                   event.route.provider_id,
@@ -2786,6 +2833,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                 "Model route attempt failed"
               );
               store.failModelUsage(run.id, event.route.attempt, event.errorCode);
+              const hold = accountHolds.get(event.route.attempt);
+              if (hold) dependencies.accountStore?.uncertainReservation(hold, "main");
             } else if (event.type === "text.delta") {
               store.appendAssistantDelta(assistant.id, event.delta);
               size += event.delta.length;
@@ -2814,6 +2863,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             attempt: completed.route.attempt,
             calculatedCost: completed.calculatedCost
           });
+          const hold = accountHolds.get(completed.route.attempt);
+          if (hold)
+            dependencies.accountStore?.completeReservation(
+              hold,
+              "main",
+              completed.usage.inputTokens,
+              completed.usage.outputTokens
+            );
           runtimeMetrics.runCompleted();
           app.log.info(
             {
@@ -2882,7 +2939,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             );
             return reply;
           }
-          if (error instanceof ProjectUsageLimitExceededError) {
+          if (
+            error instanceof ProjectUsageLimitExceededError ||
+            error instanceof QuotaExceededError
+          ) {
             store.failRun(run.id, error.code);
             runtimeMetrics.runFailed("USAGE_LIMIT_EXCEEDED");
             sendEvent(reply, {
@@ -2916,6 +2976,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             "Model provider run failed"
           );
         } finally {
+          for (const hold of accountHolds.values())
+            dependencies.accountStore?.uncertainReservation(hold, "main");
           activeRuns.delete(run.id);
         }
         endEventStream(reply);
@@ -2956,6 +3018,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   );
 
   app.addHook("preClose", () => {
+    dependencies.mediaService?.stop();
     for (const observer of runObservers) observer.abort();
     for (const active of activeRuns.values()) {
       active.controller.abort(new Error("API process is shutting down"));

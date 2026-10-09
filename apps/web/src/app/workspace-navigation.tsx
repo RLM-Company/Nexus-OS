@@ -65,6 +65,18 @@ export function WorkspaceModeMenu({
         </svg>
       </summary>
       <nav className="workspace-modes" id={id} aria-label="Режимы работы">
+        <Link
+          href="/personal-settings"
+          onClick={() => {
+            if (ref.current) ref.current.open = false;
+          }}
+        >
+          <Icon name="settings" />
+          <span>
+            <strong>Настройки</strong>
+            <small>Чат, перевод и использование</small>
+          </span>
+        </Link>
         {WORKSPACE_MODES.map((item) => (
           <button
             type="button"
@@ -87,6 +99,19 @@ export function WorkspaceModeMenu({
             {mode === item.id && <Icon name="check" />}
           </button>
         ))}
+        <Link
+          href="/research-workspace"
+          aria-label="Глубокий поиск и отчёты"
+          onClick={() => {
+            if (ref.current) ref.current.open = false;
+          }}
+        >
+          <Icon name="search" />
+          <span>
+            <strong>Исследования</strong>
+            <small>Поиск, источники и отчёты</small>
+          </span>
+        </Link>
       </nav>
     </details>
   );

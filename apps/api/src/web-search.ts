@@ -19,7 +19,8 @@ export class WebSearch {
     return this.#origin !== "";
   }
   async search(
-    query: string
+    query: string,
+    signal?: AbortSignal
   ): Promise<{ query: string; searched_at: string; items: SearchResult[] }> {
     if (!this.configured || !query.trim() || query.length > 240)
       throw new Error("Search unavailable");
@@ -31,7 +32,9 @@ export class WebSearch {
     });
     const response = await this.#fetch(`${this.#origin}/search?${params}`, {
       redirect: "error",
-      signal: AbortSignal.timeout(12_000)
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(12_000)])
+        : AbortSignal.timeout(12_000)
     });
     if (!response.ok || !response.body) throw new Error("Search unavailable");
     const reader = response.body.getReader();

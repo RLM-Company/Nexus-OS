@@ -30,6 +30,13 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.js";
+import type { AccountStore } from "./account-settings/account-store.js";
+import {
+  QuotaExceededError,
+  RelayExecution,
+  RelayProtectionError,
+  RelayUnavailableError
+} from "./account-settings/relay-execution.js";
 
 export type ActiveModelRun = {
   projectId: string | null;
@@ -39,6 +46,7 @@ export type ActiveModelRun = {
 
 export interface GeneralChatRouteOptions {
   app: FastifyInstance;
+  accountStore?: AccountStore;
   store: GeneralChatStore;
   modelGateway: ModelGateway;
   chat: ChatService;
@@ -505,15 +513,50 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         controller
       });
       options.runtimeMetrics.runStarted();
+      const mainHolds = new Map<number, string>();
       try {
-        const modelRequest = options.chat.buildRequest({
+        let modelRequest = options.chat.buildRequest({
           chatId: run.chat_id,
           runId: run.id,
           messages: conversation
         });
+        const relay = options.accountStore
+          ? new RelayExecution(options.accountStore, options.modelGateway)
+          : null;
+        if (
+          options.accountStore?.getRelay(identity.owner_id, run.chat_id) &&
+          conversation.some((message) => message.attachments?.length)
+        )
+          throw new RelayProtectionError(
+            "Attachments are not translated without explicit format permission"
+          );
+        const prepared = relay
+          ? await relay.prepare(
+              identity.owner_id,
+              run.chat_id,
+              run.id,
+              modelRequest,
+              controller.signal
+            )
+          : { request: modelRequest, relay: false };
+        modelRequest = prepared.request;
+        let pendingEnglish = "";
         for await (const event of options.modelGateway.stream(modelRequest, controller.signal)) {
           if (event.type === "route.selected") {
             options.runtimeMetrics.routeSelected();
+            if (options.accountStore) {
+              const hold = options.accountStore.reserve(
+                identity.owner_id,
+                run.id,
+                event.route.attempt,
+                event.route.estimated_input_tokens + event.route.max_output_tokens,
+                "main",
+                run.chat_id,
+                event.route.provider_id,
+                event.route.model_id
+              );
+              mainHolds.set(event.route.attempt, hold);
+            }
             const reserved = options.store.reserveModelUsage(
               run.id,
               event.route,
@@ -530,7 +573,13 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           } else if (event.type === "route.failed") {
             options.runtimeMetrics.routeFailed(event.errorCode);
             options.store.failModelUsage(run.id, event.route.attempt, event.errorCode);
+            const hold = mainHolds.get(event.route.attempt);
+            if (hold) options.accountStore?.uncertainReservation(hold, "main");
           } else if (event.type === "text.delta") {
+            if (prepared.relay) {
+              pendingEnglish += event.delta;
+              continue;
+            }
             options.store.appendAssistantDelta(assistant.id, event.delta);
             size += event.delta.length;
             sendEvent(reply, {
@@ -554,10 +603,35 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
             true
           );
         }
+        if (prepared.relay) {
+          if (!pendingEnglish.trim()) throw new RelayUnavailableError("Empty provider text");
+          const translated = await relay!.finish(
+            identity.owner_id,
+            run.chat_id,
+            run.id,
+            modelRequest,
+            pendingEnglish,
+            controller.signal
+          );
+          options.store.appendAssistantDelta(assistant.id, translated);
+          size += translated.length;
+          sendEvent(reply, {
+            type: "message.delta",
+            data: { run_id: run.id, message_id: assistant.id, seq: sequence++, delta: translated }
+          });
+        }
         options.store.completeRun(run.id, completed.provider, completed.model, completed.usage, {
           attempt: completed.route.attempt,
           calculatedCost: completed.calculatedCost
         });
+        const finalHold = mainHolds.get(completed.route.attempt);
+        if (finalHold)
+          options.accountStore?.completeReservation(
+            finalHold,
+            "main",
+            completed.usage.inputTokens,
+            completed.usage.outputTokens
+          );
         options.runtimeMetrics.runCompleted();
         sendEvent(reply, {
           type: "message.completed",
@@ -595,26 +669,43 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
             data: { run_id: run.id, error_code: "INTERRUPTED", retryable: true }
           });
         } else {
-          const gatewayError =
-            cause instanceof ContextTooLargeError
-              ? new GatewayRunError("CONTEXT_TOO_LARGE", "gateway", cause.message, false)
-              : cause instanceof GatewayRunError
-                ? cause
-                : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
-                    cause
-                  });
-          options.store.failRun(run.id, gatewayError.code);
-          options.runtimeMetrics.runFailed(gatewayError.code);
-          sendEvent(reply, {
-            type: "run.failed",
-            data: {
-              run_id: run.id,
-              error_code: gatewayError.code,
-              retryable: gatewayError.retryable
-            }
-          });
+          if (
+            cause instanceof RelayUnavailableError ||
+            cause instanceof RelayProtectionError ||
+            cause instanceof QuotaExceededError
+          ) {
+            const code =
+              cause instanceof QuotaExceededError ? "USAGE_LIMIT_EXCEEDED" : "RELAY_UNAVAILABLE";
+            options.store.failRun(run.id, code);
+            options.runtimeMetrics.runFailed("PROVIDER_ERROR");
+            sendEvent(reply, {
+              type: "run.failed",
+              data: { run_id: run.id, error_code: code, retryable: false }
+            });
+          } else {
+            const gatewayError =
+              cause instanceof ContextTooLargeError
+                ? new GatewayRunError("CONTEXT_TOO_LARGE", "gateway", cause.message, false)
+                : cause instanceof GatewayRunError
+                  ? cause
+                  : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
+                      cause
+                    });
+            options.store.failRun(run.id, gatewayError.code);
+            options.runtimeMetrics.runFailed(gatewayError.code);
+            sendEvent(reply, {
+              type: "run.failed",
+              data: {
+                run_id: run.id,
+                error_code: gatewayError.code,
+                retryable: gatewayError.retryable
+              }
+            });
+          }
         }
       } finally {
+        for (const hold of mainHolds.values())
+          options.accountStore?.uncertainReservation(hold, "main");
         options.activeRuns.delete(run.id);
       }
       end(reply);

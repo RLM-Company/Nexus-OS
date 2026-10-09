@@ -5,3 +5,5 @@ export * from "./mock-adapter.js";
 export * from "./openai-compatible-adapter.js";
 export * from "./router.js";
 export * from "./types.js";
+export * from "./media/media-registry.js";
+export * from "./media/openai-media-adapter.js";
