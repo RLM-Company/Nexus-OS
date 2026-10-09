@@ -138,11 +138,12 @@ export class SqliteIntelligenceGraphWorkspaceRepository implements IntelligenceG
     return this.inTransaction(() => {
       const changed = this.sqlite
         .prepare(
-          `UPDATE intelligence_graph_workspaces
+          `UPDATE intelligence_graph_workspaces AS g
            SET revision = ?, title = ?, updated_at = ?
-           WHERE graph_id = ? AND owner_id = ? AND project_id = ? AND revision = ?
+           WHERE g.graph_id = ? AND g.owner_id = ? AND g.project_id = ? AND g.revision = ?
              AND EXISTS (SELECT 1 FROM projects p
-                         WHERE p.id = project_id AND p.owner_id = owner_id)`
+                         WHERE p.id = g.project_id AND p.owner_id = g.owner_id
+                           AND p.status = 'ACTIVE')`
         )
         .run(
           record.revision,
