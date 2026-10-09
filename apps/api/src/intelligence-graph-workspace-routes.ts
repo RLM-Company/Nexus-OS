@@ -90,213 +90,217 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
     const route = scoped.withTypeProvider<TypeBoxTypeProvider>();
     route.setValidatorCompiler(TypeBoxValidatorCompiler);
 
-  const authenticate = async (request: FastifyRequest, reply: FastifyReply, projectId: string) => {
-    const actor = await dependencies.identity.resolve(request).catch(() => null);
-    if (!actor || !canAccessOwnerApi(actor)) {
-      reply.status(404).send({ error: "NOT_FOUND" });
-      return null;
-    }
-    const project = dependencies.projects.getProject(projectId, actor.owner_id);
-    if (!project || project.status !== "ACTIVE") {
-      reply.status(404).send({ error: "NOT_FOUND" });
-      return null;
-    }
-    return actor.owner_id;
-  };
-
-  route.get(
-    "/api/v1/projects/:projectId/intelligence-graphs",
-    {
-      schema: {
-        params: Scope,
-        querystring: Type.Object(
-          {
-            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, default: 20 }))
-          },
-          { additionalProperties: false }
-        )
+    const authenticate = async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+      projectId: string
+    ) => {
+      const actor = await dependencies.identity.resolve(request).catch(() => null);
+      if (!actor || !canAccessOwnerApi(actor)) {
+        reply.status(404).send({ error: "NOT_FOUND" });
+        return null;
       }
-    },
-    async (request, reply) => {
-      const owner = await authenticate(request, reply, request.params.projectId);
-      if (!owner) return;
-      try {
-        return {
-          items: dependencies.service.list(
+      const project = dependencies.projects.getProject(projectId, actor.owner_id);
+      if (!project || project.status !== "ACTIVE") {
+        reply.status(404).send({ error: "NOT_FOUND" });
+        return null;
+      }
+      return actor.owner_id;
+    };
+
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs",
+      {
+        schema: {
+          params: Scope,
+          querystring: Type.Object(
+            {
+              limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, default: 20 }))
+            },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return {
+            items: dependencies.service.list(
+              owner,
+              request.params.projectId,
+              request.query.limit ?? 20
+            )
+          };
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+
+    route.post(
+      "/api/v1/projects/:projectId/intelligence-graphs",
+      {
+        schema: {
+          params: Scope,
+          body: Type.Object(
+            { title: Type.String({ minLength: 1, maxLength: 80 }) },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          const graph = dependencies.service.create(
             owner,
             request.params.projectId,
-            request.query.limit ?? 20
+            request.body.title
+          );
+          return reply.status(201).send(graph);
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId",
+      {
+        schema: { params: GraphScope }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return dependencies.service.get(owner, request.params.projectId, request.params.graphId);
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/revisions",
+      {
+        schema: {
+          params: GraphScope,
+          querystring: Type.Object(
+            {
+              limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, default: 20 }))
+            },
+            { additionalProperties: false }
           )
-        };
-      } catch (error) {
-        return handleFailure(reply, error);
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return {
+            items: dependencies.service.revisions(
+              owner,
+              request.params.projectId,
+              request.params.graphId,
+              request.query.limit ?? 20
+            )
+          };
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
       }
-    }
-  );
+    );
 
-  route.post(
-    "/api/v1/projects/:projectId/intelligence-graphs",
-    {
-      schema: {
-        params: Scope,
-        body: Type.Object(
-          { title: Type.String({ minLength: 1, maxLength: 80 }) },
-          { additionalProperties: false }
-        )
-      }
-    },
-    async (request, reply) => {
-      const owner = await authenticate(request, reply, request.params.projectId);
-      if (!owner) return;
-      try {
-        const graph = dependencies.service.create(
-          owner,
-          request.params.projectId,
-          request.body.title
-        );
-        return reply.status(201).send(graph);
-      } catch (error) {
-        return handleFailure(reply, error);
-      }
-    }
-  );
-
-  route.get(
-    "/api/v1/projects/:projectId/intelligence-graphs/:graphId",
-    {
-      schema: { params: GraphScope }
-    },
-    async (request, reply) => {
-      const owner = await authenticate(request, reply, request.params.projectId);
-      if (!owner) return;
-      try {
-        return dependencies.service.get(owner, request.params.projectId, request.params.graphId);
-      } catch (error) {
-        return handleFailure(reply, error);
-      }
-    }
-  );
-
-  route.get(
-    "/api/v1/projects/:projectId/intelligence-graphs/:graphId/revisions",
-    {
-      schema: {
-        params: GraphScope,
-        querystring: Type.Object(
-          {
-            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, default: 20 }))
-          },
-          { additionalProperties: false }
-        )
-      }
-    },
-    async (request, reply) => {
-      const owner = await authenticate(request, reply, request.params.projectId);
-      if (!owner) return;
-      try {
-        return {
-          items: dependencies.service.revisions(
+    route.post(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/edits",
+      {
+        schema: {
+          params: GraphScope,
+          body: Type.Object(
+            {
+              expected_revision: Revision,
+              operation: Edit
+            },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return dependencies.service.edit(
             owner,
             request.params.projectId,
             request.params.graphId,
-            request.query.limit ?? 20
+            request.body.expected_revision,
+            request.body.operation
+          );
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+
+    route.post(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/restore",
+      {
+        schema: {
+          params: GraphScope,
+          body: Type.Object(
+            {
+              expected_revision: Revision,
+              from_revision: Revision
+            },
+            { additionalProperties: false }
           )
-        };
-      } catch (error) {
-        return handleFailure(reply, error);
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return dependencies.service.restore(
+            owner,
+            request.params.projectId,
+            request.params.graphId,
+            request.body.expected_revision,
+            request.body.from_revision
+          );
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
       }
-    }
-  );
+    );
 
-  route.post(
-    "/api/v1/projects/:projectId/intelligence-graphs/:graphId/edits",
-    {
-      schema: {
-        params: GraphScope,
-        body: Type.Object(
-          {
-            expected_revision: Revision,
-            operation: Edit
-          },
-          { additionalProperties: false }
-        )
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/explain",
+      {
+        schema: {
+          params: GraphScope,
+          querystring: Type.Object(
+            {
+              q: Type.String({ minLength: 1, maxLength: 500 })
+            },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return dependencies.service.explain(
+            owner,
+            request.params.projectId,
+            request.params.graphId,
+            request.query.q
+          );
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
       }
-    },
-    async (request, reply) => {
-      const owner = await authenticate(request, reply, request.params.projectId);
-      if (!owner) return;
-      try {
-        return dependencies.service.edit(
-          owner,
-          request.params.projectId,
-          request.params.graphId,
-          request.body.expected_revision,
-          request.body.operation
-        );
-      } catch (error) {
-        return handleFailure(reply, error);
-      }
-    }
-  );
-
-  route.post(
-    "/api/v1/projects/:projectId/intelligence-graphs/:graphId/restore",
-    {
-      schema: {
-        params: GraphScope,
-        body: Type.Object(
-          {
-            expected_revision: Revision,
-            from_revision: Revision
-          },
-          { additionalProperties: false }
-        )
-      }
-    },
-    async (request, reply) => {
-      const owner = await authenticate(request, reply, request.params.projectId);
-      if (!owner) return;
-      try {
-        return dependencies.service.restore(
-          owner,
-          request.params.projectId,
-          request.params.graphId,
-          request.body.expected_revision,
-          request.body.from_revision
-        );
-      } catch (error) {
-        return handleFailure(reply, error);
-      }
-    }
-  );
-
-  route.get(
-    "/api/v1/projects/:projectId/intelligence-graphs/:graphId/explain",
-    {
-      schema: {
-        params: GraphScope,
-        querystring: Type.Object(
-          {
-            q: Type.String({ minLength: 1, maxLength: 500 })
-          },
-          { additionalProperties: false }
-        )
-      }
-    },
-    async (request, reply) => {
-      const owner = await authenticate(request, reply, request.params.projectId);
-      if (!owner) return;
-      try {
-        return dependencies.service.explain(
-          owner,
-          request.params.projectId,
-          request.params.graphId,
-          request.query.q
-        );
-      } catch (error) {
-        return handleFailure(reply, error);
-      }
-    }
-  );
+    );
   });
 };
