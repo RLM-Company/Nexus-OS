@@ -1,4 +1,4 @@
-import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
+import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
   IntelligenceGraphWorkspaceError,
   type IntelligenceGraphWorkspaceService
@@ -84,7 +84,11 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
   dependencies: GraphWorkspaceRouteDependencies
 ): void => {
   if (!dependencies.enabled) return;
-  const route = app.withTypeProvider<TypeBoxTypeProvider>();
+  // Fastify's default Ajv drops unknown body fields. Confine a strict
+  // TypeBox validator to this plugin, never mutate the parent app's compiler.
+  app.register(async (scoped) => {
+    const route = scoped.withTypeProvider<TypeBoxTypeProvider>();
+    route.setValidatorCompiler(TypeBoxValidatorCompiler);
 
   const authenticate = async (request: FastifyRequest, reply: FastifyReply, projectId: string) => {
     const actor = await dependencies.identity.resolve(request).catch(() => null);
@@ -294,4 +298,5 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
       }
     }
   );
+  });
 };
