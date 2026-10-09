@@ -86,7 +86,7 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
   if (!dependencies.enabled) return;
   // Fastify's default Ajv drops unknown body fields. Confine a strict
   // TypeBox validator to this plugin, never mutate the parent app's compiler.
-  app.register(async (scoped) => {
+  app.register((scoped, _options, done) => {
     const route = scoped.withTypeProvider<TypeBoxTypeProvider>();
     route.setValidatorCompiler(TypeBoxValidatorCompiler);
 
@@ -302,5 +302,6 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
         }
       }
     );
+    done();
   });
 };
