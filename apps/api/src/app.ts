@@ -182,6 +182,8 @@ export interface AppDependencies {
   managerRunExecutionMode?: "stream" | "background";
   generalChatRunExecutionMode?: "stream" | "background";
   now?: () => string;
+  /** Explicit integration-only switch; absent is OFF. */
+  intelligenceGraphWorkspace?: { enabled: boolean; service: IntelligenceGraphWorkspaceService };
 }
 
 const stepUpToken = (value: string | string[] | undefined): string | null =>
