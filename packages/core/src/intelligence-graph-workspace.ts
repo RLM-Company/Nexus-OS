@@ -3,6 +3,7 @@ import {
   validateIntelligenceGraphSnapshot,
   type IntelligenceGraphEdge,
   type IntelligenceGraphNode,
+  type IntelligenceGraphRevisionInfo,
   type IntelligenceGraphVersionRef,
   type IntelligenceGraphWorkspace,
   type IntelligenceGraphWorkspaceRepository
