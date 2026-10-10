@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { WorkspaceIcon as Icon } from "./workspace-icons";
+import styles from "./workspace-navigation.module.css";
 import {
   TOOL_ITEMS,
   STUDIO_ITEMS,
@@ -64,23 +65,12 @@ export function WorkspaceModeMenu({
           />
         </svg>
       </summary>
-      <nav className="workspace-modes" id={id} aria-label="Режимы работы">
-        <Link
-          href="/personal-settings"
-          onClick={() => {
-            if (ref.current) ref.current.open = false;
-          }}
-        >
-          <Icon name="settings" />
-          <span>
-            <strong>Настройки</strong>
-            <small>Чат, перевод и использование</small>
-          </span>
-        </Link>
+      <nav className={`workspace-modes ${styles.panel}`} id={id} aria-label="Режимы работы">
         {WORKSPACE_MODES.map((item) => (
           <button
             type="button"
             key={item.id}
+            className={styles.row}
             aria-label={item.label}
             aria-current={mode === item.id ? "page" : undefined}
             onClick={() => {
@@ -99,19 +89,35 @@ export function WorkspaceModeMenu({
             {mode === item.id && <Icon name="check" />}
           </button>
         ))}
-        <Link
-          href="/research-workspace"
-          aria-label="Глубокий поиск и отчёты"
-          onClick={() => {
-            if (ref.current) ref.current.open = false;
-          }}
-        >
-          <Icon name="search" />
-          <span>
-            <strong>Исследования</strong>
-            <small>Поиск, источники и отчёты</small>
-          </span>
-        </Link>
+        <div className={styles.utilities}>
+          <Link
+            href="/personal-settings"
+            className={styles.row}
+            onClick={() => {
+              if (ref.current) ref.current.open = false;
+            }}
+          >
+            <Icon name="settings" />
+            <span>
+              <strong>Настройки</strong>
+              <small>Чат, перевод и использование</small>
+            </span>
+          </Link>
+          <Link
+            href="/research-workspace"
+            className={styles.row}
+            aria-label="Глубокий поиск и отчёты"
+            onClick={() => {
+              if (ref.current) ref.current.open = false;
+            }}
+          >
+            <Icon name="search" />
+            <span>
+              <strong>Исследования</strong>
+              <small>Поиск, источники и отчёты</small>
+            </span>
+          </Link>
+        </div>
       </nav>
     </details>
   );
@@ -312,18 +318,15 @@ export function MobileNavigation({
               }}
             />
           </label>
-          <section className="drawer-modes" aria-label="Режимы работы">
+          <section className={`drawer-modes ${styles.mobileModes}`} aria-label="Режимы работы">
             <h3>Режим работы</h3>
             {WORKSPACE_MODES.map((item) => (
               <button
                 type="button"
                 key={item.id}
+                className={styles.row}
                 aria-label={item.label}
-                aria-current={
-                  (surface === "work" || surface === "code" ? surface : "manager") === item.id
-                    ? "page"
-                    : undefined
-                }
+                aria-current={surface === item.id ? "page" : undefined}
                 onClick={() => navigate(item.id)}
               >
                 <Icon name={item.icon} />
@@ -331,6 +334,7 @@ export function MobileNavigation({
                   <strong>{item.label}</strong>
                   <small>{item.description}</small>
                 </span>
+                {surface === item.id && <Icon name="check" />}
               </button>
             ))}
           </section>

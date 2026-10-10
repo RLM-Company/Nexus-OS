@@ -59,6 +59,45 @@ test("switching Work and Code preserves an unsent chat draft and a shareable rou
   expect(writes).toEqual([]);
 });
 
+test("mode menu aligns links and buttons within the sidebar at desktop widths", async ({
+  page
+}) => {
+  for (const width of [900, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/?surface=code");
+    await page.getByLabel("Режимы Kosmora", { exact: true }).click();
+    const panel = page.getByRole("navigation", { name: "Режимы работы", exact: true });
+    const panelBox = await panel.boundingBox();
+    expect(panelBox).not.toBeNull();
+    const rows = panel.locator("button, a");
+    await expect(rows).toHaveCount(5);
+    let labelLeft: number | undefined;
+    for (const row of await rows.all()) {
+      const rowBox = await row.boundingBox();
+      const iconBox = await row.locator("svg").first().boundingBox();
+      const titleBox = await row.locator("strong").boundingBox();
+      const descriptionBox = await row.locator("small").boundingBox();
+      expect(rowBox && iconBox && titleBox && descriptionBox).toBeTruthy();
+      expect(titleBox!.x).toBeGreaterThan(iconBox!.x + iconBox!.width);
+      expect(descriptionBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height);
+      expect(descriptionBox!.x).toBeCloseTo(titleBox!.x, 0);
+      expect(descriptionBox!.x + descriptionBox!.width).toBeLessThanOrEqual(
+        panelBox!.x + panelBox!.width
+      );
+      expect(rowBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+      expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
+      if (labelLeft !== undefined) expect(titleBox!.x).toBeCloseTo(labelLeft, 0);
+      labelLeft = titleBox!.x;
+    }
+    await expect(panel.getByRole("button", { name: "Code", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    await page.screenshot({ path: `../../qa/kosmora-mode-menu-${width}.png` });
+    await page.keyboard.press("Escape");
+  }
+});
+
 test("mobile mode drawer returns to the existing chat draft", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
