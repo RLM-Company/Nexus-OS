@@ -19,22 +19,23 @@ export const hashOwnerPassword = (password) => {
 const style = `
 :root{color-scheme:light;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f7f7f7;color:#171717}
 *{box-sizing:border-box}
-body{margin:0;min-width:320px;min-height:100svh;display:grid;place-items:center;padding:32px 20px;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
-main{width:min(100%,408px);padding:32px;border:1px solid #e6e6e6;border-radius:20px;background:#fff;box-shadow:0 8px 28px rgb(0 0 0 / 3%)}
-.brand{display:flex;align-items:center;gap:10px;margin-bottom:28px;color:#171717;font-size:18px;font-weight:650;letter-spacing:-.025em}
-.brand svg{display:block;flex:none;width:40px;height:40px;padding:3px;background:#f7f7f7;border-radius:11px}
-h1{margin:0;font-size:24px;font-weight:600;line-height:1.3;letter-spacing:-.035em}
-p{margin:10px 0 24px;color:#686868;line-height:1.6}
+body{margin:0;min-width:320px;min-height:100svh;display:grid;place-items:center;padding:32px 20px;background:radial-gradient(ellipse at 50% 35%,#fff 0,#f7f7f7 70%);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+main{width:min(100%,400px);padding:32px;border:1px solid #e5e5e5;border-radius:20px;background:#fff;box-shadow:0 2px 4px rgb(0 0 0 / 2%),0 16px 48px -20px rgb(0 0 0 / 12%);animation:enter 200ms ease-out both}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:30px;color:#171717;font-size:17px;font-weight:650;letter-spacing:-.035em}
+.brand svg{display:block;flex:none;width:38px;height:38px;padding:3px;background:#171717;border:1px solid #242424;border-radius:11px}
+h1{margin:0;font-size:23px;font-weight:600;line-height:1.3;letter-spacing:-.04em;text-wrap:balance}
+p{margin:8px 0 24px;color:#737373;font-size:13px;line-height:1.6}
 form{margin:0}
-label{display:block;margin:18px 0 7px;font-size:13px;font-weight:550;color:#404040}
+label{display:block;margin:18px 0 7px;font-size:12px;font-weight:550;color:#404040}
 input,button,a{font:inherit}
-input{display:block;width:100%;min-height:44px;padding:10px 12px;border:1px solid #d8d8d8;border-radius:10px;background:#fff;color:#171717;outline:none;transition:border-color 140ms ease,box-shadow 140ms ease}
-input[readonly]{background:#f7f7f7;color:#686868}
-.remember{display:flex;align-items:center;gap:9px;margin:18px 0 0;font-weight:400;color:#555;cursor:pointer}
+input{display:block;width:100%;min-height:44px;padding:10px 12px;border:1px solid #dedede;border-radius:10px;background:#fff;color:#171717;outline:none;transition:border-color 140ms ease,box-shadow 140ms ease}
+input[readonly]{background:#f8f8f8;color:#737373}
+.remember{display:flex;align-items:center;gap:9px;min-height:32px;margin:14px 0 0;font-weight:400;color:#626262;cursor:pointer}
 .remember input{width:16px;height:16px;min-height:0;margin:0;padding:0;accent-color:#171717;flex:none}
 input:hover:not([readonly]){border-color:#b4b4b4}
 input:focus{border-color:#555;box-shadow:0 0 0 3px rgb(0 0 0 / 6%)}
-button,.link{display:flex;align-items:center;justify-content:center;min-height:44px;width:100%;margin-top:24px;padding:10px 16px;border:1px solid #171717;border-radius:10px;background:#171717;color:#fff;font-size:14px;font-weight:550;text-align:center;text-decoration:none;cursor:pointer;transition:background 140ms ease,border-color 140ms ease,transform 140ms ease}
+button,.link{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;width:100%;margin-top:20px;padding:10px 16px;border:1px solid #171717;border-radius:10px;background:#171717;color:#fff;font-size:13px;font-weight:550;text-align:center;text-decoration:none;cursor:pointer;transition:background 140ms ease,border-color 140ms ease,transform 140ms ease}
+button svg{width:15px;height:15px;flex:none}
 button:hover,.link:hover{background:#333;border-color:#333}
 button:active,.link:active{transform:translateY(1px)}
 :focus-visible{outline:2px solid #555;outline-offset:3px}
@@ -46,13 +47,15 @@ input[readonly]:-webkit-autofill:focus{box-shadow:0 0 0 1000px #f7f7f7 inset,0 0
 input:-webkit-autofill:focus-visible{outline:2px solid #555;outline-offset:3px}
 .secondary{margin-top:10px;background:#fff;color:#555;border-color:#e3e3e3}
 .secondary:hover{background:#f7f7f7;border-color:#ccc}
-.error{margin:18px 0 4px;padding:10px 12px;border:1px solid #d8d8d8;border-radius:10px;background:#f7f7f7;color:#333;font-size:13px}
-small{display:block;margin-top:24px;padding-top:20px;border-top:1px solid #eee;color:#686868;font-size:12px;line-height:1.6}
-@media(max-width:480px){body{padding:20px 16px}main{padding:26px 24px;border-radius:18px}.brand{margin-bottom:24px}}
-@media(prefers-reduced-motion:reduce){input,button,.link{transition:none}button:active,.link:active{transform:none}}
+.error{margin:18px 0 4px;padding:11px 12px;border:1px solid #d8d8d8;border-radius:10px;background:#f7f7f7;color:#333;font-size:13px;overflow-wrap:anywhere}
+small{display:block;margin-top:24px;padding-top:18px;border-top:1px solid #eee;color:#858585;font-size:11px;line-height:1.6;text-align:center}
+@keyframes enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media(max-width:480px){body{padding:20px 16px}main{padding:26px 24px;border-radius:18px}.brand{margin-bottom:24px}input{font-size:16px}}
+@media(max-height:600px){body{align-items:start;padding-top:20px}}
+@media(prefers-reduced-motion:reduce){main{animation:none}input,button,.link{transition:none}button:active,.link:active{transform:none}}
 `;
 const page = (message = "", authenticated = false) =>
-  `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f7"><title>Вход — Kosmora</title><style>${style}</style></head><body><main aria-labelledby="title"><div class="brand">${brandSymbol}<span>Kosmora</span></div><h1 id="title">${authenticated ? "Ваше пространство готово" : "С возвращением"}</h1><p>${authenticated ? "Продолжите работу с ИИ, кодом и проектами." : "Войдите в своё рабочее пространство."}</p>${message ? `<p class="error" role="alert">${message}</p>` : ""}${authenticated ? '<a class="link" href="/">Открыть Kosmora</a><form method="post" action="/__owner/logout"><button class="secondary" type="submit">Выйти из аккаунта</button></form>' : '<form method="post" action="/__owner/login"><label for="username">Логин</label><input id="username" name="username" value="owner" autocomplete="username" required readonly><label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="512" autofocus><label class="remember"><input type="checkbox" name="remember" checked>Запомнить меня на 30 дней</label><button type="submit">Войти в Kosmora</button></form><small>Личное пространство Kosmora. Доступ по паролю владельца.</small>'}</main></body></html>`;
+  `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f7"><title>Вход — Kosmora</title><style>${style}</style></head><body><main aria-labelledby="title"><div class="brand">${brandSymbol}<span>Kosmora</span></div><h1 id="title">${authenticated ? "Ваше пространство готово" : "С возвращением"}</h1><p>${authenticated ? "Продолжите работу с ИИ, кодом и проектами." : "Войдите в своё рабочее пространство."}</p>${message ? `<p class="error" role="alert">${message}</p>` : ""}${authenticated ? '<a class="link" href="/">Открыть Kosmora</a><form method="post" action="/__owner/logout"><button class="secondary" type="submit">Выйти из аккаунта</button></form>' : '<form method="post" action="/__owner/login"><label for="username">Логин</label><input id="username" name="username" value="owner" autocomplete="username" required readonly><label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="512" autofocus><label class="remember"><input type="checkbox" name="remember" checked>Запомнить меня на 30 дней</label><button type="submit">Войти в Kosmora<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form><small>Kosmora · ваше рабочее пространство</small>'}</main></body></html>`;
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
 export function createOwnerAccess({ origin, passwordHash, sessionFile, now = Date.now }) {

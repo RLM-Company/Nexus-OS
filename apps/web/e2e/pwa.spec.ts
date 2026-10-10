@@ -186,8 +186,11 @@ test("opens the image workspace and keeps generation local until a model is conn
   await page.getByRole("button", { name: "16:9" }).click();
   await page.getByRole("button", { name: "Подготовить промпт" }).click();
 
-  await expect(page.getByRole("status")).toContainText("подготовлен локально");
-  await expect(page.getByText("Внешняя модель не подключена")).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "подготовлен локально" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Скачать .txt", exact: true })).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Сгенерировать изображение", exact: true })
+  ).toBeDisabled();
 });
 
 test("offers the browser install action when the platform exposes it", async ({ page }) => {

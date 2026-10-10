@@ -1,4 +1,8 @@
 .root {
+  --file-paper: var(--bg, #ffffff);
+  --file-panel: var(--panel, #f7f7f7);
+  --file-ink: var(--text, #242424);
+  --file-line: var(--line, #e5e5e5);
   max-width: 992px;
   margin: 0 auto;
   color: var(--text);
@@ -52,11 +56,12 @@
 }
 .upload,
 .panel {
-  border: 1px solid var(--line);
+  border: 1px solid var(--file-line);
   border-radius: 12px;
-  background: white;
+  background: var(--file-paper);
   padding: 20px;
   min-width: 0;
+  box-shadow: 0 1px 2px #00000004;
 }
 .upload {
   display: grid;
@@ -65,7 +70,7 @@
   align-items: start;
   text-align: left;
   padding: 24px;
-  background: var(--panel);
+  background: var(--file-panel);
 }
 .root .upload > button {
   grid-row: 1 / 4;
@@ -97,8 +102,8 @@
   gap: 8px;
   border: 1px solid var(--line);
   min-height: 40px;
-  border-radius: 10px;
-  background: #ffffff;
+  border-radius: 8px;
+  background: var(--file-paper);
   color: inherit;
   padding: 8px 12px;
   font: inherit;
@@ -110,8 +115,8 @@
     background-color 160ms ease;
 }
 .root button:hover:not(:disabled) {
-  background: #f3f3f3;
-  border-color: #acacac;
+  background: var(--surface-hover, #ededed);
+  border-color: var(--line-strong, #cdcdcd);
 }
 .root button:disabled {
   opacity: 0.45;
@@ -145,6 +150,22 @@
   grid-column: 1 / -1;
   padding-top: 12px;
   border-top: 1px solid var(--line);
+  font-size: 0.8125rem;
+  color: var(--muted, #676767);
+  font-variant-numeric: tabular-nums;
+}
+.reading > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.reading > span::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
 }
 .documentTitle {
   display: flex;
@@ -189,6 +210,8 @@
   font-variant-numeric: tabular-nums;
   margin: 4px 0 0;
   overflow-wrap: anywhere;
+  font-weight: 550;
+  letter-spacing: -0.025em;
 }
 .layout {
   display: grid;
@@ -236,6 +259,7 @@
   border-color: transparent;
   border-radius: 6px;
   background: transparent;
+  padding: 10px 12px;
 }
 .matchList small {
   display: block;
@@ -267,13 +291,15 @@
   font:
     0.8125rem/1.7 ui-monospace,
     monospace;
-  background: #fcfcfc;
+  background: var(--file-panel);
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   margin: 16px 0 20px;
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
+  tab-size: 2;
+  font-variant-ligatures: none;
 }
 .root .primary {
   background: #202020;
@@ -401,6 +427,8 @@
   align-items: flex-start;
   margin: 0;
   overflow-wrap: anywhere;
+  cursor: pointer;
+  padding: 4px 0;
 }
 .numericStats {
   display: grid;
@@ -420,6 +448,8 @@
 .numericStats dd {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
 }
 .tableWrap {
   overflow: auto;
@@ -445,6 +475,7 @@
   vertical-align: top;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 .tableWrap thead th {
   position: sticky;
@@ -455,14 +486,51 @@
   font-weight: 600;
 }
 .tableWrap tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
   background: #f9f9f9;
   color: var(--muted);
+}
+.tableWrap thead th:first-child {
+  left: 0;
+  z-index: 2;
 }
 .tableWrap tbody tr:nth-child(even) td {
   background: #fcfcfc;
 }
 .tableWrap tbody tr:hover td {
   background: var(--panel);
+}
+.tableWrap tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+.tableWrap tr > :last-child {
+  border-right: 0;
+}
+.tableWrap tbody tr:hover th {
+  background: var(--surface-hover, #ededed);
+  color: var(--file-ink);
+}
+.root :is(input, select, textarea)::placeholder {
+  color: var(--muted, #676767);
+  opacity: 1;
+}
+@media (prefers-contrast: more) {
+  .root {
+    --file-line: #8a8a8a;
+  }
+  .root small,
+  .root :is(dt, legend, label) {
+    color: #454545;
+  }
+  .root :is(button, input, textarea, select),
+  .preview,
+  .stats,
+  .tableWrap,
+  .tableWrap :is(th, td) {
+    border-color: #8a8a8a;
+  }
 }
 @media (pointer: coarse) {
   .root :is(button, select) {

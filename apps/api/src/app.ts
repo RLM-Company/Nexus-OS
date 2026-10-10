@@ -175,8 +175,11 @@ import type { AccountStore } from "./account-settings/account-store.js";
 import type { DocumentLibraryStore, ChatHistorySearchStore } from "@cosmora/db";
 import { QuotaExceededError } from "./account-settings/account-store.js";
 import { registerResearchRoutes } from "./research/research-routes.js";
+import type { ResearchCoordinator } from "./research/research-coordinator.js";
 import type { ResearchStore } from "./research/research-store.js";
 import { registerMediaRoutes } from "./media/media-routes.js";
+import { registerCanvasRoutes } from "./canvas/canvas-routes.js";
+import type { CanvasArtifactStore } from "@cosmora/db";
 import type { MediaService } from "./media/media-service.js";
 
 export interface AppDependencies {
@@ -189,7 +192,7 @@ export interface AppDependencies {
   researchBudget?: ResearchOwnerBudget;
   ownerBudget?: CodeOwnerBudget;
   codeAgentService?: CodeAgentService;
-  researchCoordinatorCreated?: (coordinator: import("./research/research-coordinator.js").ResearchCoordinator) => void;
+  researchCoordinatorCreated?: (coordinator: ResearchCoordinator) => void;
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   identityStore?: IdentityStore;
@@ -222,6 +225,7 @@ export interface AppDependencies {
   webSearch?: WebSearch;
   researchStore?: ResearchStore;
   mediaService?: MediaService;
+  canvasStore?: CanvasArtifactStore;
   now?: () => string;
 }
 
@@ -682,24 +686,28 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   ) {
     registerCodeAgentRoutes(
       app,
-      (dependencies.codeAgentService ?? new CodeAgentService({
-        store: new CodeAgentStore(dependencies.githubDraftStore.sqlite),
-        github: dependencies.githubIntegration,
-        drafts: dependencies.githubDraftStore,
-        projects: dependencies.projectStore,
-        policy: dependencies.policyStore,
-        emergency: dependencies.emergencyStopStore,
-        gateway: dependencies.modelGateway,
-        manager: dependencies.manager,
-        runner: dependencies.codeAgentRunner ?? configuredCodeAgentExecutor(),
-        ...(dependencies.ownerBudget ? { ownerBudget: dependencies.ownerBudget } : {})
-      })),
+      dependencies.codeAgentService ??
+        new CodeAgentService({
+          store: new CodeAgentStore(dependencies.githubDraftStore.sqlite),
+          github: dependencies.githubIntegration,
+          drafts: dependencies.githubDraftStore,
+          projects: dependencies.projectStore,
+          policy: dependencies.policyStore,
+          emergency: dependencies.emergencyStopStore,
+          gateway: dependencies.modelGateway,
+          manager: dependencies.manager,
+          runner: dependencies.codeAgentRunner ?? configuredCodeAgentExecutor(),
+          ...(dependencies.ownerBudget ? { ownerBudget: dependencies.ownerBudget } : {})
+        }),
       identityFor
     );
   }
-  if (dependencies.documentLibrary) registerDocumentLibraryRoutes(app, dependencies.documentLibrary, identityFor);
-  if (dependencies.documentAnswerService) registerDocumentAnswerRoutes(app, dependencies.documentAnswerService, identityFor);
-  if (dependencies.chatHistorySearchStore) registerChatHistorySearchRoutes(app, dependencies.chatHistorySearchStore, identityFor);
+  if (dependencies.documentLibrary)
+    registerDocumentLibraryRoutes(app, dependencies.documentLibrary, identityFor);
+  if (dependencies.documentAnswerService)
+    registerDocumentAnswerRoutes(app, dependencies.documentAnswerService, identityFor);
+  if (dependencies.chatHistorySearchStore)
+    registerChatHistorySearchRoutes(app, dependencies.chatHistorySearchStore, identityFor);
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
   if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
     const coordinator = registerResearchRoutes({
@@ -718,6 +726,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     app.addHook("onClose", () => coordinator.stop());
   }
   if (dependencies.mediaService) registerMediaRoutes(app, dependencies.mediaService, identityFor);
+  if (dependencies.canvasStore) registerCanvasRoutes(app, dependencies.canvasStore, identityFor);
   if (dependencies.projectStore)
     registerProjectMaterialsRoutes(app, dependencies.projectStore, identityFor);
 

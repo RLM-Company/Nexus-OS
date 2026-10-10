@@ -87,10 +87,10 @@ export class GeneralChatBackgroundRunCoordinator {
     this.#pollTimer.unref?.();
   }
 
-  async quiesceOwner(ownerId:string):Promise<void> {
-    const active=[...this.#activeRuns.values()].filter(run=>run.ownerId===ownerId);
-    for(const run of active) run.controller.abort(new Error('OWNER_PRIVACY_QUIESCE'));
-    await Promise.allSettled(active.map(run=>run.task));
+  async quiesceOwner(ownerId: string): Promise<void> {
+    const active = [...this.#activeRuns.values()].filter((run) => run.ownerId === ownerId);
+    for (const run of active) run.controller.abort(new Error("OWNER_PRIVACY_QUIESCE"));
+    await Promise.allSettled(active.map((run) => run.task));
   }
   async stop(): Promise<void> {
     this.#stopping = true;
@@ -251,14 +251,24 @@ export class GeneralChatBackgroundRunCoordinator {
             reserved = this.#store.reserveModelUsage(queued.run_id, event.route, queued.owner_id);
           } catch (error) {
             const hold = mainHolds.get(event.route.attempt);
-            if (hold) { this.#accountStore.releaseBeforeDispatch(hold); mainHolds.delete(event.route.attempt); }
+            if (hold) {
+              this.#accountStore.releaseBeforeDispatch(hold);
+              mainHolds.delete(event.route.attempt);
+            }
             throw error;
           }
           if (!reserved) {
             const hold = mainHolds.get(event.route.attempt);
-            if (hold) { this.#accountStore.releaseBeforeDispatch(hold); mainHolds.delete(event.route.attempt); }
-            throw new GatewayRunError("ROUTE_UNAVAILABLE", event.route.provider_id,
-              "Chat run cannot reserve the selected model route", false);
+            if (hold) {
+              this.#accountStore.releaseBeforeDispatch(hold);
+              mainHolds.delete(event.route.attempt);
+            }
+            throw new GatewayRunError(
+              "ROUTE_UNAVAILABLE",
+              event.route.provider_id,
+              "Chat run cannot reserve the selected model route",
+              false
+            );
           }
         } else if (event.type === "route.failed") {
           this.#runtimeMetrics.routeFailed(event.errorCode);

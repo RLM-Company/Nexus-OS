@@ -1,17 +1,35 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { setTimeout as realDelay } from "node:timers/promises";
+import type * as childProcess from "node:child_process";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   computeCodeAgentSnapshotDigest,
-  createCodeAgentWorkspaceRunner
+  createCodeAgentWorkspaceRunner,
+  type CodeAgentWorkspaceRunner
 } from "../src/code-agent-workspace.js";
+
+// Only synthetic transport fixtures need an interpreter. Delegate to the actual Node
+// child process on every OS; keep production Docker/Podman spawning and its options intact.
+// This verifies process/CLI behavior, not container isolation or repository execution.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof childProcess>();
+  return {
+    ...actual,
+    spawn: (command: string, args: readonly string[], options: childProcess.SpawnOptions) =>
+      command.endsWith("oci-fixture.cjs")
+        ? actual.spawn(process.execPath, [command, ...args], options)
+        : actual.spawn(command, args, options)
+  };
+});
 
 const IMAGE = `sha256:${"a".repeat(64)}`;
 const files = [
   { path: "src/example.test.mjs", content: "import test from 'node:test'; test('ok', () => {});" }
 ];
 const directories: string[] = [];
+const PROCESS_TEST_TIMEOUT_MS = 30_000;
 afterEach(async () => {
   await Promise.all(
     directories.splice(0).map((path) => rm(path, { recursive: true, force: true }))
@@ -23,12 +41,11 @@ afterEach(async () => {
 async function fixture(mode: "success" | "flood" | "wait" | "unavailable" | "cleanup-fail") {
   const directory = await mkdtemp(join(tmpdir(), "kosmora-oci-transport-test-"));
   directories.push(directory);
-  const executable = join(directory, "oci-fixture");
+  const executable = join(directory, "oci-fixture.cjs");
   const record = join(directory, "calls.jsonl");
   await writeFile(
     executable,
-    `#!${process.execPath}
-const fs = require('node:fs');
+    `const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify({ args, env: process.env }) + '\\n');
 if (args[0] === 'rm') process.exit(${JSON.stringify(mode)} === 'cleanup-fail' ? 1 : 0);
@@ -41,12 +58,54 @@ else { process.stdout.write('transport fixture only'); process.exit(0); }
 `,
     { mode: 0o700 }
   );
-  const calls = async () =>
-    (await readFile(record, "utf8"))
+  const calls = async () => {
+    let data: string;
+    try {
+      data = await readFile(record, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+    return data
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as { args: string[]; env: Record<string, string> });
+  };
   return { executable, calls };
+}
+
+async function waitForStart(transport: Awaited<ReturnType<typeof fixture>>): Promise<void> {
+  const expires = Date.now() + 15_000;
+  while (!(await transport.calls()).some((call) => call.args[0] === "start")) {
+    if (Date.now() >= expires) throw new Error("SYNTHETIC_TRANSPORT_DID_NOT_START");
+    // Real Node I/O and process scheduling keep running while only the deadline clock is held.
+    await realDelay(10);
+  }
+}
+
+async function runWithStartedDeadline(
+  runner: CodeAgentWorkspaceRunner,
+  transport: Awaited<ReturnType<typeof fixture>>
+) {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const controller = new AbortController();
+  const pending = runner.run({ files, check: "syntax", signal: controller.signal });
+  try {
+    await waitForStart(transport);
+    expect((await transport.calls()).map((call) => call.args[0])).toEqual([
+      "create",
+      "cp",
+      "start"
+    ]);
+    // Exercise the real runner deadline callback after a real start, independently of Node startup.
+    await vi.advanceTimersByTimeAsync(100);
+    return await pending;
+  } finally {
+    controller.abort();
+    await vi.runAllTimersAsync();
+    await pending;
+    vi.useRealTimers();
+  }
 }
 
 describe("CodeAgent workspace boundary", () => {
@@ -170,36 +229,47 @@ describe("CodeAgent workspace boundary", () => {
     expect((await transport.calls()).some((call) => call.args[0] === "rm")).toBe(true);
   });
 
-  it("enforces deadlines and requests daemon container removal", async () => {
-    const transport = await fixture("wait");
-    const runner = createCodeAgentWorkspaceRunner({
-      runtime: "docker",
-      image: IMAGE,
-      executable: transport.executable,
-      limits: { timeoutMs: 100 }
-    });
-    const result = await runner.run({ files, check: "syntax" });
-    expect(result.status).toBe("timed_out");
-    expect((await transport.calls()).some((call) => call.args[0] === "rm")).toBe(true);
-  });
+  it(
+    "enforces deadlines and requests daemon container removal",
+    async () => {
+      const transport = await fixture("wait");
+      const runner = createCodeAgentWorkspaceRunner({
+        runtime: "docker",
+        image: IMAGE,
+        executable: transport.executable,
+        limits: { timeoutMs: 100 }
+      });
+      const result = await runWithStartedDeadline(runner, transport);
+      expect(result.status).toBe("timed_out");
+      expect((await transport.calls()).some((call) => call.args[0] === "start")).toBe(true);
+      expect((await transport.calls()).some((call) => call.args[0] === "rm")).toBe(true);
+    },
+    PROCESS_TEST_TIMEOUT_MS
+  );
 
-  it("cancels a running process and refuses a pre-cancelled run", async () => {
-    const transport = await fixture("wait");
-    const runner = createCodeAgentWorkspaceRunner({
-      runtime: "docker",
-      image: IMAGE,
-      executable: transport.executable
-    });
-    const controller = new AbortController();
-    const pending = runner.run({ files, check: "node-test", signal: controller.signal });
-    setTimeout(() => controller.abort(), 75);
-    expect((await pending).status).toBe("cancelled");
-    expect(
-      (await runner.run({ files, check: "node-test", signal: controller.signal })).journal.map(
-        (entry) => entry.event
-      )
-    ).toEqual(["snapshot", "cancelled"]);
-  });
+  it(
+    "cancels a running process and refuses a pre-cancelled run",
+    async () => {
+      const transport = await fixture("wait");
+      const runner = createCodeAgentWorkspaceRunner({
+        runtime: "docker",
+        image: IMAGE,
+        executable: transport.executable
+      });
+      const controller = new AbortController();
+      const pending = runner.run({ files, check: "node-test", signal: controller.signal });
+      await waitForStart(transport);
+      controller.abort();
+      expect((await pending).status).toBe("cancelled");
+      expect((await transport.calls()).some((call) => call.args[0] === "rm")).toBe(true);
+      expect(
+        (await runner.run({ files, check: "node-test", signal: controller.signal })).journal.map(
+          (entry) => entry.event
+        )
+      ).toEqual(["snapshot", "cancelled"]);
+    },
+    PROCESS_TEST_TIMEOUT_MS
+  );
 
   it("fails closed when OCI is missing or cannot start a container", async () => {
     const missing = createCodeAgentWorkspaceRunner({
@@ -215,28 +285,35 @@ describe("CodeAgent workspace boundary", () => {
       executable: transport.executable
     });
     expect((await unavailable.run({ files, check: "syntax" })).status).toBe("unavailable");
+    expect((await transport.calls()).map((call) => call.args[0])).toEqual(["create", "rm"]);
   });
 
-  it("quarantines the runner after uncertain daemon cleanup and refuses further creates", async () => {
-    const transport = await fixture("cleanup-fail");
-    const runner = createCodeAgentWorkspaceRunner({
-      runtime: "docker",
-      image: IMAGE,
-      executable: transport.executable,
-      limits: { timeoutMs: 1_000 }
-    });
-    const first = await runner.run({ files, check: "syntax" });
-    expect(first).toMatchObject({ status: "unavailable", cleanupVerified: false });
-    expect(first.journal.some((entry) => entry.detail === "container_cleanup_unverified")).toBe(
-      true
-    );
-    const countBefore = (await transport.calls()).length;
-    const second = await runner.run({ files, check: "node-test" });
-    expect(second).toMatchObject({ status: "unavailable", cleanupVerified: false });
-    expect(
-      second.journal.some((entry) => entry.detail === "runner_quarantined_after_unverified_cleanup")
-    ).toBe(true);
-    expect((await transport.calls()).length).toBe(countBefore);
-    expect((await transport.calls()).filter((call) => call.args[0] === "create")).toHaveLength(1);
-  });
+  it(
+    "quarantines the runner after uncertain daemon cleanup and refuses further creates",
+    async () => {
+      const transport = await fixture("cleanup-fail");
+      const runner = createCodeAgentWorkspaceRunner({
+        runtime: "docker",
+        image: IMAGE,
+        executable: transport.executable,
+        limits: { timeoutMs: 100 }
+      });
+      const first = await runWithStartedDeadline(runner, transport);
+      expect(first).toMatchObject({ status: "unavailable", cleanupVerified: false });
+      expect(first.journal.some((entry) => entry.detail === "container_cleanup_unverified")).toBe(
+        true
+      );
+      const countBefore = (await transport.calls()).length;
+      const second = await runner.run({ files, check: "node-test" });
+      expect(second).toMatchObject({ status: "unavailable", cleanupVerified: false });
+      expect(
+        second.journal.some(
+          (entry) => entry.detail === "runner_quarantined_after_unverified_cleanup"
+        )
+      ).toBe(true);
+      expect((await transport.calls()).length).toBe(countBefore);
+      expect((await transport.calls()).filter((call) => call.args[0] === "create")).toHaveLength(1);
+    },
+    PROCESS_TEST_TIMEOUT_MS
+  );
 });

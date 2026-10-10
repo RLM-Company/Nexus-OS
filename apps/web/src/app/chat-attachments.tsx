@@ -10,6 +10,7 @@ import {
 import { decodeChatAttachment } from "./decode-chat-attachment";
 import { prepareChatImage } from "./prepare-chat-image";
 import { WorkspaceIcon } from "./workspace-icons";
+import { droppedComposerFiles } from "./chat-drop-policy";
 
 export function useChatAttachments(scope: string) {
   const scopeRef = useRef(scope);
@@ -89,7 +90,21 @@ export function ChatAttachmentPicker({
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   return (
-    <div className="chat-attachment-picker">
+    <div
+      className="chat-attachment-picker"
+      onDragOver={(event) => {
+        if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+        event.preventDefault(); // Never treat dropped file URLs as navigation.
+        event.dataTransfer.dropEffect = disabled || reading ? "none" : "copy";
+      }}
+      onDrop={(event) => {
+        if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const files = droppedComposerFiles(event.dataTransfer, { disabled, reading, textOnly });
+        if (files.length) onAdd(files);
+      }}
+    >
       <input
         ref={inputRef}
         type="file"

@@ -1,31 +1,212 @@
-.shell{max-width:900px;margin:0 auto;padding:clamp(20px,5vw,52px);color:#151515;min-height:100vh;background:#fff;font-family:inherit}
-.shell *{box-sizing:border-box}
-.heading{border-bottom:1px solid #d5d5d5;padding-bottom:24px;margin-bottom:24px}
-.heading h1{font-size:clamp(26px,4vw,38px);letter-spacing:-.035em;margin:14px 0 6px}
-.heading p,.muted{color:#666;font-size:14px}
-.back{color:#333;text-decoration:none;font-size:14px}
-.form>label{font-size:14px;font-weight:600;display:block;margin-bottom:10px}
-.searchRow{display:flex;gap:8px}
-.shell input,.shell select,.shell button{font:inherit;min-height:42px;border:1px solid #bcbcbc;border-radius:8px;background:#fff;color:#111;padding:9px 12px}
-.searchRow input{flex:1;min-width:0;font-size:16px}
-.shell button{cursor:pointer}
-.searchRow button{background:#111;color:#fff;border-color:#111;padding:9px 20px}
-.shell button:disabled{opacity:.42;cursor:default}
-.shell :is(a,button,input,select):focus-visible{outline:3px solid #333;outline-offset:3px}
-.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:16px 0 25px}
-.filters label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:#454545}
-.filters input,.filters select{width:100%;min-width:0}
-.results{border-top:1px solid #dedede;padding-top:16px;scroll-margin-top:20px}
-.resultsHeader{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.resultsHeader h2{font-size:18px;margin:0}
-.resultsHeader button{border:0;text-decoration:underline;color:#333}
-.list{list-style:none;margin:15px 0;padding:0;display:grid;gap:10px}
-.hit{display:flex;flex-direction:column;gap:7px;text-decoration:none;color:inherit;background:#fafafa;border:1px solid #dedede;border-radius:10px;padding:16px}
-.hit:hover{border-color:#555;background:#f3f3f3}
-.hit strong{font-size:16px;overflow-wrap:anywhere}
-.meta{font-size:12px;color:#646464}
-.snippet{font-size:14px;color:#414141;white-space:pre-wrap;overflow-wrap:anywhere}
-.open{font-size:13px;color:#222;text-decoration:underline;margin-top:3px}
-.shell mark{background:#ddd;color:#111;border-radius:2px}
-.paging{display:flex;gap:12px;justify-content:space-between;margin:22px 0}
-@media (prefers-color-scheme:dark){.shell{background:#111;color:#fafafa}.heading,.results{border-color:#444}.heading p,.muted,.meta{color:#aaa}.back{color:#ddd}.shell input,.shell select,.shell button{background:#171717;color:#fafafa;border-color:#626262}.searchRow button{background:#fafafa;color:#111}.hit{background:#191919;border-color:#484848}.hit:hover{background:#222;border-color:#999}.snippet,.open,.filters label{color:#ddd}.shell mark{background:#777;color:#fff}}
+.shell {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: clamp(20px, 5vw, 52px);
+  color: #151515;
+  min-height: 100vh;
+  background: #fff;
+  font-family: inherit;
+}
+.shell * {
+  box-sizing: border-box;
+}
+.heading {
+  border-bottom: 1px solid #d5d5d5;
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+}
+.heading h1 {
+  font-size: clamp(26px, 4vw, 38px);
+  letter-spacing: -0.035em;
+  margin: 14px 0 6px;
+}
+.heading p,
+.muted {
+  color: #666;
+  font-size: 14px;
+}
+.back {
+  color: #333;
+  text-decoration: none;
+  font-size: 14px;
+}
+.form > label {
+  font-size: 14px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 10px;
+}
+.searchRow {
+  display: flex;
+  gap: 8px;
+}
+.shell input,
+.shell select,
+.shell button {
+  font: inherit;
+  min-height: 42px;
+  border: 1px solid #bcbcbc;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  padding: 9px 12px;
+}
+.searchRow input {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+}
+.shell button {
+  cursor: pointer;
+}
+.searchRow button {
+  background: #111;
+  color: #fff;
+  border-color: #111;
+  padding: 9px 20px;
+}
+.shell button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+.shell :is(a, button, input, select):focus-visible {
+  outline: 3px solid #333;
+  outline-offset: 3px;
+}
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 16px 0 25px;
+}
+.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: #454545;
+}
+.filters input,
+.filters select {
+  width: 100%;
+  min-width: 0;
+}
+.results {
+  border-top: 1px solid #dedede;
+  padding-top: 16px;
+  scroll-margin-top: 20px;
+}
+.resultsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.resultsHeader h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.resultsHeader button {
+  border: 0;
+  text-decoration: underline;
+  color: #333;
+}
+.list {
+  list-style: none;
+  margin: 15px 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.hit {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-decoration: none;
+  color: inherit;
+  background: #fafafa;
+  border: 1px solid #dedede;
+  border-radius: 10px;
+  padding: 16px;
+}
+.hit:hover {
+  border-color: #555;
+  background: #f3f3f3;
+}
+.hit strong {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.meta {
+  font-size: 12px;
+  color: #646464;
+}
+.snippet {
+  font-size: 14px;
+  color: #414141;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.open {
+  font-size: 13px;
+  color: #222;
+  text-decoration: underline;
+  margin-top: 3px;
+}
+.shell mark {
+  background: #ddd;
+  color: #111;
+  border-radius: 2px;
+}
+.paging {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin: 22px 0;
+}
+@media (prefers-color-scheme: dark) {
+  .shell {
+    background: #111;
+    color: #fafafa;
+  }
+  .heading,
+  .results {
+    border-color: #444;
+  }
+  .heading p,
+  .muted,
+  .meta {
+    color: #aaa;
+  }
+  .back {
+    color: #ddd;
+  }
+  .shell input,
+  .shell select,
+  .shell button {
+    background: #171717;
+    color: #fafafa;
+    border-color: #626262;
+  }
+  .searchRow button {
+    background: #fafafa;
+    color: #111;
+  }
+  .hit {
+    background: #191919;
+    border-color: #484848;
+  }
+  .hit:hover {
+    background: #222;
+    border-color: #999;
+  }
+  .snippet,
+  .open,
+  .filters label {
+    color: #ddd;
+  }
+  .shell mark {
+    background: #777;
+    color: #fff;
+  }
+}

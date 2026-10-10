@@ -12,6 +12,9 @@ async function scenario(page: Page, lostPublish: false | "after-start" | "before
     base_branch: "main",
     base_sha: "a".repeat(40),
     proposal_hash: "p".repeat(64),
+    proposal_snapshot_digest: "s".repeat(64),
+    proposal_diff:
+      "--- a/src/value.js\n+++ b/src/value.js\n@@ -1 +1 @@\n-export const value = 1;\n+export const value = 2;\n",
     proposal: [
       {
         path: "src/value.js",
@@ -39,6 +42,37 @@ async function scenario(page: Page, lostPublish: false | "after-start" | "before
         created = true;
         data = run;
       }
+    } else if (url.pathname.endsWith("/invalidate-review")) {
+      run = {
+        ...run,
+        status: run.draft ? "review" : "proposed",
+        check: undefined,
+        publication_token: undefined,
+        proposal_check: undefined
+      };
+      data = run;
+    } else if (url.pathname.endsWith("/preview-diff")) {
+      const input = route.request().postDataJSON();
+      expect(input.base_sha).toBe("a".repeat(40));
+      expect(input.snapshot_digest).toBe("s".repeat(64));
+      expect(input.proposal_hash).toBe("p".repeat(64));
+      expect(input.diff).toContain("@@ -1,9 +1,9 @@");
+      data = {
+        files: [
+          {
+            path: "src/value.js",
+            before: "export const value = 1;",
+            content: "export const value = 3;"
+          }
+        ],
+        normalizedDiff: input.diff.replace("@@ -1,9 +1,9 @@", "@@ -1 +1 @@"),
+        normalizations: [
+          { path: "src/value.js", line: 3, before: "@@ -1,9 +1,9 @@", after: "@@ -1 +1 @@" }
+        ],
+        baseSha: "a".repeat(40),
+        snapshotDigest: "s".repeat(64),
+        resultDigest: "r".repeat(64)
+      };
     } else if (url.pathname.endsWith("/review")) {
       reviews++;
       const input = route.request().postDataJSON();
@@ -160,6 +194,13 @@ test("selects and edits real server proposal, binds check to review and requires
   ).toBeDisabled();
   await expect(publish).toBeDisabled();
   await page.getByLabel("+ Итоговое содержимое: src/value.js").fill("export const value = 3;");
+  await expect(publish).toBeDisabled();
+  await page.getByRole("button", { name: "Сохранить выбранные изменения" }).click();
+  await page
+    .getByRole("checkbox", { name: "Разрешаю запуск выбранной проверки для этих изменений" })
+    .check();
+  await page.getByRole("button", { name: "Запустить проверку", exact: true }).click();
+  await expect(page.getByLabel("Результат проверки")).toContainText("syntax checked");
   await page
     .getByRole("checkbox", { name: "Подтверждаю создание этой ветки", exact: false })
     .check();
@@ -169,7 +210,7 @@ test("selects and edits real server proposal, binds check to review and requires
     "https://github.com/RLM-Company/Nexus-OS/pull/1000"
   );
   expect(state.publications()).toBe(1);
-  expect(state.checks()).toBe(1);
+  expect(state.checks()).toBe(2);
 });
 
 test("does not retry lost publication and reconciles it explicitly", async ({ page }) => {
@@ -208,4 +249,35 @@ test("reconciles a request lost before publication, then uses rotated token only
   await publish.click();
   await expect(page.getByRole("link", { name: "Открыть созданный PR" })).toBeVisible();
   expect(state.publications()).toBe(2);
+});
+
+test("previews normalized editable diff on an exact snapshot before a fresh review", async ({
+  page
+}) => {
+  const state = await scenario(page);
+  await page.goto("/code-agent");
+  await page.getByLabel("Задача", { exact: true }).fill("Исправь неверный результат");
+  await page.getByRole("button", { name: "Предложить исправление" }).click();
+  await page.getByText("Редактировать минимальный diff", { exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Редактируемый unified diff", exact: true })
+    .fill(
+      "--- a/src/value.js\n+++ b/src/value.js\n@@ -1,9 +1,9 @@\n-export const value = 1;\n+export const value = 3;\n"
+    );
+  await page
+    .getByRole("button", { name: "Проверить diff и перенести в выбранные изменения" })
+    .click();
+  await expect(
+    page.getByRole("group", { name: "Редактор unified diff", exact: true }).getByRole("status")
+  ).toContainText("Diff применим. Исправлено заголовков: 1.");
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+    "export const value = 3;"
+  );
+  await expect(
+    page.getByRole("checkbox", { name: "src/unrelated.js", exact: true })
+  ).not.toBeChecked();
+  await page.getByRole("button", { name: "Сохранить выбранные изменения" }).click();
+  await expect(page.getByRole("button", { name: "Создать черновик PR в GitHub" })).toBeDisabled();
+  expect(state.checks()).toBe(0);
+  expect(state.publications()).toBe(0);
 });

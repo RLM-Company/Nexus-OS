@@ -5,8 +5,12 @@ import type { IdentityContext } from "@cosmora/contracts";
 
 const Query = Type.Object({
   q: Type.String({ minLength: 1, maxLength: 160 }),
-  scope: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("general"), Type.Literal("project")])),
-  archive: Type.Optional(Type.Union([Type.Literal("active"), Type.Literal("archived"), Type.Literal("all")])),
+  scope: Type.Optional(
+    Type.Union([Type.Literal("all"), Type.Literal("general"), Type.Literal("project")])
+  ),
+  archive: Type.Optional(
+    Type.Union([Type.Literal("active"), Type.Literal("archived"), Type.Literal("all")])
+  ),
   project: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
   after: Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" })),
   before: Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" })),
@@ -22,14 +26,25 @@ export function registerChatHistorySearchRoutes(
 ): void {
   app.get("/api/v1/chat-history/search", { schema: { querystring: Query } }, (request) => {
     const q = request.query as {
-      q: string; scope?: "all" | "general" | "project";
-      archive?: "active" | "archived" | "all"; project?: string;
-      after?: string; before?: string; limit?: number; offset?: number;
+      q: string;
+      scope?: "all" | "general" | "project";
+      archive?: "active" | "archived" | "all";
+      project?: string;
+      after?: string;
+      before?: string;
+      limit?: number;
+      offset?: number;
     };
     return store.search({
-      query: q.q, ownerId: identityFor(request).owner_id,
-      scope: q.scope, archive: q.archive, projectId: q.project,
-      after: q.after, before: q.before, limit: q.limit, offset: q.offset
+      query: q.q,
+      ownerId: identityFor(request).owner_id,
+      ...(q.scope !== undefined ? { scope: q.scope } : {}),
+      ...(q.archive !== undefined ? { archive: q.archive } : {}),
+      ...(q.project !== undefined ? { projectId: q.project } : {}),
+      ...(q.after !== undefined ? { after: q.after } : {}),
+      ...(q.before !== undefined ? { before: q.before } : {}),
+      ...(q.limit !== undefined ? { limit: q.limit } : {}),
+      ...(q.offset !== undefined ? { offset: q.offset } : {})
     });
   });
 }

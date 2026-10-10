@@ -1,11 +1,11 @@
 :root {
   --bg: #ffffff;
-  --panel: #f7f7f7;
-  --surface: #f0f0f0;
-  --surface-hover: #eaeaea;
-  --line: #e5e5e5;
-  --text: #282828;
-  --muted: #676767;
+  --panel: #f8f8f8;
+  --surface: #f2f2f2;
+  --surface-hover: #ebebeb;
+  --line: #e7e7e7;
+  --text: #242424;
+  --muted: #626262;
   --accent-strong: #202020;
   --accent: var(--accent-strong);
   --green: #606060;
@@ -28,7 +28,10 @@
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
-  --shadow-popover: 0 12px 40px #28282812, 0 2px 8px #28282808;
+  --shadow-popover: 0 12px 32px #20202012, 0 2px 6px #20202008;
+  --shadow-control: 0 2px 6px #20202005, 0 8px 24px #20202004;
+  --motion-fast: 140ms;
+  --motion-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --font-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color-scheme: light;
   accent-color: var(--accent-strong);
@@ -71,10 +74,20 @@ button {
   cursor: pointer;
   touch-action: manipulation;
   transition:
-    color 140ms ease,
-    background 140ms ease,
-    border-color 140ms ease,
-    opacity 140ms ease;
+    color var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    opacity var(--motion-fast) var(--motion-ease);
+}
+:where(button, input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+:where(input, select, textarea) {
+  caret-color: var(--text);
+}
+:where(input, select, textarea)::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 a {
   color: inherit;
@@ -3224,11 +3237,11 @@ textarea:focus-visible {
 .product-shell .new-project {
   margin-top: 0.25rem;
   color: var(--text);
-  background: #ededed;
+  background: var(--surface);
   font-weight: 600;
 }
 .product-shell .new-project:hover {
-  background: #e3e3e3;
+  background: var(--surface-hover);
 }
 .product-shell .new-project > span:first-child {
   display: grid;
@@ -3287,6 +3300,16 @@ textarea:focus-visible {
   flex: 0 0 auto;
   min-height: 2.75rem;
   padding: 0.65rem 0.7rem 0.65rem 2.45rem;
+  border-radius: var(--radius-sm);
+}
+.product-shell .project-item:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.product-shell .project-item.active {
+  color: var(--text);
+  background: var(--surface-hover);
+  box-shadow: inset 2px 0 var(--accent-strong);
 }
 .product-shell .project-item small {
   display: none;
@@ -3325,6 +3348,9 @@ textarea:focus-visible {
   border-radius: 0.6rem;
   color: var(--muted);
   min-height: 2.75rem;
+  transition:
+    border-color var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease);
 }
 .navigation-search:focus-within {
   border-color: var(--accent-line);
@@ -3428,8 +3454,8 @@ textarea:focus-visible {
   display: grid;
   padding: 0.45rem;
   border: 1px solid var(--line);
-  border-radius: 0.85rem;
-  background: #ffffff;
+  border-radius: var(--radius-md);
+  background: var(--bg);
   box-shadow: var(--shadow-popover);
 }
 .account-menu-heading {
@@ -3462,7 +3488,7 @@ textarea:focus-visible {
 }
 .account-menu button:hover,
 .account-menu a:hover {
-  background: var(--panel);
+  background: var(--surface);
 }
 .account-menu svg {
   width: 1.05rem;
@@ -3477,13 +3503,14 @@ textarea:focus-visible {
 .product-shell .composer {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
-  box-shadow: 0 2px 8px #28282805;
+  box-shadow: var(--shadow-control);
   max-width: 44rem;
   padding: 0.85rem 1rem 0.65rem;
+  transition: border-color var(--motion-fast) var(--motion-ease);
 }
 .product-shell .composer:focus-within {
-  border-color: #b8b8b8;
-  box-shadow: 0 2px 8px #28282805;
+  border-color: #bdbdbd;
+  box-shadow: var(--shadow-control);
 }
 .product-shell .composer-actions > button:not(.restore-run) {
   display: flex;
@@ -3497,10 +3524,16 @@ textarea:focus-visible {
   background: var(--accent-strong);
   line-height: 0;
   border-radius: 50%;
+  border: 1px solid transparent;
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
 }
 .product-shell .composer-actions > button:not(.restore-run):disabled {
-  color: #a6a6a6;
-  background: #eeeeee;
+  color: #858585;
+  background: var(--surface);
+  border-color: var(--line);
 }
 .product-shell .composer-actions > button:not(.restore-run) svg {
   display: block;
@@ -3781,6 +3814,9 @@ body:has(.workspace-drawer[open]) {
 .product-shell .composer-actions > button:hover:not(:disabled):not(.restore-run) {
   background: var(--accent-hover);
 }
+.product-shell .composer-actions > button:active:not(:disabled):not(.restore-run) {
+  transform: scale(0.96);
+}
 .product-shell .message,
 .product-shell .chat-heading {
   max-width: 44rem;
@@ -3916,6 +3952,15 @@ body:has(.workspace-drawer[open]) {
   gap: 8px;
   padding: 0;
 }
+/* Retain the deployed attachment-row behavior in the combined feature release. */
+.composer-tools .chat-attachment-picker {
+  display: contents;
+}
+.composer-tools .chat-attachment-picker > ul,
+.composer-tools .chat-attachment-picker > p {
+  order: 3;
+  flex: 0 0 100%;
+}
 .chat-attachment-picker .attachment-clip,
 .composer-tools .web-search-panel summary {
   display: grid;
@@ -3924,11 +3969,14 @@ body:has(.workspace-drawer[open]) {
   height: 40px;
   padding: 9px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--ui-muted);
+  color: var(--muted);
   cursor: pointer;
   list-style: none;
+  transition:
+    color var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease);
 }
 .composer-tools .web-search-panel summary::-webkit-details-marker {
   display: none;
@@ -3940,8 +3988,8 @@ body:has(.workspace-drawer[open]) {
 }
 .attachment-clip:hover:not(:disabled),
 .composer-tools .web-search-panel summary:hover {
-  background: #ececec;
-  color: #595959;
+  background: var(--surface);
+  color: var(--text);
 }
 .attachment-clip:focus-visible,
 .composer-tools .web-search-panel summary:focus-visible {
@@ -3949,8 +3997,8 @@ body:has(.workspace-drawer[open]) {
   outline-offset: 2px;
 }
 .attachment-clip:disabled {
-  opacity: 0.45;
-  cursor: default;
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .attachment-thumbnail {
   width: 32px;
@@ -3976,6 +4024,12 @@ body:has(.workspace-drawer[open]) {
   border: 1px solid var(--line);
   border-radius: 8px;
   cursor: pointer;
+  color: var(--text);
+  background: var(--bg);
+}
+.chat-message-attachments button:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--line-strong);
 }
 .chat-attachment-picker small {
   opacity: 0.7;
@@ -3994,15 +4048,31 @@ body:has(.workspace-drawer[open]) {
   align-items: center;
   gap: 8px;
   max-width: 100%;
-  padding: 4px 8px;
+  min-height: 40px;
+  padding: 4px 6px 4px 8px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  font-size: 0.8125rem;
 }
 .chat-attachment-picker li span {
   overflow-wrap: anywhere;
 }
 .chat-attachment-picker li button {
   flex-shrink: 0;
+  display: grid;
+  min-width: 28px;
+  min-height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: transparent;
+}
+.chat-attachment-picker li button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
 }
 .chat-attachment-picker p {
   width: 100%;
@@ -4043,8 +4113,13 @@ body:has(.workspace-drawer[open]) {
   margin: 0.35em 0;
 }
 .chat-response a {
-  color: var(--accent, #aaaaaa);
+  color: var(--accent-strong);
   text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.chat-response a:hover {
+  text-decoration-color: currentColor;
 }
 .chat-response blockquote {
   margin: 1em 0;
@@ -4055,16 +4130,21 @@ body:has(.workspace-drawer[open]) {
   max-width: 100%;
   margin: 0.8em 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   overflow: hidden;
+  background: var(--panel);
 }
 .response-code pre {
   white-space: pre;
   overflow: auto;
   max-height: 480px;
-  padding: 12px;
+  padding: 16px;
   margin: 0;
   font-size: 0.88rem;
+  line-height: 1.65;
+  tab-size: 2;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 .response-actions {
   display: flex;
@@ -4077,6 +4157,8 @@ body:has(.workspace-drawer[open]) {
 .response-code .response-actions {
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
 }
 .response-actions button {
   color: inherit;
@@ -4086,6 +4168,11 @@ body:has(.workspace-drawer[open]) {
   padding: 5px 9px;
   cursor: pointer;
 }
+.response-actions button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
 .response-table {
   overflow-x: auto;
   max-width: 100%;
@@ -4094,6 +4181,13 @@ body:has(.workspace-drawer[open]) {
 .response-table table {
   border-collapse: collapse;
   min-width: 260px;
+  width: 100%;
+  font-size: 0.875rem;
+}
+.response-table th {
+  background: var(--panel);
+  text-align: left;
+  font-weight: 600;
 }
 .response-table td,
 .response-table th {
@@ -4160,7 +4254,7 @@ body:has(.workspace-drawer[open]) {
   border-radius: var(--radius-sm);
   cursor: pointer;
   list-style: none;
-  transition: background-color 150ms ease;
+  transition: background-color var(--motion-fast) var(--motion-ease);
 }
 .workspace-mode-menu > summary::-webkit-details-marker {
   display: none;
@@ -4176,7 +4270,7 @@ body:has(.workspace-drawer[open]) {
   width: 1rem;
   height: 1rem;
   color: var(--muted);
-  transition: transform 150ms ease;
+  transition: transform var(--motion-fast) var(--motion-ease);
 }
 .workspace-mode-menu[open] .brand-chevron {
   transform: rotate(180deg);
@@ -4187,7 +4281,7 @@ body:has(.workspace-drawer[open]) {
   padding: 0.4rem 0 0.5rem;
   margin: 0.25rem 0.25rem 0;
   border-bottom: 1px solid var(--line);
-  animation: workspace-reveal 160ms ease-out;
+  animation: workspace-reveal 160ms var(--motion-ease);
 }
 .workspace-modes button,
 .drawer-modes button {
@@ -4205,10 +4299,13 @@ body:has(.workspace-drawer[open]) {
   text-align: left;
 }
 .workspace-modes button:hover,
-.drawer-modes button:hover,
+.drawer-modes button:hover {
+  background: var(--surface);
+}
 .workspace-modes button[aria-current="page"],
 .drawer-modes button[aria-current="page"] {
   background: var(--surface-hover);
+  box-shadow: inset 2px 0 var(--accent-strong);
 }
 .workspace-modes button > svg,
 .drawer-modes button > svg {
@@ -4268,7 +4365,7 @@ body:has(.workspace-drawer[open]) {
 .capability-workspace,
 .workspace-drawer[open],
 .account-area[open] .account-menu {
-  animation: workspace-reveal 160ms ease-out;
+  animation: workspace-reveal 160ms var(--motion-ease);
 }
 @keyframes workspace-reveal {
   from {
@@ -4293,5 +4390,57 @@ body:has(.workspace-drawer[open]) {
   }
   .product-shell .topbar {
     min-height: 3.5rem;
+  }
+  .chat-attachment-picker li button {
+    min-width: 36px;
+    min-height: 36px;
+  }
+}
+
+/* Preserve affordances when system contrast settings replace neutral fills. */
+@media (forced-colors: active) {
+  .product-shell .composer,
+  .account-menu,
+  .response-code,
+  .chat-attachment-picker li {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+  .product-shell .composer:focus-within,
+  .navigation-search:focus-within,
+  .drawer-search:focus-within {
+    border-color: Highlight;
+  }
+  .product-shell .sidebar-tool.active,
+  .product-shell .project-item.active,
+  .workspace-modes button[aria-current="page"],
+  .drawer-modes button[aria-current="page"],
+  .product-shell .mobile-nav > button.active {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+  .product-shell .composer-actions > button:not(.restore-run),
+  .response-actions button,
+  .chat-message-attachments button {
+    border: 1px solid ButtonText;
+  }
+  :where(button, input, select, textarea):disabled {
+    color: GrayText;
+    border-color: GrayText;
+  }
+  :where(a, button, input, select, textarea, summary):focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+.product-shell .composer[data-file-drag] {
+  border-color: var(--text);
+  background: var(--bg-subtle, #f7f7f7);
+  box-shadow: 0 0 0 3px var(--line);
+}
+
+@media (forced-colors: active) {
+  .product-shell .composer[data-file-drag] {
+    outline: 2px solid Highlight;
   }
 }

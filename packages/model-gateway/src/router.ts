@@ -123,10 +123,9 @@ export class ModelRouter {
     if (costed.length === 0) throw new ModelRouteError("BUDGET_EXCEEDED");
 
     costed.sort((left, right) => {
-      const difference =
-        score(right.entry, request, right.estimated?.amount ?? null) -
-        score(left.entry, request, left.estimated?.amount ?? null);
-      if (difference !== 0) return difference;
+      const leftScore = score(left.entry, request, left.estimated?.amount ?? null);
+      const rightScore = score(right.entry, request, right.estimated?.amount ?? null);
+      if (leftScore !== rightScore) return leftScore < rightScore ? 1 : -1;
       return `${left.entry.provider_id}:${left.entry.model_id}`.localeCompare(
         `${right.entry.provider_id}:${right.entry.model_id}`
       );

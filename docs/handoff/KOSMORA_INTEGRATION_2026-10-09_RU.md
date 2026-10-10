@@ -56,18 +56,18 @@ An isolated TypeScript transpile/syntax sweep of 375 TS/TSX files completed with
 
 ## Rollback
 
-**Do not downgrade in place:** migration 30/34 install owner fences, retained accounting and FTS triggers that the old binary does not understand. Stop API and workers, restore the exact preupgrade SQLite snapshot (including WAL state if applicable), application binary and matching media directory. Use the untouched offline backup created by the 25 retrofit only when it matches the *complete* pre-deploy state. Verify SQLite integrity and object counts before restarting the previous binary. Retain a separate archive of post-migration audit/usage records before rollback for forensic reconciliation—do not simply discard charged but uncommitted usage and retry paid dispatch. If a deletion was partially applied, preserve the fenced database for recovery instead of replaying writes or silently un-fencing it.
+**Do not downgrade in place:** migration 30/34 install owner fences, retained accounting and FTS triggers that the old binary does not understand. Stop API and workers, restore the exact preupgrade SQLite snapshot (including WAL state if applicable), application binary and matching media directory. Use the untouched offline backup created by the 25 retrofit only when it matches the _complete_ pre-deploy state. Verify SQLite integrity and object counts before restarting the previous binary. Retain a separate archive of post-migration audit/usage records before rollback for forensic reconciliation—do not simply discard charged but uncommitted usage and retry paid dispatch. If a deletion was partially applied, preserve the fenced database for recovery instead of replaying writes or silently un-fencing it.
 
 ## Gate matrix
 
-| Area | Local evidence | Remaining release gate |
-| --- | --- | --- |
-| 32 migrations | PASS: clean SQLite journal | production migration rehearsal |
-| 25-old DB upgrade | PASS: offline backup/retrofit test | real schema snapshot + rehearsal |
-| Owner account budget | PASS: holds, canonical aux, uncertain, pre-dispatch tests | actual provider usage and fault injection |
-| Privacy export/delete | PASS: real SQLite/ZIP/original, 2 owners, retained canonical cost | live concurrent workers and browser |
-| Root library | PASS: actual FTS, original bytes, owner isolation | PDF/DOCX/CSV browser tests |
-| Code executor | integrated authenticated HTTP sidecar; fail-closed when absent | Docker isolation and cancellation live |
-| Build/typecheck/e2e | 375 TS/TSX syntax/transpile clean | **UNVERIFIED (deps unavailable)** |
-| WorkDAG v2 | **not integrated** | separate expected package + reserved 31 |
-| Canvas 35 / Data 36 / Windows | untouched independent lanes | integrate packages after arrival |
+| Area                          | Local evidence                                                    | Remaining release gate                    |
+| ----------------------------- | ----------------------------------------------------------------- | ----------------------------------------- |
+| 32 migrations                 | PASS: clean SQLite journal                                        | production migration rehearsal            |
+| 25-old DB upgrade             | PASS: offline backup/retrofit test                                | real schema snapshot + rehearsal          |
+| Owner account budget          | PASS: holds, canonical aux, uncertain, pre-dispatch tests         | actual provider usage and fault injection |
+| Privacy export/delete         | PASS: real SQLite/ZIP/original, 2 owners, retained canonical cost | live concurrent workers and browser       |
+| Root library                  | PASS: actual FTS, original bytes, owner isolation                 | PDF/DOCX/CSV browser tests                |
+| Code executor                 | integrated authenticated HTTP sidecar; fail-closed when absent    | Docker isolation and cancellation live    |
+| Build/typecheck/e2e           | 375 TS/TSX syntax/transpile clean                                 | **UNVERIFIED (deps unavailable)**         |
+| WorkDAG v2                    | **not integrated**                                                | separate expected package + reserved 31   |
+| Canvas 35 / Data 36 / Windows | untouched independent lanes                                       | integrate packages after arrival          |

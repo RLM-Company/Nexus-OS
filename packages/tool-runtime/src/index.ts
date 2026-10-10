@@ -320,3 +320,12 @@ export class GuardedToolRuntime {
 export * from "./code-agent-http-client.js";
 export * from "./code-agent-sidecar.js";
 export * from "./code-agent-snapshot.js";
+export {
+  applyCodeAgentUnifiedDiff,
+  inspectCodeAgentUnifiedDiff,
+  renderCodeAgentUnifiedDiff,
+  isSafeCodeAgentDiffPath,
+  CodeDiffError,
+  type CodeDiffApplication,
+  type CodeDiffNormalization
+} from "./code-agent-diff.js";

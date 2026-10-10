@@ -1,4 +1,9 @@
 .page {
+  --repo-ink: var(--text, #242424);
+  --repo-muted: var(--muted, #676767);
+  --repo-line: var(--line, #e5e5e5);
+  --repo-paper: var(--bg, #ffffff);
+  --repo-panel: var(--panel, #f7f7f7);
   min-height: 100vh;
   min-height: 100dvh;
   padding: clamp(1.25rem, 3vw, 2rem) clamp(1rem, 3vw, 2rem) 3rem;
@@ -17,8 +22,8 @@
 .page button {
   padding: 0.6rem 0.85rem;
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
+  border-radius: var(--radius-sm, 0.5rem);
+  background: var(--repo-paper);
   color: var(--text);
   min-height: 2.5rem;
   max-width: 100%;
@@ -32,7 +37,7 @@
 }
 .page button:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
 }
 .page button:not(:disabled):hover {
   background: var(--surface-hover);
@@ -47,13 +52,14 @@
 .page textarea {
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-sm, 0.5rem);
   background: var(--bg);
   color: var(--text);
   max-width: 100%;
   min-width: 0;
   min-height: 2.5rem;
   font-size: 0.875rem;
+  transition: border-color 140ms ease;
 }
 .page :is(button, input, select, textarea, a):focus-visible {
   outline: 2px solid var(--accent-strong);
@@ -146,6 +152,8 @@
 .files button[aria-pressed="true"] {
   border-color: transparent;
   background: var(--surface-hover);
+  box-shadow: inset 2px 0 0 var(--repo-ink);
+  font-weight: 500;
 }
 .editor {
   min-width: 0;
@@ -169,8 +177,12 @@
   font-size: 0.8125rem;
   line-height: 1.65;
   tab-size: 2;
-  background: #fcfcfc;
+  background: var(--repo-panel);
   border-radius: 0.5rem;
+  font-variant-ligatures: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong, #cdcdcd) transparent;
+  caret-color: var(--repo-ink);
 }
 .review {
   margin-top: 1.5rem;
@@ -178,6 +190,7 @@
   border: 1px solid var(--line);
   border-radius: 0.875rem;
   background: var(--bg);
+  box-shadow: 0 1px 2px #00000004;
 }
 .review details {
   margin: 1rem 0;
@@ -188,6 +201,9 @@
 .review summary {
   cursor: pointer;
   overflow-wrap: anywhere;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.25rem 0;
 }
 .review input[type="checkbox"] {
   accent-color: var(--accent-strong);
@@ -213,10 +229,12 @@
   min-width: 0;
 }
 .diff > div:first-child pre {
-  background: var(--danger-soft);
+  background: #f1f1f1;
+  border-left: 3px dashed #b0b0b0;
 }
 .diff > div:last-child pre {
-  background: var(--success-soft);
+  background: #fafafa;
+  border-left: 3px solid #555555;
 }
 .diff {
   display: grid;
@@ -232,11 +250,23 @@
   border-radius: 0.5rem;
   font-size: 0.8125rem;
   line-height: 1.6;
+  margin: 0.5rem 0 0;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-variant-ligatures: none;
+  tab-size: 2;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong, #cdcdcd) transparent;
 }
 .diff strong {
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--repo-line);
+  border-radius: 999px;
+  background: var(--repo-panel);
 }
 @media (max-width: 42rem) {
   .explorer,
@@ -300,7 +330,7 @@
   border: 1px solid var(--line);
   border-radius: 0.75rem;
   background: var(--bg);
-  box-shadow: none;
+  box-shadow: 0 1px 2px #00000004;
 }
 
 .loading,
@@ -381,6 +411,7 @@
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0;
+  border: 1px solid var(--repo-line);
 }
 
 .sections {
@@ -480,7 +511,8 @@
   padding: 1rem;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  background: var(--bg);
+  background: var(--repo-paper);
+  box-shadow: 0 1px 2px #00000004;
 }
 .repository {
   min-width: 0;
@@ -539,7 +571,7 @@
   margin: 0.75rem 0;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  background: var(--panel);
+  background: var(--repo-panel);
 }
 .fileToolbar label {
   gap: 0.25rem;
@@ -564,6 +596,7 @@
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--line);
   font-size: 0.8125rem;
+  background: var(--repo-paper);
 }
 .panelHeading strong {
   font-weight: 500;
@@ -610,6 +643,7 @@
   border: 1px solid var(--line);
   border-radius: 0.875rem;
   background: var(--panel);
+  color: var(--repo-ink);
 }
 .editorEmpty h2 {
   color: var(--text);
@@ -643,6 +677,7 @@
 .changeRow {
   padding: 0.625rem 0;
   border-top: 1px solid var(--line);
+  font-size: 0.8125rem;
 }
 .changeRow button:first-child {
   flex: 1;
@@ -678,6 +713,8 @@
 .approval input {
   flex-shrink: 0;
   margin-top: 0.25rem;
+  width: 1rem;
+  height: 1rem;
 }
 .notice {
   padding: 0.75rem 1rem;
@@ -687,6 +724,7 @@
   background: var(--panel);
   font-size: 0.8125rem;
   overflow-wrap: anywhere;
+  line-height: 1.65;
 }
 .previewLink {
   margin-top: 1.5rem;
@@ -756,7 +794,32 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page :is(button, a) {
+  .page :is(button, a, input, select, textarea) {
     transition: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .page {
+    --repo-line: #8a8a8a;
+    --repo-muted: #454545;
+  }
+  .page :is(button, input, select, textarea),
+  .explorer,
+  .repositoryBar,
+  .fileToolbar,
+  .review,
+  .diff pre,
+  .readonlyBadge,
+  .notice {
+    border-color: #8a8a8a;
+  }
+  .lead,
+  .infoLine,
+  .repositoryState,
+  .editorEmpty,
+  .reviewFields p,
+  .diff strong {
+    color: #454545;
   }
 }

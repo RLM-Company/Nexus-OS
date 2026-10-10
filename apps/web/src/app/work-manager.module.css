@@ -137,3 +137,10 @@
     gap: 4px;
   }
 }
+.dagStep {
+  border: 1px solid #bbb;
+  border-radius: 8px;
+  margin: 12px 0;
+  padding: 12px;
+  min-width: 0;
+}

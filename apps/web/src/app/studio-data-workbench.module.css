@@ -1,0 +1,272 @@
+.surface {
+  max-width: 1020px;
+  margin: 0 auto;
+  color: var(--text);
+  min-width: 0;
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.tabs button,
+.root button {
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  padding: 9px 12px;
+  min-height: 38px;
+  font: inherit;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+.tabs button:hover:not(:disabled),
+.root button:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--muted);
+}
+.tabs button[aria-current="page"] {
+  background: var(--accent-strong);
+  color: #fff;
+}
+.tabs button[aria-current="page"]:hover {
+  background: var(--accent-hover);
+}
+.root {
+  display: grid;
+  gap: 17px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.root h2 {
+  font-size: 24px;
+  margin: 0 0 4px;
+  letter-spacing: -0.025em;
+}
+.root h3 {
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+.root p {
+  margin: 7px 0;
+}
+.root button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.root :is(input, select, textarea) {
+  background: var(--bg);
+  color: var(--text);
+  max-width: 100%;
+  border: 1px solid var(--line-strong);
+  padding: 8px;
+  border-radius: 7px;
+  font: inherit;
+}
+.root input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-strong);
+}
+.root :is(button, input, select, textarea):focus-visible,
+.tabs button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+.root label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.root textarea {
+  display: block;
+  width: 100%;
+  min-height: 80px;
+}
+.root small,
+.muted {
+  color: var(--muted);
+}
+.root .box {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 16px;
+  border-radius: 12px;
+  min-width: 0;
+}
+.fileLabel {
+  font-weight: 650;
+  display: block !important;
+}
+.root input[type="file"] {
+  display: block;
+  margin: 10px 0;
+  width: 100%;
+}
+.root .error {
+  border: 1px solid #666;
+  background: #f5f5f5;
+  padding: 12px;
+  border-radius: 8px;
+}
+.summary {
+  padding: 10px 2px;
+  word-break: break-word;
+}
+.columns {
+  max-height: 270px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+}
+.column {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #e5e5e5;
+  padding: 8px;
+  border-radius: 7px;
+  min-width: 0;
+}
+.column label {
+  word-break: break-word;
+  min-width: 0;
+}
+.column select {
+  max-width: 100px;
+}
+.filters {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.filter input {
+  flex: 1;
+  min-width: 100px;
+}
+.controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.controls label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
+  gap: 8px;
+}
+.metrics div {
+  border: 1px solid #ddd;
+  border-radius: 7px;
+  padding: 9px;
+  min-width: 0;
+}
+.metrics dt {
+  font-size: 12px;
+  color: #666;
+}
+.metrics dd {
+  margin: 4px 0 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.tableWrap {
+  max-height: 380px;
+  overflow: auto;
+  border: 1px solid #dedede;
+  border-radius: 8px;
+}
+.tableWrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.tableWrap :is(th, td) {
+  border: 1px solid #ddd;
+  padding: 7px 10px;
+  text-align: left;
+  min-width: 90px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.tableWrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  color: var(--text);
+}
+.tableWrap tbody th[scope="row"] {
+  position: sticky;
+  left: 0;
+  background: var(--panel);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.tableWrap tbody tr:hover :is(th, td) {
+  background: var(--surface);
+}
+.chart {
+  overflow: auto;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  max-width: 100%;
+  background: #fff;
+}
+.chart svg {
+  display: block;
+  min-width: 450px;
+  width: 100%;
+  height: auto;
+}
+@media (max-width: 600px) {
+  .tabs button {
+    flex: 1;
+  }
+  .root .box {
+    padding: 12px;
+  }
+  .columns {
+    grid-template-columns: 1fr;
+  }
+  .controls {
+    align-items: stretch;
+  }
+  .filter select {
+    max-width: 100%;
+  }
+}
+@media (forced-colors: active) {
+  .tabs button[aria-current="page"] {
+    border: 2px solid Highlight;
+    color: ButtonText;
+    background: ButtonFace;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .root *,
+  .tabs * {
+    transition: none !important;
+  }
+}

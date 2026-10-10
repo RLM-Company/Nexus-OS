@@ -7,11 +7,19 @@ import { InstallApp } from "./install-app";
 import { ChatResponse } from "./chat-response";
 import { VoiceComposer } from "./voice/voice-composer";
 import { VoicePlayback } from "./voice/voice-playback";
+import { LoadingDots } from "./ui/feedback";
+import { CanvasEditor } from "./canvas-editor/canvas-editor";
+import canvasChat from "./canvas-editor/canvas-chat.module.css";
 import { WebSearchPanel } from "./web-search-panel";
 import { ChatHistoryActions } from "./chat-history-actions";
 import { RelaySwitch } from "./personal-settings/relay-switch";
 import { ChatArchivePanel } from "./chat-archive-panel";
 import { clearComposerDraft, readComposerDraft, saveComposerDraft } from "./composer-draft-storage";
+import {
+  desktopDraftBridge,
+  nativeDraftScope,
+  purgeUnscopedLegacyDrafts
+} from "./desktop-draft-bridge";
 import { ProjectContextPanel } from "./project-context-panel";
 import { ProjectContextPreview } from "./project-context-preview";
 import { ManagerWorkPanel } from "./manager-work-panel";
@@ -457,6 +465,7 @@ const generalMessagePlaceholder = (id: string, chatId: string, runId: string): L
 export default function Home() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [canvasOpen, setCanvasOpen] = useState(false);
   const executionGate = useExecutionGate(activeProject?.id);
   const [chatId, setChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -499,6 +508,8 @@ export default function Home() {
   const [workspaceSurfaceHydrated, setWorkspaceSurfaceHydrated] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const followMessagesRef = useRef(true);
+  const [fileDragActive, setFileDragActive] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const navigationSearchRef = useRef<HTMLInputElement | null>(null);
   const viewEpochRef = useRef(0);
@@ -525,12 +536,65 @@ export default function Home() {
   );
   const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
   const pendingComposeRef = useRef<{ prompt: string; files: ChatAttachment[] } | null>(null);
+  const acceptedDraftRef = useRef<{ key: string; text: string } | null>(null);
   const pendingComposerFocusRef = useRef(false);
   const draftRecoveryKeyRef = useRef<string | null>(null);
   const attachmentScope = `${composerDraftKey}:${viewEpochRef.current}`;
 
   useEffect(() => {
+    const field = composerRef.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${Math.min(176, Math.max(56, field.scrollHeight))}px`;
+  }, [draft, surface, activeProject?.id, localChatMessages.length]);
+
+  useEffect(() => {
     setDraftStorageReadyKey(null);
+    acceptedDraftRef.current = null;
+    const native = desktopDraftBridge(window);
+    const scope = nativeDraftScope(composerDraftKey);
+    if (native) {
+      // The pre-v0.11.1 localStorage drafts have no owner ID; removing them even
+      // before login prevents the next account from reading their contents.
+      try {
+        purgeUnscopedLegacyDrafts(window.localStorage);
+      } catch {
+        /* best effort */
+      }
+      setDraft("");
+      chatAttachments.replace([]); // Never restore file bytes into a native text-only draft.
+      setDraftRecoveryNotice(null);
+      let cancelled = false;
+      if (!scope) {
+        setDraftRecoveryNotice("Недопустимый идентификатор черновика.");
+        setDraftStorageReadyKey(attachmentScope);
+        return;
+      }
+      void native
+        .load(scope)
+        .then((result) => {
+          if (cancelled) return;
+          if (result.ok) {
+            setDraft(result.text ?? "");
+            setDraftRecoveryNotice(
+              result.text ? "Восстановлен локальный текстовый черновик Windows." : null
+            );
+          } else {
+            setDraftRecoveryNotice(
+              result.message ?? "Для восстановления требуется подтверждённый вход."
+            );
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setDraftRecoveryNotice("Черновик Windows пока недоступен.");
+        })
+        .finally(() => {
+          if (!cancelled) setDraftStorageReadyKey(attachmentScope);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     try {
       const saved = readComposerDraft(window.localStorage, composerDraftKey);
       setDraft(saved.text);
@@ -548,13 +612,13 @@ export default function Home() {
 
   useEffect(() => {
     const pending = pendingComposeRef.current;
-    if (!pending) return;
+    if (!pending || draftStorageReadyKey !== attachmentScope) return;
     pendingComposeRef.current = null;
     setDraft(pending.prompt);
     chatAttachments.replace(pending.files);
     pendingComposerFocusRef.current = true;
     // Consume only after the new chat scope and its draft hydration have settled.
-  }, [attachmentScope, chatAttachments]);
+  }, [attachmentScope, chatAttachments, draftStorageReadyKey]);
 
   useEffect(() => {
     if (
@@ -576,6 +640,50 @@ export default function Home() {
 
   useEffect(() => {
     if (draftStorageReadyKey !== attachmentScope) return;
+    const native = desktopDraftBridge(window);
+    if (native) {
+      const scope = nativeDraftScope(composerDraftKey);
+      if (!scope) return;
+      const flush = () => {
+        // Do not resurrect a server-acknowledged message if the window closes
+        // before React has committed the empty composer after acceptance.
+        if (
+          acceptedDraftRef.current?.key === composerDraftKey &&
+          acceptedDraftRef.current.text === draft
+        )
+          return;
+        native.flush(scope, draft);
+      };
+      window.addEventListener("pagehide", flush);
+      let cancelled = false;
+      const timer = window.setTimeout(() => {
+        // A POST still in flight can have been accepted even if its HTTP response was lost.
+        // Do not race a delayed autosave against a server-acknowledged clear.
+        if (
+          submitPendingRef.current ||
+          (acceptedDraftRef.current?.key === composerDraftKey &&
+            acceptedDraftRef.current.text === draft)
+        )
+          return;
+        if (!draft) acceptedDraftRef.current = null;
+        void native
+          .save(scope, draft)
+          .then((result) => {
+            if (!cancelled)
+              setDraftNotice(
+                result.ok ? null : (result.message ?? "Не удалось сохранить черновик Windows.")
+              );
+          })
+          .catch(() => {
+            if (!cancelled) setDraftNotice("Не удалось сохранить черновик Windows.");
+          });
+      }, 300);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
+        window.removeEventListener("pagehide", flush);
+      };
+    }
     try {
       setDraftNotice(
         saveComposerDraft(window.localStorage, composerDraftKey, draft, chatAttachments.files)
@@ -744,7 +852,14 @@ export default function Home() {
   }, [reloadShellData]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    followMessagesRef.current = true;
+  }, [activeLocalChatId, activeProject?.id]);
+  useEffect(() => {
+    if (!followMessagesRef.current) return;
+    const frame = requestAnimationFrame(() =>
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant", block: "end" })
+    );
+    return () => cancelAnimationFrame(frame);
   }, [localChatMessages, messages]);
 
   const loadProjectView = useCallback(async (projectId: string) => {
@@ -949,6 +1064,8 @@ export default function Home() {
           ) {
             chatAttachments.replace([material.attachment]);
             setDraft(material.prompt);
+            setSurface("manager");
+            pendingComposerFocusRef.current = true;
           }
           window.sessionStorage.removeItem(key);
         }
@@ -1518,6 +1635,12 @@ export default function Home() {
                   attachments: chatAttachments.files
                 })
               });
+          acceptedDraftRef.current = { key: composerDraftKey, text: draft };
+          const acceptedScope = nativeDraftScope(composerDraftKey);
+          if (acceptedScope)
+            void desktopDraftBridge(window)
+              ?.clear(acceptedScope)
+              .catch(() => undefined);
           try {
             clearComposerDraft(window.localStorage, composerDraftKey);
           } catch {
@@ -1566,9 +1689,17 @@ export default function Home() {
         } catch (cause) {
           if (epoch !== viewEpochRef.current) return;
           setDraft(content);
+          const scope = nativeDraftScope(composerDraftKey);
+          if (scope)
+            void desktopDraftBridge(window)
+              ?.save(scope, content)
+              .catch(() => undefined);
           setSending(false);
           setRunPhase("failed");
-          setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
+          setError(
+            `${cause instanceof Error ? cause.message : "Не удалось подтвердить отправку"} ` +
+              "Если соединение прервалось, результат запроса неизвестен. Проверьте историю чата перед ручной повторной отправкой: она может списать токены повторно."
+          );
         }
         return;
       }
@@ -1593,6 +1724,12 @@ export default function Home() {
           }
         );
 
+        acceptedDraftRef.current = { key: composerDraftKey, text: draft };
+        const acceptedScope = nativeDraftScope(composerDraftKey);
+        if (acceptedScope)
+          void desktopDraftBridge(window)
+            ?.clear(acceptedScope)
+            .catch(() => undefined);
         try {
           clearComposerDraft(window.localStorage, composerDraftKey);
         } catch {
@@ -1629,9 +1766,17 @@ export default function Home() {
       } catch (cause) {
         if (epoch !== viewEpochRef.current) return;
         setDraft(content);
+        const scope = nativeDraftScope(composerDraftKey);
+        if (scope)
+          void desktopDraftBridge(window)
+            ?.save(scope, content)
+            .catch(() => undefined);
         setSending(false);
         setRunPhase("failed");
-        setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
+        setError(
+          `${cause instanceof Error ? cause.message : "Не удалось подтвердить отправку"} ` +
+            "Если соединение прервалось, результат запроса неизвестен. Проверьте историю чата перед ручной повторной отправкой: она может списать токены повторно."
+        );
       }
     } finally {
       submitPendingRef.current = false;
@@ -1740,6 +1885,11 @@ export default function Home() {
     // Explicitly starting afresh from the unnamed composer discards that draft.
     // Named chats/projects retain their own draft when navigating away.
     if (!activeProject && !selectedProjectRef.current && !activeLocalChatId) {
+      const scope = nativeDraftScope(composerDraftKey);
+      if (scope)
+        void desktopDraftBridge(window)
+          ?.clear(scope)
+          .catch(() => undefined);
       try {
         clearComposerDraft(window.localStorage, composerDraftKey);
       } catch {
@@ -2400,35 +2550,58 @@ export default function Home() {
                 <i /> {RUN_PHASE_LABEL[runPhase]}
               </span>
             </div>
-            <div className="messages" aria-live="polite">
-              {messages.map((message) => (
-                <article key={message.id} className={`message ${message.role}`}>
-                  <span className="message-avatar">
-                    {message.role === "user" ? <WorkspaceIcon name="owner" /> : <SparkIcon />}
-                  </span>
-                  <div>
-                    <header>
-                      <strong>{message.role === "user" ? "Вы" : "Kosmora Manager"}</strong>
-                      <time>
-                        {new Date(message.created_at).toLocaleTimeString("ru", {
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        })}
-                      </time>
-                    </header>
-                    <ChatResponse
-                      content={displayedContent(message)}
-                      assistant={message.role === "assistant"}
-                      complete={message.status === "completed"}
-                    />
-                    {message.role === "assistant" && message.status === "completed" && (
-                      <VoicePlayback text={message.content} />
-                    )}
-                    <ChatMessageAttachments files={message.attachments ?? []} />
-                  </div>
-                </article>
-              ))}
-              <div ref={messagesEndRef} />
+            <button
+              className={canvasChat.chatAction}
+              type="button"
+              onClick={() => setCanvasOpen((open) => !open)}
+              aria-expanded={canvasOpen}
+            >
+              {canvasOpen ? "Закрыть Canvas" : "Открыть Canvas"}
+            </button>
+            <div className={canvasOpen ? canvasChat.chatSplit : canvasChat.chatBody}>
+              <div
+                className="messages"
+                aria-live="polite"
+                onScroll={(event) => {
+                  const area = event.currentTarget;
+                  followMessagesRef.current =
+                    area.scrollHeight - area.scrollTop - area.clientHeight < 64;
+                }}
+              >
+                {messages.map((message) => (
+                  <article key={message.id} className={`message ${message.role}`}>
+                    <span className="message-avatar">
+                      {message.role === "user" ? <WorkspaceIcon name="owner" /> : <SparkIcon />}
+                    </span>
+                    <div>
+                      <header>
+                        <strong>{message.role === "user" ? "Вы" : "Kosmora Manager"}</strong>
+                        <time>
+                          {new Date(message.created_at).toLocaleTimeString("ru", {
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })}
+                        </time>
+                      </header>
+                      <ChatResponse
+                        content={displayedContent(message)}
+                        assistant={message.role === "assistant"}
+                        complete={message.status === "completed"}
+                      />
+                      {message.role === "assistant" && message.status === "completed" && (
+                        <VoicePlayback text={message.content} />
+                      )}
+                      <ChatMessageAttachments files={message.attachments ?? []} />
+                    </div>
+                  </article>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+              {canvasOpen && (
+                <div className={canvasChat.chatEditor}>
+                  <CanvasEditor key={activeProject.id} projectId={activeProject.id} />
+                </div>
+              )}
             </div>
           </section>
         ) : localChatMessages.length > 0 ? (
@@ -2470,7 +2643,15 @@ export default function Home() {
                 <i /> {CHAT_RUN_PHASE_LABEL[runPhase]}
               </span>
             </div>
-            <div className="messages" aria-live="polite">
+            <div
+              className="messages"
+              aria-live="polite"
+              onScroll={(event) => {
+                const area = event.currentTarget;
+                followMessagesRef.current =
+                  area.scrollHeight - area.scrollTop - area.clientHeight < 64;
+              }}
+            >
               {localChatMessages.map((message) => (
                 <article key={message.id} className={`message ${message.role}`}>
                   <span className="message-avatar">
@@ -2546,6 +2727,41 @@ export default function Home() {
           className={
             activeProject || localChatMessages.length > 0 ? "composer chat-composer" : "composer"
           }
+          data-file-drag={fileDragActive || undefined}
+          onDragOver={(event) => {
+            if (!event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            if (
+              !sending &&
+              !loading &&
+              initialRouteReady &&
+              !chatAttachments.reading &&
+              draftStorageReadyKey === attachmentScope
+            )
+              setFileDragActive(true);
+          }}
+          onDragLeave={(event) => {
+            if (
+              !(event.relatedTarget instanceof Node) ||
+              !event.currentTarget.contains(event.relatedTarget)
+            )
+              setFileDragActive(false);
+          }}
+          onDrop={(event) => {
+            if (!event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            setFileDragActive(false);
+            if (
+              sending ||
+              loading ||
+              !initialRouteReady ||
+              chatAttachments.reading ||
+              draftStorageReadyKey !== attachmentScope
+            )
+              return;
+            const files = Array.from(event.dataTransfer.files);
+            if (files.length) void chatAttachments.add(files);
+          }}
           onSubmit={(event) => void submit(event)}
         >
           <label htmlFor="task">
@@ -2560,7 +2776,7 @@ export default function Home() {
               setDraft(event.target.value);
             }}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 event.currentTarget.form?.requestSubmit();
               }
@@ -2612,9 +2828,13 @@ export default function Home() {
               />
             </div>
             <div className="composer-footer">
-              <span role={error ? "alert" : undefined} aria-live={error ? "assertive" : "polite"}>
-                {error ?? (sending ? "Kosmora выполняет запуск…" : "")}
-              </span>
+              {error ? (
+                <span role="alert">{error}</span>
+              ) : sending ? (
+                <LoadingDots label="Kosmora выполняет запуск" />
+              ) : (
+                <span />
+              )}
               {sending ? (
                 <button
                   type="button"

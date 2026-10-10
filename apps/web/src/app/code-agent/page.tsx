@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { CodePatchEditor } from "./patch-editor";
+import { codePatchMessages, type CodePatchPreview } from "./patch-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./code-agent.module.css";
 import { codeAgentUnifiedDiff } from "./unified-diff";
@@ -16,6 +18,19 @@ type Run = {
   publication_token?: string;
   proposal?: FileChange[];
   summary?: string;
+  context_files?: Array<{ path: string; size_bytes: number }>;
+  proposal_diff?: string;
+  proposal_snapshot_digest?: string;
+  proposal_normalizations?: Array<{ path: string; line: number; before: string; after: string }>;
+  proposal_check?: {
+    status: string;
+    snapshotDigest: string;
+    stdout: string;
+    stderr: string;
+    truncated: boolean;
+    cleanupVerified?: boolean;
+  };
+  patch_diagnostic?: { code: string; path?: string; line?: number };
   error?: string;
   draft?: {
     id: string;
@@ -60,6 +75,7 @@ const labels: Record<string, string> = {
   cancelled: "Отменено"
 };
 const errors: Record<string, string> = {
+  ...codePatchMessages,
   OWNER_BUDGET_LIMIT:
     "Общий бюджет владельца не разрешает новый запрос. Проверьте расходы и удержанные резервы.",
   EXECUTION_CANCELLING: "Останавливаем проверку. Дождитесь подтверждения остановки контейнера.",
@@ -150,6 +166,11 @@ export default function CodeAgentPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkType, setCheckType] = useState("syntax");
+  const [autoCheck, setAutoCheck] = useState(false);
+  const [proofDirty, setProofDirty] = useState(false);
+  const invalidation = useRef<Promise<void> | null>(null);
+  const editingInvalidated = useRef(false);
+  const linkedRun = useRef<string | null>(null);
   const [checkApproved, setCheckApproved] = useState(false);
   const [publishApproved, setPublishApproved] = useState(false);
   const [unknownPublish, setUnknownPublish] = useState(false);
@@ -172,6 +193,8 @@ export default function CodeAgentPage() {
     }
     const identity = `${value.id}:${value.proposal_hash ?? ""}`;
     if (restore || proposalIdentity.current !== identity) {
+      editingInvalidated.current = false;
+      setProofDirty(false);
       proposalIdentity.current = identity;
       const selected = value.draft?.plan.files;
       setEdits(
@@ -202,7 +225,11 @@ export default function CodeAgentPage() {
         setProjects(list.items);
         setConnection(status);
         setBranch(status.default_branch ?? "main");
-        setProject(list.items[0]?.id ?? "");
+        const query = new URLSearchParams(window.location.search);
+        linkedRun.current = query.get("run");
+        setProject(
+          list.items.find((item) => item.id === query.get("project"))?.id ?? list.items[0]?.id ?? ""
+        );
       })
       .catch((reason: unknown) => {
         if (alive) setError(failureMessage(reason));
@@ -229,7 +256,8 @@ export default function CodeAgentPage() {
       .then((list) => {
         if (epoch.current !== requestEpoch) return;
         setRuns(list.items);
-        if (list.items[0]) accept(list.items[0], true);
+        const desired = list.items.find((item) => item.id === linkedRun.current) ?? list.items[0];
+        if (desired) accept(desired, true);
       })
       .catch((reason: unknown) => {
         if (epoch.current === requestEpoch) setError(failureMessage(reason));
@@ -292,6 +320,7 @@ export default function CodeAgentPage() {
       review.files.some((item) => item.path === file.path && item.content === file.content)
     );
   const checkingPassed =
+    !proofDirty &&
     run?.status === "checked" &&
     !!run.publication_token &&
     run.check?.status === "passed" &&
@@ -304,7 +333,47 @@ export default function CodeAgentPage() {
     !busy;
   const needsReconciliation =
     !!run && (unknownPublish || ["uncertain", "publishing"].includes(run.status));
+  function invalidateProof(): Promise<void> {
+    setProofDirty(true);
+    setCheckApproved(false);
+    setPublishApproved(false);
+    if (editingInvalidated.current) return invalidation.current ?? Promise.resolve();
+    if (!run?.proposal_hash) return Promise.resolve();
+    editingInvalidated.current = true;
+    const id = run.id,
+      requestEpoch = epoch.current;
+    const pending = api<Run>(`${root}/${encodeURIComponent(id)}/invalidate-review`, {
+      proposal_hash: run.proposal_hash
+    })
+      .then((value) => {
+        if (epoch.current === requestEpoch && activeRun.current === id) accept(value);
+      })
+      .catch((e: unknown) => {
+        editingInvalidated.current = false;
+        setError(e instanceof Error ? e.message : "Не удалось отменить старую проверку.");
+        throw e;
+      })
+      .finally(() => {
+        if (invalidation.current === pending) invalidation.current = null;
+      });
+    invalidation.current = pending;
+    return pending;
+  }
+  function applyPreview(preview: CodePatchPreview) {
+    setEdits((current) =>
+      current.map((file) => {
+        const changed = preview.files.find((f) => f.path === file.path);
+        return changed
+          ? { ...file, content: changed.content, selected: true }
+          : { ...file, selected: false };
+      })
+    );
+    setProofDirty(true);
+    setCheckApproved(false);
+    setPublishApproved(false);
+  }
   function edit(index: number, update: Partial<Edit>) {
+    void invalidateProof().catch(() => undefined);
     setEdits((current) => current.map((file, i) => (i === index ? { ...file, ...update } : file)));
     setCheckApproved(false);
     setPublishApproved(false);
@@ -376,6 +445,29 @@ export default function CodeAgentPage() {
           Агент читает только подключённый репозиторий. Публикация и запуск проверки требуют
           отдельного подтверждения.
         </p>
+        <label className={styles.checkbox}>
+          <input
+            type="checkbox"
+            checked={autoCheck}
+            disabled={busy}
+            onChange={(event) => setAutoCheck(event.target.checked)}
+          />{" "}
+          Разрешаю после предложения автоматически выполнить выбранную ниже проверку для точного
+          снимка без сети
+        </label>
+        {autoCheck && (
+          <label>
+            Автоматическая проверка
+            <select
+              value={checkType}
+              disabled={busy}
+              onChange={(event) => setCheckType(event.target.value)}
+            >
+              <option value="syntax">Синтаксис Node.js</option>
+              <option value="node-test">Тесты Node.js</option>
+            </select>
+          </label>
+        )}
         <button
           className={styles.primary}
           disabled={busy || !project || !connection?.configured || !task.trim() || !branch.trim()}
@@ -384,6 +476,7 @@ export default function CodeAgentPage() {
               api<Run>(root, {
                 task: task.trim(),
                 base_branch: branch.trim(),
+                ...(autoCheck ? { auto_check: { check: checkType, approve: true } } : {}),
                 ...(paths.trim()
                   ? {
                       files: paths
@@ -396,7 +489,7 @@ export default function CodeAgentPage() {
             )
           }
         >
-          Предложить исправление
+          {autoCheck ? "Предложить и проверить исправление" : "Предложить исправление"}
         </button>
       </section>
 
@@ -448,6 +541,18 @@ export default function CodeAgentPage() {
               Основа: {run.base_branch} · {run.base_sha || "ожидает чтения"}
             </p>
             {run.summary && <p>{run.summary}</p>}
+            {!!run.context_files?.length && (
+              <details>
+                <summary>Прочитанный контекст: {run.context_files.length} файлов</summary>
+                <ul>
+                  {run.context_files.map((file) => (
+                    <li key={file.path}>
+                      <code>{file.path}</code> · {file.size_bytes} байт
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
             {run.usage && (
               <p className={styles.muted}>
                 Учтённые токены: {run.usage.input_tokens} входящих / {run.usage.output_tokens}{" "}
@@ -458,7 +563,101 @@ export default function CodeAgentPage() {
                 {!run.usage.owner_budget_connected && " Общий бюджет владельца пока не подключён."}
               </p>
             )}
-            {run.error && <p role="alert">{errors[run.error] ?? run.error}</p>}
+            {run.error && (
+              <p role="alert">
+                {errors[run.error] ?? run.error}
+                {run.patch_diagnostic?.path
+                  ? ` Файл: ${run.patch_diagnostic.path}, строка diff: ${run.patch_diagnostic.line ?? "—"}.`
+                  : ""}
+              </p>
+            )}
+            {run.proposal_snapshot_digest && (
+              <p className={styles.muted}>
+                Исходный снимок: <code>{run.proposal_snapshot_digest}</code>
+              </p>
+            )}
+            {!!run.proposal_normalizations?.length && (
+              <details>
+                <summary>
+                  Безопасно исправлены счётчики hunk: {run.proposal_normalizations.length}
+                </summary>
+                <pre>
+                  {run.proposal_normalizations
+                    .map((n) => `${n.path}:${n.line}\n${n.before}\n${n.after}`)
+                    .join("\n")}
+                </pre>
+                <p>Пути, позиции и строки файлов не изменялись при нормализации.</p>
+              </details>
+            )}
+            {run.proposal_check && (
+              <div aria-label="Автоматическая проверка предложения">
+                <p role="status">
+                  {run.proposal_check.status === "passed"
+                    ? "Автоматическая проверка успешна; публикация ожидает review владельца."
+                    : run.proposal_check.status === "unavailable"
+                      ? "Executor недоступен. Можно повторить выбранную проверку без модели."
+                      : run.proposal_check.status === "timed_out"
+                        ? "Превышен лимит времени. Можно повторить проверку."
+                        : run.proposal_check.status === "cancelled"
+                          ? "Проверка отменена."
+                          : "Проверка не подтвердила исправление."}
+                </p>
+                <p>
+                  Проверенный снимок: <code>{run.proposal_check.snapshotDigest}</code>
+                </p>
+                <pre>{run.proposal_check.stdout || run.proposal_check.stderr || "Нет вывода"}</pre>
+                {run.proposal_check.stdout && run.proposal_check.stderr && (
+                  <pre>{run.proposal_check.stderr}</pre>
+                )}
+                {run.proposal_check.truncated && <p>Вывод ограничен.</p>}
+              </div>
+            )}
+            {run.proposal && !run.draft && editable && (
+              <div>
+                <label>
+                  Проверка предложения
+                  <select
+                    value={checkType}
+                    disabled={busy || proofDirty}
+                    onChange={(event) => {
+                      setCheckType(event.target.value);
+                      setCheckApproved(false);
+                    }}
+                  >
+                    <option value="syntax">Синтаксис Node.js</option>
+                    <option value="node-test">Тесты Node.js</option>
+                  </select>
+                </label>
+                <label className={styles.checkbox}>
+                  <input
+                    type="checkbox"
+                    checked={checkApproved}
+                    disabled={busy || proofDirty}
+                    onChange={(event) => setCheckApproved(event.target.checked)}
+                  />
+                  Разрешаю проверку исходного предложения на точном снимке
+                </label>
+                <button
+                  disabled={busy || proofDirty || !checkApproved}
+                  onClick={() =>
+                    void action(() =>
+                      api<Run>(`${root}/${encodeURIComponent(run.id)}/proposal-check`, {
+                        proposal_hash: run.proposal_hash,
+                        check: checkType,
+                        approve: true
+                      })
+                    )
+                  }
+                >
+                  {run.proposal_check
+                    ? "Повторить выбранную проверку без модели"
+                    : "Проверить предложение без модели"}
+                </button>
+                {proofDirty && (
+                  <p>Правки изменены. Сохраните просмотр, затем проверьте выбранные изменения.</p>
+                )}
+              </div>
+            )}
           </section>
 
           {edits.length > 0 && (
@@ -468,6 +667,20 @@ export default function CodeAgentPage() {
                 Снимите выбор с ненужных файлов. Можно изменить итоговый текст, чтобы принять
                 отдельные изменения. Затем сохраните просмотр.
               </p>
+              {run.proposal_diff && run.proposal_snapshot_digest && run.proposal_hash && (
+                <CodePatchEditor
+                  key={`${run.id}:${run.proposal_hash}`}
+                  project={project}
+                  id={run.id}
+                  baseSha={run.base_sha}
+                  snapshotDigest={run.proposal_snapshot_digest}
+                  proposalHash={run.proposal_hash}
+                  initialDiff={run.proposal_diff}
+                  disabled={!editable}
+                  onDirty={invalidateProof}
+                  onApply={applyPreview}
+                />
+              )}
               {edits.map((file, index) => (
                 <article className={styles.file} key={file.path}>
                   <label className={styles.checkbox}>
@@ -500,7 +713,8 @@ export default function CodeAgentPage() {
               <details aria-label="Unified diff">
                 <summary>Unified diff</summary>
                 <p className={styles.muted}>
-                  Полные замены выбранных файлов; предпросмотр учитывает текущий текст редактора.
+                  Точные изменения с ограниченным контекстом; предпросмотр учитывает текущий текст
+                  редактора.
                 </p>
                 {diffPreview.limited ? (
                   <p role="status">
@@ -511,14 +725,21 @@ export default function CodeAgentPage() {
                 )}
               </details>
               <button
-                disabled={!editable || !selected.length || matchesReview}
+                disabled={!editable || !selected.length || (matchesReview && !proofDirty)}
                 onClick={() =>
-                  void action(() =>
-                    api<Run>(`${root}/${encodeURIComponent(run.id)}/review`, {
-                      proposal_hash: run.proposal_hash,
-                      files: selected.map(({ path, content }) => ({ path, content }))
-                    })
-                  )
+                  void action(async () => {
+                    if (invalidation.current) await invalidation.current;
+                    const reviewed = await api<Run>(
+                      `${root}/${encodeURIComponent(run.id)}/review`,
+                      {
+                        proposal_hash: run.proposal_hash,
+                        files: selected.map(({ path, content }) => ({ path, content }))
+                      }
+                    );
+                    editingInvalidated.current = false;
+                    setProofDirty(false);
+                    return reviewed;
+                  })
                 }
               >
                 Сохранить выбранные изменения
@@ -594,6 +815,9 @@ export default function CodeAgentPage() {
                             : run.check.status === "cancelled"
                               ? "Проверка отменена. Можно повторить её с новым подтверждением."
                               : run.check.status}
+                  </p>
+                  <p>
+                    Проверенный снимок: <code>{run.check.snapshotDigest}</code>
                   </p>
                   <pre>{run.check.stdout || "Нет стандартного вывода"}</pre>
                   {run.check.stderr && <pre>{run.check.stderr}</pre>}

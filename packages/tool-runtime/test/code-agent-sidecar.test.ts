@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- asynchronous transport fixtures */
 import { execFileSync } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, lstat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -154,19 +154,22 @@ describe("authenticated executor HTTP protocol (transport only)", () => {
         { path: "папка/" + "x".repeat(120) + ".js", content: "текст\r\n" },
         { path: "empty.js", content: "" }
       ];
-      await writeFile(join(directory, "files.tar"), codeAgentSnapshotArchive(snapshot));
-      const listing = execFileSync("tar", ["-tvf", join(directory, "files.tar")], {
-        encoding: "utf8"
-      });
-      expect(listing).toContain("workspace/папка/");
-      expect(listing).toContain("empty.js");
-      expect(listing).not.toContain(" -> ");
-      const content = execFileSync(
-        "tar",
-        ["-xOf", join(directory, "files.tar"), "workspace/" + snapshot[0]!.path],
-        { encoding: "utf8" }
-      );
-      expect(content).toBe(snapshot[0]!.content);
+      const archive = codeAgentSnapshotArchive(snapshot);
+      await writeFile(join(directory, "files.tar"), archive);
+      // Windows tar's human-readable listing uses its console code page. Validate UTF-8
+      // PAX names and actual extracted filesystem paths/bytes rather than decode that display.
+      expect(archive.includes(Buffer.from("workspace/" + snapshot[0]!.path, "utf8"))).toBe(true);
+      execFileSync("tar", ["-xf", join(directory, "files.tar"), "-C", directory]);
+      for (const file of snapshot) {
+        const path = join(directory, "workspace", file.path);
+        const metadata = await lstat(path);
+        expect(metadata.isFile()).toBe(true);
+        expect(metadata.isSymbolicLink()).toBe(false);
+        expect(await readFile(path, "utf8")).toBe(file.content);
+      }
+      const parent = await lstat(join(directory, "workspace", "папка"));
+      expect(parent.isDirectory()).toBe(true);
+      expect(parent.isSymbolicLink()).toBe(false);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

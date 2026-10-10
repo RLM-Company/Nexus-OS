@@ -88,15 +88,22 @@ export default function SearchHistoryPage() {
     };
     window.addEventListener("keydown", onKey);
     fetch("/api/v1/projects", { credentials: "same-origin" })
-      .then((response) => response.ok ? response.json() : null)
+      .then((response) => (response.ok ? response.json() : null))
       .then((data: { items?: Project[] } | null) => setProjects(data?.items ?? []))
       .catch(() => undefined);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const reload = useCallback(() => setRevision((current) => current + 1), []);
-  const apply = (next: { q?: string; scope?: Scope; archive?: Archive; project?: string;
-    after?: string; before?: string; offset?: number }) => {
+  const apply = (next: {
+    q?: string;
+    scope?: Scope;
+    archive?: Archive;
+    project?: string;
+    after?: string;
+    before?: string;
+    offset?: number;
+  }) => {
     if (next.q !== undefined) setQuery(next.q.trim());
     if (next.scope !== undefined) setScope(next.scope);
     if (next.archive !== undefined) setArchive(next.archive);
@@ -127,17 +134,28 @@ export default function SearchHistoryPage() {
     }
     const controller = new AbortController();
     abortRef.current = controller;
-    const request = new URLSearchParams({ q: query, scope, archive,
-      limit: String(PAGE_SIZE), offset: String(offset) });
+    const request = new URLSearchParams({
+      q: query,
+      scope,
+      archive,
+      limit: String(PAGE_SIZE),
+      offset: String(offset)
+    });
     if (project) request.set("project", project);
     if (after) request.set("after", after);
     if (before) request.set("before", before);
     setLoading(true);
-    fetch(`/api/v1/chat-history/search?${request}`, { signal: controller.signal,
-      credentials: "same-origin" })
+    fetch(`/api/v1/chat-history/search?${request}`, {
+      signal: controller.signal,
+      credentials: "same-origin"
+    })
       .then(async (response) => {
-        if (!response.ok) throw new Error(response.status === 401 || response.status === 403
-          ? "Необходим вход с правами владельца." : "Не удалось выполнить поиск. Попробуйте ещё раз.");
+        if (!response.ok)
+          throw new Error(
+            response.status === 401 || response.status === 403
+              ? "Необходим вход с правами владельца."
+              : "Не удалось выполнить поиск. Попробуйте ещё раз."
+          );
         return response.json() as Promise<Page>;
       })
       .then((result) => {
@@ -153,9 +171,12 @@ export default function SearchHistoryPage() {
         }
       })
       .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Ошибка поиска");
+        if (!controller.signal.aborted)
+          setError(cause instanceof Error ? cause.message : "Ошибка поиска");
       })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
     return () => controller.abort();
   }, [ready, query, scope, archive, project, after, before, offset, revision]);
 
@@ -165,8 +186,11 @@ export default function SearchHistoryPage() {
     if (query === draft.trim()) reload();
   };
   const hrefFor = (hit: Hit): string => {
-    const params = new URLSearchParams(hit.scope === "project"
-      ? { project: hit.project_id ?? "", view: "chat" } : { chat: hit.chat_id });
+    const params = new URLSearchParams(
+      hit.scope === "project"
+        ? { project: hit.project_id ?? "", view: "chat" }
+        : { chat: hit.chat_id }
+    );
     if (hit.message_id) params.set("message", hit.message_id);
     return `/?${params}`;
   };
@@ -180,78 +204,159 @@ export default function SearchHistoryPage() {
   return (
     <main className={styles.shell}>
       <header className={styles.heading}>
-        <a href="/" className={styles.back}>← К чатам</a>
+        <a href="/" className={styles.back}>
+          ← К чатам
+        </a>
         <h1>Поиск по истории</h1>
         <p>Только ваши чаты и сообщения. Архив исключён, пока вы его не выберете.</p>
       </header>
       <form onSubmit={submit} role="search" className={styles.form}>
         <label htmlFor="history-q">Поиск в названиях и сообщениях</label>
         <div className={styles.searchRow}>
-          <input id="history-q" ref={inputRef} value={draft} maxLength={160}
-            placeholder="Слова из чата…" onChange={(event) => setDraft(event.target.value)} />
+          <input
+            id="history-q"
+            ref={inputRef}
+            value={draft}
+            maxLength={160}
+            placeholder="Слова из чата…"
+            onChange={(event) => setDraft(event.target.value)}
+          />
           <button type="submit">Искать</button>
         </div>
         <div className={styles.filters}>
-          <label>Где
-            <select value={scope} onChange={(event) => apply({ scope: event.target.value as Scope })}>
-              <option value="all">Везде</option><option value="general">Обычные чаты</option>
+          <label>
+            Где
+            <select
+              value={scope}
+              onChange={(event) => apply({ scope: event.target.value as Scope })}
+            >
+              <option value="all">Везде</option>
+              <option value="general">Обычные чаты</option>
               <option value="project">Проекты</option>
             </select>
           </label>
-          <label>Проект
-            <select value={project} onChange={(event) => apply({ project: event.target.value, scope: event.target.value ? "project" : scope })}>
+          <label>
+            Проект
+            <select
+              value={project}
+              onChange={(event) =>
+                apply({
+                  project: event.target.value,
+                  scope: event.target.value ? "project" : scope
+                })
+              }
+            >
               <option value="">Все проекты</option>
-              {projects.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+              {projects.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
+              ))}
             </select>
           </label>
-          <label>Архив
-            <select value={archive} onChange={(event) => apply({ archive: event.target.value as Archive })}>
-              <option value="active">Без архива</option><option value="archived">Только архив</option>
+          <label>
+            Архив
+            <select
+              value={archive}
+              onChange={(event) => apply({ archive: event.target.value as Archive })}
+            >
+              <option value="active">Без архива</option>
+              <option value="archived">Только архив</option>
               <option value="all">Включая архив</option>
             </select>
           </label>
-          <label>С даты
-            <input type="date" value={after} max={before || undefined}
-              onChange={(event) => apply({ after: event.target.value })} />
+          <label>
+            С даты
+            <input
+              type="date"
+              value={after}
+              max={before || undefined}
+              onChange={(event) => apply({ after: event.target.value })}
+            />
           </label>
-          <label>По дату
-            <input type="date" value={before} min={after || undefined}
-              onChange={(event) => apply({ before: event.target.value })} />
+          <label>
+            По дату
+            <input
+              type="date"
+              value={before}
+              min={after || undefined}
+              onChange={(event) => apply({ before: event.target.value })}
+            />
           </label>
         </div>
       </form>
       <div className={styles.results} ref={listRef} aria-live="polite" aria-busy={loading}>
         <div className={styles.resultsHeader}>
           <h2>Результаты</h2>
-          {query && <button type="button" onClick={reload} disabled={loading}>Обновить</button>}
+          {query && (
+            <button type="button" onClick={reload} disabled={loading}>
+              Обновить
+            </button>
+          )}
         </div>
-        {!query.trim() && <p className={styles.muted}>Введите запрос, чтобы найти прежний диалог.</p>}
+        {!query.trim() && (
+          <p className={styles.muted}>Введите запрос, чтобы найти прежний диалог.</p>
+        )}
         {loading && <p role="status">Поиск…</p>}
-        {error && <div role="alert"><p>{error}</p><button type="button" onClick={reload}>Повторить</button></div>}
-        {!loading && !error && query && page?.items.length === 0 &&
-          <p className={styles.muted}>Ничего не найдено. Попробуйте другие слова или фильтр архива.</p>}
-        {!loading && !error && page && page.items.length > 0 && <>
-          <p className={styles.muted}>Показаны {offset + 1}–{offset + page.items.length} результатов.</p>
-          <ol start={offset + 1} className={styles.list}>
-            {page.items.map((hit, index) => (
-              <li key={`${hit.scope}-${hit.message_id ?? hit.chat_id}-${index}`}>
-                <a href={hrefFor(hit)} onClick={rememberScroll} className={styles.hit}
-                  aria-label={`Открыть ${hit.scope === "project" ? "проект" : "чат"}: ${hit.title}`}>
-                  <span className={styles.meta}>{hit.scope === "project" ? "Проект" : "Чат"}{hit.archived ? " · Архив" : ""} · {new Date(hit.created_at).toLocaleDateString("ru")}</span>
-                  <strong>{highlightPlainText(hit.title, query)}</strong>
-                  <span className={styles.snippet}>{highlightPlainText(hit.snippet, query)}</span>
-                  <span className={styles.open}>Перейти к {hit.message_id ? "сообщению" : "чату"} →</span>
-                </a>
-              </li>
-            ))}
-          </ol>
-          <nav className={styles.paging} aria-label="Страницы поиска">
-            <button type="button" disabled={loading || offset === 0}
-              onClick={() => apply({ offset: Math.max(0, offset - PAGE_SIZE) })}>← Назад</button>
-            <button type="button" disabled={loading || page.next_offset === null}
-              onClick={() => apply({ offset: page.next_offset ?? offset })}>Далее →</button>
-          </nav>
-        </>}
+        {error && (
+          <div role="alert">
+            <p>{error}</p>
+            <button type="button" onClick={reload}>
+              Повторить
+            </button>
+          </div>
+        )}
+        {!loading && !error && query && page?.items.length === 0 && (
+          <p className={styles.muted}>
+            Ничего не найдено. Попробуйте другие слова или фильтр архива.
+          </p>
+        )}
+        {!loading && !error && page && page.items.length > 0 && (
+          <>
+            <p className={styles.muted}>
+              Показаны {offset + 1}–{offset + page.items.length} результатов.
+            </p>
+            <ol start={offset + 1} className={styles.list}>
+              {page.items.map((hit, index) => (
+                <li key={`${hit.scope}-${hit.message_id ?? hit.chat_id}-${index}`}>
+                  <a
+                    href={hrefFor(hit)}
+                    onClick={rememberScroll}
+                    className={styles.hit}
+                    aria-label={`Открыть ${hit.scope === "project" ? "проект" : "чат"}: ${hit.title}`}
+                  >
+                    <span className={styles.meta}>
+                      {hit.scope === "project" ? "Проект" : "Чат"}
+                      {hit.archived ? " · Архив" : ""} ·{" "}
+                      {new Date(hit.created_at).toLocaleDateString("ru")}
+                    </span>
+                    <strong>{highlightPlainText(hit.title, query)}</strong>
+                    <span className={styles.snippet}>{highlightPlainText(hit.snippet, query)}</span>
+                    <span className={styles.open}>
+                      Перейти к {hit.message_id ? "сообщению" : "чату"} →
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ol>
+            <nav className={styles.paging} aria-label="Страницы поиска">
+              <button
+                type="button"
+                disabled={loading || offset === 0}
+                onClick={() => apply({ offset: Math.max(0, offset - PAGE_SIZE) })}
+              >
+                ← Назад
+              </button>
+              <button
+                type="button"
+                disabled={loading || page.next_offset === null}
+                onClick={() => apply({ offset: page.next_offset ?? offset })}
+              >
+                Далее →
+              </button>
+            </nav>
+          </>
+        )}
       </div>
     </main>
   );

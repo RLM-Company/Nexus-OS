@@ -53,6 +53,10 @@ test("Escape closes the mode menu from its buttons and after tabbing outside", a
   await lastMode.focus();
   await page.keyboard.press("Tab");
   await expect(
+    disclosure.getByRole("link", { name: "Глубокий поиск и отчёты", exact: true })
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
     page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true })
   ).toBeFocused();
   await expect(disclosure).toHaveAttribute("open", "");

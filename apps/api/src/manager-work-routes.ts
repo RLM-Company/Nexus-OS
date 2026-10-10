@@ -1,3 +1,4 @@
+import { registerWorkDagRoutes } from "./work-dag-routes.js";
 import { registerProjectMemoryRoutes } from "./project-memory-routes.js";
 import { registerWorkRuntimeRoutes } from "./work-runtime-routes.js";
 import {
@@ -18,6 +19,7 @@ export function registerManagerWorkRoutes(options: {
   identityFor: (request: FastifyRequest) => IdentityContext;
 }): void {
   const { app, store, projects, coordinator, identityFor } = options;
+  registerWorkDagRoutes({ app, projects, coordinator: coordinator.dag, identityFor });
   registerProjectMemoryRoutes({ app, memory: store.memory, projects, identityFor });
   registerWorkRuntimeRoutes({ app, store, projects, identityFor });
   const base = "/api/v1/projects/:projectId/work";

@@ -232,6 +232,8 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
     await modeTrigger.focus();
     await page.keyboard.press("Enter");
     await expect(modeMenu).toHaveAttribute("open", "");
+    await page.keyboard.press("Tab");
+    await expect(modeMenu.getByRole("link", { name: /^Настройки/ })).toBeFocused();
     const destinations = name === "Work" ? ["Чат", "Work"] : ["Чат", "Work", "Code"];
     for (const destination of destinations) {
       await page.keyboard.press("Tab");

@@ -157,18 +157,31 @@ export class DocumentLibraryStore {
       if (!current) throw new DocumentLibraryError("NOT_FOUND");
       if (current.status !== "failed") throw new DocumentLibraryError("CONFLICT");
       this.sqlite.prepare(`DELETE FROM document_library_chunks WHERE file_id=?`).run(id);
-      this.sqlite.prepare(`UPDATE document_library_files SET status='processing',error_code=NULL,
-        characters=0,chunks=0,updated_at=? WHERE id=? AND project_id=? AND owner_id=?`)
-        .run(new Date().toISOString(),id,projectId,ownerId);
+      this.sqlite
+        .prepare(
+          `UPDATE document_library_files SET status='processing',error_code=NULL,
+        characters=0,chunks=0,updated_at=? WHERE id=? AND project_id=? AND owner_id=?`
+        )
+        .run(new Date().toISOString(), id, projectId, ownerId);
       this.sqlite.exec("COMMIT");
-      return this.get(projectId,ownerId,id)!;
-    } catch(error) { this.sqlite.exec("ROLLBACK"); throw error; }
+      return this.get(projectId, ownerId, id)!;
+    } catch (error) {
+      this.sqlite.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   cancelIndex(projectId: string, ownerId: string, id: string): boolean {
-    return Number(this.sqlite.prepare(`UPDATE document_library_files SET status='failed',error_code='CANCELLED',
-      updated_at=? WHERE id=? AND project_id=? AND owner_id=? AND status='processing'`)
-      .run(new Date().toISOString(),id,projectId,ownerId).changes) === 1;
+    return (
+      Number(
+        this.sqlite
+          .prepare(
+            `UPDATE document_library_files SET status='failed',error_code='CANCELLED',
+      updated_at=? WHERE id=? AND project_id=? AND owner_id=? AND status='processing'`
+          )
+          .run(new Date().toISOString(), id, projectId, ownerId).changes
+      ) === 1
+    );
   }
 
   complete(

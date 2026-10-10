@@ -15,15 +15,21 @@
 ```ts
 interface PrivacyAdapter {
   readonly id: string; // уникальный фиксированный идентификатор
-  quiesce(ownerId: string, epoch: number): Promise<{drained:true; fence_epoch:number}>;
+  quiesce(ownerId: string, epoch: number): Promise<{ drained: true; fence_epoch: number }>;
   export(ownerId: string): Promise<{
     records: Record<string, unknown[]>; // все owned metadata+text
-    originals: {id:string; filename:string; content_type:string; size_bytes:number; sha256:string}[];
+    originals: {
+      id: string;
+      filename: string;
+      content_type: string;
+      size_bytes: number;
+      sha256: string;
+    }[];
     complete: boolean;
     limitations?: string[];
   }>;
-  delete(ownerId: string, epoch: number): Promise<{deleted_records:number}>;
-  readBinary?(ownerId: string, opaqueId: string): Promise<BinaryStream|null>;
+  delete(ownerId: string, epoch: number): Promise<{ deleted_records: number }>;
+  readBinary?(ownerId: string, opaqueId: string): Promise<BinaryStream | null>;
 }
 ```
 

@@ -6,6 +6,7 @@ import { GeneralChatBackgroundRunCoordinator } from "../src/general-chat-backgro
 import { GeneralChatRuntimeStore } from "../src/general-chat-runtime-store.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
 import { RuntimeMetrics } from "../src/operations.js";
+import { AccountStore } from "../src/account-settings/account-store.js";
 
 describe("GeneralChatBackgroundRunCoordinator", () => {
   const config = loadServerConfig({
@@ -19,10 +20,13 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
   let metrics: RuntimeMetrics;
   let coordinator: GeneralChatBackgroundRunCoordinator;
   let runtime: Awaited<ReturnType<typeof buildModelRuntime>>;
+  let accountStore: AccountStore;
 
   beforeEach(async () => {
     database = openDatabase(":memory:");
     await runMigrations(database);
+    accountStore = new AccountStore(database.sqlite);
+    accountStore.migrate();
     runtime = await buildModelRuntime(config);
     store = new GeneralChatRuntimeStore(database.sqlite);
     stopStore = new EmergencyStopStore(database.sqlite);
@@ -33,6 +37,7 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
       chat: runtime.chat,
       runtimeMetrics: metrics,
       emergencyStopStore: stopStore,
+      accountStore,
       pollIntervalMs: 10,
       controlPollIntervalMs: 10,
       maxConcurrentRuns: 2
@@ -83,6 +88,7 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
       chat: runtime.chat,
       manager: runtime.manager,
       runtimeMetrics: metrics,
+      accountStore,
       generalChatRunExecutionMode: "background"
     });
     try {

@@ -2,9 +2,7 @@ export type HighlightPart = { text: string; matched: boolean };
 
 /** Token-safe output. Render text with React, never dangerouslySetInnerHTML. */
 export function splitHighlights(content: string, query: string): HighlightPart[] {
-  const words = (query.match(/[\p{L}\p{N}]+/gu) ?? []).map((word) =>
-    word.toLocaleLowerCase("ru")
-  );
+  const words = (query.match(/[\p{L}\p{N}]+/gu) ?? []).map((word) => word.toLocaleLowerCase("ru"));
   if (!words.length || !content) return [{ text: content, matched: false }];
   const output: HighlightPart[] = [];
   let cursor = 0;

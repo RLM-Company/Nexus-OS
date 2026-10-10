@@ -61,18 +61,18 @@ research state; this feature doesn't attach them to Work/Studio or claim registr
 separate Manager artifact store. Integration with a future shared artifact registry can ingest
 these stable descriptors without modifying documents retrieval.
 
-| Method | Route | Effect |
-| --- | --- | --- |
-| GET | `/api/v1/research/status` | Capability and limits |
-| GET | `/api/v1/research` | Current owner's last 25 saved runs |
-| POST | `/api/v1/research` | Project ID + question, policy check, launch |
-| GET | `/api/v1/research/:id` | Saved progress and cited sources |
-| POST | `/api/v1/research/:id/pause` | Abort current network request, retain checkpoint |
-| POST | `/api/v1/research/:id/resume` | Reauthorize and continue from checkpoint |
-| POST | `/api/v1/research/:id/cancel` | Terminal stop; late results ignored |
-| DELETE | `/api/v1/research/:id` | Remove paused or terminal report |
-| GET | `/api/v1/research/:id/artifacts` | Report version/source descriptors |
-| GET | `/api/v1/research/:id/export/md|html` | Real UTF-8 downloadable bytes |
+| Method | Route                            | Effect                                           |
+| ------ | -------------------------------- | ------------------------------------------------ |
+| GET    | `/api/v1/research/status`        | Capability and limits                            |
+| GET    | `/api/v1/research`               | Current owner's last 25 saved runs               |
+| POST   | `/api/v1/research`               | Project ID + question, policy check, launch      |
+| GET    | `/api/v1/research/:id`           | Saved progress and cited sources                 |
+| POST   | `/api/v1/research/:id/pause`     | Abort current network request, retain checkpoint |
+| POST   | `/api/v1/research/:id/resume`    | Reauthorize and continue from checkpoint         |
+| POST   | `/api/v1/research/:id/cancel`    | Terminal stop; late results ignored              |
+| DELETE | `/api/v1/research/:id`           | Remove paused or terminal report                 |
+| GET    | `/api/v1/research/:id/artifacts` | Report version/source descriptors                |
+| GET    | `/api/v1/research/:id/export/md  | html`                                            | Real UTF-8 downloadable bytes |
 
 A request invokes **one** SearxNG query and considers up to five deduplicated candidate URLs.
 At most four sources are read successfully, two runs can execute simultaneously, each run attempt

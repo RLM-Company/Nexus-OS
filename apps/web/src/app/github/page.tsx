@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { isValidChatAttachments } from "@cosmora/contracts/chat-attachments";
+import { LegacyCodeProposalAdapter } from "./code-proposal-adapter";
 import { WorkspaceIcon } from "../workspace-icons";
 import styles from "./github.module.css";
 import {
@@ -932,6 +933,12 @@ export default function GithubPage() {
               </section>
             </div>
             <section className={styles.review}>
+              <LegacyCodeProposalAdapter
+                project={project}
+                branch={branch}
+                baseSha={baseSha}
+                disabled={pending || baseChanged || !!publication || dirty}
+              />
               <div className={styles.reviewHeading}>
                 <h2>Подготовка изменений</h2>
                 <span>{changes.length} / 8 файлов</span>

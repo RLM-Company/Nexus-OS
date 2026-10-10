@@ -34,7 +34,7 @@ test("persists original documents, searches cited evidence and exports an editab
   await expect(library).toContainText("договор.txt, строки 1–2");
   await expect(library).toContainText("42000");
   const docxDownload = page.waitForEvent("download");
-  await library.getByRole("button", { name: "DOCX", exact: true }).click();
+  await library.getByRole("button", { name: "Фрагменты DOCX", exact: true }).click();
   const report = await docxDownload;
   expect(report.suggestedFilename()).toBe("kosmora-source-report.docx");
   const files = unzipSync(await readFile((await report.path())!));

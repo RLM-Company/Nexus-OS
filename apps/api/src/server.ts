@@ -2,6 +2,7 @@ import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
 import {
   AgentBlueprintStore,
   DocumentLibraryStore,
+  CanvasArtifactStore,
   DocumentAnswerStore,
   ChatHistorySearchStore,
   AgentInstanceStore,
@@ -43,15 +44,22 @@ import { resolve } from "node:path";
 import { SharedOwnerBudget } from "./account-settings/shared-owner-budget.js";
 import { OwnerPrivacyCoordinator } from "./account-settings/privacy/coordinator.js";
 import { AccountCorePrivacyAdapter } from "./account-settings/privacy/account-core-adapter.js";
-import { DocumentsPrivacyAdapter, WorkPrivacyAdapter, ResearchIntegratedPrivacyAdapter,
-  MediaIntegratedPrivacyAdapter, CodeIntegratedPrivacyAdapter, AgentStudioPrivacyAdapter,
-  PolicyProjectsPrivacyAdapter } from "./account-settings/privacy/integrated-adapters.js";
+import {
+  DocumentsPrivacyAdapter,
+  WorkPrivacyAdapter,
+  ResearchIntegratedPrivacyAdapter,
+  MediaIntegratedPrivacyAdapter,
+  CodeIntegratedPrivacyAdapter,
+  AgentStudioPrivacyAdapter,
+  PolicyProjectsPrivacyAdapter
+} from "./account-settings/privacy/integrated-adapters.js";
 import { DocumentAnswerService } from "./document-answer-service.js";
 import { ProjectResearchOwnerBudget } from "./research/research-synthesis.js";
 import type { ResearchCoordinator } from "./research/research-coordinator.js";
 import { CodeAgentService } from "./code-agent/service.js";
 import { CodeAgentStore } from "./code-agent/store.js";
 import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
+import { canvasPrivacyAdapter } from "./canvas/canvas-privacy.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
@@ -61,6 +69,7 @@ let generalChatBackgroundCoordinator: GeneralChatBackgroundRunCoordinator | unde
 let managerWorkCoordinator: ManagerWorkCoordinator | undefined;
 let shuttingDown = false;
 let researchCoordinator: ResearchCoordinator | null = null;
+const stopResearchCoordinator = (): Promise<void> | undefined => researchCoordinator?.stop();
 
 const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   if (shuttingDown) return;
@@ -76,7 +85,7 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     managerBackgroundCoordinator?.stop(),
     generalChatBackgroundCoordinator?.stop(),
     managerWorkCoordinator?.stop(),
-    researchCoordinator?.stop()
+    stopResearchCoordinator()
   ]);
   await app.close();
   process.exitCode = 0;
@@ -96,9 +105,15 @@ try {
   const generalChatStore = new GeneralChatRuntimeStore(database.sqlite);
   const sharedBudget = new SharedOwnerBudget(accountStore, projectStore);
   const documentLibrary = new DocumentLibraryStore(database.sqlite);
+  const canvasStore = new CanvasArtifactStore(database.sqlite);
   const documentAnswerStore = new DocumentAnswerStore(database.sqlite);
-  const documentAnswerService = new DocumentAnswerService(documentLibrary, documentAnswerStore,
-    modelRuntime.gateway, modelRuntime.chat, sharedBudget);
+  const documentAnswerService = new DocumentAnswerService(
+    documentLibrary,
+    documentAnswerStore,
+    modelRuntime.gateway,
+    modelRuntime.chat,
+    sharedBudget
+  );
   documentAnswerStore.recoverInterrupted();
   const chatHistorySearchStore = new ChatHistorySearchStore(database.sqlite);
   const researchStore = new ResearchStore(database.sqlite);
@@ -108,7 +123,10 @@ try {
   const identityStore = new IdentityStore(database.sqlite);
   const stepUpProofStore = new StepUpProofStore(database.sqlite);
   const runtimeMetrics = new RuntimeMetrics();
-  if (recoveredAccountHolds > 0) process.stdout.write(`Reconciled ${recoveredAccountHolds} verified owner holds after restart\n`);
+  if (recoveredAccountHolds > 0)
+    process.stdout.write(
+      `Reconciled ${recoveredAccountHolds} verified owner holds after restart\n`
+    );
   const identityResolver =
     config.nodeEnv === "production"
       ? new BearerSessionIdentityResolver(identityStore)
@@ -140,10 +158,15 @@ try {
   const githubDraftStore = new GithubDraftStore(database.sqlite);
   const codeAgentService = new CodeAgentService({
     store: new CodeAgentStore(database.sqlite),
-    github: githubIntegration, drafts: githubDraftStore,
-    projects: projectStore, policy: policyStore, emergency: emergencyStopStore,
-    gateway: modelRuntime.gateway, manager: modelRuntime.manager,
-    runner: configuredCodeAgentExecutor(), ownerBudget: sharedBudget
+    github: githubIntegration,
+    drafts: githubDraftStore,
+    projects: projectStore,
+    policy: policyStore,
+    emergency: emergencyStopStore,
+    gateway: modelRuntime.gateway,
+    manager: modelRuntime.manager,
+    runner: configuredCodeAgentExecutor(),
+    ownerBudget: sharedBudget
   });
   const mediaService = new MediaService({
     ...(process.env.KOSMORA_MEDIA_DIR
@@ -158,27 +181,44 @@ try {
     emergencyStopped: () => emergencyStopStore.getProcessStop() !== null,
     ownerActive: (ownerId) => ownerPrivacy.overview(ownerId).lifecycle === "active"
   });
-  ownerPrivacy.register(new AccountCorePrivacyAdapter(database.sqlite, async (owner) => {
-    await Promise.all([
-      managerBackgroundCoordinator?.quiesceOwner(owner),
-      generalChatBackgroundCoordinator?.quiesceOwner(owner)
-    ]);
-  }));
-  ownerPrivacy.register(new DocumentsPrivacyAdapter(database.sqlite, documentLibrary,
-    documentAnswerStore, documentAnswerService));
+  ownerPrivacy.register(
+    new AccountCorePrivacyAdapter(database.sqlite, async (owner) => {
+      await Promise.all([
+        managerBackgroundCoordinator?.quiesceOwner(owner),
+        generalChatBackgroundCoordinator?.quiesceOwner(owner)
+      ]);
+    })
+  );
+  ownerPrivacy.register(
+    new DocumentsPrivacyAdapter(
+      database.sqlite,
+      documentLibrary,
+      documentAnswerStore,
+      documentAnswerService
+    )
+  );
   ownerPrivacy.register(new WorkPrivacyAdapter(database.sqlite, managerWorkCoordinator));
-  ownerPrivacy.register(new ResearchIntegratedPrivacyAdapter(database.sqlite, researchStore,
-    () => researchCoordinator));
+  ownerPrivacy.register(
+    new ResearchIntegratedPrivacyAdapter(database.sqlite, researchStore, () => researchCoordinator)
+  );
   ownerPrivacy.register(new MediaIntegratedPrivacyAdapter(mediaService));
   ownerPrivacy.register(new CodeIntegratedPrivacyAdapter(database.sqlite, codeAgentService));
   ownerPrivacy.register(new AgentStudioPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new PolicyProjectsPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
   app = buildApp({
+    canvasStore,
     researchStore,
     researchBudget: new ProjectResearchOwnerBudget(database.sqlite, projectStore, accountStore),
-    researchCoordinatorCreated: coordinator => { researchCoordinator = coordinator; },
-    documentLibrary, documentAnswerService, chatHistorySearchStore,
-    ownerPrivacy, ownerBudget: sharedBudget, codeAgentService,
+    researchCoordinatorCreated: (coordinator) => {
+      researchCoordinator = coordinator;
+    },
+    documentLibrary,
+    documentAnswerService,
+    chatHistorySearchStore,
+    ownerPrivacy,
+    ownerBudget: sharedBudget,
+    codeAgentService,
     mediaService,
     webSearch: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
     githubIntegration,
@@ -261,7 +301,7 @@ try {
     managerBackgroundCoordinator?.stop(),
     generalChatBackgroundCoordinator?.stop(),
     managerWorkCoordinator?.stop(),
-    researchCoordinator?.stop()
+    stopResearchCoordinator()
   ]);
   if (app) {
     app.log.error(error, "Failed to start Kosmora API");

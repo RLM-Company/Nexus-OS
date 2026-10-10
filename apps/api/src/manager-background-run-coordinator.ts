@@ -83,10 +83,10 @@ export class ManagerBackgroundRunCoordinator {
     this.#pollTimer.unref?.();
   }
 
-  async quiesceOwner(ownerId:string):Promise<void> {
-    const active=[...this.#activeRuns.values()].filter(run=>run.ownerId===ownerId);
-    for(const run of active) run.controller.abort(new Error('OWNER_PRIVACY_QUIESCE'));
-    await Promise.allSettled(active.map(run=>run.task));
+  async quiesceOwner(ownerId: string): Promise<void> {
+    const active = [...this.#activeRuns.values()].filter((run) => run.ownerId === ownerId);
+    for (const run of active) run.controller.abort(new Error("OWNER_PRIVACY_QUIESCE"));
+    await Promise.allSettled(active.map((run) => run.task));
   }
   async stop(): Promise<void> {
     this.#stopping = true;

@@ -18,14 +18,17 @@ function gitPath(path: string): string {
   return quoted + '"';
 }
 
-function lines(text: string): string[] {
+function lines(text: string): Array<{ text: string; newline: boolean }> {
   if (text === "") return [];
   const result = text.split("\n");
   if (text.endsWith("\n")) result.pop();
-  return result;
+  return result.map((value, i) => ({
+    text: value,
+    newline: i < result.length - 1 || text.endsWith("\n")
+  }));
 }
 
-/** Linear, whole-file replacement hunks: deliberately no expensive line matching. */
+/** Linear common-prefix/suffix hunks with three context lines; no quadratic matching. */
 export function codeAgentUnifiedDiff(files: readonly DiffFile[]): DiffPreview {
   if (files.length > 8) return { limited: true, text: "" };
   let inputBytes = 0;
@@ -52,15 +55,35 @@ export function codeAgentUnifiedDiff(files: readonly DiffFile[]): DiffPreview {
     // Git creates an empty new file from the mode header without an empty hunk.
     if (!oldLines.length && !newLines.length) continue;
     chunks.push(`--- ${file.before === null ? "/dev/null" : oldPath}\n+++ ${newPath}\n`);
+    const same = (a: { text: string; newline: boolean }, b: { text: string; newline: boolean }) =>
+      a.text === b.text && a.newline === b.newline;
+    let prefix = 0,
+      suffix = 0;
+    while (
+      prefix < Math.min(oldLines.length, newLines.length) &&
+      same(oldLines[prefix]!, newLines[prefix]!)
+    )
+      prefix++;
+    while (
+      suffix < Math.min(oldLines.length, newLines.length) - prefix &&
+      same(oldLines[oldLines.length - suffix - 1]!, newLines[newLines.length - suffix - 1]!)
+    )
+      suffix++;
+    const start = Math.max(0, prefix - 3),
+      tail = Math.min(3, suffix),
+      oldEnd = oldLines.length - suffix + tail,
+      newEnd = newLines.length - suffix + tail;
     chunks.push(
-      `@@ -${oldLines.length ? 1 : 0},${oldLines.length} +${newLines.length ? 1 : 0},${newLines.length} @@\n`
+      `@@ -${oldEnd > start ? start + 1 : start},${oldEnd - start} +${newEnd > start ? start + 1 : start},${newEnd - start} @@\n`
     );
-    for (const line of oldLines) chunks.push(`-${line}\n`);
-    if (oldLines.length && !file.before?.endsWith("\n"))
-      chunks.push("\\ No newline at end of file\n");
-    for (const line of newLines) chunks.push(`+${line}\n`);
-    if (newLines.length && !file.content.endsWith("\n"))
-      chunks.push("\\ No newline at end of file\n");
+    const emit = (kind: string, line: { text: string; newline: boolean }) => {
+      chunks.push(`${kind}${line.text}\n`);
+      if (!line.newline) chunks.push("\\ No newline at end of file\n");
+    };
+    for (const line of oldLines.slice(start, prefix)) emit(" ", line);
+    for (const line of oldLines.slice(prefix, oldLines.length - suffix)) emit("-", line);
+    for (const line of newLines.slice(prefix, newLines.length - suffix)) emit("+", line);
+    for (const line of newLines.slice(newLines.length - suffix, newEnd)) emit(" ", line);
   }
   const text = chunks.join("");
   return encoder.encode(text).byteLength > OUTPUT_LIMIT

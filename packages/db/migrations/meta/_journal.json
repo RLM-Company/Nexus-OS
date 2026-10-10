@@ -213,6 +213,13 @@
       "breakpoints": true
     },
     {
+      "idx": 31,
+      "version": "6",
+      "when": 1791580800006,
+      "tag": "0031_work_dag",
+      "breakpoints": true
+    },
+    {
       "idx": 32,
       "version": "6",
       "when": 1791580800007,
@@ -224,6 +231,13 @@
       "version": "6",
       "when": 1791580800009,
       "tag": "0034_chat_history_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1791580800010,
+      "tag": "0035_canvas_artifacts",
       "breakpoints": true
     }
   ]

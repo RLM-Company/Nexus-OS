@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { WorkManagerDag } from "./work-manager-dag";
 import { WorkManagerProgress } from "./work-manager-progress";
 import { WorkManagerMemory } from "./work-manager-memory";
 import { useEffect, useRef, useState } from "react";
@@ -287,6 +288,7 @@ export function ManagerWorkPanel({
           )}
         </div>
       )}
+      <WorkManagerDag key={"dag:" + projectId} projectId={projectId} />
       <WorkManagerMemory key={projectId} projectId={projectId} />
       {work && (
         <>

@@ -143,15 +143,38 @@ export function registerDocumentLibraryRoutes(
     }
   );
 
-  app.post<{ Params: FileScope }>(`${base}/:fileId/retry`, { schema: { params: fileParams } }, (request, reply) => {
-    try { return store.retry(request.params.projectId, identityFor(request).owner_id, request.params.fileId); }
-    catch(error) { return errors(reply,error); }
-  });
-  app.post<{ Params: FileScope }>(`${base}/:fileId/cancel`, { schema: { params: fileParams } }, (request, reply) => {
-    if (!store.get(request.params.projectId, identityFor(request).owner_id, request.params.fileId))
-      return reply.code(404).send({ error: { code: "NOT_FOUND" } });
-    return {cancelled:store.cancelIndex(request.params.projectId,identityFor(request).owner_id,request.params.fileId)};
-  });
+  app.post<{ Params: FileScope }>(
+    `${base}/:fileId/retry`,
+    { schema: { params: fileParams } },
+    (request, reply) => {
+      try {
+        return store.retry(
+          request.params.projectId,
+          identityFor(request).owner_id,
+          request.params.fileId
+        );
+      } catch (error) {
+        return errors(reply, error);
+      }
+    }
+  );
+  app.post<{ Params: FileScope }>(
+    `${base}/:fileId/cancel`,
+    { schema: { params: fileParams } },
+    (request, reply) => {
+      if (
+        !store.get(request.params.projectId, identityFor(request).owner_id, request.params.fileId)
+      )
+        return reply.code(404).send({ error: { code: "NOT_FOUND" } });
+      return {
+        cancelled: store.cancelIndex(
+          request.params.projectId,
+          identityFor(request).owner_id,
+          request.params.fileId
+        )
+      };
+    }
+  );
   app.delete<{ Params: FileScope }>(
     `${base}/:fileId`,
     { schema: { params: fileParams } },

@@ -56,16 +56,16 @@ and paid actions cannot start. Browser voice may still work independently.
 
 API endpoints, all behind the existing global owner identity boundary:
 
-| Method | Path | Function |
-| --- | --- | --- |
-| GET | `/api/v1/media/capabilities` | status / registered media models |
-| POST | `/api/v1/media/images` | enqueue image, 2000-character prompt limit |
-| POST | `/api/v1/media/speech` | enqueue MP3, 4096-character input limit |
-| POST | `/api/v1/media/transcriptions` | recognize ≤1.5 MB audio, no stored input recording |
-| GET | `/api/v1/media/jobs` | list owner's jobs |
-| GET | `/api/v1/media/jobs/:id` | poll job state |
-| DELETE | `/api/v1/media/jobs/:id` | cancel pending/running job |
-| GET | `/api/v1/media/assets/:id?download=1` | private file or inline image/audio |
+| Method | Path                                  | Function                                           |
+| ------ | ------------------------------------- | -------------------------------------------------- |
+| GET    | `/api/v1/media/capabilities`          | status / registered media models                   |
+| POST   | `/api/v1/media/images`                | enqueue image, 2000-character prompt limit         |
+| POST   | `/api/v1/media/speech`                | enqueue MP3, 4096-character input limit            |
+| POST   | `/api/v1/media/transcriptions`        | recognize ≤1.5 MB audio, no stored input recording |
+| GET    | `/api/v1/media/jobs`                  | list owner's jobs                                  |
+| GET    | `/api/v1/media/jobs/:id`              | poll job state                                     |
+| DELETE | `/api/v1/media/jobs/:id`              | cancel pending/running job                         |
+| GET    | `/api/v1/media/assets/:id?download=1` | private file or inline image/audio                 |
 
 ## Integration steps
 
@@ -75,14 +75,14 @@ API endpoints, all behind the existing global owner identity boundary:
    will be activated. Do not place user media in a public static folder or ephemeral build layer.
 4. Keep paid disabled until financial authorization, media-secret provisioning, and smoke checks.
 5. Run `pnpm --filter @cosmora/model-gateway typecheck && pnpm --filter @cosmora/api typecheck &&
-   pnpm --filter @cosmora/web typecheck`, followed by the relevant `vitest` tests and browser smoke.
+pnpm --filter @cosmora/web typecheck`, followed by the relevant `vitest` tests and browser smoke.
 6. Test real credentials **only when permitted** using one explicit image and one bounded voice request;
    verify status, bytes, authenticated download, cancellation and record recovery after restart.
 
 ## Verification and remaining limits
 
 - In this isolated environment a TypeScript parser/transpiler checked modified TS/TSX sources.
-  Isolated *strict TypeScript* checking of the media gateway/store/service succeeded.
+  Isolated _strict TypeScript_ checking of the media gateway/store/service succeeded.
   An 8-case Node runtime fixture exercised the actual adapter/store/service on deterministic
   responses: disabled route, opt-in, exact API endpoint/redirect policy, PNG and MP3 persistence,
   owner isolation, transcription validation, cancellation late-result fence, restart recovery,

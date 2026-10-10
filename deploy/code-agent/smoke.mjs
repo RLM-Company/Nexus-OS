@@ -5,6 +5,8 @@ import { spawnSync } from "node:child_process";
 import {
   createCodeAgentExecutorServer,
   createCodeAgentHttpExecutor,
+  applyCodeAgentUnifiedDiff,
+  computeCodeAgentSnapshotDigest,
   createCodeAgentWorkspaceRunner
 } from "../../packages/tool-runtime/dist/index.js";
 const image = process.env.CODE_AGENT_TEST_IMAGE;
@@ -51,8 +53,28 @@ try {
     await run([{ path: "sum.mjs", content: "export const sum = (a,b) => a-b;" }, test]),
     "failed"
   );
+  const before = [{ path: "sum.mjs", content: "export const sum = (a,b) => a-b;" }, test];
+  const patch =
+    "diff --git a/sum.mjs b/sum.mjs\n--- a/sum.mjs\n+++ b/sum.mjs\n@@ -1,99 +1,99 @@\n-export const sum = (a,b) => a-b;\n\\ No newline at end of file\n+export const sum = (a,b) => a+b;\n\\ No newline at end of file\n";
+  const applied = applyCodeAgentUnifiedDiff({
+    diff: patch,
+    snapshot: before,
+    baseSha: "a".repeat(40),
+    expectedBaseSha: "a".repeat(40),
+    expectedSnapshotDigest: computeCodeAgentSnapshotDigest(before)
+  });
+  assert.equal(applied.normalizations.length, 1);
+  assert.throws(() =>
+    applyCodeAgentUnifiedDiff({
+      diff: patch.replace("a-b", "a*b"),
+      snapshot: before,
+      baseSha: "a".repeat(40),
+      expectedBaseSha: "a".repeat(40),
+      expectedSnapshotDigest: computeCodeAgentSnapshotDigest(before)
+    })
+  );
   verify(
-    await run([{ path: "sum.mjs", content: "export const sum = (a,b) => a+b;" }, test]),
+    await run([...applied.files.map(({ path, content }) => ({ path, content })), test]),
     "passed"
   );
   verify(

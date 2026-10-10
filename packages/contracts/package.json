@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./canvas-artifacts": {
+      "development": "./src/canvas-artifacts.ts",
+      "types": "./src/canvas-artifacts.ts",
+      "default": "./dist/canvas-artifacts.js"
+    },
     "./chat-attachments": {
       "development": "./src/chat-attachments.ts",
       "types": "./src/chat-attachments.ts",

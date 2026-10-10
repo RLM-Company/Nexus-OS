@@ -32,6 +32,13 @@ export interface CodeAgentRun {
   proposal?: Array<GithubFileChange & { before: string | null }>;
   proposal_hash?: string;
   summary?: string;
+  repository_paths?: string[];
+  proposal_diff?: string;
+  proposal_snapshot_digest?: string;
+  proposal_normalizations?: Array<{ path: string; line: number; before: string; after: string }>;
+  patch_diagnostic?: { code: string; path?: string; line?: number };
+  auto_check_requested?: "syntax" | "node-test";
+  proposal_check?: (CodeAgentCheckResult & { proposal_hash: string }) | undefined;
   draft_id?: string;
   draft?: GithubDraft;
   publication_token?: string | undefined;
@@ -44,7 +51,6 @@ export class CodeAgentError extends Error {}
 export class CodeAgentStore {
   constructor(readonly sqlite: DatabaseSync) {
     // Managed schema migration 0030 creates the existing feature table; no runtime DDL.
-
   }
   create(input: Omit<CodeAgentRun, "id" | "version" | "created_at" | "log">): CodeAgentRun {
     if (

@@ -19,6 +19,8 @@ import {
   OpenAICompatibleAdapter
 } from "@cosmora/model-gateway";
 import {
+  createCodeAgentExecutorServer,
+  createCodeAgentHttpExecutor,
   computeCodeAgentSnapshotDigest,
   type CodeAgentWorkspaceRunner,
   type CodeAgentWorkspaceRunInput
@@ -30,6 +32,8 @@ import { registerCodeAgentRoutes } from "../src/code-agent/routes.js";
 import { GithubDraftStore, GithubIntegration } from "../src/github-integration.js";
 import { LOCAL_DEVELOPMENT_IDENTITY } from "../src/identity.js";
 import { buildApp } from "../src/app.js";
+import { AccountStore } from "../src/account-settings/account-store.js";
+import { SharedOwnerBudget } from "../src/account-settings/shared-owner-budget.js";
 
 const owner = "local-owner",
   head = "a".repeat(40),
@@ -288,7 +292,8 @@ async function fixture(
     gateway,
     manager,
     runner,
-    ...(options.ownerBudget ? { ownerBudget: options.ownerBudget } : {})
+    ownerBudget:
+      options.ownerBudget ?? new SharedOwnerBudget(new AccountStore(database.sqlite), projects)
   });
   let requestOwner = owner;
   const app = Fastify();
@@ -758,7 +763,8 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       manager: f.service.deps.manager,
       githubIntegration: f.service.deps.github,
       githubDraftStore: f.drafts,
-      codeAgentRunner: f.service.deps.runner
+      codeAgentRunner: f.service.deps.runner,
+      ownerBudget: f.service.deps.ownerBudget!
     });
     try {
       expect((await app.inject({ url: f.base })).statusCode).toBe(200);
@@ -862,7 +868,7 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
   });
 
-  it("selects relevant existing files through the text-only route and reads their immutable content before drafting", async () => {
+  it("selects a bounded immutable context locally before the sole text-only generation", async () => {
     const jsonResponse = (value: unknown) =>
       sse(
         { choices: [{ index: 0, delta: { content: JSON.stringify(value) }, finish_reason: null }] },
@@ -873,10 +879,7 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     let providerCalls: Array<Record<string, unknown>> = [];
     const f = await fixture({
       toolCalling: false,
-      responses: [
-        jsonResponse({ paths: ["src/add.js"] }),
-        jsonResponse({ summary: "Fix addition", files: [changes[0]] })
-      ],
+      responses: [jsonResponse({ summary: "Fix addition", files: [changes[0]] })],
       onGithub: (path) => {
         if (path.startsWith("/git/blobs/")) readTurns.push(providerCalls.length);
       }
@@ -887,22 +890,24 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       base_branch: "main"
     }).id;
     const run = await f.wait(id, "proposed");
-    expect(providerCalls).toHaveLength(2);
-    expect(readTurns).toEqual([1]);
-    expect(run.snapshot).toEqual([{ path: "src/add.js", content: originals["src/add.js"] }]);
+    expect(providerCalls).toHaveLength(1);
+    expect(readTurns).toEqual([0, 0]);
+    expect(run.snapshot).toEqual(
+      Object.entries(originals).map(([path, content]) => ({ path, content }))
+    );
     expect(run.proposal?.[0]?.before).toBe(originals["src/add.js"]);
-    const messages = providerCalls[1]!.messages as Array<{ role: string; content: string }>;
+    const messages = providerCalls[0]!.messages as Array<{ role: string; content: string }>;
     expect(
       JSON.parse(messages.find((message) => message.role === "user")!.content) as unknown
     ).toMatchObject({
       commit: head,
-      files: [{ path: "src/add.js", content: originals["src/add.js"] }]
+      files: Object.entries(originals).map(([path, content]) => ({ path, content }))
     });
     expect(providerCalls.every((call) => call.tools === undefined)).toBe(true);
     expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
   });
 
-  it("rejects invented or unsafe text-only file selection before reading blobs or asking for a patch", async () => {
+  it("never treats a model file-selection response as authority or sends a repair generation", async () => {
     for (const path of ["../outside.js", "src/missing.js", ".env"]) {
       const response = sse(
         {
@@ -918,9 +923,9 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
         task: "Fix addition bug",
         base_branch: "main"
       }).id;
-      expect((await f.wait(id, "failed")).error).toBe("INVALID_FILE_SELECTION");
+      expect((await f.wait(id, "failed")).error).toBe("INVALID_PATCH");
       expect(f.providerCalls).toHaveLength(1);
-      expect(f.githubCalls.some((call) => call.path.startsWith("/git/blobs/"))).toBe(false);
+      expect(f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/"))).toHaveLength(2);
       expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
       expect(f.checked).toHaveLength(0);
     }
@@ -1064,5 +1069,325 @@ describe("Code owner budget via shared AccountStore port", () => {
     const passed = await f.check(id, hash);
     expect(passed.check!.status).toBe("passed");
     expect(f.githubCalls.filter((c) => c.method === "POST")).toHaveLength(0);
+  });
+});
+
+const textResponse = (value: unknown) =>
+  sse(
+    {
+      choices: [
+        {
+          index: 0,
+          delta: { content: typeof value === "string" ? value : JSON.stringify(value) },
+          finish_reason: null
+        }
+      ]
+    },
+    { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+    { choices: [], usage: { prompt_tokens: 100, completion_tokens: 40 } },
+    "[DONE]"
+  );
+const wrongCountsDiff =
+  "diff --git a/src/add.js b/src/add.js\n--- a/src/add.js\n+++ b/src/add.js\n@@ -1,18 +1,19 @@\n-export const add = (a,b) => a-b;\n+export const add = (a,b) => a+b;\n";
+
+describe("one text proposal → exact diff → optional approved automatic check → owner review", () => {
+  it("normalizes only hunk counts in one paid turn and reuses auto-check only after exact owner review", async () => {
+    const reserves: unknown[] = [];
+    const f = await fixture({
+      toolCalling: false,
+      responses: [textResponse({ summary: "Fix", diff: wrongCountsDiff })],
+      ownerBudget: {
+        reserve: (input) => {
+          expect(f.providerCalls).toHaveLength(0);
+          reserves.push(input);
+          return true;
+        },
+        reconcile: () => undefined,
+        releaseBeforeDispatch: () => {
+          throw new Error("not local failure");
+        }
+      }
+    });
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Fix src/add.js",
+      base_branch: "main",
+      files: ["src/add.js"],
+      auto_check: { check: "syntax", approve: true }
+    }).id;
+    await expect.poll(() => f.get(id).proposal_check?.status).toBe("passed");
+    const proposal = f.get(id);
+    expect(proposal.status).toBe("proposed");
+    expect(proposal.proposal_diff).toBe(wrongCountsDiff.replace("-1,18 +1,19", "-1,1 +1,1"));
+    expect(proposal.proposal_normalizations).toHaveLength(1);
+    expect(f.providerCalls).toHaveLength(1);
+    expect(reserves).toHaveLength(1);
+    expect(f.providerCalls[0]!.tools).toBeUndefined();
+    expect(f.checked).toHaveLength(1);
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+    expect(proposal.publication_token).toBeUndefined();
+    const reviewed = await f.review(id, [changes[0]!]);
+    expect(reviewed.status).toBe("checked");
+    expect(reviewed.check!.snapshotDigest).toBe(proposal.proposal_check!.snapshotDigest);
+    expect(reviewed.publication_token).toBeDefined();
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+  });
+  it("never reruns the model to repair foreign deletions, positions or ambiguous paths", async () => {
+    for (const diff of [
+      wrongCountsDiff.replace("a-b", "a*b"),
+      wrongCountsDiff.replace("-1,18", "-2,18"),
+      wrongCountsDiff.replace("b/src/add.js", "b/../add.js")
+    ]) {
+      const f = await fixture({
+        toolCalling: false,
+        responses: [textResponse({ summary: "wrong", diff })]
+      });
+      const run = await f.wait(await f.start(), "failed");
+      expect(run.error).toMatch(/^PATCH_/);
+      expect(f.providerCalls).toHaveLength(1);
+      expect(f.checked).toHaveLength(0);
+      expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+    }
+  });
+  it("raw fenced diff works without capabilities or another model request", async () => {
+    const f = await fixture({
+      toolCalling: false,
+      responses: [textResponse("```diff\n" + wrongCountsDiff + "```\n")]
+    });
+    expect((await f.wait(await f.start(), "proposed")).proposal?.[0]?.content).toBe(
+      changes[0]!.content
+    );
+    expect(f.providerCalls).toHaveLength(1);
+  });
+  it("legacy import is owner-scoped, validates remote base and reads immutable blobs without a model call", async () => {
+    const f = await fixture();
+    const imported = await f.app.inject({
+      method: "POST",
+      url: f.base + "/import-diff",
+      payload: { task: "Import", base_branch: "main", base_sha: head, diff: wrongCountsDiff }
+    });
+    expect(imported.statusCode).toBe(200);
+    const id = imported.json<{ id: string }>().id;
+    await f.wait(id, "proposed");
+    expect(f.providerCalls).toHaveLength(0);
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+    const other = await f.app.inject({
+      method: "POST",
+      url: f.base.replace(f.project, "other-project") + "/import-diff",
+      payload: { task: "Import", base_branch: "main", base_sha: head, diff: wrongCountsDiff }
+    });
+    expect(other.statusCode).toBe(404);
+    const stale = f.service.importDiff(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Import",
+      base_branch: "main",
+      base_sha: "f".repeat(40),
+      diff: wrongCountsDiff
+    });
+    expect((await f.wait(stale.id, "failed")).error).toBe("PATCH_BASE");
+    expect(f.providerCalls).toHaveLength(0);
+  });
+  it("edit immediately invalidates automatic proof/token; new contents cannot reuse the old check", async () => {
+    const f = await fixture({
+      toolCalling: false,
+      responses: [textResponse({ summary: "Fix", diff: wrongCountsDiff })]
+    });
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Fix",
+      base_branch: "main",
+      files: ["src/add.js"],
+      auto_check: { check: "syntax", approve: true }
+    }).id;
+    await expect.poll(() => f.get(id).proposal_check?.status).toBe("passed");
+    const reviewed = await f.review(id, [changes[0]!]);
+    const oldToken = reviewed.publication_token!;
+    const invalidated = f.service.invalidateReview(id, owner, f.get(id).proposal_hash!);
+    expect(invalidated.check).toBeUndefined();
+    expect(invalidated.proposal_check).toBeUndefined();
+    expect(invalidated.publication_token).toBeUndefined();
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: reviewed.draft!.plan.review_hash,
+        publication_token: oldToken,
+        approve: true
+      })
+    ).rejects.toThrow("CHECK_REQUIRED");
+    const edited = await f.review(id, [
+      { ...changes[0]!, content: changes[0]!.content + "// owner edit\n" }
+    ]);
+    expect(edited.status).toBe("review");
+    expect(edited.check).toBeUndefined();
+    expect(f.providerCalls).toHaveLength(1);
+  });
+  it("preview rejects stale snapshot/base and reports exact path/line without mutating the proposal", async () => {
+    const f = await fixture({
+      toolCalling: false,
+      responses: [textResponse({ summary: "Fix", diff: wrongCountsDiff })]
+    });
+    const id = await f.start();
+    const run = await f.wait(id, "proposed");
+    const body = {
+      proposal_hash: run.proposal_hash,
+      base_sha: head,
+      snapshot_digest: run.proposal_snapshot_digest,
+      diff: wrongCountsDiff
+    };
+    const result = await f.app.inject({
+      method: "POST",
+      url: f.base + `/${id}/preview-diff`,
+      payload: body
+    });
+    expect(result.statusCode).toBe(200);
+    expect(f.get(id).version).toBe(run.version);
+    const invalid = await f.app.inject({
+      method: "POST",
+      url: f.base + `/${id}/preview-diff`,
+      payload: { ...body, diff: wrongCountsDiff.replace("a-b", "a*b") }
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json<unknown>()).toMatchObject({
+      error: { code: "PATCH_CONTEXT", diagnostic: { path: "src/add.js", line: 4 } }
+    });
+    expect(() =>
+      f.service.previewDiff(id, owner, {
+        ...body,
+        proposal_hash: run.proposal_hash!,
+        snapshot_digest: "b".repeat(64)
+      })
+    ).toThrow("PATCH_SNAPSHOT");
+    f.store.save({ ...f.get(id), snapshot: [{ path: "src/add.js", content: "changed\n" }] });
+    await expect(f.review(id, [changes[0]!])).rejects.toThrow("PATCH_SNAPSHOT");
+  });
+  it("offline and timeout checks retry for free; no premature publication and no hidden model retry", async () => {
+    let attempts = 0;
+    const f = await fixture({
+      toolCalling: false,
+      responses: [textResponse({ summary: "Fix", diff: wrongCountsDiff })],
+      runner: {
+        run: (input) =>
+          Promise.resolve({
+            status: ["unavailable", "timed_out", "passed"][attempts++] as
+              "unavailable" | "timed_out" | "passed",
+            snapshotDigest: input.expectedDigest!,
+            exitCode: attempts === 3 ? 0 : null,
+            stdout: "",
+            stderr: "",
+            truncated: false,
+            cleanupVerified: attempts !== 1,
+            journal: []
+          })
+      }
+    });
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Fix",
+      base_branch: "main",
+      files: ["src/add.js"],
+      auto_check: { check: "syntax", approve: true }
+    }).id;
+    await expect.poll(() => f.get(id).proposal_check?.status).toBe("unavailable");
+    await f.service.stop();
+    const request = {
+      proposal_hash: f.get(id).proposal_hash!,
+      check: "syntax" as const,
+      approve: true as const
+    };
+    expect(f.service.retryProposalCheck(id, owner, request).status).toBe("checking");
+    await expect.poll(() => f.get(id).proposal_check?.status).toBe("timed_out");
+    await f.service.stop();
+    f.service.retryProposalCheck(id, owner, request);
+    await expect.poll(() => f.get(id).proposal_check?.status).toBe("passed");
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+  });
+});
+
+describe("Code automatic execution lifecycle", () => {
+  it("uses actual authenticated HTTP client/server for normalized diff check (OCI result explicitly synthetic)", async () => {
+    let calls = 0;
+    const sidecar = createCodeAgentExecutorServer({
+      token: "t".repeat(48),
+      runner: {
+        run: (input) => {
+          calls++;
+          expect(input.files[0]!.content).toBe(changes[0]!.content);
+          return Promise.resolve({
+            status: "passed",
+            snapshotDigest: input.expectedDigest!,
+            exitCode: 0,
+            stdout: "HTTP transport fixture; no OCI runtime",
+            stderr: "",
+            truncated: false,
+            cleanupVerified: true,
+            journal: []
+          });
+        }
+      }
+    });
+    await new Promise<void>((resolve) => sidecar.server.listen(0, "127.0.0.1", resolve));
+    const address = sidecar.server.address();
+    if (!address || typeof address === "string") throw new Error("NO_ADDRESS");
+    resources.push(() => sidecar.stop());
+    const f = await fixture({
+      toolCalling: false,
+      responses: [textResponse({ summary: "Fix", diff: wrongCountsDiff })],
+      runner: createCodeAgentHttpExecutor({
+        url: `http://127.0.0.1:${address.port}`,
+        token: "t".repeat(48),
+        pollMs: 5
+      })
+    });
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Fix",
+      base_branch: "main",
+      files: ["src/add.js"],
+      auto_check: { check: "syntax", approve: true }
+    }).id;
+    await expect.poll(() => f.get(id).proposal_check?.status).toBe("passed");
+    expect(calls).toBe(1);
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+  });
+  it("cancellation with unverified cleanup remains unavailable, never a checked/publishable proposal", async () => {
+    let entered = false;
+    const f = await fixture({
+      toolCalling: false,
+      responses: [textResponse({ summary: "Fix", diff: wrongCountsDiff })],
+      runner: {
+        run: (input) =>
+          new Promise((resolve) => {
+            entered = true;
+            input.signal!.addEventListener(
+              "abort",
+              () =>
+                resolve({
+                  status: "unavailable",
+                  snapshotDigest: input.expectedDigest!,
+                  exitCode: null,
+                  stdout: "",
+                  stderr: "cleanup not proven",
+                  truncated: false,
+                  cleanupVerified: false,
+                  journal: []
+                }),
+              { once: true }
+            );
+          })
+      }
+    });
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Fix",
+      base_branch: "main",
+      files: ["src/add.js"],
+      auto_check: { check: "syntax", approve: true }
+    }).id;
+    await expect.poll(() => entered).toBe(true);
+    f.service.cancel(id, owner);
+    await f.service.stop();
+    expect(f.get(id).proposal_check).toMatchObject({
+      status: "unavailable",
+      cleanupVerified: false
+    });
+    expect(f.get(id).publication_token).toBeUndefined();
+    const reviewed = await f.review(id, [changes[0]!]);
+    expect(reviewed.status).toBe("review");
+    expect(reviewed.check).toBeUndefined();
   });
 });

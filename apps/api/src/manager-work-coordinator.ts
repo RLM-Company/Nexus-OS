@@ -1,3 +1,4 @@
+import { WorkDagCoordinator } from "./work-dag-coordinator.js";
 import { createHash } from "node:crypto";
 import {
   ManagerWorkFilesSchema,
@@ -5,6 +6,8 @@ import {
   ManagerWorkReviewSchema,
   type ManagerWork,
   type WorkIntelligenceGraphAdapter,
+  type WorkOwnerBudget,
+  type WorkQuiescence,
   type ModelRequest
 } from "@cosmora/contracts";
 import {
@@ -39,27 +42,7 @@ const prompts = {
 } as const;
 type Completion = Extract<ModelGatewayStreamEvent, { type: "response.completed" }>;
 
-/** Optional owner-wide quota service. Project usage remains the canonical usage ledger. */
-export interface WorkOwnerBudget {
-  reserve(
-    owner: string,
-    runId: string,
-    attempt: number,
-    maxTokens: number,
-    kind: "main",
-    projectId: string,
-    provider: string,
-    model: string
-  ): string;
-  completeReservation(
-    reservationId: string,
-    kind: "main",
-    inputTokens: number | null,
-    outputTokens: number | null
-  ): void;
-  uncertainReservation(reservationId: string, kind: "main"): void;
-  releaseBeforeDispatch(reservationId: string): void;
-}
+export type { WorkOwnerBudget } from "@cosmora/contracts";
 
 export interface ManagerWorkDependencies {
   store: ManagerWorkStore;
@@ -73,14 +56,26 @@ export interface ManagerWorkDependencies {
 }
 
 export class ManagerWorkCoordinator {
-  private readonly active = new Map<string, { controller: AbortController; done: Promise<void> }>();
-  /** Owner-scoped in-process fence while a privacy snapshot is being drained. */
+  readonly dag: WorkDagCoordinator;
+  private readonly settledOwners = new Map<string, number>();
+  private readonly drains = new Map<string, Promise<WorkQuiescence>>();
+  private readonly active = new Map<
+    string,
+    { ownerId: string; controller: AbortController; done: Promise<void> }
+  >();
   private readonly quiescedOwners = new Set<string>();
+  private readonly privacySnapshots = new Map<
+    string,
+    ReturnType<ManagerWorkStore["fencePrivacySnapshot"]>
+  >();
+  private readonly privacyDrains = new Map<string, Promise<void>>();
+  private readonly privacySettled = new Set<string>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopping = false;
   private readonly tools: GuardedToolRuntime;
 
   constructor(private readonly dependencies: ManagerWorkDependencies) {
+    this.dag = new WorkDagCoordinator(dependencies.store, this);
     this.tools = new GuardedToolRuntime(dependencies.policy);
     this.tools.register<{ id: string; ownerId: string }, string[]>({
       id: "manager.publish-files",
@@ -106,29 +101,47 @@ export class ManagerWorkCoordinator {
   start(): void {
     if (this.timer) return;
     this.stopping = false;
+    for (const hold of this.dependencies.store.holds())
+      this.dependencies.ownerBudget?.uncertainReservation(hold, "main");
     this.dependencies.store.recover();
+    this.dag.reconcileAll();
     this.timer = setInterval(() => {
       if (this.stopping) return;
+      this.dag.reconcileAll();
       for (const work of this.dependencies.store.pending()) {
-        if (this.quiescedOwners.has(work.owner_id) || this.isOwnerFenced(work.owner_id) ||
-            this.active.has(work.id) || this.active.size >= 2) continue;
-        const controller = new AbortController();
-        const done = this.execute(work.id, work.owner_id, controller.signal)
-          .catch(() => undefined)
-          .finally(() => this.active.delete(work.id));
-        this.active.set(work.id, { controller, done });
+        if (this.isOwnerFenced(work.owner_id)) continue;
+        if (this.active.size >= 1) break;
+        void this.execute(work.id, work.owner_id).catch(() => undefined);
       }
     }, 200);
   }
 
-  async quiesceOwner(ownerId:string):Promise<void> {
+  quiesceOwner(ownerId: string): Promise<void> {
+    const previous = this.privacyDrains.get(ownerId);
+    if (previous) return previous;
     this.quiescedOwners.add(ownerId);
-    const owned=[...this.active.entries()].filter(([id])=>Boolean(this.dependencies.store.get(id,ownerId)));
-    for(const [,active] of owned) active.controller.abort();
-    await Promise.allSettled(owned.map(([,active])=>active.done));
+    this.privacySnapshots.set(ownerId, this.dependencies.store.fencePrivacySnapshot(ownerId));
+    const owned = [...this.active.values()].filter((active) => active.ownerId === ownerId);
+    for (const active of owned) active.controller.abort();
+    const done = Promise.allSettled(owned.map((active) => active.done)).then(() => {
+      this.privacySettled.add(ownerId);
+    });
+    this.privacyDrains.set(ownerId, done);
+    return done;
   }
-  resumeOwner(ownerId:string):void { this.quiescedOwners.delete(ownerId); }
-  private isOwnerFenced(ownerId:string):boolean {
+  resumeOwner(ownerId: string): void {
+    const snapshot = this.privacySnapshots.get(ownerId);
+    if (!snapshot) return;
+    if (!this.privacySettled.has(ownerId)) throw new ManagerWorkConflict("OWNER_NOT_SETTLED");
+    // This transaction verifies global epoch/active state, terminally checkpoints
+    // only captured Work IDs and releases the local fence without any async gap.
+    this.dependencies.store.resumePrivacySnapshot(snapshot);
+    this.privacySnapshots.delete(ownerId);
+    this.privacyDrains.delete(ownerId);
+    this.privacySettled.delete(ownerId);
+    this.quiescedOwners.delete(ownerId);
+  }
+  private isOwnerFenced(ownerId: string): boolean {
     return this.quiescedOwners.has(ownerId) || !this.dependencies.store.ownerWritable(ownerId);
   }
   async stop(): Promise<void> {
@@ -147,6 +160,14 @@ export class ManagerWorkCoordinator {
   ): ManagerWork | null {
     const work = this.dependencies.store.get(id, ownerId);
     if (!work) return null;
+    this.dependencies.store.assertWritable(ownerId);
+    if (work.dag_binding && !work.dag_binding.bound && action !== "cancel")
+      throw new ManagerWorkConflict("DAG_NOT_BOUND");
+    if (
+      ["resume", "approve"].includes(action) &&
+      this.dependencies.store.dag.projectMode(work.project_id, ownerId) !== "active"
+    )
+      throw new ManagerWorkConflict("PROJECT_PAUSED");
     if (work.version !== version) throw new ManagerWorkConflict("STALE_EXECUTION");
     if (["completed", "failed", "cancelled"].includes(work.status))
       throw new ManagerWorkConflict("TERMINAL_EXECUTION");
@@ -309,17 +330,24 @@ export class ManagerWorkCoordinator {
               work.request.max_output_tokens
           )
             throw new Error("EXECUTION_BUDGET_EXCEEDED");
-          ownerReservation = this.dependencies.ownerBudget.reserve(
-            work.owner_id,
-            runId,
-            event.route.attempt,
-            event.route.estimated_input_tokens + event.route.max_output_tokens,
-            "main",
-            work.project_id,
-            event.route.provider_id,
-            event.route.model_id
-          );
-          // Reserve BEFORE yielding control back to Gateway, which dispatches next.
+          try {
+            ownerReservation = this.dependencies.ownerBudget.reserve(
+              work.owner_id,
+              runId,
+              event.route.attempt,
+              event.route.estimated_input_tokens + event.route.max_output_tokens,
+              "main",
+              work.project_id,
+              event.route.provider_id,
+              event.route.model_id
+            );
+          } catch (error) {
+            if (error instanceof Error && "code" in error && error.code === "USAGE_LIMIT_EXCEEDED")
+              throw error;
+            throw new Error("OWNER_BUDGET_REFUSED", { cause: error });
+          }
+          // Persist the one shared reservation before provider dispatch.
+          work.owner_budget_hold_id = ownerReservation;
           work.model_requests++;
           work.reserved_input_tokens += event.route.estimated_input_tokens;
           work.reserved_output_tokens += event.route.max_output_tokens;
@@ -355,6 +383,22 @@ export class ManagerWorkCoordinator {
           completion.usage.inputTokens,
           completion.usage.outputTokens
         );
+      work = this.current(work.id, work.owner_id);
+      // Cancellation retains a conservative hold if it raced with a late result.
+      if (signal.aborted || work.status === "cancelled") throw new Error("EMERGENCY_STOP");
+      this.checkpoint({
+        ...work,
+        owner_budget_hold_id: null,
+        result_sources: [
+          ...(work.result_sources ?? []),
+          {
+            run_id: runId,
+            provider: completion.provider,
+            model: completion.model,
+            stage: work.stage
+          }
+        ]
+      });
       return content;
     } catch (error) {
       if (!runCommitted)
@@ -372,6 +416,44 @@ export class ManagerWorkCoordinator {
   }
 
   async execute(id: string, ownerId: string, signal = new AbortController().signal): Promise<void> {
+    if (this.active.has(id)) return this.active.get(id)!.done;
+    if (this.active.size || this.stopping) return Promise.resolve();
+    this.dependencies.store.assertWritable(ownerId);
+    if (this.isOwnerFenced(ownerId)) return;
+    const controller = new AbortController();
+    const done = this.run(id, ownerId, AbortSignal.any([controller.signal, signal])).finally(() =>
+      this.active.delete(id)
+    );
+    this.active.set(id, { ownerId, controller, done });
+    await done;
+  }
+
+  // Privacy/export callers must obtain product confirmation before destructive
+  // deletion, then await this barrier before touching owner data. No delete route.
+  quiesce(ownerId: string): Promise<WorkQuiescence> {
+    const previous = this.drains.get(ownerId);
+    if (previous) return previous;
+    this.dag.reconcileAll();
+    const epoch = this.dependencies.store.fenceOwner(ownerId);
+    const active = [...this.active.values()].filter((a) => a.ownerId === ownerId);
+    for (const action of active) action.controller.abort();
+    const done = Promise.allSettled(active.map((a) => a.done)).then(() => {
+      this.settledOwners.set(ownerId, epoch);
+      return { owner_id: ownerId, epoch, settled: true as const };
+    });
+    this.drains.set(ownerId, done);
+    return done;
+  }
+
+  releaseQuiescence(token: WorkQuiescence): void {
+    if (this.settledOwners.get(token.owner_id) !== token.epoch)
+      throw new ManagerWorkConflict("OWNER_NOT_SETTLED");
+    this.dependencies.store.releaseOwnerFence(token.owner_id, token.epoch);
+    this.drains.delete(token.owner_id);
+    this.settledOwners.delete(token.owner_id);
+  }
+
+  private async run(id: string, ownerId: string, signal: AbortSignal): Promise<void> {
     const { store, policy } = this.dependencies;
     let work = this.current(id, ownerId);
     if (work.status !== "queued" || this.isOwnerFenced(ownerId)) return;
@@ -520,7 +602,8 @@ export class ManagerWorkCoordinator {
           ? error.code
           : error instanceof Error && "code" in error && error.code === "USAGE_LIMIT_EXCEEDED"
             ? "USAGE_LIMIT_EXCEEDED"
-            : error instanceof Error && known.includes(error.message)
+            : error instanceof Error &&
+                (known.includes(error.message) || /^OWNER_[A-Z_]+$/.test(error.message))
               ? error.message
               : "WORK_FAILED";
       this.checkpoint(work, "Работа остановлена: " + work.error_code);

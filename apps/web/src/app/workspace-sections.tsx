@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { WorkspaceIcon as Icon, type IconName } from "./workspace-icons";
 import { PLANNED_CAPABILITIES, type CapabilityArea } from "./workspace-capabilities";
 import styles from "./workspace-sections.module.css";
-import { StudioFiles } from "./studio-files";
+import { StudioDataSurface } from "./studio-data-workbench";
 import { MediaGenerationPanel } from "./media-generation/media-panel";
 import { SpeechStudio } from "./voice/voice-playback";
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
@@ -1481,7 +1481,13 @@ export function WorkspaceSections(props: Props) {
       content = <Studio {...props} />;
       break;
     case "files":
-      content = <StudioFiles key={props.activeProjectId ?? "no-project"} projectId={props.activeProjectId} onCompose={props.onCompose} />;
+      content = (
+        <StudioDataSurface
+          key={props.activeProjectId ?? "no-project"}
+          projectId={props.activeProjectId}
+          onCompose={props.onCompose}
+        />
+      );
       break;
     case "apps":
       content = <Apps {...props} />;

@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, type ComponentProps } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 import Markdown, { type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { WorkspaceIcon } from "./workspace-icons";
+import { LoadingDots } from "./ui/feedback";
+import styles from "./chat-code.module.css";
 
 export function downloadText(content: string, name: string) {
   const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
@@ -14,18 +17,36 @@ export function downloadText(content: string, name: string) {
 }
 function CopyButton({ content, label }: { content: string; label: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const reset = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (reset.current) clearTimeout(reset.current);
+    },
+    []
+  );
   return (
     <button
       type="button"
       aria-label={label}
       onClick={() => {
+        if (reset.current) clearTimeout(reset.current);
+        if (!navigator.clipboard) {
+          setState("failed");
+          return;
+        }
         void navigator.clipboard.writeText(content).then(
-          () => setState("copied"),
+          () => {
+            setState("copied");
+            reset.current = setTimeout(() => setState("idle"), 2000);
+          },
           () => setState("failed")
         );
       }}
     >
-      {state === "copied" ? "Скопировано" : state === "failed" ? "Копирование недоступно" : label}
+      <WorkspaceIcon name={state === "copied" ? "check" : "copy"} />
+      <span aria-live="polite">
+        {state === "copied" ? "Скопировано" : state === "failed" ? "Копирование недоступно" : label}
+      </span>
     </button>
   );
 }
@@ -40,16 +61,50 @@ function CodeBlock({ children, node }: ComponentProps<"pre"> & ExtraProps) {
     ? classes.find((item: unknown) => typeof item === "string" && item.startsWith("language-"))
     : undefined;
   const name = language?.slice(9).replace(/[^a-z0-9]/gi, "") || "txt";
+  const diff = name === "diff" || name === "patch";
+  const lines = content.replace(/\n$/, "").split("\n");
+  const added = diff
+    ? lines.filter((line) => line.startsWith("+") && !line.startsWith("+++")).length
+    : 0;
+  const removed = diff
+    ? lines.filter((line) => line.startsWith("-") && !line.startsWith("---")).length
+    : 0;
   return (
-    <div className="response-code">
-      <div className="response-actions">
-        <span>{name}</span>
+    <div className={styles.panel}>
+      <div className={styles.toolbar}>
+        <span className={styles.language}>{name}</span>
+        {diff && (
+          <span className={styles.counts} aria-label={`${added} добавлено, ${removed} удалено`}>
+            +{added} / −{removed}
+          </span>
+        )}
         <CopyButton content={content} label="Копировать код" />
-        <button type="button" onClick={() => downloadText(content, `kosmora-code.${name}`)}>
-          Скачать код
+        <button
+          type="button"
+          onClick={() => downloadText(content, `kosmora-code.${diff ? "patch" : name}`)}
+        >
+          <WorkspaceIcon name="download" /> Скачать код
         </button>
       </div>
-      <pre>{children}</pre>
+      <pre className={styles.body}>
+        {content && lines.length <= 2000 ? (
+          <code>
+            {lines.map((line, index) => (
+              <span
+                className={`${styles.line} ${diff && line.startsWith("+") && !line.startsWith("+++") ? styles.added : diff && line.startsWith("-") && !line.startsWith("---") ? styles.removed : ""}`}
+                key={index}
+              >
+                <span className={styles.number} aria-hidden="true">
+                  {index + 1}
+                </span>
+                <span className={styles.text}>{line || "\u00a0"}</span>
+              </span>
+            ))}
+          </code>
+        ) : (
+          children
+        )}
+      </pre>
     </div>
   );
 }
@@ -62,12 +117,7 @@ export function ChatResponse({
   assistant: boolean;
   complete?: boolean;
 }) {
-  if (!content)
-    return (
-      <span className="typing">
-        Формирую ответ<span>…</span>
-      </span>
-    );
+  if (!content) return <LoadingDots label="Формирую ответ" />;
   if (!assistant) return <p>{content}</p>;
   return (
     <div className="chat-response">

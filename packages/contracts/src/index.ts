@@ -30,3 +30,5 @@ export * from "./step-up.js";
 export * from "./usage.js";
 export * from "./manager-work.js";
 export * from "./work-runtime.js";
+export * from "./canvas-artifacts.js";
+export * from "./work-dag.js";

@@ -4,28 +4,28 @@
 
 ## Реализовано
 
-* Настоящий HTTP OCI sidecar и API client. API не запускает процессы и не получает daemon socket; старые переменные локального OCI запуска больше не включают executor в API.
-* Авторизация отдельным внутренним bearer из secret-файла, constant-time сравнение. HTTP job API: PUT/GET/DELETE `/v1/jobs/:uuid`. PUT идемпотентен по ID + digest + check; повтор с другим snapshot запрещён. Нельзя передать команды, image, URL, env, mount, лимиты или runtime в задании.
-* Snapshot копируется до await, валидируется и хешируется. Sidecar передаёт обычные readonly файлы через PAX tar и `docker cp` до start. В пользовательском контейнере нет host mounts, Docker socket, server env/PAT/model tokens. Обычные Unicode/длинные пути сохраняются; symlink/device/traversal entries не создаются.
-* Фиксированные `syntax` и `node-test`. Pin локального immutable OCI образа; `--pull=never`, `network=none`, readonly rootfs и snapshot, UID/GID 65534, cap-drop ALL, no-new-privileges. По умолчанию CPU 1, RAM/swap 256 MiB, pids 64, timeout 30 секунд (максимум 120), общий stdout/stderr 128 KiB, bounded tmpfs. Командные строки, npm lifecycle и команды модели не исполняются.
-* Превышение вывода останавливает job. ANSI/control sequences, типовые токены, bearer, private keys и значения credential-полей редактируются; редактированный stdout/stderr также ограничен. Это ограничение распространённых форматов, не классификатор всех возможных секретов.
-* DELETE ждёт остановки runner и daemon cleanup, CLI process group убивается. Неподтверждённая очистка quarantines runner и сообщает unavailable; ошибка transport не доказывает успешную остановку. Sidecar всё равно сохраняет собственный deadline. При старте sidecar удаляет оставшиеся контейнеры со своим фиксированным label; если daemon/очистка недоступны, сервис не принимает задания.
-* 2 одновременных задания, максимум 64 retained job records, completed jobs TTL 10 минут; request body 3.2 MB, request/header deadlines, bounded HTTP response. Неопределённый PUT не отправляется повторно: клиент пытается DELETE с тем же ID.
-* Проверка привязана к точному merged snapshot digest и review_hash. Начало любой повторной проверки сразу удаляет прежние результат и publication_token. Изменение diff аннулирует проверку; публикация повторно сверяет digest и cleanupVerified. Cancel/check errors позволяют повторить ту же сохранённую проверку с новым подтверждением. Неподтверждённый PR нельзя повторно публиковать; прежняя read-only reconciliation сохранена.
-* Общий бюджет через необязательный `ownerBudget: CodeOwnerBudget`, структурный интерфейс для AccountStore. Code не хранит balances/reservations и не добавляет второй счётчик. Резерв до продолжения gateway после route.selected; отказ предотвращает provider HTTP. Второй автоматический route attempt блокируется до dispatch.
-* Успешная completion сначала записывается через ProjectStore.completeRun в канонический usage ledger, затем ownerBudget.reconcile получает именно эти строки. Неизвестные токены/стоимость, cancellation и failed dispatch должны сохранять резерв. Release разрешён только при доказанной локальной ошибке до продолжения gateway. После restart onReady повторяет идемпотентную reconciliation сохранённых Code model run IDs; ни модель, ни GitHub повторно не вызываются.
-* UI показывает токены/подтверждённые расходы из ledger, неизвестные запросы и отсутствие общего бюджета; появились русские объяснения unavailable/timeout/cancel и повтор проверки. Цветовая схема прежняя, чёрно-белая.
-* CheapVibeCode/gpt-5.5 по-прежнему `tool_calling=false`. Текстовые proposal/выбор файлов работают через настоящий adapter и strict JSON workflow; Registry capabilities не изменены.
+- Настоящий HTTP OCI sidecar и API client. API не запускает процессы и не получает daemon socket; старые переменные локального OCI запуска больше не включают executor в API.
+- Авторизация отдельным внутренним bearer из secret-файла, constant-time сравнение. HTTP job API: PUT/GET/DELETE `/v1/jobs/:uuid`. PUT идемпотентен по ID + digest + check; повтор с другим snapshot запрещён. Нельзя передать команды, image, URL, env, mount, лимиты или runtime в задании.
+- Snapshot копируется до await, валидируется и хешируется. Sidecar передаёт обычные readonly файлы через PAX tar и `docker cp` до start. В пользовательском контейнере нет host mounts, Docker socket, server env/PAT/model tokens. Обычные Unicode/длинные пути сохраняются; symlink/device/traversal entries не создаются.
+- Фиксированные `syntax` и `node-test`. Pin локального immutable OCI образа; `--pull=never`, `network=none`, readonly rootfs и snapshot, UID/GID 65534, cap-drop ALL, no-new-privileges. По умолчанию CPU 1, RAM/swap 256 MiB, pids 64, timeout 30 секунд (максимум 120), общий stdout/stderr 128 KiB, bounded tmpfs. Командные строки, npm lifecycle и команды модели не исполняются.
+- Превышение вывода останавливает job. ANSI/control sequences, типовые токены, bearer, private keys и значения credential-полей редактируются; редактированный stdout/stderr также ограничен. Это ограничение распространённых форматов, не классификатор всех возможных секретов.
+- DELETE ждёт остановки runner и daemon cleanup, CLI process group убивается. Неподтверждённая очистка quarantines runner и сообщает unavailable; ошибка transport не доказывает успешную остановку. Sidecar всё равно сохраняет собственный deadline. При старте sidecar удаляет оставшиеся контейнеры со своим фиксированным label; если daemon/очистка недоступны, сервис не принимает задания.
+- 2 одновременных задания, максимум 64 retained job records, completed jobs TTL 10 минут; request body 3.2 MB, request/header deadlines, bounded HTTP response. Неопределённый PUT не отправляется повторно: клиент пытается DELETE с тем же ID.
+- Проверка привязана к точному merged snapshot digest и review_hash. Начало любой повторной проверки сразу удаляет прежние результат и publication_token. Изменение diff аннулирует проверку; публикация повторно сверяет digest и cleanupVerified. Cancel/check errors позволяют повторить ту же сохранённую проверку с новым подтверждением. Неподтверждённый PR нельзя повторно публиковать; прежняя read-only reconciliation сохранена.
+- Общий бюджет через необязательный `ownerBudget: CodeOwnerBudget`, структурный интерфейс для AccountStore. Code не хранит balances/reservations и не добавляет второй счётчик. Резерв до продолжения gateway после route.selected; отказ предотвращает provider HTTP. Второй автоматический route attempt блокируется до dispatch.
+- Успешная completion сначала записывается через ProjectStore.completeRun в канонический usage ledger, затем ownerBudget.reconcile получает именно эти строки. Неизвестные токены/стоимость, cancellation и failed dispatch должны сохранять резерв. Release разрешён только при доказанной локальной ошибке до продолжения gateway. После restart onReady повторяет идемпотентную reconciliation сохранённых Code model run IDs; ни модель, ни GitHub повторно не вызываются.
+- UI показывает токены/подтверждённые расходы из ledger, неизвестные запросы и отсутствие общего бюджета; появились русские объяснения unavailable/timeout/cancel и повтор проверки. Цветовая схема прежняя, чёрно-белая.
+- CheapVibeCode/gpt-5.5 по-прежнему `tool_calling=false`. Текстовые proposal/выбор файлов работают через настоящий adapter и strict JSON workflow; Registry capabilities не изменены.
 
 ## Контракт AccountStore / Manager
 
 В переданном `b15912d` нет AccountStore, поэтому его реализация не выдумана. Подключите тот же экземпляр общего owner budget, которым пользуется Manager, в `buildApp({ ..., ownerBudget })`. Структурные методы определены в `apps/api/src/code-agent/owner-budget.ts`:
 
-| Метод | Вход и обязательное поведение |
-|---|---|
-| reserve | `{ownerId, runId, attempt, projectId, route}` → boolean/Promise; атомарная durable reservation по ключу owner/run/attempt. `route` содержит верхние оценки токенов и стоимость/валюту либо null. Неизвестную цену разрешать только согласно общей owner policy, не считать её нулевой. |
-| reconcile | `{ownerId, runId, attempt, ledger}` → void/Promise; ledger — канонические StoredModelUsage[]. Повтор безопасен. Не создавать резерв для отсутствующего/отклонённого ключа, не восстанавливать уже доказанно released ключ. Unknown usage/cost и failed/cancelled rows удерживать, не освобождать по одному статусу run. |
-| releaseBeforeDispatch | `{ownerId, runId, attempt, reason:'local_before_dispatch'}` → void/Promise; идемпотентное освобождение только с этим доказательством. |
+| Метод                 | Вход и обязательное поведение                                                                                                                                                                                                                                                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| reserve               | `{ownerId, runId, attempt, projectId, route}` → boolean/Promise; атомарная durable reservation по ключу owner/run/attempt. `route` содержит верхние оценки токенов и стоимость/валюту либо null. Неизвестную цену разрешать только согласно общей owner policy, не считать её нулевой.                                  |
+| reconcile             | `{ownerId, runId, attempt, ledger}` → void/Promise; ledger — канонические StoredModelUsage[]. Повтор безопасен. Не создавать резерв для отсутствующего/отклонённого ключа, не восстанавливать уже доказанно released ключ. Unknown usage/cost и failed/cancelled rows удерживать, не освобождать по одному статусу run. |
+| releaseBeforeDispatch | `{ownerId, runId, attempt, reason:'local_before_dispatch'}` → void/Promise; идемпотентное освобождение только с этим доказательством.                                                                                                                                                                                   |
 
 Если AccountStore использует другие имена/сигнатуры, главный чат добавляет тонкий adapter к этим трём вызовам, сохраняя существующий единственный owner ledger/счётчик. Нельзя создавать новую таблицу бюджета ради Code. Без этого optional port работает прежний project Usage Ledger, но общего ограничения владельца нет; UI показывает это явно. Для ежедневного hosted режима главный чат обязан передать общий AccountStore.
 
@@ -91,27 +91,27 @@ CODE_AGENT_TEST_RUNTIME=docker node deploy/code-agent/smoke.mjs
 
 ## Rollback
 
-* Прекратить новые проверки и дождаться завершения/подтверждённой отмены текущих jobs. При неизвестной очистке проверять label на выделенном daemon, не объявлять pass и не публиковать PR.
-* Остановить sidecar; SIGTERM отменяет jobs и ждёт cleanup. Проверить отсутствие label `kosmora.code-executor=true` с operator OCI CLI. При аварийном kill следующая загрузка sidecar выполняет reconciliation orphan containers до listener.
-* Пересоздать API из базового compose без override; HTTP executor не настроен → unavailable. Старый результат нельзя использовать после начатого retry: token/check уже аннулированы.
-* Не откатывать/очищать usage ledger и owner reservations, не повторять неизвестную PR publication. Для возврата исходников применить соответствующий patch reverse только после проверки отсутствия чужих пересекающихся изменений. Старый локальный API runner не возвращать в hosted API.
+- Прекратить новые проверки и дождаться завершения/подтверждённой отмены текущих jobs. При неизвестной очистке проверять label на выделенном daemon, не объявлять pass и не публиковать PR.
+- Остановить sidecar; SIGTERM отменяет jobs и ждёт cleanup. Проверить отсутствие label `kosmora.code-executor=true` с operator OCI CLI. При аварийном kill следующая загрузка sidecar выполняет reconciliation orphan containers до listener.
+- Пересоздать API из базового compose без override; HTTP executor не настроен → unavailable. Старый результат нельзя использовать после начатого retry: token/check уже аннулированы.
+- Не откатывать/очищать usage ledger и owner reservations, не повторять неизвестную PR publication. Для возврата исходников применить соответствующий patch reverse только после проверки отсутствия чужих пересекающихся изменений. Старый локальный API runner не возвращать в hosted API.
 
 ## Выполненные проверки
 
-| Проверка | Результат |
-|---|---|
-| pnpm typecheck | PASS, 9 пакетов |
-| pnpm lint | PASS, 9 пакетов; финальное локальное изменение cap/body также проходит tool-runtime lint |
-| pnpm test | PASS: 651 тест, 3 настоящих OCI tests SKIPPED; после финальной корректировки redacted-output cap/body limit повторно проверен изменённый tool-runtime |
-| Code API / SQLite / Policy / gateway / GitHub deterministic transport | 23/23 PASS (включены 5 owner-budget/retry сценариев, прежние 18 Code тестов сохранены) |
-| Полный apps/api test | 159/159 PASS |
-| Tool-runtime | 37/37 PASS: прежние runtime/OCI CLI boundary tests плюс 8 новых настоящих HTTP/archive/redaction проверок; OCI daemon в этих тестах не запускается |
-| Build | PASS, 9 пакетов, `/code-agent` в production routes; первая попытка имела internal Turbopack cache panic, повтор с чистым generated cache прошёл. Финальный tool-runtime build повторён после cap/body limit |
-| Formatter | PASS для всех изменённых TypeScript/TSX/MJS/YAML; Dockerfile не поддерживает parser Prettier и им не проверяется |
-| node --check | PASS sidecar.mjs и smoke.mjs |
-| pnpm check:secrets | PASS |
-| YAML/security shape | PASS: internal network; sidecar без public ports; API override без volumes/socket. Настоящий docker compose config/build здесь не выполнялся |
-| Patch verification | Полный b15912d и incremental feature+integration patches применены к соответствующим точным baseline; итоговые файлы проверены побайтно (manifest) |
+| Проверка                                                              | Результат                                                                                                                                                                                                   |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pnpm typecheck                                                        | PASS, 9 пакетов                                                                                                                                                                                             |
+| pnpm lint                                                             | PASS, 9 пакетов; финальное локальное изменение cap/body также проходит tool-runtime lint                                                                                                                    |
+| pnpm test                                                             | PASS: 651 тест, 3 настоящих OCI tests SKIPPED; после финальной корректировки redacted-output cap/body limit повторно проверен изменённый tool-runtime                                                       |
+| Code API / SQLite / Policy / gateway / GitHub deterministic transport | 23/23 PASS (включены 5 owner-budget/retry сценариев, прежние 18 Code тестов сохранены)                                                                                                                      |
+| Полный apps/api test                                                  | 159/159 PASS                                                                                                                                                                                                |
+| Tool-runtime                                                          | 37/37 PASS: прежние runtime/OCI CLI boundary tests плюс 8 новых настоящих HTTP/archive/redaction проверок; OCI daemon в этих тестах не запускается                                                          |
+| Build                                                                 | PASS, 9 пакетов, `/code-agent` в production routes; первая попытка имела internal Turbopack cache panic, повтор с чистым generated cache прошёл. Финальный tool-runtime build повторён после cap/body limit |
+| Formatter                                                             | PASS для всех изменённых TypeScript/TSX/MJS/YAML; Dockerfile не поддерживает parser Prettier и им не проверяется                                                                                            |
+| node --check                                                          | PASS sidecar.mjs и smoke.mjs                                                                                                                                                                                |
+| pnpm check:secrets                                                    | PASS                                                                                                                                                                                                        |
+| YAML/security shape                                                   | PASS: internal network; sidecar без public ports; API override без volumes/socket. Настоящий docker compose config/build здесь не выполнялся                                                                |
+| Patch verification                                                    | Полный b15912d и incremental feature+integration patches применены к соответствующим точным baseline; итоговые файлы проверены побайтно (manifest)                                                          |
 
 Не запускались: платные модели, реальные GitHub writes/PR, VPS/rollout, OCI контейнеры, browser acceptance. В среде отсутствуют docker и podman. Поэтому настоящий OCI isolation/cancellation/daemon restart и сборка sidecar image не объявлены production-проверенными. Browser UI acceptance также остаётся главному чату; React/Next typecheck/build пройдены.
 

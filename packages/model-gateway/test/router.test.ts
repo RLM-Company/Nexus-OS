@@ -315,3 +315,36 @@ describe("ModelRouter", () => {
     );
   });
 });
+
+describe("unknown pricing routing tie (live NaN regression)", () => {
+  it("uses the same lexical tie-break in both registry orders when both cost scores are -Infinity", () => {
+    const a = entry({ model_id: "a", pricing: null }),
+      z = entry({ model_id: "z", pricing: null });
+    for (const entries of [
+      [z, a],
+      [a, z]
+    ]) {
+      const route = new ModelRouter(new ModelRegistry(document(entries))).resolve(
+        request({ preferred_model_alias: null, max_cost: null, optimize_for: "cost" })
+      );
+      expect(route.model_id).toBe("a");
+      expect(route.estimated_max_cost).toBeNull();
+    }
+  });
+  it("still prefers known lower cost and rejects unknown cost under a monetary limit", () => {
+    const unknown = entry({ model_id: "unknown", pricing: null }),
+      known = entry({ model_id: "known" });
+    const router = new ModelRouter(new ModelRegistry(document([unknown, known])));
+    expect(
+      router.resolve(request({ preferred_model_alias: null, max_cost: null, optimize_for: "cost" }))
+        .model_id
+    ).toBe("known");
+    expectRouteError(
+      () =>
+        new ModelRouter(new ModelRegistry(document([unknown]))).resolve(
+          request({ preferred_model_alias: null, optimize_for: "cost" })
+        ),
+      "BUDGET_EXCEEDED"
+    );
+  });
+});

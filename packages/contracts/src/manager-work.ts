@@ -83,6 +83,9 @@ export interface ManagerWork {
   memory_snapshot?: ProjectMemorySnapshot;
   graph_context?: ProjectMemorySnapshot;
   task_graph?: WorkRuntimeProgress;
+  result_sources?: { run_id: string; provider: string; model: string; stage: ManagerWorkStage }[];
+  dag_binding?: { graph_id: string; node_id: string; attempt: number; bound: boolean };
+  owner_budget_hold_id?: string | null;
   status: ManagerWorkStatus;
   stage: ManagerWorkStage;
   version: number;

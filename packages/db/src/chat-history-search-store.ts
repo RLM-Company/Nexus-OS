@@ -74,7 +74,9 @@ const SEARCH_SQL = `
 
 export class ChatHistorySearchStore {
   private readonly sqlite: DatabaseSync;
-  constructor(sqlite: DatabaseSync) { this.sqlite = sqlite; }
+  constructor(sqlite: DatabaseSync) {
+    this.sqlite = sqlite;
+  }
 
   search(filters: ChatHistorySearchFilters): ChatHistorySearchPage {
     const raw = filters.query.trim();
@@ -88,10 +90,24 @@ export class ChatHistorySearchStore {
     const before = filters.before ? `${filters.before}T23:59:59.999Z` : "";
     const limit = safePositive(filters.limit, 30, 20) || 20;
     const offset = safePositive(filters.offset, 1000, 0);
-    const rows = this.sqlite.prepare(SEARCH_SQL).all(
-      match, filters.ownerId, scope, scope, project, project,
-      archive, archive, after, after, before, before, limit + 1, offset
-    ) as unknown as Array<Omit<ChatHistorySearchHit, "archived"> & { archived: number }>;
+    const rows = this.sqlite
+      .prepare(SEARCH_SQL)
+      .all(
+        match,
+        filters.ownerId,
+        scope,
+        scope,
+        project,
+        project,
+        archive,
+        archive,
+        after,
+        after,
+        before,
+        before,
+        limit + 1,
+        offset
+      ) as unknown as Array<Omit<ChatHistorySearchHit, "archived"> & { archived: number }>;
     return {
       items: rows.slice(0, limit).map((row) => ({
         ...row,
