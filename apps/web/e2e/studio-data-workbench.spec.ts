@@ -17,7 +17,7 @@ test("Data: actual worker parsing, Russian numbers, line/scatter, complete CSV a
     if (request.method() === "POST") writes++;
   });
   await openData(page);
-  await page.getByLabel("Открыть CSV / TSV / workspace JSON").setInputFiles({
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
     name: "workbench.tsv",
     mimeType: "text/tab-separated-values",
     buffer: Buffer.from(
@@ -50,7 +50,7 @@ test("Data: workspace is explicit; filtered attachment carries complete rows onl
   page
 }) => {
   await openData(page);
-  await page.getByLabel("Открыть CSV / TSV / workspace JSON").setInputFiles({
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
     name: "data.csv",
     mimeType: "text/csv",
     buffer: Buffer.from('name,value\nfirst," =2+2"\nsecond,7\n')
@@ -61,7 +61,7 @@ test("Data: workspace is explicit; filtered attachment carries complete rows onl
   const workspace = await saved;
   expect(workspace.suggestedFilename()).toContain("workspace.json");
   const json = await readFile(await workspace.path());
-  await page.getByLabel("Открыть CSV / TSV / workspace JSON").setInputFiles({
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
     name: "saved.workspace.json",
     mimeType: "application/json",
     buffer: json
@@ -83,7 +83,7 @@ test("Data: worker cancellation during large CSV prevents late results and allow
   await openData(page);
   const ten = Array.from({ length: 10 }, (_, i) => `column${i}`).join("\t");
   const large = ten + "\n" + 'ID001\t"quoted\nrow"\t1,5\t2\t3\t4\t5\t6\t7\t8\n'.repeat(79_000);
-  await page.getByLabel("Открыть CSV / TSV / workspace JSON").setInputFiles({
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
     name: "large.tsv",
     mimeType: "text/tab-separated-values",
     buffer: Buffer.from(large)
@@ -93,7 +93,7 @@ test("Data: worker cancellation during large CSV prevents late results and allow
     page.getByRole("region", { name: "Data Workbench" }).getByRole("alert")
   ).toContainText("Операция отменена");
   await expect(page.getByText("large.tsv", { exact: true })).toHaveCount(0);
-  await page.getByLabel("Открыть CSV / TSV / workspace JSON").setInputFiles({
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
     name: "clean.csv",
     mimeType: "text/csv",
     buffer: Buffer.from("name,value\nworking,1")
@@ -104,7 +104,7 @@ test("Data: worker cancellation during large CSV prevents late results and allow
 
 test("Data: workspace rejects invalid schema and leaves no stale table", async ({ page }) => {
   await openData(page);
-  await page.getByLabel("Открыть CSV / TSV / workspace JSON").setInputFiles({
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
     name: "invalid.workspace.json",
     mimeType: "application/json",
     buffer: Buffer.from(
@@ -122,12 +122,12 @@ test("Data: invalid replacement during parsing clears pending state and allows a
 }) => {
   await openData(page);
   const source = "x,y\n" + "1,2\n".repeat(79_000);
-  await page.getByLabel("Открыть CSV / TSV / workspace JSON").setInputFiles({
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
     name: "pending.csv",
     mimeType: "text/csv",
     buffer: Buffer.from(source)
   });
-  await page.getByLabel("Открыть CSV / TSV / workspace JSON").setInputFiles({
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
     name: "invalid.txt",
     mimeType: "text/plain",
     buffer: Buffer.from("unsupported")
@@ -137,7 +137,7 @@ test("Data: invalid replacement during parsing clears pending state and allows a
   ).toContainText("Поддерживаются только CSV");
   await expect(page.getByRole("button", { name: "Отменить обработку" })).toHaveCount(0);
   await expect(page.getByText("pending.csv", { exact: true })).toHaveCount(0);
-  await page.getByLabel("Открыть CSV / TSV / workspace JSON").setInputFiles({
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
     name: "recovered.csv",
     mimeType: "text/csv",
     buffer: Buffer.from("x,y\n1,2")

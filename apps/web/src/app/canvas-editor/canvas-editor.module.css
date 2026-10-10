@@ -1,5 +1,5 @@
 .root {
-  font: inherit;
+  font: 14px/1.6 var(--font-ui);
   color: var(--text, #282828);
   width: 100%;
   min-width: 0;
@@ -22,7 +22,7 @@
 .heading h2 {
   font-size: 1.17rem;
   margin: 0 0 4px;
-  font-weight: 650;
+  font-weight: 550;
 }
 .heading small,
 .files small,
@@ -34,10 +34,10 @@
   border: 1px solid var(--line-strong, #cdcdcd);
   background: transparent;
   padding: 7px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
-.root button:hover {
+.root button:hover:not(:disabled) {
   background: var(--surface-hover, #eaeaea);
 }
 .root button:focus-visible,
@@ -73,7 +73,7 @@
 }
 .files > button[aria-current="page"] {
   background: var(--surface-hover, #eaeaea);
-  border-color: var(--muted, #676767);
+  border-color: var(--line, #e5e5e5);
 }
 .files p {
   font-size: 0.85rem;
@@ -95,7 +95,7 @@
 .root input,
 .root select {
   border: 1px solid var(--line-strong, #cdcdcd);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   min-width: 0;
   width: 100%;
   background: transparent;
@@ -125,7 +125,7 @@
   min-height: 320px;
   resize: vertical;
   border: 1px solid var(--line-strong, #cdcdcd);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 14px;
   line-height: 1.55;
   font-family: ui-monospace, Consolas, monospace !important;
@@ -145,12 +145,12 @@
   color: #fff;
   border-color: var(--accent-strong, #202020);
 }
-.root .primary:hover {
+.root .primary:hover:not(:disabled) {
   background: var(--accent-hover, #3a3a3a);
 }
 .conflict {
   border: 1px solid var(--muted, #676767);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   margin: 18px 0;
   padding: 12px;
 }
@@ -186,7 +186,7 @@
 .preview {
   border: 1px solid var(--line, #e5e5e5);
   background: var(--panel, #f7f7f7);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   min-height: 90px;
   max-height: 380px;
   overflow: auto;
@@ -238,5 +238,49 @@
   }
   .textarea {
     min-height: 260px;
+  }
+}
+
+.heading {
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 20px;
+}
+.heading h2 {
+  letter-spacing: -0.025em;
+}
+.root :is(button, input, select) {
+  min-height: 40px;
+}
+.root button {
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease);
+}
+.files > button {
+  border-color: transparent;
+  padding: 10px 12px;
+}
+.preview {
+  border-radius: var(--radius-container);
+}
+.history ol {
+  padding-left: 0;
+}
+.history li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+@media (pointer: coarse) {
+  .root :is(button, input, select) {
+    min-height: 44px;
+  }
+  .root :is(input, select, textarea) {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .root button {
+    transition: none;
   }
 }

@@ -19,6 +19,8 @@ import {
   type AnswerReport
 } from "./studio-files-report";
 import styles from "./studio-files-library.module.css";
+import { ShiningText, SystemMessage } from "./ui/kosmora-controls";
+import { WorkspaceIcon } from "./workspace-icons";
 
 type Props = {
   projectId: string | null;
@@ -343,10 +345,14 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
           <h3>Библиотека проекта</h3>
           <p>Сохранённые документы · поиск по страницам и строкам · отчёты</p>
         </div>
-        <span>Локальный индекс без embeddings</span>
+        <span>Поиск по источникам</span>
       </header>
       {!projectId ? (
-        <p>Выберите проект в разделе «Чаты», чтобы сохранять материалы надолго.</p>
+        <div className={styles.empty}>
+          <WorkspaceIcon name="files" />
+          <strong>Документы вашего проекта</strong>
+          <p>Выберите проект в разделе «Чаты», чтобы сохранять материалы надолго.</p>
+        </div>
       ) : (
         <>
           <div className={styles.toolbar}>
@@ -358,7 +364,13 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
               accept=".pdf,.docx,.txt,.csv"
               onChange={(event) => void upload(event)}
             />
-            <button type="button" disabled={busy} onClick={() => uploader.current?.click()}>
+            <button
+              className={styles.primary}
+              type="button"
+              disabled={busy}
+              onClick={() => uploader.current?.click()}
+            >
+              <WorkspaceIcon name="new-chat" />
               Добавить файлы
             </button>
             {busy && (
@@ -368,12 +380,8 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
             )}
             <small>До 20 МБ на файл · до 100 МБ и 100 файлов в проекте</small>
           </div>
-          {status && <p role="status">{status}</p>}
-          {error && (
-            <p role="alert" className={styles.error}>
-              {error}
-            </p>
-          )}
+          {status && <p role="status">{busy ? <ShiningText>{status}</ShiningText> : status}</p>}
+          {error && <SystemMessage>{error}</SystemMessage>}
           <div className={styles.files}>
             {files.map((file) => (
               <div className={styles.file} key={file.id}>
@@ -390,6 +398,7 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
                       )
                     }
                   />
+                  <WorkspaceIcon className={styles.fileIcon} name="files" />
                   <span>
                     <strong>{file.name}</strong>
                     <small>
@@ -415,7 +424,9 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
                 </div>
               </div>
             ))}
-            {!files.length && <p>В проекте пока нет сохранённых документов.</p>}
+            {!files.length && (
+              <p className={styles.empty}>В проекте пока нет сохранённых документов.</p>
+            )}
           </div>
           <div className={styles.query}>
             <label htmlFor="library-question">Вопрос к документам</label>
@@ -457,8 +468,8 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
             <h4>Ответ модели с источниками</h4>
             {!answerAvailable && (
               <p className={styles.disclaimer}>
-                Модельный анализ недоступен: требуется общий gateway и ownerBudget с каноническим
-                учётом. Локальный поиск и экспорт фрагментов работают без модели.
+                Ответы модели сейчас недоступны. Поиск по документам и экспорт найденных фрагментов
+                продолжают работать.
               </p>
             )}
             {!!answers.length && (

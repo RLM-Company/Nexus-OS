@@ -1,25 +1,27 @@
 .library {
-  background: #fff;
-  border: 1px solid #c5c5c5;
-  border-radius: 14px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-container);
   padding: 20px;
-  margin: 0 0 28px;
-  color: #171717;
+  margin: 0 0 24px;
+  color: var(--text);
   font-size: 14px;
+  line-height: 1.6;
+  min-width: 0;
 }
 .header {
   display: flex;
   align-items: start;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px solid #e3e3e3;
+  border-bottom: 1px solid var(--line);
   padding-bottom: 13px;
   margin-bottom: 15px;
   flex-wrap: wrap;
 }
 .header h3 {
   font-size: 18px;
-  font-weight: 650;
+  font-weight: 550;
   margin: 0;
 }
 .header p,
@@ -27,7 +29,7 @@
 .toolbar small,
 .file small,
 .disclaimer {
-  color: #6d6d6d;
+  color: var(--muted);
   margin: 4px 0 0;
   font-size: 12px;
 }
@@ -42,39 +44,43 @@
 .library button,
 .library a {
   cursor: pointer;
-  display: inline-block;
-  border-radius: 8px;
-  border: 1px solid #c6c6c6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--line);
   padding: 7px 11px;
   font-size: 13px;
   text-decoration: none;
-  background: #fff;
-  color: #171717;
+  background: var(--bg);
+  color: var(--text);
   font-family: inherit;
 }
-.library button:hover,
+.library button:hover:not(:disabled),
 .library a:hover {
-  background: #efefef;
+  background: var(--surface);
 }
 .library button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.library button:first-child {
-  background: #171717;
+.library .primary {
+  background: var(--accent-strong);
   color: white;
-  border-color: #171717;
+  border-color: var(--text);
 }
-.library button:first-child:hover {
-  background: #404040;
+.library .primary:hover:not(:disabled) {
+  background: var(--accent-hover);
 }
 .file {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #ededed;
+  border-bottom: 1px solid var(--line);
   gap: 12px;
-  padding: 8px 0;
+  padding: 12px 0;
   flex-wrap: wrap;
 }
 .file label,
@@ -94,7 +100,7 @@
 }
 .file strong,
 .hit strong {
-  font-weight: 600;
+  font-weight: 550;
 }
 .file small,
 .hit small {
@@ -107,24 +113,24 @@
   padding: 14px 0;
 }
 .query textarea {
-  border: 1px solid #aaa;
-  border-radius: 8px;
-  min-height: 70px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  min-height: 80px;
   padding: 10px;
   font: inherit;
   resize: vertical;
   width: 100%;
-  background: #fff;
-  color: #111;
+  background: var(--bg);
+  color: var(--text);
 }
 .results {
   max-height: 420px;
   overflow: auto;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
 }
 .hit {
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid var(--line);
   padding: 12px;
   font-size: 13px;
   line-height: 1.5;
@@ -134,7 +140,7 @@
 }
 .hit small {
   line-height: 1.55;
-  color: #414141;
+  color: var(--muted);
 }
 .preview {
   font:
@@ -144,23 +150,123 @@
   overflow: auto;
   max-height: 380px;
   padding: 14px;
-  background: #f4f4f4;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
 }
 .error {
-  color: #8b2020;
+  color: var(--text);
 }
 .disclaimer {
   line-height: 1.5;
 }
 
 .library select {
-  background: #fff;
-  color: #171717;
-  border: 1px solid #999;
-  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
   padding: 7px;
   max-width: 100%;
   font: inherit;
+}
+
+.library :is(button, a) {
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease);
+}
+.library :is(button, a, textarea, select, input):focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+.library button svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.library input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 3px 0;
+  flex-shrink: 0;
+  accent-color: var(--text);
+}
+.library select {
+  min-height: 40px;
+}
+.header > span {
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--panel);
+  padding: 3px 9px;
+}
+.header h3 {
+  letter-spacing: -0.025em;
+}
+.files {
+  min-width: 0;
+}
+.fileIcon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.file .actions {
+  margin: 0;
+}
+.empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 120px;
+  padding: 24px 16px;
+  border-radius: var(--radius-control);
+  background: var(--panel);
+  color: var(--muted);
+  text-align: center;
+}
+.empty > svg {
+  width: 24px;
+  height: 24px;
+}
+.empty strong {
+  color: var(--text);
+  font-weight: 550;
+}
+.empty p {
+  margin: 0;
+  max-width: 420px;
+}
+@media (max-width: 600px) {
+  .library {
+    padding: 16px;
+  }
+  .header > span {
+    margin: 0;
+  }
+  .file label {
+    flex-basis: 100%;
+  }
+  .file .actions {
+    width: 100%;
+  }
+  .toolbar small {
+    flex-basis: 100%;
+  }
+}
+@media (pointer: coarse) {
+  .library :is(button, a, select) {
+    min-height: 44px;
+  }
+  .query textarea {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .library :is(button, a) {
+    transition: none;
+  }
 }

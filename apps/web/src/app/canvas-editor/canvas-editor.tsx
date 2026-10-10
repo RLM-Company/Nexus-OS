@@ -13,6 +13,7 @@ import {
 import styles from "./canvas-editor.module.css";
 import { canvasDraftKey, parseCanvasDraft, type CanvasDraft } from "./canvas-draft-storage";
 import { CanvasPreview } from "./canvas-preview";
+import { ShiningText, SystemMessage } from "../ui/kosmora-controls";
 
 type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
 type Meta = Omit<CanvasRevision, "content">;
@@ -99,8 +100,14 @@ export function CanvasEditor({ projectId }: { projectId: string }) {
   }, [projectId]);
   if (!scope || scope.projectId !== projectId)
     return (
-      <section aria-label="Редактор Canvas">
-        {scopeError ? <p role="alert">{scopeError}</p> : <p role="status">Загружаем Canvas…</p>}
+      <section className={styles.root} aria-label="Редактор Canvas">
+        {scopeError ? (
+          <SystemMessage>{scopeError}</SystemMessage>
+        ) : (
+          <p role="status">
+            <ShiningText>Загружаем Canvas…</ShiningText>
+          </p>
+        )}
       </section>
     );
   return (
@@ -632,16 +639,8 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
               </button>
             </div>
           )}
-          {error && (
-            <p role="alert" className={styles.error}>
-              {error}
-            </p>
-          )}
-          {notice && (
-            <p role="status" className={styles.notice}>
-              {notice}
-            </p>
-          )}
+          {error && <SystemMessage>{error}</SystemMessage>}
+          {notice && <SystemMessage kind="info">{notice}</SystemMessage>}
           <div className={styles.previewHead}>
             <h3>
               {revisionPreview ? `Просмотр версии ${revisionPreview.version}` : "Предпросмотр"}

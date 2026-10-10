@@ -1,23 +1,23 @@
 .panel {
-  border: 1px solid #bbb;
-  border-radius: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-container);
   padding: 16px;
   margin: 16px 0;
-  background: #fff;
-  color: #111;
+  background: var(--bg);
+  color: var(--text);
 }
 .panel h3 {
   margin: 0 0 12px;
   font-size: 17px;
 }
 .panel p {
-  color: #444;
+  color: var(--muted);
   line-height: 1.5;
 }
 .panel progress {
   width: 100%;
   height: 10px;
-  accent-color: #111;
+  accent-color: var(--text);
 }
 .tasks {
   padding: 0;
@@ -30,18 +30,18 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--line);
 }
 .tasks small {
   display: block;
   margin-top: 4px;
-  color: #555;
+  color: var(--muted);
 }
 .panel button {
-  background: #fff;
-  color: #111;
-  border: 1px solid #999;
-  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
   padding: 7px 10px;
   cursor: pointer;
 }
@@ -53,7 +53,7 @@
 .panel input:focus-visible,
 .panel textarea:focus-visible,
 .panel select:focus-visible {
-  outline: 2px solid #111;
+  outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 .panel input,
@@ -61,10 +61,10 @@
 .panel select {
   box-sizing: border-box;
   width: 100%;
-  color: #111;
-  background: #fff;
-  border: 1px solid #999;
-  border-radius: 7px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
   padding: 9px;
   font: inherit;
 }
@@ -79,7 +79,7 @@
 }
 .panel input[type="checkbox"] {
   width: auto;
-  accent-color: #111;
+  accent-color: var(--text);
 }
 .actions {
   display: flex;
@@ -95,8 +95,8 @@
 }
 .entry {
   padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
 }
 .entry p {
   white-space: pre-wrap;
@@ -104,12 +104,12 @@
 }
 .entry small {
   display: block;
-  color: #555;
+  color: var(--muted);
   overflow-wrap: anywhere;
 }
 .error {
-  color: #111;
-  border-left: 3px solid #111;
+  color: var(--text);
+  border-left: 3px solid var(--text);
   padding-left: 10px;
 }
 .artifacts {
@@ -118,15 +118,15 @@
 }
 .artifacts li {
   padding: 8px 0;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--line);
 }
 .artifacts a {
-  color: #111;
+  color: var(--text);
   text-decoration: underline;
 }
 .checkpoint {
   font-size: 13px;
-  color: #555;
+  color: var(--muted);
 }
 @media (max-width: 600px) {
   .panel {
@@ -138,9 +138,46 @@
   }
 }
 .dagStep {
-  border: 1px solid #bbb;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
   margin: 12px 0;
   padding: 12px;
   min-width: 0;
+}
+
+.panel {
+  font-size: 14px;
+  line-height: 1.6;
+  min-width: 0;
+}
+.panel h3 {
+  font-weight: 550;
+  letter-spacing: -0.02em;
+}
+.panel :is(button, input:not([type="checkbox"]), select) {
+  min-height: 40px;
+}
+.panel button {
+  font: inherit;
+  font-size: 13px;
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+.panel button:hover:not(:disabled) {
+  background: var(--surface);
+}
+.panel .entry {
+  overflow-wrap: anywhere;
+}
+@media (pointer: coarse) {
+  .panel :is(button, input:not([type="checkbox"]), select) {
+    min-height: 44px;
+  }
+  .panel :is(input:not([type="checkbox"]), textarea, select) {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel button {
+    transition: none;
+  }
 }

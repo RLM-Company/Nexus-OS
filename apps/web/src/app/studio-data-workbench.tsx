@@ -21,6 +21,8 @@ import {
 } from "./studio-data-export";
 import { StudioFiles } from "./studio-files";
 import styles from "./studio-data-workbench.module.css";
+import { ShiningText, SystemMessage } from "./ui/kosmora-controls";
+import { WorkspaceIcon } from "./workspace-icons";
 
 type Response =
   | { id: number; kind: "loaded"; name: string; table: CsvTable; settings: DataSettings }
@@ -359,13 +361,18 @@ export function DataWorkbench({
       : null;
   return (
     <section className={styles.root} aria-label="Data Workbench">
-      <header>
-        <h2>Таблицы и диаграммы</h2>
-        <p>Фильтруйте данные, сравнивайте значения и сохраняйте результаты.</p>
+      <header className={styles.header}>
+        <span className={styles.icon}>
+          <WorkspaceIcon name="files" />
+        </span>
+        <div>
+          <h2>Таблицы и диаграммы</h2>
+          <p>Фильтруйте данные, сравнивайте значения и сохраняйте результаты.</p>
+        </div>
       </header>
       <div className={styles.box}>
         <label className={styles.fileLabel} htmlFor="data-file">
-          Открыть CSV / TSV / workspace JSON
+          Открыть таблицу или сохранённый проект
         </label>
         <input
           id="data-file"
@@ -392,13 +399,13 @@ export function DataWorkbench({
           </button>
         )}
 
-        {progress && <p role="status">{progress}</p>}
-        {error && (
-          <p className={styles.error} role="alert">
-            {error}
+        {progress && (
+          <p role="status">
+            {busy || exporting ? <ShiningText>{progress}</ShiningText> : progress}
           </p>
         )}
-        {notice && <p role="status">{notice}</p>}
+        {error && <SystemMessage>{error}</SystemMessage>}
+        {notice && <SystemMessage kind="success">{notice}</SystemMessage>}
       </div>
       {table && settings && (
         <>
