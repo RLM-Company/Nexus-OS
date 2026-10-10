@@ -1,0 +1,101 @@
+.menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.menu > summary {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-control);
+  list-style: none;
+  cursor: pointer;
+  color: var(--muted);
+}
+.menu > summary::-webkit-details-marker {
+  display: none;
+}
+.menu > summary svg {
+  width: 20px;
+  height: 20px;
+}
+.menu > summary:hover,
+.menu[open] > summary {
+  background: var(--surface);
+  color: var(--text);
+}
+.menu :is(summary, button, a, input):focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+.panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(560px, 75vh);
+  overflow: auto;
+  z-index: 60;
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-container);
+  background: var(--bg);
+  box-shadow: var(--shadow-popover);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.panel > strong {
+  font-weight: 550;
+  font-size: 14px;
+}
+.panel label {
+  display: grid;
+  gap: 6px;
+}
+.panel input:not([type="checkbox"]) {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.panel button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.panel button:hover:not(:disabled) {
+  background: var(--surface);
+}
+.panel button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.panel a {
+  color: var(--text);
+}
+.panel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (pointer: coarse) {
+  .menu > summary,
+  .panel button {
+    min-height: 44px;
+  }
+  .panel input:not([type="checkbox"]) {
+    font-size: 16px;
+  }
+}

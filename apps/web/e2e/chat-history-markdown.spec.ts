@@ -23,7 +23,7 @@ test("renders safe Markdown, downloads code, renames and restores an archived ch
   const downloaded = page.waitForEvent("download");
   await reply.getByRole("button", { name: "Скачать код" }).click();
   expect((await downloaded).suggestedFilename()).toBe("kosmora-code.ts");
-  await page.getByText("Управление чатом", { exact: true }).click();
+  await page.getByLabel("Настройки чата", { exact: true }).click();
   const title = `Мой чат ${crypto.randomUUID().slice(0, 8)}`;
   await page.getByLabel("Название чата").fill(title);
   await page.getByRole("button", { name: "Сохранить название" }).click();

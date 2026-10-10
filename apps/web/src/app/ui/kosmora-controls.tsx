@@ -173,7 +173,7 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
     }
   };
   return (
-    <details className={styles.modelPicker} ref={menu}>
+    <details className={styles.modelPicker} ref={menu} data-model-picker>
       <summary
         aria-label="Выбор модели"
         aria-controls={id}

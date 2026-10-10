@@ -20,6 +20,10 @@
 .voiceMenu {
   position: relative;
 }
+.voiceMenu > .voice {
+  left: auto;
+  right: -44px;
+}
 .voiceMenu > summary {
   list-style: none;
   position: relative;
@@ -112,6 +116,9 @@
   accent-color: var(--text);
 }
 @media (max-width: 600px) {
+  .voiceMenu > .voice {
+    right: -51px;
+  }
   .voiceMenu > summary {
     width: 44px;
     height: 44px;

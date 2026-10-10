@@ -108,7 +108,7 @@ test("new chat keeps attachment and composer layout at desktop and mobile widths
   await page.goto("/");
   await expect(page.getByLabel("Сообщение Kosmora")).toBeEnabled();
   await expect(page.getByLabel("Выбор модели")).toBeVisible();
-  await expect(page.getByRole("switch", { name: "English Relay выключен" })).toBeVisible();
+  await expect(page.locator(".composer").getByRole("switch")).toHaveCount(0);
   await page.getByLabel("Голосовой ввод", { exact: true }).click();
   await expect(page.getByRole("button", { name: "Диктовать в браузере" })).toBeVisible();
   await page.getByLabel("Голосовой ввод", { exact: true }).press("Escape");

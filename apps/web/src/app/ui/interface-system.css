@@ -91,6 +91,48 @@
   border-radius: 50%;
   box-shadow: none;
 }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.product-shell .composer-tools [data-model-picker] > div {
+  left: 0;
+  right: auto;
+}
+.composer-send-control {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.product-shell .composer-send-control > button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: none;
+}
+.product-shell .composer-send-control > button:disabled {
+  opacity: 0.38;
+  pointer-events: none;
+}
+.product-shell .composer-send-control > button:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+.product-shell .composer-send-control > button svg {
+  width: 18px;
+  height: 18px;
+}
+@media (max-width: 600px) {
+  .product-shell .composer-send-control > button {
+    width: 44px;
+    height: 44px;
+  }
+}
 .chat-response[data-streaming]::after {
   content: "";
   display: inline-block;

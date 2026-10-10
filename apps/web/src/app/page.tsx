@@ -7,13 +7,12 @@ import { InstallApp } from "./install-app";
 import { ChatResponse } from "./chat-response";
 import { VoiceComposer } from "./voice/voice-composer";
 import { VoicePlayback } from "./voice/voice-playback";
+import { VoiceAssistant } from "./voice/voice-assistant";
 import { LoadingDots } from "./ui/feedback";
 import { ModelPicker, SystemMessage } from "./ui/kosmora-controls";
 import { CanvasEditor } from "./canvas-editor/canvas-editor";
 import canvasChat from "./canvas-editor/canvas-chat.module.css";
-import { WebSearchPanel } from "./web-search-panel";
 import { ChatHistoryActions } from "./chat-history-actions";
-import { RelaySwitch } from "./personal-settings/relay-switch";
 import { ChatArchivePanel } from "./chat-archive-panel";
 import { clearComposerDraft, readComposerDraft, saveComposerDraft } from "./composer-draft-storage";
 import {
@@ -511,6 +510,8 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const followMessagesRef = useRef(true);
   const [fileDragActive, setFileDragActive] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [voiceAssistantOpen, setVoiceAssistantOpen] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const navigationSearchRef = useRef<HTMLInputElement | null>(null);
   const viewEpochRef = useRef(0);
@@ -1592,9 +1593,9 @@ export default function Home() {
     window.requestAnimationFrame(() => composerRef.current?.focus());
   };
 
-  const submit = async (event: FormEvent): Promise<void> => {
-    event.preventDefault();
-    const content = draft.trim();
+  const submit = async (event?: FormEvent, voiceContent?: string): Promise<void> => {
+    event?.preventDefault();
+    const content = (voiceContent ?? draft).trim();
     if (
       !content ||
       sending ||
@@ -2211,7 +2212,38 @@ export default function Home() {
                 : SURFACE_TITLE[surface]}
             </h1>
           </div>
-          <InstallApp />
+          <div className="topbar-actions">
+            <InstallApp />
+            {surface === "manager" && (
+              <ChatHistoryActions
+                key={activeLocalChat?.id ?? activeProject?.id ?? "new-chat"}
+                id={activeProject ? null : (activeLocalChat?.id ?? null)}
+                title={activeLocalChat?.title ?? "Новый чат"}
+                messages={localChatMessages}
+                disabled={sending || loading}
+                showRelay={!activeProject}
+                onRecover={restoreRunDraft}
+                runError={error}
+                onVoice={() => {
+                  setVoiceMode(true);
+                  setVoiceAssistantOpen(true);
+                }}
+                onChange={(title) =>
+                  setLocalChats((current) =>
+                    current.map((chat) =>
+                      chat.id === activeLocalChat?.id ? { ...chat, title } : chat
+                    )
+                  )
+                }
+                onArchive={() => {
+                  setLocalChats((current) =>
+                    current.filter((chat) => chat.id !== activeLocalChat?.id)
+                  );
+                  newChat();
+                }}
+              />
+            )}
+          </div>
         </header>
 
         {activeProject && (
@@ -2614,28 +2646,6 @@ export default function Home() {
           </section>
         ) : localChatMessages.length > 0 ? (
           <section className="chat-panel general-chat-panel" aria-label="Обычный чат Kosmora">
-            {activeLocalChat && (
-              <ChatHistoryActions
-                key={activeLocalChat.id}
-                id={activeLocalChat.id}
-                title={activeLocalChat.title}
-                messages={localChatMessages}
-                disabled={sending || loading}
-                onChange={(title) =>
-                  setLocalChats((current) =>
-                    current.map((chat) =>
-                      chat.id === activeLocalChat.id ? { ...chat, title } : chat
-                    )
-                  )
-                }
-                onArchive={() => {
-                  setLocalChats((current) =>
-                    current.filter((chat) => chat.id !== activeLocalChat.id)
-                  );
-                  newChat();
-                }}
-              />
-            )}
             <div className="chat-heading general-chat-heading">
               <div>
                 <strong>Kosmora</strong>
@@ -2803,9 +2813,6 @@ export default function Home() {
               activeProject ? "Уточните задачу или добавьте требование…" : "Спросите что-нибудь…"
             }
           />
-          {!activeProject && (
-            <RelaySwitch chatId={activeLocalChatId} error={error} onRecover={restoreRunDraft} />
-          )}
           <div className="composer-controls">
             <div className="composer-tools">
               {
@@ -2827,23 +2834,13 @@ export default function Home() {
                   }
                 />
               }
+              <ModelPicker disabled={sending || loading || !initialRouteReady} />
+            </div>
+            <div className="composer-footer">
               <VoiceComposer
                 disabled={sending || loading || !initialRouteReady}
                 onInsert={(text) => setDraft((current) => (current ? `${current} ${text}` : text))}
               />
-              <WebSearchPanel
-                scope={composerDraftKey}
-                disabled={sending || loading || !initialRouteReady || chatAttachments.reading}
-                onAttach={(file) => {
-                  const next = [...chatAttachments.files, file];
-                  if (!isValidChatAttachments(next)) return false;
-                  chatAttachments.replace(next);
-                  return true;
-                }}
-              />
-            </div>
-            <div className="composer-footer">
-              <ModelPicker disabled={sending || loading || !initialRouteReady} />
               {error ? (
                 <SystemMessage>{error}</SystemMessage>
               ) : sending ? (
@@ -2876,22 +2873,73 @@ export default function Home() {
                       ↻ Вернуть запрос в редактор
                     </button>
                   )}
-                  <button
-                    disabled={
-                      !draft.trim() ||
-                      loading ||
-                      chatAttachments.reading ||
-                      executionGate !== "clear"
-                    }
-                    aria-label="Отправить"
+                  <span
+                    className="composer-send-control"
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      if (!loading && initialRouteReady) setVoiceMode((value) => !value);
+                    }}
                   >
-                    <SendIcon />
-                  </button>
+                    <button
+                      type={voiceMode ? "button" : "submit"}
+                      data-send-mode={voiceMode ? "voice" : "text"}
+                      onClick={() => {
+                        if (voiceMode) setVoiceAssistantOpen(true);
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "ContextMenu" ||
+                          (event.shiftKey && event.key === "F10")
+                        ) {
+                          event.preventDefault();
+                          setVoiceMode((value) => !value);
+                        }
+                      }}
+                      disabled={
+                        (!voiceMode && !draft.trim()) ||
+                        loading ||
+                        !initialRouteReady ||
+                        chatAttachments.reading ||
+                        executionGate !== "clear"
+                      }
+                      aria-label={voiceMode ? "Открыть голосового помощника" : "Отправить"}
+                      title={
+                        voiceMode
+                          ? "Голосовой помощник · ПКМ для возврата к тексту"
+                          : "Отправить · ПКМ для голосового помощника"
+                      }
+                    >
+                      {voiceMode ? <WorkspaceIcon name="headphones" /> : <SendIcon />}
+                    </button>
+                  </span>
                 </div>
               )}
             </div>
           </div>
         </form>
+
+        {voiceAssistantOpen && (
+          <VoiceAssistant
+            onClose={() => setVoiceAssistantOpen(false)}
+            onSend={(text) => submit(undefined, text)}
+            busy={sending || loading}
+            canSend={
+              initialRouteReady &&
+              draftStorageReadyKey === attachmentScope &&
+              !draft.trim() &&
+              !chatAttachments.files.length &&
+              !chatAttachments.reading &&
+              executionGate === "clear"
+            }
+            error={error}
+            reply={(() => {
+              const last = (activeProject ? messages : localChatMessages)
+                .filter((message) => message.role === "assistant" && message.status === "completed")
+                .at(-1);
+              return last ? { id: last.id, text: last.content } : null;
+            })()}
+          />
+        )}
 
         {surface !== "manager" && (
           <WorkspaceSections
