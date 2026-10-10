@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
 import type { IdentityContext } from "@cosmora/contracts";
 import {
@@ -44,25 +45,29 @@ export function registerAccountRoutes(
       relay_default: false
     })
   );
-  app.put("/api/v1/personal-settings", { schema: { body: prefs } }, async (request, reply) => {
-    const owner = identityFor(request).owner_id;
-    const body = request.body as PreferenceUpdate;
-    if (
-      (body.preferred_provider !== null && body.preferred_provider !== model.provider) ||
-      (body.preferred_model !== null && body.preferred_model !== model.model) ||
-      Boolean(body.preferred_model) !== Boolean(body.preferred_provider)
-    )
-      return reply
-        .status(400)
-        .send(replyError("Only verified, configured model routes are selectable"));
-    try {
-      return { settings: store.update(owner, body) };
-    } catch (e) {
-      if (e instanceof PreferenceConflictError)
-        return reply.status(409).send(replyError("Settings were updated elsewhere"));
-      throw e;
+  app.put(
+    "/api/v1/personal-settings",
+    { schema: { body: prefs }, validatorCompiler: TypeBoxValidatorCompiler },
+    async (request, reply) => {
+      const owner = identityFor(request).owner_id;
+      const body = request.body as PreferenceUpdate;
+      if (
+        (body.preferred_provider !== null && body.preferred_provider !== model.provider) ||
+        (body.preferred_model !== null && body.preferred_model !== model.model) ||
+        Boolean(body.preferred_model) !== Boolean(body.preferred_provider)
+      )
+        return reply
+          .status(400)
+          .send(replyError("Only verified, configured model routes are selectable"));
+      try {
+        return { settings: store.update(owner, body) };
+      } catch (e) {
+        if (e instanceof PreferenceConflictError)
+          return reply.status(409).send(replyError("Settings were updated elsewhere"));
+        throw e;
+      }
     }
-  });
+  );
   app.get(
     "/api/v1/personal-settings/chats/:chatId",
     { schema: { params: param } },
@@ -84,6 +89,7 @@ export function registerAccountRoutes(
   app.put(
     "/api/v1/personal-settings/chats/:chatId",
     {
+      validatorCompiler: TypeBoxValidatorCompiler,
       schema: {
         params: param,
         body: Type.Object(
