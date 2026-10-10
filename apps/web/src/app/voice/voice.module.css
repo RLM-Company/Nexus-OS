@@ -1,12 +1,67 @@
 .voice {
   display: grid;
   gap: 8px;
-  margin: 8px 0;
-  padding: 10px;
-  border: 1px solid #777;
-  border-radius: 10px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
   color: inherit;
-  background: transparent;
+  background: var(--bg);
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: -12px;
+  width: min(340px, calc(100vw - 48px));
+  max-height: min(520px, 60vh);
+  overflow: auto;
+  box-shadow: var(--shadow-popover);
+  z-index: 50;
+  font-size: 12px;
+}
+.voiceMenu {
+  position: relative;
+}
+.voiceMenu > summary {
+  list-style: none;
+  position: relative;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+.voiceMenu > summary::-webkit-details-marker {
+  display: none;
+}
+.voiceMenu > summary:hover,
+.voiceMenu[open] > summary {
+  background: var(--surface);
+  color: var(--text);
+}
+.voiceMenu[data-active] > summary {
+  color: var(--text);
+}
+.recordingDot {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text);
+}
+.voiceMenu > summary:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+.voice > strong {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.voice > small {
+  color: var(--muted);
+  font-size: 11px;
 }
 .row {
   display: flex;
@@ -54,7 +109,13 @@
   font-size: 0.8rem;
 }
 .consent input {
-  accent-color: #fff;
+  accent-color: var(--text);
+}
+@media (max-width: 600px) {
+  .voiceMenu > summary {
+    width: 44px;
+    height: 44px;
+  }
 }
 .voice small {
   line-height: 1.5;

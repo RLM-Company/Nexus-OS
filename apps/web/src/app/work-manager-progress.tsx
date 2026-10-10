@@ -6,22 +6,13 @@ import type {
 } from "@cosmora/contracts";
 import { useEffect, useState } from "react";
 import styles from "./work-manager.module.css";
+import { AgentPipeline, SystemMessage } from "./ui/kosmora-controls";
 
 type Detail = {
   progress: WorkRuntimeProgress;
   checkpoints: WorkCheckpointRecord[];
   artifacts: WorkArtifactVersion[];
   memory: { included: number; omitted: number };
-};
-const taskLabels: Record<string, string> = {
-  pending: "Ожидает этапа",
-  ready: "В очереди",
-  running: "Выполняется",
-  waiting: "Ожидает решения",
-  completed: "Готово",
-  skipped: "Не требуется",
-  failed: "Ошибка",
-  cancelled: "Отменено"
 };
 const stageLabels: Record<string, string> = {
   plan: "План",
@@ -93,11 +84,7 @@ export function WorkManagerProgress({
   return (
     <section className={styles.panel} aria-label="Прогресс Work">
       <h3>План и результат</h3>
-      {error && (
-        <p role="alert" className={styles.error}>
-          {error}
-        </p>
-      )}
+      {error && <SystemMessage>{error}</SystemMessage>}
       {!detail ? (
         <p>Загружаем этапы…</p>
       ) : (
@@ -111,26 +98,19 @@ export function WorkManagerProgress({
             max={detail.progress.total}
           />
           {detail.progress.waiting_decision && <p>{decisions[detail.progress.waiting_decision]}</p>}
-          <ol className={styles.tasks} aria-label="Задачи и зависимости">
-            {detail.progress.tasks.map((task) => (
-              <li key={task.task_id}>
-                <div>
-                  <strong>{task.title}</strong>
-                  {task.depends_on.length > 0 && (
-                    <small>
-                      После:{" "}
-                      {task.depends_on
-                        .map(
-                          (id) => detail.progress.tasks.find((t) => t.task_id === id)?.title ?? id
-                        )
-                        .join(", ")}
-                    </small>
-                  )}
-                </div>
-                <span>{taskLabels[task.status]}</span>
-              </li>
-            ))}
-          </ol>
+          <AgentPipeline
+            steps={detail.progress.tasks.map((task) => ({
+              id: task.task_id,
+              title: task.title,
+              status: task.status,
+              detail: task.depends_on.length
+                ? "После: " +
+                  task.depends_on
+                    .map((id) => detail.progress.tasks.find((t) => t.task_id === id)?.title ?? id)
+                    .join(", ")
+                : undefined
+            }))}
+          />
           <p className={styles.checkpoint}>
             Память при принятии: {detail.memory.included} записей
             {detail.memory.omitted ? `; не вошло в лимит: ${detail.memory.omitted}` : ""}. Команда

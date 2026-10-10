@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useMediaCapabilities, type MediaJob } from "../media-generation/media-panel";
 import styles from "./voice.module.css";
+import { VoiceOrb } from "../ui/kosmora-controls";
+import { WorkspaceIcon } from "../workspace-icons";
 
 type SpeechResult = { results: ArrayLike<ArrayLike<{ transcript: string }>> };
 type Recognition = {
@@ -48,6 +50,29 @@ export function VoiceComposer({
   const turn = useRef<{ cancelled: boolean }>({ cancelled: false });
   const jobId = useRef<string | null>(null);
   const mounted = useRef(true);
+  const menu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (
+        menu.current?.open &&
+        event.target instanceof Node &&
+        !menu.current.contains(event.target)
+      )
+        menu.current.open = false;
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && menu.current?.open) {
+        menu.current.open = false;
+        menu.current.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, []);
   const refresh = async () => {
     try {
       const response = await fetch("/api/v1/media/jobs", { cache: "no-store" });
@@ -271,115 +296,138 @@ export function VoiceComposer({
     } else setNotice("Не удалось удалить результат.");
   };
   return (
-    <div className={styles.voice} aria-label="Голосовой ввод">
-      <div className={styles.row}>
-        {recording === "idle" ? (
-          <>
-            {browserAvailable && (
-              <button type="button" disabled={disabled} onClick={startBrowser}>
-                Диктовать в браузере
-              </button>
-            )}
-            {recorderAvailable && caps?.transcription.ready && (
-              <button
-                type="button"
-                disabled={disabled || !consent}
-                onClick={() => void startServer()}
-              >
-                Записать через сервер
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            {recording === "server" && (
-              <button type="button" onClick={() => recorder.current?.stop()}>
-                Остановить и распознать
-              </button>
-            )}
-            <button type="button" onClick={() => void cancel()}>
-              Отменить
-            </button>
-            {recording === "uploading" && <small>Передаём запись…</small>}
-            {recording === "running" && <small>Распознаём…</small>}
-          </>
+    <details
+      className={styles.voiceMenu}
+      ref={menu}
+      data-active={recording !== "idle" || undefined}
+    >
+      <summary aria-label="Голосовой ввод" title="Голосовой ввод">
+        <WorkspaceIcon name="microphone" />
+        {recording !== "idle" && <span className={styles.recordingDot} aria-hidden="true" />}
+      </summary>
+      <div className={styles.voice} data-voice-panel>
+        <strong>Голосовой ввод</strong>
+        {recording !== "idle" && (
+          <VoiceOrb
+            active
+            label={
+              recording === "running"
+                ? "Распознаю речь…"
+                : recording === "uploading"
+                  ? "Передаю запись…"
+                  : "Слушаю…"
+            }
+          />
         )}
-      </div>
-      {recorderAvailable && caps?.transcription.ready && (
-        <label className={styles.consent}>
-          <input
-            type="checkbox"
-            checked={consent}
-            onChange={(event) => setConsent(event.target.checked)}
-          />
-          Разрешаю один платный запрос на распознавание
-        </label>
-      )}
-      {browserAvailable && (
-        <small>
-          Браузерная диктовка зависит от браузера и может передавать голос его сервисам.
-        </small>
-      )}
-      {!caps?.transcription.ready && (
-        <small>Серверная транскрипция недоступна. Возможность не имитируется.</small>
-      )}
-      {transcript && (
-        <label className={styles.review}>
-          Проверьте текст перед отправкой
-          <textarea
-            rows={2}
-            value={transcript}
-            onChange={(event) => setTranscript(event.target.value)}
-          />
-          <button
-            type="button"
-            disabled={disabled || !transcript.trim()}
-            onClick={() => {
-              onInsert(transcript.trim());
-              setTranscript("");
-              setNotice("Текст добавлен в черновик, не отправлен.");
-            }}
-          >
-            Вставить в сообщение
-          </button>
-        </label>
-      )}
-      {history.length > 0 && (
-        <div className={styles.saved}>
-          <small>История распознавания</small>
-          {history.map((item) => (
-            <div key={item.id} className={styles.row}>
-              <button
-                type="button"
-                onClick={() => {
-                  setJob(item);
-                  if (item.status === "done" && item.transcript) setTranscript(item.transcript);
-                }}
-              >
-                {new Date(item.created_at).toLocaleString("ru")} · {item.status}
+        <div className={styles.row}>
+          {recording === "idle" ? (
+            <>
+              {browserAvailable && (
+                <button type="button" disabled={disabled} onClick={startBrowser}>
+                  Диктовать в браузере
+                </button>
+              )}
+              {recorderAvailable && caps?.transcription.ready && (
+                <button
+                  type="button"
+                  disabled={disabled || !consent}
+                  onClick={() => void startServer()}
+                >
+                  Записать через сервер
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              {recording === "server" && (
+                <button type="button" onClick={() => recorder.current?.stop()}>
+                  Остановить и распознать
+                </button>
+              )}
+              <button type="button" onClick={() => void cancel()}>
+                Отменить
               </button>
-              {["queued", "running"].includes(item.status) && (
+              {recording === "uploading" && <small>Передаём запись…</small>}
+              {recording === "running" && <small>Распознаём…</small>}
+            </>
+          )}
+        </div>
+        {recorderAvailable && caps?.transcription.ready && (
+          <label className={styles.consent}>
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(event) => setConsent(event.target.checked)}
+            />
+            Разрешаю один платный запрос на распознавание
+          </label>
+        )}
+        {browserAvailable && (
+          <small>
+            Браузерная диктовка зависит от браузера и может передавать голос его сервисам.
+          </small>
+        )}
+        {!caps?.transcription.ready && (
+          <small>Серверная транскрипция недоступна. Возможность не имитируется.</small>
+        )}
+        {transcript && (
+          <label className={styles.review}>
+            Проверьте текст перед отправкой
+            <textarea
+              rows={2}
+              value={transcript}
+              onChange={(event) => setTranscript(event.target.value)}
+            />
+            <button
+              type="button"
+              disabled={disabled || !transcript.trim()}
+              onClick={() => {
+                onInsert(transcript.trim());
+                setTranscript("");
+                setNotice("Текст добавлен в черновик, не отправлен.");
+              }}
+            >
+              Вставить в сообщение
+            </button>
+          </label>
+        )}
+        {history.length > 0 && (
+          <div className={styles.saved}>
+            <small>История распознавания</small>
+            {history.map((item) => (
+              <div key={item.id} className={styles.row}>
                 <button
                   type="button"
                   onClick={() => {
-                    void fetch(`/api/v1/media/jobs/${encodeURIComponent(item.id)}`, {
-                      method: "DELETE"
-                    }).then(() => void refresh());
+                    setJob(item);
+                    if (item.status === "done" && item.transcript) setTranscript(item.transcript);
                   }}
                 >
-                  Отменить
+                  {new Date(item.created_at).toLocaleString("ru")} · {item.status}
                 </button>
-              )}
-              {item.status === "done" && (
-                <button type="button" onClick={() => void remove(item.id)}>
-                  Удалить
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      {notice && <small role="status">{notice}</small>}
-    </div>
+                {["queued", "running"].includes(item.status) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void fetch(`/api/v1/media/jobs/${encodeURIComponent(item.id)}`, {
+                        method: "DELETE"
+                      }).then(() => void refresh());
+                    }}
+                  >
+                    Отменить
+                  </button>
+                )}
+                {item.status === "done" && (
+                  <button type="button" onClick={() => void remove(item.id)}>
+                    Удалить
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {notice && <small role="status">{notice}</small>}
+      </div>
+    </details>
   );
 }

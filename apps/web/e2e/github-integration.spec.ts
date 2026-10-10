@@ -59,7 +59,7 @@ test("requires review approval before publishing the exact prepared GitHub draft
     });
   });
   await page.goto("/github");
-  await page.getByRole("button", { name: "app.ts", exact: true }).click();
+  await page.getByRole("treeitem", { name: "app.ts", exact: true }).click();
   await page.getByLabel("Содержимое файла").fill("const value = 2;");
   await page.getByRole("button", { name: "Добавить изменение" }).click();
   await page.getByLabel("Проект для изменений").selectOption("github-project");
@@ -162,9 +162,9 @@ test("protects unstaged text and allows empty new files to be reviewed", async (
   await mockWorkspace(page);
   await page.goto("/github");
   await expect(page.getByLabel("Разрешённый репозиторий")).toHaveValue("RLM-Company/Nexus-OS");
-  await page.getByRole("button", { name: "app.ts", exact: true }).click();
+  await page.getByRole("treeitem", { name: "app.ts", exact: true }).click();
   await page.getByLabel("Содержимое файла").fill("unsaved text");
-  await expect(page.getByRole("button", { name: "src/file-1.ts", exact: true })).toBeDisabled();
+  await expect(page.getByRole("treeitem", { name: "src/file-1.ts", exact: true })).toBeDisabled();
   await expect(page.getByLabel("Ветка репозитория")).toBeDisabled();
   await page.getByRole("button", { name: "Обновить подключение" }).click();
   await expect(page.getByLabel("Содержимое файла")).toHaveValue("unsaved text");
@@ -207,9 +207,11 @@ test("reveals files past the first 500 and reports a GitHub read refusal", async
   await mockWorkspace(page, { manyFiles: true });
   await page.goto("/github");
   const files = page.getByRole("navigation", { name: "Файлы репозитория" });
-  await expect(files.getByRole("button", { name: "src/file-500.ts", exact: true })).toHaveCount(0);
+  await expect(files.getByRole("treeitem", { name: "src/file-500.ts", exact: true })).toHaveCount(
+    0
+  );
   await files.getByRole("button", { name: "Показать ещё файлы (1)" }).click();
-  await expect(files.getByRole("button", { name: "src/file-500.ts", exact: true })).toBeVisible();
+  await expect(files.getByRole("treeitem", { name: "src/file-500.ts", exact: true })).toBeVisible();
   await page.route("**/api/v1/github/file?*", (route) =>
     route.fulfill({
       status: 403,
@@ -217,7 +219,7 @@ test("reveals files past the first 500 and reports a GitHub read refusal", async
       body: JSON.stringify({ error: { code: "GITHUB_ACCESS_DENIED" } })
     })
   );
-  await files.getByRole("button", { name: "src/file-500.ts", exact: true }).click();
+  await files.getByRole("treeitem", { name: "src/file-500.ts", exact: true }).click();
   await expect(page.locator("main").getByRole("alert")).toContainText("GitHub отказал в доступе");
   await expect(page.getByLabel("Содержимое файла")).toHaveCount(0);
 });
@@ -288,7 +290,7 @@ test("reads code into a chat draft and does not start a model request", async ({
     if (request.method() === "POST" && /\/api\/v1\/chats/.test(request.url())) sends++;
   });
   await page.goto("/github");
-  await page.getByRole("button", { name: "src/example.ts", exact: true }).click();
+  await page.getByRole("treeitem", { name: "src/example.ts", exact: true }).click();
   await expect(page.getByLabel("Содержимое файла")).toHaveValue("export const value = 42;");
   await page.getByRole("button", { name: "Открыть файл в чате" }).click();
   await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue(/src\/example.ts/);

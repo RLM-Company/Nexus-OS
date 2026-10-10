@@ -523,7 +523,7 @@ svg {
   background: rgba(21, 21, 21, 0.86);
   box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.25);
 }
-.composer label {
+.composer > label {
   display: block;
   padding: 0.25rem 0.35rem 0.6rem;
   color: #bfbfbf;
@@ -1506,7 +1506,7 @@ svg {
 .composer:focus-within {
   border-color: rgba(255, 255, 255, 0.15);
 }
-.composer label {
+.composer > label {
   position: absolute;
   width: 1px;
   height: 1px;

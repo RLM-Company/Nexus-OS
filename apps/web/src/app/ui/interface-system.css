@@ -1,0 +1,165 @@
+/* Kosmora's common visual layer: references are adapted to the existing layout and tokens. */
+:root {
+  --radius-control: 9px;
+  --radius-container: 16px;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.product-shell .sidebar {
+  background: #f7f7f7;
+  border-right-color: #ececec;
+}
+.product-shell .sidebar .brand {
+  padding-bottom: 18px;
+}
+.product-shell .sidebar .nav-item,
+.product-shell .sidebar .project-item,
+.product-shell .sidebar .sidebar-tool {
+  border-radius: var(--radius-control);
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+.product-shell .sidebar .project-item:hover,
+.product-shell .sidebar .sidebar-tool:hover {
+  background: #eaeaea;
+}
+.product-shell .sidebar .projects-heading {
+  font-size: 11px;
+  letter-spacing: 0.015em;
+  color: #777;
+}
+.workspace-modes,
+.account-menu {
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow:
+    0 10px 35px #00000010,
+    0 2px 5px #00000005;
+}
+.workspace-modes :is(button, a),
+.account-menu :is(button, a) {
+  border-radius: 8px;
+  min-height: 40px;
+}
+.workspace-mode-menu[open] .brand-chevron {
+  transform: rotate(180deg);
+}
+.brand-chevron {
+  transition: transform 160ms var(--motion-ease);
+}
+.product-shell .composer {
+  border: 1px solid #dedede;
+  box-shadow:
+    0 2px 4px #00000003,
+    0 8px 26px #00000006;
+  background: #fff;
+  border-radius: 23px;
+  padding: 17px 18px 12px;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+.product-shell .composer:focus-within {
+  border-color: #bbb;
+  box-shadow: 0 3px 14px #00000007;
+}
+.product-shell .composer textarea {
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 56px;
+}
+.product-shell .composer-tools {
+  gap: 4px;
+}
+.product-shell .composer-footer {
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+}
+.product-shell .composer-footer > [role="alert"] {
+  flex-basis: 100%;
+  max-width: 420px;
+}
+.product-shell .composer-controls:has([role="alert"]) {
+  flex-wrap: wrap;
+}
+.product-shell .composer-controls:has([role="alert"]) .composer-footer {
+  flex-wrap: wrap;
+}
+.product-shell .composer-actions > button:not(.restore-run) {
+  border-radius: 50%;
+  box-shadow: none;
+}
+.chat-response[data-streaming]::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--text);
+  animation: stream-breathe 1.4s ease-in-out infinite;
+}
+.chat-response[data-streaming] > :last-child {
+  animation: stream-appear 150ms ease;
+}
+.response-followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+.response-followups button {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  padding: 7px 11px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+}
+.response-followups button:hover {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.response-followups button span {
+  color: var(--muted);
+}
+@keyframes stream-breathe {
+  50% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+}
+@keyframes stream-appear {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (max-width: 600px) {
+  .product-shell .composer {
+    border-radius: 20px;
+    padding: 14px 12px 10px;
+  }
+  .response-followups button {
+    min-height: 38px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-response[data-streaming]::after,
+  .chat-response[data-streaming] > :last-child {
+    animation: none;
+  }
+  .brand-chevron,
+  .product-shell .composer {
+    transition: none;
+  }
+}

@@ -1,4 +1,5 @@
 "use client";
+import { CodeFiles } from "./ui/code-files";
 
 import Link from "next/link";
 import { WorkManagerDag } from "./work-manager-dag";
@@ -304,6 +305,7 @@ export function ManagerWorkPanel({
               </p>
             </div>
           )}
+          {work.draft && <CodeFiles files={work.draft.files} />}
           <ol
             className="manager-work-events"
             aria-label="Шаги выполнения"

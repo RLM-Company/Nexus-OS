@@ -16,6 +16,7 @@ export type IconName =
   | "images"
   | "video"
   | "sound"
+  | "microphone"
   | "apps"
   | "features"
   | "settings"
@@ -30,6 +31,12 @@ export type IconName =
   | "check";
 
 const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
+  microphone: (
+    <>
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" />
+    </>
+  ),
   paperclip: (
     <path d="m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l10-10a2 2 0 0 1 3 3L6 15a1 1 0 0 0 2 2l9-9" />
   ),

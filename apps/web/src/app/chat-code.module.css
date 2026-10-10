@@ -17,12 +17,19 @@
   font-size: 12px;
 }
 .language {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   margin-right: auto;
   text-transform: uppercase;
   font:
     500 10px/1.3 ui-monospace,
     monospace;
   letter-spacing: 0.06em;
+}
+.language svg {
+  width: 14px;
+  height: 14px;
 }
 .counts {
   white-space: nowrap;

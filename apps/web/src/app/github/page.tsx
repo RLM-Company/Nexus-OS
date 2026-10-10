@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { isValidChatAttachments } from "@cosmora/contracts/chat-attachments";
 import { LegacyCodeProposalAdapter } from "./code-proposal-adapter";
 import { WorkspaceIcon } from "../workspace-icons";
+import { FileTree } from "../ui/file-tree";
 import styles from "./github.module.css";
 import {
   readWorkspace,
@@ -815,18 +816,15 @@ export default function GithubPage() {
                       Загружаю список файлов…
                     </p>
                   )}
-                  {filteredFiles.slice(0, visibleCount).map((item) => (
-                    <button
-                      type="button"
-                      disabled={pending || dirty || !!rebase}
-                      key={item.path}
-                      aria-pressed={file?.path === item.path}
-                      onClick={() => void open(item)}
-                    >
-                      <WorkspaceIcon name="files" aria-hidden="true" />
-                      <span>{item.path}</span>
-                    </button>
-                  ))}
+                  <FileTree
+                    files={filteredFiles.slice(0, visibleCount)}
+                    selected={file?.path}
+                    disabled={pending || dirty || !!rebase}
+                    onSelect={(path) => {
+                      const item = filteredFiles.find((entry) => entry.path === path);
+                      if (item) void open(item);
+                    }}
+                  />
                   {tree && !filteredFiles.length && <p>Файлы не найдены.</p>}
                   {filteredFiles.length > visibleCount && (
                     <button onClick={() => setVisibleCount((count) => count + 500)}>

@@ -178,7 +178,7 @@ async function fixture(page: Page) {
 async function edit(page: Page, path: string, content: string) {
   await page
     .getByRole("navigation", { name: "Файлы репозитория" })
-    .getByRole("button", { name: path, exact: true })
+    .getByRole("treeitem", { name: path, exact: true })
     .click();
   await page.getByLabel("Содержимое файла").fill(content);
   await page.getByRole("button", { name: "Добавить изменение" }).click();

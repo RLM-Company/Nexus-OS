@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import styles from "./feedback.module.css";
+import { ShiningText } from "./kosmora-controls";
 
 export function StatusPill({ children, busy = false }: { children: ReactNode; busy?: boolean }) {
   return (
@@ -18,7 +19,7 @@ export function LoadingDots({ label, announce = false }: { label: string; announ
         <i />
         <i />
       </span>
-      {label}
+      <ShiningText>{label}</ShiningText>
     </span>
   );
 }

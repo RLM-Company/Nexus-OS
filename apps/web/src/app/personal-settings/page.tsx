@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import styles from "./personal-settings.module.css";
 import PrivacyPanel from "./privacy-panel";
+import { Switch, SystemMessage } from "../ui/kosmora-controls";
 
 type Preferences = {
   version: number;
@@ -193,15 +194,13 @@ export default function PersonalSettings() {
           </section>
           <section>
             <h2>English Relay</h2>
-            <label className={styles.check}>
-              <input
-                type="checkbox"
-                disabled={busy}
-                checked={prefs.relay_enabled}
-                onChange={(e) => void save({ ...prefs, relay_enabled: e.target.checked })}
-              />{" "}
+            <Switch
+              disabled={busy}
+              checked={prefs.relay_enabled}
+              onChange={(value) => void save({ ...prefs, relay_enabled: value })}
+            >
               Переводить запрос на английский и ответ обратно
-            </label>
+            </Switch>
             <p className={styles.muted}>
               По умолчанию выключено. Это дополнительные запросы к модели с дополнительными
               токенами. Уменьшение расхода не гарантировано. Код, URL и идентификаторы защищаются;
@@ -284,7 +283,11 @@ export default function PersonalSettings() {
           <PrivacyPanel />
         </>
       )}
-      {notice && <p role="status">{notice}</p>}
+      {notice && (
+        <SystemMessage kind={notice === "Настройки сохранены на сервере." ? "success" : "error"}>
+          {notice}
+        </SystemMessage>
+      )}
     </main>
   );
 }

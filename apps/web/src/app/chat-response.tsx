@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { WorkspaceIcon } from "./workspace-icons";
 import { LoadingDots } from "./ui/feedback";
 import styles from "./chat-code.module.css";
+import { CodeText } from "./ui/code-text";
 
 export function downloadText(content: string, name: string) {
   const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
@@ -72,7 +73,10 @@ function CodeBlock({ children, node }: ComponentProps<"pre"> & ExtraProps) {
   return (
     <div className={styles.panel}>
       <div className={styles.toolbar}>
-        <span className={styles.language}>{name}</span>
+        <span className={styles.language}>
+          <WorkspaceIcon name="code" />
+          {name}
+        </span>
         {diff && (
           <span className={styles.counts} aria-label={`${added} добавлено, ${removed} удалено`}>
             +{added} / −{removed}
@@ -97,7 +101,9 @@ function CodeBlock({ children, node }: ComponentProps<"pre"> & ExtraProps) {
                 <span className={styles.number} aria-hidden="true">
                   {index + 1}
                 </span>
-                <span className={styles.text}>{line || "\u00a0"}</span>
+                <span className={styles.text}>
+                  {diff ? line || "\u00a0" : <CodeText text={line || "\u00a0"} language={name} />}
+                </span>
               </span>
             ))}
           </code>
@@ -111,16 +117,20 @@ function CodeBlock({ children, node }: ComponentProps<"pre"> & ExtraProps) {
 export function ChatResponse({
   content,
   assistant,
-  complete = false
+  complete = false,
+  streaming = false,
+  onFollowUp
 }: {
   content: string | null;
   assistant: boolean;
   complete?: boolean;
+  streaming?: boolean;
+  onFollowUp?: (prompt: string) => void;
 }) {
   if (!content) return <LoadingDots label="Формирую ответ" />;
   if (!assistant) return <p>{content}</p>;
   return (
-    <div className="chat-response">
+    <div className="chat-response" data-streaming={streaming || undefined}>
       <Markdown
         remarkPlugins={[remarkGfm]}
         skipHtml
@@ -150,6 +160,24 @@ export function ChatResponse({
           <CopyButton content={content} label="Копировать ответ" />
           <button type="button" onClick={() => downloadText(content, "kosmora-answer.md")}>
             Скачать ответ
+          </button>
+        </div>
+      )}
+      {complete && onFollowUp && (
+        <div className="response-followups" aria-label="Продолжить разговор">
+          <button
+            type="button"
+            onClick={() => onFollowUp("Объясни предыдущий ответ проще и приведи пример.")}
+          >
+            Объяснить проще <span aria-hidden="true">↗</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onFollowUp("Разверни предыдущий ответ: предложи конкретные следующие шаги.")
+            }
+          >
+            Следующие шаги <span aria-hidden="true">↗</span>
           </button>
         </div>
       )}

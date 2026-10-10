@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import "./ui/interface-system.css";
 
 export const metadata: Metadata = {
   title: "Kosmora OS",

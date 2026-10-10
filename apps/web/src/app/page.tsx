@@ -8,6 +8,7 @@ import { ChatResponse } from "./chat-response";
 import { VoiceComposer } from "./voice/voice-composer";
 import { VoicePlayback } from "./voice/voice-playback";
 import { LoadingDots } from "./ui/feedback";
+import { ModelPicker, SystemMessage } from "./ui/kosmora-controls";
 import { CanvasEditor } from "./canvas-editor/canvas-editor";
 import canvasChat from "./canvas-editor/canvas-chat.module.css";
 import { WebSearchPanel } from "./web-search-panel";
@@ -2587,6 +2588,13 @@ export default function Home() {
                         content={displayedContent(message)}
                         assistant={message.role === "assistant"}
                         complete={message.status === "completed"}
+                        streaming={message.status === "streaming"}
+                        onFollowUp={(prompt) => {
+                          setDraft((current) =>
+                            current.trim() ? `${current}\n\n${prompt}` : prompt
+                          );
+                          composerRef.current?.focus();
+                        }}
                       />
                       {message.role === "assistant" && message.status === "completed" && (
                         <VoicePlayback text={message.content} />
@@ -2671,6 +2679,13 @@ export default function Home() {
                       content={displayedGeneralContent(message)}
                       assistant={message.role === "assistant"}
                       complete={message.status === "completed"}
+                      streaming={message.status === "streaming"}
+                      onFollowUp={(prompt) => {
+                        setDraft((current) =>
+                          current.trim() ? `${current}\n\n${prompt}` : prompt
+                        );
+                        composerRef.current?.focus();
+                      }}
                     />
                     {message.role === "assistant" && message.status === "completed" && (
                       <VoicePlayback text={message.content} />
@@ -2828,8 +2843,9 @@ export default function Home() {
               />
             </div>
             <div className="composer-footer">
+              <ModelPicker disabled={sending || loading || !initialRouteReady} />
               {error ? (
-                <span role="alert">{error}</span>
+                <SystemMessage>{error}</SystemMessage>
               ) : sending ? (
                 <LoadingDots label="Kosmora выполняет запуск" />
               ) : (

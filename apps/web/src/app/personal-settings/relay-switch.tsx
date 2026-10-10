@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Switch } from "../ui/kosmora-controls";
 type AccountPreferences = {
   version: number;
   relay_enabled: boolean;
@@ -101,15 +102,13 @@ export function RelaySwitch({
         color: "#555"
       }}
     >
-      <label title="Дополнительные запросы перевода расходуют токены">
-        <input
-          type="checkbox"
-          checked={enabled}
-          disabled={!ready || busy}
-          onChange={(e) => void setRelay(e.target.checked)}
-        />{" "}
+      <Switch
+        checked={enabled}
+        disabled={!ready || busy}
+        onChange={(value) => void setRelay(value)}
+      >
         English Relay {enabled ? "включён" : "выключен"}
-      </label>
+      </Switch>
       <a href="/personal-settings">Настройки</a>
       {error?.includes("Перевод") && (
         <>
