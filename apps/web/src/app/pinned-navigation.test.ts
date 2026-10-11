@@ -36,12 +36,23 @@ describe("pinned navigation", () => {
       chats: [],
       projects: []
     });
-    expect(savePinnedNavigation({ setItem: () => { throw new Error("quota"); } }, { chats: [], projects: [] })).toBe(false);
+    expect(
+      savePinnedNavigation(
+        {
+          setItem: () => {
+            throw new Error("quota");
+          }
+        },
+        { chats: [], projects: [] }
+      )
+    ).toBe(false);
   });
 
   it("deduplicates and caps malicious storage without affecting unrelated lists", () => {
     const raw = JSON.stringify({ version: 1, chats: ["a", "a", 3, "x".repeat(161)], projects: [] });
-    expect(readPinnedNavigation({ getItem: (key) => key === PINNED_NAVIGATION_KEY ? raw : null }).chats).toEqual(["a"]);
+    expect(
+      readPinnedNavigation({ getItem: (key) => (key === PINNED_NAVIGATION_KEY ? raw : null) }).chats
+    ).toEqual(["a"]);
     expect(pinsFirst([{ id: "other" }], ["a"]).map((item) => item.id)).toEqual(["other"]);
   });
 });

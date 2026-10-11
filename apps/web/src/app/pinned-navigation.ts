@@ -62,5 +62,8 @@ export function togglePin(
 /** Server order remains the tie breaker within pinned and unpinned groups. */
 export function pinsFirst<T extends { id: string }>(items: T[], pinnedIds: string[]): T[] {
   const pinned = new Set(pinnedIds);
-  return [...items.filter((item) => pinned.has(item.id)), ...items.filter((item) => !pinned.has(item.id))];
+  return [
+    ...items.filter((item) => pinned.has(item.id)),
+    ...items.filter((item) => !pinned.has(item.id))
+  ];
 }
