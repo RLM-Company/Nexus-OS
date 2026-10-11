@@ -2101,14 +2101,15 @@ export default function Home() {
                       onClick={() => void openLocalChat(chat.id)}
                     >
                       <span>
-                        <strong>{chat.title}</strong>
+                        <strong id={`pin-chat-${chat.id}`}>{chat.title}</strong>
                         <small>{chat.last_message_preview ?? "Обычный чат"}</small>
                       </span>
                     </button>
                     <button
                       type="button"
                       className="navigation-pin"
-                      aria-label={`${pins.chats.includes(chat.id) ? "Открепить" : "Закрепить"} чат ${chat.title}`}
+                      aria-label={`${pins.chats.includes(chat.id) ? "Открепить" : "Закрепить"} чат`}
+                      aria-describedby={`pin-chat-${chat.id}`}
                       aria-pressed={pins.chats.includes(chat.id)}
                       disabled={!pinsHydrated}
                       onClick={() => changePin("chats", chat.id)}
@@ -2163,14 +2164,15 @@ export default function Home() {
                         {project.title.slice(0, 1).toUpperCase()}
                       </span>
                       <span>
-                        <strong>{project.title}</strong>
+                        <strong id={`pin-project-${project.id}`}>{project.title}</strong>
                         <small>{project.last_message_preview ?? "Новый проект"}</small>
                       </span>
                     </button>
                     <button
                       type="button"
                       className="navigation-pin"
-                      aria-label={`${pins.projects.includes(project.id) ? "Открепить" : "Закрепить"} проект ${project.title}`}
+                      aria-label={`${pins.projects.includes(project.id) ? "Открепить" : "Закрепить"} проект`}
+                      aria-describedby={`pin-project-${project.id}`}
                       aria-pressed={pins.projects.includes(project.id)}
                       disabled={!pinsHydrated}
                       onClick={() => changePin("projects", project.id)}
@@ -2304,7 +2306,7 @@ export default function Home() {
                   : "Обычный чат"
                 : "Kosmora workspace"}
             </span>
-            <h1>
+            <h1 id="workspace-title">
               {surface === "manager"
                 ? (activeProject?.title ?? activeLocalChat?.title ?? "Новый чат")
                 : SURFACE_TITLE[surface]}
@@ -2355,9 +2357,10 @@ export default function Home() {
                 }
                 aria-label={
                   activeProject
-                    ? `${pins.projects.includes(activeProject.id) ? "Открепить" : "Закрепить"} проект ${activeProject.title}`
-                    : `${pins.chats.includes(activeLocalChat!.id) ? "Открепить" : "Закрепить"} чат ${activeLocalChat!.title}`
+                    ? `${pins.projects.includes(activeProject.id) ? "Открепить" : "Закрепить"} проект`
+                    : `${pins.chats.includes(activeLocalChat!.id) ? "Открепить" : "Закрепить"} чат`
                 }
+                aria-describedby="workspace-title"
                 onClick={() =>
                   activeProject
                     ? changePin("projects", activeProject.id)
