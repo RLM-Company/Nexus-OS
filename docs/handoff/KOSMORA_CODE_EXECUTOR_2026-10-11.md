@@ -66,3 +66,20 @@ deployment wrapper/API configuration and stops the new executor.
 
 Do not infer activation from these tests. The result of the separate activation is recorded
 below only after the server confirms it.
+
+## Current disposition
+
+Feature commit: `150bb46bce16572bb6f7791318a27e35cc9646ef` on the local integration
+branch. No GitHub push/PR or production activation is claimed. The source archive used for
+the successful VPS verification differs only by a subsequent explanatory startup comment.
+
+**Activation is awaiting explicit user approval.** Automatic approval review rejected the
+attempt to run `sh /opt/cosmora/releases/code-runtime-20261011/activate.sh` before it connected
+or executed. Its stated reason: continued development authorization does not cover this exact
+security-sensitive deployment creating a persistent Docker-socket-backed service, writing a
+service token, changing deployment configuration and stopping/restarting live API. Do not
+retry or execute it indirectly without that approval.
+
+The prepared script is present on the VPS but has not been run. No service token was created,
+no deployment wrapper was changed, and no API/web/login restart occurred in this delivery.
+The user need not configure anything manually after approving the exact activation.
