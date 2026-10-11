@@ -67,19 +67,54 @@ deployment wrapper/API configuration and stops the new executor.
 Do not infer activation from these tests. The result of the separate activation is recorded
 below only after the server confirms it.
 
-## Current disposition
+## Approval history
 
 Feature commit: `150bb46bce16572bb6f7791318a27e35cc9646ef` on the local integration
-branch. No GitHub push/PR or production activation is claimed. The source archive used for
+branch. No GitHub push/PR is claimed. The source archive used for
 the successful VPS verification differs only by a subsequent explanatory startup comment.
 
-**Activation is awaiting explicit user approval.** Automatic approval review rejected the
+Automatic approval review initially rejected the
 attempt to run `sh /opt/cosmora/releases/code-runtime-20261011/activate.sh` before it connected
 or executed. Its stated reason: continued development authorization does not cover this exact
 security-sensitive deployment creating a persistent Docker-socket-backed service, writing a
 service token, changing deployment configuration and stopping/restarting live API. Do not
 retry or execute it indirectly without that approval.
 
-The prepared script is present on the VPS but has not been run. No service token was created,
-no deployment wrapper was changed, and no API/web/login restart occurred in this delivery.
-The user need not configure anything manually after approving the exact activation.
+The user subsequently explicitly approved: “Да, подключить исполнитель Code”. The same
+prepared action was then allowed. The first server attempt rejected an incorrectly unquoted
+flow-list tmpfs value; automatic rollback completed before stopping API. The tmpfs value was
+quoted and retry was guarded by exact comparison to the restored deployment wrapper. The
+existing unused service token was reused; it was never printed or transferred back locally.
+
+## Current live disposition
+
+**The executor is active.** The final activation exited 0 and printed
+`LIVE_CODE_EXECUTOR_HTTP_PASS` and `KOSMORA_CODE_EXECUTOR_ACTIVE`. The running API's real
+HTTP executor client executed one synthetic Node check, verified UID 65534/read-only files,
+and reported passed with verified cleanup. This was a direct internal executor check, not a
+paid AI proposal or GitHub publication.
+
+API and executor reached healthy status. Authenticated health, chats, projects, personal
+settings, usage and media-capabilities routes returned 200. The migration count stayed 34;
+SQLite integrity/foreign keys passed. A consistent backup was verified before the API restart.
+Web and owner-login container IDs and start timestamps were identical before and after.
+API image remains `cosmora-alpha-app:api-7d779b3`; only its executor service configuration was
+added. Web remains `cosmora-alpha-app:chat-tools-0879c45` and login remains unchanged.
+
+The Compose service is `cosmora-alpha-code-executor-1`, private to the internal
+`code_executor` network with no published ports. It uses the immutable verified image ID
+recorded in `overlay.yaml` and the pinned check image above. The service token is stored only
+on the VPS in the release's mode-0700 private directory and is mounted read-only as a secret
+in API and executor.
+
+Live browser reload restored the remembered login, six existing chats and their saved
+conversation. The Code and Code-agent pages opened; Code-agent loaded the actual allowed
+`RLM-Company/Nexus-OS` repository and `main` branch. No project/task/AI message was created
+just for browser acceptance. Code-agent still requires selecting/creating a project as part
+of its existing workflow. Full live AI proposal → approved check → approved GitHub draft PR
+is not established by this activation.
+
+Rollback/config records: `deployctl.before`, `deployctl.next`, `overlay.yaml`, `backup/`
+under `/opt/cosmora/releases/code-runtime-20261011`. Restoring `deployctl.before` to
+`/opt/cosmora/runtime/deployctl`, recreating only API using that wrapper and stopping
+code-executor with `deployctl.next` reverts this configuration without a DB migration.

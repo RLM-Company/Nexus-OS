@@ -79,6 +79,7 @@ Validation: strict TypeScript, targeted ESLint, formatting/diff checks and the n
 **Composer release web image:** `cosmora-alpha-app:composer-534a3ef`. Its web-only activation completed with healthy status, HTTP checks returning 200, and exact API/login IDs/start times unchanged. API remains `cosmora-alpha-app:api-7d779b3`; login remains `cosmora-alpha-app:b21c2c7`; no migrations ran. Live browser verification confirmed the revised composer, Relay hidden inside settings, right-click icon switching, opening/closing the assistant with the real browser speech API detected, and restoration of normal send mode. Six existing chats and the remembered session remained visible.
 
 Release/rollback: `/opt/cosmora/releases/534a3ef/activate.sh`, `overlay.yaml`, `deployctl.before`, `deployctl.next`; local material `2026-10-10/kosmora-composer-release`. Nine-file source archive: 35,033 bytes, SHA-256 `e1c51931bc25d01bf573d868ce55bbfdec2cd5dc9031e448c7b560191896478d`, verified on the VPS. Previous static chunks retained. Current live proof: `qa/kosmora-live-composer-revised.jpg`, `qa/kosmora-live-voice-assistant.jpg`; desktop/mobile fixture screenshots: `qa/kosmora-composer-revised-desktop.png`, `qa/kosmora-composer-revised-mobile.png`.
+
 ## Mode-menu rebuild — previous web release
 
 Source revision `dcf7608bf8540fa813c516210c724b72230412af` fixes the visibly broken brand menu: global layout rules covered mode buttons but omitted the settings/research links, causing inline icons and concatenated labels. A scoped CSS Module now gives buttons and links explicit icon/text columns, consistent spacing and wrapping. Chat, Work and Code appear first; settings/research are grouped below a separator. Selected mode uses a neutral background and checkmark. The mobile drawer shares the row layout and marks only its actual selected mode, rather than showing Chat selected in unrelated workspaces. Brand placement, routes, outside/Escape closing and focus return are preserved.
@@ -88,6 +89,7 @@ Validation: TypeScript, component ESLint, formatting/diff checks, network-isolat
 **Mode-menu release web image:** `cosmora-alpha-app:mode-menu-dcf7608`. Web-only activation reached healthy status; Code and interface-kit HTTP checks returned 200. Exact API/login container IDs and start times stayed unchanged. API remains `cosmora-alpha-app:api-7d779b3`; login remains `cosmora-alpha-app:b21c2c7`. Live browser verification confirmed the aligned menu and switching Code → Work → Code; six existing chats and remembered login remained visible.
 
 Release/rollback: `/opt/cosmora/releases/dcf7608/activate.sh`, `overlay.yaml`, `deployctl.before`, `deployctl.next`; local material `2026-10-10/kosmora-mode-menu-release`. Two-file web archive: 4,438 bytes, SHA-256 `3761628bd9c5d9fcdfc0fa1d62eff40e0f9e12ebd21105bc1480f70403671257`, verified before extraction. Previous static chunks retained. Live proof: `qa/kosmora-live-mode-menu-rebuilt.jpg`; local desktop proofs: `qa/kosmora-mode-menu-900.png`, `qa/kosmora-mode-menu-1440.png`.
+
 ## Chat navigation and search — current live web (2026-10-11)
 
 Source revision `0879c45c385f5d1a71abf873845c05220f695682` removes the duplicate settings link from the brand mode menu; account and chat settings remain available in their existing places. Opening or polling a saved chat now replaces its cached content in place, rather than prepending it to the list. The server still controls activity ordering when messages are sent; reading does not update that ordering.
@@ -99,3 +101,13 @@ Validation: TypeScript, targeted component ESLint, formatting/diff checks and th
 **Current live web image:** `cosmora-alpha-app:chat-tools-0879c45`. Activation reached healthy status; Code and interface-kit checks returned 200. Exact API/login container IDs and start times remained unchanged. API is `cosmora-alpha-app:api-7d779b3`; login is `cosmora-alpha-app:b21c2c7`; no database migration was required. Live browser verification confirmed settings absent from modes, six chats present, identical list order before/after opening an older saved chat, three matches for “работает”, and keyboard navigation to the real stored response. The remembered session remained valid.
 
 Release/rollback: `/opt/cosmora/releases/0879c45/activate.sh`, `overlay.yaml`, `deployctl.before`, `deployctl.next`; local material `2026-10-11/kosmora-chat-tools-release`. Seven-file archive SHA-256: `a8e4878dca4dac439f6d345462147b631c3e57666259dba58dd591ade09ddeb2`, verified before extraction. Previous static chunks retained. Live proof: `qa/kosmora-live-chat-search.jpg`, `qa/kosmora-live-mode-menu-no-settings.jpg`; local fixture proof: `qa/kosmora-chat-search-desktop.png`, `qa/kosmora-chat-search-mobile.png`.
+
+## Code executor activation — 11 October 2026
+
+The previous note that the real OCI runner is disabled is superseded by
+`KOSMORA_CODE_EXECUTOR_2026-10-11.md`. After four actual OCI cases, a 33-case targeted server
+suite, a real HTTP/OCI smoke and explicit user approval, the private executor was activated.
+The existing API image remains `cosmora-alpha-app:api-7d779b3` with its new executor
+URL/token/network configuration. Web/login were not restarted. A real synthetic check from
+the live API passed with verified cleanup; authenticated read routes/schema and browser
+session/six chats passed. No paid model request, GitHub write, migration or logo change ran.
