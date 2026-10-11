@@ -14,6 +14,7 @@ import { CanvasEditor } from "./canvas-editor/canvas-editor";
 import canvasChat from "./canvas-editor/canvas-chat.module.css";
 import { ChatHistoryActions } from "./chat-history-actions";
 import { ChatArchivePanel } from "./chat-archive-panel";
+import { QuickSwitcher } from "./quick-switcher";
 import {
   EMPTY_PINS,
   PINNED_NAVIGATION_KEY,
@@ -2345,6 +2346,14 @@ export default function Home() {
                 }}
               />
             )}
+            <QuickSwitcher
+              chats={pinsFirst(localChats, pins.chats)}
+              projects={pinsFirst(projects, pins.projects)}
+              onNewChat={newChat}
+              onOpenChat={(id) => void openLocalChat(id)}
+              onOpenProject={(id) => void openProject(id)}
+              onNavigate={selectSurface}
+            />
             {surface === "manager" && (activeProject || activeLocalChat) && (
               <button
                 type="button"
