@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import process from "node:process";
 import {
   createCodeAgentExecutorServer,
   createCodeAgentWorkspaceRunner
@@ -14,13 +15,41 @@ const invoke = (args) =>
     maxBuffer: 65536,
     shell: false
   });
-// Dedicated daemon namespace: clear jobs orphaned by a sidecar crash before accepting work.
+// Dedicated job labels: clear jobs orphaned by a sidecar crash before accepting work.
 const previous = invoke(["ps", "-aq", "--filter", "label=kosmora.code-executor=true"]);
 if (previous.status !== 0) throw new Error("EXECUTOR_DAEMON_UNAVAILABLE");
 const ids = previous.stdout.trim().split(/\s+/).filter(Boolean);
 if (ids.some((id) => !/^[a-f0-9]{12,64}$/.test(id))) throw new Error("INVALID_CONTAINER_ID");
 if (ids.length && invoke(["rm", "--force", ...ids]).status !== 0)
   throw new Error("ORPHAN_CLEANUP_UNVERIFIED");
+const remaining = invoke(["ps", "-aq", "--filter", "label=kosmora.code-executor=true"]);
+if (remaining.status !== 0 || remaining.stdout.trim()) throw new Error("ORPHAN_CLEANUP_UNVERIFIED");
+// Snapshot volumes survive a crash independently of containers. Remove only our labelled,
+// generated names after proving every orphaned job container has gone; never prune the daemon.
+const snapshots = invoke([
+  "volume",
+  "ls",
+  "--filter",
+  "label=kosmora.code-executor=true",
+  "--format",
+  "{{.Name}}"
+]);
+if (snapshots.status !== 0) throw new Error("EXECUTOR_DAEMON_UNAVAILABLE");
+const volumes = snapshots.stdout.trim().split(/\s+/).filter(Boolean);
+if (volumes.some((name) => !/^kosmora-snapshot-[a-f0-9-]{36}$/.test(name)))
+  throw new Error("INVALID_SNAPSHOT_VOLUME");
+if (volumes.length && invoke(["volume", "rm", ...volumes]).status !== 0)
+  throw new Error("ORPHAN_SNAPSHOT_CLEANUP_UNVERIFIED");
+const remainingVolumes = invoke([
+  "volume",
+  "ls",
+  "--filter",
+  "label=kosmora.code-executor=true",
+  "--format",
+  "{{.Name}}"
+]);
+if (remainingVolumes.status !== 0 || remainingVolumes.stdout.trim())
+  throw new Error("ORPHAN_SNAPSHOT_CLEANUP_UNVERIFIED");
 const runner = createCodeAgentWorkspaceRunner({
   runtime: "docker",
   image: process.env.CODE_AGENT_SANDBOX_IMAGE,

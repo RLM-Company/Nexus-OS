@@ -56,7 +56,11 @@ import net from 'node:net';
 test('uid and readonly workspace', () => {
   assert.equal(process.getuid(), 65534);
   assert.equal(fs.existsSync('/var/run/docker.sock'), false);
-  assert.throws(() => fs.writeFileSync('/workspace/injected.js', 'x'));
+  assert.equal(process.cwd(), '/snapshot/workspace');
+  assert.throws(() => fs.writeFileSync(process.cwd() + '/injected.js', 'x'));
+  assert.throws(() => fs.chmodSync(process.cwd() + '/isolation.test.mjs', 0o777));
+  assert.throws(() => fs.writeFileSync(process.cwd() + '/isolation.test.mjs', 'x'));
+  fs.writeFileSync('/tmp/scratch', 'temporary output');
   assert.throws(() => fs.writeFileSync('/root/injected.js', 'x'));
 });
 test('external network denied', async () => {
@@ -68,6 +72,21 @@ test('external network denied', async () => {
   });
 });
 `
+        }
+      ]
+    });
+    expect(result).toMatchObject({ status: "passed", exitCode: 0, cleanupVerified: true });
+  }, 10_000);
+
+  it("preserves Unicode paths and content in the immutable snapshot", async () => {
+    const result = await runner().run({
+      check: "node-test",
+      files: [
+        { path: "папка/данные.txt", content: "Космора 🚀\n" },
+        {
+          path: "unicode.test.mjs",
+          content:
+            "import fs from 'node:fs'; import assert from 'node:assert/strict'; assert.equal(fs.readFileSync('папка/данные.txt','utf8'), 'Космора 🚀\\n');"
         }
       ]
     });

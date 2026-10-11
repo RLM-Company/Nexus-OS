@@ -38,7 +38,16 @@ afterEach(async () => {
 
 // This executable is a transport fixture, NEVER a sandbox fallback. It does not execute
 // repository contents; it only exercises the real child process lifecycle and CLI boundary.
-async function fixture(mode: "success" | "flood" | "wait" | "unavailable" | "cleanup-fail") {
+async function fixture(
+  mode:
+    | "success"
+    | "flood"
+    | "wait"
+    | "unavailable"
+    | "cleanup-fail"
+    | "load-fail"
+    | "volume-cleanup-fail"
+) {
   const directory = await mkdtemp(join(tmpdir(), "kosmora-oci-transport-test-"));
   directories.push(directory);
   const executable = join(directory, "oci-fixture.cjs");
@@ -49,8 +58,13 @@ async function fixture(mode: "success" | "flood" | "wait" | "unavailable" | "cle
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify({ args, env: process.env }) + '\\n');
 if (args[0] === 'rm') process.exit(${JSON.stringify(mode)} === 'cleanup-fail' ? 1 : 0);
+if (args[0] === 'ps') { if (${JSON.stringify(mode)} === 'cleanup-fail') process.stdout.write('orphan-container'); process.exit(0); }
+if (args[0] === 'volume') {
+  if (args[1] === 'ls' && ${JSON.stringify(mode)} === 'volume-cleanup-fail') process.stdout.write('orphan-volume');
+  process.exit(0);
+}
 if (${JSON.stringify(mode)} === 'unavailable') process.exit(125);
-if (args[0] === 'cp') { process.stdin.resume(); process.stdin.on('end', () => process.exit(0)); return; }
+if (args[0] === 'start' && args.includes('--interactive')) { process.stdin.resume(); process.stdin.on('end', () => process.exit(${JSON.stringify(mode)} === 'load-fail' ? 1 : 0)); return; }
 if (args[0] === 'create') { process.stdout.write('fixture-container-id'); process.exit(0); }
 if (${JSON.stringify(mode)} === 'wait' || ${JSON.stringify(mode)} === 'cleanup-fail') setInterval(() => {}, 1000);
 else if (${JSON.stringify(mode)} === 'flood') { setInterval(() => process.stdout.write('x'.repeat(8192)), 1); }
@@ -76,7 +90,11 @@ else { process.stdout.write('transport fixture only'); process.exit(0); }
 
 async function waitForStart(transport: Awaited<ReturnType<typeof fixture>>): Promise<void> {
   const expires = Date.now() + 15_000;
-  while (!(await transport.calls()).some((call) => call.args[0] === "start")) {
+  while (
+    !(await transport.calls()).some(
+      (call) => call.args[0] === "start" && !call.args.includes("--interactive")
+    )
+  ) {
     if (Date.now() >= expires) throw new Error("SYNTHETIC_TRANSPORT_DID_NOT_START");
     // Real Node I/O and process scheduling keep running while only the deadline clock is held.
     await realDelay(10);
@@ -93,8 +111,10 @@ async function runWithStartedDeadline(
   try {
     await waitForStart(transport);
     expect((await transport.calls()).map((call) => call.args[0])).toEqual([
+      "volume",
       "create",
-      "cp",
+      "start",
+      "create",
       "start"
     ]);
     // Exercise the real runner deadline callback after a real start, independently of Node startup.
@@ -188,7 +208,8 @@ describe("CodeAgent workspace boundary", () => {
     });
     expect(result.status).toBe("passed");
     expect(result.stdout).toBe("transport fixture only");
-    const call = (await transport.calls())[0]!;
+    const calls = await transport.calls();
+    const call = calls.find((call) => call.args.includes("--user=65534:65534"))!;
     for (const flag of [
       "--network=none",
       "--read-only",
@@ -207,9 +228,19 @@ describe("CodeAgent workspace boundary", () => {
     expect(call.env).not.toHaveProperty("DOCKER_HOST");
     expect(call.env).not.toHaveProperty("NODE_OPTIONS");
     expect(call.args).not.toContain("sh");
-    expect(call.args).not.toContain("--mount");
-    expect((await transport.calls())[1]!.args.slice(0, 2)).toEqual(["cp", "-"]);
-    expect((await transport.calls())[2]!.args.slice(0, 2)).toEqual(["start", "--attach"]);
+    expect(call.args.find((arg) => arg.startsWith("--mount="))).toMatch(
+      /^--mount=type=volume,src=kosmora-snapshot-[a-f0-9-]+,dst=\/snapshot,readonly,volume-nocopy$/
+    );
+    const loader = calls.find((call) => call.args.includes("--entrypoint=tar"))!;
+    expect(loader.args).toContain("--user=0:0");
+    expect(loader.args).toContain("--read-only");
+    expect(loader.args).toContain("--cap-drop=ALL");
+    expect(loader.args).toContain("--network=none");
+    expect(loader.args).toContain("--no-same-owner");
+    expect(loader.args).not.toContain("node");
+    expect(calls[2]!.args.slice(0, 3)).toEqual(["start", "--attach", "--interactive"]);
+    expect(calls[4]!.args.slice(0, 2)).toEqual(["start", "--attach"]);
+    expect(calls.map((call) => call.args.slice(0, 2))).toContainEqual(["volume", "rm"]);
     expect(result.journal.map((entry) => entry.event)).toEqual(["snapshot", "started", "finished"]);
   });
 
@@ -285,7 +316,14 @@ describe("CodeAgent workspace boundary", () => {
       executable: transport.executable
     });
     expect((await unavailable.run({ files, check: "syntax" })).status).toBe("unavailable");
-    expect((await transport.calls()).map((call) => call.args[0])).toEqual(["create", "rm"]);
+    expect((await transport.calls()).map((call) => call.args.slice(0, 2))).toEqual([
+      ["volume", "create"],
+      ["create", "--pull=never"],
+      ["rm", "--force"],
+      ["ps", "-aq"],
+      ["volume", "rm"],
+      ["volume", "ls"]
+    ]);
   });
 
   it(
@@ -312,8 +350,41 @@ describe("CodeAgent workspace boundary", () => {
         )
       ).toBe(true);
       expect((await transport.calls()).length).toBe(countBefore);
-      expect((await transport.calls()).filter((call) => call.args[0] === "create")).toHaveLength(1);
+      expect((await transport.calls()).filter((call) => call.args[0] === "create")).toHaveLength(2);
     },
     PROCESS_TEST_TIMEOUT_MS
   );
+  it("never starts repository checks when snapshot loading fails", async () => {
+    const transport = await fixture("load-fail");
+    const runner = createCodeAgentWorkspaceRunner({
+      runtime: "docker",
+      image: IMAGE,
+      executable: transport.executable
+    });
+    expect(await runner.run({ files, check: "syntax" })).toMatchObject({
+      status: "unavailable",
+      cleanupVerified: true
+    });
+    const calls = await transport.calls();
+    expect(calls.some((call) => call.args.includes("--user=65534:65534"))).toBe(false);
+    expect(calls.some((call) => call.args[0] === "volume" && call.args[1] === "rm")).toBe(true);
+  });
+  it("quarantines after an unremoved snapshot even when containers are gone", async () => {
+    const transport = await fixture("volume-cleanup-fail");
+    const runner = createCodeAgentWorkspaceRunner({
+      runtime: "docker",
+      image: IMAGE,
+      executable: transport.executable
+    });
+    expect(await runner.run({ files, check: "syntax" })).toMatchObject({
+      status: "unavailable",
+      cleanupVerified: false
+    });
+    const count = (await transport.calls()).length;
+    expect(await runner.run({ files, check: "syntax" })).toMatchObject({
+      status: "unavailable",
+      cleanupVerified: false
+    });
+    expect((await transport.calls()).length).toBe(count);
+  });
 });
