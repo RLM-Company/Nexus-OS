@@ -554,7 +554,9 @@ export default function Home() {
   );
   const matchingProjects = pinsFirst(
     navigationSearch
-      ? projects.filter((project) => project.title.toLocaleLowerCase("ru").includes(navigationSearch))
+      ? projects.filter((project) =>
+          project.title.toLocaleLowerCase("ru").includes(navigationSearch)
+        )
       : projects,
     pins.projects
   );
@@ -2124,7 +2126,11 @@ export default function Home() {
               </div>
             )}
           </section>
-          {pinNotice && <p className="pin-notice" role="status">{pinNotice}</p>}
+          {pinNotice && (
+            <p className="pin-notice" role="status">
+              {pinNotice}
+            </p>
+          )}
           <ChatArchivePanel onRestore={() => void loadGeneralChats()} />
           <section className="sidebar-section">
             <button
@@ -2153,7 +2159,9 @@ export default function Home() {
                       }
                       onClick={() => void openProject(project.id)}
                     >
-                      <span className="project-glyph">{project.title.slice(0, 1).toUpperCase()}</span>
+                      <span className="project-glyph">
+                        {project.title.slice(0, 1).toUpperCase()}
+                      </span>
                       <span>
                         <strong>{project.title}</strong>
                         <small>{project.last_message_preview ?? "Новый проект"}</small>
@@ -2340,15 +2348,21 @@ export default function Home() {
                 type="button"
                 className="topbar-pin"
                 disabled={!pinsHydrated}
-                aria-pressed={activeProject
-                  ? pins.projects.includes(activeProject.id)
-                  : pins.chats.includes(activeLocalChat!.id)}
-                aria-label={activeProject
-                  ? `${pins.projects.includes(activeProject.id) ? "Открепить" : "Закрепить"} проект ${activeProject.title}`
-                  : `${pins.chats.includes(activeLocalChat!.id) ? "Открепить" : "Закрепить"} чат ${activeLocalChat!.title}`}
-                onClick={() => activeProject
-                  ? changePin("projects", activeProject.id)
-                  : changePin("chats", activeLocalChat!.id)}
+                aria-pressed={
+                  activeProject
+                    ? pins.projects.includes(activeProject.id)
+                    : pins.chats.includes(activeLocalChat!.id)
+                }
+                aria-label={
+                  activeProject
+                    ? `${pins.projects.includes(activeProject.id) ? "Открепить" : "Закрепить"} проект ${activeProject.title}`
+                    : `${pins.chats.includes(activeLocalChat!.id) ? "Открепить" : "Закрепить"} чат ${activeLocalChat!.title}`
+                }
+                onClick={() =>
+                  activeProject
+                    ? changePin("projects", activeProject.id)
+                    : changePin("chats", activeLocalChat!.id)
+                }
               >
                 <PinIcon />
               </button>
