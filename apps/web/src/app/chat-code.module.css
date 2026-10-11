@@ -132,3 +132,42 @@
     border-color: CanvasText;
   }
 }
+
+.userActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+}
+.userActions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.userActions button:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.userActions button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.userActions svg {
+  width: 14px;
+  height: 14px;
+}
+@media (pointer: coarse) {
+  .userActions button {
+    min-height: 44px;
+  }
+}

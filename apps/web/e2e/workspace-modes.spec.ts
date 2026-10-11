@@ -70,7 +70,8 @@ test("mode menu aligns links and buttons within the sidebar at desktop widths", 
     const panelBox = await panel.boundingBox();
     expect(panelBox).not.toBeNull();
     const rows = panel.locator("button, a");
-    await expect(rows).toHaveCount(5);
+    await expect(rows).toHaveCount(4);
+    await expect(panel.getByRole("link", { name: /Настройки/ })).toHaveCount(0);
     let labelLeft: number | undefined;
     for (const row of await rows.all()) {
       const rowBox = await row.boundingBox();

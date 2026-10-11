@@ -91,19 +91,6 @@ export function WorkspaceModeMenu({
         ))}
         <div className={styles.utilities}>
           <Link
-            href="/personal-settings"
-            className={styles.row}
-            onClick={() => {
-              if (ref.current) ref.current.open = false;
-            }}
-          >
-            <Icon name="settings" />
-            <span>
-              <strong>Настройки</strong>
-              <small>Чат, перевод и использование</small>
-            </span>
-          </Link>
-          <Link
             href="/research-workspace"
             className={styles.row}
             aria-label="Глубокий поиск и отчёты"

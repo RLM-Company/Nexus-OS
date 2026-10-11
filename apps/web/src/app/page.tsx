@@ -949,7 +949,10 @@ export default function Home() {
         }),
         projectProposal: existing?.projectProposal ?? null
       };
-      return [updated, ...current.filter((chat) => chat.id !== generalChatId)];
+      // Reading history updates cached content, not the server's activity order.
+      return existing
+        ? current.map((chat) => (chat.id === generalChatId ? updated : chat))
+        : [...current, updated];
     });
     setRunPhase(restoredRun.phase);
     setActiveRunId(restoredRun.activeRunId);
@@ -2218,8 +2221,8 @@ export default function Home() {
               <ChatHistoryActions
                 key={activeLocalChat?.id ?? activeProject?.id ?? "new-chat"}
                 id={activeProject ? null : (activeLocalChat?.id ?? null)}
-                title={activeLocalChat?.title ?? "Новый чат"}
-                messages={localChatMessages}
+                title={activeProject?.title ?? activeLocalChat?.title ?? "Новый чат"}
+                messages={activeProject ? messages : localChatMessages}
                 disabled={sending || loading}
                 showRelay={!activeProject}
                 onRecover={restoreRunDraft}
@@ -2602,7 +2605,12 @@ export default function Home() {
                 }}
               >
                 {messages.map((message) => (
-                  <article key={message.id} className={`message ${message.role}`}>
+                  <article
+                    key={message.id}
+                    id={`chat-message-${message.id}`}
+                    tabIndex={-1}
+                    className={`message ${message.role}`}
+                  >
                     <span className="message-avatar">
                       {message.role === "user" ? <WorkspaceIcon name="owner" /> : <SparkIcon />}
                     </span>
@@ -2619,7 +2627,7 @@ export default function Home() {
                       <ChatResponse
                         content={displayedContent(message)}
                         assistant={message.role === "assistant"}
-                        complete={message.status === "completed"}
+                        complete={message.status === "completed" && message.role !== "system_event"}
                         streaming={message.status === "streaming"}
                         onFollowUp={(prompt) => {
                           setDraft((current) =>
@@ -2671,7 +2679,12 @@ export default function Home() {
               }}
             >
               {localChatMessages.map((message) => (
-                <article key={message.id} className={`message ${message.role}`}>
+                <article
+                  key={message.id}
+                  id={`chat-message-${message.id}`}
+                  tabIndex={-1}
+                  className={`message ${message.role}`}
+                >
                   <span className="message-avatar">
                     {message.role === "user" ? <WorkspaceIcon name="owner" /> : <SparkIcon />}
                   </span>

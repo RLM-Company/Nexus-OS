@@ -4,6 +4,7 @@ import { downloadText } from "./chat-response";
 import { WorkspaceIcon } from "./workspace-icons";
 import { RelaySwitch } from "./personal-settings/relay-switch";
 import styles from "./chat-history-actions.module.css";
+import { ChatSearch, type SearchableChatMessage } from "./chat-search";
 export function ChatHistoryActions({
   id,
   title,
@@ -18,7 +19,7 @@ export function ChatHistoryActions({
 }: {
   id: string | null;
   title: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: SearchableChatMessage[];
   disabled: boolean;
   onChange: (title: string) => void;
   onArchive: () => void;
@@ -30,6 +31,7 @@ export function ChatHistoryActions({
   const [name, setName] = useState(title);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
@@ -75,74 +77,99 @@ export function ChatHistoryActions({
     }
   };
   return (
-    <details className={styles.menu} ref={menu}>
-      <summary aria-label="Настройки чата" title="Настройки чата">
-        <WorkspaceIcon name="settings" />
-      </summary>
-      <div className={styles.panel}>
-        <strong>Настройки чата</strong>
-        {showRelay ? (
-          <RelaySwitch
-            chatId={id}
-            error={runError ?? error}
-            {...(onRecover ? { onRecover } : {})}
-          />
-        ) : (
-          <a href="/personal-settings">Личные настройки</a>
-        )}
-        {onVoice && (
+    <>
+      <details className={styles.menu} ref={menu}>
+        <summary aria-label="Настройки чата" title="Настройки чата">
+          <WorkspaceIcon name="settings" />
+        </summary>
+        <div className={styles.panel}>
+          <strong>Настройки чата</strong>
           <button
             type="button"
-            disabled={disabled}
+            disabled={!messages.length}
             onClick={() => {
               if (menu.current) menu.current.open = false;
-              onVoice();
+              setSearchOpen(true);
             }}
           >
-            Голосовой помощник
+            Найти в переписке
           </button>
-        )}
-        {id && (
-          <>
-            <label>
-              Название чата
-              <input
-                maxLength={160}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
+          {showRelay ? (
+            <RelaySwitch
+              chatId={id}
+              error={runError ?? error}
+              {...(onRecover ? { onRecover } : {})}
+            />
+          ) : (
+            <a href="/personal-settings">Личные настройки</a>
+          )}
+          {onVoice && (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                if (menu.current) menu.current.open = false;
+                onVoice();
+              }}
+            >
+              Голосовой помощник
+            </button>
+          )}
+          {id && (
+            <>
+              <label>
+                Название чата
+                <input
+                  maxLength={160}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  disabled={disabled || pending}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={disabled || pending || !name.trim()}
+                onClick={() => void update(false)}
+              >
+                Сохранить название
+              </button>
+              <button
+                type="button"
                 disabled={disabled || pending}
-              />
-            </label>
-            <button
-              type="button"
-              disabled={disabled || pending || !name.trim()}
-              onClick={() => void update(false)}
-            >
-              Сохранить название
-            </button>
-            <button
-              type="button"
-              disabled={disabled || pending}
-              onClick={() =>
-                downloadText(
-                  `# ${title}\n\n${messages.map((message) => `## ${message.role === "user" ? "Вы" : "Kosmora"}\n\n${message.content}`).join("\n\n")}`,
-                  "kosmora-chat.md"
-                )
-              }
-            >
-              Скачать переписку
-            </button>
-            <p>
-              Архив убирает чат из списка. История остаётся на сервере; чат можно вернуть из архива
-              в боковой панели.
-            </p>
-            <button type="button" disabled={disabled || pending} onClick={() => void update(true)}>
-              Убрать чат в архив
-            </button>
-            {error && <p role="alert">{error}</p>}
-          </>
-        )}
-      </div>
-    </details>
+                onClick={() =>
+                  downloadText(
+                    `# ${title}\n\n${messages.map((message) => `## ${message.role === "user" ? "Вы" : "Kosmora"}\n\n${message.content}`).join("\n\n")}`,
+                    "kosmora-chat.md"
+                  )
+                }
+              >
+                Скачать переписку
+              </button>
+              <p>
+                Архив убирает чат из списка. История остаётся на сервере; чат можно вернуть из
+                архива в боковой панели.
+              </p>
+              <button
+                type="button"
+                disabled={disabled || pending}
+                onClick={() => void update(true)}
+              >
+                Убрать чат в архив
+              </button>
+              {error && <p role="alert">{error}</p>}
+            </>
+          )}
+        </div>
+      </details>
+      <ChatSearch
+        open={searchOpen}
+        title={title}
+        messages={messages}
+        onClose={(selectedMessage) => {
+          setSearchOpen(false);
+          if (!selectedMessage) menu.current?.querySelector("summary")?.focus();
+        }}
+      />
+    </>
   );
 }

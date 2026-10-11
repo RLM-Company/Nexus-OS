@@ -128,7 +128,23 @@ export function ChatResponse({
   onFollowUp?: (prompt: string) => void;
 }) {
   if (!content) return <LoadingDots label="Формирую ответ" />;
-  if (!assistant) return <p>{content}</p>;
+  if (!assistant)
+    return (
+      <div>
+        <p>{content}</p>
+        {complete && (
+          <div className={styles.userActions}>
+            <CopyButton content={content} label="Копировать запрос" />
+            {onFollowUp && (
+              <button type="button" onClick={() => onFollowUp(content)}>
+                <WorkspaceIcon name="new-chat" />
+                Вставить в сообщение
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
   return (
     <div className="chat-response" data-streaming={streaming || undefined}>
       <Markdown
