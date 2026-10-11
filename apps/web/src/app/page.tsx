@@ -2223,6 +2223,8 @@ export default function Home() {
                 id={activeProject ? null : (activeLocalChat?.id ?? null)}
                 title={activeProject?.title ?? activeLocalChat?.title ?? "Новый чат"}
                 messages={activeProject ? messages : localChatMessages}
+                conversationId={activeProject ? chatId : (activeLocalChat?.id ?? null)}
+                projectId={activeProject?.id ?? null}
                 disabled={sending || loading}
                 showRelay={!activeProject}
                 onRecover={restoreRunDraft}

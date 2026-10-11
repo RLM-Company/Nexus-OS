@@ -1,14 +1,17 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { downloadText } from "./chat-response";
+import { ChatExportControls } from "./chat-export-controls";
+import type { ExportableChatMessage } from "./chat-export";
 import { WorkspaceIcon } from "./workspace-icons";
 import { RelaySwitch } from "./personal-settings/relay-switch";
 import styles from "./chat-history-actions.module.css";
-import { ChatSearch, type SearchableChatMessage } from "./chat-search";
+import { ChatSearch } from "./chat-search";
 export function ChatHistoryActions({
   id,
   title,
   messages,
+  conversationId,
+  projectId,
   disabled,
   onChange,
   onArchive,
@@ -19,7 +22,9 @@ export function ChatHistoryActions({
 }: {
   id: string | null;
   title: string;
-  messages: SearchableChatMessage[];
+  messages: ExportableChatMessage[];
+  conversationId: string | null;
+  projectId: string | null;
   disabled: boolean;
   onChange: (title: string) => void;
   onArchive: () => void;
@@ -115,6 +120,10 @@ export function ChatHistoryActions({
               Голосовой помощник
             </button>
           )}
+          <ChatExportControls
+            source={{ id: conversationId, projectId, title, messages }}
+            disabled={disabled || pending}
+          />
           {id && (
             <>
               <label>
@@ -132,18 +141,6 @@ export function ChatHistoryActions({
                 onClick={() => void update(false)}
               >
                 Сохранить название
-              </button>
-              <button
-                type="button"
-                disabled={disabled || pending}
-                onClick={() =>
-                  downloadText(
-                    `# ${title}\n\n${messages.map((message) => `## ${message.role === "user" ? "Вы" : "Kosmora"}\n\n${message.content}`).join("\n\n")}`,
-                    "kosmora-chat.md"
-                  )
-                }
-              >
-                Скачать переписку
               </button>
               <p>
                 Архив убирает чат из списка. История остаётся на сервере; чат можно вернуть из
