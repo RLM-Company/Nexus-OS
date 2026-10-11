@@ -8,6 +8,7 @@ import { ChatResponse } from "./chat-response";
 import { WebSearchPanel } from "./web-search-panel";
 import { ChatHistoryActions } from "./chat-history-actions";
 import { ChatArchivePanel } from "./chat-archive-panel";
+import { QuickSwitcher } from "./quick-switcher";
 import {
   EMPTY_PINS,
   PINNED_NAVIGATION_KEY,
@@ -2149,6 +2150,14 @@ export default function Home() {
             </h1>
           </div>
           <div className="topbar-actions">
+            <QuickSwitcher
+              chats={pinsFirst(localChats, pins.chats)}
+              projects={pinsFirst(projects, pins.projects)}
+              onNewChat={newChat}
+              onOpenChat={(id) => void openLocalChat(id)}
+              onOpenProject={(id) => void openProject(id)}
+              onNavigate={selectSurface}
+            />
             {surface === "manager" && (activeProject || activeLocalChat) && (
               <button
                 type="button"
