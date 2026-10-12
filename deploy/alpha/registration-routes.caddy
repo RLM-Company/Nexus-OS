@@ -1,7 +1,7 @@
 encode zstd gzip
 header Cache-Control "private, no-store"
 
-@auth_public path /login /register /auth/*
+@auth_public path /login /register /forgot-password /auth/*
 handle @auth_public {
   @internal_verify path /auth/verify
   respond @internal_verify 404

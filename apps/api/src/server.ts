@@ -265,6 +265,11 @@ try {
                   sendVerification: sendWithLocalMta(
                     process.env.KOSMORA_SENDMAIL_PATH,
                     process.env.KOSMORA_EMAIL_FROM
+                  ),
+                  sendPasswordReset: sendWithLocalMta(
+                    process.env.KOSMORA_SENDMAIL_PATH,
+                    process.env.KOSMORA_EMAIL_FROM,
+                    "reset"
                   )
                 }
               : {})

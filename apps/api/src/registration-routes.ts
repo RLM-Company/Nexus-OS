@@ -38,6 +38,7 @@ const formPage = (kind: "login" | "register", message = "", google = false, emai
   }
   ${google ? '<a class="button" href="/auth/google">Продолжить с Google</a>' : ""}
   <p class="hint">${register ? '<a href="/login">Уже есть аккаунт? Войти</a>' : '<a href="/register">Создать аккаунт</a>'}</p>
+  ${!register && email ? '<p><a href="/forgot-password">Забыли пароль?</a></p>' : ""}
   </main></body></html>`;
 };
 const cookie = (name: string, value: string, seconds: number) =>
@@ -56,9 +57,14 @@ export interface RegistrationOptions {
   identity: IdentityStore;
   google?: GoogleIdentity;
   sendVerification?: (email: string, link: string) => Promise<void>;
+  sendPasswordReset?: (email: string, link: string) => Promise<void>;
 }
 
-export const sendWithLocalMta = (executable: string, from: string) => {
+export const sendWithLocalMta = (
+  executable: string,
+  from: string,
+  purpose: "verify" | "reset" = "verify"
+) => {
   const sender = normalizedEmail(from);
   if (!executable.startsWith("/") || !sender) throw Error("Mail delivery is not configured");
   return (to: string, link: string): Promise<void> =>
@@ -77,7 +83,7 @@ export const sendWithLocalMta = (executable: string, from: string) => {
         code === 0 ? resolve() : reject(Error("MAIL_DELIVERY_FAILED"));
       });
       child.stdin.end(
-        `From: ${sender}\r\nTo: ${recipient}\r\nSubject: Kosmora: confirm your email\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nПодтвердите адрес email в Kosmora: ${link}\r\nСсылка действует 30 минут.\r\n`
+        `From: ${sender}\r\nTo: ${recipient}\r\nSubject: Kosmora: ${purpose === "reset" ? "reset your password" : "confirm your email"}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${purpose === "reset" ? "Сбросьте пароль Kosmora" : "Подтвердите адрес email в Kosmora"}: ${link}\r\nСсылка действует 30 минут.\r\n`
       );
     });
 };
@@ -131,6 +137,13 @@ export function registerRegistrationRoutes(
     "content-security-policy":
       "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
   };
+  const account = (request: FastifyRequest) => {
+    const token = readCookie(request, SESSION_COOKIE);
+    const current = token ? options.identity.resolveSession(token) : null;
+    return current?.actor_kind === "owner" ? current : null;
+  };
+  const revoke = (ownerId: string, reason: string) =>
+    options.identity.revokeAllOwnerSessions(ownerId, ownerId, reason);
   app.addContentTypeParser(
     "application/x-www-form-urlencoded",
     { parseAs: "string", bodyLimit: 4096 },
@@ -159,6 +172,78 @@ export function registerRegistrationRoutes(
       .type("text/html")
       .send(formPage("register", "", Boolean(options.google), Boolean(options.sendVerification)))
   );
+  app.get("/forgot-password", async (_request, reply) => {
+    if (!options.sendPasswordReset) return reply.code(404).send();
+    return reply.headers(publicHeaders).type("text/html")
+      .send(`<!doctype html><html lang="ru"><meta charset="utf-8"><title>Восстановление Kosmora</title>
+      <main><h1>Восстановление пароля</h1><form method="post" action="/auth/recovery/request">
+      <label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" required>
+      <button type="submit">Отправить ссылку</button></form><p><a href="/login">Вход</a></p></main></html>`);
+  });
+  app.post("/auth/recovery/request", async (request, reply) => {
+    if (!options.sendPasswordReset) return reply.code(404).send();
+    if (!ownOrigin(request)) return reply.code(403).send();
+    if (!allowed(request)) return reply.code(429).header("retry-after", "900").send();
+    const form = request.body as Form;
+    if (!(form instanceof URLSearchParams) || form.getAll("email").length !== 1)
+      return reply.code(400).send();
+    const email = normalizedEmail(form.get("email") ?? "");
+    if (!email) return reply.code(400).send();
+    try {
+      const token = options.store.requestPasswordReset(email);
+      if (token)
+        await options.sendPasswordReset(
+          email,
+          `${options.origin}/auth/recovery/reset?token=${encodeURIComponent(token)}`
+        );
+    } catch (cause) {
+      request.log.error({ cause }, "Password reset delivery failed");
+    }
+    return reply.headers(publicHeaders).type("text/html")
+      .send(`<!doctype html><html lang="ru"><meta charset="utf-8"><title>Проверьте почту</title>
+      <main><h1>Проверьте почту</h1><p>Если этот адрес привязан к аккаунту, мы отправили ссылку для смены пароля.</p>
+      <p><a href="/login">Вход</a></p></main></html>`);
+  });
+  app.get<{ Querystring: { token?: string } }>("/auth/recovery/reset", async (request, reply) => {
+    if (!options.sendPasswordReset) return reply.code(404).send();
+    const token = request.query.token ?? "";
+    if (!/^[A-Za-z0-9_-]{43}$/u.test(token)) return reply.code(400).send();
+    return reply.headers(publicHeaders).type("text/html")
+      .send(`<!doctype html><html lang="ru"><meta charset="utf-8"><title>Новый пароль Kosmora</title>
+      <main><h1>Новый пароль</h1><form method="post" action="/auth/recovery/reset">
+      <input type="hidden" name="token" value="${token}"><label for="password">Новый пароль</label>
+      <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="512" required>
+      <button type="submit">Сменить пароль</button></form></main></html>`);
+  });
+  app.post("/auth/recovery/reset", async (request, reply) => {
+    if (!options.sendPasswordReset) return reply.code(404).send();
+    if (!ownOrigin(request)) return reply.code(403).send();
+    const form = request.body as Form;
+    if (
+      !(form instanceof URLSearchParams) ||
+      form.getAll("token").length !== 1 ||
+      form.getAll("password").length !== 1
+    )
+      return reply.code(400).send();
+    try {
+      if (
+        !options.store.resetPassword(
+          form.get("token") ?? "",
+          form.get("password") ?? "",
+          (ownerId) => revoke(ownerId, "password_reset")
+        )
+      )
+        return reply
+          .code(400)
+          .headers(publicHeaders)
+          .send("Ссылка недействительна или срок её действия истёк.");
+      return redirect(reply, "/login?reset=1", cookie(SESSION_COOKIE, "", 0));
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "INVALID_PASSWORD")
+        return reply.code(400).send("Пароль должен содержать от 12 до 512 символов.");
+      throw cause;
+    }
+  });
   app.post("/auth/register", async (request, reply) => {
     if (!ownOrigin(request)) return reply.code(403).send();
     if (!allowed(request)) return reply.code(429).header("retry-after", "900").send();
@@ -332,8 +417,61 @@ export function registerRegistrationRoutes(
       <main><h1>Аккаунт Kosmora</h1><p>Ваши данные доступны только в этой учётной записи.</p>
       ${options.google && !methods.google ? '<a href="/auth/google/link">Привязать Google</a>' : ""}
       ${!methods.email ? '<form action="/auth/account/email" method="post"><label for="new-password">Добавить вход по email</label><input id="new-password" name="password" type="password" minlength="12" maxlength="512" required><button type="submit">Сохранить пароль</button></form>' : ""}
+      ${methods.email ? '<form action="/auth/account/password" method="post"><h2>Сменить пароль</h2><label for="current-password">Текущий пароль</label><input id="current-password" name="current" type="password" autocomplete="current-password" required><label for="changed-password">Новый пароль</label><input id="changed-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="512" required><button type="submit">Сменить пароль и завершить старые сеансы</button></form>' : ""}
+      ${methods.email && methods.google ? '<form action="/auth/account/method/remove" method="post"><h2>Способы входа</h2><label for="method">Отключить способ входа</label><select id="method" name="method"><option value="google">Google</option><option value="email">Пароль</option></select><label for="proof-password">Текущий пароль для подтверждения</label><input id="proof-password" name="password" type="password" autocomplete="current-password" required><button type="submit">Отключить и завершить старые сеансы</button></form>' : ""}
       <p><a href="/">Вернуться в Kosmora</a></p>
       <form action="/auth/logout" method="post"><button type="submit">Выйти</button></form></main></html>`);
+  });
+  app.post("/auth/account/password", async (request, reply) => {
+    if (!ownOrigin(request)) return reply.code(403).send();
+    const current = account(request);
+    if (!current) return reply.code(401).send();
+    if (!allowed(request)) return reply.code(429).header("retry-after", "900").send();
+    const form = request.body as Form;
+    if (
+      !(form instanceof URLSearchParams) ||
+      form.getAll("current").length !== 1 ||
+      form.getAll("password").length !== 1
+    )
+      return reply.code(400).send();
+    try {
+      if (
+        !options.store.changePassword(
+          current.owner_id,
+          form.get("current") ?? "",
+          form.get("password") ?? "",
+          (ownerId) => revoke(ownerId, "password_changed")
+        )
+      )
+        return reply.code(401).send("Неверный текущий пароль.");
+      return redirect(reply, "/login?changed=1", cookie(SESSION_COOKIE, "", 0));
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "INVALID_PASSWORD")
+        return reply.code(400).send("Пароль должен содержать от 12 до 512 символов.");
+      throw cause;
+    }
+  });
+  app.post("/auth/account/method/remove", async (request, reply) => {
+    if (!ownOrigin(request)) return reply.code(403).send();
+    const current = account(request);
+    if (!current) return reply.code(401).send();
+    if (!allowed(request)) return reply.code(429).header("retry-after", "900").send();
+    const form = request.body as Form;
+    if (
+      !(form instanceof URLSearchParams) ||
+      form.getAll("method").length !== 1 ||
+      form.getAll("password").length !== 1
+    )
+      return reply.code(400).send();
+    const method = form.get("method");
+    if (method !== "email" && method !== "google") return reply.code(400).send();
+    if (
+      !options.store.removeMethod(current.owner_id, method, form.get("password") ?? "", (ownerId) =>
+        revoke(ownerId, "login_method_removed")
+      )
+    )
+      return reply.code(409).send("Проверьте пароль и наличие второго способа входа.");
+    return redirect(reply, "/login?method=removed", cookie(SESSION_COOKIE, "", 0));
   });
   app.post("/auth/account/email", async (request, reply) => {
     if (!ownOrigin(request)) return reply.code(403).send();

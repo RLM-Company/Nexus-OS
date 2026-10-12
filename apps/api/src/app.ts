@@ -629,14 +629,19 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       dependencies.registration &&
       (path === "/login" ||
         path === "/register" ||
+        path === "/forgot-password" ||
         path === "/auth/register" ||
         path === "/auth/login" ||
         path === "/auth/confirm" ||
+        path === "/auth/recovery/request" ||
+        path === "/auth/recovery/reset" ||
         path === "/auth/google" ||
         path === "/auth/google/link" ||
         path === "/auth/google/callback" ||
         path === "/auth/account" ||
         path === "/auth/account/email" ||
+        path === "/auth/account/password" ||
+        path === "/auth/account/method/remove" ||
         path === "/auth/logout" ||
         path === "/auth/verify")
     )
