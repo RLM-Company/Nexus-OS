@@ -18,7 +18,7 @@ import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
 import {
   EMPTY_PINS,
-  PINNED_NAVIGATION_KEY,
+  pinnedNavigationKey,
   pinsFirst,
   readPinnedNavigation,
   savePinnedNavigation,
@@ -517,6 +517,7 @@ export default function Home() {
   const [pins, setPins] = useState<PinnedNavigation>(EMPTY_PINS);
   const [pinsHydrated, setPinsHydrated] = useState(false);
   const [pinNotice, setPinNotice] = useState<string | null>(null);
+  const [pinStorageKey, setPinStorageKey] = useState<string | null>(null);
   const [activeLocalChatId, setActiveLocalChatId] = useState<string | null>(null);
   const [localChatsHydrated, setLocalChatsHydrated] = useState(false);
   const [chatsExpanded, setChatsExpanded] = useState(true);
@@ -582,16 +583,34 @@ export default function Home() {
     field.style.height = `${Math.min(176, Math.max(56, field.scrollHeight))}px`;
   }, [draft, surface, activeProject?.id, localChatMessages.length]);
   useEffect(() => {
-    try {
-      setPins(readPinnedNavigation(window.localStorage));
-    } catch {
-      setPinNotice("Закрепление действует до закрытия страницы: сохранение в браузере недоступно.");
-    }
-    setPinsHydrated(true);
+    let cancelled = false;
+    void api<{ owner_id: string }>("/api/v1/navigation-context")
+      .then(({ owner_id }) => {
+        if (cancelled) return;
+        const key = pinnedNavigationKey(owner_id);
+        setPinStorageKey(key);
+        setPins(readPinnedNavigation(window.localStorage, key));
+        setPinsHydrated(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPinNotice("Закрепления доступны до закрытия страницы: сохранение недоступно.");
+        setPinsHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pinStorageKey) return;
     const sync = (event: StorageEvent) => {
-      if (event.key === PINNED_NAVIGATION_KEY || event.key === null) {
+      if (
+        event.storageArea === window.localStorage &&
+        (event.key === pinStorageKey || event.key === null)
+      ) {
         try {
-          setPins(readPinnedNavigation(window.localStorage));
+          setPins(readPinnedNavigation(window.localStorage, pinStorageKey));
         } catch {
           // Keep the in-memory order when this browser denies storage access.
         }
@@ -599,20 +618,20 @@ export default function Home() {
     };
     window.addEventListener("storage", sync);
     return () => window.removeEventListener("storage", sync);
-  }, []);
+  }, [pinStorageKey]);
 
   useEffect(() => {
-    if (!pinsHydrated) return;
+    if (!pinsHydrated || !pinStorageKey) return;
     try {
       setPinNotice(
-        savePinnedNavigation(window.localStorage, pins)
+        savePinnedNavigation(window.localStorage, pins, pinStorageKey)
           ? null
           : "Закрепление действует до закрытия страницы: сохранение в браузере недоступно."
       );
     } catch {
       setPinNotice("Закрепление действует до закрытия страницы: сохранение в браузере недоступно.");
     }
-  }, [pins, pinsHydrated]);
+  }, [pins, pinsHydrated, pinStorageKey]);
 
   const changePin = (kind: keyof PinnedNavigation, id: string) => {
     setPins((current) => togglePin(current, kind, id));

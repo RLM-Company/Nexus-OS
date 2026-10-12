@@ -650,6 +650,24 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   });
 
   app.get(
+    "/api/v1/navigation-context",
+    {
+      schema: {
+        response: {
+          200: Type.Object(
+            { owner_id: Type.String({ minLength: 1, maxLength: 160 }) },
+            { additionalProperties: false }
+          )
+        }
+      }
+    },
+    (request, reply) =>
+      reply
+        .header("Cache-Control", "private, no-store")
+        .send({ owner_id: identityFor(request).owner_id })
+  );
+
+  app.get(
     "/api/v1/health",
     { schema: { response: { 200: HealthResponseSchema, 503: HealthResponseSchema } } },
     async (_request, reply) => {
@@ -2457,7 +2475,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             200: Type.Object({ project: ProjectSchema }, { additionalProperties: false }),
             404: ApiErrorSchema
           }
-        }
+        },
+        validatorCompiler: TypeBoxValidatorCompiler
       },
       async (request, reply) => {
         const project = store.renameProject(

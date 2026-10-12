@@ -105,12 +105,25 @@ describe("project chat API", () => {
     expect(renamed.json<{ project: { title: string } }>().project.title).toBe("Новое название");
     expect(projectStore.getProject(id)?.title).toBe("Новое название");
     expect(projectStore.renameProject(id, "another-owner", "Чужое имя")).toBeNull();
+    const foreign = projectStore.createProject("Чужой проект", "foreign-project", "another-owner");
+    const denied = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${foreign.project.id}`,
+      payload: { title: "Недопустимая правка" }
+    });
+    expect(denied.statusCode).toBe(404);
+    expect(projectStore.getProject(foreign.project.id, "another-owner")?.title).toBe(
+      "Чужой проект"
+    );
+    const context = await app.inject({ method: "GET", url: "/api/v1/navigation-context" });
+    expect(context.statusCode).toBe(200);
+    expect(context.json()).toEqual({ owner_id: "local-owner" });
 
     const projects = await app.inject({ method: "GET", url: "/api/v1/projects" });
     expect(projects.json<{ items: Array<{ title: string }> }>().items[0]?.title).toBe(
       "Новое название"
     );
-    for (const title of ["  ", "x".repeat(161)]) {
+    for (const title of ["  ", "x".repeat(161), null, 123, true]) {
       const invalid = await app.inject({
         method: "PATCH",
         url: `/api/v1/projects/${id}`,

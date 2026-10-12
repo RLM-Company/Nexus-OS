@@ -25,13 +25,19 @@ export function QuickSwitcher({
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     const shortcut = (event: globalThis.KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
+        if (event.isComposing) return;
         event.preventDefault();
+        if (document.querySelector("dialog[open]") && !dialog.current?.open) return;
+        if (!dialog.current?.open)
+          previousFocus.current =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null;
         setOpen(true);
       }
     };
@@ -45,7 +51,9 @@ export function QuickSwitcher({
       input.current?.focus();
     } else if (dialog.current?.open) {
       dialog.current.close();
-      trigger.current?.focus();
+      const target = previousFocus.current;
+      if (target?.isConnected) target.focus();
+      else trigger.current?.focus();
     }
   }, [open]);
 
@@ -112,10 +120,13 @@ export function QuickSwitcher({
         className={styles.trigger}
         aria-label="Быстрый переход"
         aria-keyshortcuts="Control+K Meta+K"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          previousFocus.current = trigger.current;
+          setOpen(true);
+        }}
       >
         <span aria-hidden="true">⌕</span>
-        <kbd>⌘ K</kbd>
+        <kbd>Ctrl K</kbd>
       </button>
       <dialog
         ref={dialog}

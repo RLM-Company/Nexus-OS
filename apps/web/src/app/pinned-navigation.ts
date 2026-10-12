@@ -1,5 +1,9 @@
 /** Browser-local quick access for the owner workspace. Store IDs only, never chat content. */
-export const PINNED_NAVIGATION_KEY = "kosmora:pinned-navigation:v1";
+export const PINNED_NAVIGATION_KEY = "kosmora:pinned-navigation:v2:";
+export function pinnedNavigationKey(ownerId: string): string {
+  if (!ownerId || ownerId.length > 160) throw new Error("Invalid navigation owner");
+  return `${PINNED_NAVIGATION_KEY}${encodeURIComponent(ownerId)}`;
+}
 const MAX_PINS_PER_KIND = 100;
 const MAX_ID_LENGTH = 160;
 
@@ -16,9 +20,12 @@ function cleanIds(value: unknown): string[] {
   return [...ids];
 }
 
-export function readPinnedNavigation(storage: Pick<Storage, "getItem">): PinnedNavigation {
+export function readPinnedNavigation(
+  storage: Pick<Storage, "getItem">,
+  key: string
+): PinnedNavigation {
   try {
-    const raw = storage.getItem(PINNED_NAVIGATION_KEY);
+    const raw = storage.getItem(key);
     if (!raw || raw.length > 40_000) return { chats: [], projects: [] };
     const value: unknown = JSON.parse(raw);
     if (!value || typeof value !== "object" || Array.isArray(value))
@@ -33,11 +40,12 @@ export function readPinnedNavigation(storage: Pick<Storage, "getItem">): PinnedN
 
 export function savePinnedNavigation(
   storage: Pick<Storage, "setItem">,
-  pins: PinnedNavigation
+  pins: PinnedNavigation,
+  key: string
 ): boolean {
   try {
     storage.setItem(
-      PINNED_NAVIGATION_KEY,
+      key,
       JSON.stringify({ version: 1, chats: cleanIds(pins.chats), projects: cleanIds(pins.projects) })
     );
     return true;
