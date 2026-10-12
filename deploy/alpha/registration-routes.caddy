@@ -1,0 +1,33 @@
+encode zstd gzip
+header Cache-Control "private, no-store"
+
+@auth_public path /login /register /auth/*
+handle @auth_public {
+  @internal_verify path /auth/verify
+  respond @internal_verify 404
+  reverse_proxy api:3100 {
+    header_up -Authorization
+    header_up -X-Kosmora-Authorization
+    header_up X-Kosmora-Client-IP {remote_host}
+  }
+}
+
+handle {
+  forward_auth api:3100 {
+    uri /auth/verify
+    copy_headers X-Kosmora-Authorization>Authorization
+  }
+  @api path /api/*
+  handle @api {
+    reverse_proxy api:3100 {
+      header_up -Cookie
+      header_up -X-Kosmora-Authorization
+    }
+  }
+  handle {
+    reverse_proxy web:3000 {
+      header_up -Authorization
+      header_up -Cookie
+    }
+  }
+}

@@ -171,6 +171,7 @@ import { registerDocumentLibraryRoutes } from "./document-library-routes.js";
 import { registerDocumentAnswerRoutes } from "./document-answer-routes.js";
 import type { DocumentAnswerService } from "./document-answer-service.js";
 import { registerChatHistorySearchRoutes } from "./chat-history-search-routes.js";
+import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
 import type { ResearchOwnerBudget } from "./research/research-synthesis.js";
 import type { CodeOwnerBudget } from "./code-agent/owner-budget.js";
 import type { AccountStore } from "./account-settings/account-store.js";
@@ -198,6 +199,7 @@ export interface AppDependencies {
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   identityStore?: IdentityStore;
+  registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
   projectStore?: ProjectStore;
   demoManagerStore?: DemoManagerStore;
@@ -621,7 +623,24 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   };
 
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url.split("?", 1)[0] === "/api/v1/health") return;
+    const path = request.url.split("?", 1)[0];
+    if (path === "/api/v1/health") return;
+    if (
+      dependencies.registration &&
+      (path === "/login" ||
+        path === "/register" ||
+        path === "/auth/register" ||
+        path === "/auth/login" ||
+        path === "/auth/confirm" ||
+        path === "/auth/google" ||
+        path === "/auth/google/link" ||
+        path === "/auth/google/callback" ||
+        path === "/auth/account" ||
+        path === "/auth/account/email" ||
+        path === "/auth/logout" ||
+        path === "/auth/verify")
+    )
+      return;
     let identity: IdentityContext | null = null;
     try {
       identity = await identityResolver.resolve(request);
@@ -666,6 +685,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       return { owner_id: identityFor(request).owner_id };
     }
   );
+
+  if (dependencies.registration) registerRegistrationRoutes(app, dependencies.registration);
 
   app.get(
     "/api/v1/health",

@@ -59,6 +59,9 @@ import type { ResearchCoordinator } from "./research/research-coordinator.js";
 import { CodeAgentService } from "./code-agent/service.js";
 import { CodeAgentStore } from "./code-agent/store.js";
 import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
+import { RegistrationStore } from "./registration-store.js";
+import { GoogleIdentity } from "./google-identity.js";
+import { sendWithLocalMta } from "./registration-routes.js";
 import { canvasPrivacyAdapter } from "./canvas/canvas-privacy.js";
 
 const config = loadServerConfig();
@@ -242,6 +245,32 @@ try {
       };
     })(),
     identityStore,
+    ...(process.env.KOSMORA_REGISTRATION_ENABLED === "1"
+      ? {
+          registration: {
+            origin: config.webOrigin,
+            store: new RegistrationStore(database.sqlite),
+            identity: identityStore,
+            ...(process.env.KOSMORA_GOOGLE_CLIENT_ID && process.env.KOSMORA_GOOGLE_CLIENT_SECRET
+              ? {
+                  google: new GoogleIdentity(
+                    process.env.KOSMORA_GOOGLE_CLIENT_ID,
+                    process.env.KOSMORA_GOOGLE_CLIENT_SECRET,
+                    `${config.webOrigin}/auth/google/callback`
+                  )
+                }
+              : {}),
+            ...(process.env.KOSMORA_SENDMAIL_PATH && process.env.KOSMORA_EMAIL_FROM
+              ? {
+                  sendVerification: sendWithLocalMta(
+                    process.env.KOSMORA_SENDMAIL_PATH,
+                    process.env.KOSMORA_EMAIL_FROM
+                  )
+                }
+              : {})
+          }
+        }
+      : {}),
     generalChatStore,
     projectStore,
     demoManagerStore,
