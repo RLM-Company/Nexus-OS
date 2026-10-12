@@ -12,6 +12,12 @@ const applySql = (db, filename) => {
   for (const part of readFileSync(join(migrations, filename), "utf8").split(
     "--> statement-breakpoint"
   )) {
+    // This fixture has only chat tables; the integrated file also contains privacy triggers.
+    if (
+      filename === "0034_chat_history_search.sql" &&
+      part.includes("kosmora_privacy_document_answer_runs")
+    )
+      continue;
     if (part.trim()) db.exec(part);
   }
 };
