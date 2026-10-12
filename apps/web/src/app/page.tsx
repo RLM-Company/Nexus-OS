@@ -2485,9 +2485,11 @@ export default function Home() {
                   current?.id === renamed.id ? { ...current, ...renamed } : current
                 );
                 setProjects((current) =>
-                  current.map((project) =>
-                    project.id === renamed.id ? { ...project, ...renamed } : project
-                  )
+                  current
+                    .map((project) =>
+                      project.id === renamed.id ? { ...project, ...renamed } : project
+                    )
+                    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
                 );
               }}
             />
