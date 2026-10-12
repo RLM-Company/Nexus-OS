@@ -30,3 +30,28 @@ This is an additive web-only change on the current integrated checkout, outside 
 four blocks delegated to Gemini. Keep `ChatExportControls` in chat settings when
 integrating any future folders/branching/history changes. No migrations, provider
 configuration or executor changes are needed.
+
+## Live activation
+
+Source commit `82c834203a1977bec3399e04ab8c24b22a52309f` is active as
+`cosmora-alpha-app:chat-export-82c8342`. The six-file web archive is 30,009 bytes,
+SHA-256 `4ce6d50b569a7d04fd17945e86a4e88ce192078f23c8cb133c8b8cdb394010e6`.
+The VPS verified the hash and built the image with build networking disabled.
+Activation exited 0 with healthy web and both read-route HTTP checks returning 200.
+Exact API, owner-login and Code-executor container identities/start timestamps were
+unchanged; only web restarted. No migration or paid provider call ran.
+
+Browser verification restored the remembered session and six chats. An existing
+synthetic conversation exported to a real downloaded JSON file, parsed locally:
+`kosmora.chat` version 1, eight user/assistant messages, timestamps present, known
+test response present, attachment mode `metadata_only`. No message was sent.
+Project export was verified against local fixtures, not by creating a live project.
+Proof: `qa/kosmora-live-chat-export.png`; mobile fixture:
+`qa/kosmora-chat-export-mobile.png`.
+
+Deployment and rollback records are under
+`/opt/cosmora/releases/chat-export-82c8342` (`activate.sh`, `deployctl.before`,
+`deployctl.next`, `overlay.yaml`). The corresponding local release folder is
+`2026-10-11/chat-export-82c8342`. Restoring the previous deployment wrapper and
+recreating web rolls back this release. Previous static chunks were retained for
+already-open browser tabs. No GitHub push or PR of the export change is claimed.
