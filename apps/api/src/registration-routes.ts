@@ -138,11 +138,20 @@ export function registerRegistrationRoutes(
       done(null, new URLSearchParams(body as string));
     }
   );
-  app.get("/login", async (_request, reply) =>
+  app.get<{ Querystring: { error?: string } }>("/login", async (request, reply) =>
     reply
       .headers(publicHeaders)
       .type("text/html")
-      .send(formPage("login", "", Boolean(options.google), Boolean(options.sendVerification)))
+      .send(
+        formPage(
+          "login",
+          request.query.error === "google"
+            ? "Не удалось войти через Google. Попробуйте ещё раз."
+            : "",
+          Boolean(options.google),
+          Boolean(options.sendVerification)
+        )
+      )
   );
   app.get("/register", async (_request, reply) =>
     reply
