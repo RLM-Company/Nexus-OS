@@ -1,14 +1,14 @@
-import type {
-  Currency,
-  GeneralChatMessage,
-  ModelFeature,
-  ModelMessage,
-  ModelRequest
+import {
+  assertEntityId,
+  type GeneralChatMessage,
+  type ModelMessage,
+  type ModelRequest
 } from "@cosmora/contracts";
-import { estimateInputTokensUpperBound } from "./manager.js";
-import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
+import {
+  conversationWindow,
+  estimateInputTokensUpperBound
+} from "./conversation-window.js";
 import { messageWithMaterials } from "./message-materials.js";
-import { conversationWindow } from "./conversation-window.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
@@ -25,12 +25,12 @@ export const DEFAULT_CHAT_SYSTEM_PROMPT = `Ты — Kosmora, обычный ди
 
 export interface ChatServiceOptions {
   preferredProvider: string;
-  preferredModelAlias: string;
+  preferredModelAlias?: string;
   fallbackAllowed: boolean;
-  requiredFeatures?: ModelFeature[];
-  confidential?: boolean;
-  maxCost?: { amount: number; currency: Currency } | null;
-  optimizeFor?: "balanced" | "quality" | "latency" | "cost";
+  requiredFeatures: string[];
+  confidential: boolean;
+  maxCost?: number;
+  optimizeFor?: "cost" | "latency" | "quality";
   timeoutMs?: number;
   maxOutputTokens?: number;
   systemPrompt?: string;
@@ -40,16 +40,18 @@ export interface ChatRunContext {
   chatId: string;
   runId: string;
   messages: GeneralChatMessage[];
+  memoryNotes?: string;
+  summary?: string;
 }
 
 interface NormalizedChatOptions {
   preferredProvider: string;
   preferredModelAlias: string;
   fallbackAllowed: boolean;
-  requiredFeatures: ModelFeature[];
+  requiredFeatures: string[];
   confidential: boolean;
-  maxCost: { amount: number; currency: Currency } | null;
-  optimizeFor: "balanced" | "quality" | "latency" | "cost";
+  maxCost?: number;
+  optimizeFor: "cost" | "latency" | "quality";
   timeoutMs: number;
   maxOutputTokens: number;
   systemPrompt: string;
@@ -59,29 +61,37 @@ export class ChatService {
   readonly #options: NormalizedChatOptions;
 
   constructor(options: ChatServiceOptions) {
-    this.#options = normalizeCommonModelServiceOptions({
+    this.#options = {
       preferredProvider: options.preferredProvider,
-      preferredModelAlias: options.preferredModelAlias,
+      preferredModelAlias: options.preferredModelAlias ?? "chat-default",
       fallbackAllowed: options.fallbackAllowed,
-      requiredFeatures: options.requiredFeatures ?? ["streaming"],
-      confidential: options.confidential ?? false,
-      maxCost: options.maxCost ?? null,
-      optimizeFor: options.optimizeFor ?? "balanced",
-      timeoutMs: options.timeoutMs ?? 60_000,
-      maxOutputTokens: options.maxOutputTokens ?? 1_200,
+      requiredFeatures: [...options.requiredFeatures],
+      confidential: options.confidential,
+      maxCost: options.maxCost,
+      optimizeFor: options.optimizeFor ?? "latency",
+      timeoutMs: options.timeoutMs ?? 30000,
+      maxOutputTokens: options.maxOutputTokens ?? 4096,
       systemPrompt: options.systemPrompt ?? DEFAULT_CHAT_SYSTEM_PROMPT
-    });
+    };
   }
 
   buildRequest(context: ChatRunContext): ModelRequest {
     assertEntityId(context.chatId, "chatId");
     assertEntityId(context.runId, "runId");
 
+    let systemPrompt = this.#options.systemPrompt;
+    if (context.summary?.trim()) {
+      systemPrompt += `\n\nСводка предыдущего контекста ветки:\n${context.summary.trim()}`;
+    }
+    if (context.memoryNotes?.trim()) {
+      systemPrompt += `\n\nПостоянная память и важные заметки диалога:\n${context.memoryNotes.trim()}`;
+    }
+
     const conversation: ModelMessage[] = context.messages
       .filter((message) => message.content.trim().length > 0)
       .map(messageWithMaterials);
     const messages = conversationWindow(
-      [{ role: "system", content: this.#options.systemPrompt }],
+      [{ role: "system", content: systemPrompt }],
       conversation
     );
 
