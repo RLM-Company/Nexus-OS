@@ -661,10 +661,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
       }
     },
-    (request, reply) =>
-      reply
-        .header("Cache-Control", "private, no-store")
-        .send({ owner_id: identityFor(request).owner_id })
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      return { owner_id: identityFor(request).owner_id };
+    }
   );
 
   app.get(
