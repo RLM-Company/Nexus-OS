@@ -3321,6 +3321,72 @@ textarea:focus-visible {
   font-size: 0.8125rem;
   font-weight: 450;
 }
+.product-shell .pinnable-navigation-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.product-shell .pinnable-navigation-item .project-item {
+  min-width: 0;
+  padding-right: 2.5rem;
+}
+.product-shell .navigation-pin {
+  position: absolute;
+  right: 0.4rem;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.5rem;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.45;
+}
+.product-shell .navigation-pin:hover,
+.product-shell .navigation-pin[aria-pressed="true"],
+.product-shell .navigation-pin:focus-visible {
+  color: var(--text);
+  opacity: 1;
+}
+.product-shell .navigation-pin svg,
+.product-shell .topbar-pin svg {
+  width: 1rem;
+  height: 1rem;
+}
+.product-shell .navigation-pin:focus-visible,
+.product-shell .topbar-pin:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.product-shell .topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.product-shell .topbar-pin {
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.product-shell .topbar-pin[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.product-shell .pin-notice {
+  margin: 0.25rem 0.7rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
 .product-shell .empty-projects {
   margin: 0.25rem 0.65rem 0.5rem 2.5rem;
   font-size: 0.75rem;

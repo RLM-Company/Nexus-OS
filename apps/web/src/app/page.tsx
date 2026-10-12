@@ -14,6 +14,17 @@ import { CanvasEditor } from "./canvas-editor/canvas-editor";
 import canvasChat from "./canvas-editor/canvas-chat.module.css";
 import { ChatHistoryActions } from "./chat-history-actions";
 import { ChatArchivePanel } from "./chat-archive-panel";
+import { ProjectTitleEditor } from "./project-title-editor";
+import { QuickSwitcher } from "./quick-switcher";
+import {
+  EMPTY_PINS,
+  pinnedNavigationKey,
+  pinsFirst,
+  readPinnedNavigation,
+  savePinnedNavigation,
+  togglePin,
+  type PinnedNavigation
+} from "./pinned-navigation";
 import { clearComposerDraft, readComposerDraft, saveComposerDraft } from "./composer-draft-storage";
 import {
   desktopDraftBridge,
@@ -290,6 +301,16 @@ const ToolIcon = ({ kind }: { kind: ToolSurface | "projects" | "new-chat" | "cha
   <WorkspaceIcon name={kind} />
 );
 
+const PinIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <path
+      d="M8 3h8l-1 6 3 3v2H6v-2l3-3-1-6ZM12 14v7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 const safeApiErrorMessage = (status: number): string => {
   if (status === 401 || status === 403) return "Недостаточно прав для этого действия.";
   if (status === 404) return "Запрошенные данные не найдены.";
@@ -493,6 +514,10 @@ export default function Home() {
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
   const [greeting, setGreeting] = useState("Чем могу помочь?");
   const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
+  const [pins, setPins] = useState<PinnedNavigation>(EMPTY_PINS);
+  const [pinsHydrated, setPinsHydrated] = useState(false);
+  const [pinNotice, setPinNotice] = useState<string | null>(null);
+  const [pinStorageKey, setPinStorageKey] = useState<string | null>(null);
   const [activeLocalChatId, setActiveLocalChatId] = useState<string | null>(null);
   const [localChatsHydrated, setLocalChatsHydrated] = useState(false);
   const [chatsExpanded, setChatsExpanded] = useState(true);
@@ -524,12 +549,20 @@ export default function Home() {
   const projectPromotionPendingRef = useRef(false);
   const activeLocalChat = localChats.find((chat) => chat.id === activeLocalChatId) ?? null;
   const navigationSearch = navigationQuery.trim().toLocaleLowerCase("ru");
-  const matchingChats = navigationSearch
-    ? localChats.filter((chat) => chat.title.toLocaleLowerCase("ru").includes(navigationSearch))
-    : localChats;
-  const matchingProjects = navigationSearch
-    ? projects.filter((project) => project.title.toLocaleLowerCase("ru").includes(navigationSearch))
-    : projects;
+  const matchingChats = pinsFirst(
+    navigationSearch
+      ? localChats.filter((chat) => chat.title.toLocaleLowerCase("ru").includes(navigationSearch))
+      : localChats,
+    pins.chats
+  );
+  const matchingProjects = pinsFirst(
+    navigationSearch
+      ? projects.filter((project) =>
+          project.title.toLocaleLowerCase("ru").includes(navigationSearch)
+        )
+      : projects,
+    pins.projects
+  );
   const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
   const projectProposal = activeLocalChat?.projectProposal ?? null;
   const composerDraftKey = composerDraftStorageKey(
@@ -549,6 +582,60 @@ export default function Home() {
     field.style.height = "auto";
     field.style.height = `${Math.min(176, Math.max(56, field.scrollHeight))}px`;
   }, [draft, surface, activeProject?.id, localChatMessages.length]);
+  useEffect(() => {
+    let cancelled = false;
+    void api<{ owner_id: string }>("/api/v1/navigation-context")
+      .then(({ owner_id }) => {
+        if (cancelled) return;
+        const key = pinnedNavigationKey(owner_id);
+        setPinStorageKey(key);
+        setPins(readPinnedNavigation(window.localStorage, key));
+        setPinsHydrated(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPinNotice("Закрепления доступны до закрытия страницы: сохранение недоступно.");
+        setPinsHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pinStorageKey) return;
+    const sync = (event: StorageEvent) => {
+      if (
+        event.storageArea === window.localStorage &&
+        (event.key === pinStorageKey || event.key === null)
+      ) {
+        try {
+          setPins(readPinnedNavigation(window.localStorage, pinStorageKey));
+        } catch {
+          // Keep the in-memory order when this browser denies storage access.
+        }
+      }
+    };
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, [pinStorageKey]);
+
+  useEffect(() => {
+    if (!pinsHydrated || !pinStorageKey) return;
+    try {
+      setPinNotice(
+        savePinnedNavigation(window.localStorage, pins, pinStorageKey)
+          ? null
+          : "Закрепление действует до закрытия страницы: сохранение в браузере недоступно."
+      );
+    } catch {
+      setPinNotice("Закрепление действует до закрытия страницы: сохранение в браузере недоступно.");
+    }
+  }, [pins, pinsHydrated, pinStorageKey]);
+
+  const changePin = (kind: keyof PinnedNavigation, id: string) => {
+    setPins((current) => togglePin(current, kind, id));
+  };
 
   useEffect(() => {
     setDraftStorageReadyKey(null);
@@ -2024,21 +2111,33 @@ export default function Home() {
                 id="sidebar-chat-list"
               >
                 {matchingChats.map((chat) => (
-                  <button
-                    key={chat.id}
-                    type="button"
-                    className={
-                      surface === "manager" && activeLocalChatId === chat.id
-                        ? "project-item chat-item active"
-                        : "project-item chat-item"
-                    }
-                    onClick={() => void openLocalChat(chat.id)}
-                  >
-                    <span>
-                      <strong>{chat.title}</strong>
-                      <small>{chat.last_message_preview ?? "Обычный чат"}</small>
-                    </span>
-                  </button>
+                  <div className="pinnable-navigation-item" key={chat.id}>
+                    <button
+                      type="button"
+                      className={
+                        surface === "manager" && activeLocalChatId === chat.id
+                          ? "project-item chat-item active"
+                          : "project-item chat-item"
+                      }
+                      onClick={() => void openLocalChat(chat.id)}
+                    >
+                      <span>
+                        <strong id={`pin-chat-${chat.id}`}>{chat.title}</strong>
+                        <small>{chat.last_message_preview ?? "Обычный чат"}</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="navigation-pin"
+                      aria-label={`${pins.chats.includes(chat.id) ? "Открепить" : "Закрепить"} чат`}
+                      aria-describedby={`pin-chat-${chat.id}`}
+                      aria-pressed={pins.chats.includes(chat.id)}
+                      disabled={!pinsHydrated}
+                      onClick={() => changePin("chats", chat.id)}
+                    >
+                      <PinIcon />
+                    </button>
+                  </div>
                 ))}
                 {navigationSearch && matchingChats.length === 0 && (
                   <p className="empty-projects">Чаты не найдены.</p>
@@ -2049,6 +2148,11 @@ export default function Home() {
               </div>
             )}
           </section>
+          {pinNotice && (
+            <p className="pin-notice" role="status">
+              {pinNotice}
+            </p>
+          )}
           <ChatArchivePanel onRestore={() => void loadGeneralChats()} />
           <section className="sidebar-section">
             <button
@@ -2068,21 +2172,35 @@ export default function Home() {
             {projectsExpanded && (
               <div className="project-list" id="sidebar-project-list">
                 {matchingProjects.map((project) => (
-                  <button
-                    key={project.id}
-                    className={
-                      surface === "manager" && activeProject?.id === project.id
-                        ? "project-item active"
-                        : "project-item"
-                    }
-                    onClick={() => void openProject(project.id)}
-                  >
-                    <span className="project-glyph">{project.title.slice(0, 1).toUpperCase()}</span>
-                    <span>
-                      <strong>{project.title}</strong>
-                      <small>{project.last_message_preview ?? "Новый проект"}</small>
-                    </span>
-                  </button>
+                  <div className="pinnable-navigation-item" key={project.id}>
+                    <button
+                      className={
+                        surface === "manager" && activeProject?.id === project.id
+                          ? "project-item active"
+                          : "project-item"
+                      }
+                      onClick={() => void openProject(project.id)}
+                    >
+                      <span className="project-glyph">
+                        {project.title.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span>
+                        <strong id={`pin-project-${project.id}`}>{project.title}</strong>
+                        <small>{project.last_message_preview ?? "Новый проект"}</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="navigation-pin"
+                      aria-label={`${pins.projects.includes(project.id) ? "Открепить" : "Закрепить"} проект`}
+                      aria-describedby={`pin-project-${project.id}`}
+                      aria-pressed={pins.projects.includes(project.id)}
+                      disabled={!pinsHydrated}
+                      onClick={() => changePin("projects", project.id)}
+                    >
+                      <PinIcon />
+                    </button>
+                  </div>
                 ))}
                 {navigationSearch && matchingProjects.length === 0 && (
                   <p className="empty-projects">Проекты не найдены.</p>
@@ -2209,7 +2327,7 @@ export default function Home() {
                   : "Обычный чат"
                 : "Kosmora workspace"}
             </span>
-            <h1>
+            <h1 id="workspace-title">
               {surface === "manager"
                 ? (activeProject?.title ?? activeLocalChat?.title ?? "Новый чат")
                 : SURFACE_TITLE[surface]}
@@ -2223,6 +2341,8 @@ export default function Home() {
                 id={activeProject ? null : (activeLocalChat?.id ?? null)}
                 title={activeProject?.title ?? activeLocalChat?.title ?? "Новый чат"}
                 messages={activeProject ? messages : localChatMessages}
+                conversationId={activeProject ? chatId : (activeLocalChat?.id ?? null)}
+                projectId={activeProject?.id ?? null}
                 disabled={sending || loading}
                 showRelay={!activeProject}
                 onRecover={restoreRunDraft}
@@ -2245,6 +2365,39 @@ export default function Home() {
                   newChat();
                 }}
               />
+            )}
+            <QuickSwitcher
+              chats={pinsFirst(localChats, pins.chats)}
+              projects={pinsFirst(projects, pins.projects)}
+              onNewChat={newChat}
+              onOpenChat={(id) => void openLocalChat(id)}
+              onOpenProject={(id) => void openProject(id)}
+              onNavigate={selectSurface}
+            />
+            {surface === "manager" && (activeProject || activeLocalChat) && (
+              <button
+                type="button"
+                className="topbar-pin"
+                disabled={!pinsHydrated}
+                aria-pressed={
+                  activeProject
+                    ? pins.projects.includes(activeProject.id)
+                    : pins.chats.includes(activeLocalChat!.id)
+                }
+                aria-label={
+                  activeProject
+                    ? `${pins.projects.includes(activeProject.id) ? "Открепить" : "Закрепить"} проект`
+                    : `${pins.chats.includes(activeLocalChat!.id) ? "Открепить" : "Закрепить"} чат`
+                }
+                aria-describedby="workspace-title"
+                onClick={() =>
+                  activeProject
+                    ? changePin("projects", activeProject.id)
+                    : changePin("chats", activeLocalChat!.id)
+                }
+              >
+                <PinIcon />
+              </button>
             )}
           </div>
         </header>
@@ -2343,6 +2496,22 @@ export default function Home() {
 
         {activeProject && projectView === "project" && (
           <div className="project-context view-panel" role="tabpanel" aria-label="Проект">
+            <ProjectTitleEditor
+              key={activeProject.id}
+              project={activeProject}
+              onSaved={(renamed) => {
+                setActiveProject((current) =>
+                  current?.id === renamed.id ? { ...current, ...renamed } : current
+                );
+                setProjects((current) =>
+                  current
+                    .map((project) =>
+                      project.id === renamed.id ? { ...project, ...renamed } : project
+                    )
+                    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+                );
+              }}
+            />
             <section className="project-facts" aria-label="Информация о проекте">
               <span>
                 <small>Статус проекта</small>
@@ -2983,8 +3152,8 @@ export default function Home() {
         surface={surface}
         onNewChat={newChat}
         onNavigate={selectSurface}
-        chats={localChats}
-        projects={projects}
+        chats={pinsFirst(localChats, pins.chats)}
+        projects={pinsFirst(projects, pins.projects)}
         onOpenChat={(id) => void openLocalChat(id)}
         onOpenProject={(id) => void openProject(id)}
       />

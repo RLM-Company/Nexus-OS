@@ -1,0 +1,45 @@
+.editor {
+  margin: 0.7rem 0 0;
+}
+
+.editor label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.controls input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: transparent;
+  color: inherit;
+}
+
+.controls button {
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.6rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.controls button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.editor p {
+  color: var(--danger, #c76363);
+  font-size: 0.75rem;
+}

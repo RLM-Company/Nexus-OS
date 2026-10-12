@@ -40,6 +40,7 @@ import {
   OwnerSessionListResponseSchema,
   OwnerSessionViewSchema,
   ProjectDetailResponseSchema,
+  ProjectSchema,
   DemoManagerRunListResponseSchema,
   DemoManagerRunSchema,
   ProjectListResponseSchema,
@@ -56,6 +57,7 @@ import {
   RuntimeOperationsStatusSchema,
   UpdateCapabilityProfileRequestSchema,
   UpdateProjectUsageLimitRequestSchema,
+  UpdateProjectTitleRequestSchema,
   createCapabilityProfile,
   hasUniqueCapabilityOverrideIds,
   isValidChatAttachments,
@@ -646,6 +648,24 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     }
     requestIdentities.set(request, identity);
   });
+
+  app.get(
+    "/api/v1/navigation-context",
+    {
+      schema: {
+        response: {
+          200: Type.Object(
+            { owner_id: Type.String({ minLength: 1, maxLength: 160 }) },
+            { additionalProperties: false }
+          )
+        }
+      }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      return { owner_id: identityFor(request).owner_id };
+    }
+  );
 
   app.get(
     "/api/v1/health",
@@ -2442,6 +2462,33 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           messages: store.listMessages(project.id, ownerId)
         };
         return response;
+      }
+    );
+
+    app.patch(
+      "/api/v1/projects/:projectId",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          body: UpdateProjectTitleRequestSchema,
+          response: {
+            200: Type.Object({ project: ProjectSchema }, { additionalProperties: false }),
+            404: ApiErrorSchema
+          }
+        },
+        validatorCompiler: TypeBoxValidatorCompiler
+      },
+      async (request, reply) => {
+        const project = store.renameProject(
+          request.params.projectId,
+          identityFor(request).owner_id,
+          request.body.title
+        );
+        if (!project)
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        return { project };
       }
     );
 

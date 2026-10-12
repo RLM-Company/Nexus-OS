@@ -21,7 +21,9 @@ export function codeAgentSnapshotArchive(files: readonly CodeAgentWorkspaceFile[
     header.write(sum.toString(8).padStart(6, "0") + "\0 ", 148, 8);
     chunks.push(header, data, Buffer.alloc((512 - (data.length % 512)) % 512));
   };
-  entry("workspace/", Buffer.alloc(0), "5", 0o555);
+  // The trusted loader needs to populate directories without CAP_DAC_OVERRIDE. Immutability
+  // is enforced by the check container's read-only volume mount, not by chmod alone.
+  entry("workspace/", Buffer.alloc(0), "5", 0o755);
   const directories = new Set<string>();
   let index = 0;
   for (const file of files) {
@@ -38,7 +40,7 @@ export function codeAgentSnapshotArchive(files: readonly CodeAgentWorkspaceFile[
     entry(`entry-${index++}`, data, type, mode);
   };
   for (const directory of [...directories].sort())
-    pathEntry(directory, Buffer.alloc(0), "5", 0o555);
+    pathEntry(directory, Buffer.alloc(0), "5", 0o755);
   for (const file of files)
     pathEntry("workspace/" + file.path, Buffer.from(file.content), "0", 0o444);
   chunks.push(Buffer.alloc(1024));

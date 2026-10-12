@@ -88,6 +88,57 @@ describe("project chat API", () => {
     expect(accountStore.summary("local-owner").total_counted_tokens).toBe(0);
   });
 
+  it("renames a project for its owner and keeps the title in the project list", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: { initial_message: "Исходная задача", client_message_id: "rename-project-1" }
+    });
+    const id = created.json<{ project: { id: string } }>().project.id;
+
+    const renamed = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${id}`,
+      payload: { title: "  Новое название  " }
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json<{ project: { title: string } }>().project.title).toBe("Новое название");
+    expect(projectStore.getProject(id)?.title).toBe("Новое название");
+    expect(projectStore.renameProject(id, "another-owner", "Чужое имя")).toBeNull();
+    const foreign = projectStore.createProject("Чужой проект", "foreign-project", "another-owner");
+    const denied = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${foreign.project.id}`,
+      payload: { title: "Недопустимая правка" }
+    });
+    expect(denied.statusCode).toBe(404);
+    expect(projectStore.getProject(foreign.project.id, "another-owner")?.title).toBe(
+      "Чужой проект"
+    );
+    const context = await app.inject({ method: "GET", url: "/api/v1/navigation-context" });
+    expect(context.statusCode).toBe(200);
+    expect(context.json()).toEqual({ owner_id: "local-owner" });
+
+    const projects = await app.inject({ method: "GET", url: "/api/v1/projects" });
+    expect(projects.json<{ items: Array<{ title: string }> }>().items[0]?.title).toBe(
+      "Новое название"
+    );
+    for (const title of ["  ", "x".repeat(161), null, 123, true]) {
+      const invalid = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/projects/${id}`,
+        payload: { title }
+      });
+      expect(invalid.statusCode).toBe(400);
+    }
+    const missing = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/projects/missing",
+      payload: { title: "Нет проекта" }
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(projectStore.getProject(id)?.title).toBe("Новое название");
+  });
   it("streams and persists the mock manager response", async () => {
     const created = await app.inject({
       method: "POST",

@@ -1,0 +1,116 @@
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2.4rem;
+  padding: 0 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.trigger span {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.trigger kbd {
+  font-family: inherit;
+  font-size: 0.7rem;
+}
+.trigger:focus-visible,
+.dialog button:focus-visible,
+.dialog input:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.dialog {
+  width: min(36rem, calc(100vw - 2rem));
+  max-height: min(36rem, calc(100dvh - 2rem));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.28);
+}
+.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.8rem;
+  border-bottom: 1px solid var(--line);
+}
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+}
+.search button {
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.results {
+  min-height: 3rem;
+  max-height: min(26rem, 60dvh);
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+.results button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem;
+  border: 0;
+  border-radius: 0.55rem;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.results button:hover,
+.results button:focus-visible {
+  background: var(--surface-hover);
+}
+.results button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.results button small {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.results p,
+.hint {
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.hint {
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 600px) {
+  .trigger kbd {
+    display: none;
+  }
+}

@@ -24,7 +24,7 @@
   background: var(--surface);
   color: var(--text);
 }
-.menu :is(summary, button, a, input):focus-visible {
+.menu :is(summary, button, a, input, select):focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 3px;
 }
@@ -55,7 +55,8 @@
   display: grid;
   gap: 6px;
 }
-.panel input:not([type="checkbox"]) {
+.panel input:not([type="checkbox"]),
+.panel select {
   width: 100%;
   min-height: 40px;
   padding: 9px 10px;
@@ -90,12 +91,26 @@
   color: var(--muted);
   font-size: 12px;
 }
+.panel fieldset {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.panel legend {
+  padding: 0 8px 0 0;
+  font-weight: 550;
+}
 @media (pointer: coarse) {
   .menu > summary,
   .panel button {
     min-height: 44px;
   }
-  .panel input:not([type="checkbox"]) {
+  .panel input:not([type="checkbox"]),
+  .panel select {
     font-size: 16px;
   }
 }

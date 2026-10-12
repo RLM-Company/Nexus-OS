@@ -182,6 +182,17 @@ export class ProjectStore {
     return row ? asProject(row) : null;
   }
 
+  renameProject(projectId: string, ownerId: string, title: string): StoredProject | null {
+    const normalized = title.trim();
+    if (!normalized || normalized.length > 160) throw new Error("Invalid project title");
+    const current = this.getProject(projectId, ownerId);
+    if (!current || current.title === normalized) return current;
+    this.#sqlite
+      .prepare("UPDATE projects SET title = ?, updated_at = ? WHERE id = ? AND owner_id = ?")
+      .run(normalized, now(), projectId, ownerId);
+    return this.getProject(projectId, ownerId);
+  }
+
   getMainChatId(projectId: string, ownerId = LOCAL_OWNER_ID): string | null {
     const row = this.#get(
       this.#sqlite.prepare(

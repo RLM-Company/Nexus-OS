@@ -108,6 +108,12 @@ export const CreateProjectRequestSchema = Type.Object(
 );
 export type CreateProjectRequest = Static<typeof CreateProjectRequestSchema>;
 
+export const UpdateProjectTitleRequestSchema = Type.Object(
+  { title: Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }) },
+  { additionalProperties: false }
+);
+export type UpdateProjectTitleRequest = Static<typeof UpdateProjectTitleRequestSchema>;
+
 export const CreateMessageRequestSchema = Type.Object(
   {
     content: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),

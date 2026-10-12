@@ -8,13 +8,21 @@ import { LoadingDots } from "./ui/feedback";
 import styles from "./chat-code.module.css";
 import { CodeText } from "./ui/code-text";
 
-export function downloadText(content: string, name: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
+export function downloadText(content: string, name: string, mimeType = "text/plain;charset=utf-8") {
+  downloadBlob(new Blob([content], { type: mimeType }), name);
+}
+export function downloadBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = name;
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  try {
+    document.body.appendChild(link);
+    link.click();
+  } finally {
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
 function CopyButton({ content, label }: { content: string; label: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");

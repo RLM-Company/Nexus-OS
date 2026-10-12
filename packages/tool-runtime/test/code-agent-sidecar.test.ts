@@ -159,7 +159,13 @@ describe("authenticated executor HTTP protocol (transport only)", () => {
       // Windows tar's human-readable listing uses its console code page. Validate UTF-8
       // PAX names and actual extracted filesystem paths/bytes rather than decode that display.
       expect(archive.includes(Buffer.from("workspace/" + snapshot[0]!.path, "utf8"))).toBe(true);
-      execFileSync("tar", ["-xf", join(directory, "files.tar"), "-C", directory]);
+      execFileSync("tar", [
+        "--no-same-owner",
+        "-xf",
+        join(directory, "files.tar"),
+        "-C",
+        directory
+      ]);
       for (const file of snapshot) {
         const path = join(directory, "workspace", file.path);
         const metadata = await lstat(path);

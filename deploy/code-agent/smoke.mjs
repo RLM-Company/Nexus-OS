@@ -2,6 +2,10 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { Buffer } from "node:buffer";
+import console from "node:console";
+import process from "node:process";
+import { setTimeout } from "node:timers";
 import {
   createCodeAgentExecutorServer,
   createCodeAgentHttpExecutor,
@@ -86,7 +90,11 @@ import assert from 'node:assert/strict'; import fs from 'node:fs'; import net fr
 assert.equal(process.getuid(),65534);
 for (const name of ['CODE_AGENT_EXECUTOR_TOKEN','GITHUB_TOKEN','OPENAI_API_KEY','DOCKER_HOST']) assert.equal(process.env[name],undefined);
 assert.equal(fs.existsSync('/var/run/docker.sock'),false);
-assert.throws(()=>fs.writeFileSync('/workspace/other.js','x'));
+assert.equal(process.cwd(),'/snapshot/workspace');
+assert.throws(()=>fs.writeFileSync(process.cwd()+'/other.js','x'));
+assert.throws(()=>fs.chmodSync(process.cwd()+'/isolation.test.mjs',0o777));
+assert.throws(()=>fs.writeFileSync(process.cwd()+'/isolation.test.mjs','x'));
+fs.writeFileSync('/tmp/check-output','scratch is allowed');
 assert.throws(()=>fs.writeFileSync('/etc/other','x'));
 await new Promise((resolve,reject)=>{ const socket=net.connect({host:'1.1.1.1',port:443}); socket.once('connect',()=>{socket.destroy();reject(new Error('NETWORK_ALLOWED'));});socket.once('error',()=>{socket.destroy();resolve();});socket.setTimeout(500,()=>{socket.destroy();resolve();}); });
 `
@@ -101,7 +109,7 @@ await new Promise((resolve,reject)=>{ const socket=net.connect({host:'1.1.1.1',p
     }
   ];
   verify(await run(waiting), "timed_out");
-  const controller = new AbortController();
+  const controller = new globalThis.AbortController();
   const cancelled = client.run({ files: waiting, check: "node-test", signal: controller.signal });
   setTimeout(() => controller.abort(), 500);
   verify(await cancelled, "cancelled");
@@ -122,6 +130,16 @@ await new Promise((resolve,reject)=>{ const socket=net.connect({host:'1.1.1.1',p
   const remaining = cli(["ps", "-aq", "--filter", "label=kosmora.code-executor=true"]);
   assert.equal(remaining.status, 0);
   assert.equal(remaining.stdout.trim(), "", "No live or stopped job containers may remain");
+  const volumes = cli([
+    "volume",
+    "ls",
+    "--filter",
+    "label=kosmora.code-executor=true",
+    "--format",
+    "{{.Name}}"
+  ]);
+  assert.equal(volumes.status, 0);
+  assert.equal(volumes.stdout.trim(), "", "No snapshot volumes may remain");
   console.log(
     "PASS real OCI + HTTP: bug/fix, readonly/non-root/no-network/no-secrets, timeout, cancellation, output cap/redaction, daemon cleanup"
   );

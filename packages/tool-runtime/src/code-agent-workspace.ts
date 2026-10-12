@@ -231,17 +231,18 @@ export function createCodeAgentWorkspaceRunner(
         log("cancelled", "before_start");
         return cancelledResult();
       }
-      const name = `kosmora-check-${randomUUID()}`;
-      const args = [
+      const jobId = randomUUID();
+      const name = `kosmora-check-${jobId}`;
+      const loaderName = `kosmora-load-${jobId}`;
+      const volumeName = `kosmora-snapshot-${jobId}`;
+      const jobLabel = `kosmora.code-job=${jobId}`;
+      const commonArgs = [
         "create",
         "--pull=never",
-        "--name",
-        name,
         "--network=none",
         "--read-only",
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
-        "--user=65534:65534",
         `--pids-limit=${pids}`,
         `--memory=${memoryMb}m`,
         `--memory-swap=${memoryMb}m`,
@@ -252,15 +253,41 @@ export function createCodeAgentWorkspaceRunner(
         "--ulimit=nofile=128:128",
         "--ulimit=fsize=16777216:16777216",
         "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
-        "--workdir=/workspace",
         "--label=kosmora.code-executor=true",
+        `--label=${jobLabel}`,
         "--env=HOME=/tmp",
-        "--env=NODE_OPTIONS=",
+        "--env=NODE_OPTIONS="
+      ];
+      // Populate a daemon-managed volume with a trusted tar command, never repository code.
+      // The actual check receives the same snapshot as a read-only mount. docker cp into a
+      // read-only rootfs is unsupported, and writable tmpfs plus chmod is not immutable.
+      const loaderArgs = [
+        ...commonArgs,
+        "--name",
+        loaderName,
+        "--user=0:0",
+        "--interactive",
+        "--workdir=/snapshot",
+        `--mount=type=volume,src=${volumeName},dst=/snapshot,volume-nocopy`,
+        "--entrypoint=tar",
+        image,
+        "--extract",
+        "--file=-",
+        "--directory=/snapshot",
+        "--no-same-owner"
+      ];
+      const args = [
+        ...commonArgs,
+        "--name",
+        name,
+        "--user=65534:65534",
+        "--workdir=/snapshot/workspace",
+        `--mount=type=volume,src=${volumeName},dst=/snapshot,readonly,volume-nocopy`,
         "--entrypoint=node",
         image,
         "--max-old-space-size=128",
         "-e",
-        CHECK_PROGRAM,
+        CHECK_PROGRAM.replaceAll("/workspace", "/snapshot/workspace"),
         input.check
       ];
       log("started", `${input.check}:oci:no-network:non-root:read-only`);
@@ -278,31 +305,54 @@ export function createCodeAgentWorkspaceRunner(
         let stopped: "cancelled" | "timed_out" | "failed" | undefined;
         let settled = false;
         let termination: Promise<boolean> | undefined;
-        const removeContainer = () =>
-          new Promise<boolean>((done) => {
-            const removal = spawn(executable, ["rm", "--force", name], {
+        const cleanupCommand = (cleanupArgs: string[]) =>
+          new Promise<{ ok: boolean; output: string }>((done) => {
+            const removal = spawn(executable, cleanupArgs, {
               shell: false,
-              stdio: "ignore",
+              stdio: ["ignore", "pipe", "ignore"],
               env: environment
+            });
+            let output = "";
+            let overflow = false;
+            removal.stdout.on("data", (chunk: Buffer) => {
+              if (output.length + chunk.length > 4096) overflow = true;
+              else output += chunk.toString("utf8");
             });
             const timer = setTimeout(() => {
               removal.kill("SIGKILL");
-              done(false);
+              done({ ok: false, output: "" });
             }, 2_000);
             const finish = (success: boolean) => {
               clearTimeout(timer);
-              done(success);
+              done({ ok: success && !overflow, output: output.trim() });
             };
             removal.once("error", () => finish(false));
             removal.once("close", (code) => finish(code === 0));
           });
+        const removeResources = async () => {
+          // rm may report a missing resource after cancellation during create. Prove absence
+          // using successful daemon queries, rather than treating an error as successful cleanup.
+          await cleanupCommand(["rm", "--force", name, loaderName]);
+          const containers = await cleanupCommand(["ps", "-aq", "--filter", `label=${jobLabel}`]);
+          if (!containers.ok || containers.output) return false;
+          await cleanupCommand(["volume", "rm", volumeName]);
+          const volumes = await cleanupCommand([
+            "volume",
+            "ls",
+            "--filter",
+            `label=${jobLabel}`,
+            "--format",
+            "{{.Name}}"
+          ]);
+          return volumes.ok && !volumes.output;
+        };
         const kill = (status: "cancelled" | "timed_out" | "failed") => {
           if (stopped || settled) return;
           stopped = status;
           // Create and start are separate. An uncertain create response can leave only a
           // stopped container; it can never launch repository code after cancellation.
           // Explicit daemon removal also stops descendants even after the CLI is killed.
-          termination = removeContainer();
+          termination = removeResources();
           if (child?.pid) {
             try {
               process.kill(-child.pid, "SIGKILL");
@@ -338,10 +388,10 @@ export function createCodeAgentWorkspaceRunner(
           settled = true;
           clearTimeout(timer);
           input.signal?.removeEventListener("abort", cancel);
-          const earlyCleanup = await termination;
+          await termination;
           // Normal completion also removes the stopped container. Never retain a snapshot
           // mount after this request, and retry removal after an interrupted create/start.
-          const cleanupVerified = (await removeContainer()) || earlyCleanup === true;
+          const cleanupVerified = await removeResources();
           if (!cleanupVerified) {
             quarantined = true;
             log("unavailable", "container_cleanup_unverified");
@@ -378,11 +428,12 @@ export function createCodeAgentWorkspaceRunner(
             cleanupVerified
           });
         };
-        const launch = (arguments_: string[], stage: "create" | "copy" | "start") => {
+        type Stage = "volume" | "loader-create" | "load" | "create" | "start";
+        const launch = (arguments_: string[], stage: Stage) => {
           child = spawn(executable, arguments_, {
             shell: false,
             detached: true,
-            stdio: [stage === "copy" ? "pipe" : "ignore", "pipe", "pipe"],
+            stdio: [stage === "load" ? "pipe" : "ignore", "pipe", "pipe"],
             env: environment
           });
           child.stdout!.on("data", (chunk: Buffer) => {
@@ -393,20 +444,33 @@ export function createCodeAgentWorkspaceRunner(
             void finish(null, true);
           });
           child.once("close", (code) => {
-            if (code === 0 && !stopped && stage === "create")
-              launch(["cp", "-", `${name}:/`], "copy");
-            else if (code === 0 && !stopped && stage === "copy")
+            if (code === 0 && !stopped && stage === "volume") launch(loaderArgs, "loader-create");
+            else if (code === 0 && !stopped && stage === "loader-create")
+              launch(["start", "--attach", "--interactive", loaderName], "load");
+            else if (code === 0 && !stopped && stage === "load") launch(args, "create");
+            else if (code === 0 && !stopped && stage === "create")
               launch(["start", "--attach", name], "start");
             else void finish(code, stage !== "start");
           });
-          if (stage === "copy") {
+          if (stage === "load") {
             child.stdin!.on("error", () => {
               /* close/error determines cleanup */
             });
             child.stdin!.end(codeAgentSnapshotArchive(files));
           }
         };
-        if (!stopped) launch(args, "create");
+        if (!stopped)
+          launch(
+            [
+              "volume",
+              "create",
+              "--driver=local",
+              "--label=kosmora.code-executor=true",
+              `--label=${jobLabel}`,
+              volumeName
+            ],
+            "volume"
+          );
         else void finish(null, false);
       });
     }
