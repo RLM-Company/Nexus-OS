@@ -29,3 +29,46 @@ passed. No paid AI request. API changes use existing columns and require no migr
 
 Deployment is recorded below only after verification. The source PRs remain draft;
 CI results from their older bases are not proof for this integrated checkout.
+
+## Live activation
+
+Final source `057f35660104bf0323bfaa9cd80e00299b8a8a6e` is deployed as
+`cosmora-alpha-app:navigation-api-5db34b5` and
+`cosmora-alpha-app:navigation-web-5db34b5`. The release directory retains its earlier
+short revision name; both image revision labels contain the final full source SHA.
+The ten-file source archive is 67,870 bytes, SHA-256
+`195b6efdea985e5c9ca12f63956179aeb4f849ebc0653839721e6ca1e9880f37`.
+Both production images built with networking disabled.
+
+The first activation rolled back before switching to the new images: the copied-DB
+verification omitted a mock Manager/gateway, so project routes were not registered
+and PATCH returned 404. Old API/web were confirmed healthy. The verifier was corrected,
+passed separately with no network, and retry required an exact match to the restored
+deployment wrapper. A fresh `backup-2` was created/verified for the second activation.
+No test requirement was removed to obtain success.
+
+Final activation exited 0, verified all original rows of seven chat/project/run tables,
+unchanged 34 migrations, integrity and foreign keys, and authenticated health, chat,
+project, navigation-context, account/usage and media-capability reads returning 200.
+A synthetic check through the running API's real private Code executor passed with
+verified cleanup. Exact login/executor container IDs/start times were unchanged.
+The backup SHA-256 was `f6da91cf97f3f9612f351e0054e393fea4a42db54a54ad9c2c8240892848cd16`.
+
+Live browser restored the remembered session and six saved chats, displayed the new
+quick switcher and searched existing history. A temporary pin survived reload; it was
+then removed and the original list order was confirmed restored. No AI request or
+production project was created. Positive project rename and foreign-owner/invalid
+input checks ran on the real copied database with a mock-only app, plus the local
+browser/API suites; no existing user's production project was renamed for verification.
+
+Deployment/rollback material: `/opt/cosmora/releases/navigation-5db34b5`, including
+`activate.sh`, `activate-2.log`, `api-build.log`, `web-build.log`, `backup-2/`,
+`deployctl.before`, `deployctl.next`, `overlay.yaml`, `unaffected.before/after`.
+Restoring the old wrapper and recreating API/web rolls back without a schema change.
+Previous static chunks were retained. The corresponding local folder contains
+`live-quick-switcher.png` proof.
+
+The integration branch is published as `codex/integrate-navigation-20261012`.
+The active Work chat received its SHA/link and a coordination note to avoid duplicating
+these closed functions or the separate graph/Gemini blocks. No default-branch merge
+or source PR closure was performed.
