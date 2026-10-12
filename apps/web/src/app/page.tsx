@@ -3135,6 +3135,10 @@ export default function Home() {
             error={error}
             onRetry={() => void reloadShellData()}
             onOpenProject={(id, view) => void openProject(id, view)}
+            onLibraryProjectCreated={(id) => {
+              void loadProjects().catch(() => undefined);
+              void openProject(id, "chat", "files");
+            }}
             onNavigate={selectSurface}
             onCompose={(prompt, files = []) => {
               pendingComposeRef.current = { prompt, files };

@@ -42,6 +42,51 @@ describe("project chat API", () => {
     vi.restoreAllMocks();
   });
 
+  it("creates an empty owner project idempotently without a model run or dispatch", async () => {
+    const spy = vi.spyOn(MockProviderAdapter.prototype, "stream");
+    const payload = {
+      title: "  Документы  ",
+      client_project_id: "aa120001-0001-4000-8000-000000000001"
+    };
+    const first = await app.inject({ method: "POST", url: "/api/v1/projects/empty", payload });
+    const second = await app.inject({ method: "POST", url: "/api/v1/projects/empty", payload });
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+    const body = first.json<{
+      project: { id: string; title: string; status: string };
+      chat_id: string;
+      messages: unknown[];
+    }>();
+    expect(body.project).toMatchObject({
+      id: payload.client_project_id,
+      title: "Документы",
+      status: "DRAFT"
+    });
+    expect(body.messages).toEqual([]);
+    expect(second.json<{ chat_id: string }>().chat_id).toBe(body.chat_id);
+    expect(projectStore.listProjects()).toHaveLength(1);
+    expect(database.sqlite.prepare("SELECT count(*) n FROM runs").get()?.n).toBe(0);
+    expect(spy).not.toHaveBeenCalled();
+    const foreign = projectStore.createEmptyProject(
+      "aa120001-0001-4000-8000-000000000002",
+      "Чужой",
+      "foreign-owner"
+    );
+    const collision = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects/empty",
+      payload: { ...payload, client_project_id: foreign.id }
+    });
+    expect(collision.statusCode).toBe(409);
+    expect(projectStore.getProject(foreign.id)).toBeNull();
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects/empty",
+      payload: { title: 123, client_project_id: crypto.randomUUID() }
+    });
+    expect(invalid.statusCode).toBe(400);
+  });
+
   it("creates a project and reuses the idempotent request", async () => {
     const payload = { initial_message: "Создай digital-продукт", client_message_id: "client-1" };
     const first = await app.inject({ method: "POST", url: "/api/v1/projects", payload });

@@ -152,10 +152,12 @@ function HighlightedPart({
 
 export function StudioFiles({
   onCompose,
-  projectId
+  projectId,
+  onProjectCreated
 }: {
   onCompose: (prompt: string, files?: ChatAttachment[]) => void;
   projectId: string | null;
+  onProjectCreated?: (id: string) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const operation = useRef<AbortController | null>(null);
@@ -354,7 +356,12 @@ export function StudioFiles({
           <p>Документы, данные и код — локально в одном рабочем окне.</p>
         </div>
       </header>
-      <StudioDocumentLibrary projectId={projectId} onCompose={onCompose} />
+      <StudioDocumentLibrary
+        key={projectId ?? "no-project"}
+        projectId={projectId}
+        onCompose={onCompose}
+        {...(onProjectCreated ? { onProjectCreated } : {})}
+      />
       <section className={styles.upload} aria-label="Загрузка документа">
         <input
           ref={input}

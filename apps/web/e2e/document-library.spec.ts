@@ -21,10 +21,18 @@ test("persists original documents, searches cited evidence and exports an editab
     mimeType: "text/plain",
     buffer: original
   });
-  await expect(library.getByText("договор.txt", { exact: true })).toBeVisible();
+  await expect(
+    library
+      .getByRole("group", { name: "Сохранённые документы" })
+      .getByText("договор.txt", { exact: true })
+  ).toBeVisible();
   await expect(library).toContainText("Готов");
   await page.reload();
-  await expect(library.getByText("договор.txt", { exact: true })).toBeVisible();
+  await expect(
+    library
+      .getByRole("group", { name: "Сохранённые документы" })
+      .getByText("договор.txt", { exact: true })
+  ).toBeVisible();
   const originalDownload = page.waitForEvent("download");
   await library.getByRole("link", { name: "Оригинал", exact: true }).click();
   const downloaded = await originalDownload;
@@ -52,6 +60,10 @@ test("persists original documents, searches cited evidence and exports an editab
   // Preparing cited context must not start a model request.
   await page.goto(`/?project=${encodeURIComponent(accepted.project.id)}&surface=files`);
   await library.getByRole("button", { name: "Удалить", exact: true }).click();
-  await expect(library.getByText("договор.txt", { exact: true })).toHaveCount(0);
+  await expect(
+    library
+      .getByRole("group", { name: "Сохранённые документы" })
+      .getByText("договор.txt", { exact: true })
+  ).toHaveCount(0);
   await expect(library).toContainText("В проекте пока нет сохранённых документов.");
 });

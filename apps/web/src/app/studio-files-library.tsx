@@ -21,13 +21,23 @@ import {
 import styles from "./studio-files-library.module.css";
 import { ShiningText, SystemMessage } from "./ui/kosmora-controls";
 import { WorkspaceIcon } from "./workspace-icons";
+import { downloadBlob } from "./chat-response";
+import {
+  runLibraryUploadQueue,
+  LibraryUploadRejectedError,
+  UPLOAD_STATE_LABELS,
+  uploadFinished,
+  type LibraryUploadAdapter,
+  type LibraryUploadItem
+} from "./library-upload-queue";
 
 type Props = {
   projectId: string | null;
   onCompose: (prompt: string, files?: ChatAttachment[]) => void;
+  onProjectCreated?: (id: string) => void;
 };
 
-export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
+export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }: Props) {
   const uploader = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
   const [files, setFiles] = useState<LibraryFileView[]>([]);
@@ -42,14 +52,29 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
   const [answers, setAnswers] = useState<AnswerReport[]>([]);
   const [activeAnswerId, setActiveAnswerId] = useState<string | null>(null);
   const [answerAvailable, setAnswerAvailable] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<LibraryUploadItem[]>([]);
+  const [uploadActive, setUploadActive] = useState(false);
+  const [originalsActive, setOriginalsActive] = useState(false);
+  const [projectTitle, setProjectTitle] = useState("Моя библиотека");
+  const [creatingProject, setCreatingProject] = useState(false);
+  const creation = useRef<{ id: string; title: string } | null>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const base = projectId
     ? `/api/v1/projects/${encodeURIComponent(projectId)}/document-library`
     : "";
 
   const refresh = async (url: string) => {
-    const response = await libraryFetch<{ files: LibraryFileView[] }>(url);
-    setFiles(response.files);
+    const response = await libraryFetch<{ files: LibraryFileView[] }>(url, {
+      signal: AbortSignal.timeout(8_000)
+    });
+    if (alive.current) setFiles(response.files);
   };
 
   useEffect(() => {
@@ -120,55 +145,180 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
     };
   }, [base, activeAnswerId]);
 
+  const createLibraryProject = async () => {
+    if (!onProjectCreated || creatingProject || !projectTitle.trim()) return;
+    const attempt = creation.current ?? { id: crypto.randomUUID(), title: projectTitle.trim() };
+    creation.current = attempt;
+    setCreatingProject(true);
+    setError("");
+    try {
+      const value = await libraryFetch<{ project: { id: string } }>("/api/v1/projects/empty", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: attempt.title, client_project_id: attempt.id }),
+        signal: AbortSignal.timeout(15_000)
+      });
+      if (alive.current) onProjectCreated(value.project.id);
+    } catch {
+      if (alive.current) {
+        try {
+          const value = await libraryFetch<{ project: { id: string } }>(
+            `/api/v1/projects/${encodeURIComponent(attempt.id)}`,
+            { signal: AbortSignal.timeout(5_000) }
+          );
+          if (alive.current) onProjectCreated(value.project.id);
+        } catch {
+          if (alive.current)
+            setError(
+              "Не удалось подтвердить создание. Повторите попытку: второй проект не будет создан."
+            );
+        }
+      }
+    } finally {
+      if (alive.current) setCreatingProject(false);
+    }
+  };
+
+  const rememberFile = (file: LibraryFileView) => {
+    if (!alive.current) return;
+    setFiles((old) =>
+      old.some((item) => item.id === file.id)
+        ? old.map((item) => (item.id === file.id ? file : item))
+        : [file, ...old]
+    );
+  };
+  const uploadAdapter = (existing?: LibraryFileView): LibraryUploadAdapter => ({
+    stage: async (file, signal) => {
+      if (existing) return existing;
+      const response = await fetch(base, {
+        method: "POST",
+        cache: "no-store",
+        signal,
+        body: file,
+        headers: {
+          "content-type": "application/octet-stream",
+          "x-kosmora-file-name": encodeURIComponent(file.name)
+        }
+      });
+      if (!response.ok) {
+        if (response.status >= 400 && response.status < 500)
+          throw new LibraryUploadRejectedError(
+            `Сервер отклонил файл (${response.status}). Проверьте формат, права и квоту.`
+          );
+        throw new Error("Сохранение оригинала не подтверждено.");
+      }
+      const staged = (await response.json()) as LibraryFileView;
+      if (typeof staged.id !== "string" || !staged.id)
+        throw new Error("Не удалось подтвердить сохранение оригинала.");
+      rememberFile(staged);
+      return staged;
+    },
+    extract: extractLibraryPages,
+    index: async (staged, pages, signal) => {
+      if (existing?.status === "failed")
+        await libraryFetch(`${base}/${encodeURIComponent(staged.id)}/retry`, {
+          method: "POST",
+          signal
+        });
+      const result = await libraryFetch<LibraryFileView>(
+        `${base}/${encodeURIComponent(staged.id)}/index`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ pages }),
+          signal
+        }
+      );
+      rememberFile(result);
+    },
+    settle: async (staged, cancelled) => {
+      await fetch(`${base}/${encodeURIComponent(staged.id)}/${cancelled ? "cancel" : "failed"}`, {
+        method: "POST",
+        signal: AbortSignal.timeout(5_000)
+      }).catch(() => undefined);
+      const actual = await libraryFetch<{ files: LibraryFileView[] }>(base, {
+        signal: AbortSignal.timeout(5_000)
+      });
+      const saved = actual.files.find((file) => file.id === staged.id);
+      if (saved) rememberFile(saved);
+      return saved?.status ?? null;
+    }
+  });
+
   const upload = async (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.currentTarget.files ?? []);
     event.currentTarget.value = "";
-    if (!base || !selectedFiles.length) return;
+    if (!base || busy || !selectedFiles.length) return;
     abort.current?.abort();
     const controller = new AbortController();
     abort.current = controller;
     setBusy(true);
+    setUploadActive(true);
+    setUploadQueue([]);
     setError("");
     try {
-      for (const file of selectedFiles) {
-        controller.signal.throwIfAborted();
-        setStatus(`Сохраняю ${file.name}…`);
-        if (!/\.(pdf|docx|txt|csv)$/i.test(file.name) || file.size > 20_000_000 || !file.size)
-          throw new Error("Допустимы PDF, DOCX, TXT и CSV до 20 МБ.");
-        const staged = await libraryFetch<LibraryFileView>(base, {
-          method: "POST",
-          headers: {
-            "content-type": "application/octet-stream",
-            "x-kosmora-file-name": encodeURIComponent(file.name)
-          },
-          body: file,
-          signal: controller.signal
-        });
-        await refresh(base);
-        try {
-          const pages = await extractLibraryPages(file, controller.signal, setStatus);
-          await libraryFetch(`${base}/${encodeURIComponent(staged.id)}/index`, {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ pages }),
-            signal: controller.signal
-          });
-          setStatus(`Индексирован: ${file.name}`);
-        } catch (cause) {
-          await fetch(
-            `${base}/${encodeURIComponent(staged.id)}/${controller.signal.aborted ? "cancel" : "failed"}`,
-            { method: "POST" }
-          ).catch(() => undefined);
-          throw cause;
-        } finally {
-          await refresh(base).catch(() => undefined);
+      const result = await runLibraryUploadQueue(
+        selectedFiles,
+        uploadAdapter(),
+        controller.signal,
+        (items) => {
+          if (alive.current) setUploadQueue(items);
         }
-      }
+      );
+      if (alive.current)
+        setStatus(
+          `Готово: ${result.filter((item) => item.state === "ready").length} из ${result.length}. Подробности — в результатах загрузки.`
+        );
     } catch (cause) {
-      if (!controller.signal.aborted)
+      if (alive.current && !controller.signal.aborted)
         setError(cause instanceof Error ? cause.message : "Загрузка не удалась");
     } finally {
-      setBusy(false);
+      if (alive.current) {
+        await refresh(base).catch(() => undefined);
+        setBusy(false);
+        setUploadActive(false);
+      }
+    }
+  };
+
+  const archiveOriginals = async () => {
+    if (!projectId || busy) return;
+    const selection = chosen.length ? files.filter((file) => chosen.includes(file.id)) : files;
+    if (!selection.length) return;
+    const controller = new AbortController();
+    abort.current = controller;
+    setBusy(true);
+    setOriginalsActive(true);
+    setError("");
+    try {
+      const { createLibraryOriginalsArchive } = await import("./library-originals-archive");
+      const bytes = await createLibraryOriginalsArchive({
+        projectId,
+        files: selection,
+        signal: controller.signal,
+        onProgress: (done, total, name) => {
+          if (alive.current) setStatus(`Оригиналы: ${done} из ${total} · ${name}`);
+        }
+      });
+      controller.signal.throwIfAborted();
+      if (alive.current) {
+        downloadBlob(
+          new Blob([bytes], { type: "application/zip" }),
+          `kosmora-originals-${new Date().toISOString().replace(/[^0-9]/g, "")}.zip`
+        );
+        setStatus(`Архив сохранённых оригиналов: ${selection.length} документов.`);
+      }
+    } catch (cause) {
+      if (alive.current) {
+        if (controller.signal.aborted) setStatus("Скачивание оригиналов отменено.");
+        else
+          setError(cause instanceof Error ? cause.message : "Не удалось создать архив оригиналов.");
+      }
+    } finally {
+      if (alive.current) {
+        setBusy(false);
+        setOriginalsActive(false);
+      }
     }
   };
 
@@ -193,6 +343,8 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
   const retry = async (file: LibraryFileView) => {
     if (!base || busy) return;
     setBusy(true);
+    setUploadActive(true);
+    setUploadQueue([]);
     setError("");
     const controller = new AbortController();
     abort.current = controller;
@@ -203,23 +355,29 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
       });
       if (!original.ok) throw new Error("Исходный документ недоступен.");
       const source = new File([await original.blob()], file.name);
-      const pages = await extractLibraryPages(source, controller.signal, setStatus);
-      if (file.status === "failed") {
-        await libraryFetch(`${base}/${encodeURIComponent(file.id)}/retry`, { method: "POST" });
-      }
-      await libraryFetch(`${base}/${encodeURIComponent(file.id)}/index`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ pages }),
-        signal: controller.signal
-      });
-      setStatus(`Индексирован без повторной загрузки: ${file.name}`);
-      await refresh(base);
+      const results = await runLibraryUploadQueue(
+        [source],
+        uploadAdapter(file),
+        controller.signal,
+        (items) => {
+          if (alive.current) setUploadQueue(items);
+        }
+      );
+      if (alive.current)
+        setStatus(
+          results[0]?.state === "ready"
+            ? `Индексирован без повторной загрузки: ${file.name}`
+            : `Обработка ${file.name} завершена. Подробности — в результатах загрузки.`
+        );
     } catch (cause) {
-      if (!controller.signal.aborted)
+      if (alive.current && !controller.signal.aborted)
         setError(cause instanceof Error ? cause.message : "Обработка не удалась");
     } finally {
-      setBusy(false);
+      if (alive.current) {
+        await refresh(base).catch(() => undefined);
+        setBusy(false);
+        setUploadActive(false);
+      }
     }
   };
 
@@ -351,7 +509,31 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
         <div className={styles.empty}>
           <WorkspaceIcon name="files" />
           <strong>Документы вашего проекта</strong>
-          <p>Выберите проект в разделе «Чаты», чтобы сохранять материалы надолго.</p>
+          <p>Выберите существующий проект или создайте библиотеку для своих документов.</p>
+          {onProjectCreated && (
+            <form
+              className={styles.creation}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void createLibraryProject();
+              }}
+            >
+              <label htmlFor="library-project-title">Название проекта</label>
+              <input
+                id="library-project-title"
+                value={projectTitle}
+                maxLength={160}
+                disabled={creatingProject || creation.current !== null}
+                onChange={(event) => setProjectTitle(event.target.value)}
+                required
+              />
+              <button type="submit" disabled={creatingProject || !projectTitle.trim()}>
+                {creatingProject ? "Создаём…" : "Создать библиотеку"}
+              </button>
+              <small>Проект создаётся без обращения к модели. Токены не расходуются.</small>
+            </form>
+          )}
+          {error && <SystemMessage>{error}</SystemMessage>}
         </div>
       ) : (
         <>
@@ -373,23 +555,69 @@ export function StudioDocumentLibrary({ projectId, onCompose }: Props) {
               <WorkspaceIcon name="new-chat" />
               Добавить файлы
             </button>
-            {busy && (
+            <button
+              type="button"
+              disabled={busy || !files.length}
+              onClick={() => void archiveOriginals()}
+            >
+              {chosen.length ? `Скачать оригиналы (${chosen.length})` : "Скачать все оригиналы"}
+            </button>
+            {originalsActive && (
               <button type="button" onClick={() => abort.current?.abort()}>
-                Отменить чтение
+                Отменить скачивание
               </button>
             )}
+            {uploadActive &&
+              (uploadQueue.length === 0 || uploadQueue.some((item) => !uploadFinished(item))) && (
+                <button type="button" onClick={() => abort.current?.abort()}>
+                  Отменить загрузку
+                </button>
+              )}
             <small>До 20 МБ на файл · до 100 МБ и 100 файлов в проекте</small>
           </div>
           {status && <p role="status">{busy ? <ShiningText>{status}</ShiningText> : status}</p>}
           {error && <SystemMessage>{error}</SystemMessage>}
-          <div className={styles.files}>
+          {uploadQueue.length > 0 && (
+            <section className={styles.queue} aria-label="Результаты загрузки">
+              <div className={styles.queueHeading}>
+                <strong>
+                  Обработано {uploadQueue.filter(uploadFinished).length} из {uploadQueue.length}
+                </strong>
+                {!busy && (
+                  <button type="button" onClick={() => setUploadQueue([])}>
+                    Скрыть результаты
+                  </button>
+                )}
+              </div>
+              <progress
+                value={uploadQueue.filter(uploadFinished).length}
+                max={uploadQueue.length}
+                aria-label="Обработанные файлы"
+              />
+              <ul>
+                {uploadQueue.map((item) => (
+                  <li key={item.index} data-upload-state={item.state}>
+                    <WorkspaceIcon name={item.state === "ready" ? "check" : "files"} />
+                    <div>
+                      <strong>{item.name}</strong>
+                      <span>
+                        {UPLOAD_STATE_LABELS[item.state]}
+                        {item.detail ? ` · ${item.detail}` : ""}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          <div className={styles.files} role="group" aria-label="Сохранённые документы">
             {files.map((file) => (
               <div className={styles.file} key={file.id}>
                 <label>
                   <input
                     type="checkbox"
                     checked={chosen.includes(file.id)}
-                    disabled={file.status !== "ready"}
+                    disabled={busy || file.status !== "ready"}
                     onChange={(event) =>
                       setChosen((old) =>
                         event.target.checked

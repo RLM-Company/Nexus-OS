@@ -667,6 +667,43 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     }
   );
 
+  if (dependencies.projectStore) {
+    const projects = dependencies.projectStore;
+    app.post(
+      "/api/v1/projects/empty",
+      {
+        schema: {
+          body: Type.Object(
+            {
+              title: Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }),
+              client_project_id: Type.String({
+                pattern:
+                  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+              })
+            },
+            { additionalProperties: false }
+          ),
+          response: { 201: ProjectDetailResponseSchema, 409: ApiErrorSchema }
+        },
+        validatorCompiler: TypeBoxValidatorCompiler
+      },
+      (request, reply) => {
+        const owner = identityFor(request).owner_id;
+        const project = projects.createEmptyProject(
+          request.body.client_project_id,
+          request.body.title,
+          owner
+        );
+        reply.code(201);
+        return {
+          project,
+          chat_id: projects.getMainChatId(project.id, owner)!,
+          messages: projects.listMessages(project.id, owner)
+        };
+      }
+    );
+  }
+
   app.get(
     "/api/v1/health",
     { schema: { response: { 200: HealthResponseSchema, 503: HealthResponseSchema } } },
