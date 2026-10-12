@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 const SCRYPT = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const VERIFY_TTL = 30 * 60 * 1000;
+const RECOVERY_TTL = 30 * 60 * 1000;
 type Row = Record<string, unknown>;
 
 export const normalizedEmail = (value: string): string | null => {
@@ -174,5 +175,130 @@ export class RegistrationStore {
       )
       .run(passwordHash, new Date(this.now()).toISOString(), ownerId);
     return result.changes === 1;
+  }
+
+  requestPasswordReset(email: string): string | null {
+    const normalized = normalizedEmail(email);
+    if (!normalized) return null;
+    const account = this.db
+      .prepare("SELECT owner_id FROM auth_accounts WHERE email=? AND verified_at IS NOT NULL")
+      .get(normalized) as Row | undefined;
+    if (!account) return null;
+    const ownerId = String(account.owner_id);
+    const token = randomBytes(32).toString("base64url");
+    const at = new Date(this.now()).toISOString();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("DELETE FROM auth_password_resets WHERE owner_id=?").run(ownerId);
+      this.db
+        .prepare(
+          "INSERT INTO auth_password_resets (token_hash,owner_id,expires_at,created_at) VALUES (?,?,?,?)"
+        )
+        .run(tokenHash(token), ownerId, new Date(this.now() + RECOVERY_TTL).toISOString(), at);
+      this.db.exec("COMMIT");
+      return token;
+    } catch (cause) {
+      this.db.exec("ROLLBACK");
+      throw cause;
+    }
+  }
+
+  resetPassword(token: string, password: string, revoke: (ownerId: string) => void): boolean {
+    if (!/^[A-Za-z0-9_-]{43}$/u.test(token)) return false;
+    const passwordHash = hashPassword(password);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.db
+        .prepare(
+          "SELECT owner_id FROM auth_password_resets WHERE token_hash=? AND consumed_at IS NULL AND expires_at>?"
+        )
+        .get(tokenHash(token), new Date(this.now()).toISOString()) as Row | undefined;
+      if (!row) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      const ownerId = String(row.owner_id);
+      const at = new Date(this.now()).toISOString();
+      this.db
+        .prepare(
+          "UPDATE auth_accounts SET password_hash=?,updated_at=? WHERE owner_id=? AND verified_at IS NOT NULL"
+        )
+        .run(passwordHash, at, ownerId);
+      this.db
+        .prepare("UPDATE auth_password_resets SET consumed_at=? WHERE token_hash=?")
+        .run(at, tokenHash(token));
+      revoke(ownerId);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (cause) {
+      this.db.exec("ROLLBACK");
+      throw cause;
+    }
+  }
+
+  changePassword(
+    ownerId: string,
+    currentPassword: string,
+    newPassword: string,
+    revoke: (ownerId: string) => void
+  ): boolean {
+    const passwordHash = hashPassword(newPassword);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.db
+        .prepare(
+          "SELECT password_hash FROM auth_accounts WHERE owner_id=? AND verified_at IS NOT NULL"
+        )
+        .get(ownerId) as Row | undefined;
+      if (!row?.password_hash || !verifyPassword(currentPassword, String(row.password_hash))) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      this.db
+        .prepare("UPDATE auth_accounts SET password_hash=?,updated_at=? WHERE owner_id=?")
+        .run(passwordHash, new Date(this.now()).toISOString(), ownerId);
+      this.db.prepare("DELETE FROM auth_password_resets WHERE owner_id=?").run(ownerId);
+      revoke(ownerId);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (cause) {
+      this.db.exec("ROLLBACK");
+      throw cause;
+    }
+  }
+
+  removeMethod(
+    ownerId: string,
+    method: "email" | "google",
+    password: string,
+    revoke: (ownerId: string) => void
+  ): boolean {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.db
+        .prepare(
+          "SELECT password_hash,google_sub FROM auth_accounts WHERE owner_id=? AND verified_at IS NOT NULL"
+        )
+        .get(ownerId) as Row | undefined;
+      if (
+        !row?.password_hash ||
+        !row.google_sub ||
+        !verifyPassword(password, String(row.password_hash))
+      ) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      const column = method === "email" ? "password_hash" : "google_sub";
+      this.db
+        .prepare(`UPDATE auth_accounts SET ${column}=NULL,updated_at=? WHERE owner_id=?`)
+        .run(new Date(this.now()).toISOString(), ownerId);
+      this.db.prepare("DELETE FROM auth_password_resets WHERE owner_id=?").run(ownerId);
+      revoke(ownerId);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (cause) {
+      this.db.exec("ROLLBACK");
+      throw cause;
+    }
   }
 }
