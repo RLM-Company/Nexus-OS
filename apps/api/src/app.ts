@@ -40,6 +40,7 @@ import {
   OwnerSessionListResponseSchema,
   OwnerSessionViewSchema,
   ProjectDetailResponseSchema,
+  ProjectSchema,
   DemoManagerRunListResponseSchema,
   DemoManagerRunSchema,
   ProjectListResponseSchema,
@@ -56,6 +57,7 @@ import {
   RuntimeOperationsStatusSchema,
   UpdateCapabilityProfileRequestSchema,
   UpdateProjectUsageLimitRequestSchema,
+  UpdateProjectTitleRequestSchema,
   createCapabilityProfile,
   hasUniqueCapabilityOverrideIds,
   isValidChatAttachments,
@@ -2347,6 +2349,32 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           messages: store.listMessages(project.id, ownerId)
         };
         return response;
+      }
+    );
+
+    app.patch(
+      "/api/v1/projects/:projectId",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          body: UpdateProjectTitleRequestSchema,
+          response: {
+            200: Type.Object({ project: ProjectSchema }, { additionalProperties: false }),
+            404: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const project = store.renameProject(
+          request.params.projectId,
+          identityFor(request).owner_id,
+          request.body.title
+        );
+        if (!project)
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        return { project };
       }
     );
 

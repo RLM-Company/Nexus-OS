@@ -8,6 +8,7 @@ import { ChatResponse } from "./chat-response";
 import { WebSearchPanel } from "./web-search-panel";
 import { ChatHistoryActions } from "./chat-history-actions";
 import { ChatArchivePanel } from "./chat-archive-panel";
+import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
 import {
   EMPTY_PINS,
@@ -2281,6 +2282,20 @@ export default function Home() {
 
         {activeProject && projectView === "project" && (
           <div className="project-context view-panel" role="tabpanel" aria-label="Проект">
+            <ProjectTitleEditor
+              key={activeProject.id}
+              project={activeProject}
+              onSaved={(renamed) => {
+                setActiveProject((current) =>
+                  current?.id === renamed.id ? { ...current, ...renamed } : current
+                );
+                setProjects((current) =>
+                  current.map((project) =>
+                    project.id === renamed.id ? { ...project, ...renamed } : project
+                  )
+                );
+              }}
+            />
             <section className="project-facts" aria-label="Информация о проекте">
               <span>
                 <small>Статус проекта</small>
