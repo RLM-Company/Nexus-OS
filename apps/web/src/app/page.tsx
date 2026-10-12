@@ -188,6 +188,14 @@ const replaceConsoleRoute = (
     : generalChatId
       ? `/?chat=${encodeURIComponent(generalChatId)}`
       : "/";
+  const currentRoute = new URLSearchParams(window.location.search);
+  const targetMessage = currentRoute.get("message");
+  if (
+    targetMessage &&
+    ((projectId && view === "chat" && currentRoute.get("project") === projectId) ||
+      (generalChatId && currentRoute.get("chat") === generalChatId))
+  )
+    route += `${route.includes("?") ? "&" : "?"}message=${encodeURIComponent(targetMessage)}`;
   if (new URLSearchParams(window.location.search).get("context_preview") === "1")
     route += `${route.includes("?") ? "&" : "?"}context_preview=1`;
   window.history.replaceState(window.history.state, "", route);
@@ -533,6 +541,7 @@ export default function Home() {
   const [workspaceSurfaceHydrated, setWorkspaceSurfaceHydrated] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const focusedSearchMessageRef = useRef<string | null>(null);
   const followMessagesRef = useRef(true);
   const [fileDragActive, setFileDragActive] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
@@ -950,6 +959,33 @@ export default function Home() {
     );
     return () => cancelAnimationFrame(frame);
   }, [localChatMessages, messages]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const messageId = params.get("message");
+    if (!messageId || focusedSearchMessageRef.current === messageId || surface !== "manager")
+      return;
+    const inProject =
+      activeProject &&
+      projectView === "chat" &&
+      params.get("project") === activeProject.id &&
+      messages.some((message) => message.id === messageId);
+    const inChat =
+      !activeProject &&
+      activeLocalChatId &&
+      params.get("chat") === activeLocalChatId &&
+      localChatMessages.some((message) => message.id === messageId);
+    if (!inProject && !inChat) return;
+    followMessagesRef.current = false;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`chat-message-${messageId}`);
+      if (!target) return;
+      target.scrollIntoView({ block: "center" });
+      target.focus({ preventScroll: true });
+      focusedSearchMessageRef.current = messageId;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeProject, activeLocalChatId, localChatMessages, messages, projectView, surface]);
 
   const loadProjectView = useCallback(async (projectId: string) => {
     const epoch = viewEpochRef.current;
@@ -2089,6 +2125,9 @@ export default function Home() {
             </button>
           )}
         </div>
+        <a className="history-search-link" href="/search">
+          Поиск по сообщениям →
+        </a>
         <nav className="navigation" aria-label="Основная навигация">
           <section className="sidebar-section">
             <button

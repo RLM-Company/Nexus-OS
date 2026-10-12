@@ -3441,6 +3441,22 @@ textarea:focus-visible {
 .navigation-search input::placeholder {
   color: var(--muted);
 }
+.history-search-link {
+  display: block;
+  padding: 0.3rem 0.8rem 0.6rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+.history-search-link:hover,
+.history-search-link:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
+}
+.message:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 2px;
+}
 .navigation-search > button {
   display: grid;
   width: 1.75rem;

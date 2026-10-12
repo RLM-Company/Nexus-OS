@@ -67,6 +67,12 @@ export function QuickSwitcher({
   };
   const actions: Result[] = [
     { key: "new-chat", label: "Новый чат", group: "Действия", run: onNewChat },
+    {
+      key: "history-search",
+      label: "Поиск по истории",
+      group: "Действия",
+      run: () => window.location.assign("/search")
+    },
     { key: "work", label: "Work", group: "Разделы", run: () => onNavigate("work") },
     { key: "code", label: "Code", group: "Разделы", run: () => onNavigate("code") },
     { key: "studio", label: "Kosmora Studio", group: "Разделы", run: () => onNavigate("studio") }
