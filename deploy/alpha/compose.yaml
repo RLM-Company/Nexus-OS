@@ -21,6 +21,11 @@ services:
       API_PORT: 3100
       DATABASE_URL: file:/var/lib/cosmora/cosmora.db
       WEB_ORIGIN: https://${COSMORA_DEMO_DOMAIN:?Set COSMORA_DEMO_DOMAIN}
+      KOSMORA_REGISTRATION_ENABLED: ${KOSMORA_REGISTRATION_ENABLED:-0}
+      KOSMORA_GOOGLE_CLIENT_ID: ${KOSMORA_GOOGLE_CLIENT_ID:-}
+      KOSMORA_GOOGLE_CLIENT_SECRET: ${KOSMORA_GOOGLE_CLIENT_SECRET:-}
+      KOSMORA_SENDMAIL_PATH: ${KOSMORA_SENDMAIL_PATH:-}
+      KOSMORA_EMAIL_FROM: ${KOSMORA_EMAIL_FROM:-}
     volumes:
       - cosmora_data:/var/lib/cosmora
     networks: [internal]
@@ -85,12 +90,15 @@ services:
       - path: ./private/owner-session.env
         format: raw
         required: false
+    environment:
+      COSMORA_AUTH_ROUTE_FILE: ${COSMORA_AUTH_ROUTE_FILE:-owner-routes.caddy}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./owner-routes.caddy:/etc/caddy/owner-routes.caddy:ro
+      - ./registration-routes.caddy:/etc/caddy/registration-routes.caddy:ro
       - caddy_data:/data
       - caddy_config:/config
     networks: [internal]
