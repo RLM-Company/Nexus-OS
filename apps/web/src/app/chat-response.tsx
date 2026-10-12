@@ -9,7 +9,10 @@ import styles from "./chat-code.module.css";
 import { CodeText } from "./ui/code-text";
 
 export function downloadText(content: string, name: string, mimeType = "text/plain;charset=utf-8") {
-  const url = URL.createObjectURL(new Blob([content], { type: mimeType }));
+  downloadBlob(new Blob([content], { type: mimeType }), name);
+}
+export function downloadBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = name;

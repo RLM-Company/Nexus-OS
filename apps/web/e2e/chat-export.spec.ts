@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { unzipSync, strFromU8 } from "fflate";
 import { expect, test, type Page } from "@playwright/test";
 
 const chatId = "a1090011-0001-4000-8000-000000000001";
@@ -170,4 +171,95 @@ test("an empty chat cannot download a fabricated transcript", async ({ page }) =
   await page.goto("/");
   await page.getByLabel("Настройки чата", { exact: true }).click();
   await expect(page.getByRole("button", { name: "Скачать переписку", exact: true })).toBeDisabled();
+});
+
+test("downloads a usable ZIP with actual attachments locally and keeps the composer intact", async ({
+  page
+}) => {
+  const writes = await fixture(page);
+  await page.getByLabel("Формат файла", { exact: true }).selectOption("zip");
+  await expect(page.getByRole("group", { name: "Экспорт переписки", exact: true })).toContainText(
+    "PDF и DOCX — извлечённый текст"
+  );
+  const downloaded = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать переписку", exact: true }).click();
+  const file = await downloaded;
+  expect(file.suggestedFilename()).toMatch(/\.zip$/);
+  const entries = unzipSync(await readFile((await file.path())!));
+  const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as {
+    attachments: { path: string; original_name: string; representation: string }[];
+  };
+  expect(manifest.attachments).toHaveLength(1);
+  expect(manifest.attachments[0]!.original_name).toBe("план.txt");
+  expect(strFromU8(entries[manifest.attachments[0]!.path]!)).toBe("attachment body must not leak");
+  expect(strFromU8(entries["conversation.md"]!)).toContain(code);
+  expect(strFromU8(entries["conversation.json"]!)).not.toContain("Неотправленный черновик");
+  await expect(page.getByRole("button", { name: "Скачать переписку", exact: true })).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toHaveValue(
+    "Неотправленный черновик"
+  );
+  expect(writes).toEqual([]);
+});
+
+test("a corrupt saved attachment reports an error and leaves plain export available", async ({
+  page
+}) => {
+  const writes = await fixture(page);
+  await page.route(`**/api/v1/chats/${chatId}`, (route) =>
+    route.fulfill({
+      json: {
+        chat: { id: chatId, title, created_at: at, updated_at: at },
+        messages: [
+          {
+            ...messages[0],
+            attachments: [
+              { name: "bad.png", kind: "image", media_type: "image/png", data_base64: "aGVsbG8=" }
+            ]
+          },
+          messages[1]
+        ]
+      }
+    })
+  );
+  await page.reload();
+  await expect(page.locator(".message")).toHaveCount(2);
+  await page.getByLabel("Настройки чата", { exact: true }).click();
+  await page.getByLabel("Формат файла", { exact: true }).selectOption("zip");
+  await page.getByRole("button", { name: "Скачать переписку", exact: true }).click();
+  await expect(
+    page.getByRole("group", { name: "Экспорт переписки", exact: true }).getByRole("alert")
+  ).toHaveText(/повреждено/);
+  await page.getByLabel("Формат файла", { exact: true }).selectOption("markdown");
+  const downloaded = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать переписку", exact: true }).click();
+  expect((await downloaded).suggestedFilename()).toMatch(/\.md$/);
+  expect(writes).toEqual([]);
+});
+
+test("cancelling archive preparation suppresses a late download and permits another format", async ({
+  page
+}) => {
+  await page.addInitScript(() => {
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    crypto.subtle.digest = async (algorithm, data) => {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return digest(algorithm, data);
+    };
+  });
+  const writes = await fixture(page);
+  const filenames: string[] = [];
+  page.on("download", (file) => filenames.push(file.suggestedFilename()));
+  await page.getByLabel("Формат файла", { exact: true }).selectOption("zip");
+  await page.getByRole("button", { name: "Скачать переписку", exact: true }).click();
+  await page.getByRole("button", { name: "Отменить подготовку", exact: true }).click();
+  await expect(page.getByLabel("Формат файла", { exact: true })).toBeEnabled();
+  await page.getByLabel("Формат файла", { exact: true }).selectOption("json");
+  const downloaded = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать переписку", exact: true }).click();
+  expect((await downloaded).suggestedFilename()).toMatch(/\.json$/);
+  await page.waitForTimeout(1200);
+  expect(filenames).toHaveLength(1);
+  expect(filenames[0]).toMatch(/\.json$/);
+  expect(writes).toEqual([]);
 });
