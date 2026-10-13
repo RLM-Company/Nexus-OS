@@ -296,7 +296,7 @@ export default function PresentationsPage() {
             <button
               type="button"
               className={styles.primary}
-              onClick={save}
+              onClick={() => void save()}
               disabled={!dirty || busy}
             >
               Сохранить
@@ -320,7 +320,7 @@ export default function PresentationsPage() {
               maxLength={160}
               onChange={(event) => setTitle(event.target.value)}
             />
-            <button type="button" onClick={create} disabled={busy || !title.trim()}>
+            <button type="button" onClick={() => void create()} disabled={busy || !title.trim()}>
               + Создать
             </button>
           </div>
@@ -370,7 +370,12 @@ export default function PresentationsPage() {
                 </select>
               </label>
               <span className={styles.saveState}>{dirty ? "Не сохранено" : "Сохранено"}</span>
-              <button type="button" className={styles.danger} onClick={remove} disabled={busy}>
+              <button
+                type="button"
+                className={styles.danger}
+                onClick={() => void remove()}
+                disabled={busy}
+              >
                 Удалить презентацию
               </button>
             </div>

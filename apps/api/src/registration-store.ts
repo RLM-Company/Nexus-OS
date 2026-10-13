@@ -41,7 +41,14 @@ export class RegistrationStore {
       .prepare("SELECT owner_id, password_hash, verified_at FROM auth_accounts WHERE email = ?")
       .get(normalized) as Row | undefined;
     if (existing?.verified_at) return null;
-    if (existing && !verifyPassword(password, String(existing.password_hash ?? ""))) return null;
+    if (
+      existing &&
+      !verifyPassword(
+        password,
+        typeof existing.password_hash === "string" ? existing.password_hash : ""
+      )
+    )
+      return null;
     const ownerId = existing ? String(existing.owner_id) : randomUUID();
     const token = randomBytes(32).toString("base64url");
     const at = new Date(this.now()).toISOString();
@@ -146,8 +153,8 @@ export class RegistrationStore {
         )
         .get(ownerId) as Row | undefined;
       if (
-        !current?.password_hash ||
-        !verifyPassword(currentPassword, String(current.password_hash)) ||
+        typeof current?.password_hash !== "string" ||
+        !verifyPassword(currentPassword, current.password_hash) ||
         current.email === newEmail ||
         this.db.prepare("SELECT 1 FROM auth_accounts WHERE email=?").get(newEmail)
       ) {
@@ -351,7 +358,10 @@ export class RegistrationStore {
           "SELECT password_hash FROM auth_accounts WHERE owner_id=? AND verified_at IS NOT NULL"
         )
         .get(ownerId) as Row | undefined;
-      if (!row?.password_hash || !verifyPassword(currentPassword, String(row.password_hash))) {
+      if (
+        typeof row?.password_hash !== "string" ||
+        !verifyPassword(currentPassword, row.password_hash)
+      ) {
         this.db.exec("ROLLBACK");
         return false;
       }
@@ -382,9 +392,9 @@ export class RegistrationStore {
         )
         .get(ownerId) as Row | undefined;
       if (
-        !row?.password_hash ||
+        typeof row?.password_hash !== "string" ||
         !row.google_sub ||
-        !verifyPassword(password, String(row.password_hash))
+        !verifyPassword(password, row.password_hash)
       ) {
         this.db.exec("ROLLBACK");
         return false;
