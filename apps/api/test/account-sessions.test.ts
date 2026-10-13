@@ -58,6 +58,7 @@ describe("owner session management", () => {
       });
       expect(page.statusCode).toBe(200);
       expect(page.body).toContain("Завершить все другие сеансы");
+      expect(page.body).toContain("Завершить все сеансы и выйти");
       expect(page.body).toContain(another.session.session_id);
       expect(page.body).not.toContain(foreign.session.session_id);
       expect((await post({ all_others: "1" }, "https://evil.example")).statusCode).toBe(403);
@@ -69,6 +70,14 @@ describe("owner session management", () => {
       expect((await post({ all_others: "1" })).statusCode).toBe(303);
       expect(identity.resolveSession(third.token)).toBeNull();
       expect(identity.resolveSession(current.token)).not.toBeNull();
+      expect(identity.resolveSession(foreign.token)).not.toBeNull();
+      expect((await post({ all_sessions: "1", all_others: "1" })).statusCode).toBe(400);
+      expect((await post({ all_sessions: "1" }, "https://evil.example")).statusCode).toBe(403);
+      const all = await post({ all_sessions: "1" });
+      expect(all.statusCode).toBe(303);
+      expect(all.headers.location).toBe("/login");
+      expect(all.headers["set-cookie"]).toContain("Max-Age=0");
+      expect(identity.resolveSession(current.token)).toBeNull();
       expect(identity.resolveSession(foreign.token)).not.toBeNull();
     } finally {
       await app.close();
