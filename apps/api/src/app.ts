@@ -173,6 +173,7 @@ import type { DocumentAnswerService } from "./document-answer-service.js";
 import { registerChatHistorySearchRoutes } from "./chat-history-search-routes.js";
 import { registerPresentationRoutes } from "./presentation-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
+import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
 import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
 import type { ResearchOwnerBudget } from "./research/research-synthesis.js";
 import type { CodeOwnerBudget } from "./code-agent/owner-budget.js";
@@ -181,7 +182,8 @@ import type {
   DocumentLibraryStore,
   ChatHistorySearchStore,
   PresentationStore,
-  NotificationStore
+  NotificationStore,
+  OwnerSkillStore
 } from "@cosmora/db";
 import { QuotaExceededError } from "./account-settings/account-store.js";
 import { registerResearchRoutes } from "./research/research-routes.js";
@@ -201,6 +203,7 @@ export interface AppDependencies {
   chatHistorySearchStore?: ChatHistorySearchStore;
   presentationStore?: PresentationStore;
   notificationStore?: NotificationStore;
+  ownerSkillStore?: OwnerSkillStore;
   researchBudget?: ResearchOwnerBudget;
   ownerBudget?: CodeOwnerBudget;
   codeAgentService?: CodeAgentService;
@@ -767,6 +770,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerPresentationRoutes(app, dependencies.presentationStore, identityFor);
   if (dependencies.notificationStore)
     registerNotificationRoutes(app, dependencies.notificationStore, identityFor);
+  if (dependencies.ownerSkillStore)
+    registerOwnerSkillRoutes(app, dependencies.ownerSkillStore, identityFor);
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
   if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
     const coordinator = registerResearchRoutes({

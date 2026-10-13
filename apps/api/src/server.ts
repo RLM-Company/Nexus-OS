@@ -7,6 +7,7 @@ import {
   ChatHistorySearchStore,
   PresentationStore,
   NotificationStore,
+  OwnerSkillStore,
   AgentInstanceStore,
   AgentStudioMutationStore,
   DemoManagerStore,
@@ -66,6 +67,7 @@ import { GoogleIdentity } from "./google-identity.js";
 import { sendWithLocalMta } from "./registration-routes.js";
 import { PresentationPrivacyAdapter } from "./presentation-privacy.js";
 import { NotificationPrivacyAdapter } from "./notification-privacy.js";
+import { OwnerSkillPrivacyAdapter } from "./owner-skill-privacy.js";
 import { canvasPrivacyAdapter } from "./canvas/canvas-privacy.js";
 
 const config = loadServerConfig();
@@ -125,6 +127,7 @@ try {
   const chatHistorySearchStore = new ChatHistorySearchStore(database.sqlite);
   const presentationStore = new PresentationStore(database.sqlite);
   const notificationStore = new NotificationStore(database.sqlite);
+  const ownerSkillStore = new OwnerSkillStore(database.sqlite);
   const researchStore = new ResearchStore(database.sqlite);
   const ownerPrivacy = new OwnerPrivacyCoordinator(database.sqlite);
   const demoManagerStore = new DemoManagerStore(database.sqlite);
@@ -216,6 +219,7 @@ try {
   ownerPrivacy.register(new PolicyProjectsPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new PresentationPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new NotificationPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new OwnerSkillPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
   app = buildApp({
     canvasStore,
@@ -229,6 +233,7 @@ try {
     chatHistorySearchStore,
     presentationStore,
     notificationStore,
+    ownerSkillStore,
     ownerPrivacy,
     ownerBudget: sharedBudget,
     codeAgentService,
