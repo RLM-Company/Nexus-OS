@@ -1,8 +1,12 @@
 import { spawn } from "node:child_process";
 import type { IdentityStore } from "@cosmora/db";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { GoogleIdentity, newOAuthTransaction, type OAuthTransaction } from "./google-identity.js";
-import { RegistrationStore, normalizedEmail } from "./registration-store.js";
+import {
+  newOAuthTransaction,
+  type GoogleIdentity,
+  type OAuthTransaction
+} from "./google-identity.js";
+import { normalizedEmail, type RegistrationStore } from "./registration-store.js";
 
 const SESSION_COOKIE = "__Host-kosmora-session";
 const OAUTH_COOKIE = "__Host-kosmora-oauth";
@@ -81,7 +85,8 @@ export const sendWithLocalMta = (
       });
       child.once("close", (code) => {
         clearTimeout(timer);
-        code === 0 ? resolve() : reject(Error("MAIL_DELIVERY_FAILED"));
+        if (code === 0) resolve();
+        else reject(Error("MAIL_DELIVERY_FAILED"));
       });
       child.stdin.end(
         `From: ${sender}\r\nTo: ${recipient}\r\nSubject: Kosmora: ${purpose === "reset" ? "reset your password" : purpose === "email-change" ? "confirm your new email" : "confirm your email"}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${purpose === "reset" ? "Сбросьте пароль Kosmora" : purpose === "email-change" ? "Подтвердите новый адрес email в Kosmora" : "Подтвердите адрес email в Kosmora"}: ${link}\r\nСсылка действует 30 минут.\r\n`

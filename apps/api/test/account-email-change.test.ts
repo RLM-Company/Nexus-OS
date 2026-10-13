@@ -39,8 +39,9 @@ describe("account email change", () => {
         origin,
         store,
         identity,
-        sendEmailChange: async (_email, link) => {
+        sendEmailChange: (_email, link) => {
           links.push(link);
+          return Promise.resolve();
         }
       }
     });

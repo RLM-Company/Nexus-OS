@@ -4,24 +4,22 @@ import type { PrivacyAdapter, PrivacySection } from "./account-settings/privacy/
 export class OwnerSkillPrivacyAdapter implements PrivacyAdapter {
   readonly id = "owner-skills";
   constructor(private readonly sql: DatabaseSync) {}
-  async quiesce(_ownerId: string, epoch: number): Promise<{ drained: true; fence_epoch: number }> {
-    return { drained: true, fence_epoch: epoch };
+  quiesce(_ownerId: string, epoch: number): Promise<{ drained: true; fence_epoch: number }> {
+    return Promise.resolve({ drained: true, fence_epoch: epoch });
   }
-  async export(ownerId: string): Promise<PrivacySection> {
-    return {
+  export(ownerId: string): Promise<PrivacySection> {
+    return Promise.resolve({
       records: {
-        skills: this.sql
-          .prepare("SELECT * FROM owner_skills WHERE owner_id=?")
-          .all(ownerId) as Record<string, unknown>[],
+        skills: this.sql.prepare("SELECT * FROM owner_skills WHERE owner_id=?").all(ownerId),
         versions: this.sql
           .prepare("SELECT * FROM owner_skill_versions WHERE owner_id=?")
-          .all(ownerId) as Record<string, unknown>[]
+          .all(ownerId)
       },
       originals: [],
       complete: true
-    };
+    });
   }
-  async delete(ownerId: string, epoch: number): Promise<{ deleted_records: number }> {
+  delete(ownerId: string, epoch: number): Promise<{ deleted_records: number }> {
     if (
       !this.sql
         .prepare(
@@ -36,6 +34,6 @@ export class OwnerSkillPrivacyAdapter implements PrivacyAdapter {
     const skills = Number(
       this.sql.prepare("DELETE FROM owner_skills WHERE owner_id=?").run(ownerId).changes
     );
-    return { deleted_records: skills + versions };
+    return Promise.resolve({ deleted_records: skills + versions });
   }
 }
