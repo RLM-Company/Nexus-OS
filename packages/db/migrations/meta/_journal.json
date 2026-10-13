@@ -1,186 +1,186 @@
 {
-  "version": "6",
+  "version": "7",
   "dialect": "sqlite",
   "entries": [
     {
       "idx": 0,
       "version": "6",
-      "when": 1789420800000,
-      "tag": "0000_initial_schema",
+      "when": 1787244365653,
+      "tag": "0000_early_banshee",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1789420800001,
-      "tag": "0001_idempotency_records",
+      "when": 1787252997001,
+      "tag": "0001_complex_wendigo",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "6",
-      "when": 1789420800002,
-      "tag": "0002_model_registry",
+      "when": 1787257543107,
+      "tag": "0002_striped_triathlon",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "6",
-      "when": 1789420800003,
-      "tag": "0003_owner_sessions",
+      "when": 1787571242195,
+      "tag": "0003_exotic_the_stranger",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "6",
-      "when": 1789420800004,
-      "tag": "0004_policy_overrides",
+      "when": 1787571704722,
+      "tag": "0004_complete_vision",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "6",
-      "when": 1789420800005,
-      "tag": "0005_project_usage",
+      "when": 1787755241380,
+      "tag": "0005_cosmora_system_metadata",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "6",
-      "when": 1789420800006,
-      "tag": "0006_demo_manager",
+      "when": 1787756411936,
+      "tag": "0006_model_usage_ledger",
       "breakpoints": true
     },
     {
       "idx": 7,
       "version": "6",
-      "when": 1789420800007,
-      "tag": "0007_runtime_events",
+      "when": 1787805348433,
+      "tag": "0007_perpetual_supernaut",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "6",
-      "when": 1789420800008,
-      "tag": "0008_companion_settings",
+      "when": 1787853057469,
+      "tag": "0008_identity_core",
       "breakpoints": true
     },
     {
       "idx": 9,
       "version": "6",
-      "when": 1789420800009,
-      "tag": "0009_agent_catalog",
+      "when": 1787856000000,
+      "tag": "0009_step_up_proofs",
       "breakpoints": true
     },
     {
       "idx": 10,
       "version": "6",
-      "when": 1789420800010,
-      "tag": "0010_agent_proposals",
+      "when": 1787895762483,
+      "tag": "0010_agent_pattern_library",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "6",
-      "when": 1789420800011,
-      "tag": "0011_work_execution",
+      "when": 1787921249350,
+      "tag": "0011_agent_blueprints",
       "breakpoints": true
     },
     {
       "idx": 12,
       "version": "6",
-      "when": 1789420800012,
-      "tag": "0012_runtime_artifacts",
+      "when": 1787921765688,
+      "tag": "0012_agent_instance_proposals",
       "breakpoints": true
     },
     {
       "idx": 13,
       "version": "6",
-      "when": 1789420800013,
-      "tag": "0013_checkpoint_records",
+      "when": 1788000088726,
+      "tag": "0013_agent_studio_mutation_idempotency",
       "breakpoints": true
     },
     {
       "idx": 14,
       "version": "6",
-      "when": 1789420800014,
-      "tag": "0014_critic_verdicts",
+      "when": 1788036854926,
+      "tag": "0014_breezy_crusher_hogan",
       "breakpoints": true
     },
     {
       "idx": 15,
       "version": "6",
-      "when": 1789420800015,
-      "tag": "0015_suite_runners",
+      "when": 1788319742180,
+      "tag": "0015_regular_overlord",
       "breakpoints": true
     },
     {
       "idx": 16,
       "version": "6",
-      "when": 1789420800016,
-      "tag": "0016_scenario_runs",
+      "when": 1788409086093,
+      "tag": "0016_yellow_katie_power",
       "breakpoints": true
     },
     {
       "idx": 17,
       "version": "6",
-      "when": 1789420800017,
-      "tag": "0017_general_chat",
+      "when": 1789020000000,
+      "tag": "0017_manager_demo_runs",
       "breakpoints": true
     },
     {
       "idx": 18,
       "version": "6",
-      "when": 1789420800018,
-      "tag": "0018_general_chat_runs",
+      "when": 1789545600000,
+      "tag": "0018_general_chats",
       "breakpoints": true
     },
     {
       "idx": 19,
       "version": "6",
-      "when": 1789420800019,
-      "tag": "0019_chat_attachments",
+      "when": 1790380800000,
+      "tag": "0019_manager_work",
       "breakpoints": true
     },
     {
       "idx": 20,
       "version": "6",
-      "when": 1789420800020,
-      "tag": "0020_project_materials",
+      "when": 1790985600000,
+      "tag": "0020_chat_text_attachments",
       "breakpoints": true
     },
     {
       "idx": 21,
       "version": "6",
-      "when": 1789420800021,
-      "tag": "0021_user_profiles",
+      "when": 1791072000000,
+      "tag": "0021_project_message_attachments",
       "breakpoints": true
     },
     {
       "idx": 22,
       "version": "6",
-      "when": 1789420800022,
-      "tag": "0022_account_ledger",
+      "when": 1791072000001,
+      "tag": "0022_github_change_drafts",
       "breakpoints": true
     },
     {
       "idx": 23,
       "version": "6",
-      "when": 1789420800023,
-      "tag": "0023_project_conversations",
+      "when": 1791072000002,
+      "tag": "0023_project_materials",
       "breakpoints": true
     },
     {
       "idx": 24,
       "version": "6",
-      "when": 1789420800024,
-      "tag": "0024_work_dag_runs",
+      "when": 1791072000003,
+      "tag": "0024_chat_archive",
       "breakpoints": true
     },
     {
       "idx": 25,
       "version": "6",
-      "when": 1789420800025,
+      "when": 1791489600000,
       "tag": "0025_document_library",
       "breakpoints": true
     },
@@ -188,42 +188,35 @@
       "idx": 26,
       "version": "6",
       "when": 1791580800001,
-      "tag": "0026_project_memory",
+      "tag": "0026_work_runtime",
       "breakpoints": true
     },
     {
       "idx": 27,
       "version": "6",
       "when": 1791580800002,
-      "tag": "0027_project_memory_snapshots",
+      "tag": "0027_personal_settings",
       "breakpoints": true
     },
     {
       "idx": 28,
       "version": "6",
       "when": 1791580800003,
-      "tag": "0028_project_memory_citations",
-      "breakpoints": true
-    },
-    {
-      "idx": 29,
-      "version": "6",
-      "when": 1791580800004,
-      "tag": "0029_code_interpreter_sessions",
+      "tag": "0028_research_workspace",
       "breakpoints": true
     },
     {
       "idx": 30,
       "version": "6",
       "when": 1791580800005,
-      "tag": "0030_research_notebooks",
+      "tag": "0030_owner_privacy_lifecycle",
       "breakpoints": true
     },
     {
       "idx": 31,
       "version": "6",
       "when": 1791580800006,
-      "tag": "0031_agent_skills",
+      "tag": "0031_work_dag",
       "breakpoints": true
     },
     {

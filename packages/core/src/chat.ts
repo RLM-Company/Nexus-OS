@@ -1,14 +1,15 @@
-import {
-  assertEntityId,
-  type GeneralChatMessage,
-  type ModelMessage,
-  type ModelRequest
+import type {
+  Currency,
+  GeneralChatMessage,
+  ModelFeature,
+  ModelMessage,
+  ModelRequest
 } from "@cosmora/contracts";
-import {
-  conversationWindow,
-  estimateInputTokensUpperBound
-} from "./conversation-window.js";
+import { estimateInputTokensUpperBound } from "./manager.js";
+import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
 import { messageWithMaterials } from "./message-materials.js";
+import { conversationWindow } from "./conversation-window.js";
+import { MemoryHierarchyManager } from "./memory-hierarchy.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
@@ -25,12 +26,12 @@ export const DEFAULT_CHAT_SYSTEM_PROMPT = `Ты — Kosmora, обычный ди
 
 export interface ChatServiceOptions {
   preferredProvider: string;
-  preferredModelAlias?: string;
+  preferredModelAlias: string;
   fallbackAllowed: boolean;
-  requiredFeatures: string[];
-  confidential: boolean;
-  maxCost?: number;
-  optimizeFor?: "cost" | "latency" | "quality";
+  requiredFeatures?: ModelFeature[];
+  confidential?: boolean;
+  maxCost?: { amount: number; currency: Currency } | null;
+  optimizeFor?: "balanced" | "quality" | "latency" | "cost";
   timeoutMs?: number;
   maxOutputTokens?: number;
   systemPrompt?: string;
@@ -48,10 +49,10 @@ interface NormalizedChatOptions {
   preferredProvider: string;
   preferredModelAlias: string;
   fallbackAllowed: boolean;
-  requiredFeatures: string[];
+  requiredFeatures: ModelFeature[];
   confidential: boolean;
-  maxCost?: number;
-  optimizeFor: "cost" | "latency" | "quality";
+  maxCost: { amount: number; currency: Currency } | null;
+  optimizeFor: "balanced" | "quality" | "latency" | "cost";
   timeoutMs: number;
   maxOutputTokens: number;
   systemPrompt: string;
@@ -61,18 +62,18 @@ export class ChatService {
   readonly #options: NormalizedChatOptions;
 
   constructor(options: ChatServiceOptions) {
-    this.#options = {
+    this.#options = normalizeCommonModelServiceOptions({
       preferredProvider: options.preferredProvider,
-      preferredModelAlias: options.preferredModelAlias ?? "chat-default",
+      preferredModelAlias: options.preferredModelAlias,
       fallbackAllowed: options.fallbackAllowed,
-      requiredFeatures: [...options.requiredFeatures],
-      confidential: options.confidential,
-      maxCost: options.maxCost,
-      optimizeFor: options.optimizeFor ?? "latency",
-      timeoutMs: options.timeoutMs ?? 30000,
-      maxOutputTokens: options.maxOutputTokens ?? 4096,
+      requiredFeatures: options.requiredFeatures ?? ["streaming"],
+      confidential: options.confidential ?? false,
+      maxCost: options.maxCost ?? null,
+      optimizeFor: options.optimizeFor ?? "balanced",
+      timeoutMs: options.timeoutMs ?? 60_000,
+      maxOutputTokens: options.maxOutputTokens ?? 1_200,
       systemPrompt: options.systemPrompt ?? DEFAULT_CHAT_SYSTEM_PROMPT
-    };
+    });
   }
 
   buildRequest(context: ChatRunContext): ModelRequest {
@@ -80,11 +81,29 @@ export class ChatService {
     assertEntityId(context.runId, "runId");
 
     let systemPrompt = this.#options.systemPrompt;
-    if (context.summary?.trim()) {
-      systemPrompt += `\n\nСводка предыдущего контекста ветки:\n${context.summary.trim()}`;
-    }
-    if (context.memoryNotes?.trim()) {
-      systemPrompt += `\n\nПостоянная память и важные заметки диалога:\n${context.memoryNotes.trim()}`;
+
+    // L1/L2/L3 Memory Hierarchy Synthesis
+    if (context.memoryNotes?.trim() || context.summary?.trim()) {
+      const { facts, textNotes } = MemoryHierarchyManager.parseMemoryNotes(
+        context.memoryNotes ?? ""
+      );
+      const latestUserQuery =
+        context.messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
+
+      const tieredContext = MemoryHierarchyManager.buildPromptContext(
+        {
+          chat_id: context.chatId,
+          branch_id: "main",
+          summary: context.summary ?? "",
+          facts,
+          raw_notes: textNotes
+        },
+        latestUserQuery
+      );
+
+      if (tieredContext.trim()) {
+        systemPrompt += `\n\n${tieredContext.trim()}`;
+      }
     }
 
     const conversation: ModelMessage[] = context.messages

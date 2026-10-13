@@ -17,3 +17,7 @@ export * from "./work-runtime/index.js";
 export * from "./work-runtime/dag.js";
 export * from "./project-memory/index.js";
 export * from "./document-library.js";
+export * from "./secret-masking.js";
+export * from "./code-pruner.js";
+export * from "./memory-hierarchy.js";
+export * from "./local-tools.js";
