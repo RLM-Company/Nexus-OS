@@ -495,7 +495,7 @@ export function registerRegistrationRoutes(
       "session.issued": "Вход выполнен",
       "session.revoked": "Сеанс завершён",
       "session.expired": "Срок сеанса истёк",
-      "login.failed": "Неудачная попытка входа"
+      "login.failed": "Неудачная попытка входа по email"
     };
     const events = options.identity.listRecentOwnerSessionEvents(
       current.owner_id,
@@ -514,7 +514,7 @@ export function registerRegistrationRoutes(
       body{margin:0;padding:24px}main{width:min(100%,740px);margin:0 auto;padding:24px;background:#fff;border:1px solid #ddd;border-radius:16px}
       ul{list-style:none;padding:0}li{border-top:1px solid #ddd;padding:14px 0;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
       p,span{color:#666;line-height:1.5}a{color:#171717}:focus-visible{outline:2px solid #555;outline-offset:3px}</style>
-      <main><h1>Активность доступа</h1><p>Последние 50 событий входа и сеансов вашего аккаунта, время UTC. Повторные неудачные попытки входа в пределах минуты объединены.</p>
+      <main><h1>Активность доступа</h1><p>Последние 50 событий входа и сеансов вашего аккаунта, время UTC. Повторные неудачные попытки входа по email в пределах минуты объединены.</p>
       ${rows ? `<ul>${rows}</ul>` : "<p>Событий пока нет.</p>"}<p><a href="/auth/account">Вернуться к аккаунту</a></p></main></html>`);
   });
   app.post("/auth/account/email-change/request", async (request, reply) => {
