@@ -267,6 +267,13 @@
       "when": 1791580800014,
       "tag": "0039_notification_center",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791580800015,
+      "tag": "0040_owner_skills",
+      "breakpoints": true
     }
   ]
 }
