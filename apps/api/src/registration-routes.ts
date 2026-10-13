@@ -609,6 +609,7 @@ export function registerRegistrationRoutes(
       a{color:#171717}:focus-visible{outline:2px solid #555;outline-offset:3px}</style>
       <main><h1>Активные сеансы</h1><p>Показаны сеансы входа вашего аккаунта. Время указано в UTC.</p>
       <ul>${rows}</ul>${active.length > 1 ? '<form method="post" action="/auth/account/sessions/revoke"><input type="hidden" name="all_others" value="1"><button type="submit">Завершить все другие сеансы</button></form>' : ""}
+      <form method="post" action="/auth/account/sessions/revoke"><input type="hidden" name="all_sessions" value="1"><button type="submit">Завершить все сеансы и выйти</button></form>
       <p><a href="/auth/account">Вернуться к аккаунту</a></p></main></html>`);
   });
   app.post("/auth/account/sessions/revoke", async (request, reply) => {
@@ -619,12 +620,21 @@ export function registerRegistrationRoutes(
     const form = request.body as Form;
     if (!(form instanceof URLSearchParams)) return reply.code(400).send();
     const one = form.getAll("session_id"),
-      all = form.getAll("all_others");
+      all = form.getAll("all_others"),
+      every = form.getAll("all_sessions");
     if (!(
-      (one.length === 1 && all.length === 0 && /^[0-9a-f-]{36}$/u.test(one[0]!)) ||
-      (one.length === 0 && all.length === 1 && all[0] === "1")
+      (one.length === 1 &&
+        all.length === 0 &&
+        every.length === 0 &&
+        /^[0-9a-f-]{36}$/u.test(one[0]!)) ||
+      (one.length === 0 && all.length === 1 && every.length === 0 && all[0] === "1") ||
+      (one.length === 0 && all.length === 0 && every.length === 1 && every[0] === "1")
     ))
       return reply.code(400).send();
+    if (every.length === 1) {
+      revoke(current.owner_id, "owner_logout_all_sessions");
+      return redirect(reply, "/login", cookie(SESSION_COOKIE, "", 0));
+    }
     const candidates = options.identity
       .listSessions(current.owner_id)
       .filter(
