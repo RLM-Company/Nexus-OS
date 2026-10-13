@@ -104,6 +104,19 @@ export function WorkspaceModeMenu({
               <small>Поиск, источники и отчёты</small>
             </span>
           </Link>
+          <Link
+            href="/presentations"
+            className={styles.row}
+            onClick={() => {
+              if (ref.current) ref.current.open = false;
+            }}
+          >
+            <Icon name="studio" />
+            <span>
+              <strong>Презентации</strong>
+              <small>Слайды и PPTX</small>
+            </span>
+          </Link>
         </div>
       </nav>
     </details>
@@ -352,6 +365,10 @@ export function MobileNavigation({
                   {item.label}
                 </button>
               ))}
+              <Link href="/presentations" className={styles.row} onClick={close}>
+                <Icon name="studio" />
+                Презентации
+              </Link>
             </div>
           </section>
           <section>

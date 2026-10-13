@@ -11,7 +11,8 @@ export const REQUIRED_PRIVACY_STORES = [
   "code",
   "agent-studio",
   "policy-projects",
-  "canvas"
+  "canvas",
+  "presentations"
 ] as const;
 export type PrivacyStoreId = string;
 export class PrivacyUnavailableError extends Error {

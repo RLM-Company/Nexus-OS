@@ -152,3 +152,4 @@ export * from "./document-library-store.js";
 export * from "./canvas-artifact-store.js";
 export * from "./document-answer-store.js";
 export * from "./chat-history-search-store.js";
+export * from "./presentation-store.js";
