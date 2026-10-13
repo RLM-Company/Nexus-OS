@@ -185,10 +185,13 @@ export class GeneralChatBackgroundRunCoordinator {
         );
       }
 
+      const memory = this.#store.getChatMemory(queued.chat_id, "main", queued.owner_id);
       let modelRequest = this.#chat.buildRequest({
         chatId: queued.chat_id,
         runId: queued.run_id,
-        messages: conversation
+        messages: conversation,
+        memoryNotes: memory?.memory_notes,
+        summary: memory && !memory.summary_invalidated ? memory.summary : undefined
       });
       if (
         this.#accountStore?.getRelay(queued.owner_id, queued.chat_id) &&
