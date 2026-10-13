@@ -14,7 +14,8 @@ export const REQUIRED_PRIVACY_STORES = [
   "canvas",
   "presentations",
   "notifications",
-  "owner-skills"
+  "owner-skills",
+  "email-change"
 ] as const;
 export type PrivacyStoreId = string;
 export class PrivacyUnavailableError extends Error {

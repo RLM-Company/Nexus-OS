@@ -58,12 +58,13 @@ export interface RegistrationOptions {
   google?: GoogleIdentity;
   sendVerification?: (email: string, link: string) => Promise<void>;
   sendPasswordReset?: (email: string, link: string) => Promise<void>;
+  sendEmailChange?: (email: string, link: string) => Promise<void>;
 }
 
 export const sendWithLocalMta = (
   executable: string,
   from: string,
-  purpose: "verify" | "reset" = "verify"
+  purpose: "verify" | "reset" | "email-change" = "verify"
 ) => {
   const sender = normalizedEmail(from);
   if (!executable.startsWith("/") || !sender) throw Error("Mail delivery is not configured");
@@ -83,7 +84,7 @@ export const sendWithLocalMta = (
         code === 0 ? resolve() : reject(Error("MAIL_DELIVERY_FAILED"));
       });
       child.stdin.end(
-        `From: ${sender}\r\nTo: ${recipient}\r\nSubject: Kosmora: ${purpose === "reset" ? "reset your password" : "confirm your email"}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${purpose === "reset" ? "Сбросьте пароль Kosmora" : "Подтвердите адрес email в Kosmora"}: ${link}\r\nСсылка действует 30 минут.\r\n`
+        `From: ${sender}\r\nTo: ${recipient}\r\nSubject: Kosmora: ${purpose === "reset" ? "reset your password" : purpose === "email-change" ? "confirm your new email" : "confirm your email"}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${purpose === "reset" ? "Сбросьте пароль Kosmora" : purpose === "email-change" ? "Подтвердите новый адрес email в Kosmora" : "Подтвердите адрес email в Kosmora"}: ${link}\r\nСсылка действует 30 минут.\r\n`
       );
     });
 };
@@ -418,10 +419,79 @@ export function registerRegistrationRoutes(
       ${options.google && !methods.google ? '<a href="/auth/google/link">Привязать Google</a>' : ""}
       ${!methods.email ? '<form action="/auth/account/email" method="post"><label for="new-password">Добавить вход по email</label><input id="new-password" name="password" type="password" minlength="12" maxlength="512" required><button type="submit">Сохранить пароль</button></form>' : ""}
       ${methods.email ? '<form action="/auth/account/password" method="post"><h2>Сменить пароль</h2><label for="current-password">Текущий пароль</label><input id="current-password" name="current" type="password" autocomplete="current-password" required><label for="changed-password">Новый пароль</label><input id="changed-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="512" required><button type="submit">Сменить пароль и завершить старые сеансы</button></form>' : ""}
+      ${methods.email && options.sendEmailChange ? '<form action="/auth/account/email-change/request" method="post"><h2>Сменить email</h2><label for="new-email">Новый email</label><input id="new-email" name="email" type="email" autocomplete="email" maxlength="254" required><label for="email-change-password">Текущий пароль</label><input id="email-change-password" name="password" type="password" autocomplete="current-password" required><button type="submit">Отправить подтверждение</button></form>' : ""}
       ${methods.email && methods.google ? '<form action="/auth/account/method/remove" method="post"><h2>Способы входа</h2><label for="method">Отключить способ входа</label><select id="method" name="method"><option value="google">Google</option><option value="email">Пароль</option></select><label for="proof-password">Текущий пароль для подтверждения</label><input id="proof-password" name="password" type="password" autocomplete="current-password" required><button type="submit">Отключить и завершить старые сеансы</button></form>' : ""}
       <p><a href="/auth/account/sessions">Активные сеансы</a></p>
       <p><a href="/">Вернуться в Kosmora</a></p>
       <form action="/auth/logout" method="post"><button type="submit">Выйти</button></form></main></html>`);
+  });
+  app.post("/auth/account/email-change/request", async (request, reply) => {
+    if (!options.sendEmailChange) return reply.code(404).send();
+    if (!ownOrigin(request)) return reply.code(403).send();
+    const current = account(request);
+    if (!current) return reply.code(401).send();
+    if (!allowed(request)) return reply.code(429).header("retry-after", "900").send();
+    const form = request.body as Form;
+    if (
+      !(form instanceof URLSearchParams) ||
+      form.getAll("email").length !== 1 ||
+      form.getAll("password").length !== 1
+    )
+      return reply.code(400).send();
+    const email = normalizedEmail(form.get("email") ?? "");
+    if (!email) return reply.code(400).send();
+    try {
+      const token = options.store.requestEmailChange(
+        current.owner_id,
+        form.get("password") ?? "",
+        email
+      );
+      if (token)
+        await options.sendEmailChange(
+          email,
+          `${options.origin}/auth/account/email-change/confirm?token=${encodeURIComponent(token)}`
+        );
+    } catch (cause) {
+      request.log.error({ cause }, "Email change request failed");
+      return reply.code(503).send("Не удалось отправить подтверждение.");
+    }
+    return reply
+      .headers(publicHeaders)
+      .type("text/html")
+      .send(
+        '<!doctype html><html lang="ru"><meta charset="utf-8"><title>Проверьте почту</title><main><h1>Проверьте почту</h1><p>Если данные верны и адрес свободен, мы отправили ссылку подтверждения. Старый адрес действует до подтверждения.</p><a href="/auth/account">К аккаунту</a></main></html>'
+      );
+  });
+  app.get<{ Querystring: { token?: string } }>(
+    "/auth/account/email-change/confirm",
+    async (request, reply) => {
+      if (!options.sendEmailChange) return reply.code(404).send();
+      const token = request.query.token ?? "";
+      if (!/^[A-Za-z0-9_-]{43}$/u.test(token)) return reply.code(400).send();
+      return reply
+        .headers(publicHeaders)
+        .type("text/html")
+        .send(
+          `<!doctype html><html lang="ru"><meta charset="utf-8"><title>Подтвердить новый email</title><main><h1>Подтвердить новый email</h1><p>После подтверждения все сеансы завершатся, затем войдите с новым адресом.</p><form method="post" action="/auth/account/email-change/confirm"><input type="hidden" name="token" value="${token}"><button type="submit">Подтвердить адрес</button></form></main></html>`
+        );
+    }
+  );
+  app.post("/auth/account/email-change/confirm", async (request, reply) => {
+    if (!options.sendEmailChange) return reply.code(404).send();
+    if (!ownOrigin(request)) return reply.code(403).send();
+    const form = request.body as Form;
+    if (!(form instanceof URLSearchParams) || form.getAll("token").length !== 1)
+      return reply.code(400).send();
+    if (
+      !options.store.confirmEmailChange(form.get("token") ?? "", (ownerId) =>
+        revoke(ownerId, "email_changed")
+      )
+    )
+      return reply
+        .code(400)
+        .headers(publicHeaders)
+        .send("Ссылка недействительна или срок её действия истёк.");
+    return redirect(reply, "/login?email=changed", cookie(SESSION_COOKIE, "", 0));
   });
   app.get("/auth/account/sessions", async (request, reply) => {
     const current = account(request);
