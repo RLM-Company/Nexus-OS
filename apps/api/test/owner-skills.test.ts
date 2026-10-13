@@ -73,6 +73,30 @@ describe("owner skills", () => {
       }>();
       expect(detail.versions).toHaveLength(3);
       expect(detail.versions[0]?.instructions).toBe(draft.instructions);
+      const packResponse = await call("owner-a", "GET", `/${id}/package`);
+      expect(packResponse.statusCode).toBe(200);
+      const pack = packResponse.json<{
+        name: string;
+        instructions: string;
+        permissions: unknown[];
+        sha256: string;
+      }>();
+      expect(pack.permissions).toEqual([]);
+      expect((await call("owner-b", "GET", `/${id}/package`)).statusCode).toBe(404);
+      expect(
+        (await call("owner-b", "POST", "/import", { ...pack, instructions: "tampered" })).statusCode
+      ).toBe(400);
+      expect(
+        (await call("owner-b", "POST", "/import", { ...pack, permissions: ["network.write"] }))
+          .statusCode
+      ).toBe(400);
+      const imported = await call("owner-b", "POST", "/import", pack);
+      expect(imported.statusCode).toBe(201);
+      expect(
+        (await call("owner-b", "GET", `/${imported.json<{ id: string }>().id}`)).json<{
+          versions: Array<{ instructions: string }>;
+        }>().versions[0]?.instructions
+      ).toBe(draft.instructions);
       expect((await call("owner-b", "DELETE", `/${id}`, { expected_version: 3 })).statusCode).toBe(
         404
       );

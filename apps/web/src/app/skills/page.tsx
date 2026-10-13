@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadMockSkillCatalog } from "./skills-manifest";
 import styles from "./skills.module.css";
 
@@ -15,6 +15,12 @@ type Skill = {
 };
 type Revision = Draft & { version: number; created_at: string };
 type Detail = { skill: Skill; versions: Revision[] };
+type SkillPackage = Draft & {
+  format: "kosmora.skill.v1";
+  execution: "disabled";
+  permissions: [];
+  sha256: string;
+};
 const empty: Draft = { name: "", summary: "", instructions: "" };
 const catalog = loadMockSkillCatalog();
 
@@ -53,6 +59,7 @@ export default function SkillsPage() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const importInput = useRef<HTMLInputElement>(null);
   const refresh = useCallback(async () => {
     const result = await api<{ items: Skill[] }>("");
     setItems(result.items);
@@ -132,6 +139,35 @@ export default function SkillsPage() {
       createNew();
       setMessage("Инструкция удалена.");
     });
+  const exportSkill = () =>
+    void run(async () => {
+      if (!selected) return;
+      const pack = await api<SkillPackage>(`/${encodeURIComponent(selected)}/package`);
+      const blob = new Blob([JSON.stringify(pack, null, 2) + "\n"], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `kosmora-skill-${selected}.json`;
+        link.click();
+      } finally {
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+    });
+  const importSkill = (file?: File) =>
+    void run(async () => {
+      if (!file) return;
+      if (file.size > 64_000) throw Error("Файл Skill слишком большой (максимум 64 КБ).");
+      let pack: unknown;
+      try {
+        pack = JSON.parse(await file.text());
+      } catch {
+        throw Error("Нужен корректный JSON-пакет Kosmora Skill.");
+      }
+      const saved = await api<Skill>("/import", "POST", pack);
+      await open(saved.id);
+      setMessage("Skill импортирован без прав на выполнение.");
+    });
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
@@ -163,6 +199,26 @@ export default function SkillsPage() {
                 Новая
               </button>
             </div>
+            <button
+              type="button"
+              className={styles.importButton}
+              disabled={busy}
+              onClick={() => importInput.current?.click()}
+            >
+              Импорт JSON
+            </button>
+            <input
+              ref={importInput}
+              type="file"
+              accept="application/json,.json"
+              className={styles.fileInput}
+              aria-label="Выберите пакет Skill"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                importSkill(file);
+              }}
+            />
             {loading ? (
               <p>Загрузка…</p>
             ) : items.length === 0 ? (
@@ -226,6 +282,11 @@ export default function SkillsPage() {
               <button type="button" disabled={busy} onClick={() => setPreview(!preview)}>
                 {preview ? "Скрыть предпросмотр" : "Предпросмотр"}
               </button>
+              {selected && (
+                <button type="button" disabled={busy} onClick={exportSkill}>
+                  Скачать пакет
+                </button>
+              )}
               {selected && (
                 <button type="button" disabled={busy} onClick={remove}>
                   Удалить
