@@ -110,7 +110,11 @@ export class RegistrationStore {
     }
   }
 
-  authenticateEmail(email: string, password: string): string | null {
+  authenticateEmail(
+    email: string,
+    password: string,
+    onFailedVerified?: (ownerId: string) => void
+  ): string | null {
     const normalized = normalizedEmail(email);
     const row = normalized
       ? (this.db
@@ -121,7 +125,9 @@ export class RegistrationStore {
       password,
       typeof row?.password_hash === "string" ? row.password_hash : null
     );
-    return matches && row?.verified_at ? String(row.owner_id) : null;
+    if (matches && row?.verified_at) return String(row.owner_id);
+    if (row?.verified_at && typeof row.owner_id === "string") onFailedVerified?.(row.owner_id);
+    return null;
   }
 
   methods(ownerId: string): { email: boolean; google: boolean } | null {
