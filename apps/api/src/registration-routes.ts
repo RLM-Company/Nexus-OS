@@ -422,8 +422,37 @@ export function registerRegistrationRoutes(
       ${methods.email && options.sendEmailChange ? '<form action="/auth/account/email-change/request" method="post"><h2>Сменить email</h2><label for="new-email">Новый email</label><input id="new-email" name="email" type="email" autocomplete="email" maxlength="254" required><label for="email-change-password">Текущий пароль</label><input id="email-change-password" name="password" type="password" autocomplete="current-password" required><button type="submit">Отправить подтверждение</button></form>' : ""}
       ${methods.email && methods.google ? '<form action="/auth/account/method/remove" method="post"><h2>Способы входа</h2><label for="method">Отключить способ входа</label><select id="method" name="method"><option value="google">Google</option><option value="email">Пароль</option></select><label for="proof-password">Текущий пароль для подтверждения</label><input id="proof-password" name="password" type="password" autocomplete="current-password" required><button type="submit">Отключить и завершить старые сеансы</button></form>' : ""}
       <p><a href="/auth/account/sessions">Активные сеансы</a></p>
+      <p><a href="/auth/account/activity">Активность доступа</a></p>
       <p><a href="/">Вернуться в Kosmora</a></p>
       <form action="/auth/logout" method="post"><button type="submit">Выйти</button></form></main></html>`);
+  });
+  app.get("/auth/account/activity", async (request, reply) => {
+    const current = account(request);
+    if (!current) return redirect(reply, "/login");
+    const labels: Record<string, string> = {
+      "session.issued": "Вход выполнен",
+      "session.revoked": "Сеанс завершён",
+      "session.expired": "Срок сеанса истёк"
+    };
+    const events = options.identity.listRecentOwnerSessionEvents(
+      current.owner_id,
+      current.actor_id,
+      50
+    );
+    const rows = events
+      .map((item) => {
+        const at = new Date(item.created_at).toLocaleString("ru-RU", { timeZone: "UTC" });
+        return `<li><strong>${labels[item.event_type]}</strong><span>${at} UTC</span></li>`;
+      })
+      .join("");
+    return reply.headers(publicHeaders).type("text/html")
+      .send(`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Активность доступа Kosmora</title><style>
+      :root{font-family:system-ui,sans-serif;color:#171717;background:#f7f7f7}*{box-sizing:border-box}
+      body{margin:0;padding:24px}main{width:min(100%,740px);margin:0 auto;padding:24px;background:#fff;border:1px solid #ddd;border-radius:16px}
+      ul{list-style:none;padding:0}li{border-top:1px solid #ddd;padding:14px 0;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+      p,span{color:#666;line-height:1.5}a{color:#171717}:focus-visible{outline:2px solid #555;outline-offset:3px}</style>
+      <main><h1>Активность доступа</h1><p>Последние 50 событий входа и сеансов вашего аккаунта, время UTC. Здесь нет истории неудачных попыток входа.</p>
+      ${rows ? `<ul>${rows}</ul>` : "<p>Событий пока нет.</p>"}<p><a href="/auth/account">Вернуться к аккаунту</a></p></main></html>`);
   });
   app.post("/auth/account/email-change/request", async (request, reply) => {
     if (!options.sendEmailChange) return reply.code(404).send();
