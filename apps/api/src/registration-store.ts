@@ -33,13 +33,14 @@ export class RegistrationStore {
     private readonly now: () => number = Date.now
   ) {}
 
-  requestEmailVerification(email: string, password: string): string | null {
+  requestEmailVerification(email: string, password: string, existingOnly = false): string | null {
     const normalized = normalizedEmail(email);
     if (!normalized) throw Error("INVALID_EMAIL");
     const passwordHash = hashPassword(password);
     const existing = this.db
       .prepare("SELECT owner_id, password_hash, verified_at FROM auth_accounts WHERE email = ?")
       .get(normalized) as Row | undefined;
+    if (existingOnly && !existing) return null;
     if (existing?.verified_at) return null;
     if (
       existing &&

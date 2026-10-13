@@ -42,6 +42,7 @@ const formPage = (kind: "login" | "register", message = "", google = false, emai
   }
   ${google ? '<a class="button" href="/auth/google">Продолжить с Google</a>' : ""}
   <p class="hint">${register ? '<a href="/login">Уже есть аккаунт? Войти</a>' : '<a href="/register">Создать аккаунт</a>'}</p>
+  ${register && email ? '<p><a href="/resend-verification">Не пришло письмо подтверждения?</a></p>' : ""}
   ${!register && email ? '<p><a href="/forgot-password">Забыли пароль?</a></p>' : ""}
   </main></body></html>`;
 };
@@ -178,6 +179,23 @@ export function registerRegistrationRoutes(
       .type("text/html")
       .send(formPage("register", "", Boolean(options.google), Boolean(options.sendVerification)))
   );
+  app.get("/resend-verification", async (_request, reply) => {
+    if (!options.sendVerification) return reply.code(404).send();
+    return reply.headers(publicHeaders).type("text/html").send(`<!doctype html><html lang="ru">
+      <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>Повторное подтверждение Kosmora</title>
+      <style>:root{font-family:system-ui,sans-serif;color:#171717;background:#f7f7f7}
+      *{box-sizing:border-box}body{min-height:100vh;display:grid;place-items:center;margin:0;padding:20px}
+      main{width:min(100%,420px);background:white;border:1px solid #ddd;border-radius:18px;padding:30px}
+      label{display:block;margin:18px 0 6px}input{width:100%;padding:12px;border:1px solid #aaa;border-radius:8px;font:inherit}
+      button{width:100%;padding:12px;margin:20px 0 0;background:#171717;color:white;border:0;border-radius:8px;font:inherit;cursor:pointer}
+      a{color:#171717}:focus-visible{outline:2px solid #555;outline-offset:3px}</style>
+      <main><h1>Отправить письмо ещё раз</h1><p>Введите адрес и пароль, указанные при регистрации.</p>
+      <form method="post" action="/auth/resend-verification">
+      <label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" required>
+      <label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="current-password" minlength="12" maxlength="512" required>
+      <button type="submit">Отправить подтверждение</button></form><p><a href="/login">Вход</a></p></main></html>`);
+  });
   app.get("/forgot-password", async (_request, reply) => {
     if (!options.sendPasswordReset) return reply.code(404).send();
     return reply.headers(publicHeaders).type("text/html")
@@ -286,6 +304,44 @@ export function registerRegistrationRoutes(
       request.log.error({ cause }, "Email registration failed");
       return reply.code(503).send("Не удалось отправить подтверждение.");
     }
+  });
+  app.post("/auth/resend-verification", async (request, reply) => {
+    if (!options.sendVerification) return reply.code(404).send();
+    if (!ownOrigin(request)) return reply.code(403).send();
+    if (!allowed(request)) return reply.code(429).header("retry-after", "900").send();
+    const form = request.body as Form;
+    if (
+      !(form instanceof URLSearchParams) ||
+      form.getAll("email").length !== 1 ||
+      form.getAll("password").length !== 1
+    )
+      return reply.code(400).send();
+    const email = normalizedEmail(form.get("email") ?? "");
+    if (!email) return reply.code(400).send();
+    try {
+      const token = options.store.requestEmailVerification(email, form.get("password") ?? "", true);
+      if (token)
+        await options.sendVerification(
+          email,
+          `${options.origin}/auth/confirm?token=${encodeURIComponent(token)}`
+        );
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "INVALID_PASSWORD")
+        return reply.code(400).send("Пароль должен содержать от 12 до 512 символов.");
+      request.log.error({ cause }, "Email verification resend failed");
+      return reply.code(503).send("Не удалось отправить подтверждение.");
+    }
+    return reply
+      .headers(publicHeaders)
+      .type("text/html")
+      .send(
+        formPage(
+          "login",
+          "Если адрес ожидает подтверждения и пароль верен, мы отправили новую ссылку.",
+          Boolean(options.google),
+          true
+        )
+      );
   });
   app.get<{ Querystring: { token?: string } }>("/auth/confirm", async (request, reply) => {
     const token = request.query.token ?? "";
