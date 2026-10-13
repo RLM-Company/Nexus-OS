@@ -18,6 +18,16 @@
       "development": "./src/index.ts",
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./general-chat-features": {
+      "development": "./src/general-chat-features.ts",
+      "types": "./src/general-chat-features.ts",
+      "default": "./dist/general-chat-features.js"
+    },
+    "./work-dag": {
+      "development": "./src/work-dag.ts",
+      "types": "./src/work-dag.ts",
+      "default": "./dist/work-dag.js"
     }
   },
   "files": [

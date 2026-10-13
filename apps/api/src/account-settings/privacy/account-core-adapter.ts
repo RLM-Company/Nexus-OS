@@ -60,6 +60,14 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
     private readonly stopOwnedExecutions: (ownerId: string, epoch: number) => Promise<void>
   ) {}
 
+  #hasTable(table: string): boolean {
+    return Boolean(
+      this.sqlite
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
+        .get(table)
+    );
+  }
+
   async quiesce(ownerId: string, epoch: number): Promise<{ drained: true; fence_epoch: number }> {
     await this.stopOwnedExecutions(ownerId, epoch);
     // Durable queue is cancelled, NEVER restarted during deletion. Only owned rows.
@@ -127,6 +135,20 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
       chat_usage: select(
         "SELECT u.* FROM general_chat_model_usage u JOIN general_chats c ON c.id=u.chat_id WHERE c.owner_id=?"
       ),
+      ...(this.#hasTable("general_chat_folders")
+        ? { chat_folders: select("SELECT * FROM general_chat_folders WHERE owner_id=?") }
+        : {}),
+      ...(this.#hasTable("general_chat_memory")
+        ? { chat_memory: select("SELECT * FROM general_chat_memory WHERE owner_id=?") }
+        : {}),
+      ...(this.#hasTable("general_chat_artifacts")
+        ? {
+            chat_artifacts: select("SELECT * FROM general_chat_artifacts WHERE owner_id=?"),
+            chat_artifact_versions: select(
+              "SELECT v.* FROM general_chat_artifact_versions v JOIN general_chat_artifacts a ON a.id=v.artifact_id WHERE a.owner_id=?"
+            )
+          }
+        : {}),
       project_usage: select(
         "SELECT u.* FROM model_usage_ledger u JOIN projects p ON p.id=u.project_id WHERE p.owner_id=?"
       )
@@ -176,7 +198,8 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
           ? `SELECT m.attachments_json FROM messages m JOIN projects p ON p.id=m.project_id WHERE p.owner_id=? AND m.id=?`
           : `SELECT m.attachments_json FROM project_materials m JOIN projects p ON p.id=m.project_id WHERE p.owner_id=? AND m.project_id=?`;
     const row = this.sqlite.prepare(sql).get(ownerId, objectId) as
-      { attachments_json: string } | undefined;
+      | { attachments_json: string }
+      | undefined;
     if (!row) return null;
     const attachments = JSON.parse(row.attachments_json) as unknown;
     if (!Array.isArray(attachments)) throw new Error("Corrupt attachments");
@@ -199,6 +222,15 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
     try {
       const n = (sql: string) => Number(this.sqlite.prepare(sql).run(ownerId).changes);
       let deleted = 0;
+      if (this.#hasTable("general_chat_artifacts")) {
+        deleted += n("DELETE FROM general_chat_artifacts WHERE owner_id=?");
+      }
+      if (this.#hasTable("general_chat_memory")) {
+        deleted += n("DELETE FROM general_chat_memory WHERE owner_id=?");
+      }
+      if (this.#hasTable("general_chat_folders")) {
+        deleted += n("DELETE FROM general_chat_folders WHERE owner_id=?");
+      }
       deleted += n("DELETE FROM general_chat_messages WHERE owner_id=?");
       deleted += n(
         "DELETE FROM general_chat_runs WHERE chat_id IN (SELECT id FROM general_chats WHERE owner_id=?)"

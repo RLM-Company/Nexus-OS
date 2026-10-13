@@ -7,10 +7,40 @@ export class ContextTooLargeError extends Error {
     );
   }
 }
+
 export const estimateMessageTokens = (message: ModelMessage): number =>
   new TextEncoder().encode(message.content).length + 8 + (message.images?.length ?? 0) * 16384;
+
 export const estimateInputTokensUpperBound = (messages: ModelMessage[]): number =>
   messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
+
+export function estimateTextTokens(text: string): number {
+  if (!text) return 0;
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const chars = text.length;
+  return Math.max(Math.ceil(chars / 3.5), Math.ceil(words * 1.3));
+}
+
+export interface ContextBudgetUsage {
+  usedTokens: number;
+  budgetTokens: number;
+  percentage: number;
+  isCloseToLimit: boolean;
+}
+
+export function calculateContextUsage(
+  messages: ModelMessage[],
+  budget = 28000
+): ContextBudgetUsage {
+  const usedTokens = estimateInputTokensUpperBound(messages);
+  const percentage = Math.min(100, Math.round((usedTokens / budget) * 100));
+  return {
+    usedTokens,
+    budgetTokens: budget,
+    percentage,
+    isCloseToLimit: percentage >= 80
+  };
+}
 
 export function conversationWindow(
   prefix: ModelMessage[],

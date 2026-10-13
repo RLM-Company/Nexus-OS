@@ -9,6 +9,7 @@ import { estimateInputTokensUpperBound } from "./manager.js";
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
 import { messageWithMaterials } from "./message-materials.js";
 import { conversationWindow } from "./conversation-window.js";
+import { MemoryHierarchyManager } from "./memory-hierarchy.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
@@ -40,6 +41,8 @@ export interface ChatRunContext {
   chatId: string;
   runId: string;
   messages: GeneralChatMessage[];
+  memoryNotes?: string;
+  summary?: string;
 }
 
 interface NormalizedChatOptions {
@@ -77,11 +80,37 @@ export class ChatService {
     assertEntityId(context.chatId, "chatId");
     assertEntityId(context.runId, "runId");
 
+    let systemPrompt = this.#options.systemPrompt;
+
+    // L1/L2/L3 Memory Hierarchy Synthesis
+    if (context.memoryNotes?.trim() || context.summary?.trim()) {
+      const { facts, textNotes } = MemoryHierarchyManager.parseMemoryNotes(
+        context.memoryNotes ?? ""
+      );
+      const latestUserQuery =
+        context.messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
+
+      const tieredContext = MemoryHierarchyManager.buildPromptContext(
+        {
+          chat_id: context.chatId,
+          branch_id: "main",
+          summary: context.summary ?? "",
+          facts,
+          raw_notes: textNotes
+        },
+        latestUserQuery
+      );
+
+      if (tieredContext.trim()) {
+        systemPrompt += `\n\n${tieredContext.trim()}`;
+      }
+    }
+
     const conversation: ModelMessage[] = context.messages
       .filter((message) => message.content.trim().length > 0)
       .map(messageWithMaterials);
     const messages = conversationWindow(
-      [{ role: "system", content: this.#options.systemPrompt }],
+      [{ role: "system", content: systemPrompt }],
       conversation
     );
 
