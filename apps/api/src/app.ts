@@ -654,6 +654,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         path === "/auth/account/email" ||
         path === "/auth/account/password" ||
         path === "/auth/account/method/remove" ||
+        path === "/auth/account/sessions" ||
+        path === "/auth/account/sessions/revoke" ||
         path === "/auth/logout" ||
         path === "/auth/verify")
     )

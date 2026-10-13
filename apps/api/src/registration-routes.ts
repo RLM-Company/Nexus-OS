@@ -419,8 +419,72 @@ export function registerRegistrationRoutes(
       ${!methods.email ? '<form action="/auth/account/email" method="post"><label for="new-password">Добавить вход по email</label><input id="new-password" name="password" type="password" minlength="12" maxlength="512" required><button type="submit">Сохранить пароль</button></form>' : ""}
       ${methods.email ? '<form action="/auth/account/password" method="post"><h2>Сменить пароль</h2><label for="current-password">Текущий пароль</label><input id="current-password" name="current" type="password" autocomplete="current-password" required><label for="changed-password">Новый пароль</label><input id="changed-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="512" required><button type="submit">Сменить пароль и завершить старые сеансы</button></form>' : ""}
       ${methods.email && methods.google ? '<form action="/auth/account/method/remove" method="post"><h2>Способы входа</h2><label for="method">Отключить способ входа</label><select id="method" name="method"><option value="google">Google</option><option value="email">Пароль</option></select><label for="proof-password">Текущий пароль для подтверждения</label><input id="proof-password" name="password" type="password" autocomplete="current-password" required><button type="submit">Отключить и завершить старые сеансы</button></form>' : ""}
+      <p><a href="/auth/account/sessions">Активные сеансы</a></p>
       <p><a href="/">Вернуться в Kosmora</a></p>
       <form action="/auth/logout" method="post"><button type="submit">Выйти</button></form></main></html>`);
+  });
+  app.get("/auth/account/sessions", async (request, reply) => {
+    const current = account(request);
+    if (!current) return redirect(reply, "/login");
+    const active = options.identity
+      .listSessions(current.owner_id)
+      .filter((item) => item.actor_id === current.actor_id && item.status === "active");
+    const rows = active
+      .map((item) => {
+        const currentSession = item.session_id === current.session_id;
+        const issued = new Date(item.issued_at).toLocaleString("ru-RU", { timeZone: "UTC" });
+        const seen = new Date(item.last_seen_at).toLocaleString("ru-RU", { timeZone: "UTC" });
+        const expires = new Date(item.expires_at).toLocaleString("ru-RU", { timeZone: "UTC" });
+        return `<li><strong>${currentSession ? "Этот сеанс" : "Другой сеанс"}</strong>
+        <p>Начат: ${issued} UTC · Последняя активность: ${seen} UTC · Истекает: ${expires} UTC</p>
+        ${currentSession ? "" : `<form method="post" action="/auth/account/sessions/revoke"><input type="hidden" name="session_id" value="${item.session_id}"><button type="submit">Завершить этот сеанс</button></form>`}</li>`;
+      })
+      .join("");
+    return reply.headers(publicHeaders).type("text/html")
+      .send(`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Сеансы Kosmora</title><style>
+      :root{font-family:system-ui,sans-serif;color:#171717;background:#f7f7f7}*{box-sizing:border-box}
+      body{margin:0;padding:24px}main{width:min(100%,740px);margin:0 auto;padding:24px;background:#fff;border:1px solid #ddd;border-radius:16px}
+      ul{list-style:none;padding:0}li{border-top:1px solid #ddd;padding:18px 0}p{color:#666;line-height:1.5}
+      button{padding:9px 14px;background:#171717;color:#fff;border:0;border-radius:7px;font:inherit;cursor:pointer}
+      a{color:#171717}:focus-visible{outline:2px solid #555;outline-offset:3px}</style>
+      <main><h1>Активные сеансы</h1><p>Показаны сеансы входа вашего аккаунта. Время указано в UTC.</p>
+      <ul>${rows}</ul>${active.length > 1 ? '<form method="post" action="/auth/account/sessions/revoke"><input type="hidden" name="all_others" value="1"><button type="submit">Завершить все другие сеансы</button></form>' : ""}
+      <p><a href="/auth/account">Вернуться к аккаунту</a></p></main></html>`);
+  });
+  app.post("/auth/account/sessions/revoke", async (request, reply) => {
+    if (!ownOrigin(request)) return reply.code(403).send();
+    const current = account(request);
+    if (!current) return reply.code(401).send();
+    if (!allowed(request)) return reply.code(429).header("retry-after", "900").send();
+    const form = request.body as Form;
+    if (!(form instanceof URLSearchParams)) return reply.code(400).send();
+    const one = form.getAll("session_id"),
+      all = form.getAll("all_others");
+    if (!(
+      (one.length === 1 && all.length === 0 && /^[0-9a-f-]{36}$/u.test(one[0]!)) ||
+      (one.length === 0 && all.length === 1 && all[0] === "1")
+    ))
+      return reply.code(400).send();
+    const candidates = options.identity
+      .listSessions(current.owner_id)
+      .filter(
+        (item) =>
+          item.actor_id === current.actor_id &&
+          item.status === "active" &&
+          item.session_id !== current.session_id
+      );
+    if (one.length === 1 && !candidates.some((item) => item.session_id === one[0]))
+      return reply.code(404).send();
+    for (const candidate of candidates) {
+      if (one.length === 1 && candidate.session_id !== one[0]) continue;
+      options.identity.revokeSession(
+        candidate.session_id,
+        current.owner_id,
+        current.actor_id,
+        "owner_session_management"
+      );
+    }
+    return redirect(reply, "/auth/account/sessions");
   });
   app.post("/auth/account/password", async (request, reply) => {
     if (!ownOrigin(request)) return reply.code(403).send();
