@@ -32,12 +32,18 @@ describe("presentations", () => {
       authorization: string,
       payload?: unknown
     ) =>
-      app.inject({
-        method,
-        url,
-        headers: { authorization, origin: "http://localhost:3000" },
-        ...(payload === undefined ? {} : { payload })
-      });
+      Promise.resolve(
+        app.inject({
+          method,
+          url,
+          headers: {
+            authorization,
+            origin: "http://localhost:3000",
+            ...(payload === undefined ? {} : { "content-type": "application/json" })
+          },
+          ...(payload === undefined ? {} : { payload: JSON.stringify(payload) })
+        })
+      );
     try {
       expect((await app.inject({ method: "GET", url: "/api/v1/presentations" })).statusCode).toBe(
         401
