@@ -21,6 +21,7 @@ export type IconName =
   | "apps"
   | "features"
   | "settings"
+  | "bell"
   | "owner"
   | "shield"
   | "search"
@@ -32,6 +33,12 @@ export type IconName =
   | "check";
 
 const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
+  bell: (
+    <>
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
+      <path d="M10 21h4" />
+    </>
+  ),
   headphones: (
     <>
       <path d="M4 13v-2a8 8 0 0 1 16 0v2" />
