@@ -6,6 +6,7 @@ import {
   DocumentAnswerStore,
   ChatHistorySearchStore,
   PresentationStore,
+  NotificationStore,
   AgentInstanceStore,
   AgentStudioMutationStore,
   DemoManagerStore,
@@ -64,6 +65,7 @@ import { RegistrationStore } from "./registration-store.js";
 import { GoogleIdentity } from "./google-identity.js";
 import { sendWithLocalMta } from "./registration-routes.js";
 import { PresentationPrivacyAdapter } from "./presentation-privacy.js";
+import { NotificationPrivacyAdapter } from "./notification-privacy.js";
 import { canvasPrivacyAdapter } from "./canvas/canvas-privacy.js";
 
 const config = loadServerConfig();
@@ -122,6 +124,7 @@ try {
   documentAnswerStore.recoverInterrupted();
   const chatHistorySearchStore = new ChatHistorySearchStore(database.sqlite);
   const presentationStore = new PresentationStore(database.sqlite);
+  const notificationStore = new NotificationStore(database.sqlite);
   const researchStore = new ResearchStore(database.sqlite);
   const ownerPrivacy = new OwnerPrivacyCoordinator(database.sqlite);
   const demoManagerStore = new DemoManagerStore(database.sqlite);
@@ -212,6 +215,7 @@ try {
   ownerPrivacy.register(new AgentStudioPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new PolicyProjectsPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new PresentationPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new NotificationPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
   app = buildApp({
     canvasStore,
@@ -224,6 +228,7 @@ try {
     documentAnswerService,
     chatHistorySearchStore,
     presentationStore,
+    notificationStore,
     ownerPrivacy,
     ownerBudget: sharedBudget,
     codeAgentService,

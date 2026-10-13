@@ -172,11 +172,17 @@ import { registerDocumentAnswerRoutes } from "./document-answer-routes.js";
 import type { DocumentAnswerService } from "./document-answer-service.js";
 import { registerChatHistorySearchRoutes } from "./chat-history-search-routes.js";
 import { registerPresentationRoutes } from "./presentation-routes.js";
+import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
 import type { ResearchOwnerBudget } from "./research/research-synthesis.js";
 import type { CodeOwnerBudget } from "./code-agent/owner-budget.js";
 import type { AccountStore } from "./account-settings/account-store.js";
-import type { DocumentLibraryStore, ChatHistorySearchStore, PresentationStore } from "@cosmora/db";
+import type {
+  DocumentLibraryStore,
+  ChatHistorySearchStore,
+  PresentationStore,
+  NotificationStore
+} from "@cosmora/db";
 import { QuotaExceededError } from "./account-settings/account-store.js";
 import { registerResearchRoutes } from "./research/research-routes.js";
 import type { ResearchCoordinator } from "./research/research-coordinator.js";
@@ -194,6 +200,7 @@ export interface AppDependencies {
   documentAnswerService?: DocumentAnswerService;
   chatHistorySearchStore?: ChatHistorySearchStore;
   presentationStore?: PresentationStore;
+  notificationStore?: NotificationStore;
   researchBudget?: ResearchOwnerBudget;
   ownerBudget?: CodeOwnerBudget;
   codeAgentService?: CodeAgentService;
@@ -758,6 +765,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerChatHistorySearchRoutes(app, dependencies.chatHistorySearchStore, identityFor);
   if (dependencies.presentationStore)
     registerPresentationRoutes(app, dependencies.presentationStore, identityFor);
+  if (dependencies.notificationStore)
+    registerNotificationRoutes(app, dependencies.notificationStore, identityFor);
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
   if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
     const coordinator = registerResearchRoutes({
