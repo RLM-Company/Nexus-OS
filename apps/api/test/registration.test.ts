@@ -11,6 +11,82 @@ const origin = "https://kosmora.example";
 const form = (values: Record<string, string>) => new URLSearchParams(values).toString();
 
 describe("registration and owner identity", () => {
+  it("resends only for a pending account with its password and replaces the old link", async () => {
+    const db = openDatabase(":memory:");
+    await runMigrations(db);
+    const identity = new IdentityStore(db.sqlite);
+    const sent: string[] = [];
+    const app = buildApp({
+      config: loadServerConfig({ NODE_ENV: "test" }),
+      database: db,
+      identityStore: identity,
+      identityResolver: new BearerSessionIdentityResolver(identity),
+      registration: {
+        origin,
+        store: new RegistrationStore(db.sqlite),
+        identity,
+        sendVerification: (_email, link) => {
+          sent.push(link);
+          return Promise.resolve();
+        }
+      }
+    });
+    const post = (url: string, values: Record<string, string>, requestOrigin = origin) =>
+      app.inject({
+        method: "POST",
+        url,
+        headers: { origin: requestOrigin, "content-type": "application/x-www-form-urlencoded" },
+        payload: form(values)
+      });
+    const password = "correct-horse-123";
+    const address = "pending@example.com";
+    try {
+      const page = await app.inject({ method: "GET", url: "/resend-verification" });
+      expect(page.statusCode).toBe(200);
+      expect(page.headers["cache-control"]).toBe("no-store");
+      expect((await app.inject({ method: "GET", url: "/register" })).body).toContain(
+        "/resend-verification"
+      );
+      const unknown = await post("/auth/resend-verification", { email: address, password });
+      expect(unknown.statusCode).toBe(200);
+      expect(sent).toHaveLength(0);
+      expect(
+        db.sqlite.prepare("SELECT 1 FROM auth_accounts WHERE email=?").get(address)
+      ).toBeUndefined();
+      expect((await post("/auth/register", { email: address, password })).statusCode).toBe(200);
+      const oldToken = new URL(sent[0]!).searchParams.get("token")!;
+      const wrong = await post("/auth/resend-verification", {
+        email: address,
+        password: "incorrect-password-123"
+      });
+      expect(wrong.body).toBe(unknown.body);
+      expect(sent).toHaveLength(1);
+      expect(
+        (
+          await post(
+            "/auth/resend-verification",
+            { email: address, password },
+            "https://evil.example"
+          )
+        ).statusCode
+      ).toBe(403);
+      expect(
+        (await post("/auth/resend-verification", { email: address, password })).statusCode
+      ).toBe(200);
+      expect(sent).toHaveLength(2);
+      const newToken = new URL(sent[1]!).searchParams.get("token")!;
+      expect(newToken).not.toBe(oldToken);
+      expect((await post("/auth/confirm", { token: oldToken })).statusCode).toBe(400);
+      expect((await post("/auth/confirm", { token: newToken })).statusCode).toBe(303);
+      const verified = await post("/auth/resend-verification", { email: address, password });
+      expect(verified.body).toBe(unknown.body);
+      expect(sent).toHaveLength(2);
+    } finally {
+      await app.close();
+      db.close();
+    }
+  });
+
   it("confirms email once, issues a separate owner session and isolates another user", async () => {
     const db = openDatabase(":memory:");
     await runMigrations(db);
@@ -26,8 +102,9 @@ describe("registration and owner identity", () => {
         origin,
         store: registration,
         identity,
-        sendVerification: async (email, link) => {
+        sendVerification: (email, link) => {
           sent.push({ email, link });
+          return Promise.resolve();
         }
       }
     });
@@ -156,8 +233,10 @@ describe("registration and owner identity", () => {
       "client.apps.googleusercontent.com",
       "fixture-secret",
       `${origin}/auth/google/callback`,
-      async (input) => {
-        if (String(input).endsWith("/certs")) return Response.json({ keys: [key] });
+      (input) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url.endsWith("/certs")) return Promise.resolve(Response.json({ keys: [key] }));
         const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: key.kid })).toString(
           "base64url"
         );
@@ -178,7 +257,7 @@ describe("registration and owner identity", () => {
           Buffer.from(`${header}.${payload}`),
           privateKey
         ).toString("base64url");
-        return Response.json({ id_token: `${header}.${payload}.${signature}` });
+        return Promise.resolve(Response.json({ id_token: `${header}.${payload}.${signature}` }));
       }
     );
     const app = buildApp({
@@ -194,7 +273,8 @@ describe("registration and owner identity", () => {
       const destination = new URL(start.headers.location as string);
       const oauthCookie = start.headers["set-cookie"] as string;
       const encoded = oauthCookie.split(";", 1)[0]!.split("=")[1]!;
-      nonce = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")).nonce as string;
+      nonce = (JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { nonce: string })
+        .nonce;
       const state = destination.searchParams.get("state")!;
       const denied = await app.inject({
         method: "GET",

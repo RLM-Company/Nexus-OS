@@ -641,8 +641,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       dependencies.registration &&
       (path === "/login" ||
         path === "/register" ||
+        path === "/resend-verification" ||
         path === "/forgot-password" ||
         path === "/auth/register" ||
+        path === "/auth/resend-verification" ||
         path === "/auth/login" ||
         path === "/auth/confirm" ||
         path === "/auth/recovery/request" ||
