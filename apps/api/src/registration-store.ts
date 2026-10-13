@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 const SCRYPT = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const VERIFY_TTL = 30 * 60 * 1000;
 const RECOVERY_TTL = 30 * 60 * 1000;
+const EMAIL_CHANGE_TTL = 30 * 60 * 1000;
 type Row = Record<string, unknown>;
 
 export const normalizedEmail = (value: string): string | null => {
@@ -120,6 +121,106 @@ export class RegistrationStore {
       .prepare("SELECT password_hash,google_sub FROM auth_accounts WHERE owner_id=?")
       .get(ownerId) as Row | undefined;
     return row ? { email: Boolean(row.password_hash), google: Boolean(row.google_sub) } : null;
+  }
+
+  requestEmailChange(
+    ownerId: string,
+    currentPassword: string,
+    desiredEmail: string
+  ): string | null {
+    const newEmail = normalizedEmail(desiredEmail);
+    if (!newEmail) throw Error("INVALID_EMAIL");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      if (
+        this.db
+          .prepare(
+            "SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id=? AND state<>'active'"
+          )
+          .get(ownerId)
+      )
+        throw Error("OWNER_DATA_FENCED");
+      const current = this.db
+        .prepare(
+          "SELECT email,password_hash FROM auth_accounts WHERE owner_id=? AND verified_at IS NOT NULL"
+        )
+        .get(ownerId) as Row | undefined;
+      if (
+        !current?.password_hash ||
+        !verifyPassword(currentPassword, String(current.password_hash)) ||
+        current.email === newEmail ||
+        this.db.prepare("SELECT 1 FROM auth_accounts WHERE email=?").get(newEmail)
+      ) {
+        this.db.exec("ROLLBACK");
+        return null;
+      }
+      const token = randomBytes(32).toString("base64url");
+      const at = new Date(this.now()).toISOString();
+      this.db.prepare("DELETE FROM auth_email_changes WHERE owner_id=?").run(ownerId);
+      this.db
+        .prepare(
+          "INSERT INTO auth_email_changes(token_hash,owner_id,new_email,expires_at,created_at) VALUES(?,?,?,?,?)"
+        )
+        .run(
+          tokenHash(token),
+          ownerId,
+          newEmail,
+          new Date(this.now() + EMAIL_CHANGE_TTL).toISOString(),
+          at
+        );
+      this.db.exec("COMMIT");
+      return token;
+    } catch (cause) {
+      this.db.exec("ROLLBACK");
+      throw cause;
+    }
+  }
+
+  confirmEmailChange(token: string, revoke: (ownerId: string) => void): boolean {
+    if (!/^[A-Za-z0-9_-]{43}$/u.test(token)) return false;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.db
+        .prepare(
+          "SELECT owner_id,new_email FROM auth_email_changes WHERE token_hash=? AND expires_at>?"
+        )
+        .get(tokenHash(token), new Date(this.now()).toISOString()) as Row | undefined;
+      if (!row) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      const ownerId = String(row.owner_id),
+        email = String(row.new_email);
+      if (
+        this.db
+          .prepare(
+            "SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id=? AND state<>'active'"
+          )
+          .get(ownerId) ||
+        this.db.prepare("SELECT 1 FROM auth_accounts WHERE email=?").get(email)
+      ) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      const at = new Date(this.now()).toISOString();
+      const updated = this.db
+        .prepare(
+          "UPDATE auth_accounts SET email=?,updated_at=? WHERE owner_id=? AND verified_at IS NOT NULL AND password_hash IS NOT NULL"
+        )
+        .run(email, at, ownerId);
+      if (updated.changes !== 1) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      this.db.prepare("DELETE FROM auth_email_changes WHERE owner_id=?").run(ownerId);
+      this.db.prepare("DELETE FROM auth_password_resets WHERE owner_id=?").run(ownerId);
+      revoke(ownerId);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (cause) {
+      this.db.exec("ROLLBACK");
+      throw cause;
+    }
   }
 
   authenticateGoogle(email: string, subject: string): string | null {

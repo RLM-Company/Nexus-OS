@@ -68,6 +68,7 @@ import { sendWithLocalMta } from "./registration-routes.js";
 import { PresentationPrivacyAdapter } from "./presentation-privacy.js";
 import { NotificationPrivacyAdapter } from "./notification-privacy.js";
 import { OwnerSkillPrivacyAdapter } from "./owner-skill-privacy.js";
+import { EmailChangePrivacyAdapter } from "./email-change-privacy.js";
 import { canvasPrivacyAdapter } from "./canvas/canvas-privacy.js";
 
 const config = loadServerConfig();
@@ -220,6 +221,7 @@ try {
   ownerPrivacy.register(new PresentationPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new NotificationPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new OwnerSkillPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new EmailChangePrivacyAdapter(database.sqlite));
   ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
   app = buildApp({
     canvasStore,
@@ -285,6 +287,11 @@ try {
                     process.env.KOSMORA_SENDMAIL_PATH,
                     process.env.KOSMORA_EMAIL_FROM,
                     "reset"
+                  ),
+                  sendEmailChange: sendWithLocalMta(
+                    process.env.KOSMORA_SENDMAIL_PATH,
+                    process.env.KOSMORA_EMAIL_FROM,
+                    "email-change"
                   )
                 }
               : {})
