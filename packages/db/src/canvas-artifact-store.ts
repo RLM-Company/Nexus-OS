@@ -185,18 +185,23 @@ export class CanvasArtifactStore {
       format: CanvasFormat;
       content: string;
       source?: CanvasSource;
+      idempotency_id?: string;
     }
   ): { artifact: CanvasArtifact; revision: CanvasRevision } | null {
     validateCanvasContent(input.title, input.format, input.content);
     return this.tx(() => {
       this.assertOwnerActive(ownerId);
       if (!this.ownedProject(projectId, ownerId)) return null;
+      if (input.idempotency_id) {
+        const existing = this.get(projectId, ownerId, input.idempotency_id);
+        if (existing) return existing;
+      }
       const total = this.sqlite
         .prepare("SELECT COUNT(*) AS n FROM canvas_artifacts WHERE owner_id=? AND project_id=?")
         .get(ownerId, projectId) as { n: number };
       if (total.n >= CANVAS_MAX_PROJECT_ARTIFACTS)
         throw new CanvasLimitError("CANVAS_ARTIFACT_LIMIT");
-      const id = randomUUID(),
+      const id = input.idempotency_id ?? randomUUID(),
         at = timestamp();
       this.sqlite
         .prepare(
@@ -396,7 +401,16 @@ export class CanvasArtifactStore {
       title: input.title,
       format: input.format,
       content,
-      source: input.source
+      source: input.source,
+      ...(input.source.kind === "chat"
+        ? {
+            idempotency_id:
+              "chat-" +
+              hash(
+                JSON.stringify([ownerId, projectId, input.source.chat_id, input.source.message_id])
+              )
+          }
+        : {})
     });
   }
   /** Bounded, resumable privacy stream; caller must consume every page before reporting success. */

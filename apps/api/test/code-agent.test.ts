@@ -356,6 +356,94 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("creates an active isolated Code project with explicit A2 approval, no initial model run, and idempotent replay", async () => {
+    const f = await fixture(),
+      id = randomUUID(),
+      payload = { client_project_id: id, title: "My Code project", approve_local_execution: true };
+    const first = await f.app.inject({ method: "POST", url: "/api/v1/code-projects", payload });
+    expect(first.statusCode).toBe(200);
+    expect(first.json<{ project: { id: string; status: string } }>().project).toMatchObject({
+      id,
+      status: "ACTIVE"
+    });
+    expect(f.service.deps.policy.getProfile(id)?.base_level).toBe("A2");
+    expect(f.service.deps.projects.listMessages(id, owner)).toEqual([]);
+    expect(f.providerCalls).toHaveLength(0);
+    expect(f.githubCalls).toHaveLength(0);
+    expect(
+      (await f.app.inject({ method: "POST", url: "/api/v1/code-projects", payload })).statusCode
+    ).toBe(200);
+    expect(
+      (
+        await f.app.inject({
+          method: "POST",
+          url: "/api/v1/code-projects",
+          payload: { ...payload, approve_local_execution: false }
+        })
+      ).statusCode
+    ).toBe(400);
+    f.requestOwner("foreign");
+    expect(
+      (
+        await f.app.inject({
+          method: "POST",
+          url: "/api/v1/code-projects",
+          payload: { ...payload, client_project_id: randomUUID() }
+        })
+      ).statusCode
+    ).toBe(404);
+  });
+  it("replays a durable creation request once, rejects changed retries and recovers by owner-scoped request ID", async () => {
+    const f = await fixture({
+      toolCalling: false,
+      responses: [
+        sse(
+          {
+            choices: [
+              {
+                delta: { content: JSON.stringify({ summary: "Fix", files: [changes[0]] }) },
+                finish_reason: null
+              }
+            ]
+          },
+          { choices: [{ delta: {}, finish_reason: "stop" }] },
+          { choices: [], usage: { prompt_tokens: 20, completion_tokens: 20 } },
+          "[DONE]"
+        )
+      ]
+    });
+    const key = randomUUID(),
+      payload = { client_request_id: key, task: "Fix sum", base_branch: "main" };
+    const first = await f.app.inject({ method: "POST", url: f.base, payload });
+    expect(first.statusCode).toBe(200);
+    const id = first.json<{ id: string }>().id;
+    const again = await f.app.inject({ method: "POST", url: f.base, payload });
+    expect(again.json<{ id: string }>().id).toBe(id);
+    await f.wait(id, "proposed");
+    const calls = f.providerCalls.length;
+    expect(
+      (await f.app.inject({ method: "POST", url: f.base, payload })).json<{ id: string }>().id
+    ).toBe(id);
+    expect(f.providerCalls).toHaveLength(calls);
+    expect(
+      (await f.app.inject({ method: "GET", url: f.base + "/by-request/" + key })).json<{
+        id: string;
+      }>().id
+    ).toBe(id);
+    expect(
+      (
+        await f.app.inject({
+          method: "POST",
+          url: f.base,
+          payload: { ...payload, task: "Different" }
+        })
+      ).statusCode
+    ).toBe(409);
+    f.requestOwner("foreign-owner");
+    expect(
+      (await f.app.inject({ method: "GET", url: f.base + "/by-request/" + key })).statusCode
+    ).toBe(404);
+  });
   it("reads immutable source, carries authoritative tools through gateway, edits selection, checks exact snapshot and creates confirmed draft PR", async () => {
     const f = await fixture(),
       id = await f.start(),

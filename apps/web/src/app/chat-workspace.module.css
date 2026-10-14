@@ -1,0 +1,112 @@
+.folders {
+  padding: 8px 12px;
+  color: var(--text, #222);
+  font-size: 12px;
+}
+.folders summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+.folders label,
+.panel label {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+.folders input,
+.folders select,
+.transfer select,
+.panel textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #bbb;
+  border-radius: 8px;
+  color: #222;
+  background: #fff;
+  font: inherit;
+}
+.folders button,
+.panel button,
+.transfer button {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  color: #222;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  margin: 3px;
+}
+.folders button:disabled,
+.panel button:disabled,
+.transfer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.folderRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0;
+}
+.folderRow span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.panel {
+  margin: 12px auto;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 14px;
+  width: min(760px, 96%);
+  font-size: 13px;
+}
+.panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.panel h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.panel fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.panel p {
+  line-height: 1.6;
+  color: #666;
+}
+.messageList {
+  max-height: 240px;
+  overflow: auto;
+}
+.messageList label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+  overflow-wrap: anywhere;
+}
+.messageList input {
+  margin-top: 3px;
+  accent-color: #222;
+}
+.transfer {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 4px 0;
+  font-size: 12px;
+}
+.transfer label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}

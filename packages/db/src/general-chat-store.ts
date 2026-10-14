@@ -1,3 +1,4 @@
+import { ChatWorkspaceStore } from "./chat-workspace-store.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -126,9 +127,11 @@ const USAGE_COLUMNS = `usage_id, run_id, chat_id, attempt, status, registry_vers
 
 export class GeneralChatStore {
   readonly #sqlite: DatabaseSync;
+  readonly workspace: ChatWorkspaceStore;
 
   constructor(sqlite: DatabaseSync) {
     this.#sqlite = sqlite;
+    this.workspace = new ChatWorkspaceStore(sqlite);
   }
 
   listChats(
@@ -392,9 +395,10 @@ export class GeneralChatStore {
         `INSERT INTO general_chat_messages(id,chat_id,owner_id,role,content_type,content,attachments_json,status,run_id,error_code,created_at,updated_at)
          VALUES(?,?,?,?,'text',?,?,?,NULL,?,?,?)`
       );
+      const copiedIds = new Map(prefix.map((message) => [message.id, randomUUID()]));
       for (const message of prefix)
         copy.run(
-          randomUUID(),
+          copiedIds.get(message.id)!,
           input.client_branch_id,
           ownerId,
           message.role,
@@ -405,6 +409,7 @@ export class GeneralChatStore {
           message.created_at,
           message.updated_at
         );
+      this.workspace.copySelection(chatId, input.client_branch_id, ownerId, copiedIds);
       const memory = this.getChatMemory(chatId, ownerId);
       if (memory?.memory_notes)
         this.#sqlite
@@ -617,7 +622,7 @@ export class GeneralChatStore {
   getConversationForRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage[] {
     const run = this.getRun(runId, ownerId);
     if (!run) return [];
-    return this.#sqlite
+    const messages = this.#sqlite
       .prepare(
         `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages
          WHERE chat_id = ? AND rowid <= (
@@ -626,6 +631,7 @@ export class GeneralChatStore {
       )
       .all(run.chat_id, runId)
       .map((row) => asMessage(row as SqlRow));
+    return this.workspace.applyContext(run.chat_id, ownerId, messages);
   }
 
   getAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage | null {

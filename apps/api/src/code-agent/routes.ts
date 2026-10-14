@@ -80,6 +80,56 @@ export function registerCodeAgentRoutes(
         });
     }
   };
+  app.post<{ Body: { client_project_id: string; title: string; approve_local_execution: true } }>(
+    "/api/v1/code-projects",
+    {
+      schema: {
+        body: Type.Object(
+          {
+            client_project_id: Type.String({
+              pattern:
+                "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$"
+            }),
+            title: Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }),
+            approve_local_execution: Type.Literal(true)
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) =>
+      handle(() => {
+        const identity = identityFor(request);
+        if (identity.owner_id !== service.deps.github.ownerId)
+          throw new CodeAgentError("PROJECT_NOT_FOUND");
+        if (
+          service.deps.store.sqlite
+            .prepare(
+              "SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id=? AND state<>'active'"
+            )
+            .get(identity.owner_id)
+        )
+          throw new CodeAgentError("EXECUTION_STOPPED");
+        const project = service.deps.projects.createEmptyProject(
+          request.body.client_project_id,
+          request.body.title,
+          identity.owner_id,
+          "ACTIVE"
+        );
+        const existing = service.deps.policy.getProfile(project.id);
+        if (!existing) {
+          const profile = service.deps.policy.ensureProfile(project.id);
+          if (!profile) throw new CodeAgentError("PROJECT_NOT_FOUND");
+          service.deps.policy.updateProfile({
+            projectId: project.id,
+            baseLevel: "A2",
+            overrides: [],
+            expectedVersion: profile.version
+          });
+        }
+        return { project };
+      }, reply)
+  );
   const owned = (request: FastifyRequest<{ Params: Params }>) => {
     const identity = identityFor(request);
     if (
@@ -104,9 +154,37 @@ export function registerCodeAgentRoutes(
       };
     }, reply)
   );
+  app.get<{ Params: { projectId: string; requestId: string } }>(
+    base + "/by-request/:requestId",
+    {
+      schema: {
+        params: Type.Object(
+          {
+            projectId: Type.String({ minLength: 1, maxLength: 128 }),
+            requestId: Type.String({ minLength: 1, maxLength: 128 })
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) =>
+      handle(() => {
+        const identity = identityFor(request);
+        if (
+          identity.owner_id !== service.deps.github.ownerId ||
+          !service.deps.projects.getProject(request.params.projectId, identity.owner_id)
+        )
+          throw new CodeAgentError("PROJECT_NOT_FOUND");
+        const run = service.deps.store.findRequest(identity.owner_id, request.params.requestId);
+        if (!run || run.project_id !== request.params.projectId)
+          throw new CodeAgentError("RUN_NOT_FOUND");
+        return service.view(run);
+      }, reply)
+  );
   app.post<{
     Params: Params;
     Body: {
+      client_request_id?: string;
       task: string;
       base_branch: string;
       files?: string[];
@@ -119,6 +197,12 @@ export function registerCodeAgentRoutes(
         params,
         body: Type.Object(
           {
+            client_request_id: Type.Optional(
+              Type.String({
+                pattern:
+                  "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$"
+              })
+            ),
             auto_check: Type.Optional(autoCheck),
             task: Type.String({ minLength: 1, maxLength: 8000 }),
             base_branch: Type.String({ minLength: 1, maxLength: 240 }),

@@ -322,13 +322,42 @@ export class CodeAgentService {
     project: string,
     identity: IdentityContext,
     input: {
+      client_request_id?: string;
       task: string;
       base_branch: string;
       files?: string[];
       auto_check?: { check: "syntax" | "node-test"; approve: true };
     }
   ) {
-    const run = this.start(project, identity, input);
+    const digest = hash([
+      project,
+      input.task,
+      input.base_branch,
+      input.files ?? [],
+      input.auto_check ?? null
+    ]);
+    if (input.client_request_id) {
+      if (
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu.test(
+          input.client_request_id
+        )
+      )
+        throw new CodeAgentError("INVALID_INPUT");
+      const existing = this.deps.store.findRequest(identity.owner_id, input.client_request_id);
+      if (existing) {
+        if (existing.project_id !== project || existing.request_digest !== digest)
+          throw new CodeAgentError("REQUEST_CONFLICT");
+        return this.view(existing);
+      }
+    }
+    const run = this.start(
+      project,
+      identity,
+      input,
+      input.client_request_id
+        ? { client_request_id: input.client_request_id, request_digest: digest }
+        : {}
+    );
     this.launch(run, (signal) => this.propose(run.id, run.owner_id, signal));
     return this.view(run);
   }
@@ -362,7 +391,8 @@ export class CodeAgentService {
       base_branch: string;
       files?: string[];
       auto_check?: { check: "syntax" | "node-test"; approve: true };
-    }
+    },
+    request: { client_request_id?: string; request_digest?: string } = {}
   ): CodeAgentRun {
     if (this.active.size >= 2) throw new CodeAgentError("WORKSPACE_BUSY");
     if (
@@ -383,6 +413,7 @@ export class CodeAgentService {
     )
       throw new CodeAgentError("INVALID_INPUT");
     const run = this.deps.store.create({
+      ...request,
       project_id: project,
       owner_id: identity.owner_id,
       actor_id: identity.actor_id,

@@ -16,6 +16,8 @@ export type CodeAgentStatus =
   | "cancelled";
 export interface CodeAgentRun {
   id: string;
+  client_request_id?: string;
+  request_digest?: string;
   project_id: string;
   owner_id: string;
   actor_id: string;
@@ -72,6 +74,14 @@ export class CodeAgentStore {
       .prepare("INSERT INTO code_agent_runs VALUES (?, ?, ?, ?, ?, ?)")
       .run(run.id, run.project_id, run.owner_id, run.version, JSON.stringify(run), run.created_at);
     return run;
+  }
+  findRequest(owner: string, requestId: string): CodeAgentRun | null {
+    const row = this.sqlite
+      .prepare(
+        "SELECT state_json FROM code_agent_runs WHERE owner_id=? AND json_extract(state_json,'$.client_request_id')=?"
+      )
+      .get(owner, requestId);
+    return row ? (JSON.parse(String(row.state_json)) as CodeAgentRun) : null;
   }
   get(id: string, owner: string): CodeAgentRun | null {
     const row = this.sqlite

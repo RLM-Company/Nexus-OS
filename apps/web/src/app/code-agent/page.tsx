@@ -159,6 +159,7 @@ export default function CodeAgentPage() {
   const [project, setProject] = useState("");
   const [branch, setBranch] = useState("");
   const [task, setTask] = useState("");
+  const projectAttempt = useRef<string | null>(null);
   const [paths, setPaths] = useState("");
   const [runs, setRuns] = useState<Run[]>([]);
   const [run, setRun] = useState<Run | null>(null);
@@ -179,6 +180,7 @@ export default function CodeAgentPage() {
   const epoch = useRef(0);
   const activeRun = useRef<string | null>(null);
   const requestBusy = useRef(false);
+  const createAttempt = useRef<{ signature: string; id: string } | null>(null);
   const root = `/api/v1/projects/${encodeURIComponent(project)}/code-agent`;
 
   function accept(value: Run, restore = false) {
@@ -285,13 +287,44 @@ export default function CodeAgentPage() {
     };
   }, [project, run?.id, run?.status]);
 
-  async function action(operation: () => Promise<Run>, reconcile = false) {
+  async function createProject() {
     if (requestBusy.current) return;
     requestBusy.current = true;
     setBusy(true);
     setError(null);
+    projectAttempt.current ??= crypto.randomUUID();
+    try {
+      const result = await api<{ project: { id: string; title: string } }>(
+        "/api/v1/code-projects",
+        {
+          client_project_id: projectAttempt.current,
+          title: "Code-проект",
+          approve_local_execution: true
+        }
+      );
+      setProjects((current) => [
+        ...current.filter((p) => p.id !== result.project.id),
+        result.project
+      ]);
+      setProject(result.project.id);
+      projectAttempt.current = null;
+    } catch (reason) {
+      setError(failureMessage(reason));
+    } finally {
+      requestBusy.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function action(operation: () => Promise<Run>, reconcile = false) {
+    if (requestBusy.current) return;
+    requestBusy.current = true;
+    const actionEpoch = epoch.current;
+    setBusy(true);
+    setError(null);
     try {
       const value = await operation();
+      if (epoch.current !== actionEpoch) return;
       accept(value);
       if (reconcile && !["uncertain", "publishing"].includes(value.status)) {
         markPublication(project, value.id, false);
@@ -300,7 +333,8 @@ export default function CodeAgentPage() {
       setCheckApproved(false);
       setPublishApproved(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Операция не завершена.");
+      if (epoch.current === actionEpoch)
+        setError(reason instanceof Error ? reason.message : "Операция не завершена.");
     } finally {
       requestBusy.current = false;
       setBusy(false);
@@ -420,6 +454,13 @@ export default function CodeAgentPage() {
             <input value={branch} onChange={(event) => setBranch(event.target.value)} />
           </label>
         </div>
+        <button disabled={busy || !connection?.configured} onClick={() => void createProject()}>
+          Новый Code-проект
+        </button>
+        <p className={styles.muted}>
+          Новый Code-проект разрешает локальную работу уровня A2. Создание ветки и PR подтверждается
+          отдельно.
+        </p>
         {connection && !connection.configured && (
           <p role="status">Для этой задачи нужно серверное подключение GitHub.</p>
         )}
@@ -472,8 +513,8 @@ export default function CodeAgentPage() {
           className={styles.primary}
           disabled={busy || !project || !connection?.configured || !task.trim() || !branch.trim()}
           onClick={() =>
-            void action(() =>
-              api<Run>(root, {
+            void action(async () => {
+              const input = {
                 task: task.trim(),
                 base_branch: branch.trim(),
                 ...(autoCheck ? { auto_check: { check: checkType, approve: true } } : {}),
@@ -481,12 +522,28 @@ export default function CodeAgentPage() {
                   ? {
                       files: paths
                         .split(/\r?\n/)
-                        .map((path) => path.trim())
+                        .map((p) => p.trim())
                         .filter(Boolean)
                     }
                   : {})
-              })
-            )
+              };
+              const signature = JSON.stringify([project, input]);
+              if (createAttempt.current?.signature !== signature)
+                createAttempt.current = { signature, id: crypto.randomUUID() };
+              const id = createAttempt.current.id;
+              let value: Run;
+              try {
+                value = await api<Run>(root, { ...input, client_request_id: id });
+              } catch (cause) {
+                try {
+                  value = await api<Run>(root + "/by-request/" + encodeURIComponent(id));
+                } catch {
+                  throw cause;
+                }
+              }
+              createAttempt.current = null;
+              return value;
+            })
           }
         >
           {autoCheck ? "Предложить и проверить исправление" : "Предложить исправление"}
