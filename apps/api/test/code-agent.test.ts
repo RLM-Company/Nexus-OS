@@ -1057,6 +1057,48 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
   });
 
+  it("turns one bounded text replacement into a reviewable diff without model line offsets", async () => {
+    const f = await fixture({
+      toolCalling: false,
+      responses: [
+        sse(
+          {
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  content: JSON.stringify({
+                    summary: "Fix addition",
+                    edits: [{ path: "src/add.js", old_text: "a-b", new_text: "a+b" }]
+                  })
+                },
+                finish_reason: null
+              }
+            ]
+          },
+          { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+          "[DONE]"
+        )
+      ]
+    });
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Fix addition bug",
+      base_branch: "main"
+    }).id;
+    const run = await f.wait(id, "proposed");
+    expect(run.proposal?.[0]).toMatchObject({
+      path: "src/add.js",
+      before: originals["src/add.js"],
+      content: changes[0]!.content
+    });
+    expect(run.proposal_diff).toContain("-export const add = (a,b) => a-b;");
+    expect(run.proposal_diff).toContain("+export const add = (a,b) => a+b;");
+    expect(run.proposal_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    expect(run.publication_token).toBeUndefined();
+  });
+
   it("never treats a model file-selection response as authority or sends a repair generation", async () => {
     for (const path of ["../outside.js", "src/missing.js", ".env"]) {
       const response = sse(
@@ -1073,7 +1115,16 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
         task: "Fix addition bug",
         base_branch: "main"
       }).id;
-      expect((await f.wait(id, "failed")).error).toBe("INVALID_PATCH");
+      const rejected = await f.wait(id, "failed");
+      expect(rejected.error).toBe("INVALID_PATCH");
+      expect(rejected.rejected_proposal_text).toBe(JSON.stringify({ paths: [path] }));
+      expect(rejected.proposal).toBeUndefined();
+      expect(rejected.publication_token).toBeUndefined();
+      const draft = await f.app.inject({ method: "GET", url: `${f.base}/${id}` });
+      expect(draft.statusCode).toBe(200);
+      expect(draft.json().rejected_proposal_text).toBe(rejected.rejected_proposal_text);
+      f.requestOwner("foreign-owner");
+      expect((await f.app.inject({ method: "GET", url: `${f.base}/${id}` })).statusCode).toBe(404);
       expect(f.providerCalls).toHaveLength(1);
       expect(f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/"))).toHaveLength(2);
       expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);

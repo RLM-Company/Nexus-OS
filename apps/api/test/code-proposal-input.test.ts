@@ -1,11 +1,44 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyCodeExactEdits,
   codePromptFiles,
   decodeCodeProposal,
   selectCodeContextPaths
 } from "../src/code-agent/proposal-input.js";
 
 describe("single text proposal input", () => {
+  it("applies sequential exact edits while preserving other text and CRLF bytes", () => {
+    const snapshot = [{ path: "src/a.js", content: "first\r\nold\r\nlast" }];
+    expect(
+      applyCodeExactEdits(
+        [
+          { path: "src/a.js", old_text: "old", new_text: "new" },
+          { path: "src/a.js", old_text: "new\r\nlast", new_text: "done\r\nlast" }
+        ],
+        snapshot
+      )
+    ).toEqual([{ path: "src/a.js", content: "first\r\ndone\r\nlast" }]);
+    expect(snapshot[0]!.content).toBe("first\r\nold\r\nlast");
+  });
+  it("refuses fuzzy, repeated, overlapping, unread and ambiguous replacement instructions", () => {
+    const snapshot = [{ path: "a.js", content: "aaaa\nother\r\n" }];
+    for (const [edit, error] of [
+      [{ path: "a.js", old_text: "other\n", new_text: "new\n" }, "PATCH_CONTEXT"],
+      [{ path: "a.js", old_text: "aa", new_text: "new" }, "PATCH_AMBIGUOUS"],
+      [{ path: "other.js", old_text: "aaaa", new_text: "new" }, "FILE_NOT_READ"],
+      [{ path: "a.js", old_text: "aaaa", new_text: "aaaa" }, "EMPTY_CHANGE"],
+      [{ path: "a.js", old_text: "", new_text: "new" }, "INVALID_PATCH"],
+      [{ path: "a.js", old_text: "aaaa", new_text: "new", execute: true }, "INVALID_PATCH"]
+    ] as const)
+      expect(() => applyCodeExactEdits([edit], snapshot)).toThrow(error);
+    expect(() => applyCodeExactEdits([], snapshot)).toThrow("INVALID_PATCH");
+    expect(() =>
+      applyCodeExactEdits(
+        [{ path: "a.js", old_text: "aaaa", new_text: "x".repeat(50001) }],
+        snapshot
+      )
+    ).toThrow("INVALID_PATCH");
+  });
   it("labels exact source lines without mutating canonical bytes or losing final-newline evidence", () => {
     const files = [{ path: "src/a.js", content: "same\r\nsame\r\n" }];
     const prompt = codePromptFiles(files);

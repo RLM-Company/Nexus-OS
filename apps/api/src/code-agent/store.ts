@@ -39,6 +39,8 @@ export interface CodeAgentRun {
   proposal_snapshot_digest?: string;
   proposal_normalizations?: Array<{ path: string; line: number; before: string; after: string }>;
   patch_diagnostic?: { code: string; path?: string; line?: number };
+  /** Owner-only recovery draft. Never validated, executed or published as a proposal. */
+  rejected_proposal_text?: string;
   auto_check_requested?: "syntax" | "node-test";
   proposal_check?: (CodeAgentCheckResult & { proposal_hash: string }) | undefined;
   draft_id?: string;
