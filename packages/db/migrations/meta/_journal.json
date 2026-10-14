@@ -239,6 +239,55 @@
       "when": 1791580800010,
       "tag": "0035_canvas_artifacts",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1791580800011,
+      "tag": "0036_account_registration",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1791580800012,
+      "tag": "0037_account_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1791580800013,
+      "tag": "0038_presentations",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1791580800014,
+      "tag": "0039_notification_center",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791580800015,
+      "tag": "0040_owner_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1791580800016,
+      "tag": "0041_account_email_change",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1791580800017,
+      "tag": "0042_chat_memory_notes",
+      "breakpoints": true
     }
   ]
 }

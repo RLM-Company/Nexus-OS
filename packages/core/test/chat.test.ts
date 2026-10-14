@@ -16,6 +16,28 @@ const message = (role: "user" | "assistant", content: string): GeneralChatMessag
 });
 
 describe("ChatService", () => {
+  it("keeps saved notes in the latest user turn after old history falls out of context", () => {
+    const service = new ChatService({
+      preferredProvider: "mock",
+      preferredModelAlias: "chat",
+      fallbackAllowed: false
+    });
+    const request = service.buildRequest({
+      chatId: "chat-1",
+      runId: "notes-long",
+      memoryNotes: "Использовать TypeScript",
+      messages: [
+        message("user", "z".repeat(29000)),
+        message("assistant", "old"),
+        message("user", "Продолжай")
+      ]
+    });
+    expect(request.messages).toHaveLength(2);
+    expect(request.messages[0]?.content).not.toContain("TypeScript");
+    expect(request.messages[1]?.role).toBe("user");
+    expect(request.messages[1]?.content).toContain("TypeScript");
+    expect(request.messages[1]?.content).toContain("Продолжай");
+  });
   it("keeps file content in the user turn and accounts for it in later context", () => {
     const service = new ChatService({
       preferredProvider: "mock",

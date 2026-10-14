@@ -403,6 +403,48 @@ export class IdentityStore {
     return rows.map(asAuditEvent);
   }
 
+  listRecentOwnerSessionEvents(
+    ownerId: string,
+    actorId: string,
+    limit: number
+  ): IdentityAuditEvent[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error("Session audit limit must be between 1 and 100");
+    const rows = this.#sqlite
+      .prepare(
+        `SELECT event_id, owner_id, actor_id, session_id, event_type, outcome, reason_code, created_at
+       FROM identity_audit_events
+       WHERE owner_id=? AND actor_id=? AND event_type IN ('session.issued','session.revoked','session.expired','login.failed')
+       ORDER BY created_at DESC, rowid DESC LIMIT ?`
+      )
+      .all(ownerId, actorId, limit) as unknown as SqlRow[];
+    return rows.map(asAuditEvent);
+  }
+
+  recordFailedOwnerEmailLogin(ownerId: string): void {
+    if (this.getActor(ownerId, ownerId)?.status !== "active") return;
+    const now = this.#nowMs();
+    this.#sqlite
+      .prepare(
+        `INSERT INTO identity_audit_events
+          (event_id, owner_id, actor_id, session_id, event_type, outcome, reason_code, created_at)
+         SELECT ?, ?, ?, NULL, 'login.failed', 'denied', 'BAD_CREDENTIALS', ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM identity_audit_events
+           WHERE owner_id=? AND actor_id=? AND event_type='login.failed' AND created_at>=?
+         )`
+      )
+      .run(
+        randomUUID(),
+        ownerId,
+        ownerId,
+        new Date(now).toISOString(),
+        ownerId,
+        ownerId,
+        new Date(now - 60_000).toISOString()
+      );
+  }
+
   listAuditEvents(ownerId: string): IdentityAuditEvent[] {
     const rows = this.#sqlite
       .prepare(

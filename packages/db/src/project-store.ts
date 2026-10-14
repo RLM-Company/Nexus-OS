@@ -297,6 +297,37 @@ export class ProjectStore {
       .map(asMessage);
   }
 
+  createEmptyProject(projectId: string, title: string, ownerId = LOCAL_OWNER_ID): StoredProject {
+    const normalized = title.trim();
+    if (!normalized || normalized.length > 160) throw new Error("Invalid project title");
+    this.#sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const existing = this.#sqlite
+        .prepare("SELECT owner_id,title FROM projects WHERE id=?")
+        .get(projectId) as { owner_id: string; title: string } | undefined;
+      if (existing) {
+        if (existing.owner_id !== ownerId || existing.title !== normalized)
+          throw new IdempotencyConflictError();
+      } else {
+        const timestamp = now();
+        this.#sqlite
+          .prepare(
+            "INSERT INTO projects (id,owner_id,title,status,created_at,updated_at) VALUES (?,?,?,'DRAFT',?,?)"
+          )
+          .run(projectId, ownerId, normalized, timestamp, timestamp);
+        this.#sqlite
+          .prepare("INSERT INTO chats (id,project_id,kind,created_at) VALUES (?,?,'main',?)")
+          .run(randomUUID(), projectId, timestamp);
+      }
+      const project = this.getProject(projectId, ownerId)!;
+      this.#sqlite.exec("COMMIT");
+      return project;
+    } catch (cause) {
+      this.#sqlite.exec("ROLLBACK");
+      throw cause;
+    }
+  }
+
   createProject(
     initialMessage: string,
     clientMessageId: string,

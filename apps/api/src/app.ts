@@ -171,10 +171,20 @@ import { registerDocumentLibraryRoutes } from "./document-library-routes.js";
 import { registerDocumentAnswerRoutes } from "./document-answer-routes.js";
 import type { DocumentAnswerService } from "./document-answer-service.js";
 import { registerChatHistorySearchRoutes } from "./chat-history-search-routes.js";
+import { registerPresentationRoutes } from "./presentation-routes.js";
+import { registerNotificationRoutes } from "./notification-routes.js";
+import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
+import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
 import type { ResearchOwnerBudget } from "./research/research-synthesis.js";
 import type { CodeOwnerBudget } from "./code-agent/owner-budget.js";
 import type { AccountStore } from "./account-settings/account-store.js";
-import type { DocumentLibraryStore, ChatHistorySearchStore } from "@cosmora/db";
+import type {
+  DocumentLibraryStore,
+  ChatHistorySearchStore,
+  PresentationStore,
+  NotificationStore,
+  OwnerSkillStore
+} from "@cosmora/db";
 import { QuotaExceededError } from "./account-settings/account-store.js";
 import { registerResearchRoutes } from "./research/research-routes.js";
 import type { ResearchCoordinator } from "./research/research-coordinator.js";
@@ -191,6 +201,9 @@ export interface AppDependencies {
   documentLibrary?: DocumentLibraryStore;
   documentAnswerService?: DocumentAnswerService;
   chatHistorySearchStore?: ChatHistorySearchStore;
+  presentationStore?: PresentationStore;
+  notificationStore?: NotificationStore;
+  ownerSkillStore?: OwnerSkillStore;
   researchBudget?: ResearchOwnerBudget;
   ownerBudget?: CodeOwnerBudget;
   codeAgentService?: CodeAgentService;
@@ -198,6 +211,7 @@ export interface AppDependencies {
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   identityStore?: IdentityStore;
+  registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
   projectStore?: ProjectStore;
   demoManagerStore?: DemoManagerStore;
@@ -621,7 +635,36 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   };
 
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url.split("?", 1)[0] === "/api/v1/health") return;
+    const path = request.url.split("?", 1)[0];
+    if (path === "/api/v1/health") return;
+    if (
+      dependencies.registration &&
+      (path === "/login" ||
+        path === "/register" ||
+        path === "/resend-verification" ||
+        path === "/forgot-password" ||
+        path === "/auth/register" ||
+        path === "/auth/resend-verification" ||
+        path === "/auth/login" ||
+        path === "/auth/confirm" ||
+        path === "/auth/recovery/request" ||
+        path === "/auth/recovery/reset" ||
+        path === "/auth/google" ||
+        path === "/auth/google/link" ||
+        path === "/auth/google/callback" ||
+        path === "/auth/account" ||
+        path === "/auth/account/email" ||
+        path === "/auth/account/password" ||
+        path === "/auth/account/method/remove" ||
+        path === "/auth/account/sessions" ||
+        path === "/auth/account/sessions/revoke" ||
+        path === "/auth/account/email-change/request" ||
+        path === "/auth/account/email-change/confirm" ||
+        path === "/auth/account/activity" ||
+        path === "/auth/logout" ||
+        path === "/auth/verify")
+    )
+      return;
     let identity: IdentityContext | null = null;
     try {
       identity = await identityResolver.resolve(request);
@@ -666,6 +709,44 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       return { owner_id: identityFor(request).owner_id };
     }
   );
+
+  if (dependencies.projectStore) {
+    const projects = dependencies.projectStore;
+    app.post(
+      "/api/v1/projects/empty",
+      {
+        schema: {
+          body: Type.Object(
+            {
+              title: Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }),
+              client_project_id: Type.String({
+                pattern:
+                  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+              })
+            },
+            { additionalProperties: false }
+          ),
+          response: { 201: ProjectDetailResponseSchema, 409: ApiErrorSchema }
+        },
+        validatorCompiler: TypeBoxValidatorCompiler
+      },
+      (request, reply) => {
+        const owner = identityFor(request).owner_id;
+        const project = projects.createEmptyProject(
+          request.body.client_project_id,
+          request.body.title,
+          owner
+        );
+        reply.code(201);
+        return {
+          project,
+          chat_id: projects.getMainChatId(project.id, owner)!,
+          messages: projects.listMessages(project.id, owner)
+        };
+      }
+    );
+  }
+  if (dependencies.registration) registerRegistrationRoutes(app, dependencies.registration);
 
   app.get(
     "/api/v1/health",
@@ -728,6 +809,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerDocumentAnswerRoutes(app, dependencies.documentAnswerService, identityFor);
   if (dependencies.chatHistorySearchStore)
     registerChatHistorySearchRoutes(app, dependencies.chatHistorySearchStore, identityFor);
+  if (dependencies.presentationStore)
+    registerPresentationRoutes(app, dependencies.presentationStore, identityFor);
+  if (dependencies.notificationStore)
+    registerNotificationRoutes(app, dependencies.notificationStore, identityFor);
+  if (dependencies.ownerSkillStore)
+    registerOwnerSkillRoutes(app, dependencies.ownerSkillStore, identityFor);
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
   if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
     const coordinator = registerResearchRoutes({

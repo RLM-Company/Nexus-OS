@@ -188,7 +188,8 @@ export class GeneralChatBackgroundRunCoordinator {
       let modelRequest = this.#chat.buildRequest({
         chatId: queued.chat_id,
         runId: queued.run_id,
-        messages: conversation
+        messages: conversation,
+        memoryNotes: this.#store.getChatMemory(queued.chat_id, queued.owner_id)?.memory_notes ?? ""
       });
       if (
         this.#accountStore?.getRelay(queued.owner_id, queued.chat_id) &&

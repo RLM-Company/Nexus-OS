@@ -112,6 +112,7 @@ type Props = {
   error: string | null;
   onRetry: () => void;
   onOpenProject: (id: string, view?: "chat" | "plan" | "project" | "context") => void;
+  onLibraryProjectCreated: (id: string) => void;
   onCompose: (prompt: string, files?: ChatAttachment[]) => void;
   onNavigate: (surface: ToolSurface) => void;
   agentStudioHref: string;
@@ -1486,6 +1487,7 @@ export function WorkspaceSections(props: Props) {
           key={props.activeProjectId ?? "no-project"}
           projectId={props.activeProjectId}
           onCompose={props.onCompose}
+          onProjectCreated={props.onLibraryProjectCreated}
         />
       );
       break;

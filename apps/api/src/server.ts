@@ -5,6 +5,9 @@ import {
   CanvasArtifactStore,
   DocumentAnswerStore,
   ChatHistorySearchStore,
+  PresentationStore,
+  NotificationStore,
+  OwnerSkillStore,
   AgentInstanceStore,
   AgentStudioMutationStore,
   DemoManagerStore,
@@ -59,6 +62,13 @@ import type { ResearchCoordinator } from "./research/research-coordinator.js";
 import { CodeAgentService } from "./code-agent/service.js";
 import { CodeAgentStore } from "./code-agent/store.js";
 import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
+import { RegistrationStore } from "./registration-store.js";
+import { GoogleIdentity } from "./google-identity.js";
+import { sendWithLocalMta } from "./registration-routes.js";
+import { PresentationPrivacyAdapter } from "./presentation-privacy.js";
+import { NotificationPrivacyAdapter } from "./notification-privacy.js";
+import { OwnerSkillPrivacyAdapter } from "./owner-skill-privacy.js";
+import { EmailChangePrivacyAdapter } from "./email-change-privacy.js";
 import { canvasPrivacyAdapter } from "./canvas/canvas-privacy.js";
 
 const config = loadServerConfig();
@@ -116,6 +126,9 @@ try {
   );
   documentAnswerStore.recoverInterrupted();
   const chatHistorySearchStore = new ChatHistorySearchStore(database.sqlite);
+  const presentationStore = new PresentationStore(database.sqlite);
+  const notificationStore = new NotificationStore(database.sqlite);
+  const ownerSkillStore = new OwnerSkillStore(database.sqlite);
   const researchStore = new ResearchStore(database.sqlite);
   const ownerPrivacy = new OwnerPrivacyCoordinator(database.sqlite);
   const demoManagerStore = new DemoManagerStore(database.sqlite);
@@ -205,6 +218,10 @@ try {
   ownerPrivacy.register(new CodeIntegratedPrivacyAdapter(database.sqlite, codeAgentService));
   ownerPrivacy.register(new AgentStudioPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new PolicyProjectsPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new PresentationPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new NotificationPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new OwnerSkillPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new EmailChangePrivacyAdapter(database.sqlite));
   ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
   app = buildApp({
     canvasStore,
@@ -216,6 +233,9 @@ try {
     documentLibrary,
     documentAnswerService,
     chatHistorySearchStore,
+    presentationStore,
+    notificationStore,
+    ownerSkillStore,
     ownerPrivacy,
     ownerBudget: sharedBudget,
     codeAgentService,
@@ -242,6 +262,42 @@ try {
       };
     })(),
     identityStore,
+    ...(process.env.KOSMORA_REGISTRATION_ENABLED === "1"
+      ? {
+          registration: {
+            origin: config.webOrigin,
+            store: new RegistrationStore(database.sqlite),
+            identity: identityStore,
+            ...(process.env.KOSMORA_GOOGLE_CLIENT_ID && process.env.KOSMORA_GOOGLE_CLIENT_SECRET
+              ? {
+                  google: new GoogleIdentity(
+                    process.env.KOSMORA_GOOGLE_CLIENT_ID,
+                    process.env.KOSMORA_GOOGLE_CLIENT_SECRET,
+                    `${config.webOrigin}/auth/google/callback`
+                  )
+                }
+              : {}),
+            ...(process.env.KOSMORA_SENDMAIL_PATH && process.env.KOSMORA_EMAIL_FROM
+              ? {
+                  sendVerification: sendWithLocalMta(
+                    process.env.KOSMORA_SENDMAIL_PATH,
+                    process.env.KOSMORA_EMAIL_FROM
+                  ),
+                  sendPasswordReset: sendWithLocalMta(
+                    process.env.KOSMORA_SENDMAIL_PATH,
+                    process.env.KOSMORA_EMAIL_FROM,
+                    "reset"
+                  ),
+                  sendEmailChange: sendWithLocalMta(
+                    process.env.KOSMORA_SENDMAIL_PATH,
+                    process.env.KOSMORA_EMAIL_FROM,
+                    "email-change"
+                  )
+                }
+              : {})
+          }
+        }
+      : {}),
     generalChatStore,
     projectStore,
     demoManagerStore,

@@ -24,7 +24,7 @@
   background: var(--surface);
   color: var(--text);
 }
-.menu :is(summary, button, a, input, select):focus-visible {
+.menu :is(summary, button, a, input, select, textarea):focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 3px;
 }
@@ -56,6 +56,7 @@
   gap: 6px;
 }
 .panel input:not([type="checkbox"]),
+.panel textarea,
 .panel select {
   width: 100%;
   min-height: 40px;
@@ -65,6 +66,10 @@
   background: var(--bg);
   color: var(--text);
   font: inherit;
+}
+.panel textarea {
+  resize: vertical;
+  min-height: 112px;
 }
 .panel button {
   min-height: 40px;
@@ -110,6 +115,7 @@
     min-height: 44px;
   }
   .panel input:not([type="checkbox"]),
+  .panel textarea,
   .panel select {
     font-size: 16px;
   }

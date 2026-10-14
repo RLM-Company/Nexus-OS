@@ -46,10 +46,12 @@ function download(blob: Blob, name: string) {
 
 export function StudioDataSurface({
   onCompose,
-  projectId
+  projectId,
+  onProjectCreated
 }: {
   onCompose: (prompt: string, files?: ChatAttachment[]) => void;
   projectId: string | null;
+  onProjectCreated?: (id: string) => void;
 }) {
   const [tab, setTab] = useState<"data" | "documents">("documents");
   return (
@@ -73,7 +75,11 @@ export function StudioDataSurface({
       {tab === "data" ? (
         <DataWorkbench onCompose={onCompose} />
       ) : (
-        <StudioFiles onCompose={onCompose} projectId={projectId} />
+        <StudioFiles
+          onCompose={onCompose}
+          projectId={projectId}
+          {...(onProjectCreated ? { onProjectCreated } : {})}
+        />
       )}
     </div>
   );
