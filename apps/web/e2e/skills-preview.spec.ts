@@ -1,20 +1,20 @@
 import { expect, test } from "@playwright/test";
 
-test("shows a mock-only Skills catalog with permission previews", async ({ page }) => {
+test("shows a private instruction editor and inert contract examples", async ({ page }) => {
   await page.goto("/skills");
 
   await expect(page.getByRole("heading", { name: "Skills" })).toBeVisible();
-  await expect(page.getByText("Preview only", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("skills-catalog")).toContainText("Research Brief");
-  await expect(page.getByTestId("skills-catalog")).toContainText("Document Review");
-  await expect(page.getByTestId("skills-catalog")).toContainText("GitHub Audit Preview");
-  await expect(page.getByText("Read-only").first()).toBeVisible();
-
-  const disabledRunButtons = page.getByRole("button", { name: "Запуск отключён" });
-  await expect(disabledRunButtons).toHaveCount(3);
-  for (let index = 0; index < 3; index += 1) {
-    await expect(disabledRunButtons.nth(index)).toBeDisabled();
-  }
+  await expect(page.getByText("Инструкции без исполнения", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Новая инструкция" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Примеры контрактов" })).toContainText(
+    "Research Brief"
+  );
+  await expect(page.getByRole("region", { name: "Примеры контрактов" })).toContainText(
+    "Document Review"
+  );
+  await expect(page.getByRole("region", { name: "Примеры контрактов" })).toContainText(
+    "GitHub Audit Preview"
+  );
 
   await expect(page.locator("body")).not.toContainText("Authorization");
   await expect(page.locator("body")).not.toContainText("MODEL_API_KEY");
