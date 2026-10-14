@@ -1,9 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import {
   isValidChatAttachments,
   CHAT_MEMORY_MAX_LENGTH,
   type ChatMemory,
+  type ChatBranchList,
+  type CreateChatBranch,
   sameChatAttachments,
   type ChatAttachment,
   type Currency
@@ -23,6 +25,7 @@ export class GeneralChatBusyError extends Error {
 }
 
 export class ChatMemoryConflictError extends Error {}
+export class ChatBranchValidationError extends Error {}
 
 export interface StoredGeneralChat {
   id: string;
@@ -250,6 +253,197 @@ export class GeneralChatStore {
       )
       .all(chatId)
       .map((row) => asMessage(row as SqlRow));
+  }
+
+  listChatBranches(chatId: string, ownerId = LOCAL_OWNER_ID): ChatBranchList | null {
+    if (!this.getChat(chatId, ownerId)) return null;
+    const ancestry = this.#sqlite
+      .prepare("SELECT root_chat_id FROM chat_branches WHERE chat_id=?")
+      .get(chatId) as { root_chat_id: string | null } | undefined;
+    const root =
+      ancestry?.root_chat_id && this.getChat(ancestry.root_chat_id, ownerId)
+        ? ancestry.root_chat_id
+        : chatId;
+    const items = this.#sqlite
+      .prepare(
+        `SELECT c.id AS chat_id,c.title,coalesce(b.kind,'original') AS kind,c.created_at
+       FROM general_chats c LEFT JOIN chat_branches b ON b.chat_id=c.id
+       WHERE c.owner_id=? AND (c.id=? OR b.root_chat_id=?)
+       ORDER BY CASE WHEN c.id=? THEN 0 ELSE 1 END,b.rowid`
+      )
+      .all(ownerId, root, root, root) as unknown as ChatBranchList["items"];
+    return { root_chat_id: root, items };
+  }
+
+  createChatBranch(
+    chatId: string,
+    ownerId: string,
+    input: CreateChatBranch
+  ): AcceptedGeneralChatMessage | null {
+    const digest = createHash("sha256")
+      .update(
+        JSON.stringify([
+          chatId,
+          input.message_id,
+          input.kind,
+          input.kind === "edit" ? input.content : null
+        ])
+      )
+      .digest("hex");
+    this.#sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const parent = this.getChat(chatId, ownerId);
+      if (!parent) {
+        this.#sqlite.exec("COMMIT");
+        return null;
+      }
+      const existing = this.getChat(input.client_branch_id, ownerId);
+      const metadata = this.#sqlite
+        .prepare("SELECT request_digest FROM chat_branches WHERE chat_id=?")
+        .get(input.client_branch_id) as { request_digest: string } | undefined;
+      if (existing) {
+        if (metadata?.request_digest !== digest) throw new IdempotencyConflictError();
+        const accepted = this.findByClientMessageId(`branch:${input.client_branch_id}`, ownerId);
+        if (!accepted || accepted.chat.id !== existing.id) throw new IdempotencyConflictError();
+        this.#sqlite.exec("COMMIT");
+        return { ...accepted, duplicate: true };
+      }
+      if (
+        this.#sqlite.prepare("SELECT 1 FROM general_chats WHERE id=?").get(input.client_branch_id)
+      )
+        throw new IdempotencyConflictError();
+      if (this.findByClientMessageId(`branch:${input.client_branch_id}`, ownerId))
+        throw new IdempotencyConflictError();
+      if (
+        this.#sqlite
+          .prepare(
+            "SELECT 1 FROM general_chat_runs WHERE chat_id=? AND status IN ('queued','running')"
+          )
+          .get(chatId)
+      )
+        throw new GeneralChatBusyError();
+      const selected = this.#sqlite
+        .prepare(
+          `SELECT rowid AS position,${MESSAGE_COLUMNS} FROM general_chat_messages WHERE chat_id=? AND id=?`
+        )
+        .get(chatId, input.message_id) as SqlRow | undefined;
+      if (!selected) {
+        this.#sqlite.exec("COMMIT");
+        return null;
+      }
+      const source = asMessage(selected);
+      let pivot = selected;
+      if (input.kind === "regenerate") {
+        if (source.role !== "assistant")
+          throw new ChatBranchValidationError("Выберите ответ ассистента.");
+        const user = this.#sqlite
+          .prepare(
+            `SELECT rowid AS position,${MESSAGE_COLUMNS} FROM general_chat_messages WHERE chat_id=? AND role='user' AND rowid<? ORDER BY rowid DESC LIMIT 1`
+          )
+          .get(chatId, Number(selected.position)) as SqlRow | undefined;
+        if (!user) throw new ChatBranchValidationError("Не найден исходный запрос.");
+        pivot = user;
+      } else if (
+        source.role !== "user" ||
+        !input.content.trim() ||
+        input.content.length > 100_000
+      ) {
+        throw new ChatBranchValidationError("Выберите непустой запрос пользователя.");
+      }
+      const family = this.listChatBranches(chatId, ownerId)!;
+      if (family.items.length >= 33)
+        throw new ChatBranchValidationError("В этой переписке уже 32 варианта. Начните новый чат.");
+      const size = this.#sqlite
+        .prepare(
+          `SELECT count(*) AS n,coalesce(sum(length(CAST(content AS BLOB))+length(CAST(attachments_json AS BLOB))+1000),0) AS bytes FROM general_chat_messages WHERE chat_id=? AND rowid<?`
+        )
+        .get(chatId, Number(pivot.position)) as { n: number; bytes: number };
+      if (size.n > 400 || size.bytes > 8 * 1024 * 1024)
+        throw new ChatBranchValidationError(
+          "Слишком большая история для варианта. Начните новый чат с нужной выборкой."
+        );
+      const prefix = this.#sqlite
+        .prepare(
+          `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE chat_id=? AND rowid<? ORDER BY rowid`
+        )
+        .all(chatId, Number(pivot.position))
+        .map((row) => asMessage(row as SqlRow));
+      const original = asMessage(pivot);
+      const content = input.kind === "edit" ? input.content : original.content;
+      const attachments = original.attachments ?? [];
+      const bytes = Buffer.byteLength(
+        JSON.stringify([...prefix, { content, attachments }]),
+        "utf8"
+      );
+      if (prefix.length > 400 || bytes > 8 * 1024 * 1024)
+        throw new ChatBranchValidationError(
+          "Слишком большая история для варианта. Начните новый чат с нужной выборкой."
+        );
+      const createdAt = timestamp();
+      const stem =
+        prefix.length === 0 ? titleFor(content) : parent.title.replace(/ · вариант \d+$/u, "");
+      const title = `${stem.slice(0, 130)} · вариант ${family.items.length}`;
+      this.#sqlite
+        .prepare(
+          "INSERT INTO general_chats(id,owner_id,title,created_at,updated_at) VALUES(?,?,?,?,?)"
+        )
+        .run(input.client_branch_id, ownerId, title, createdAt, createdAt);
+      const copy = this.#sqlite.prepare(
+        `INSERT INTO general_chat_messages(id,chat_id,owner_id,role,content_type,content,attachments_json,status,run_id,error_code,created_at,updated_at)
+         VALUES(?,?,?,?,'text',?,?,?,NULL,?,?,?)`
+      );
+      for (const message of prefix)
+        copy.run(
+          randomUUID(),
+          input.client_branch_id,
+          ownerId,
+          message.role,
+          message.content,
+          JSON.stringify(message.attachments ?? []),
+          message.status,
+          message.error_code,
+          message.created_at,
+          message.updated_at
+        );
+      const memory = this.getChatMemory(chatId, ownerId);
+      if (memory?.memory_notes)
+        this.#sqlite
+          .prepare(
+            "INSERT INTO chat_memory_notes(chat_id,memory_notes,version,updated_at) VALUES(?,?,1,?)"
+          )
+          .run(input.client_branch_id, memory.memory_notes, createdAt);
+      this.#sqlite
+        .prepare(
+          `INSERT INTO kosmora_chat_preferences(chat_id,owner_id,relay_enabled)
+         SELECT ?,owner_id,relay_enabled FROM kosmora_chat_preferences WHERE chat_id=? AND owner_id=?`
+        )
+        .run(input.client_branch_id, chatId, ownerId);
+      const accepted = this.#insertMessage(
+        input.client_branch_id,
+        content,
+        `branch:${input.client_branch_id}`,
+        createdAt,
+        ownerId,
+        attachments
+      );
+      this.#sqlite
+        .prepare(
+          "INSERT INTO chat_branches(chat_id,parent_chat_id,root_chat_id,source_message_id,kind,request_digest) VALUES(?,?,?,?,?,?)"
+        )
+        .run(
+          input.client_branch_id,
+          chatId,
+          family.root_chat_id,
+          input.message_id,
+          input.kind,
+          digest
+        );
+      this.#sqlite.exec("COMMIT");
+      return { ...accepted, duplicate: false };
+    } catch (cause) {
+      this.#sqlite.exec("ROLLBACK");
+      throw cause;
+    }
   }
 
   createChat(

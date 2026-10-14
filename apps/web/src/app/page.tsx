@@ -13,6 +13,7 @@ import { ModelPicker, SystemMessage } from "./ui/kosmora-controls";
 import { CanvasEditor } from "./canvas-editor/canvas-editor";
 import canvasChat from "./canvas-editor/canvas-chat.module.css";
 import { ChatHistoryActions } from "./chat-history-actions";
+import { ChatBranches, ChatBranchButton } from "./chat-branches";
 import { ChatArchivePanel } from "./chat-archive-panel";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -519,6 +520,10 @@ export default function Home() {
   const [pinNotice, setPinNotice] = useState<string | null>(null);
   const [pinStorageKey, setPinStorageKey] = useState<string | null>(null);
   const [activeLocalChatId, setActiveLocalChatId] = useState<string | null>(null);
+  const [branchSelection, setBranchSelection] = useState<{
+    chatId: string;
+    message: LocalChatMessage;
+  } | null>(null);
   const [localChatsHydrated, setLocalChatsHydrated] = useState(false);
   const [chatsExpanded, setChatsExpanded] = useState(true);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
@@ -2007,6 +2012,31 @@ export default function Home() {
     }
   };
 
+  const openChatBranch = async (
+    id: string,
+    accepted?: GeneralChatAcceptedResponse
+  ): Promise<void> => {
+    setBranchSelection(null);
+    resetToLocalChat(id);
+    const epoch = viewEpochRef.current;
+    setLoading(true);
+    try {
+      await loadGeneralChats();
+      if (epoch !== viewEpochRef.current) return;
+      await loadGeneralChatView(id);
+      if (epoch === viewEpochRef.current && accepted) {
+        setSending(true);
+        setRunPhase("queued");
+        followGeneralChatStream(accepted);
+      }
+    } catch {
+      if (epoch === viewEpochRef.current)
+        setError("Вариант сохранён. Не удалось открыть переписку; выберите её в истории.");
+    } finally {
+      if (epoch === viewEpochRef.current) setLoading(false);
+    }
+  };
+
   const dismissProjectProposal = (): void => {
     if (!activeLocalChatId) return;
     setLocalChats((current) =>
@@ -2823,6 +2853,19 @@ export default function Home() {
           </section>
         ) : localChatMessages.length > 0 ? (
           <section className="chat-panel general-chat-panel" aria-label="Обычный чат Kosmora">
+            {activeLocalChatId && (
+              <ChatBranches
+                key={activeLocalChatId}
+                chatId={activeLocalChatId}
+                message={
+                  branchSelection?.chatId === activeLocalChatId ? branchSelection.message : null
+                }
+                disabled={sending || loading}
+                onClose={() => setBranchSelection(null)}
+                onOpen={(id) => void openChatBranch(id)}
+                onCreated={(accepted) => void openChatBranch(accepted.chat.id, accepted)}
+              />
+            )}
             <div className="chat-heading general-chat-heading">
               <div>
                 <strong>Kosmora</strong>
@@ -2883,6 +2926,15 @@ export default function Home() {
                       <VoicePlayback text={message.content} />
                     )}
                     <ChatMessageAttachments files={message.attachments ?? []} />
+                    {activeLocalChatId &&
+                      message.status !== "streaming" &&
+                      message.status !== "pending" && (
+                        <ChatBranchButton
+                          assistant={message.role === "assistant"}
+                          disabled={sending || loading || executionGate !== "clear"}
+                          onClick={() => setBranchSelection({ chatId: activeLocalChatId, message })}
+                        />
+                      )}
                   </div>
                 </article>
               ))}

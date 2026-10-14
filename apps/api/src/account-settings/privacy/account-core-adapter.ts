@@ -101,6 +101,9 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
       chat_memory: select(
         "SELECT m.* FROM chat_memory_notes m JOIN general_chats c ON c.id=m.chat_id WHERE c.owner_id=?"
       ),
+      chat_branches: select(
+        "SELECT b.* FROM chat_branches b JOIN general_chats c ON c.id=b.chat_id WHERE c.owner_id=?"
+      ),
       messages: select(
         "SELECT m.* FROM general_chat_messages m JOIN general_chats c ON c.id=m.chat_id WHERE c.owner_id=?"
       ),

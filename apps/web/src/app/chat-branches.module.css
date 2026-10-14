@@ -1,0 +1,118 @@
+.action {
+  padding: 4px 6px;
+  margin: 4px 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.action:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface);
+}
+.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.selector select {
+  max-width: 65%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: var(--radius-control);
+  padding: 8px;
+  font: inherit;
+}
+.dialog {
+  width: min(600px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  padding: 26px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-container);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-popover);
+}
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+.dialog h2 {
+  margin: 0 0 14px;
+  font-size: 20px;
+  font-weight: 550;
+}
+.dialog p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.dialog label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.dialog textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 150px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+}
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+.buttons button {
+  padding: 10px 14px;
+  min-height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.buttons button:last-child {
+  background: var(--text);
+  color: var(--bg);
+}
+.buttons button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.action:focus-visible,
+.selector select:focus-visible,
+.dialog :is(textarea, button):focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .dialog {
+    padding: 20px;
+  }
+  .dialog textarea {
+    font-size: 16px;
+  }
+  .buttons {
+    flex-direction: column-reverse;
+  }
+}
