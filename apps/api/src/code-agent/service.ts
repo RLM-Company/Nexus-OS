@@ -309,7 +309,9 @@ export class CodeAgentService {
     }
     if (
       result.status === "RECOVERY_REQUIRED" &&
-      (executionError instanceof CodeAgentError || executionError instanceof CodeDiffError)
+      (executionError instanceof CodeAgentError ||
+        executionError instanceof CodeDiffError ||
+        executionError instanceof GatewayRunError)
     )
       throw executionError;
     if (result.status !== "EXECUTED")
@@ -464,6 +466,9 @@ export class CodeAgentService {
             ...latest,
             status: latest.status === "publishing" ? "uncertain" : "failed",
             error: code,
+            ...(error instanceof GatewayRunError && error.diagnostic
+              ? { provider_diagnostic: error.diagnostic }
+              : {}),
             ...(error instanceof CodeDiffError
               ? {
                   patch_diagnostic: {

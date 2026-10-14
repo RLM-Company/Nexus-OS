@@ -116,6 +116,7 @@ const entry = (toolCalling: boolean): ModelRegistryEntry => ({
 
 async function fixture(
   options: {
+    providerStatus?: number;
     extraTreePaths?: number;
     ownerBudget?: CodeOwnerBudget;
     level?: AutonomyLevel;
@@ -239,6 +240,12 @@ async function fixture(
     fetchImplementation: (_input, init) => {
       if (typeof init?.body !== "string") throw new Error("Missing JSON request");
       providerCalls.push(JSON.parse(init.body) as Record<string, unknown>);
+      if (options.providerStatus)
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: { message: "DO_NOT_PERSIST_PROVIDER_BODY" } }), {
+            status: options.providerStatus
+          })
+        );
       const response = responses[providerCalls.length - 1];
       if (!response) throw new Error("Unexpected provider turn");
       return Promise.resolve(
@@ -363,6 +370,17 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("retains an allowlisted provider diagnostic without storing its body or releasing uncertain usage", async () => {
+    const f = await fixture({ toolCalling: false, providerStatus: 402 });
+    const id = await f.start();
+    const run = await f.wait(id, "failed");
+    expect(run.error).toBe("PROVIDER_ERROR");
+    expect(run.provider_diagnostic).toBe("HTTP_402");
+    expect(JSON.stringify(run)).not.toContain("DO_NOT_PERSIST_PROVIDER_BODY");
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.service.view(run).usage.unknown_attempts).toBe(1);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
   it("bounds model tree metadata on large repositories while retaining complete server path validation", async () => {
     const response = sse(
       {

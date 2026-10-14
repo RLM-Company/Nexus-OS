@@ -46,6 +46,7 @@ export interface CodeAgentRun {
   publication_token?: string | undefined;
   check?: (CodeAgentCheckResult & { review_hash: string }) | undefined;
   error?: string | undefined;
+  provider_diagnostic?: string | undefined;
   log: Array<{ at: string; event: string }>;
   created_at: string;
 }
