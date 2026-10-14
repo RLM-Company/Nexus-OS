@@ -122,7 +122,7 @@ describe("presentations", () => {
           "UPDATE kosmora_owner_data_lifecycle SET state='deleting' WHERE owner_id='owner-a'"
         )
         .run();
-      expect((await privacy.delete("owner-a", 1)).deleted_records).toBe(1);
+      expect((await privacy.delete("owner-a", 1)).deleted_records).toBe(3);
       expect((await privacy.export("owner-a")).records.decks).toHaveLength(0);
     } finally {
       await app.close();

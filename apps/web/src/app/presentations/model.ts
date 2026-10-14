@@ -19,6 +19,16 @@ export type Deck = {
   updated_at: string;
 };
 export type DeckSummary = Omit<Deck, "slides">;
+export type DeckRevisionSummary = {
+  version: number;
+  title: string;
+  theme: Theme;
+  slide_count: number;
+  source: "create" | "save" | "import" | "restore" | "migration";
+  source_version: number | null;
+  created_at: string;
+};
+export type DeckRevision = DeckRevisionSummary & { slides: Slide[] };
 
 const estimate = (value: string, charsPerLine: number) =>
   value
