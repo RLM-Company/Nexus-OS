@@ -116,6 +116,7 @@ const entry = (toolCalling: boolean): ModelRegistryEntry => ({
 
 async function fixture(
   options: {
+    extraTreePaths?: number;
     ownerBudget?: CodeOwnerBudget;
     level?: AutonomyLevel;
     toolCalling?: boolean;
@@ -170,11 +171,17 @@ async function fixture(
       else if (path.startsWith("/git/trees/"))
         value = {
           truncated: false,
-          tree: Object.keys(originals).map((path, i) => ({
+          tree: [
+            ...Object.keys(originals),
+            ...Array.from(
+              { length: options.extraTreePaths ?? 0 },
+              (_, i) => `unrelated/large-project/module-${i}/source-file-with-long-name.js`
+            )
+          ].map((path, i) => ({
             path,
             type: "blob",
             mode: "100644",
-            sha: String(i + 1).repeat(40)
+            sha: i < 2 ? String(i + 1).repeat(40) : "9".repeat(40)
           }))
         };
       else if (path.startsWith("/git/blobs/")) {
@@ -356,6 +363,40 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("bounds model tree metadata on large repositories while retaining complete server path validation", async () => {
+    const response = sse(
+      {
+        choices: [
+          {
+            delta: { content: JSON.stringify({ summary: "Fix sum", files: [changes[0]] }) },
+            finish_reason: null
+          }
+        ]
+      },
+      { choices: [{ delta: {}, finish_reason: "stop" }] },
+      "[DONE]"
+    );
+    const f = await fixture({ toolCalling: false, extraTreePaths: 3000, responses: [response] });
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Fix sum",
+      base_branch: "main",
+      files: ["src/add.js"]
+    }).id;
+    const run = await f.wait(id, "proposed");
+    expect(run.repository_paths).toHaveLength(3002);
+    expect(f.providerCalls).toHaveLength(1);
+    const messages = f.providerCalls[0]!.messages as Array<{ role: string; content: string }>;
+    const input = JSON.parse(messages.find((m) => m.role === "user")!.content) as {
+      tree: string[];
+      tree_partial: boolean;
+      tree_total_count: number;
+    };
+    expect(input.tree_partial).toBe(true);
+    expect(input.tree_total_count).toBe(3002);
+    expect(input.tree).toContain("src/add.js");
+    expect(input.tree.length).toBeLessThanOrEqual(128);
+    expect(Buffer.byteLength(JSON.stringify(input.tree))).toBeLessThanOrEqual(12000);
+  });
   it("creates an active isolated Code project with explicit A2 approval, no initial model run, and idempotent replay", async () => {
     const f = await fixture(),
       id = randomUUID(),

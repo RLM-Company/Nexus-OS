@@ -61,6 +61,23 @@
   border-radius: 14px;
   width: min(760px, 96%);
   font-size: 13px;
+  max-height: min(52dvh, 520px);
+  overflow: auto;
+  flex: 0 1 auto;
+}
+.contextToggle {
+  align-self: flex-end;
+  flex-shrink: 0;
+  width: fit-content;
+  margin: 8px 24px;
+  padding: 7px 12px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  background: #fafafa;
+  color: #444;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
 .panel header {
   display: flex;

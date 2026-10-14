@@ -63,3 +63,39 @@ DB/API/web semantic type checks passed; scoped source/test lint has zero errors.
 Production activation, source IDs and a real Code/GitHub acceptance are recorded
 below after verification. Hosted CI is still affected by the previously confirmed
 GitHub billing gate; hosted CI success is not claimed.
+
+## Initial verified activation and real Code finding
+
+Source `6eee1548fc44e68e337773d530e744898cb73064` is published in Draft PR
+[#345](https://github.com/RLM-Company/Nexus-OS/pull/345). Release directory:
+`/opt/cosmora/releases/workspace-code-6eee154`. The 683,679-byte archive has SHA-256
+`94603ba8a209d3fe56954270263ee8fe4adbd361c85dfdea4cbd3a1e1b5b71cc`.
+
+Both production images built with networking disabled for build steps. An initial
+incorrect self-reference in the Dockerfile base image was corrected before any
+service replacement. The verified consistent backup has SHA-256
+`1e2278d3d89334abfe904d7dbcebe07ccd741039b29c0f9a97bd734b39e0541e`.
+The copied live database passed migration rehearsal (42 to 43 journal rows),
+integrity/FK checks, folders/pins/context, source ownership, idempotent Canvas
+imports and existing workspace checks without calling a model.
+
+API/web became healthy, existing project/chat/message/run/identity/memory/branch
+rows were preserved, and authenticated workspace, navigation, memory and context
+reads passed. Login and the private executor retained their exact container IDs
+and start times. The executor completed a real synthetic unprivileged check with
+verified cleanup. Registration remains disabled. Browser context/folder controls
+loaded in the remembered session; no existing chat context was changed by probing.
+
+The actual Code acceptance created a dedicated A2 project
+`cc140005-0001-4000-8000-000000000001` with no Manager request. It read the correct
+GitHub base commit and selected files, but run
+`2c8062c0-0ce1-4484-b936-2704e831450b` failed with `ROUTE_UNAVAILABLE` before a model
+dispatch; usage, unknown attempts and cost records are all zero. The full
+repository tree in the model prompt exceeded the route's conservative context.
+
+The correction bounds model tree metadata to selected/nearby paths (128 entries,
+12,000 bytes), labels a partial tree explicitly, and preserves the complete tree
+for server-side path validation. A new 3002-file regression passes with one mock
+generation; all 35 Code API cases passed. The context panel also gains a bounded
+scroll area and a compact toggle after live viewport inspection. Production
+activation and the next deliberately initiated Code attempt are recorded below.

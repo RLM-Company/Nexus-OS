@@ -1,5 +1,34 @@
 import { CodeAgentError } from "./store.js";
 
+/** Repository validation uses the complete tree; model input needs only nearby paths. */
+export function selectCodeTreePaths(
+  entries: Array<{ path: string }>,
+  selected: string[]
+): string[] {
+  const selectedSet = new Set(selected);
+  const result = [...selected];
+  const parents = new Set(
+    selected.map((p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : ""))
+  );
+  const nearby = entries
+    .filter(
+      (e) =>
+        !selectedSet.has(e.path) &&
+        (parents.has(e.path.includes("/") ? e.path.slice(0, e.path.lastIndexOf("/")) : "") ||
+          ["package.json", "README.md", "tsconfig.json"].includes(e.path))
+    )
+    .map((e) => e.path)
+    .sort();
+  let bytes = Buffer.byteLength(JSON.stringify(result));
+  for (const path of nearby) {
+    const size = Buffer.byteLength(JSON.stringify(path)) + 1;
+    if (result.length >= 128 || bytes + size > 12000) break;
+    result.push(path);
+    bytes += size;
+  }
+  return result;
+}
+
 /** One bounded response. Never call a model to repair/paraphrase a malformed patch. */
 export function decodeCodeProposal(text: string): unknown {
   if (Buffer.byteLength(text) > 200_000) throw new CodeAgentError("PATCH_LIMIT");

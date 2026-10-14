@@ -20,6 +20,24 @@ type Context = {
 };
 type Message = { id: string; role: string; content: string; status: string };
 const empty: Navigation = { folders: [], assignments: [], chats: [], projects: [] };
+export function ChatContextToggle({
+  expanded,
+  onClick
+}: {
+  expanded: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={styles.contextToggle}
+      aria-expanded={expanded}
+      onClick={onClick}
+    >
+      Контекст переписки
+    </button>
+  );
+}
 async function request<T>(
   path: string,
   body?: unknown,

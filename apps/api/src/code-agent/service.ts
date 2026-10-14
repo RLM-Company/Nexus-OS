@@ -24,7 +24,11 @@ import {
   type GithubDraftStore,
   type GithubFileChange
 } from "../github-integration.js";
-import { decodeCodeProposal, selectCodeContextPaths } from "./proposal-input.js";
+import {
+  decodeCodeProposal,
+  selectCodeContextPaths,
+  selectCodeTreePaths
+} from "./proposal-input.js";
 import type { CodeOwnerBudget, CodeOwnerBudgetKey } from "./owner-budget.js";
 import { CodeAgentError, type CodeAgentStore, type CodeAgentRun } from "./store.js";
 
@@ -666,7 +670,8 @@ export class CodeAgentService {
     const selected = selectCodeContextPaths(run.task, run.requested_files, entries);
     if (!selected.length) throw new CodeAgentError("CONTEXT_FILES_REQUIRED");
     for (const path of selected) await read(path);
-    const treeData = entries.map((e) => e.path);
+    const treeData = selectCodeTreePaths(entries, selected);
+    const treePartial = treeData.length < entries.length;
     if (Buffer.byteLength(JSON.stringify(treeData)) > 80000)
       throw new CodeAgentError("TREE_CONTEXT_LIMIT");
     if (imported) {
@@ -687,6 +692,7 @@ export class CodeAgentService {
           repository: run.repository,
           commit: run.base_sha,
           tree: treeData,
+          ...(treePartial ? { tree_partial: true, tree_total_count: entries.length } : {}),
           snapshot_digest: computeCodeAgentSnapshotDigest(this.current(id, owner).snapshot),
           files: this.current(id, owner).snapshot
         })
@@ -744,7 +750,10 @@ export class CodeAgentService {
         )
           output = { path: args.path, content: await read(args.path) };
         else if (call.name === "list_files" && Object.keys(args).length === 0)
-          output = { files: treeData };
+          output = {
+            files: treeData,
+            ...(treePartial ? { partial: true, total_count: entries.length } : {})
+          };
         else if (call.name === "propose_patch") {
           if (result.calls.length !== 1) throw new CodeAgentError("PATCH_MUST_BE_FINAL");
           this.setProposal(

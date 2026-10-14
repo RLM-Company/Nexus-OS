@@ -14,7 +14,13 @@ import { CanvasEditor } from "./canvas-editor/canvas-editor";
 import canvasChat from "./canvas-editor/canvas-chat.module.css";
 import { ChatHistoryActions } from "./chat-history-actions";
 import { ChatBranches, ChatBranchButton } from "./chat-branches";
-import { useChatNavigation, ChatFolders, ChatContextPanel, ChatToCanvas } from "./chat-workspace";
+import {
+  useChatNavigation,
+  ChatFolders,
+  ChatContextPanel,
+  ChatContextToggle,
+  ChatToCanvas
+} from "./chat-workspace";
 import { ChatArchivePanel } from "./chat-archive-panel";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -2832,15 +2838,12 @@ export default function Home() {
               />
             )}
             {activeLocalChatId && (
-              <button
-                type="button"
-                className={canvasChat.chatAction}
+              <ChatContextToggle
+                expanded={contextChatId === activeLocalChatId}
                 onClick={() =>
                   setContextChatId(contextChatId === activeLocalChatId ? null : activeLocalChatId)
                 }
-              >
-                Контекст переписки
-              </button>
+              />
             )}
             {activeLocalChatId && contextChatId === activeLocalChatId && (
               <ChatContextPanel
