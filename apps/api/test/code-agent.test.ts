@@ -1048,7 +1048,10 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       JSON.parse(messages.find((message) => message.role === "user")!.content) as unknown
     ).toMatchObject({
       commit: head,
-      files: Object.entries(originals).map(([path, content]) => ({ path, content }))
+      files: [
+        { path: "src/add.js", numbered_lines: "1: export const add = (a,b) => a-b;\n2: " },
+        { path: "src/add.test.js", numbered_lines: "1: import {add} from './add.js';\n2: " }
+      ]
     });
     expect(providerCalls.every((call) => call.tools === undefined)).toBe(true);
     expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);

@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { decodeCodeProposal, selectCodeContextPaths } from "../src/code-agent/proposal-input.js";
+import {
+  codePromptFiles,
+  decodeCodeProposal,
+  selectCodeContextPaths
+} from "../src/code-agent/proposal-input.js";
 
 describe("single text proposal input", () => {
+  it("labels exact source lines without mutating canonical bytes or losing final-newline evidence", () => {
+    const files = [{ path: "src/a.js", content: "same\r\nsame\r\n" }];
+    const prompt = codePromptFiles(files);
+    expect(prompt[0]!.numbered_lines).toBe("1: same\r\n2: same\r\n3: ");
+    expect(files[0]!.content).toBe("same\r\nsame\r\n");
+    expect(codePromptFiles([{ path: "src/a.js", content: "same" }])[0]!.numbered_lines).toBe(
+      "1: same"
+    );
+  });
   it("accepts JSON, raw and one fenced diff without changing its bytes", () => {
     const diff = "--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-old\n+new\n";
     for (const text of [diff, `\u0060\u0060\u0060diff\n${diff}\u0060\u0060\u0060`])

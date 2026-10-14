@@ -1,5 +1,16 @@
 import { CodeAgentError } from "./store.js";
 
+/** Line labels belong to the prompt, never to the canonical snapshot or patch. */
+export function codePromptFiles(files: Array<{ path: string; content: string }>) {
+  return files.map(({ path, content }) => ({
+    path,
+    numbered_lines: content
+      .split("\n")
+      .map((line, index) => `${index + 1}: ${line}`)
+      .join("\n")
+  }));
+}
+
 /** Repository validation uses the complete tree; model input needs only nearby paths. */
 export function selectCodeTreePaths(
   entries: Array<{ path: string }>,
