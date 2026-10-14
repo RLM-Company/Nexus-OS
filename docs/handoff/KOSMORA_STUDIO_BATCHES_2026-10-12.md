@@ -55,4 +55,20 @@ was rejected before storage, so a damaged PDF was used to cover extraction failu
 after a real original had been retained.
 
 Web/API typecheck, scoped lint, formatting, diff and secret gates passed. Fixtures/mock
-provider only; no paid AI request. Production activation is recorded after verification.
+provider only; no paid AI request.
+
+## Verified production activation
+
+Activated API `cosmora-alpha-app:studio-api-c7c16d6` and web
+`cosmora-alpha-app:studio-web-c7c16d6` from source
+`c7c16d60b4cd5c723e2abe009d7b055520b8c6de`. Release directory:
+`/opt/cosmora/releases/studio-c7c16d6`. Source archive SHA-256:
+`73179d8673f66bb7dd9f5c65c62d16541181d6bfdf8a299745214babb6c5b7f4`.
+Backup verification, copied-database empty-project and navigation checks,
+existing chat/project row comparison, authenticated API reads, and the existing
+real Code executor check all passed. All 34 journal rows were unchanged.
+Login and executor container identities/start times were unchanged.
+
+The user's empty Studio library "Моя библиотека" was created successfully with
+no message or model run: project `5cfc8743-0b51-4cdc-8356-f273ae99a8ae`.
+No originals were uploaded into that live library during this acceptance check.

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await -- PrivacyAdapter is asynchronous; fenced SQLite operations finish synchronously and errors must remain promise rejections. */
 import type { DatabaseSync } from "node:sqlite";
 import type { PrivacyAdapter, PrivacySection } from "./account-settings/privacy/coordinator.js";
 
@@ -12,10 +13,8 @@ export class NotificationPrivacyAdapter implements PrivacyAdapter {
       records: {
         preferences: this.sql
           .prepare("SELECT * FROM notification_preferences WHERE owner_id=?")
-          .all(ownerId) as Record<string, unknown>[],
-        reads: this.sql
-          .prepare("SELECT * FROM notification_reads WHERE owner_id=?")
-          .all(ownerId) as Record<string, unknown>[]
+          .all(ownerId),
+        reads: this.sql.prepare("SELECT * FROM notification_reads WHERE owner_id=?").all(ownerId)
       },
       originals: [],
       complete: true

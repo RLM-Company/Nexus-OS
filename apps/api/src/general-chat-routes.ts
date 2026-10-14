@@ -1,7 +1,9 @@
 import { ContextTooLargeError } from "@cosmora/core";
-import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
+import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
   ApiErrorSchema,
+  ChatMemorySchema,
+  UpdateChatMemorySchema,
   CreateGeneralChatRequestSchema,
   CreateGeneralChatMessageRequestSchema,
   isValidChatAttachments,
@@ -17,6 +19,7 @@ import {
 import type { ChatService } from "@cosmora/core";
 import {
   GeneralChatBusyError,
+  ChatMemoryConflictError,
   type EmergencyStopStore,
   type GeneralChatStore,
   type StoredGeneralChatMessage,
@@ -235,6 +238,75 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
   const runParams = Type.Object(
     { runId: Type.String({ minLength: 1 }) },
     { additionalProperties: false }
+  );
+
+  app.get(
+    "/api/v1/chats/:chatId/memory",
+    {
+      schema: {
+        params,
+        response: { 200: Type.Object({ memory: ChatMemorySchema }), 404: ApiErrorSchema }
+      }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      const memory = options.store.getChatMemory(
+        request.params.chatId,
+        options.identityFor(request).owner_id
+      );
+      if (!memory) {
+        reply.code(404).send(error(request.id, "CHAT_NOT_FOUND", "Chat not found"));
+        return;
+      }
+      return { memory };
+    }
+  );
+  app.put(
+    "/api/v1/chats/:chatId/memory",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: UpdateChatMemorySchema,
+        response: {
+          200: Type.Object({ memory: ChatMemorySchema }),
+          404: ApiErrorSchema,
+          409: ApiErrorSchema
+        }
+      }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      try {
+        const memory = options.store.updateChatMemory(
+          request.params.chatId,
+          options.identityFor(request).owner_id,
+          request.body.memory_notes,
+          request.body.expected_version
+        );
+        if (!memory) {
+          reply.code(404).send(error(request.id, "CHAT_NOT_FOUND", "Chat not found"));
+          return;
+        }
+        return { memory };
+      } catch (cause) {
+        if (cause instanceof GeneralChatBusyError || cause instanceof ChatMemoryConflictError) {
+          reply
+            .code(409)
+            .send(
+              error(
+                request.id,
+                "CONFLICT",
+                cause instanceof GeneralChatBusyError
+                  ? "Остановите ответ перед изменением памяти чата."
+                  : "Память чата изменена в другой вкладке. Загрузите сохранённую версию."
+              )
+            );
+          return;
+        }
+        throw cause;
+      }
+    }
   );
 
   app.patch(
@@ -518,7 +590,9 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         let modelRequest = options.chat.buildRequest({
           chatId: run.chat_id,
           runId: run.id,
-          messages: conversation
+          messages: conversation,
+          memoryNotes:
+            options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? ""
         });
         const relay = options.accountStore
           ? new RelayExecution(options.accountStore, options.modelGateway)

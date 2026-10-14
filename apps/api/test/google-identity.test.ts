@@ -33,11 +33,11 @@ describe("Google sign-in validation", () => {
       return `${header}.${payload}.${signature}`;
     };
     const requested: string[] = [];
-    const fakeFetch: typeof fetch = async (input) => {
-      const url = String(input);
+    const fakeFetch: typeof fetch = (input) => {
+      const url = input instanceof Request ? input.url : input.toString();
       requested.push(url);
-      if (url.endsWith("/certs")) return Response.json({ keys: [key] });
-      if (url.endsWith("/token")) return Response.json({ id_token: token() });
+      if (url.endsWith("/certs")) return Promise.resolve(Response.json({ keys: [key] }));
+      if (url.endsWith("/token")) return Promise.resolve(Response.json({ id_token: token() }));
       throw Error("Unexpected remote endpoint");
     };
     const google = new GoogleIdentity(

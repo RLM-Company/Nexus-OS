@@ -50,6 +50,23 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
     database.close();
   });
 
+  it("uses persisted chat memory when dispatching without an SSE observer", async () => {
+    const first = store.createChat("Начало", "memory-background-seed");
+    store.cancelRun(first.run.id);
+    store.updateChatMemory(first.chat.id, "local-owner", "Отвечать на TypeScript", 0);
+    const spy = vi.spyOn(runtime.gateway, "stream");
+    const next = store.createMessage(first.chat.id, "Продолжение", "memory-background-next")!;
+    await vi.waitFor(() => expect(store.getRun(next.run.id)?.status).toBe("succeeded"), {
+      timeout: 3000
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const request = spy.mock.calls[0]![0];
+    expect(request.messages.findLast((message) => message.role === "user")?.content).toContain(
+      "Отвечать на TypeScript"
+    );
+    expect(request.messages[0]?.content).not.toContain("Отвечать на TypeScript");
+  });
+
   it("executes a queued ordinary-chat run without any SSE consumer", async () => {
     const accepted = store.createChat(
       "Ответь даже если вкладка не открывала поток",

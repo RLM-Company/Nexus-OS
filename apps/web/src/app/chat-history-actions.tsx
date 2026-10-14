@@ -6,6 +6,7 @@ import { WorkspaceIcon } from "./workspace-icons";
 import { RelaySwitch } from "./personal-settings/relay-switch";
 import styles from "./chat-history-actions.module.css";
 import { ChatSearch } from "./chat-search";
+import { ChatMemorySettings } from "./chat-memory-settings";
 export function ChatHistoryActions({
   id,
   title,
@@ -37,6 +38,7 @@ export function ChatHistoryActions({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [opened, setOpened] = useState(false);
   const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
@@ -83,7 +85,13 @@ export function ChatHistoryActions({
   };
   return (
     <>
-      <details className={styles.menu} ref={menu}>
+      <details
+        className={styles.menu}
+        ref={menu}
+        onToggle={(event) => {
+          if (event.currentTarget.open) setOpened(true);
+        }}
+      >
         <summary aria-label="Настройки чата" title="Настройки чата">
           <WorkspaceIcon name="settings" />
         </summary>
@@ -126,6 +134,7 @@ export function ChatHistoryActions({
           />
           {id && (
             <>
+              {opened && <ChatMemorySettings key={id} chatId={id} disabled={disabled} />}
               <label>
                 Название чата
                 <input

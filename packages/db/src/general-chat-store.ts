@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import {
   isValidChatAttachments,
+  CHAT_MEMORY_MAX_LENGTH,
+  type ChatMemory,
   sameChatAttachments,
   type ChatAttachment,
   type Currency
@@ -19,6 +21,8 @@ export class GeneralChatBusyError extends Error {
     this.name = "GeneralChatBusyError";
   }
 }
+
+export class ChatMemoryConflictError extends Error {}
 
 export interface StoredGeneralChat {
   id: string;
@@ -149,6 +153,60 @@ export class GeneralChatStore {
       )
       .get(chatId, ownerId) as SqlRow | undefined;
     return row ? asChat(row) : null;
+  }
+
+  getChatMemory(chatId: string, ownerId = LOCAL_OWNER_ID): ChatMemory | null {
+    if (!this.getChat(chatId, ownerId)) return null;
+    const row = this.#sqlite
+      .prepare("SELECT memory_notes, version, updated_at FROM chat_memory_notes WHERE chat_id=?")
+      .get(chatId) as ChatMemory | undefined;
+    return row ?? { memory_notes: "", version: 0, updated_at: null };
+  }
+
+  updateChatMemory(
+    chatId: string,
+    ownerId: string,
+    memoryNotes: string,
+    expectedVersion: number
+  ): ChatMemory | null {
+    if (
+      typeof memoryNotes !== "string" ||
+      memoryNotes.length > CHAT_MEMORY_MAX_LENGTH ||
+      !Number.isSafeInteger(expectedVersion) ||
+      expectedVersion < 0
+    )
+      throw new Error("Invalid chat memory");
+    this.#sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.getChatMemory(chatId, ownerId);
+      if (!current) {
+        this.#sqlite.exec("COMMIT");
+        return null;
+      }
+      if (
+        this.#sqlite
+          .prepare(
+            "SELECT 1 FROM general_chat_runs WHERE chat_id=? AND status IN ('queued','running')"
+          )
+          .get(chatId)
+      )
+        throw new GeneralChatBusyError();
+      if (current.version !== expectedVersion || expectedVersion === Number.MAX_SAFE_INTEGER)
+        throw new ChatMemoryConflictError("Chat memory changed elsewhere");
+      this.#sqlite
+        .prepare(
+          `INSERT INTO chat_memory_notes(chat_id,memory_notes,version,updated_at) VALUES(?,?,?,?)
+         ON CONFLICT(chat_id) DO UPDATE SET memory_notes=excluded.memory_notes,
+         version=excluded.version,updated_at=excluded.updated_at`
+        )
+        .run(chatId, memoryNotes, current.version + 1, timestamp());
+      const result = this.getChatMemory(chatId, ownerId);
+      this.#sqlite.exec("COMMIT");
+      return result;
+    } catch (cause) {
+      this.#sqlite.exec("ROLLBACK");
+      throw cause;
+    }
   }
 
   updateChat(

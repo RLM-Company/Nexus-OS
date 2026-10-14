@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await -- PrivacyAdapter is asynchronous; fenced SQLite operations finish synchronously and errors must remain promise rejections. */
 import type { DatabaseSync } from "node:sqlite";
 import type { PrivacyAdapter, PrivacySection } from "./account-settings/privacy/coordinator.js";
 

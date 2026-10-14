@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./chat-memory": {
+      "development": "./src/chat-memory.ts",
+      "types": "./src/chat-memory.ts",
+      "default": "./dist/chat-memory.js"
+    },
     "./canvas-artifacts": {
       "development": "./src/canvas-artifacts.ts",
       "types": "./src/canvas-artifacts.ts",

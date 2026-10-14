@@ -281,6 +281,13 @@
       "when": 1791580800016,
       "tag": "0041_account_email_change",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1791580800017,
+      "tag": "0042_chat_memory_notes",
+      "breakpoints": true
     }
   ]
 }

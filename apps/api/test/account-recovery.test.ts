@@ -38,11 +38,13 @@ describe("account recovery", () => {
         origin,
         identity,
         store,
-        sendVerification: async (_email, link) => {
+        sendVerification: (_email, link) => {
           verifications.push(link);
+          return Promise.resolve();
         },
-        sendPasswordReset: async (_email, link) => {
+        sendPasswordReset: (_email, link) => {
           resets.push(link);
+          return Promise.resolve();
         }
       }
     });
@@ -145,8 +147,9 @@ describe("account recovery", () => {
         origin,
         identity,
         store,
-        sendPasswordReset: async (_email, link) => {
+        sendPasswordReset: (_email, link) => {
           resets.push(link);
+          return Promise.resolve();
         }
       }
     });
