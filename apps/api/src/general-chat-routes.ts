@@ -4,6 +4,8 @@ import {
   ApiErrorSchema,
   ChatMemorySchema,
   UpdateChatMemorySchema,
+  CreateChatBranchSchema,
+  ChatBranchListSchema,
   CreateGeneralChatRequestSchema,
   CreateGeneralChatMessageRequestSchema,
   isValidChatAttachments,
@@ -20,6 +22,7 @@ import type { ChatService } from "@cosmora/core";
 import {
   GeneralChatBusyError,
   ChatMemoryConflictError,
+  ChatBranchValidationError,
   type EmergencyStopStore,
   type GeneralChatStore,
   type StoredGeneralChatMessage,
@@ -238,6 +241,73 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
   const runParams = Type.Object(
     { runId: Type.String({ minLength: 1 }) },
     { additionalProperties: false }
+  );
+
+  app.get(
+    "/api/v1/chats/:chatId/branches",
+    {
+      schema: { params, response: { 200: ChatBranchListSchema, 404: ApiErrorSchema } }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      const family = options.store.listChatBranches(
+        request.params.chatId,
+        options.identityFor(request).owner_id
+      );
+      if (!family) {
+        reply.code(404).send(error(request.id, "CHAT_NOT_FOUND", "Chat not found"));
+        return;
+      }
+      return family;
+    }
+  );
+  app.post(
+    "/api/v1/chats/:chatId/branches",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: CreateChatBranchSchema,
+        response: {
+          200: GeneralChatMessageAcceptedResponseSchema,
+          201: GeneralChatMessageAcceptedResponseSchema,
+          400: ApiErrorSchema,
+          404: ApiErrorSchema,
+          409: ApiErrorSchema
+        }
+      }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      try {
+        const accepted = options.store.createChatBranch(
+          request.params.chatId,
+          options.identityFor(request).owner_id,
+          request.body
+        );
+        if (!accepted) {
+          reply
+            .code(404)
+            .send(error(request.id, "CHAT_NOT_FOUND", "Чат или сообщение не найдено."));
+          return;
+        }
+        reply.code(accepted.duplicate ? 200 : 201).send(acceptedResponse(accepted));
+      } catch (cause) {
+        if (cause instanceof GeneralChatBusyError) {
+          reply
+            .code(409)
+            .send(
+              error(request.id, "CONFLICT", "Остановите текущий ответ перед созданием варианта.")
+            );
+          return;
+        }
+        if (cause instanceof ChatBranchValidationError) {
+          reply.code(400).send(error(request.id, "VALIDATION_ERROR", cause.message));
+          return;
+        }
+        throw cause;
+      }
+    }
   );
 
   app.get(
