@@ -74,6 +74,64 @@ run hit a five-second recovery-test timeout; bounded two-worker execution with a
 15-second test timeout passed the complete set, without changing security behavior.
 Three real HTTP/SQLite Chromium memory cases passed (save/clear/reload, stale edits,
 lost PUT response). Six existing export Chromium cases also passed. API and web
-type checking passed. All providers in these checks are local mocks; no paid call.
+type checking passed. Four document-queue Chromium cases and two real presentation/
+Skills workflows also passed: create, edit, reload, download an editable PPTX and an
+inert Skill package. Three PPTX/quiet-hours unit cases passed. Scoped TypeScript
+source/test lint reported zero errors; browser E2E files and deployment JavaScript
+are outside that package lint scope. After lint corrections, 20 affected API/core
+cases passed again. All providers in these checks are local mocks; no paid call.
 
-Deployment status and final source revision are recorded separately after activation.
+Source revision: `601f0ac5c7d92a87c5ce809a66a10c2d4d27deae`.
+Integration Draft PR: https://github.com/RLM-Company/Nexus-OS/pull/343.
+
+GitHub Actions run `38524643974` did not start any job steps. Its failure annotation
+states that recent account payments failed or the spending limit needs increasing.
+No job log exists. This is a GitHub billing gate, not a successful CI check and not
+a test failure attributed to application code. No billing setting was changed.
+
+The production API image built successfully offline. The first web build exposed
+a missing compiled default export for the new contracts subpath; the release's
+web Dockerfile now builds `@cosmora/contracts` before Next. The source revision
+does not change, and the old live application stays running throughout image builds.
+
+## Verified production activation
+
+Activated successfully on the existing VPS with source revision `601f0ac`:
+
+- API: `cosmora-alpha-app:workspace-api-601f0ac`.
+- Web: `cosmora-alpha-app:workspace-web-601f0ac`.
+- Release: `/opt/cosmora/releases/workspace-601f0ac`.
+- Source archive: 668,551 bytes; SHA-256
+  `28e4e039f11373b566a501064e476f164a0ab0d63a12b79105b221305e9e3efb`.
+- Verified pre-activation backup SHA-256
+  `4b36b0065bd16deb20546452e04d5608397e643027603f4d814c36e8204f6967`.
+
+Both image builds ran with `--network=none`. Before service replacement, the
+verified backup copy passed all seven additive migrations (34 → 41 journal rows),
+integrity and foreign-key checks, memory save/stale-version/owner-isolation tests,
+new workspace reads and Studio empty-library creation. No model was dispatched.
+Production startup applied the same migration set successfully. All existing
+project/chat/message/run and identity actor/session rows were preserved (routine
+session `last_seen_at` is excluded from the session comparison).
+
+Authenticated health, chats, projects, navigation context, settings, usage, media
+capabilities, presentations, Skills and notifications returned 200. Memory read
+returned 200 with private/no-store; no live memory was written by acceptance.
+The real Code executor completed a synthetic unprivileged check and verified
+cleanup. Owner-login and Code-executor container IDs/start times were unchanged;
+registration remains disabled. Activation exited successfully without rollback.
+
+The live browser restored the remembered session, six existing chats and one
+project. `/presentations` loaded without errors. The saved synthetic chat
+`d18ae726-c7b4-4d6d-b327-bfc03086fd17` opened and its new memory field loaded and
+became editable. No message/provider request or memory write was sent. Screenshots
+are saved locally under `2026-10-14/kosmora-workspace-601f0ac/`.
+
+Rollback records: `deployctl.before`, `deployctl.next`, `overlay.yaml`, `backup/`
+and `activate.log` in the release directory. Image rollback intentionally retains
+the compatible additive schema; it does not erase user writes by restoring a stale
+database automatically. A database restore requires explicit incident review.
+
+The initial activation tool request timed out in automatic permission review
+before SSH started. Its single allowed retry was approved and completed; there
+is no outstanding permission request.
