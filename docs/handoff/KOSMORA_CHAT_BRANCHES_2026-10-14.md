@@ -61,6 +61,46 @@ edit/cancel/draft retention, switching/reload, regeneration, lost creation respo
 and the three existing memory workflows. API/web type checking and formatting passed.
 No paid model requests have been used in verification.
 
-Release source, final lint/secret checks and live activation are recorded below
-after verification. GitHub Actions remains subject to the previously verified
-account billing gate; a green hosted CI result is not claimed.
+Scoped lint reported zero errors; secret scanning and `git diff --check` passed.
+GitHub Actions remains subject to the previously verified account billing gate;
+a green hosted CI result is not claimed.
+
+## Production activation
+
+Source `f3471692d57106e892874e0e395feec17d2511a4` is published in
+[Draft PR #344](https://github.com/RLM-Company/Nexus-OS/pull/344), based on
+`codex/chat-memory-20261014`. No merge into main was performed.
+
+Release directory: `/opt/cosmora/releases/branches-f347169`. The source archive
+contains 671,690 bytes; SHA-256:
+`33ec1a41a5ddb3b6f96da67213811351d057dd460296119b67785dd19c12a86d`.
+Both production images built successfully with Docker networking disabled:
+`cosmora-alpha-app:branches-api-f347169` and
+`cosmora-alpha-app:branches-web-f347169`. The web image retains previous static
+assets for cached clients. There were no dependency changes.
+
+The verified, consistent pre-migration backup has SHA-256
+`64a2f9cdb10eb778676c78e277a99d1cbbeb5247ccaa19cb136b57909fb5537c`.
+Migration rehearsal on its copy passed with 42 migration-journal rows (previously
+41), database integrity and foreign-key checks, edit/regeneration/idempotency,
+history isolation, memory snapshots and workspace routes. It made no model calls.
+
+API and web were activated and became healthy. Read-only production comparisons
+confirmed preservation of existing projects, chats, messages, runs, manual memory,
+actors and identity sessions, excluding routine session last-seen timestamps.
+Authenticated health, chats, projects, navigation, settings, usage, media,
+presentations, Skills and notification routes returned 200. Live memory/branch
+reads returned private/no-store. The existing private Code executor passed a
+synthetic unprivileged Node check and verified cleanup. Login and executor
+container IDs/start times remained unchanged; registration remains disabled.
+
+The remembered browser session loaded the published ordinary-chat actions.
+Both edit and regeneration dialogs opened successfully and were cancelled before
+generation. No new live chat, variant, message or paid model request was created.
+Screenshot: `2026-10-14/kosmora-branches-f347169/chat-edit-live.png` in the parent
+Codex workspace. Activation completed with
+`KOSMORA_CHAT_BRANCHES_ACTIVE_LOGIN_AND_EXECUTOR_UNCHANGED`.
+
+The deployment rollback restores previous API/web images while retaining the
+compatible additive migration; it does not overwrite subsequent user writes with
+an older database. No rollback was needed.
