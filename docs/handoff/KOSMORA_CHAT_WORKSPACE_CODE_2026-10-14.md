@@ -201,3 +201,93 @@ API/operator recovery; a dedicated end-user recovery editor is not claimed.
 canonical diff generation, byte preservation, repeated/overlapping/fuzzy matches,
 read boundaries, size limits and retained-draft access. Cumulative feature API
 coverage is now 65 distinct cases; browser coverage remains 13 cases.
+
+## Verified end-to-end Code acceptance — 15 October 2026
+
+Current API: `cosmora-alpha-app:code-exact-api-7c1bbfe`, source
+`7c1bbfebe19bf0663983f312e11ba1a04083e720`. Web remains
+`cosmora-alpha-app:code-ready-web-e03d87f`. The API-only source archive is 147,513
+bytes, SHA-256 `20ae1285ee3c2769f2f100c793f12f00e062d6319640d090cc41c6c552e1508d`.
+Release `/opt/cosmora/releases/code-exact-7c1bbfe` includes build/activation logs,
+verified backup `4145e348e3d6ac03015ef874aa6715b22ca32d65433bb924e788244788fe2b4c6`,
+wrapper rollback and copied/live DB verification. All authenticated routes and the
+real private executor passed. Existing canonical rows and exact login/web/executor
+containers were preserved, 43 migration rows, integrity/FKs intact. Model remains
+gpt-6.1-sol with the same key/provider; registration remains disabled.
+
+The deliberately initiated request `cc140005-0001-4000-8000-000000000008` produced
+run `93b2ba32-3f2f-4e7d-8f86-3deaa8dd464a`. Its single generation used the new
+exact-replacement protocol: 5,779 input / 402 output tokens. It proposed exactly
+the two selected provider connection files and preserved all connection guards.
+Server-rendered proposal hash:
+`e13fc060266964d0c3903324f00e8fbd528d40e10f540221ef11cf280138aab3`.
+
+The actual OCI executor ran 14 Node tests successfully with no network, non-root
+and read-only isolation. Cleanup was verified. Snapshot digest:
+`ffa3a864c68b833ea921b6ed58d8a5003fb4ec6becb32e89cc6d3968d7a526ff`.
+After reading the exact diff, the operator confirmed review via the live API.
+The review reused the exact passed snapshot; publication was explicitly approved
+once. An initial mistyped hash was refused locally before API access; the corrected
+64-character reviewed hash succeeded. No model repair or publication retry occurred.
+
+Kosmora itself created the separate branch
+`kosmora/change-9fbf868f-7399-4996-98a5-318c06c954a6` and real Draft PR
+[#347](https://github.com/RLM-Company/Nexus-OS/pull/347). GitHub independently
+confirms open/draft, commit `fcae38c92e370c578fd3ced3d234d0d4dddc9adc`, correct
+base and no merge. The PR is attached to this task. Its title/body were clarified
+without changing files. The complete real pipeline is confirmed: GitHub read →
+model generation → canonical patch → real OCI check → exact review → Draft PR.
+This is one representative acceptance, not a guarantee every arbitrary task succeeds.
+
+Pricing remains unknown. Even this successful generation has a retained uncertain
+monetary reservation; canonical token usage was recorded and no zero-cost claim
+or ledger rewrite was made. Prior failed attempts remain visible for audit.
+
+## PR 330 publication status
+
+The user also asked to push ready PR 330. GitHub confirms branch
+`feature/kosmora-updates` was already published at
+`ab5e5591b17cfdb0faf548671fe76bee3c8f295c`. It was attached and changed from Draft
+to Ready for review on 15 October. It remains open and unmerged against the older
+`kosmora-base` (`0182e6a612e2c1572be186995463f00857e304b7`). No force-push or
+unreviewed merge was performed.
+
+Inspection of its three commits/21 changed files shows new schemas, helpers,
+migration and a test suite, but its own GeneralChatStore does not implement
+`getChatMemory` and its routes do not implement the folder/fork/artifact/summary
+endpoints expected by those tests. The background coordinator calls that absent
+method. Therefore its descriptive readiness claims are not treated as execution
+evidence. The current branch implements the ordinary-chat features separately;
+copying the old migration journal or replacing those working stores/routes is not
+a valid integration. Remaining useful WorkDAG/local helper work needs selective
+integration and verification on the current base.
+A separate live ordinary-chat acceptance also passed on the reserve route:
+chat `b2d6c749-cec2-4023-88ea-e9f59eeb57bc`, exactly two user messages and two
+completed assistant answers. The second answer correctly recalled the synthetic
+word from the first turn (`орбита`). This exercised canonical chat creation,
+streaming, stored history, title derivation and second-turn context using two
+small real generations. No existing conversation was edited for this check.
+
+The browser independently loaded the published Code run and showed the passed
+check and link to PR 347. Proof screenshot:
+`2026-10-15/kosmora-code-exact-7c1bbfe/code-live-draft-pr.png`.
+The result tab is retained for the user. Source/check/release evidence is in the
+release directory; no credentials were included in this handoff.
+
+## Readiness after the two requested blocks
+
+The principal ordinary-chat and Code/GitHub paths are implemented, deployed and
+verified with local coverage plus the live acceptances above. Extractive summary
+is an explicit local draft, not automatic semantic model memory. Exact text edits
+and preserved rejected responses improve recovery but do not promise perfect
+arbitrary task generation. The reserve is a currently verified provider route,
+not a second silently retried billed attempt after an uncertain failure.
+
+Remaining major directions from the eight-part plan: Work/agents acceptance;
+documents/tables/Canvas integration polish; real voice/media provider acceptance;
+Windows install/update lifecycle; release quality, monitoring/load/recovery and
+hosted CI billing; multi-user registration, tariffs/payments/quotas/support.
+A personal beta is materially closer: chat organisation/context and a complete
+verified Code task-to-Draft-PR path now work. Public-service readiness still needs
+those broader acceptance and account/operations blocks. No aggregate percentage
+or time estimate is implied by counting directions.
