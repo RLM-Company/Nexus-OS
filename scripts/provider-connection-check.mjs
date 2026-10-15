@@ -106,7 +106,7 @@ export async function checkProviderConnection(env, fetchImpl = fetch) {
     if (env.MODEL_MAX_ATTEMPTS_PER_ROUTE !== "1")
       fail("Live check requires MODEL_MAX_ATTEMPTS_PER_ROUTE=1.");
   }
-  const endpoint = (suffix) => `${base.href.replace(/\/$/, "")}/${suffix}`;
+  const endpoint = (suffix) => `${base.href.replace(/\/+$/, "")}/${suffix}`;
   const headers =
     protocol === "anthropic-compatible"
       ? { "x-api-key": env.MODEL_API_KEY, "anthropic-version": "2023-06-01" }
