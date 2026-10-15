@@ -1122,7 +1122,9 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       expect(rejected.publication_token).toBeUndefined();
       const draft = await f.app.inject({ method: "GET", url: `${f.base}/${id}` });
       expect(draft.statusCode).toBe(200);
-      expect(draft.json().rejected_proposal_text).toBe(rejected.rejected_proposal_text);
+      expect(draft.json<{ rejected_proposal_text: string }>().rejected_proposal_text).toBe(
+        rejected.rejected_proposal_text
+      );
       f.requestOwner("foreign-owner");
       expect((await f.app.inject({ method: "GET", url: `${f.base}/${id}` })).statusCode).toBe(404);
       expect(f.providerCalls).toHaveLength(1);
