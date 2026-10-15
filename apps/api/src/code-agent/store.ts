@@ -16,6 +16,8 @@ export type CodeAgentStatus =
   | "cancelled";
 export interface CodeAgentRun {
   id: string;
+  client_request_id?: string;
+  request_digest?: string;
   project_id: string;
   owner_id: string;
   actor_id: string;
@@ -37,6 +39,8 @@ export interface CodeAgentRun {
   proposal_snapshot_digest?: string;
   proposal_normalizations?: Array<{ path: string; line: number; before: string; after: string }>;
   patch_diagnostic?: { code: string; path?: string; line?: number };
+  /** Owner-only recovery draft. Never validated, executed or published as a proposal. */
+  rejected_proposal_text?: string;
   auto_check_requested?: "syntax" | "node-test";
   proposal_check?: (CodeAgentCheckResult & { proposal_hash: string }) | undefined;
   draft_id?: string;
@@ -44,6 +48,7 @@ export interface CodeAgentRun {
   publication_token?: string | undefined;
   check?: (CodeAgentCheckResult & { review_hash: string }) | undefined;
   error?: string | undefined;
+  provider_diagnostic?: string | undefined;
   log: Array<{ at: string; event: string }>;
   created_at: string;
 }
@@ -72,6 +77,14 @@ export class CodeAgentStore {
       .prepare("INSERT INTO code_agent_runs VALUES (?, ?, ?, ?, ?, ?)")
       .run(run.id, run.project_id, run.owner_id, run.version, JSON.stringify(run), run.created_at);
     return run;
+  }
+  findRequest(owner: string, requestId: string): CodeAgentRun | null {
+    const row = this.sqlite
+      .prepare(
+        "SELECT state_json FROM code_agent_runs WHERE owner_id=? AND json_extract(state_json,'$.client_request_id')=?"
+      )
+      .get(owner, requestId);
+    return row ? (JSON.parse(String(row.state_json)) as CodeAgentRun) : null;
   }
   get(id: string, owner: string): CodeAgentRun | null {
     const row = this.sqlite

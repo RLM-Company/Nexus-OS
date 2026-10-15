@@ -1,3 +1,4 @@
+import { registerChatWorkspaceRoutes } from "./chat-workspace-routes.js";
 import { ContextTooLargeError } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
@@ -232,6 +233,9 @@ const observePersistedRun = async (
 };
 
 export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): void => {
+  registerChatWorkspaceRoutes(options.app, options.store.workspace, (request) =>
+    options.identityFor(request)
+  );
   const app = options.app.withTypeProvider<TypeBoxTypeProvider>();
   const runsExecuteInBackground = options.runExecutionMode === "background";
   const params = Type.Object(

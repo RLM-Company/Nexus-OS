@@ -116,6 +116,8 @@ const entry = (toolCalling: boolean): ModelRegistryEntry => ({
 
 async function fixture(
   options: {
+    providerStatus?: number;
+    extraTreePaths?: number;
     ownerBudget?: CodeOwnerBudget;
     level?: AutonomyLevel;
     toolCalling?: boolean;
@@ -170,11 +172,17 @@ async function fixture(
       else if (path.startsWith("/git/trees/"))
         value = {
           truncated: false,
-          tree: Object.keys(originals).map((path, i) => ({
+          tree: [
+            ...Object.keys(originals),
+            ...Array.from(
+              { length: options.extraTreePaths ?? 0 },
+              (_, i) => `unrelated/large-project/module-${i}/source-file-with-long-name.js`
+            )
+          ].map((path, i) => ({
             path,
             type: "blob",
             mode: "100644",
-            sha: String(i + 1).repeat(40)
+            sha: i < 2 ? String(i + 1).repeat(40) : "9".repeat(40)
           }))
         };
       else if (path.startsWith("/git/blobs/")) {
@@ -232,6 +240,12 @@ async function fixture(
     fetchImplementation: (_input, init) => {
       if (typeof init?.body !== "string") throw new Error("Missing JSON request");
       providerCalls.push(JSON.parse(init.body) as Record<string, unknown>);
+      if (options.providerStatus)
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: { message: "DO_NOT_PERSIST_PROVIDER_BODY" } }), {
+            status: options.providerStatus
+          })
+        );
       const response = responses[providerCalls.length - 1];
       if (!response) throw new Error("Unexpected provider turn");
       return Promise.resolve(
@@ -356,6 +370,139 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("retains an allowlisted provider diagnostic without storing its body or releasing uncertain usage", async () => {
+    const f = await fixture({ toolCalling: false, providerStatus: 402 });
+    const id = await f.start();
+    const run = await f.wait(id, "failed");
+    expect(run.error).toBe("PROVIDER_ERROR");
+    expect(run.provider_diagnostic).toBe("HTTP_402");
+    expect(JSON.stringify(run)).not.toContain("DO_NOT_PERSIST_PROVIDER_BODY");
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.service.view(run).usage.unknown_attempts).toBe(1);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("bounds model tree metadata on large repositories while retaining complete server path validation", async () => {
+    const response = sse(
+      {
+        choices: [
+          {
+            delta: { content: JSON.stringify({ summary: "Fix sum", files: [changes[0]] }) },
+            finish_reason: null
+          }
+        ]
+      },
+      { choices: [{ delta: {}, finish_reason: "stop" }] },
+      "[DONE]"
+    );
+    const f = await fixture({ toolCalling: false, extraTreePaths: 3000, responses: [response] });
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Fix sum",
+      base_branch: "main",
+      files: ["src/add.js"]
+    }).id;
+    const run = await f.wait(id, "proposed");
+    expect(run.repository_paths).toHaveLength(3002);
+    expect(f.providerCalls).toHaveLength(1);
+    const messages = f.providerCalls[0]!.messages as Array<{ role: string; content: string }>;
+    const input = JSON.parse(messages.find((m) => m.role === "user")!.content) as {
+      tree: string[];
+      tree_partial: boolean;
+      tree_total_count: number;
+    };
+    expect(input.tree_partial).toBe(true);
+    expect(input.tree_total_count).toBe(3002);
+    expect(input.tree).toContain("src/add.js");
+    expect(input.tree.length).toBeLessThanOrEqual(128);
+    expect(Buffer.byteLength(JSON.stringify(input.tree))).toBeLessThanOrEqual(12000);
+  });
+  it("creates an active isolated Code project with explicit A2 approval, no initial model run, and idempotent replay", async () => {
+    const f = await fixture(),
+      id = randomUUID(),
+      payload = { client_project_id: id, title: "My Code project", approve_local_execution: true };
+    const first = await f.app.inject({ method: "POST", url: "/api/v1/code-projects", payload });
+    expect(first.statusCode).toBe(200);
+    expect(first.json<{ project: { id: string; status: string } }>().project).toMatchObject({
+      id,
+      status: "ACTIVE"
+    });
+    expect(f.service.deps.policy.getProfile(id)?.base_level).toBe("A2");
+    expect(f.service.deps.projects.listMessages(id, owner)).toEqual([]);
+    expect(f.providerCalls).toHaveLength(0);
+    expect(f.githubCalls).toHaveLength(0);
+    expect(
+      (await f.app.inject({ method: "POST", url: "/api/v1/code-projects", payload })).statusCode
+    ).toBe(200);
+    expect(
+      (
+        await f.app.inject({
+          method: "POST",
+          url: "/api/v1/code-projects",
+          payload: { ...payload, approve_local_execution: false }
+        })
+      ).statusCode
+    ).toBe(400);
+    f.requestOwner("foreign");
+    expect(
+      (
+        await f.app.inject({
+          method: "POST",
+          url: "/api/v1/code-projects",
+          payload: { ...payload, client_project_id: randomUUID() }
+        })
+      ).statusCode
+    ).toBe(404);
+  });
+  it("replays a durable creation request once, rejects changed retries and recovers by owner-scoped request ID", async () => {
+    const f = await fixture({
+      toolCalling: false,
+      responses: [
+        sse(
+          {
+            choices: [
+              {
+                delta: { content: JSON.stringify({ summary: "Fix", files: [changes[0]] }) },
+                finish_reason: null
+              }
+            ]
+          },
+          { choices: [{ delta: {}, finish_reason: "stop" }] },
+          { choices: [], usage: { prompt_tokens: 20, completion_tokens: 20 } },
+          "[DONE]"
+        )
+      ]
+    });
+    const key = randomUUID(),
+      payload = { client_request_id: key, task: "Fix sum", base_branch: "main" };
+    const first = await f.app.inject({ method: "POST", url: f.base, payload });
+    expect(first.statusCode).toBe(200);
+    const id = first.json<{ id: string }>().id;
+    const again = await f.app.inject({ method: "POST", url: f.base, payload });
+    expect(again.json<{ id: string }>().id).toBe(id);
+    await f.wait(id, "proposed");
+    const calls = f.providerCalls.length;
+    expect(
+      (await f.app.inject({ method: "POST", url: f.base, payload })).json<{ id: string }>().id
+    ).toBe(id);
+    expect(f.providerCalls).toHaveLength(calls);
+    expect(
+      (await f.app.inject({ method: "GET", url: f.base + "/by-request/" + key })).json<{
+        id: string;
+      }>().id
+    ).toBe(id);
+    expect(
+      (
+        await f.app.inject({
+          method: "POST",
+          url: f.base,
+          payload: { ...payload, task: "Different" }
+        })
+      ).statusCode
+    ).toBe(409);
+    f.requestOwner("foreign-owner");
+    expect(
+      (await f.app.inject({ method: "GET", url: f.base + "/by-request/" + key })).statusCode
+    ).toBe(404);
+  });
   it("reads immutable source, carries authoritative tools through gateway, edits selection, checks exact snapshot and creates confirmed draft PR", async () => {
     const f = await fixture(),
       id = await f.start(),
@@ -901,10 +1048,55 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       JSON.parse(messages.find((message) => message.role === "user")!.content) as unknown
     ).toMatchObject({
       commit: head,
-      files: Object.entries(originals).map(([path, content]) => ({ path, content }))
+      files: [
+        { path: "src/add.js", numbered_lines: "1: export const add = (a,b) => a-b;\n2: " },
+        { path: "src/add.test.js", numbered_lines: "1: import {add} from './add.js';\n2: " }
+      ]
     });
     expect(providerCalls.every((call) => call.tools === undefined)).toBe(true);
     expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+
+  it("turns one bounded text replacement into a reviewable diff without model line offsets", async () => {
+    const f = await fixture({
+      toolCalling: false,
+      responses: [
+        sse(
+          {
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  content: JSON.stringify({
+                    summary: "Fix addition",
+                    edits: [{ path: "src/add.js", old_text: "a-b", new_text: "a+b" }]
+                  })
+                },
+                finish_reason: null
+              }
+            ]
+          },
+          { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+          "[DONE]"
+        )
+      ]
+    });
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      task: "Fix addition bug",
+      base_branch: "main"
+    }).id;
+    const run = await f.wait(id, "proposed");
+    expect(run.proposal?.[0]).toMatchObject({
+      path: "src/add.js",
+      before: originals["src/add.js"],
+      content: changes[0]!.content
+    });
+    expect(run.proposal_diff).toContain("-export const add = (a,b) => a-b;");
+    expect(run.proposal_diff).toContain("+export const add = (a,b) => a+b;");
+    expect(run.proposal_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    expect(run.publication_token).toBeUndefined();
   });
 
   it("never treats a model file-selection response as authority or sends a repair generation", async () => {
@@ -923,7 +1115,18 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
         task: "Fix addition bug",
         base_branch: "main"
       }).id;
-      expect((await f.wait(id, "failed")).error).toBe("INVALID_PATCH");
+      const rejected = await f.wait(id, "failed");
+      expect(rejected.error).toBe("INVALID_PATCH");
+      expect(rejected.rejected_proposal_text).toBe(JSON.stringify({ paths: [path] }));
+      expect(rejected.proposal).toBeUndefined();
+      expect(rejected.publication_token).toBeUndefined();
+      const draft = await f.app.inject({ method: "GET", url: `${f.base}/${id}` });
+      expect(draft.statusCode).toBe(200);
+      expect(draft.json<{ rejected_proposal_text: string }>().rejected_proposal_text).toBe(
+        rejected.rejected_proposal_text
+      );
+      f.requestOwner("foreign-owner");
+      expect((await f.app.inject({ method: "GET", url: `${f.base}/${id}` })).statusCode).toBe(404);
       expect(f.providerCalls).toHaveLength(1);
       expect(f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/"))).toHaveLength(2);
       expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);

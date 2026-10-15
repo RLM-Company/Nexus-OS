@@ -14,18 +14,17 @@ import { CanvasEditor } from "./canvas-editor/canvas-editor";
 import canvasChat from "./canvas-editor/canvas-chat.module.css";
 import { ChatHistoryActions } from "./chat-history-actions";
 import { ChatBranches, ChatBranchButton } from "./chat-branches";
+import {
+  useChatNavigation,
+  ChatFolders,
+  ChatContextPanel,
+  ChatContextToggle,
+  ChatToCanvas
+} from "./chat-workspace";
 import { ChatArchivePanel } from "./chat-archive-panel";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
-import {
-  EMPTY_PINS,
-  pinnedNavigationKey,
-  pinsFirst,
-  readPinnedNavigation,
-  savePinnedNavigation,
-  togglePin,
-  type PinnedNavigation
-} from "./pinned-navigation";
+import { pinsFirst } from "./pinned-navigation";
 import { clearComposerDraft, readComposerDraft, saveComposerDraft } from "./composer-draft-storage";
 import {
   desktopDraftBridge,
@@ -515,10 +514,12 @@ export default function Home() {
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
   const [greeting, setGreeting] = useState("Чем могу помочь?");
   const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
-  const [pins, setPins] = useState<PinnedNavigation>(EMPTY_PINS);
-  const [pinsHydrated, setPinsHydrated] = useState(false);
-  const [pinNotice, setPinNotice] = useState<string | null>(null);
-  const [pinStorageKey, setPinStorageKey] = useState<string | null>(null);
+  const chatNavigation = useChatNavigation();
+  const pins = chatNavigation.navigation;
+  const pinsHydrated = chatNavigation.ready;
+  const pinNotice = chatNavigation.notice;
+  const [folderFilter, setFolderFilter] = useState("");
+  const [contextChatId, setContextChatId] = useState<string | null>(null);
   const [activeLocalChatId, setActiveLocalChatId] = useState<string | null>(null);
   const [branchSelection, setBranchSelection] = useState<{
     chatId: string;
@@ -557,7 +558,13 @@ export default function Home() {
   const matchingChats = pinsFirst(
     navigationSearch
       ? localChats.filter((chat) => chat.title.toLocaleLowerCase("ru").includes(navigationSearch))
-      : localChats,
+      : localChats.filter(
+          (chat) =>
+            !folderFilter ||
+            (folderFilter === "unfiled"
+              ? !pins.assignments.some((a) => a.chat_id === chat.id)
+              : pins.assignments.some((a) => a.chat_id === chat.id && a.folder_id === folderFilter))
+        ),
     pins.chats
   );
   const matchingProjects = pinsFirst(
@@ -587,59 +594,10 @@ export default function Home() {
     field.style.height = "auto";
     field.style.height = `${Math.min(176, Math.max(56, field.scrollHeight))}px`;
   }, [draft, surface, activeProject?.id, localChatMessages.length]);
-  useEffect(() => {
-    let cancelled = false;
-    void api<{ owner_id: string }>("/api/v1/navigation-context")
-      .then(({ owner_id }) => {
-        if (cancelled) return;
-        const key = pinnedNavigationKey(owner_id);
-        setPinStorageKey(key);
-        setPins(readPinnedNavigation(window.localStorage, key));
-        setPinsHydrated(true);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setPinNotice("Закрепления доступны до закрытия страницы: сохранение недоступно.");
-        setPinsHydrated(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!pinStorageKey) return;
-    const sync = (event: StorageEvent) => {
-      if (
-        event.storageArea === window.localStorage &&
-        (event.key === pinStorageKey || event.key === null)
-      ) {
-        try {
-          setPins(readPinnedNavigation(window.localStorage, pinStorageKey));
-        } catch {
-          // Keep the in-memory order when this browser denies storage access.
-        }
-      }
-    };
-    window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
-  }, [pinStorageKey]);
-
-  useEffect(() => {
-    if (!pinsHydrated || !pinStorageKey) return;
-    try {
-      setPinNotice(
-        savePinnedNavigation(window.localStorage, pins, pinStorageKey)
-          ? null
-          : "Закрепление действует до закрытия страницы: сохранение в браузере недоступно."
-      );
-    } catch {
-      setPinNotice("Закрепление действует до закрытия страницы: сохранение в браузере недоступно.");
-    }
-  }, [pins, pinsHydrated, pinStorageKey]);
-
-  const changePin = (kind: keyof PinnedNavigation, id: string) => {
-    setPins((current) => togglePin(current, kind, id));
+  const changePin = (kind: "chats" | "projects", id: string) => {
+    void chatNavigation.mutate(`/api/v1/chat-navigation/pins/${kind}/${encodeURIComponent(id)}`, {
+      pinned: !pins[kind].includes(id)
+    });
   };
 
   useEffect(() => {
@@ -1765,7 +1723,12 @@ export default function Home() {
             const updated: LocalChatSession = {
               ...accepted.chat,
               last_message_preview: content.slice(0, 240),
-              messages: [...(existing?.messages ?? []), accepted.user_message],
+              messages: [
+                ...(existing?.messages ?? []).filter(
+                  (message) => message.id !== accepted.user_message.id
+                ),
+                accepted.user_message
+              ],
               projectProposal: proposal
             };
             return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
@@ -2178,6 +2141,14 @@ export default function Home() {
               </div>
             )}
           </section>
+          <ChatFolders
+            navigation={pins}
+            ready={pinsHydrated}
+            chatId={activeProject ? null : activeLocalChatId}
+            onChange={chatNavigation.mutate}
+            onFilter={setFolderFilter}
+            filter={folderFilter}
+          />
           {pinNotice && (
             <p className="pin-notice" role="status">
               {pinNotice}
@@ -2866,6 +2837,23 @@ export default function Home() {
                 onCreated={(accepted) => void openChatBranch(accepted.chat.id, accepted)}
               />
             )}
+            {activeLocalChatId && (
+              <ChatContextToggle
+                expanded={contextChatId === activeLocalChatId}
+                onClick={() =>
+                  setContextChatId(contextChatId === activeLocalChatId ? null : activeLocalChatId)
+                }
+              />
+            )}
+            {activeLocalChatId && contextChatId === activeLocalChatId && (
+              <ChatContextPanel
+                key={`context:${activeLocalChatId}`}
+                chatId={activeLocalChatId}
+                messages={localChatMessages}
+                disabled={sending || loading || executionGate !== "clear"}
+                onClose={() => setContextChatId(null)}
+              />
+            )}
             <div className="chat-heading general-chat-heading">
               <div>
                 <strong>Kosmora</strong>
@@ -2926,6 +2914,16 @@ export default function Home() {
                       <VoicePlayback text={message.content} />
                     )}
                     <ChatMessageAttachments files={message.attachments ?? []} />
+                    {activeLocalChatId &&
+                      message.role === "assistant" &&
+                      message.status === "completed" && (
+                        <ChatToCanvas
+                          key={message.id}
+                          chatId={activeLocalChatId}
+                          message={message}
+                          projects={projects}
+                        />
+                      )}
                     {activeLocalChatId &&
                       message.status !== "streaming" &&
                       message.status !== "pending" && (

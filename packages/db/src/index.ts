@@ -155,3 +155,5 @@ export * from "./chat-history-search-store.js";
 export * from "./presentation-store.js";
 export * from "./notification-store.js";
 export * from "./owner-skill-store.js";
+
+export * from "./chat-workspace-store.js";

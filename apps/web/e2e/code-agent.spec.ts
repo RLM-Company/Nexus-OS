@@ -36,6 +36,7 @@ async function scenario(page: Page, lostPublish: false | "after-start" | "before
       if (route.request().method() === "GET") data = { items: created ? [run] : [] };
       else {
         expect(route.request().postDataJSON()).toEqual({
+          client_request_id: expect.any(String),
           task: "Исправь неверный результат",
           base_branch: "main"
         });
@@ -179,6 +180,53 @@ async function prepare(page: Page) {
   await check.click();
   await expect(page.getByLabel("Результат проверки")).toContainText("syntax checked");
 }
+test("creates a Code project directly without starting a model task", async ({ page }) => {
+  await scenario(page);
+  let posts = 0;
+  await page.route("**/api/v1/code-projects", async (route) => {
+    const body = route.request().postDataJSON() as {
+      client_project_id: string;
+      title: string;
+      approve_local_execution: boolean;
+    };
+    expect(body.approve_local_execution).toBe(true);
+    posts++;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        project: { id: body.client_project_id, title: body.title, status: "ACTIVE" }
+      })
+    });
+  });
+  await page.goto("/code-agent");
+  await page.getByRole("button", { name: "Новый Code-проект", exact: true }).click();
+  await expect(page.getByRole("option", { name: "Code-проект", exact: true })).toBeAttached();
+  expect(posts).toBe(1);
+  await expect(
+    page.getByRole("button", { name: "Предложить исправление", exact: true })
+  ).toBeDisabled();
+});
+
+test("recovers a lost creation response using its request ID without a second generation POST", async ({
+  page
+}) => {
+  await scenario(page);
+  let posts = 0;
+  let requestId = "";
+  await page.route("**/code-agent", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    posts++;
+    requestId = (route.request().postDataJSON() as { client_request_id: string }).client_request_id;
+    await route.abort("failed");
+  });
+  await page.goto("/code-agent");
+  await page.getByLabel("Задача", { exact: true }).fill("Исправь неверный результат");
+  await page.getByRole("button", { name: "Предложить исправление", exact: true }).click();
+  await expect(page.getByLabel("Просмотр изменений")).toContainText("export const value = 1;");
+  expect(requestId).toMatch(/^[a-f0-9-]{36}$/);
+  expect(posts).toBe(1);
+});
 
 test("selects and edits real server proposal, binds check to review and requires exact publication approval", async ({
   page

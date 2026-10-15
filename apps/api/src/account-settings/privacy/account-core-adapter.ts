@@ -101,6 +101,15 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
       chat_memory: select(
         "SELECT m.* FROM chat_memory_notes m JOIN general_chats c ON c.id=m.chat_id WHERE c.owner_id=?"
       ),
+      chat_folders: select("SELECT * FROM chat_folders WHERE owner_id=?"),
+      navigation_legacy_imports: select("SELECT * FROM navigation_legacy_imports WHERE owner_id=?"),
+      navigation_pins: select("SELECT * FROM navigation_pins WHERE owner_id=?"),
+      chat_folder_assignments: select(
+        "SELECT a.* FROM chat_folder_assignments a JOIN general_chats c ON c.id=a.chat_id WHERE c.owner_id=?"
+      ),
+      chat_context: select(
+        "SELECT s.* FROM chat_context_settings s JOIN general_chats c ON c.id=s.chat_id WHERE c.owner_id=?"
+      ),
       chat_branches: select(
         "SELECT b.* FROM chat_branches b JOIN general_chats c ON c.id=b.chat_id WHERE c.owner_id=?"
       ),
@@ -232,6 +241,9 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
       );
       // Project-related items cascade only after their specialized adapters delete them.
       deleted += n("DELETE FROM projects WHERE owner_id=?");
+      deleted += n("DELETE FROM chat_folders WHERE owner_id=?");
+      deleted += n("DELETE FROM navigation_pins WHERE owner_id=?");
+      deleted += n("DELETE FROM navigation_legacy_imports WHERE owner_id=?");
       deleted += n("DELETE FROM kosmora_account_preferences WHERE owner_id=?");
       deleted += n("DELETE FROM kosmora_data_delete_challenges WHERE owner_id=?");
       // Keep all canonical usage that migrated to retained accounting BEFORE FK cascades.

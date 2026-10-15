@@ -295,6 +295,13 @@
       "when": 1791580800018,
       "tag": "0043_chat_branches",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1791580800019,
+      "tag": "0044_chat_workspace",
+      "breakpoints": true
     }
   ]
 }

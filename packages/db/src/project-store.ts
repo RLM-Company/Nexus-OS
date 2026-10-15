@@ -297,7 +297,12 @@ export class ProjectStore {
       .map(asMessage);
   }
 
-  createEmptyProject(projectId: string, title: string, ownerId = LOCAL_OWNER_ID): StoredProject {
+  createEmptyProject(
+    projectId: string,
+    title: string,
+    ownerId = LOCAL_OWNER_ID,
+    initialStatus: "DRAFT" | "ACTIVE" = "DRAFT"
+  ): StoredProject {
     const normalized = title.trim();
     if (!normalized || normalized.length > 160) throw new Error("Invalid project title");
     this.#sqlite.exec("BEGIN IMMEDIATE");
@@ -312,9 +317,9 @@ export class ProjectStore {
         const timestamp = now();
         this.#sqlite
           .prepare(
-            "INSERT INTO projects (id,owner_id,title,status,created_at,updated_at) VALUES (?,?,?,'DRAFT',?,?)"
+            "INSERT INTO projects (id,owner_id,title,status,created_at,updated_at) VALUES (?,?,?,?,?,?)"
           )
-          .run(projectId, ownerId, normalized, timestamp, timestamp);
+          .run(projectId, ownerId, normalized, initialStatus, timestamp, timestamp);
         this.#sqlite
           .prepare("INSERT INTO chats (id,project_id,kind,created_at) VALUES (?,?,'main',?)")
           .run(randomUUID(), projectId, timestamp);
