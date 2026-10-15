@@ -65,5 +65,58 @@ DAG, distributed agents, or automatic external actions.
   Both steps completed with one attempt each, six model requests and PASS reviews;
   reload and the exact two-file bundle were verified. No real model calls there.
 - DB/API/web semantic type checks passed; scoped lint has zero errors. Production
-  build, copied database rehearsal, deployment and a bounded live acceptance are
-  recorded below after completion. Hosted CI success is not claimed.
+  builds, copied database rehearsal and bounded live acceptance passed as recorded
+  below. Hosted CI success is not claimed.
+
+## Deployment and live acceptance
+
+Source revision `ecbaeb9c9300e8f77b7a539196bf7280396f94f0` is deployed on the
+owner's VPS. Draft PR: https://github.com/RLM-Company/Nexus-OS/pull/348, based on
+`codex/chat-workspace-code-20261014`; no main merge was performed.
+
+- Release: `/opt/cosmora/releases/work-autonomy-ecbaeb9`.
+- API image: `cosmora-alpha-app:work-autonomy-api-ecbaeb9`.
+- Web image: `cosmora-alpha-app:work-autonomy-web-ecbaeb9`.
+- Source archive: 659,695 bytes; SHA-256
+  `6009f141216f62e2f0fec5a782f87aa49633e8004add7a5f9d5b53aed00f4b75`.
+- Pre-activation database backup SHA-256:
+  `6ab34ab9fbc645a7e1f8e0c2022600d140e792d72cc08ecea5c74dedcc3015490`.
+
+Both production images built without network access. Activation held the
+maintenance lock, verified the previous image revisions, stopped the API for a
+consistent backup, and rehearsed the new code against a copy of the live database.
+That copy passed integrity/foreign-key checks, retained all 43 migration journal
+rows, and completed a synthetic two-step Work run with six fixture model requests,
+required Critic review and the result bundle. Canonical chat/project/identity,
+Canvas, Code and Work records were compared before/after activation and preserved.
+
+API/web are healthy and authenticated read routes passed. Login and the separate
+Code executor retained their original container identities/start times; the real
+OCI executor smoke check passed. Provider/model settings, credentials, registration
+policy and maintenance overlays were preserved. No rollback was required.
+
+The bounded real-model acceptance completed on 15 October 2026:
+
+- Project `cc150003-0001-4000-8000-000000000001`, plan
+  `2a62f2ba-bb5f-4887-b99b-8c4398ce5228`.
+- First step wrote `brief.md` for chat folders; the dependent step consumed that
+  exact artifact and wrote `checklist.md`. Both had one attempt, required Critic
+  review and a PASS verdict. The final state was `completed`, with exactly six
+  real `cheapvibecode/gpt-6.1-sol` requests against a ceiling of six.
+- Dependency artifact IDs, published versions, recorded hashes and actual bundle
+  contents matched. Subsequent reads did not create requests. There was no paid
+  retry, external publication or claim that the described feature was executed.
+- The browser visibly showed two completed steps and six of six requests. The
+  result bundle was downloaded through the actual authenticated UI; the
+  downloaded contents were independently hash-checked locally. The brief covers
+  the requested behavior and three acceptance criteria; the checklist has seven
+  planned checks with expected results, including preserving chats after removing
+  a folder. Content was inspected, not just the PASS labels.
+
+Server evidence is retained as `live-work-result.json` and
+`live-work-bundle.json` in the release directory. Local evidence is under
+`2026-10-15/kosmora-work-autonomy` in the owner's Codex workspace:
+`work-live-result.png`, the UI-downloaded `work-results.json`, and the extracted
+`brief.md` / `checklist.md`. These are synthetic acceptance documents, not user
+files. Six requests establish request usage; monetary cost is not asserted while
+the provider route has no confirmed pricing metadata.
