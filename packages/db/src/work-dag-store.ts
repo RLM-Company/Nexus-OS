@@ -175,6 +175,10 @@ export class WorkDagStore {
       .all(owner) as { state_json: string }[]) {
       const g = JSON.parse(row.state_json) as WorkDag;
       if (g.mode !== "cancelled") g.mode = "paused";
+      if (g.execution && ["running", "waiting"].includes(g.execution.status)) {
+        g.execution.status = "paused";
+        g.execution.reason = "OWNER_QUIESCED";
+      }
       for (const n of g.nodes)
         if (n.status === "running" || (n.attempts.length && n.status === "blocked")) {
           n.status = "cancelled";

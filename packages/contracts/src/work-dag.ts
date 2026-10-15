@@ -5,6 +5,7 @@ export const WorkDagNodeInputSchema = Type.Object(
     id: Type.String({ minLength: 1, maxLength: 60, pattern: "^[a-zA-Z0-9_-]+$" }),
     title: Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }),
     goal: Type.String({ minLength: 1, maxLength: 4000, pattern: "\\S" }),
+    requires_critic: Type.Optional(Type.Boolean()),
     depends_on: Type.Array(Type.String({ minLength: 1, maxLength: 60 }), {
       maxItems: 32,
       uniqueItems: true
@@ -36,10 +37,13 @@ export const WorkDagControlSchema = Type.Object(
       Type.Literal("resume"),
       Type.Literal("cancel"),
       Type.Literal("approve_step"),
-      Type.Literal("resume_step")
+      Type.Literal("resume_step"),
+      Type.Literal("run_plan"),
+      Type.Literal("stop_plan")
     ]),
     node_id: Type.Optional(Type.String({ minLength: 1, maxLength: 60 })),
-    acknowledge_cost: Type.Optional(Type.Literal(true))
+    acknowledge_cost: Type.Optional(Type.Literal(true)),
+    max_model_requests: Type.Optional(Type.Integer({ minimum: 3, maximum: 96 }))
   },
   { additionalProperties: false }
 );
@@ -75,6 +79,14 @@ export interface WorkDag {
   client_request_id: string;
   title: string;
   mode: "active" | "paused" | "cancelled";
+  execution?: {
+    status: "running" | "waiting" | "paused" | "stopped" | "completed" | "failed";
+    max_model_requests: number;
+    reason: string | null;
+    started_at: string;
+  };
+  usage?: { model_requests: number; reserved_input_tokens: number; reserved_output_tokens: number };
+  execution_waves?: string[][];
   nodes: WorkDagNode[];
   events: { sequence: number; message: string; at: string }[];
   created_at: string;

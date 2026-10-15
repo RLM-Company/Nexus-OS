@@ -92,11 +92,13 @@ async function fixture(
                   needs_critic: false,
                   requires_external_actions: false
                 }
-              : {
-                  files: [
-                    { name: "result.md", content: "# Exact\nDependency evidence in a real file" }
-                  ]
-                })
+              : request.task_type === "manager_work_review"
+                ? { verdict: "PASS", reason: "Fixture content review" }
+                : {
+                    files: [
+                      { name: "result.md", content: "# Exact\nDependency evidence in a real file" }
+                    ]
+                  })
         )
       };
       yield {
@@ -164,6 +166,243 @@ async function fixture(
 }
 
 describe("executable durable Work DAG", () => {
+  const arm = (f: Awaited<ReturnType<typeof fixture>>, graph: WorkDag, limit = 9) =>
+    f.dag.control(graph.id, owner, {
+      version: f.dag.get(graph.id, owner)!.version,
+      action: "run_plan",
+      acknowledge_cost: true,
+      max_model_requests: limit
+    });
+  async function autoTick(f: Awaited<ReturnType<typeof fixture>>, id: string) {
+    f.dag.advance();
+    for (const child of f.store.pending()) await f.coordinator.execute(child.id, owner);
+    return f.dag.get(id, owner)!;
+  }
+  it("automatically follows dependencies, enforces requested Critic review and exports exact completed results", async () => {
+    const f = await fixture();
+    let graph = f.dag.create(f.project.id, owner, owner, {
+      client_request_id: "automatic",
+      title: "Reviewed plan",
+      nodes: nodes.slice(0, 2).map((node) => ({ ...node, requires_critic: true }))
+    });
+    expect(() =>
+      f.dag.control(graph.id, owner, {
+        version: graph.version,
+        action: "run_plan",
+        max_model_requests: 6
+      })
+    ).toThrow("EXPLICIT_RETRY_REQUIRED");
+    graph = arm(f, graph, 6);
+    const app = buildApp({
+      config: f.config,
+      database: f.db,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const base = "/api/v1/projects/" + f.project.id + "/work-dags/" + graph.id;
+      await app.inject({ url: base });
+      expect(f.calls).toHaveLength(0); // GET is not a paid dispatcher.
+      graph = await autoTick(f, graph.id);
+      expect(graph.nodes.map((node) => node.status)).toEqual(["completed", "pending"]);
+      expect(() => f.dag.edit(graph.id, owner, graph.version, nodes.slice(0, 2))).toThrow(
+        "AUTO_PLAN_ACTIVE"
+      );
+      expect(() =>
+        f.dag.control(graph.id, owner, {
+          version: graph.version,
+          action: "run",
+          node_id: "document"
+        })
+      ).toThrow("AUTO_PLAN_ACTIVE");
+      graph = await autoTick(f, graph.id);
+      expect(graph.execution).toMatchObject({ status: "completed", max_model_requests: 6 });
+      expect(graph.execution_waves).toEqual([["brief"], ["document"]]);
+      expect(graph.usage?.model_requests).toBe(6);
+      expect(graph.nodes.map((node) => node.result?.review?.verdict)).toEqual(["PASS", "PASS"]);
+      expect(graph.nodes[1]!.attempts[0]!.source_artifact_ids).toEqual([
+        graph.nodes[0]!.artifacts[0]!.id
+      ]);
+      expect(f.calls[3]!.messages[1]!.content).toContain("Dependency evidence in a real file");
+      const response = await app.inject({ url: base + "/results" });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["cache-control"]).toBe("private, no-store");
+      expect(response.headers["content-disposition"]).toContain("attachment");
+      const result = response.json<{ files: { content: string; sha256: string }[] }>();
+      expect(result.files).toHaveLength(2);
+      for (const file of result.files)
+        expect(createHash("sha256").update(file.content).digest("hex")).toBe(file.sha256);
+      const other = f.projects.createProject("Other", "other", "other-owner").project;
+      expect(
+        (
+          await app.inject({
+            url: "/api/v1/projects/" + other.id + "/work-dags/" + graph.id + "/results"
+          })
+        ).statusCode
+      ).toBe(404);
+      await autoTick(f, graph.id);
+      expect(f.calls).toHaveLength(6);
+      f.db.sqlite
+        .prepare("UPDATE work_artifact_versions SET content = 'corrupt' WHERE id = ?")
+        .run(graph.nodes[0]!.artifacts[0]!.id);
+      expect((await app.inject({ url: base + "/results" })).statusCode).toBe(409);
+    } finally {
+      await app.close();
+    }
+  });
+  it("stops before a new child exceeds the total budget and counts earlier attempts after explicit continuation", async () => {
+    const f = await fixture();
+    let graph = arm(f, f.create(), 3);
+    graph = await autoTick(f, graph.id);
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution).toMatchObject({ status: "stopped", reason: "PLAN_REQUEST_LIMIT" });
+    expect(f.calls).toHaveLength(2);
+    expect(graph.nodes.flatMap((node) => node.attempts)).toHaveLength(1);
+    expect(() => arm(f, graph, 3)).toThrow("PLAN_REQUEST_LIMIT");
+    graph = arm(f, graph, 9);
+    graph = await autoTick(f, graph.id);
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution?.status).toBe("completed");
+    expect(graph.usage?.model_requests).toBe(6);
+    expect(graph.nodes.map((node) => node.attempts.length)).toEqual([1, 1, 1]);
+  });
+  it("never retries a failed model step or starts an independent step behind it", async () => {
+    let fail = true;
+    const f = await fixture({
+      onCall: () => {
+        if (fail) throw new GatewayRunError("PROVIDER_ERROR", "mock", "fixture", true);
+        return Promise.resolve();
+      }
+    });
+    let graph = arm(f, f.create());
+    graph = await autoTick(f, graph.id);
+    for (let i = 0; i < 4; i++) graph = await autoTick(f, graph.id);
+    expect(graph.execution).toMatchObject({ status: "failed", reason: "STEP_FAILED" });
+    expect(f.calls).toHaveLength(1);
+    expect(graph.nodes[2]!.attempts).toHaveLength(0);
+    fail = false;
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "retry",
+      node_id: "brief",
+      acknowledge_cost: true
+    });
+    await f.coordinator.execute(graph.nodes[0]!.attempts[1]!.work_id, owner);
+    graph = arm(f, f.dag.get(graph.id, owner)!);
+    graph = await autoTick(f, graph.id);
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution?.status).toBe("completed");
+    expect(graph.usage?.model_requests).toBe(7);
+    expect(graph.nodes.map((node) => node.attempts.length)).toEqual([2, 1, 1]);
+  });
+  it("waits for explicit complex-plan approval without repeating planning or waiving Critic", async () => {
+    const f = await fixture({
+      output: (request) =>
+        request.task_type === "manager_work_plan"
+          ? {
+              summary: "Review required",
+              instructions: "Create result.md",
+              complexity: "complex",
+              needs_critic: false,
+              requires_external_actions: false
+            }
+          : undefined
+    });
+    let graph = arm(f, f.create());
+    graph = await autoTick(f, graph.id);
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution).toMatchObject({ status: "waiting", reason: "AWAITING_APPROVAL" });
+    expect(f.calls).toHaveLength(1);
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "approve_step",
+      node_id: "brief"
+    });
+    await f.coordinator.execute(graph.nodes[0]!.attempts[0]!.work_id, owner);
+    graph = f.dag.get(graph.id, owner)!;
+    expect(graph.nodes[0]!.result?.review?.verdict).toBe("PASS");
+    expect(f.calls.map((request) => request.task_type)).toEqual([
+      "manager_work_plan",
+      "manager_work_draft",
+      "manager_work_review"
+    ]);
+  });
+  it("stops autostart, respects project pause/cancel and preserves files", async () => {
+    const f = await fixture();
+    let graph = arm(f, f.create());
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "stop_plan" });
+    graph = await autoTick(f, graph.id);
+    expect(f.calls).toHaveLength(0);
+    graph = arm(f, graph);
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "pause" });
+    graph = await autoTick(f, graph.id);
+    expect(f.calls).toHaveLength(0);
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "resume" });
+    graph = await autoTick(f, graph.id);
+    const artifact = graph.nodes[0]!.artifacts[0]!;
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "cancel" });
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution).toMatchObject({ status: "stopped", reason: "PROJECT_CANCELLED" });
+    expect(f.calls).toHaveLength(2);
+    expect(f.store.runtime.artifact(f.project.id, owner, artifact.id)?.metadata.sha256).toBe(
+      artifact.sha256
+    );
+  });
+  it("requires explicit continuation after restart and never repeats a completed step", async () => {
+    const f = await fixture();
+    let graph = await autoTick(f, arm(f, f.create()).id);
+    const completed = graph.nodes[0]!.attempts[0]!.work_id;
+    const restarted = new ManagerWorkCoordinator(f.deps);
+    restarted.dag.recoverAutomation();
+    restarted.dag.advance();
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.execution).toMatchObject({ status: "paused", reason: "RESTART_REQUIRES_RESUME" });
+    expect(f.calls).toHaveLength(2);
+    graph = restarted.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "run_plan",
+      max_model_requests: 9,
+      acknowledge_cost: true
+    });
+    restarted.dag.advance();
+    for (const child of f.store.pending()) await restarted.execute(child.id, owner);
+    expect(f.calls).toHaveLength(4);
+    expect(restarted.dag.get(graph.id, owner)!.nodes[0]!.attempts[0]!.work_id).toBe(completed);
+  });
+  it("invalidates autostart consent when an unstarted goal is edited while paused", async () => {
+    const f = await fixture();
+    let graph = arm(f, f.create());
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "pause" });
+    graph = f.dag.edit(
+      graph.id,
+      owner,
+      graph.version,
+      nodes.map((node) => ({ ...node, goal: node.goal + " updated" }))
+    );
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "resume" });
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution).toMatchObject({ status: "stopped", reason: "PLAN_EDITED" });
+    expect(f.calls).toHaveLength(0);
+    graph = await autoTick(f, arm(f, graph).id);
+    expect(graph.nodes[0]!.status).toBe("completed");
+  });
+  it("requires a clear emergency/privacy gate before arming and before scheduling", async () => {
+    const f = await fixture();
+    let graph = f.create();
+    f.deps.emergency.activateProcess("test stop");
+    expect(() => arm(f, graph)).toThrow("EMERGENCY_STOP");
+    expect(f.calls).toHaveLength(0);
+    const fresh = await fixture();
+    graph = arm(fresh, fresh.create());
+    const token = await fresh.coordinator.quiesce(owner);
+    fresh.dag.advance();
+    fresh.coordinator.releaseQuiescence(token);
+    graph = fresh.dag.get(graph.id, owner)!;
+    expect(graph.execution).toMatchObject({ status: "paused", reason: "OWNER_QUIESCED" });
+    fresh.dag.advance();
+    expect(fresh.calls).toHaveLength(0);
+  });
   it("detects cycles/missing nodes before creating a work or spending, and keeps HTTP scope", async () => {
     const f = await fixture();
     const app = buildApp({
