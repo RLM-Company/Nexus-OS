@@ -104,10 +104,12 @@ export class ManagerWorkCoordinator {
     for (const hold of this.dependencies.store.holds())
       this.dependencies.ownerBudget?.uncertainReservation(hold, "main");
     this.dependencies.store.recover();
+    this.dag.recoverAutomation();
     this.dag.reconcileAll();
     this.timer = setInterval(() => {
       if (this.stopping) return;
       this.dag.reconcileAll();
+      this.dag.advance();
       for (const work of this.dependencies.store.pending()) {
         if (this.isOwnerFenced(work.owner_id)) continue;
         if (this.active.size >= 1) break;
@@ -143,6 +145,14 @@ export class ManagerWorkCoordinator {
   }
   private isOwnerFenced(ownerId: string): boolean {
     return this.quiescedOwners.has(ownerId) || !this.dependencies.store.ownerWritable(ownerId);
+  }
+  schedulingBlock(projectId: string, ownerId: string): string | null {
+    if (this.isOwnerFenced(ownerId)) return "OWNER_QUIESCED";
+    if (this.dependencies.projects.getProject(projectId, ownerId)?.status !== "ACTIVE")
+      return "PROJECT_INACTIVE";
+    return this.dependencies.emergency.getBlockingStop(projectId, ownerId)
+      ? "EMERGENCY_STOP"
+      : null;
   }
   async stop(): Promise<void> {
     this.stopping = true;
@@ -537,7 +547,10 @@ export class ManagerWorkCoordinator {
         if (stage === "plan") {
           if (!Value.Check(ManagerWorkPlanSchema, value)) throw new Error("INVALID_MODEL_OUTPUT");
           // Complex work always receives a Critic gate; model output cannot waive it.
-          value.needs_critic = value.needs_critic || value.complexity === "complex";
+          value.needs_critic =
+            value.needs_critic ||
+            value.complexity === "complex" ||
+            work.request.require_critic === true;
           work.plan = value;
           work.stage = "draft";
           if (value.needs_critic && work.model_requests + 2 > work.request.max_model_requests)

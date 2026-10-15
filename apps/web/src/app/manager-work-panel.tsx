@@ -82,6 +82,7 @@ export function ManagerWorkPanel({
 }) {
   const [goal, setGoal] = useState(initialGoal);
   const [role, setRole] = useState("analyst");
+  const [critic, setCritic] = useState(true);
   const [work, setWork] = useState<Work | null>(null);
   const [works, setWorks] = useState<Work[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
@@ -92,7 +93,7 @@ export function ManagerWorkPanel({
   const [error, setError] = useState("");
   const lock = useRef(false);
   const mutationEpoch = useRef(0);
-  const pending = useRef<{ goal: string; role: string; id: string } | null>(null);
+  const pending = useRef<{ goal: string; role: string; critic: boolean; id: string } | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
   useEffect(() => {
     const controller = new AbortController();
@@ -154,12 +155,18 @@ export function ManagerWorkPanel({
         url += "/" + encodeURIComponent(work.id) + "/control";
         body = { version: work.version, action };
       } else {
-        if (!pending.current || pending.current.goal !== goal || pending.current.role !== role)
-          pending.current = { goal, role, id: crypto.randomUUID() };
+        if (
+          !pending.current ||
+          pending.current.goal !== goal ||
+          pending.current.role !== role ||
+          pending.current.critic !== critic
+        )
+          pending.current = { goal, role, critic, id: crypto.randomUUID() };
         body = {
           client_request_id: pending.current.id,
           goal,
           worker_role: role,
+          require_critic: critic,
           max_model_requests: 3,
           max_input_tokens: 32000,
           max_output_tokens: 6000
@@ -250,6 +257,15 @@ export function ManagerWorkPanel({
         Предел на задачу: 3 обращения к модели, 32 000 входных и 6 000 выходных токенов.
         Автоматических платных повторов нет. Автономность наследуется от проекта.
       </p>
+      <label className="manager-work-field">
+        <input
+          type="checkbox"
+          checked={critic}
+          disabled={busy || !historyLoaded}
+          onChange={(e) => setCritic(e.target.checked)}
+        />
+        Проверить готовые файлы Критиком
+      </label>
       <button
         type="button"
         className="manager-work-submit"

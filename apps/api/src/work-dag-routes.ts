@@ -77,6 +77,19 @@ export function registerWorkDagRoutes(options: {
       return { items: coordinator.checkpoints(r.params.id, identityFor(r).owner_id) };
     }, reply)
   );
+  app.get<{ Params: Params }>(base + "/:id/results", { schema: { params } }, (r, reply) =>
+    safe(() => {
+      const owner = identityFor(r).owner_id;
+      if (!coordinator.owns(r.params.id, owner, r.params.projectId))
+        return reply.code(404).send({ error: "DAG_NOT_FOUND" });
+      return reply
+        .header("content-disposition", 'attachment; filename="work-results.json"')
+        .header("cache-control", "private, no-store")
+        .header("x-content-type-options", "nosniff")
+        .type("application/json; charset=utf-8")
+        .send(coordinator.results(r.params.id, owner));
+    }, reply)
+  );
   app.put<{ Params: Params; Body: { version: number; nodes: WorkDagNodeInput[] } }>(
     base + "/:id",
     { schema: { params, body: WorkDagEditSchema } },
