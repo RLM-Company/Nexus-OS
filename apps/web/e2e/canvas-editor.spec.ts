@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { strFromU8, unzipSync } from "fflate";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import type { CanvasArtifact, CanvasRevision, CanvasSource } from "@cosmora/contracts";
 
@@ -19,6 +20,61 @@ async function openCanvas(page: Page, projectId: string) {
   await expect(canvas.getByLabel("Содержимое", { exact: true })).toBeEnabled();
   return canvas;
 }
+
+test("Canvas opens local documents without losing drafts and round-trips edited DOCX", async ({
+  page,
+  request
+}) => {
+  const projectId = await createProject(request);
+  const canvas = await openCanvas(page, projectId);
+  page.on("dialog", (dialog) => dialog.accept());
+  await canvas.getByLabel("Содержимое", { exact: true }).fill("Сохранить мой отдельный черновик");
+  await canvas.getByLabel("Открыть документ", { exact: true }).setInputFiles({
+    name: "invalid.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from([0xff])
+  });
+  await expect(canvas.getByRole("alert")).toContainText("UTF-8");
+  await expect(canvas.getByLabel("Содержимое", { exact: true })).toHaveValue(
+    "Сохранить мой отдельный черновик"
+  );
+  await canvas.getByLabel("Открыть документ", { exact: true }).setInputFiles({
+    name: "Бриф.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Бриф\nИсходный текст")
+  });
+  await expect(canvas.getByRole("status")).toContainText("Документ открыт");
+  await canvas.getByRole("button", { name: "+ Новый", exact: true }).click();
+  await expect(canvas.getByLabel("Содержимое", { exact: true })).toHaveValue(
+    "Сохранить мой отдельный черновик"
+  );
+  await canvas.getByRole("button", { name: /Бриф.*v1/ }).click();
+  const edited = "Редакция владельца & <данные>\nВторая строка на русском";
+  await canvas.getByLabel("Содержимое", { exact: true }).fill(edited);
+  const downloading = page.waitForEvent("download");
+  await canvas.getByRole("button", { name: "Скачать DOCX", exact: true }).click();
+  const exported = await downloading;
+  const bytes = await readFile(await exported.path());
+  const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+  expect(xml).toContain("Редакция владельца &amp; &lt;данные&gt;");
+  expect(xml).toContain("Вторая строка на русском");
+  await canvas.getByLabel("Открыть документ", { exact: true }).setInputFiles({
+    name: "Редакция.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: bytes
+  });
+  await expect(canvas.getByRole("status")).toContainText("Документ открыт");
+  await expect(canvas.getByLabel("Содержимое", { exact: true })).toHaveValue(edited);
+  await canvas.getByLabel("Содержимое", { exact: true }).fill(edited + "\nГотово к передаче");
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
+  await page.reload();
+  await page.getByRole("button", { name: "Открыть Canvas", exact: true }).click();
+  await canvas.getByRole("button", { name: /Редакция.*v2/ }).click();
+  await expect(canvas.getByLabel("Содержимое", { exact: true })).toHaveValue(
+    edited + "\nГотово к передаче"
+  );
+});
 
 test("Canvas persists real versions, preserves a stale draft, restores a new revision and exports/deletes", async ({
   page,
