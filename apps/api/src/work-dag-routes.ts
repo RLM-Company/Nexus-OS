@@ -2,7 +2,9 @@ import {
   WorkDagCreateSchema,
   WorkDagEditSchema,
   WorkDagControlSchema,
+  WorkDagCloneSchema,
   type WorkDagCreate,
+  type WorkDagClone,
   type WorkDagControl,
   type WorkDagNodeInput,
   type IdentityContext
@@ -10,6 +12,7 @@ import {
 import { ManagerWorkConflict, WorkDagConflict, type ProjectStore } from "@cosmora/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
+import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import type { WorkDagCoordinator } from "./work-dag-coordinator.js";
 
 export function registerWorkDagRoutes(options: {
@@ -39,7 +42,9 @@ export function registerWorkDagRoutes(options: {
       return fn();
     } catch (e) {
       if (e instanceof WorkDagConflict || e instanceof ManagerWorkConflict)
-        return reply.code(409).send({ error: e.message });
+        return reply
+          .code(["DAG_NOT_FOUND", "PROJECT_NOT_FOUND"].includes(e.message) ? 404 : 409)
+          .send({ error: e.message });
       throw e;
     }
   };
@@ -69,6 +74,29 @@ export function registerWorkDagRoutes(options: {
   );
   app.get<{ Params: Params }>(base + "/:id", { schema: { params } }, (r, reply) =>
     safe(() => graph(r) ?? reply.code(404).send({ error: "DAG_NOT_FOUND" }), reply)
+  );
+  app.post<{ Params: Params; Body: WorkDagClone }>(
+    base + "/:id/clone",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: { params, body: WorkDagCloneSchema }
+    },
+    (r, reply) =>
+      safe(() => {
+        const identity = identityFor(r);
+        return reply
+          .header("Cache-Control", "private, no-store")
+          .code(201)
+          .send(
+            coordinator.clone(
+              r.params.projectId,
+              r.params.id,
+              identity.owner_id,
+              identity.actor_id,
+              r.body
+            )
+          );
+      }, reply)
   );
   app.get<{ Params: Params }>(base + "/:id/checkpoints", { schema: { params } }, (r, reply) =>
     safe(() => {

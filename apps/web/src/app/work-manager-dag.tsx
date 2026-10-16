@@ -93,6 +93,13 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     nodes: WorkDagNodeInput[];
     requestId: string;
   } | null>(null);
+  const [copy, setCopy] = useState<{
+    sourceId: string;
+    sourceVersion: number;
+    title: string;
+    skills: "source" | "project";
+    requestId: string;
+  } | null>(null);
   const [retry, setRetry] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [autoConfirmed, setAutoConfirmed] = useState(false);
@@ -183,11 +190,39 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       setGraphs((current) => [result, ...current.filter((g) => g.id !== result.id)]);
       setSelected(result.id);
       setEditor(null);
+      setCopy(null);
       setRetry(null);
       setAcknowledged(false);
       setAutoConfirmed(false);
     } catch (e) {
-      // Lost acknowledgement: read canonical state, never repeat the billable command.
+      // Lost acknowledgement: read canonical state, never repeat the command.
+      if (method === "POST" && url.endsWith("/clone")) {
+        try {
+          const data = body as {
+            client_request_id: string;
+            expected_version: number;
+            title: string;
+            skills: "source" | "project";
+          };
+          const latest = await request<{ items: WorkDag[] }>(base);
+          const found = latest.items.find(
+            (g) =>
+              g.client_request_id === data.client_request_id &&
+              g.title === data.title &&
+              g.copied_from?.version === data.expected_version &&
+              g.copied_from.skills === data.skills
+          );
+          if (found) {
+            setGraphs(latest.items);
+            setSelected(found.id);
+            setCopy(null);
+            setError("");
+            return;
+          }
+        } catch {
+          /* Keep the copy draft and its idempotency key for a later explicit retry. */
+        }
+      }
       const control = body as Partial<WorkDagControl>;
       if (method === "POST" && control.action === "run_plan" && url.endsWith("/control")) {
         try {
@@ -244,8 +279,25 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         токенов. Повторы запускаются вручную.
       </p>
       <div className={styles.actions}>
+        {graph && (
+          <button
+            type="button"
+            disabled={busy || Boolean(editor) || Boolean(copy)}
+            onClick={() =>
+              setCopy({
+                sourceId: graph.id,
+                sourceVersion: graph.version,
+                title: (graph.title + " — копия").slice(0, 160),
+                skills: "source",
+                requestId: crypto.randomUUID()
+              })
+            }
+          >
+            Создать копию плана
+          </button>
+        )}
         <button
-          disabled={busy || Boolean(editor)}
+          disabled={busy || Boolean(editor) || Boolean(copy)}
           onClick={() =>
             setEditor({
               graphId: null,
@@ -260,7 +312,13 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         </button>
         {graph && (
           <button
-            disabled={busy || Boolean(editor) || graph.mode === "cancelled" || Boolean(automatic)}
+            disabled={
+              busy ||
+              Boolean(editor) ||
+              Boolean(copy) ||
+              graph.mode === "cancelled" ||
+              Boolean(automatic)
+            }
             onClick={() =>
               setEditor({
                 graphId: graph.id,
@@ -280,7 +338,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           Сохранённые планы
           <select
             value={graph?.id ?? ""}
-            disabled={busy || Boolean(editor)}
+            disabled={busy || Boolean(editor) || Boolean(copy)}
             onChange={(e) => {
               setSelected(e.target.value);
               setRetry(null);
@@ -301,6 +359,58 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         <p role="alert" className={styles.error}>
           {error}
         </p>
+      )}
+      {copy && (
+        <form
+          aria-label="Копия плана"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void mutate(base + "/" + encodeURIComponent(copy.sourceId) + "/clone", "POST", {
+              client_request_id: copy.requestId,
+              expected_version: copy.sourceVersion,
+              title: copy.title,
+              skills: copy.skills
+            });
+          }}
+        >
+          <p>
+            Будет создан отдельный план с теми же задачами и зависимостями. История запусков,
+            результаты, разрешения и расходы не переносятся. Запуск потребует отдельного действия.
+          </p>
+          <label>
+            Название копии
+            <input
+              aria-label="Название копии"
+              maxLength={160}
+              required
+              value={copy.title}
+              disabled={busy}
+              onChange={(e) => setCopy({ ...copy, title: e.target.value })}
+            />
+          </label>
+          <label>
+            Инструкции для копии
+            <select
+              aria-label="Инструкции для копии"
+              value={copy.skills}
+              disabled={busy}
+              onChange={(e) => setCopy({ ...copy, skills: e.target.value as "source" | "project" })}
+            >
+              <option value="source">Сохранённый снимок Skills исходного плана</option>
+              <option value="project">Текущий сохранённый выбор Skills Work проекта</option>
+            </select>
+          </label>
+          <p>
+            Исходный снимок может содержать текст удалённых Skills. Для текущего набора инструкций
+            выберите настройки проекта.
+          </p>
+          <button type="submit" disabled={busy || !copy.title.trim()}>
+            Сохранить копию
+          </button>
+          <button type="button" disabled={busy} onClick={() => setCopy(null)}>
+            Отмена копирования
+          </button>
+        </form>
       )}
       {editor && (
         <form
@@ -422,6 +532,14 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       {graph && (
         <>
           <h4>{graph.title}</h4>
+          {graph.copied_from && (
+            <p>
+              Копия плана · исходная версия {graph.copied_from.version} ·{" "}
+              {graph.copied_from.skills === "source"
+                ? "Skills из исходного снимка"
+                : "Skills из настроек проекта"}
+            </p>
+          )}
           <AcceptedSkillView
             key={graph.id}
             path={base + "/" + encodeURIComponent(graph.id) + "/skills"}

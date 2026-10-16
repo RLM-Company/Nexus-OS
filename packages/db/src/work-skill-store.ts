@@ -116,19 +116,23 @@ export class WorkSkillStore {
     }
   }
   /** Must run inside the transaction that creates its parent. No retroactive catalog resolution. */
-  capturePlan(graph: string, project: string, owner: string): void {
+  capturePlan(graph: string, project: string, owner: string, sourceGraph?: string): void {
     this.writable(owner);
-    const s = this.get(project, owner);
+    const s = sourceGraph ? this.forPlan(sourceGraph, owner) : this.get(project, owner);
+    if (!s) throw new WorkSkillError(404, "Исходный план не найден.");
+    const version = "selection_version" in s ? s.selection_version : s.version;
     const result = this.sql
       .prepare(
         `INSERT INTO work_dag_skill_snapshots(graph_id,selection_version,skills_json,captured_at,source,source_id)
-      SELECT d.id,?,?,?,'project',d.project_id FROM work_dags d JOIN projects p ON p.id=d.project_id
+      SELECT d.id,?,?,?,?,? FROM work_dags d JOIN projects p ON p.id=d.project_id
       WHERE d.id=? AND d.project_id=? AND d.owner_id=? AND p.owner_id=?`
       )
       .run(
-        s.version,
+        version,
         JSON.stringify(s.items),
         new Date().toISOString(),
+        sourceGraph ? "plan" : "project",
+        sourceGraph ?? project,
         graph,
         project,
         owner,

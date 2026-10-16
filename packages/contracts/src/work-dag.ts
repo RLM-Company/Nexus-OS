@@ -23,6 +23,17 @@ export const WorkDagCreateSchema = Type.Object(
   { additionalProperties: false }
 );
 export type WorkDagCreate = Static<typeof WorkDagCreateSchema>;
+export const WorkDagCloneSchema = Type.Object(
+  {
+    client_request_id: Type.String({ minLength: 1, maxLength: 100 }),
+    expected_version: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+    title: WorkDagCreateSchema.properties.title,
+    target_project_id: Type.Optional(Type.String({ minLength: 1, maxLength: 160 })),
+    skills: Type.Union([Type.Literal("source"), Type.Literal("project")])
+  },
+  { additionalProperties: false }
+);
+export type WorkDagClone = Static<typeof WorkDagCloneSchema>;
 export const WorkDagEditSchema = Type.Object(
   { version: Type.Integer({ minimum: 1 }), nodes: WorkDagCreateSchema.properties.nodes },
   { additionalProperties: false }
@@ -79,6 +90,7 @@ export interface WorkDag {
   client_request_id: string;
   title: string;
   mode: "active" | "paused" | "cancelled";
+  copied_from?: { graph_id: string; version: number; skills: "source" | "project" };
   execution?: {
     status: "running" | "waiting" | "paused" | "stopped" | "completed" | "failed";
     max_model_requests: number;

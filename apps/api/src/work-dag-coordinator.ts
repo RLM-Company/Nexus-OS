@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import type { WorkDag, WorkDagControl, WorkDagCreate, WorkDagNodeInput } from "@cosmora/contracts";
+import type {
+  WorkDag,
+  WorkDagControl,
+  WorkDagCreate,
+  WorkDagNodeInput,
+  WorkDagClone
+} from "@cosmora/contracts";
 import { projectDagStatuses, validateWorkDag } from "@cosmora/core";
 import { WorkDagConflict, ManagerWorkConflict, type ManagerWorkStore } from "@cosmora/db";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
@@ -21,6 +27,9 @@ export class WorkDagCoordinator {
   create(project: string, owner: string, actor: string, input: WorkDagCreate): WorkDag {
     this.validate(input.nodes);
     return this.works.dag.create(project, owner, actor, input);
+  }
+  clone(project: string, id: string, owner: string, actor: string, input: WorkDagClone): WorkDag {
+    return this.works.dag.clone(project, id, owner, actor, input);
   }
   owns(id: string, owner: string, project: string): boolean {
     return this.works.dag.get(id, owner)?.project_id === project;
