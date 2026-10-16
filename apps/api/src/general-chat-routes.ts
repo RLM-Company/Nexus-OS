@@ -1,3 +1,4 @@
+import { registerChatSkillRoutes } from "./chat-skill-routes.js";
 import { registerChatWorkspaceRoutes } from "./chat-workspace-routes.js";
 import { ContextTooLargeError } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
@@ -233,6 +234,9 @@ const observePersistedRun = async (
 };
 
 export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): void => {
+  registerChatSkillRoutes(options.app, options.store.skills, (request) =>
+    options.identityFor(request)
+  );
   registerChatWorkspaceRoutes(options.app, options.store.workspace, (request) =>
     options.identityFor(request)
   );
@@ -666,7 +670,8 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           runId: run.id,
           messages: conversation,
           memoryNotes:
-            options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? ""
+            options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? "",
+          skills: options.store.skills.forRun(run.id, identity.owner_id)?.items ?? []
         });
         const relay = options.accountStore
           ? new RelayExecution(options.accountStore, options.modelGateway)

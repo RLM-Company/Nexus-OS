@@ -157,3 +157,4 @@ export * from "./notification-store.js";
 export * from "./owner-skill-store.js";
 
 export * from "./chat-workspace-store.js";
+export * from "./chat-skill-store.js";

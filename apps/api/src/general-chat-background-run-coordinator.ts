@@ -189,7 +189,8 @@ export class GeneralChatBackgroundRunCoordinator {
         chatId: queued.chat_id,
         runId: queued.run_id,
         messages: conversation,
-        memoryNotes: this.#store.getChatMemory(queued.chat_id, queued.owner_id)?.memory_notes ?? ""
+        memoryNotes: this.#store.getChatMemory(queued.chat_id, queued.owner_id)?.memory_notes ?? "",
+        skills: this.#store.skills.forRun(queued.run_id, queued.owner_id)?.items ?? []
       });
       if (
         this.#accountStore?.getRelay(queued.owner_id, queued.chat_id) &&

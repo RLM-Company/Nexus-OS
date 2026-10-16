@@ -35,7 +35,7 @@ const offsetOf = (value: string | null): number => {
 const normalizedDate = (value: string | null): string =>
   value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
 /** Render the returned plain-text tokens without injecting HTML from the corpus. */
-export function highlightPlainText(content: string, query: string): ReactNode[] {
+function highlightPlainText(content: string, query: string): ReactNode[] {
   return splitHighlights(content, query).map((part, index) =>
     part.matched ? <mark key={index}>{part.text}</mark> : part.text
   );

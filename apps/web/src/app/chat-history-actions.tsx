@@ -6,6 +6,7 @@ import { WorkspaceIcon } from "./workspace-icons";
 import { RelaySwitch } from "./personal-settings/relay-switch";
 import styles from "./chat-history-actions.module.css";
 import { ChatSearch } from "./chat-search";
+import { ChatSkillSettings } from "./chat-skill-settings";
 import { ChatMemorySettings } from "./chat-memory-settings";
 export function ChatHistoryActions({
   id,
@@ -134,7 +135,10 @@ export function ChatHistoryActions({
           />
           {id && (
             <>
-              {opened && <ChatMemorySettings key={id} chatId={id} disabled={disabled} />}
+              {opened && (
+                <ChatMemorySettings key={`memory:${id}`} chatId={id} disabled={disabled} />
+              )}
+              {opened && <ChatSkillSettings key={`skills:${id}`} chatId={id} disabled={disabled} />}
               <label>
                 Название чата
                 <input
