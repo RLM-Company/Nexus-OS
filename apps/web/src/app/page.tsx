@@ -189,7 +189,11 @@ const replaceConsoleRoute = (
     : generalChatId
       ? `/?chat=${encodeURIComponent(generalChatId)}`
       : "/";
-  if (new URLSearchParams(window.location.search).get("context_preview") === "1")
+  const currentParams = new URLSearchParams(window.location.search);
+  const planId = currentParams.get("plan");
+  if (projectId && view === "plan" && currentParams.get("project") === projectId && planId)
+    route += `&plan=${encodeURIComponent(planId)}`;
+  if (currentParams.get("context_preview") === "1")
     route += `${route.includes("?") ? "&" : "?"}context_preview=1`;
   window.history.replaceState(window.history.state, "", route);
 };

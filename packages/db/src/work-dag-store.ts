@@ -191,7 +191,7 @@ export class WorkDagStore {
     return (
       this.sqlite
         .prepare(
-          "SELECT state_json FROM work_dags WHERE json_extract(state_json, '$.mode') != 'cancelled'"
+          "SELECT state_json FROM work_dags WHERE json_extract(state_json, '$.mode') != 'cancelled' AND json_extract(state_json, '$.archived_at') IS NULL"
         )
         .all() as { state_json: string }[]
     ).map((r) => JSON.parse(r.state_json) as WorkDag);
@@ -240,6 +240,7 @@ export class WorkDagStore {
       .prepare("SELECT state_json FROM work_dags WHERE owner_id = ?")
       .all(owner) as { state_json: string }[]) {
       const g = JSON.parse(row.state_json) as WorkDag;
+      if (g.archived_at) continue;
       if (g.mode !== "cancelled") g.mode = "paused";
       if (g.execution && ["running", "waiting"].includes(g.execution.status)) {
         g.execution.status = "paused";

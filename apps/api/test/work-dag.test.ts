@@ -167,6 +167,254 @@ async function fixture(
 }
 
 describe("executable durable Work DAG", () => {
+  it("renames a running plan with CAS without changing tasks, instructions or execution authorization", async () => {
+    const f = await fixture();
+    let graph = f.create();
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "run_plan",
+      acknowledge_cost: true,
+      max_model_requests: 9
+    });
+    const before = structuredClone(graph),
+      snapshot = f.store.skills.forPlan(graph.id, owner);
+    const app = buildApp({
+      config: f.config,
+      database: f.db,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const url = `/api/v1/projects/${f.project.id}/work-dags/${graph.id}/title`;
+      const put = (payload: unknown, path = url) =>
+        app.inject({ method: "PUT", url: path, payload: payload as Record<string, unknown> });
+      for (const title of ["   ", "x".repeat(161), 5])
+        expect((await put({ expected_version: graph.version, title })).statusCode).toBe(400);
+      expect(
+        (await put({ expected_version: graph.version, title: "New", nodes: [] })).statusCode
+      ).toBe(400);
+      const foreign = f.projects.createProject("Foreign", "foreign", "foreign-owner").project;
+      expect(
+        (
+          await put(
+            { expected_version: graph.version, title: "New" },
+            url.replace(f.project.id, foreign.id)
+          )
+        ).statusCode
+      ).toBe(404);
+      const renamed = await put({
+        expected_version: graph.version,
+        title: "<script>Новый план</script>"
+      });
+      expect(renamed.statusCode).toBe(200);
+      graph = renamed.json<WorkDag>();
+      expect(graph.title).toBe("<script>Новый план</script>");
+      expect(graph.nodes).toEqual(before.nodes);
+      expect(graph.execution).toEqual(before.execution);
+      expect(f.store.skills.forPlan(graph.id, owner)).toEqual(snapshot);
+      expect(
+        (await put({ expected_version: before.version, title: "Stale overwrite" })).json()
+      ).toEqual({ error: "STALE_DAG" });
+      expect(
+        (await put({ expected_version: graph.version, title: graph.title })).json<WorkDag>().version
+      ).toBe(graph.version);
+      graph = f.dag.control(graph.id, owner, { version: graph.version, action: "stop_plan" });
+      graph = f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: true });
+      expect(
+        (await put({ expected_version: graph.version, title: "Archived overwrite" })).json()
+      ).toEqual({ error: "PLAN_ARCHIVED" });
+      expect(f.calls).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
+  });
+  it("archives completed results, preserves snapshots and provenance, restores without spending", async () => {
+    const f = await fixture();
+    let graph = f.create();
+    graph = await f.execute(graph, "brief");
+    const original = f.dag.results(graph.id, owner);
+    const snapshot = f.store.skills.forPlan(graph.id, owner);
+    const beforeCalls = f.calls.length;
+    graph = f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: true });
+    expect(graph.archived_at).toEqual(expect.any(String));
+    expect(f.store.dag.active().map((g) => g.id)).not.toContain(graph.id);
+    expect(f.dag.list(f.project.id, owner)).toHaveLength(1);
+    expect(f.dag.results(graph.id, owner)).toEqual(original);
+    expect(f.store.skills.forPlan(graph.id, owner)).toEqual(snapshot);
+    expect(f.dag.package(graph.id, owner, f.project.id)).not.toHaveProperty("archived_at");
+    const version = graph.version;
+    f.dag.reconcileAll();
+    f.dag.recoverAutomation();
+    f.dag.advance();
+    expect(f.dag.get(graph.id, owner)?.version).toBe(version);
+    expect(f.calls).toHaveLength(beforeCalls);
+    for (const action of [
+      "run",
+      "retry",
+      "pause",
+      "resume",
+      "cancel",
+      "run_plan",
+      "approve_step"
+    ] as const)
+      expect(() =>
+        f.dag.control(graph.id, owner, { version, action, node_id: "document" })
+      ).toThrow("PLAN_ARCHIVED");
+    expect(() => f.dag.edit(graph.id, owner, version, nodes)).toThrow("PLAN_ARCHIVED");
+    const copy = f.dag.clone(f.project.id, graph.id, owner, owner, {
+      client_request_id: "archived-copy",
+      expected_version: version,
+      title: "Copy",
+      skills: "source"
+    });
+    expect(copy.archived_at).toBeUndefined();
+    expect(copy.nodes.every((n) => !n.attempts.length)).toBe(true);
+    graph = f.dag.archive(graph.id, owner, { expected_version: version, archived: false });
+    expect(graph.archived_at).toBeUndefined();
+    f.dag.advance();
+    expect(f.calls).toHaveLength(beforeCalls);
+    expect(f.dag.results(graph.id, owner)).toEqual(original);
+    expect(graph.nodes[1]?.status).toBe("pending");
+  });
+  it("rejects armed automation and unfinished children even when paused", async () => {
+    const f = await fixture();
+    let graph = f.create();
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "run_plan",
+      acknowledge_cost: true,
+      max_model_requests: 9
+    });
+    expect(() =>
+      f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: true })
+    ).toThrow("AUTO_PLAN_ACTIVE");
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "stop_plan" });
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "run",
+      node_id: "brief"
+    });
+    expect(() =>
+      f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: true })
+    ).toThrow("PLAN_HAS_UNFINISHED_WORK");
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "pause" });
+    expect(() =>
+      f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: true })
+    ).toThrow("PLAN_HAS_UNFINISHED_WORK");
+    expect(f.store.dag.get(graph.id, owner)?.archived_at).toBeUndefined();
+    expect(f.calls).toHaveLength(0);
+  });
+  it("keeps archived plans frozen across project controls and restores the current project mode without rearming", async () => {
+    const f = await fixture();
+    let graph = f.create();
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "run_plan",
+      acknowledge_cost: true,
+      max_model_requests: 9
+    });
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "pause" });
+    graph = f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: true });
+    const frozen = structuredClone(graph);
+    let other = f.dag.create(f.project.id, owner, owner, {
+      client_request_id: "other",
+      title: "Other",
+      nodes
+    });
+    other = f.dag.control(other.id, owner, { version: other.version, action: "resume" });
+    f.dag.advance();
+    expect(f.dag.get(graph.id, owner)).toEqual(frozen);
+    graph = f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: false });
+    expect(graph.mode).toBe("active");
+    expect(graph.execution).toMatchObject({ status: "stopped", reason: "RESTORED_REQUIRES_START" });
+    f.dag.advance();
+    expect(f.store.list(f.project.id, owner)).toEqual([]);
+    graph = f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: true });
+    f.dag.control(other.id, owner, { version: other.version, action: "cancel" });
+    graph = f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: false });
+    expect(graph.mode).toBe("cancelled");
+    expect(graph.nodes.every((n) => n.status === "cancelled")).toBe(true);
+    expect(f.calls).toHaveLength(0);
+  });
+  it("checks archive scope, strict payloads, stale versions and owner fences through HTTP", async () => {
+    const f = await fixture();
+    const graph = f.create();
+    const app = buildApp({
+      config: f.config,
+      database: f.db,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const url = `/api/v1/projects/${f.project.id}/work-dags/${graph.id}/archive`;
+      const put = (payload: unknown, path = url) =>
+        app.inject({ method: "PUT", url: path, payload: payload as Record<string, unknown> });
+      expect(
+        (await put({ expected_version: graph.version, archived: true, mode: "active" })).statusCode
+      ).toBe(400);
+      expect((await put({ expected_version: graph.version, archived: "true" })).statusCode).toBe(
+        400
+      );
+      const foreign = f.projects.createProject("Foreign", "foreign", "foreign-owner").project;
+      expect(
+        (
+          await put(
+            { expected_version: graph.version, archived: true },
+            url.replace(f.project.id, foreign.id)
+          )
+        ).statusCode
+      ).toBe(404);
+      expect(() =>
+        f.dag.archive(graph.id, "foreign-owner", { expected_version: 1, archived: true })
+      ).toThrow("DAG_NOT_FOUND");
+      const archived = await put({ expected_version: graph.version, archived: true });
+      expect(archived.statusCode).toBe(200);
+      const version = archived.json<WorkDag>().version;
+      expect((await put({ expected_version: graph.version, archived: false })).json()).toEqual({
+        error: "STALE_DAG"
+      });
+      expect(
+        (await put({ expected_version: version, archived: true })).json<WorkDag>().version
+      ).toBe(version);
+      f.db.sqlite
+        .prepare(
+          "INSERT INTO work_owner_fences(owner_id, epoch, fenced) VALUES (?, 1, 1) ON CONFLICT(owner_id) DO UPDATE SET fenced=1"
+        )
+        .run(owner);
+      expect((await put({ expected_version: version, archived: false })).statusCode).toBe(409);
+      expect(f.store.dag.get(graph.id, owner)?.archived_at).toBeDefined();
+      expect(f.calls).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
+  });
+  it("persists archive on reopen and rolls back the transition if the checkpoint fails", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "dag-archive-"));
+    cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
+    const path = join(directory, "archive.db");
+    const f = await fixture({ path });
+    let graph = f.create();
+    f.db.sqlite.exec(
+      "CREATE TRIGGER reject_archive_checkpoint BEFORE INSERT ON work_dag_checkpoints BEGIN SELECT RAISE(ABORT, 'fixture_checkpoint_failure'); END"
+    );
+    expect(() =>
+      f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: true })
+    ).toThrow("fixture_checkpoint_failure");
+    expect(f.store.dag.get(graph.id, owner)?.archived_at).toBeUndefined();
+    expect(f.store.dag.get(graph.id, owner)?.version).toBe(graph.version);
+    f.db.sqlite.exec("DROP TRIGGER reject_archive_checkpoint");
+    graph = f.dag.archive(graph.id, owner, { expected_version: graph.version, archived: true });
+    f.close();
+    const reopened = openDatabase(path);
+    cleanups.push(() => reopened.close());
+    await runMigrations(reopened);
+    const store = new ManagerWorkStore(reopened.sqlite);
+    expect(store.dag.get(graph.id, owner)).toEqual(graph);
+    expect(store.dag.active()).toEqual([]);
+    expect(store.dag.checkpoints(graph.id, owner)[0]?.version).toBe(graph.version);
+  });
   it("pins Skills once for the plan, all stages and explicit retries despite catalog deletion and a new project selection", async () => {
     let fail = true;
     const f = await fixture({

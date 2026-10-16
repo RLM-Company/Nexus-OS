@@ -13,7 +13,8 @@ The AI executor does not execute arbitrary code or external actions.
   server-side streaming, cancellation and restart recovery;
 - Manager work panel with plan, file drafts, optional Critic review, owner controls and saved task
   history with downloads from earlier completed tasks; dependency plans support sequential execution,
-  independent copies and reviewed portable JSON import/export;
+  independent copies across owned projects, reviewed portable JSON import/export, search, renaming
+  and reversible archival retaining results and accepted instructions;
 - server-persisted project instructions and text/code/PDF/DOCX materials, optimistic version checks
   and a material snapshot taken when each message or Manager work item is accepted;
 - chat text/code/PDF/DOCX attachments and PNG/JPEG multimodal payloads, safe Markdown/code downloads,

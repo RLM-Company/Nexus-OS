@@ -57,6 +57,10 @@ const reasons: Record<string, string> = {
   STOPPED_BY_OWNER: "Автозапуск остановлен; сохранённые результаты доступны",
   RESTART_REQUIRES_RESUME: "Сервер перезапустился. Для новых шагов подтвердите продолжение",
   EMERGENCY_STOP: "Работа остановлена аварийным выключателем",
+  PLAN_ARCHIVED: "План в архиве. Восстановите его перед изменением или запуском",
+  PLAN_HAS_UNFINISHED_WORK:
+    "Сначала завершите или отмените начатые шаги, включая ожидающие подтверждения",
+  RESTORED_REQUIRES_START: "План восстановлен. Запуск выполняется отдельно",
   RESULTS_LIMIT: "Результаты слишком велики для общего пакета; скачайте файлы по отдельности"
 };
 export function workDagReason(reason: string | null, graph: WorkDag): string {
@@ -93,6 +97,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   const gate = useExecutionGate(projectId);
   const [graphs, setGraphs] = useState<WorkDag[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [collection, setCollection] = useState<"active" | "archived">("active");
+  const [search, setSearch] = useState("");
+  const [rename, setRename] = useState<{ id: string; version: number; title: string } | null>(null);
   const [editor, setEditor] = useState<{
     graphId: string | null;
     version: number;
@@ -105,8 +112,14 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     sourceVersion: number;
     title: string;
     skills: "source" | "project";
+    targetProjectId: string;
     requestId: string;
   } | null>(null);
+  const [copyProjects, setCopyProjects] = useState<{ id: string; title: string; status: string }[]>(
+    []
+  );
+  const [copyProjectsError, setCopyProjectsError] = useState("");
+  const [copiedElsewhere, setCopiedElsewhere] = useState<WorkDag | null>(null);
   const [importDraft, setImportDraft] = useState<{
     package: WorkPlanPackage;
     requestId: string;
@@ -123,7 +136,21 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   const [checkpoints, setCheckpoints] = useState<{ version: number; at: string }[]>([]);
   const lock = useRef(false),
     epoch = useRef(0);
-  const graph = graphs.find((g) => g.id === selected) ?? graphs[0] ?? null;
+  const visibleGraphs = graphs.filter(
+    (g) =>
+      Boolean(g.archived_at) === (collection === "archived") &&
+      [g.title, ...g.nodes.flatMap((n) => [n.title, n.goal])].some((text) =>
+        text.toLocaleLowerCase("ru-RU").includes(search.trim().toLocaleLowerCase("ru-RU"))
+      )
+  );
+  const graph = visibleGraphs.find((g) => g.id === selected) ?? visibleGraphs[0] ?? null;
+  const browsingLocked =
+    busy ||
+    Boolean(editor) ||
+    Boolean(copy) ||
+    Boolean(importDraft) ||
+    Boolean(rename) ||
+    readingImport;
   const automatic = graph?.execution && ["running", "waiting"].includes(graph.execution.status);
   const totalLimit =
     requestLimit ??
@@ -137,6 +164,12 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             3
       )
     );
+  useEffect(() => {
+    setRetry(null);
+    setAcknowledged(false);
+    setAutoConfirmed(false);
+    setRequestLimit(null);
+  }, [graph?.id]);
   async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await fetch(url, {
       ...init,
@@ -152,14 +185,68 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     return response.json() as Promise<T>;
   }
   useEffect(() => {
+    setSelected(new URLSearchParams(window.location.search).get("plan"));
+  }, [projectId]);
+  const copySource = copy?.sourceId;
+  useEffect(() => {
+    if (!copySource) return;
+    const controller = new AbortController();
+    setCopyProjects([]);
+    setCopyProjectsError("");
+    void request<{ items: { id: string; title: string; status: string }[] }>("/api/v1/projects", {
+      signal: controller.signal
+    })
+      .then((data) => {
+        if (!controller.signal.aborted)
+          setCopyProjects(data.items.filter((p) => p.status === "ACTIVE"));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setCopyProjectsError(
+            "Не удалось загрузить другие проекты. Можно сохранить копию в текущем проекте или открыть форму заново."
+          );
+      });
+    return () => controller.abort();
+  }, [copySource]);
+  function acceptSaved(result: WorkDag) {
+    if (result.project_id === projectId) {
+      setGraphs((current) => [result, ...current.filter((g) => g.id !== result.id)]);
+      setSelected(result.id);
+      setCollection(result.archived_at ? "archived" : "active");
+      setSearch("");
+    } else {
+      setCopiedElsewhere(result);
+    }
+    setEditor(null);
+    setRename(null);
+    setCopy(null);
+    setImportDraft(null);
+    setRetry(null);
+    setAcknowledged(false);
+    setAutoConfirmed(false);
+    setRequestLimit(null);
+  }
+  useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
+    let linkedPlan = new URLSearchParams(window.location.search).get("plan");
     async function refresh() {
       const before = epoch.current;
       try {
         const data = await request<{ items: WorkDag[] }>(base, { signal: controller.signal });
-        if (!controller.signal.aborted && before === epoch.current && !lock.current)
+        if (!controller.signal.aborted && before === epoch.current && !lock.current) {
           setGraphs(data.items);
+          if (linkedPlan) {
+            const linked = data.items.find((item) => item.id === linkedPlan);
+            if (linked) {
+              setSelected(linked.id);
+              setCollection(linked.archived_at ? "archived" : "active");
+            } else {
+              setError("План из ссылки не найден в этом проекте");
+            }
+            linkedPlan = null;
+          }
+        }
       } catch {
         if (!controller.signal.aborted)
           setError("Не удалось обновить план. Состояние сохранено на сервере");
@@ -195,22 +282,49 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     epoch.current++;
     setBusy(true);
     setError("");
+    setCopiedElsewhere(null);
     try {
       const result = await request<WorkDag>(url, {
         method,
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      setGraphs((current) => [result, ...current.filter((g) => g.id !== result.id)]);
-      setSelected(result.id);
-      setEditor(null);
-      setCopy(null);
-      setImportDraft(null);
-      setRetry(null);
-      setAcknowledged(false);
-      setAutoConfirmed(false);
+      acceptSaved(result);
     } catch (e) {
       // Lost acknowledgement: read canonical state, never repeat the command.
+      if (method === "PUT" && url.endsWith("/title")) {
+        try {
+          const expected = body as { expected_version: number; title: string };
+          const latest = await request<WorkDag>(url.slice(0, -"/title".length));
+          setGraphs((current) => [latest, ...current.filter((g) => g.id !== latest.id)]);
+          if (latest.version >= expected.expected_version && latest.title === expected.title) {
+            acceptSaved(latest);
+            return;
+          }
+        } catch {
+          /* Retain the draft; never repeat a write automatically. */
+        }
+      }
+      if (method === "PUT" && url.endsWith("/archive")) {
+        try {
+          const expected = body as { expected_version: number; archived: boolean };
+          const latest = await request<WorkDag>(url.slice(0, -"/archive".length));
+          setGraphs((current) => [latest, ...current.filter((g) => g.id !== latest.id)]);
+          if (
+            latest.version > expected.expected_version &&
+            Boolean(latest.archived_at) === expected.archived
+          ) {
+            setSelected(latest.id);
+            setCollection(latest.archived_at ? "archived" : "active");
+            setSearch("");
+            setRetry(null);
+            setAutoConfirmed(false);
+            return;
+          }
+        } catch {
+          /* Read-only polling can still recover the canonical state. */
+        }
+      }
       if (method === "POST" && url.endsWith("/clone")) {
         try {
           const data = body as {
@@ -218,19 +332,23 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             expected_version: number;
             title: string;
             skills: "source" | "project";
+            target_project_id?: string;
           };
-          const latest = await request<{ items: WorkDag[] }>(base);
+          const targetBase =
+            "/api/v1/projects/" +
+            encodeURIComponent(data.target_project_id ?? projectId) +
+            "/work-dags";
+          const latest = await request<{ items: WorkDag[] }>(targetBase);
           const found = latest.items.find(
             (g) =>
               g.client_request_id === data.client_request_id &&
               g.title === data.title &&
+              g.copied_from?.graph_id === url.slice(base.length + 1, -"/clone".length) &&
               g.copied_from?.version === data.expected_version &&
               g.copied_from.skills === data.skills
           );
           if (found) {
-            setGraphs(latest.items);
-            setSelected(found.id);
-            setCopy(null);
+            acceptSaved(found);
             setError("");
             return;
           }
@@ -246,6 +364,8 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           if (found) {
             setGraphs(latest.items);
             setSelected(found.id);
+            setCollection("active");
+            setSearch("");
             setImportDraft(null);
             setError("");
             return;
@@ -304,6 +424,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   function act(action: WorkDagControl["action"], nodeId?: string) {
     if (
       !graph ||
+      graph.archived_at ||
       (["run", "retry", "resume", "resume_step", "approve_step", "run_plan"].includes(action) &&
         gate !== "clear")
     )
@@ -336,15 +457,14 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         {graph && (
           <button
             type="button"
-            disabled={
-              busy || Boolean(editor) || Boolean(copy) || Boolean(importDraft) || readingImport
-            }
+            disabled={browsingLocked}
             onClick={() =>
               setCopy({
                 sourceId: graph.id,
                 sourceVersion: graph.version,
                 title: (graph.title + " — копия").slice(0, 160),
                 skills: "source",
+                targetProjectId: projectId,
                 requestId: crypto.randomUUID()
               })
             }
@@ -353,9 +473,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </button>
         )}
         <button
-          disabled={
-            busy || Boolean(editor) || Boolean(copy) || Boolean(importDraft) || readingImport
-          }
+          disabled={browsingLocked}
           onClick={() =>
             setEditor({
               graphId: null,
@@ -371,9 +489,8 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         {graph && (
           <button
             disabled={
-              busy ||
-              Boolean(editor) ||
-              Boolean(copy) ||
+              browsingLocked ||
+              Boolean(graph.archived_at) ||
               graph.mode === "cancelled" ||
               Boolean(automatic)
             }
@@ -392,28 +509,66 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         )}
       </div>
       {graphs.length > 0 && (
-        <label>
-          Сохранённые планы
-          <select
-            value={graph?.id ?? ""}
-            disabled={
-              busy || Boolean(editor) || Boolean(copy) || Boolean(importDraft) || readingImport
-            }
-            onChange={(e) => {
-              setSelected(e.target.value);
-              setRetry(null);
-              setAcknowledged(false);
-              setAutoConfirmed(false);
-              setRequestLimit(null);
-            }}
-          >
-            {graphs.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.title}
+        <>
+          <label>
+            Раздел планов
+            <select
+              value={collection}
+              disabled={browsingLocked}
+              onChange={(e) => {
+                setCollection(e.target.value as "active" | "archived");
+                setSelected(null);
+                setRetry(null);
+                setAutoConfirmed(false);
+                setRequestLimit(null);
+              }}
+            >
+              <option value="active">
+                Текущие ({graphs.filter((g) => !g.archived_at).length})
               </option>
-            ))}
-          </select>
-        </label>
+              <option value="archived">Архив ({graphs.filter((g) => g.archived_at).length})</option>
+            </select>
+          </label>
+          <label>
+            Поиск планов
+            <input
+              type="search"
+              value={search}
+              disabled={browsingLocked}
+              placeholder="Название или текст задачи"
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setRetry(null);
+                setAutoConfirmed(false);
+                setRequestLimit(null);
+              }}
+            />
+          </label>
+          {visibleGraphs.length === 0 ? (
+            <p role="status">В этом разделе подходящих планов нет.</p>
+          ) : (
+            <label>
+              Сохранённые планы
+              <select
+                value={graph?.id ?? ""}
+                disabled={browsingLocked}
+                onChange={(e) => {
+                  setSelected(e.target.value);
+                  setRetry(null);
+                  setAcknowledged(false);
+                  setAutoConfirmed(false);
+                  setRequestLimit(null);
+                }}
+              >
+                {visibleGraphs.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </>
       )}
       <details>
         <summary>Перенос плана через JSON</summary>
@@ -427,7 +582,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             aria-label="JSON плана"
             type="file"
             accept=".json,application/json"
-            disabled={busy || Boolean(editor) || Boolean(copy) || readingImport}
+            disabled={busy || Boolean(editor) || Boolean(copy) || Boolean(rename) || readingImport}
             onChange={(e) => {
               const file = e.currentTarget.files?.[0];
               e.currentTarget.value = "";
@@ -487,6 +642,21 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           {error}
         </p>
       )}
+      {copiedElsewhere && (
+        <p role="status">
+          Копия «{copiedElsewhere.title}» сохранена в другом проекте.{" "}
+          <a
+            href={
+              "/?project=" +
+              encodeURIComponent(copiedElsewhere.project_id) +
+              "&view=plan&plan=" +
+              encodeURIComponent(copiedElsewhere.id)
+            }
+          >
+            Открыть сохранённую копию
+          </a>
+        </p>
+      )}
       {copy && (
         <form
           aria-label="Копия плана"
@@ -496,7 +666,8 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
               client_request_id: copy.requestId,
               expected_version: copy.sourceVersion,
               title: copy.title,
-              skills: copy.skills
+              skills: copy.skills,
+              target_project_id: copy.targetProjectId
             });
           }}
         >
@@ -516,6 +687,25 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             />
           </label>
           <label>
+            Проект для копии
+            <select
+              aria-label="Проект для копии"
+              value={copy.targetProjectId}
+              disabled={busy}
+              onChange={(e) => setCopy({ ...copy, targetProjectId: e.target.value })}
+            >
+              <option value={projectId}>Текущий проект</option>
+              {copyProjects
+                .filter((p) => p.id !== projectId)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+            </select>
+          </label>
+          {copyProjectsError && <p role="status">{copyProjectsError}</p>}
+          <label>
             Инструкции для копии
             <select
               aria-label="Инструкции для копии"
@@ -524,12 +714,13 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
               onChange={(e) => setCopy({ ...copy, skills: e.target.value as "source" | "project" })}
             >
               <option value="source">Сохранённый снимок Skills исходного плана</option>
-              <option value="project">Текущий сохранённый выбор Skills Work проекта</option>
+              <option value="project">Сохранённый выбор Skills Work целевого проекта</option>
             </select>
           </label>
           <p>
             Исходный снимок может содержать текст удалённых Skills. Для текущего набора инструкций
-            выберите настройки проекта.
+            выберите настройки целевого проекта. Материалы проекта будут взяты при запуске каждого
+            шага в целевом проекте.
           </p>
           <button type="submit" disabled={busy || !copy.title.trim()}>
             Сохранить копию
@@ -656,9 +847,83 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </div>
         </form>
       )}
+      {rename && (
+        <form
+          aria-label="Переименование плана"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (rename.title.trim())
+              void mutate(base + "/" + rename.id + "/title", "PUT", {
+                expected_version: rename.version,
+                title: rename.title.trim()
+              });
+          }}
+        >
+          <label>
+            Новое название плана
+            <input
+              required
+              maxLength={160}
+              value={rename.title}
+              disabled={busy}
+              onChange={(e) => setRename({ ...rename, title: e.target.value })}
+            />
+          </label>
+          <button type="submit" disabled={busy || !rename.title.trim()}>
+            Сохранить название
+          </button>
+          <button type="button" disabled={busy} onClick={() => setRename(null)}>
+            Отмена переименования
+          </button>
+        </form>
+      )}
       {graph && (
         <>
           <h4>{graph.title}</h4>
+          {!graph.archived_at && (
+            <button
+              type="button"
+              disabled={browsingLocked}
+              onClick={() =>
+                setRename({ id: graph.id, version: graph.version, title: graph.title })
+              }
+            >
+              Переименовать план
+            </button>
+          )}
+
+          {graph.archived_at && (
+            <p role="status">
+              В архиве с {new Date(graph.archived_at).toLocaleString("ru-RU")}. Файлы и история
+              сохранены. Для запуска восстановите план.
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={
+              browsingLocked ||
+              (!graph.archived_at &&
+                (Boolean(automatic) ||
+                  graph.nodes.some(
+                    (n) =>
+                      n.attempts.length && !["completed", "failed", "cancelled"].includes(n.status)
+                  )))
+            }
+            onClick={() =>
+              void mutate(base + "/" + graph.id + "/archive", "PUT", {
+                expected_version: graph.version,
+                archived: !graph.archived_at
+              })
+            }
+          >
+            {graph.archived_at ? "Восстановить план" : "В архив"}
+          </button>
+          {!graph.archived_at && (
+            <p>
+              Архив сохраняет результаты и историю. Начатые шаги должны быть завершены или отменены,
+              автозапуск — остановлен.
+            </p>
+          )}
           <a
             href={base + "/" + encodeURIComponent(graph.id) + "/package"}
             download="work-plan.json"
@@ -679,6 +944,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             label="Skills этого плана"
           />
           <p>
+            {graph.archived_at ? "Состояние при архивировании: " : ""}
             {graph.mode === "active"
               ? "Проект активен"
               : graph.mode === "paused"
@@ -713,6 +979,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
               предыдущие попытки.
             </p>
             {!automatic &&
+              !graph.archived_at &&
               graph.mode === "active" &&
               graph.nodes.some((node) => !["completed", "cancelled"].includes(node.status)) && (
                 <>
@@ -780,17 +1047,17 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             )}
           </div>
           <div className={styles.actions}>
-            {graph.mode === "active" && (
+            {!graph.archived_at && graph.mode === "active" && (
               <button disabled={busy} onClick={() => act("pause")}>
                 Приостановить проект
               </button>
             )}
-            {graph.mode === "paused" && (
+            {!graph.archived_at && graph.mode === "paused" && (
               <button disabled={busy || gate !== "clear"} onClick={() => act("resume")}>
                 Продолжить проект
               </button>
             )}
-            {graph.mode !== "cancelled" && (
+            {!graph.archived_at && graph.mode !== "cancelled" && (
               <button disabled={busy} onClick={() => act("cancel")}>
                 Отменить работы проекта
               </button>
@@ -834,7 +1101,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                   </p>
                 )}
                 <div className={styles.actions}>
-                  {node.status === "pending" && (
+                  {!graph.archived_at && node.status === "pending" && (
                     <button
                       disabled={
                         busy || graph.mode !== "active" || gate !== "clear" || Boolean(automatic)
@@ -844,15 +1111,18 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                       Запустить шаг
                     </button>
                   )}
-                  {node.status === "blocked" && node.blocked_reason === "AWAITING_APPROVAL" && (
-                    <button
-                      disabled={busy || graph.mode !== "active" || gate !== "clear"}
-                      onClick={() => act("approve_step", node.id)}
-                    >
-                      Подтвердить план Manager
-                    </button>
-                  )}
-                  {node.status === "blocked" &&
+                  {!graph.archived_at &&
+                    node.status === "blocked" &&
+                    node.blocked_reason === "AWAITING_APPROVAL" && (
+                      <button
+                        disabled={busy || graph.mode !== "active" || gate !== "clear"}
+                        onClick={() => act("approve_step", node.id)}
+                      >
+                        Подтвердить план Manager
+                      </button>
+                    )}
+                  {!graph.archived_at &&
+                    node.status === "blocked" &&
                     ["PAUSED", "DENIED", "WAITING_CONFIRMATION"].includes(
                       node.blocked_reason ?? ""
                     ) && (
@@ -863,7 +1133,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                         Продолжить шаг
                       </button>
                     )}
-                  {node.status === "failed" && (
+                  {!graph.archived_at && node.status === "failed" && (
                     <button
                       disabled={busy || graph.mode !== "active" || gate !== "clear"}
                       onClick={() => {

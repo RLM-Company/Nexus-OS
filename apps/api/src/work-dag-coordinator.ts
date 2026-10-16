@@ -7,6 +7,8 @@ import {
   type WorkDagCreate,
   type WorkDagNodeInput,
   type WorkDagClone,
+  type WorkDagArchive,
+  type WorkDagRename,
   type WorkPlanImport
 } from "@cosmora/contracts";
 import { projectDagStatuses, validateWorkDag } from "@cosmora/core";
@@ -144,7 +146,7 @@ export class WorkDagCoordinator {
     }
   }
   private reconcile(graph: WorkDag): WorkDag {
-    if (!this.works.ownerWritable(graph.owner_id)) return graph;
+    if (graph.archived_at || !this.works.ownerWritable(graph.owner_id)) return graph;
     const next = structuredClone(graph);
     const ids = new Set(next.nodes.flatMap((node) => node.attempts.map((a) => a.work_id)));
     next.usage = { model_requests: 0, reserved_input_tokens: 0, reserved_output_tokens: 0 };
@@ -262,11 +264,49 @@ export class WorkDagCoordinator {
       throw new WorkDagConflict("RESULTS_LIMIT");
     return bundle;
   }
-  private current(id: string, owner: string, version: number): WorkDag {
+  rename(id: string, owner: string, input: WorkDagRename): WorkDag {
+    const graph = this.current(id, owner, input.expected_version);
+    if (graph.title === input.title) return graph;
+    graph.title = input.title;
+    return this.works.dag.save(graph, "Название плана изменено");
+  }
+  archive(id: string, owner: string, input: WorkDagArchive): WorkDag {
+    const graph = this.current(id, owner, input.expected_version, true);
+    if (Boolean(graph.archived_at) === input.archived) return graph;
+    if (input.archived) {
+      if (graph.execution && ["running", "waiting"].includes(graph.execution.status))
+        throw new WorkDagConflict("AUTO_PLAN_ACTIVE");
+      // Check canonical child records, including older attempts. A paused or
+      // awaiting-approval child is still resumable and cannot be hidden away.
+      for (const attempt of graph.nodes.flatMap((n) => n.attempts)) {
+        const child = this.works.get(attempt.work_id, owner);
+        if (
+          !child ||
+          !["completed", "failed", "cancelled"].includes(child.status) ||
+          child.inflight_run_id
+        )
+          throw new WorkDagConflict("PLAN_HAS_UNFINISHED_WORK");
+      }
+      graph.archived_at = new Date().toISOString();
+    } else {
+      delete graph.archived_at;
+      graph.mode = this.works.dag.projectMode(graph.project_id, owner);
+    }
+    if (graph.execution && graph.execution.status !== "completed") {
+      graph.execution.status = "stopped";
+      graph.execution.reason = input.archived ? "PLAN_ARCHIVED" : "RESTORED_REQUIRES_START";
+    }
+    return this.works.dag.save(
+      projectDagStatuses(graph),
+      input.archived ? "План перемещён в архив" : "План восстановлен; запуск выполняется отдельно"
+    );
+  }
+  private current(id: string, owner: string, version: number, allowArchived = false): WorkDag {
     this.works.assertWritable(owner);
     const graph = this.works.dag.get(id, owner);
     if (!graph) throw new WorkDagConflict("DAG_NOT_FOUND");
     if (graph.version !== version) throw new WorkDagConflict("STALE_DAG");
+    if (graph.archived_at && !allowArchived) throw new WorkDagConflict("PLAN_ARCHIVED");
     return this.reconcile(graph);
   }
   edit(id: string, owner: string, version: number, nodes: WorkDagNodeInput[]): WorkDag {
@@ -362,6 +402,7 @@ export class WorkDagCoordinator {
           );
       }
       for (const other of this.works.dag.list(graph.project_id, owner)) {
+        if (other.archived_at) continue;
         other.mode = mode;
         if (other.execution) {
           if (mode === "cancelled") {
