@@ -1,5 +1,11 @@
 import { loadServerConfig } from "@cosmora/config";
-import { EmergencyStopStore, openDatabase, ProjectStore, runMigrations } from "@cosmora/db";
+import {
+  OwnerSkillStore,
+  EmergencyStopStore,
+  openDatabase,
+  ProjectStore,
+  runMigrations
+} from "@cosmora/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { GeneralChatBackgroundRunCoordinator } from "../src/general-chat-background-run-coordinator.js";
@@ -48,6 +54,39 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
   afterEach(async () => {
     await coordinator.stop();
     database.close();
+  });
+
+  it("dispatches only the accepted Skill snapshot after catalog mutation, without an observer", async () => {
+    const first = store.createChat("Начало", "skills-background-seed");
+    store.cancelRun(first.run.id);
+    const skills = new OwnerSkillStore(database.sqlite);
+    const skill = skills.create("local-owner", {
+      name: "Brief",
+      summary: "Кратко",
+      instructions: "PINNED_SKILL_V1"
+    });
+    store.skills.update(first.chat.id, "local-owner", 0, [{ skill_id: skill.id, version: 1 }]);
+    const spy = vi.spyOn(runtime.gateway, "stream");
+    const next = store.createMessage(first.chat.id, "Продолжение", "skills-background-next")!;
+    skills.update("local-owner", skill.id, 1, {
+      name: "Brief",
+      summary: "Кратко",
+      instructions: "DO_NOT_USE_V2"
+    });
+    skills.delete("local-owner", skill.id, 2);
+    await vi.waitFor(() => expect(store.getRun(next.run.id)?.status).toBe("succeeded"), {
+      timeout: 3000
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const request = spy.mock.calls[0]![0];
+    expect(request.messages.findLast((message) => message.role === "user")?.content).toContain(
+      "PINNED_SKILL_V1"
+    );
+    expect(request.messages.some((message) => message.content.includes("DO_NOT_USE_V2"))).toBe(
+      false
+    );
+    expect(request.messages[0]?.content).not.toContain("PINNED_SKILL_V1");
+    expect(store.skills.get(first.chat.id, "local-owner").items).toEqual([]);
   });
 
   it("uses persisted chat memory when dispatching without an SSE observer", async () => {

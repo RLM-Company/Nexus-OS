@@ -1,3 +1,4 @@
+import { ChatSkillStore } from "./chat-skill-store.js";
 import { ChatWorkspaceStore } from "./chat-workspace-store.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
@@ -128,10 +129,12 @@ const USAGE_COLUMNS = `usage_id, run_id, chat_id, attempt, status, registry_vers
 export class GeneralChatStore {
   readonly #sqlite: DatabaseSync;
   readonly workspace: ChatWorkspaceStore;
+  readonly skills: ChatSkillStore;
 
   constructor(sqlite: DatabaseSync) {
     this.#sqlite = sqlite;
     this.workspace = new ChatWorkspaceStore(sqlite);
+    this.skills = new ChatSkillStore(sqlite);
   }
 
   listChats(
@@ -410,6 +413,7 @@ export class GeneralChatStore {
           message.updated_at
         );
       this.workspace.copySelection(chatId, input.client_branch_id, ownerId, copiedIds);
+      this.skills.copy(chatId, input.client_branch_id, ownerId);
       const memory = this.getChatMemory(chatId, ownerId);
       if (memory?.memory_notes)
         this.#sqlite
@@ -575,6 +579,7 @@ export class GeneralChatStore {
         createdAt,
         createdAt
       );
+    this.skills.snapshotRun(runId, chatId, ownerId);
     const chat = this.getChat(chatId, ownerId);
     const userMessage = this.#sqlite
       .prepare(`SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE id = ?`)
