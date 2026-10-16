@@ -9,6 +9,7 @@ import type {
   WorkIntelligenceGraphAdapter
 } from "@cosmora/contracts";
 import {
+  OwnerSkillStore,
   EmergencyStopStore,
   ManagerWorkStore,
   openDatabase,
@@ -154,6 +155,29 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("accounts accepted Skill text before dispatch and refuses input that exceeds the existing task ceiling", async () => {
+    const f = await fixture();
+    const skill = new OwnerSkillStore(f.database.sqlite).create("local-owner", {
+      name: "Detailed",
+      summary: "Long context",
+      instructions: "x".repeat(6500)
+    });
+    f.store.skills.update(f.project.id, "local-owner", 0, [{ skill_id: skill.id, version: 1 }]);
+    const limited = f.store.create(f.project.id, "local-owner", "local-owner", {
+      ...request,
+      client_request_id: "skill-budget",
+      max_input_tokens: 1000
+    })!;
+    await f.coordinator.execute(limited.id, "local-owner");
+    expect(f.store.get(limited.id, "local-owner")).toMatchObject({
+      status: "failed",
+      error_code: "EXECUTION_BUDGET_EXCEEDED",
+      model_requests: 0
+    });
+    expect(f.calls).toEqual([]);
+    expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(0);
+  });
+
   it("applies the real owner account ceiling to Work and deduplicates its canonical project usage", async () => {
     const limited = await fixture();
     limited.accountStore.update("local-owner", {
