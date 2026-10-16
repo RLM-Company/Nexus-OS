@@ -10,7 +10,7 @@ const slide: Slide = {
   title: "Проект & план",
   body: "Отчёт <2026>",
   aside: "",
-  notes: "Скрытая заметка"
+  notes: "Скрытая заметка & <пример>\nСледующая строка"
 };
 describe("editable PPTX export", () => {
   it("packages slides, relationships, escaped text and the selected theme", () => {
@@ -39,6 +39,18 @@ describe("editable PPTX export", () => {
     expect(content("ppt/slides/slide2.xml")).toContain("Справа");
     expect(content("ppt/slides/slide1.xml")).toContain('val="E9E9E9"');
     expect(content("ppt/slides/slide1.xml")).not.toContain("Скрытая заметка");
+    expect(content("ppt/notesSlides/notesSlide1.xml")).toContain(
+      "Скрытая заметка &amp; &lt;пример&gt;"
+    );
+    expect(content("ppt/notesSlides/notesSlide1.xml")).toContain("Следующая строка");
+    expect(content("ppt/notesSlides/_rels/notesSlide1.xml.rels")).toContain(
+      'Target="../slides/slide1.xml"'
+    );
+    expect(content("ppt/slides/_rels/slide2.xml.rels")).toContain(
+      'Target="../notesSlides/notesSlide2.xml"'
+    );
+    expect(content("ppt/_rels/presentation.xml.rels")).toContain("notesMasters/notesMaster1.xml");
+    expect(content("[Content_Types].xml")).toContain("presentationml.notesSlide+xml");
   });
   it("blocks text that cannot fit on the slide", () => {
     const overflowing = { ...slide, body: "Длинный текст ".repeat(100) };
@@ -46,5 +58,10 @@ describe("editable PPTX export", () => {
     expect(() => createPptx({ title: "Демо", theme: "paper", slides: [overflowing] })).toThrow(
       "OVERFLOW:1"
     );
+  });
+  it("refuses control characters that would make OOXML unreadable", () => {
+    expect(() =>
+      createPptx({ title: "Демо", theme: "paper", slides: [{ ...slide, notes: "bad\u0001xml" }] })
+    ).toThrow("символ");
   });
 });
