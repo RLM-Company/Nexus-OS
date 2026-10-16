@@ -13,6 +13,8 @@ import {
 import styles from "./canvas-editor.module.css";
 import { canvasDraftKey, parseCanvasDraft, type CanvasDraft } from "./canvas-draft-storage";
 import { CanvasPreview } from "./canvas-preview";
+import { CanvasComparison, type CanvasComparisonSide } from "./canvas-comparison";
+import { CANVAS_FILE_ACCEPT, canvasFileDraft } from "./canvas-file-import";
 import { ShiningText, SystemMessage } from "../ui/kosmora-controls";
 
 type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
@@ -22,6 +24,20 @@ type Candidate = {
   source: Exclude<CanvasSource, { kind: "manual" } | { kind: "restore" }>;
 };
 type Draft = CanvasDraft;
+type Review = {
+  kind: "compare" | "restore" | "conflict";
+  artifactId: string;
+  baseVersion: number;
+  sourceVersion?: number;
+  before: CanvasComparisonSide;
+  after: CanvasComparisonSide;
+};
+const revisionSide = (revision: CanvasRevision): CanvasComparisonSide => ({
+  label: `Сохранённая v${revision.version}`,
+  title: revision.title,
+  format: revision.format,
+  content: revision.content
+});
 const blank: Draft = { title: "Без названия", format: "markdown", content: "", baseVersion: 0 };
 const formats: CanvasFormat[] = ["markdown", "text", "code", "html"];
 const names: Record<CanvasFormat, string> = {
@@ -36,6 +52,9 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     cache: "no-store",
     credentials: "same-origin",
     ...options,
+    signal: options?.signal
+      ? AbortSignal.any([options.signal, AbortSignal.timeout(15000)])
+      : AbortSignal.timeout(15000),
     headers: {
       ...(options?.body ? { "content-type": "application/json" } : {}),
       ...options?.headers
@@ -144,6 +163,9 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selectedSource, setSelectedSource] = useState("");
   const [revisionPreview, setRevisionPreview] = useState<CanvasRevision | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
+  const [compareFrom, setCompareFrom] = useState("");
+  const [compareTo, setCompareTo] = useState("draft");
   const [conflict, setConflict] = useState<number | null>(null);
   const [working, setWorking] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -162,6 +184,11 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
       draft.content !== loaded.revision.content ||
       draft.baseVersion !== loaded.artifact.version
     : draft.title !== blank.title || draft.format !== blank.format || !!draft.content;
+  const reviewedDraftMatches =
+    review?.kind === "conflict" &&
+    draft.title === review.after.title &&
+    draft.format === review.after.format &&
+    draft.content === review.after.content;
   const refresh = useCallback(async () => {
     const [list, sources] = await Promise.all([
       readList(),
@@ -223,6 +250,9 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
     setError("");
     setNotice("");
     setRevisionPreview(null);
+    setReview(null);
+    setCompareFrom("");
+    setCompareTo("draft");
     setConflict(null);
     try {
       const next = await scopedRequest<Full>(`${base}/${encodeURIComponent(id)}`);
@@ -268,6 +298,9 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
     });
     setConflict(null);
     setRevisionPreview(null);
+    setReview(null);
+    setCompareFrom("");
+    setCompareTo("draft");
     try {
       localStorage.removeItem(localKey(projectId, result.artifact.id));
       if (consumeDraft) localStorage.removeItem(localKey(projectId, selected || "new"));
@@ -296,6 +329,7 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
     } catch (e) {
       const problem = e as Error & { currentVersion?: number };
       if (problem.currentVersion !== undefined) {
+        setReview(null);
         setConflict(problem.currentVersion);
         setError(
           "Версия на сервере изменилась. Ваш черновик сохранён здесь: сравните, сохраните копию или подтвердите перезапись."
@@ -322,14 +356,22 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
         newCopy ? "Копия создана, прежний артефакт не изменён." : "Артефакт создан.",
         true
       );
-    else if ((override && conflict !== null) || (!override && conflict === null)) {
+    else if (
+      (override &&
+        conflict !== null &&
+        review?.kind === "conflict" &&
+        review.artifactId === selected &&
+        reviewedDraftMatches &&
+        review.baseVersion === conflict) ||
+      (!override && conflict === null)
+    ) {
       void perform(
         () =>
           scopedRequest<Full>(`${base}/${encodeURIComponent(selected)}`, {
             method: "PUT",
             body: JSON.stringify({
               ...payload,
-              baseVersion: override ? conflict : draft.baseVersion
+              baseVersion: override ? review!.baseVersion : draft.baseVersion
             })
           }),
         "Сохранена новая версия."
@@ -356,6 +398,9 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
     setError("");
     setNotice("");
     setRevisionPreview(null);
+    setReview(null);
+    setCompareFrom("");
+    setCompareTo("draft");
   };
   const importSelected = () => {
     if (working || loading) return;
@@ -388,8 +433,8 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
       "Импортирована независимая редакторская копия. Источник не изменён."
     );
   };
-  const restore = (version: number) => {
-    if (!loaded || working) return;
+  const restore = () => {
+    if (!loaded || working || review?.kind !== "restore" || review.artifactId !== selected) return;
     if (dirty) {
       setError(
         "Сначала сохраните черновик или создайте его копию: восстановление истории не должно стирать правки."
@@ -400,10 +445,70 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
       () =>
         scopedRequest<Full>(`${base}/${encodeURIComponent(selected)}/restore`, {
           method: "POST",
-          body: JSON.stringify({ baseVersion: loaded.artifact.version, sourceVersion: version })
+          body: JSON.stringify({
+            baseVersion: review.baseVersion,
+            sourceVersion: review.sourceVersion
+          })
         }),
       "Старая версия восстановлена как новая, история сохранена."
     );
+  };
+  const compare = async (kind: Review["kind"], sourceVersion?: number) => {
+    if (working || !loaded) return;
+    if (kind === "restore" && sourceVersion === undefined) return;
+    if (kind === "restore" && dirty) {
+      setError(
+        "Сначала сохраните черновик или создайте его копию: восстановление истории не должно стирать правки."
+      );
+      return;
+    }
+    setWorking(true);
+    setReview(null);
+    setError("");
+    try {
+      const current = await scopedRequest<Full>(`${base}/${encodeURIComponent(selected)}`);
+      const from =
+        kind === "compare"
+          ? Number(compareFrom || loaded.artifact.version)
+          : current.artifact.version;
+      const to =
+        kind === "restore"
+          ? sourceVersion
+          : kind === "conflict" || compareTo === "draft"
+            ? undefined
+            : Number(compareTo);
+      const [before, after] = await Promise.all([
+        from === current.artifact.version
+          ? current.revision
+          : scopedRequest<CanvasRevision>(
+              `${base}/${encodeURIComponent(selected)}/revisions/${from}`
+            ),
+        to === undefined
+          ? Promise.resolve(null)
+          : scopedRequest<CanvasRevision>(`${base}/${encodeURIComponent(selected)}/revisions/${to}`)
+      ]);
+      if (current.artifact.version !== loaded.artifact.version)
+        setConflict(current.artifact.version);
+      setReview({
+        kind,
+        artifactId: selected,
+        baseVersion: current.artifact.version,
+        ...(kind === "restore" && sourceVersion !== undefined ? { sourceVersion } : {}),
+        before: revisionSide(before),
+        after: after
+          ? revisionSide(after)
+          : {
+              label: "Снимок черновика",
+              title: draft.title,
+              format: draft.format,
+              content: draft.content
+            }
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось сравнить версии");
+    } finally {
+      setWorking(false);
+    }
   };
   const remove = () => {
     if (!selected || !window.confirm("Удалить этот артефакт вместе с его историей?")) return;
@@ -420,6 +525,8 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
         setDraft(blank);
         setHistory([]);
         setConflict(null);
+        setRevisionPreview(null);
+        setReview(null);
         setNotice("Артефакт удалён.");
         await refresh();
       })
@@ -435,14 +542,60 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
     }
   };
   const download = () => {
-    const blob = new Blob([draft.content], { type: "text/plain;charset=utf-8" });
+    downloadSnapshot(draft);
+    setNotice("Скачан текущий текст редактора (включая несохранённые правки).");
+  };
+  const downloadSnapshot = (snapshot: { title: string; content: string; format: CanvasFormat }) => {
+    const blob = new Blob([snapshot.content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob),
       a = document.createElement("a");
     a.href = url;
-    a.download = sanitizeName(draft.title, draft.format);
+    a.download = sanitizeName(snapshot.title, snapshot.format);
     a.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setNotice("Скачан текущий текст редактора (включая несохранённые правки).");
+  };
+  const openFile = async (file: File) => {
+    if (working || loading) return;
+    if (file.size > CANVAS_MAX_CONTENT_BYTES) {
+      setError("Файл превышает лимит 512 КиБ.");
+      return;
+    }
+    if (dirty) {
+      setError("Сначала сохраните текущий черновик или его копию, затем откройте файл.");
+      return;
+    }
+    try {
+      if (selected && parseDraft(localStorage.getItem(localKey(projectId, "new")), 0)) {
+        setError(
+          "В браузере есть новый черновик. Откройте его кнопкой «+ Новый» и сохраните перед загрузкой файла."
+        );
+        return;
+      }
+    } catch {
+      /* Draft storage is optional. */
+    }
+    setWorking(true);
+    setError("");
+    try {
+      const next = canvasFileDraft(file.name, new Uint8Array(await file.arrayBuffer()));
+      if (lifecycle.current?.signal.aborted) return;
+      setSelected("");
+      setLoaded(null);
+      setHistory([]);
+      setDraft(next);
+      setConflict(null);
+      setRevisionPreview(null);
+      setReview(null);
+      setCompareFrom("");
+      setCompareTo("draft");
+      setNotice(
+        "Файл открыт в новом черновике. Проверьте текст и нажмите «Сохранить версию», чтобы создать артефакт."
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось прочитать файл");
+    } finally {
+      setWorking(false);
+    }
   };
   const preview = revisionPreview?.content ?? draft.content;
   const previewFormat = revisionPreview?.format ?? draft.format;
@@ -497,6 +650,19 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
             </button>
           ))}
           <div className={styles.import}>
+            <label htmlFor="canvas-local-file">Открыть текстовый файл</label>
+            <input
+              id="canvas-local-file"
+              type="file"
+              accept={CANVAS_FILE_ACCEPT}
+              disabled={working || loading}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void openFile(file);
+              }}
+            />
+            <small>UTF-8, до 512 КиБ. Файл откроется в новом черновике.</small>
             <label htmlFor="canvas-source">Импорт из Work и чатов</label>
             <select
               id="canvas-source"
@@ -603,25 +769,14 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
             <div className={styles.conflict} role="alert">
               <strong>Конфликт версий: на сервере v{conflict}</strong>
               <p>
-                Ваш текст остался в редакторе. Вы можете создать копию или явно записать новую
-                версию на основе последней.
+                Ваш текст остался в редакторе. Создайте копию или сравните его с серверной версией
+                перед сохранением.
               </p>
               <button type="button" onClick={() => save(true)} disabled={working}>
                 Сохранить как копию
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Подтверждаете сохранение вашего черновика как следующей версии поверх изменений на сервере?"
-                    )
-                  )
-                    save(false, true);
-                }}
-                disabled={working}
-              >
-                Подтвердить новую версию
+              <button type="button" onClick={() => void compare("conflict")} disabled={working}>
+                Сравнить с серверной версией
               </button>
               <button
                 type="button"
@@ -662,6 +817,83 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
           {loaded && (
             <section className={styles.history}>
               <h3>История версий</h3>
+              <div className={styles.comparisonControls}>
+                <label>
+                  Версия до
+                  <select
+                    value={compareFrom || String(loaded.artifact.version)}
+                    disabled={working}
+                    onChange={(e) => setCompareFrom(e.target.value)}
+                  >
+                    {history.map((item) => (
+                      <option key={item.version} value={String(item.version)}>
+                        v{item.version}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Версия после
+                  <select
+                    value={compareTo}
+                    disabled={working}
+                    onChange={(e) => setCompareTo(e.target.value)}
+                  >
+                    <option value="draft">Текст редактора</option>
+                    {history.map((item) => (
+                      <option key={item.version} value={String(item.version)}>
+                        v{item.version}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" disabled={working} onClick={() => void compare("compare")}>
+                  Сравнить версии
+                </button>
+              </div>
+              {review && review.artifactId === selected && (
+                <section className={styles.review} aria-label="Проверка изменений Canvas">
+                  <CanvasComparison before={review.before} after={review.after} />
+                  <button type="button" onClick={() => downloadSnapshot(review.before)}>
+                    Скачать текст до
+                  </button>
+                  <button type="button" onClick={() => downloadSnapshot(review.after)}>
+                    Скачать текст после
+                  </button>
+                  {review.kind === "restore" && (
+                    <p>
+                      После подтверждения будет создана новая версия на основе v{review.baseVersion}
+                      . История сохранится.
+                    </p>
+                  )}
+                  {review.kind === "conflict" && (
+                    <p>
+                      После подтверждения снимок вашего черновика станет новой версией поверх v
+                      {review.baseVersion}.
+                    </p>
+                  )}
+                  {review.kind === "restore" && (
+                    <button type="button" disabled={working || dirty} onClick={restore}>
+                      Подтвердить восстановление v{review.sourceVersion}
+                    </button>
+                  )}
+                  {review.kind === "conflict" && (
+                    <button
+                      type="button"
+                      disabled={working || !reviewedDraftMatches || conflict !== review.baseVersion}
+                      onClick={() => save(false, true)}
+                    >
+                      Подтвердить новую версию
+                    </button>
+                  )}
+                  {review.kind === "conflict" && !reviewedDraftMatches && (
+                    <p>Черновик изменён после сравнения. Сравните его с сервером заново.</p>
+                  )}
+                  <button type="button" disabled={working} onClick={() => setReview(null)}>
+                    Закрыть сравнение
+                  </button>
+                </section>
+              )}
               <ol>
                 {history.map((item) => (
                   <li key={item.version}>
@@ -676,7 +908,17 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
                     >
                       Посмотреть
                     </button>
-                    <button type="button" disabled={working} onClick={() => restore(item.version)}>
+                    <a
+                      className={styles.revisionDownload}
+                      href={`${base}/${encodeURIComponent(selected)}/revisions/${item.version}/download`}
+                    >
+                      Скачать v{item.version}
+                    </a>
+                    <button
+                      type="button"
+                      disabled={working}
+                      onClick={() => void compare("restore", item.version)}
+                    >
                       Восстановить новой версией
                     </button>
                   </li>

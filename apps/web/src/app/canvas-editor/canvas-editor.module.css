@@ -271,6 +271,87 @@
   padding: 10px 0;
   border-bottom: 1px solid var(--line);
 }
+.comparisonControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+.comparisonControls label {
+  display: grid;
+  gap: 4px;
+  min-width: 130px;
+}
+.review {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--line-strong, #cdcdcd);
+  border-radius: var(--radius-container);
+  min-width: 0;
+}
+.review > button {
+  margin: 4px;
+}
+.comparison {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.comparison h4 {
+  margin: 0 0 10px;
+}
+.comparisonMeta {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) minmax(0, 1fr);
+  gap: 4px 12px;
+  font-size: 0.82rem;
+}
+.comparisonMeta dd {
+  margin: 0;
+}
+.diff {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line, #e5e5e5);
+  font:
+    0.8rem/1.7 ui-monospace,
+    Consolas,
+    monospace;
+}
+.diffRow {
+  display: grid;
+  grid-template-columns: 4ch 4ch 2ch minmax(0, 1fr);
+  padding: 2px 6px;
+}
+.diffRow[data-kind="remove"] {
+  background: var(--surface-hover, #eaeaea);
+  border-left: 3px dashed currentColor;
+}
+.diffRow[data-kind="add"] {
+  background: var(--panel, #f7f7f7);
+  border-left: 3px solid currentColor;
+}
+.diffRow code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
+}
+.diffNumber,
+.lineEnding,
+.diffFold {
+  color: var(--muted, #676767);
+}
+.lineEnding {
+  user-select: none;
+  font-size: 0.7rem;
+}
+.diffFold {
+  padding: 4px 10px;
+}
+.revisionDownload {
+  color: inherit;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
 @media (pointer: coarse) {
   .root :is(button, input, select) {
     min-height: 44px;
