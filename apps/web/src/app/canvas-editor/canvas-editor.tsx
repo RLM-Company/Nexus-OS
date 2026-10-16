@@ -13,6 +13,8 @@ import {
 import styles from "./canvas-editor.module.css";
 import { canvasDraftKey, parseCanvasDraft, type CanvasDraft } from "./canvas-draft-storage";
 import { CanvasPreview } from "./canvas-preview";
+import { readCanvasFile } from "./canvas-file";
+import { createDocxReport, downloadReport } from "../studio-files-report";
 import { ShiningText, SystemMessage } from "../ui/kosmora-controls";
 
 type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
@@ -388,6 +390,22 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
       "Импортирована независимая редакторская копия. Источник не изменён."
     );
   };
+  const importFile = (file: File) => {
+    if (working || loading) return;
+    if (
+      dirty &&
+      !window.confirm(
+        "Несохранённый текст останется в черновике браузера. Открыть документ как отдельную копию?"
+      )
+    )
+      return;
+    void perform(async () => {
+      const controller = lifecycle.current;
+      if (!controller) throw new Error("Редактор ещё загружается.");
+      const payload = await readCanvasFile(file, controller.signal);
+      return scopedRequest<Full>(base, { method: "POST", body: JSON.stringify(payload) });
+    }, "Документ открыт и сохранён как отдельная копия. Импортирован текст без исходного оформления.");
+  };
   const restore = (version: number) => {
     if (!loaded || working) return;
     if (dirty) {
@@ -497,6 +515,19 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
             </button>
           ))}
           <div className={styles.import}>
+            <label htmlFor="canvas-file">Открыть документ</label>
+            <input
+              id="canvas-file"
+              type="file"
+              accept=".txt,.md,.docx,.json,.csv,.html,.js,.ts,.py,.css,.sql"
+              disabled={working || loading}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) importFile(file);
+              }}
+            />
+            <small>Текст до 512 КиБ. DOCX открывается без исходной вёрстки.</small>
             <label htmlFor="canvas-source">Импорт из Work и чатов</label>
             <select
               id="canvas-source"
@@ -592,6 +623,25 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
             </button>
             <button type="button" onClick={download}>
               Скачать
+            </button>
+            <button
+              type="button"
+              disabled={working || loading}
+              onClick={() => {
+                try {
+                  downloadReport(
+                    createDocxReport([draft.content]),
+                    sanitizeName(draft.title, "text").replace(/\.txt$/, ".docx")
+                  );
+                  setNotice(
+                    "Скачан DOCX с текущим текстом, включая несохранённые правки. Markdown и код сохранены как текст."
+                  );
+                } catch {
+                  setError("Не удалось подготовить DOCX. Текст остаётся в редакторе.");
+                }
+              }}
+            >
+              Скачать DOCX
             </button>
             {selected && (
               <button type="button" onClick={remove} disabled={working}>

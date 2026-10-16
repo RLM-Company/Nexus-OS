@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 import type { CsvTable } from "./studio-csv";
+import { applyDataCellEdit, DATA_EDIT_HISTORY_LIMIT, type DataCellEdit } from "./studio-data-edit";
 import {
   DATA_LIMITS,
   type DataChart,
@@ -72,15 +73,16 @@ export function StudioDataSurface({
           Документы и текст
         </button>
       </nav>
-      {tab === "data" ? (
+      <div hidden={tab !== "data"}>
         <DataWorkbench onCompose={onCompose} />
-      ) : (
+      </div>
+      <div hidden={tab !== "documents"}>
         <StudioFiles
           onCompose={onCompose}
           projectId={projectId}
           {...(onProjectCreated ? { onProjectCreated } : {})}
         />
-      )}
+      </div>
     </div>
   );
 }
@@ -108,6 +110,10 @@ export function DataWorkbench({
     "Сделай выводы по приложенной выборке данных. Укажи ограничения покрытия."
   );
   const [page, setPage] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [cellEdit, setCellEdit] = useState<DataCellEdit | null>(null);
+  const [undoEdits, setUndoEdits] = useState<DataCellEdit[]>([]);
+  const [redoEdits, setRedoEdits] = useState<DataCellEdit[]>([]);
 
   function stopAll() {
     generation.current++;
@@ -180,6 +186,9 @@ export function DataWorkbench({
     setTable(null);
     setSettings(null);
     setResult(null);
+    setCellEdit(null);
+    setUndoEdits([]);
+    setRedoEdits([]);
     const workspace = file.name.toLowerCase().endsWith(".json");
     if (!(workspace || /\.(csv|tsv)$/i.test(file.name))) {
       setError("Поддерживаются только CSV, TSV и файл workspace JSON.");
@@ -219,16 +228,53 @@ export function DataWorkbench({
     setError("");
     setBusy(true);
     setProgress("Обновляю таблицу и статистику…");
-    let worker = workerRef.current;
-    if (!worker) {
-      worker = makeWorker();
-      worker.postMessage({ id: ++nextId.current, kind: "restore", table, name });
+    try {
+      let worker = workerRef.current;
+      if (!worker) {
+        worker = makeWorker();
+        worker.postMessage({ id: ++nextId.current, kind: "restore", table, name });
+      }
+      const id = ++nextId.current;
+      queryId.current = id;
+      worker.postMessage({ id, kind: "query", settings });
+    } catch {
+      stopAll();
+      setBusy(false);
+      setProgress("");
+      setError(
+        "Не удалось пересчитать таблицу. Данные сохранены в текущем окне; повторите пересчёт."
+      );
     }
-    const id = ++nextId.current;
-    queryId.current = id;
-    worker.postMessage({ id, kind: "query", settings });
     // Settings are immutable; queries supersede stale results by id.
   }, [table, settings]);
+
+  function commitCell(edit: DataCellEdit, action: "edit" | "undo" | "redo" = "edit") {
+    if (!table || busy || exporting) return;
+    try {
+      const next = applyDataCellEdit(table, edit, action === "undo");
+      if (next === table) {
+        setCellEdit(null);
+        return;
+      }
+      stopAll();
+      setResult(null);
+      setBusy(true);
+      setTable(next);
+      setCellEdit(null);
+      if (action === "undo") {
+        setUndoEdits((items) => items.slice(0, -1));
+        setRedoEdits((items) => [...items, edit]);
+      } else {
+        setUndoEdits((items) => [...items, edit].slice(-DATA_EDIT_HISTORY_LIMIT));
+        setRedoEdits((items) => (action === "redo" ? items.slice(0, -1) : []));
+      }
+      setNotice(
+        "Таблица изменена. Сохраните workspace JSON или выгрузите результат, чтобы сохранить правки."
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Не удалось изменить ячейку.");
+    }
+  }
 
   function update(next: (current: DataSettings) => DataSettings) {
     // Fence old query responses and abort an export of a now-stale selection.
@@ -782,6 +828,59 @@ export function DataWorkbench({
           </div>
           <div className={styles.box}>
             <h3>Таблица</h3>
+            <div className={styles.controls}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={editing}
+                  onChange={(event) => {
+                    setEditing(event.target.checked);
+                    setCellEdit(null);
+                  }}
+                />
+                Редактировать ячейки
+              </label>
+              <button
+                type="button"
+                disabled={busy || exporting || !undoEdits.length || !!cellEdit}
+                onClick={() => commitCell(undoEdits[undoEdits.length - 1]!, "undo")}
+              >
+                Отменить правку
+              </button>
+              <button
+                type="button"
+                disabled={busy || exporting || !redoEdits.length || !!cellEdit}
+                onClick={() => commitCell(redoEdits[redoEdits.length - 1]!, "redo")}
+              >
+                Повторить правку
+              </button>
+            </div>
+            {cellEdit && (
+              <div className={styles.cellEditor}>
+                <label htmlFor="data-cell-value">
+                  Строка {cellEdit.row + 1}, столбец {cellEdit.column + 1}:{" "}
+                  {columns[cellEdit.column]}
+                </label>
+                <textarea
+                  id="data-cell-value"
+                  aria-label="Новое значение ячейки"
+                  value={cellEdit.after}
+                  onChange={(event) => setCellEdit({ ...cellEdit, after: event.target.value })}
+                />
+                <div className={styles.controls}>
+                  <button
+                    type="button"
+                    disabled={busy || exporting}
+                    onClick={() => commitCell(cellEdit)}
+                  >
+                    Применить ячейку
+                  </button>
+                  <button type="button" onClick={() => setCellEdit(null)}>
+                    Отменить ввод
+                  </button>
+                </div>
+              </div>
+            )}
             <p>
               {result
                 ? `Показано ${preview.length} из ${result.indexes.length} строк`
@@ -805,7 +904,28 @@ export function DataWorkbench({
                     <tr key={idx}>
                       <th scope="row">{idx + 1}</th>
                       {settings.columns.map((col) => (
-                        <td key={col}>{table.rows[idx]?.[col]}</td>
+                        <td key={col}>
+                          {editing ? (
+                            <button
+                              type="button"
+                              className={styles.cellButton}
+                              disabled={busy || exporting}
+                              aria-label={`Изменить ячейку: строка ${idx + 1}, столбец ${col + 1}`}
+                              onClick={() =>
+                                setCellEdit({
+                                  row: idx,
+                                  column: col,
+                                  before: table.rows[idx]![col]!,
+                                  after: table.rows[idx]![col]!
+                                })
+                              }
+                            >
+                              {table.rows[idx]?.[col] || "—"}
+                            </button>
+                          ) : (
+                            table.rows[idx]?.[col]
+                          )}
+                        </td>
                       ))}
                     </tr>
                   ))}

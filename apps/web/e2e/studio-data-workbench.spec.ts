@@ -7,6 +7,59 @@ async function openData(page: import("@playwright/test").Page) {
   await expect(page.getByRole("heading", { name: "Таблицы и диаграммы" })).toBeVisible();
 }
 
+test("Data edits source rows under sorting, supports undo/redo and retains edits across tabs and workspace export", async ({
+  page
+}) => {
+  await openData(page);
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
+    name: "editable.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("id,value\nA,9\nB,2\nC,5")
+  });
+  await page.getByLabel("Тип столбца 2 value").selectOption("number");
+  await page.getByLabel("Числовая колонка").selectOption("1");
+  await page.getByLabel("Сортировать по").selectOption("1");
+  await page.getByRole("button", { name: "Добавить фильтр" }).click();
+  await page.getByLabel("Столбец фильтра 1").selectOption("1");
+  await page.getByLabel("Условие фильтра 1").selectOption("greater");
+  await page.getByLabel("Значение фильтра 1").fill("3");
+  await expect(page.getByText(/после фильтра: 2$/)).toBeVisible();
+  await page.getByLabel("Редактировать ячейки").check();
+  const cell = page.getByRole("button", {
+    name: "Изменить ячейку: строка 3, столбец 2",
+    exact: true
+  });
+  await cell.click();
+  await page.getByLabel("Новое значение ячейки").fill("12,5");
+  await page.getByRole("button", { name: "Применить ячейку", exact: true }).click();
+  await expect(cell).toHaveText("12,5");
+  await expect(page.getByText("Сумма", { exact: true }).locator("..")).toContainText("21,5");
+  await page.getByRole("button", { name: "Отменить правку", exact: true }).click();
+  await expect(cell).toHaveText("5");
+  await page.getByRole("button", { name: "Повторить правку", exact: true }).click();
+  await expect(cell).toHaveText("12,5");
+  await page.getByRole("button", { name: "Документы и текст", exact: true }).click();
+  await page.getByRole("button", { name: "Таблицы и диаграммы", exact: true }).click();
+  await expect(cell).toHaveText("12,5");
+  const saving = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Сохранить workspace JSON", exact: true }).click();
+  const file = await saving;
+  const bytes = await readFile(await file.path());
+  const stored = JSON.parse(bytes.toString("utf8"));
+  expect(stored.table.rows).toEqual([
+    ["A", "9"],
+    ["B", "2"],
+    ["C", "12,5"]
+  ]);
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
+    name: "edited.workspace.json",
+    mimeType: "application/json",
+    buffer: bytes
+  });
+  await expect(cell).toHaveText("12,5");
+  await expect(page.getByRole("button", { name: "Отменить правку", exact: true })).toBeDisabled();
+});
+
 test("Data: actual worker parsing, Russian numbers, line/scatter, complete CSV and injection protection", async ({
   page
 }) => {
@@ -14,7 +67,12 @@ test("Data: actual worker parsing, Russian numbers, line/scatter, complete CSV a
   const workers: string[] = [];
   page.on("worker", (worker) => workers.push(worker.url()));
   page.on("request", (request) => {
-    if (request.method() === "POST") writes++;
+    // Initial navigation may migrate existing browser pins. Data itself must stay local.
+    if (
+      request.method() === "POST" &&
+      !new URL(request.url()).pathname.endsWith("/chat-navigation/import-pins")
+    )
+      writes++;
   });
   await openData(page);
   await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
