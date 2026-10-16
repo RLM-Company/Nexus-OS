@@ -125,6 +125,7 @@ async function fixture(
     runner?: CodeAgentWorkspaceRunner;
     onGithub?: (path: string, method: string) => void;
     registry?: ModelRegistryDocument;
+    registryNow?: number;
   } = {}
 ) {
   const database = openDatabase(":memory:");
@@ -262,7 +263,8 @@ async function fixture(
           registry_version: "code-fixture",
           generated_at: "2026-10-08T00:00:00.000Z",
           entries: [modelEntry]
-        }
+        },
+        options.registryNow === undefined ? {} : { now: () => options.registryNow! }
       )
     ),
     [],
@@ -990,7 +992,12 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
       "[DONE]"
     );
-    const f = await fixture({ registry, responses: [response] }),
+    // Historical routing contract, using mocked transport at the recorded evidence date.
+    const f = await fixture({
+        registry,
+        registryNow: Date.parse(registry.generated_at),
+        responses: [response]
+      }),
       assertRoute = vi.spyOn(f.service.deps.gateway, "assertRoute"),
       id = await f.start();
     const run = await f.wait(id, "proposed");

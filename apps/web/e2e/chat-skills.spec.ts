@@ -100,3 +100,40 @@ test("keeps the Skills controls within a narrow screen", async ({ page, request 
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
   await page.screenshot({ path: test.info().outputPath("chat-skills-mobile.png") });
 });
+
+test("opens only the accepted answer Skill snapshot after catalog deletion without another generation", async ({
+  page,
+  request
+}) => {
+  const { choice, panel, skill, path } = await setup(page, request);
+  await choice.check();
+  await panel.getByRole("button", { name: "Сохранить Skills", exact: true }).click();
+  await expect(panel.getByRole("status")).toHaveText("Skills сохранены.");
+  const chatId = path.split("/").at(-2)!;
+  const next = await request.post(`${api}/api/v1/chats/${chatId}/messages`, {
+    data: { content: "Проверка снимка", client_message_id: randomUUID() }
+  });
+  expect(next.status()).toBe(201);
+  const accepted = (await next.json()) as { stream_url: string };
+  await request.get(`${api}${accepted.stream_url}`);
+  expect(
+    (
+      await request.delete(`${api}/api/v1/owner-skills/${skill.id}`, {
+        data: { expected_version: 1 }
+      })
+    ).status()
+  ).toBe(204);
+  await page.reload();
+  const snapshot = page.getByLabel("Skills этого ответа", { exact: true }).last();
+  let reads = 0;
+  await page.route("**/chat-runs/*/skills", async (route) => {
+    reads++;
+    await route.continue();
+  });
+  await snapshot.locator("summary").click();
+  await expect(snapshot.locator("pre")).toContainText("<script>window.skillInjected=true</script>");
+  expect(await snapshot.locator("script").count()).toBe(0);
+  await snapshot.locator("summary").click();
+  await snapshot.locator("summary").click();
+  expect(reads).toBe(1);
+});

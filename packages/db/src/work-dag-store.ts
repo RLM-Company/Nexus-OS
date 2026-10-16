@@ -1,6 +1,12 @@
+import { WorkSkillStore } from "./work-skill-store.js";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { WorkDag, WorkDagCreate } from "@cosmora/contracts";
+import {
+  createWorkPlanPackage,
+  type WorkDag,
+  type WorkDagCreate,
+  type WorkDagClone
+} from "@cosmora/contracts";
 export class WorkDagConflict extends Error {}
 export class WorkDagStore {
   constructor(private readonly sqlite: DatabaseSync) {}
@@ -42,7 +48,65 @@ export class WorkDagStore {
       )
       .run(project, owner, mode);
   }
-  create(project: string, owner: string, actor: string, input: WorkDagCreate): WorkDag {
+  clone(
+    sourceProject: string,
+    id: string,
+    owner: string,
+    actor: string,
+    input: WorkDagClone
+  ): WorkDag {
+    this.writable(owner);
+    const target = input.target_project_id ?? sourceProject;
+    if (!this.owned(target, owner)) throw new WorkDagConflict("PROJECT_NOT_FOUND");
+    const fingerprint = JSON.stringify({
+      clone: {
+        source_project: sourceProject,
+        source_id: id,
+        expected_version: input.expected_version,
+        target_project: target,
+        title: input.title,
+        skills: input.skills,
+        actor
+      }
+    });
+    // Replay must work even if the source was subsequently edited or deleted.
+    const previous = this.sqlite
+      .prepare(
+        "SELECT state_json,request_json FROM work_dags WHERE project_id=? AND owner_id=? AND client_request_id=?"
+      )
+      .get(target, owner, input.client_request_id) as
+      { state_json: string; request_json: string } | undefined;
+    if (previous) {
+      if (previous.request_json !== fingerprint) throw new WorkDagConflict("IDEMPOTENCY_CONFLICT");
+      return JSON.parse(previous.state_json) as WorkDag;
+    }
+    const source = this.get(id, owner);
+    if (!source || source.project_id !== sourceProject) throw new WorkDagConflict("DAG_NOT_FOUND");
+    if (source.version !== input.expected_version) throw new WorkDagConflict("STALE_DAG");
+    const { nodes } = createWorkPlanPackage(source);
+    return this.create(
+      target,
+      owner,
+      actor,
+      { client_request_id: input.client_request_id, title: input.title, nodes },
+      {
+        fingerprint,
+        copiedFrom: { graph_id: source.id, version: source.version, skills: input.skills },
+        ...(input.skills === "source" ? { sourceGraph: source.id } : {})
+      }
+    );
+  }
+  create(
+    project: string,
+    owner: string,
+    actor: string,
+    input: WorkDagCreate,
+    admission?: {
+      fingerprint: string;
+      copiedFrom: NonNullable<WorkDag["copied_from"]>;
+      sourceGraph?: string;
+    }
+  ): WorkDag {
     this.writable(owner);
     if (!this.owned(project, owner)) throw new WorkDagConflict("PROJECT_NOT_FOUND");
     const previous = this.sqlite
@@ -52,7 +116,7 @@ export class WorkDagStore {
       .get(project, owner, input.client_request_id) as
       { state_json: string; request_json: string } | undefined;
     if (previous) {
-      if (previous.request_json !== JSON.stringify(input))
+      if (previous.request_json !== (admission?.fingerprint ?? JSON.stringify(input)))
         throw new WorkDagConflict("IDEMPOTENCY_CONFLICT");
       return JSON.parse(previous.state_json) as WorkDag;
     }
@@ -72,6 +136,7 @@ export class WorkDagStore {
       client_request_id: input.client_request_id,
       title: input.title,
       mode,
+      ...(admission ? { copied_from: admission.copiedFrom } : {}),
       nodes: input.nodes.map((n) => ({
         ...n,
         status: mode === "paused" || n.depends_on.length ? "blocked" : "pending",
@@ -98,8 +163,9 @@ export class WorkDagStore {
           input.client_request_id,
           1,
           JSON.stringify(graph),
-          JSON.stringify(input)
+          admission?.fingerprint ?? JSON.stringify(input)
         );
+      new WorkSkillStore(this.sqlite).capturePlan(graph.id, project, owner, admission?.sourceGraph);
       this.checkpoint(graph);
       return graph;
     });

@@ -1,4 +1,5 @@
 "use client";
+import { ChatRunSkills } from "./chat-run-skills";
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
@@ -2914,6 +2915,11 @@ export default function Home() {
                       <VoicePlayback text={message.content} />
                     )}
                     <ChatMessageAttachments files={message.attachments ?? []} />
+                    {message.role === "assistant" &&
+                      message.run_id &&
+                      message.status === "completed" && (
+                        <ChatRunSkills key={message.run_id} runId={message.run_id} />
+                      )}
                     {activeLocalChatId &&
                       message.role === "assistant" &&
                       message.status === "completed" && (

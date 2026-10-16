@@ -1,4 +1,6 @@
 "use client";
+import { PersonalSkillSettings } from "./chat-skill-settings";
+import { AcceptedSkillView } from "./accepted-skill-view";
 import { CodeFiles } from "./ui/code-files";
 
 import Link from "next/link";
@@ -230,6 +232,17 @@ export function ManagerWorkPanel({
           </Link>
         </p>
       )}
+      <details>
+        <summary>Skills Work</summary>
+        <PersonalSkillSettings
+          key={projectId}
+          path={`/api/v1/projects/${encodeURIComponent(projectId)}/work-skills`}
+          disabled={busy}
+          label="Skills Work проекта"
+          description="До трёх инструкций для новых задач и планов. Применяется сохранённый выбор. Принятые задачи, шаги сохранённых планов и их повторы используют исходный снимок. Новые версии подключаются явно."
+          emptyMessage="Создайте личный Skill, чтобы использовать его в Work."
+        />
+      </details>
       <label className="manager-work-field">
         Задача
         <textarea
@@ -310,6 +323,11 @@ export function ManagerWorkPanel({
       {work && (
         <>
           <WorkManagerProgress projectId={projectId} workId={work.id} version={work.version} />
+          <AcceptedSkillView
+            key={work.id}
+            path={base + "/" + encodeURIComponent(work.id) + "/skills"}
+            label="Skills этой задачи"
+          />
           <p className="manager-work-usage">Обращений к модели: {work.model_requests} / 3</p>
           {work.plan && (
             <div className="manager-work-plan">

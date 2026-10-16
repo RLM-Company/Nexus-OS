@@ -1,6 +1,6 @@
 import { loadServerConfig } from "@cosmora/config";
 import type { ModelRegistryDocument, ModelRegistryEntry } from "@cosmora/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runtime.js";
 
 const externalEntry = (overrides: Partial<ModelRegistryEntry> = {}): ModelRegistryEntry => ({
@@ -78,10 +78,35 @@ describe("buildModelRuntime", () => {
       MODEL_NAME: "gpt-5.5"
     });
 
-    const runtime = await buildModelRuntime(config, { secretResolver });
+    // This is a historical adapter-construction fixture, not a current live-readiness claim.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-14T00:00:00.000Z"));
+    try {
+      const runtime = await buildModelRuntime(config, { secretResolver });
+      expect(runtime.registryVersion).toBe("vibecode-owner-preview-2026-09-13");
+      expect(runtime.gateway.hasProvider("vibecode")).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
+  });
 
-    expect(runtime.registryVersion).toBe("vibecode-owner-preview-2026-09-13");
-    expect(runtime.gateway.hasProvider("vibecode")).toBe(true);
+  it("fails closed after the checked-in preview evidence expires", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-16T00:00:00.000Z"));
+    try {
+      const config = loadServerConfig({
+        NODE_ENV: "test",
+        MODEL_PROVIDER: "openai-compatible",
+        MODEL_PROVIDER_ID: "vibecode",
+        MODEL_REGISTRY_PATH: "config/model-registry.vibecode.v1.json",
+        MODEL_BASE_URL: "https://vibecode.moe/v1",
+        MODEL_API_KEY: "test-secret",
+        MODEL_NAME: "gpt-5.5"
+      });
+      await expect(buildModelRuntime(config, { secretResolver })).rejects.toThrow(
+        "evidence has expired"
+      );
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("binds an external adapter only to an active registry route", async () => {

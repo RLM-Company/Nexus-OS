@@ -9,7 +9,11 @@ const refs = (s: ChatSkillSelection) =>
 const same = (a: ChatSkillReference[], b: ChatSkillReference[]) =>
   JSON.stringify(a) === JSON.stringify(b);
 async function read<T>(url: string, signal: AbortSignal, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...init, signal, cache: "no-store" });
+  const response = await fetch(url, {
+    ...init,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+    cache: "no-store"
+  });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
       error?: { message?: string };
@@ -19,6 +23,31 @@ async function read<T>(url: string, signal: AbortSignal, init?: RequestInit): Pr
   return response.json() as Promise<T>;
 }
 export function ChatSkillSettings({ chatId, disabled }: { chatId: string; disabled: boolean }) {
+  return (
+    <PersonalSkillSettings
+      key={chatId}
+      path={`/api/v1/chats/${encodeURIComponent(chatId)}/skills`}
+      disabled={disabled}
+      label="Skills чата"
+      description="До трёх личных инструкций для следующих ответов. Новые версии подключаются по вашему выбору."
+      emptyMessage="Создайте Skill, чтобы подключить его к чату."
+    />
+  );
+}
+
+export function PersonalSkillSettings({
+  path,
+  disabled,
+  label,
+  description,
+  emptyMessage
+}: {
+  path: string;
+  disabled: boolean;
+  label: string;
+  description: string;
+  emptyMessage: string;
+}) {
   const [catalog, setCatalog] = useState<CatalogSkill[]>([]);
   const [stored, setStored] = useState<ChatSkillSelection | null>(null);
   const [chosen, setChosen] = useState<ChatSkillReference[]>([]);
@@ -26,7 +55,6 @@ export function ChatSkillSettings({ chatId, disabled }: { chatId: string; disabl
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const controller = useRef<AbortController | null>(null);
-  const path = `/api/v1/chats/${encodeURIComponent(chatId)}/skills`;
   useEffect(() => {
     const c = new AbortController();
     controller.current = c;
@@ -104,13 +132,11 @@ export function ChatSkillSettings({ chatId, disabled }: { chatId: string; disabl
     }
   };
   return (
-    <fieldset className={styles.skills} aria-label="Skills чата">
-      <legend>Skills чата</legend>
-      <p>
-        До трёх личных инструкций для следующих ответов. Новые версии подключаются по вашему выбору.
-      </p>
+    <fieldset className={styles.skills} aria-label={label}>
+      <legend>{label}</legend>
+      <p>{description}</p>
       <a href="/skills">Управлять личными Skills</a>
-      {stored && catalog.length === 0 && <p>Создайте Skill, чтобы подключить его к чату.</p>}
+      {stored && catalog.length === 0 && <p>{emptyMessage}</p>}
       {catalog.map((skill) => {
         const selected = chosen.find((x) => x.skill_id === skill.id);
         return (

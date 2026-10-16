@@ -2,7 +2,12 @@ import {
   WorkDagCreateSchema,
   WorkDagEditSchema,
   WorkDagControlSchema,
+  WorkDagCloneSchema,
+  WorkPlanImportSchema,
+  WORK_PLAN_PACKAGE_MAX_BYTES,
   type WorkDagCreate,
+  type WorkDagClone,
+  type WorkPlanImport,
   type WorkDagControl,
   type WorkDagNodeInput,
   type IdentityContext
@@ -10,6 +15,7 @@ import {
 import { ManagerWorkConflict, WorkDagConflict, type ProjectStore } from "@cosmora/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
+import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import type { WorkDagCoordinator } from "./work-dag-coordinator.js";
 
 export function registerWorkDagRoutes(options: {
@@ -38,8 +44,22 @@ export function registerWorkDagRoutes(options: {
     try {
       return fn();
     } catch (e) {
+      if (
+        e instanceof Error &&
+        !(e instanceof WorkDagConflict) &&
+        [
+          "INVALID_WORK_PLAN_PACKAGE",
+          "PLAN_PACKAGE_LIMIT",
+          "INVALID_DAG",
+          "DAG_CYCLE",
+          "DAG_DEPENDENCY_MISSING"
+        ].includes(e.message)
+      )
+        return reply.code(400).send({ error: e.message });
       if (e instanceof WorkDagConflict || e instanceof ManagerWorkConflict)
-        return reply.code(409).send({ error: e.message });
+        return reply
+          .code(["DAG_NOT_FOUND", "PROJECT_NOT_FOUND"].includes(e.message) ? 404 : 409)
+          .send({ error: e.message });
       throw e;
     }
   };
@@ -69,6 +89,64 @@ export function registerWorkDagRoutes(options: {
   );
   app.get<{ Params: Params }>(base + "/:id", { schema: { params } }, (r, reply) =>
     safe(() => graph(r) ?? reply.code(404).send({ error: "DAG_NOT_FOUND" }), reply)
+  );
+  app.post<{ Params: Params; Body: WorkPlanImport }>(
+    base + "/import",
+    {
+      bodyLimit: WORK_PLAN_PACKAGE_MAX_BYTES + 1024,
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: { params, body: WorkPlanImportSchema }
+    },
+    (r, reply) =>
+      safe(() => {
+        const identity = identityFor(r);
+        if (!owned(r)) return reply.code(404).send({ error: "PROJECT_NOT_FOUND" });
+        return reply
+          .header("Cache-Control", "private, no-store")
+          .code(201)
+          .send(
+            coordinator.import(r.params.projectId, identity.owner_id, identity.actor_id, r.body)
+          );
+      }, reply)
+  );
+  app.get<{ Params: Params }>(base + "/:id/package", { schema: { params } }, (r, reply) =>
+    safe(
+      () =>
+        reply
+          .header("content-disposition", 'attachment; filename="work-plan.json"')
+          .header("Cache-Control", "private, no-store")
+          .header("X-Content-Type-Options", "nosniff")
+          .type("application/json; charset=utf-8")
+          .send(
+            JSON.stringify(
+              coordinator.package(r.params.id, identityFor(r).owner_id, r.params.projectId)
+            )
+          ),
+      reply
+    )
+  );
+  app.post<{ Params: Params; Body: WorkDagClone }>(
+    base + "/:id/clone",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: { params, body: WorkDagCloneSchema }
+    },
+    (r, reply) =>
+      safe(() => {
+        const identity = identityFor(r);
+        return reply
+          .header("Cache-Control", "private, no-store")
+          .code(201)
+          .send(
+            coordinator.clone(
+              r.params.projectId,
+              r.params.id,
+              identity.owner_id,
+              identity.actor_id,
+              r.body
+            )
+          );
+      }, reply)
   );
   app.get<{ Params: Params }>(base + "/:id/checkpoints", { schema: { params } }, (r, reply) =>
     safe(() => {

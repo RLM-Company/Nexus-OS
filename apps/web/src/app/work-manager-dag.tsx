@@ -2,7 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type { WorkDag, WorkDagNodeInput, WorkDagControl } from "@cosmora/contracts";
+import { AcceptedSkillView } from "./accepted-skill-view";
+import {
+  WORK_PLAN_PACKAGE_MAX_BYTES,
+  parseWorkPlanPackageText,
+  type WorkPlanPackage,
+  type WorkDag,
+  type WorkDagNodeInput,
+  type WorkDagControl
+} from "@cosmora/contracts";
 import { useExecutionGate } from "./use-execution-gate";
 import styles from "./work-manager.module.css";
 
@@ -92,6 +100,20 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     nodes: WorkDagNodeInput[];
     requestId: string;
   } | null>(null);
+  const [copy, setCopy] = useState<{
+    sourceId: string;
+    sourceVersion: number;
+    title: string;
+    skills: "source" | "project";
+    requestId: string;
+  } | null>(null);
+  const [importDraft, setImportDraft] = useState<{
+    package: WorkPlanPackage;
+    requestId: string;
+    checked: boolean;
+  } | null>(null);
+  const [readingImport, setReadingImport] = useState(false);
+  const importEpoch = useRef(0);
   const [retry, setRetry] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [autoConfirmed, setAutoConfirmed] = useState(false);
@@ -182,11 +204,56 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       setGraphs((current) => [result, ...current.filter((g) => g.id !== result.id)]);
       setSelected(result.id);
       setEditor(null);
+      setCopy(null);
+      setImportDraft(null);
       setRetry(null);
       setAcknowledged(false);
       setAutoConfirmed(false);
     } catch (e) {
-      // Lost acknowledgement: read canonical state, never repeat the billable command.
+      // Lost acknowledgement: read canonical state, never repeat the command.
+      if (method === "POST" && url.endsWith("/clone")) {
+        try {
+          const data = body as {
+            client_request_id: string;
+            expected_version: number;
+            title: string;
+            skills: "source" | "project";
+          };
+          const latest = await request<{ items: WorkDag[] }>(base);
+          const found = latest.items.find(
+            (g) =>
+              g.client_request_id === data.client_request_id &&
+              g.title === data.title &&
+              g.copied_from?.version === data.expected_version &&
+              g.copied_from.skills === data.skills
+          );
+          if (found) {
+            setGraphs(latest.items);
+            setSelected(found.id);
+            setCopy(null);
+            setError("");
+            return;
+          }
+        } catch {
+          /* Keep the copy draft and its idempotency key for a later explicit retry. */
+        }
+      }
+      if (method === "POST" && url === base + "/import") {
+        try {
+          const data = body as { client_request_id: string };
+          const latest = await request<{ items: WorkDag[] }>(base);
+          const found = latest.items.find((g) => g.client_request_id === data.client_request_id);
+          if (found) {
+            setGraphs(latest.items);
+            setSelected(found.id);
+            setImportDraft(null);
+            setError("");
+            return;
+          }
+        } catch {
+          /* Preserve the reviewed file and key. No automatic second POST. */
+        }
+      }
       const control = body as Partial<WorkDagControl>;
       if (method === "POST" && control.action === "run_plan" && url.endsWith("/control")) {
         try {
@@ -209,6 +276,29 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     } finally {
       lock.current = false;
       setBusy(false);
+    }
+  }
+  async function loadImport(file: File | undefined) {
+    const epoch = ++importEpoch.current;
+    setImportDraft(null);
+    setError("");
+    if (!file) return;
+    if (!file.size || file.size > WORK_PLAN_PACKAGE_MAX_BYTES) {
+      setError("Выберите JSON плана размером до 600 КБ.");
+      return;
+    }
+    setReadingImport(true);
+    try {
+      const pkg = parseWorkPlanPackageText(await file.text());
+      if (epoch === importEpoch.current)
+        setImportDraft({ package: pkg, requestId: crypto.randomUUID(), checked: false });
+    } catch {
+      if (epoch === importEpoch.current)
+        setError(
+          "Файл не соответствует формату плана Kosmora или содержит недопустимые зависимости."
+        );
+    } finally {
+      if (epoch === importEpoch.current) setReadingImport(false);
     }
   }
   function act(action: WorkDagControl["action"], nodeId?: string) {
@@ -243,8 +333,29 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         токенов. Повторы запускаются вручную.
       </p>
       <div className={styles.actions}>
+        {graph && (
+          <button
+            type="button"
+            disabled={
+              busy || Boolean(editor) || Boolean(copy) || Boolean(importDraft) || readingImport
+            }
+            onClick={() =>
+              setCopy({
+                sourceId: graph.id,
+                sourceVersion: graph.version,
+                title: (graph.title + " — копия").slice(0, 160),
+                skills: "source",
+                requestId: crypto.randomUUID()
+              })
+            }
+          >
+            Создать копию плана
+          </button>
+        )}
         <button
-          disabled={busy || Boolean(editor)}
+          disabled={
+            busy || Boolean(editor) || Boolean(copy) || Boolean(importDraft) || readingImport
+          }
           onClick={() =>
             setEditor({
               graphId: null,
@@ -259,7 +370,13 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         </button>
         {graph && (
           <button
-            disabled={busy || Boolean(editor) || graph.mode === "cancelled" || Boolean(automatic)}
+            disabled={
+              busy ||
+              Boolean(editor) ||
+              Boolean(copy) ||
+              graph.mode === "cancelled" ||
+              Boolean(automatic)
+            }
             onClick={() =>
               setEditor({
                 graphId: graph.id,
@@ -279,7 +396,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           Сохранённые планы
           <select
             value={graph?.id ?? ""}
-            disabled={busy || Boolean(editor)}
+            disabled={
+              busy || Boolean(editor) || Boolean(copy) || Boolean(importDraft) || readingImport
+            }
             onChange={(e) => {
               setSelected(e.target.value);
               setRetry(null);
@@ -296,10 +415,129 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </select>
         </label>
       )}
+      <details>
+        <summary>Перенос плана через JSON</summary>
+        <p>
+          Файл содержит задачи и зависимости. После локального предпросмотра импорт создаст новый
+          план с текущим сохранённым выбором Skills Work проекта. Запуск выполняется отдельно.
+        </p>
+        <label>
+          JSON плана
+          <input
+            aria-label="JSON плана"
+            type="file"
+            accept=".json,application/json"
+            disabled={busy || Boolean(editor) || Boolean(copy) || readingImport}
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = "";
+              void loadImport(file);
+            }}
+          />
+        </label>
+        {readingImport && <p role="status">Проверка файла…</p>}
+        {importDraft && (
+          <form
+            aria-label="Предпросмотр импорта плана"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (importDraft.checked)
+                void mutate(base + "/import", "POST", {
+                  client_request_id: importDraft.requestId,
+                  package: importDraft.package
+                });
+            }}
+          >
+            <strong>{importDraft.package.title}</strong>
+            <ol className={styles.importPreview}>
+              {importDraft.package.nodes.map((n) => (
+                <li key={n.id}>
+                  <strong>{n.title}</strong>
+                  <p>{n.goal}</p>
+                  <p>
+                    Зависимости:{" "}
+                    {n.depends_on
+                      .map((id) => importDraft.package.nodes.find((x) => x.id === id)?.title ?? id)
+                      .join(", ") || "нет"}{" "}
+                    · {n.requires_critic ? "Критик обязателен" : "Критик по риску"}
+                  </p>
+                </li>
+              ))}
+            </ol>
+            <label>
+              <input
+                type="checkbox"
+                checked={importDraft.checked}
+                disabled={busy}
+                onChange={(e) => setImportDraft({ ...importDraft, checked: e.target.checked })}
+              />
+              Я проверил задачи и зависимости; использовать сохранённые Skills Work проекта
+            </label>
+            <button type="submit" disabled={busy || !importDraft.checked}>
+              Сохранить импортированный план
+            </button>
+            <button type="button" disabled={busy} onClick={() => setImportDraft(null)}>
+              Отмена импорта
+            </button>
+          </form>
+        )}
+      </details>
       {error && (
         <p role="alert" className={styles.error}>
           {error}
         </p>
+      )}
+      {copy && (
+        <form
+          aria-label="Копия плана"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void mutate(base + "/" + encodeURIComponent(copy.sourceId) + "/clone", "POST", {
+              client_request_id: copy.requestId,
+              expected_version: copy.sourceVersion,
+              title: copy.title,
+              skills: copy.skills
+            });
+          }}
+        >
+          <p>
+            Будет создан отдельный план с теми же задачами и зависимостями. История запусков,
+            результаты, разрешения и расходы не переносятся. Запуск потребует отдельного действия.
+          </p>
+          <label>
+            Название копии
+            <input
+              aria-label="Название копии"
+              maxLength={160}
+              required
+              value={copy.title}
+              disabled={busy}
+              onChange={(e) => setCopy({ ...copy, title: e.target.value })}
+            />
+          </label>
+          <label>
+            Инструкции для копии
+            <select
+              aria-label="Инструкции для копии"
+              value={copy.skills}
+              disabled={busy}
+              onChange={(e) => setCopy({ ...copy, skills: e.target.value as "source" | "project" })}
+            >
+              <option value="source">Сохранённый снимок Skills исходного плана</option>
+              <option value="project">Текущий сохранённый выбор Skills Work проекта</option>
+            </select>
+          </label>
+          <p>
+            Исходный снимок может содержать текст удалённых Skills. Для текущего набора инструкций
+            выберите настройки проекта.
+          </p>
+          <button type="submit" disabled={busy || !copy.title.trim()}>
+            Сохранить копию
+          </button>
+          <button type="button" disabled={busy} onClick={() => setCopy(null)}>
+            Отмена копирования
+          </button>
+        </form>
       )}
       {editor && (
         <form
@@ -421,6 +659,25 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       {graph && (
         <>
           <h4>{graph.title}</h4>
+          <a
+            href={base + "/" + encodeURIComponent(graph.id) + "/package"}
+            download="work-plan.json"
+          >
+            Скачать JSON плана
+          </a>
+          {graph.copied_from && (
+            <p>
+              Копия плана · исходная версия {graph.copied_from.version} ·{" "}
+              {graph.copied_from.skills === "source"
+                ? "Skills из исходного снимка"
+                : "Skills из настроек проекта"}
+            </p>
+          )}
+          <AcceptedSkillView
+            key={graph.id}
+            path={base + "/" + encodeURIComponent(graph.id) + "/skills"}
+            label="Skills этого плана"
+          />
           <p>
             {graph.mode === "active"
               ? "Проект активен"

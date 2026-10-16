@@ -3188,6 +3188,16 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   }
 
   app.setErrorHandler((error, request, reply) => {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      error.statusCode === 413
+    ) {
+      return reply
+        .status(413)
+        .send(errorBody(request.id, "VALIDATION_ERROR", "Request body is too large"));
+    }
     if (error instanceof IdempotencyConflictError) {
       return reply
         .status(409)
