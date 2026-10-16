@@ -3189,6 +3189,9 @@ export default function Home() {
               void loadProjects().catch(() => undefined);
               void openProject(id, "chat", "files");
             }}
+            onDataProjectAvailable={() => {
+              void loadProjects().catch(() => undefined);
+            }}
             onNavigate={selectSurface}
             onCompose={(prompt, files = []) => {
               pendingComposeRef.current = { prompt, files };

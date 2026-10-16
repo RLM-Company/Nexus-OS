@@ -24,6 +24,7 @@ import { StudioFiles } from "./studio-files";
 import styles from "./studio-data-workbench.module.css";
 import { ShiningText, SystemMessage } from "./ui/kosmora-controls";
 import { WorkspaceIcon } from "./workspace-icons";
+import { ProjectTables } from "./project-tables";
 
 type Response =
   | { id: number; kind: "loaded"; name: string; table: CsvTable; settings: DataSettings }
@@ -48,11 +49,13 @@ function download(blob: Blob, name: string) {
 export function StudioDataSurface({
   onCompose,
   projectId,
-  onProjectCreated
+  onProjectCreated,
+  onProjectAvailable
 }: {
   onCompose: (prompt: string, files?: ChatAttachment[]) => void;
   projectId: string | null;
   onProjectCreated?: (id: string) => void;
+  onProjectAvailable?: () => void;
 }) {
   const [tab, setTab] = useState<"data" | "documents">("documents");
   return (
@@ -74,7 +77,11 @@ export function StudioDataSurface({
         </button>
       </nav>
       <div hidden={tab !== "data"}>
-        <DataWorkbench onCompose={onCompose} />
+        <DataWorkbench
+          onCompose={onCompose}
+          projectId={projectId}
+          {...(onProjectAvailable ? { onProjectAvailable } : {})}
+        />
       </div>
       <div hidden={tab !== "documents"}>
         <StudioFiles
@@ -88,9 +95,13 @@ export function StudioDataSurface({
 }
 
 export function DataWorkbench({
-  onCompose
+  onCompose,
+  projectId = null,
+  onProjectAvailable
 }: {
   onCompose: (prompt: string, files?: ChatAttachment[]) => void;
+  projectId?: string | null;
+  onProjectAvailable?: () => void;
 }) {
   const workerRef = useRef<Worker | null>(null);
   const generation = useRef(0);
@@ -114,6 +125,8 @@ export function DataWorkbench({
   const [cellEdit, setCellEdit] = useState<DataCellEdit | null>(null);
   const [undoEdits, setUndoEdits] = useState<DataCellEdit[]>([]);
   const [redoEdits, setRedoEdits] = useState<DataCellEdit[]>([]);
+  const [serverBusy, setServerBusy] = useState(false);
+  const [sourceEpoch, setSourceEpoch] = useState(0);
 
   function stopAll() {
     generation.current++;
@@ -176,7 +189,8 @@ export function DataWorkbench({
     return worker;
   }
 
-  async function loadFile(file: File) {
+  async function loadFile(file: File, fromProject = false) {
+    if (!fromProject) setSourceEpoch((value) => value + 1);
     stopAll();
     setBusy(false);
     setExporting(false);
@@ -413,612 +427,647 @@ export function DataWorkbench({
       : null;
   return (
     <section className={styles.root} aria-label="Data Workbench">
-      <header className={styles.header}>
-        <span className={styles.icon}>
-          <WorkspaceIcon name="files" />
-        </span>
-        <div>
-          <h2>Таблицы и диаграммы</h2>
-          <p>Фильтруйте данные, сравнивайте значения и сохраняйте результаты.</p>
-        </div>
-      </header>
-      <div className={styles.box}>
-        <label className={styles.fileLabel} htmlFor="data-file">
-          Открыть таблицу или сохранённый проект
-        </label>
-        <input
-          id="data-file"
-          type="file"
-          accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void loadFile(file);
-            e.target.value = "";
-          }}
-        />
-        <small>
-          CSV и TSV в UTF-8 до 8 МБ: 80 000 строк, 100 столбцов, 1 млн ячеек. Сохранённый проект —
-          до 16 МБ; выгрузка — до 32 МБ.
-        </small>
-        {(busy || exporting) && (
-          <button type="button" onClick={cancel}>
-            Отменить обработку
-          </button>
-        )}
-        {table && settings && !busy && !exporting && (
-          <button type="button" onClick={() => update((s) => ({ ...s }))}>
-            Пересчитать
-          </button>
-        )}
+      <ProjectTables
+        projectId={projectId}
+        hasTable={!!table && !!settings}
+        blocked={busy || exporting}
+        sourceEpoch={sourceEpoch}
+        onBusy={setServerBusy}
+        {...(onProjectAvailable ? { onProjectAvailable } : {})}
+        snapshot={async () => {
+          if (!table || !settings) throw new Error("Сначала откройте таблицу.");
+          return (
+            await exportWorkspace(name, table, settings, new AbortController().signal)
+          ).text();
+        }}
+        report={() => {
+          if (!table || !settings || !result) throw new Error("Сначала дождитесь пересчёта.");
+          return dataReport(name, table, settings, result);
+        }}
+        onLoad={(content) =>
+          void loadFile(
+            new File([content], "project.workspace.json", { type: "application/json" }),
+            true
+          )
+        }
+      />
+      <fieldset className={styles.workingBody} disabled={serverBusy}>
+        <header className={styles.header}>
+          <span className={styles.icon}>
+            <WorkspaceIcon name="files" />
+          </span>
+          <div>
+            <h2>Таблицы и диаграммы</h2>
+            <p>Фильтруйте данные, сравнивайте значения и сохраняйте результаты.</p>
+          </div>
+        </header>
+        <div className={styles.box}>
+          <label className={styles.fileLabel} htmlFor="data-file">
+            Открыть таблицу или сохранённый проект
+          </label>
+          <input
+            id="data-file"
+            type="file"
+            accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void loadFile(file);
+              e.target.value = "";
+            }}
+          />
+          <small>
+            CSV и TSV в UTF-8 до 8 МБ: 80 000 строк, 100 столбцов, 1 млн ячеек. Сохранённый проект —
+            до 16 МБ; выгрузка — до 32 МБ.
+          </small>
+          {(busy || exporting) && (
+            <button type="button" onClick={cancel}>
+              Отменить обработку
+            </button>
+          )}
+          {table && settings && !busy && !exporting && (
+            <button type="button" onClick={() => update((s) => ({ ...s }))}>
+              Пересчитать
+            </button>
+          )}
 
-        {progress && (
-          <p role="status">
-            {busy || exporting ? <ShiningText>{progress}</ShiningText> : progress}
-          </p>
-        )}
-        {error && <SystemMessage>{error}</SystemMessage>}
-        {notice && <SystemMessage kind="success">{notice}</SystemMessage>}
-      </div>
-      {table && settings && (
-        <>
-          <div className={styles.summary}>
-            <strong>{name}</strong> · {table.rows.length.toLocaleString("ru")} строк ·{" "}
-            {columns.length} колонок · после фильтра:{" "}
-            {result ? result.indexes.length.toLocaleString("ru") : "пересчёт"}
-          </div>
-          <div className={styles.box}>
-            <h3>Столбцы и явные типы</h3>
-            <p className={styles.muted}>
-              По умолчанию все значения — текст. Идентификаторы остаются исходными строками; числа
-              распознаются только после выбора типа.
+          {progress && (
+            <p role="status">
+              {busy || exporting ? <ShiningText>{progress}</ShiningText> : progress}
             </p>
-            <div className={styles.columns}>
-              {columns.map((label, i) => (
-                <div key={i} className={styles.column}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={settings.columns.includes(i)}
-                      onChange={(e) =>
-                        update((s) => ({
-                          ...s,
-                          columns: e.target.checked
-                            ? [...s.columns, i].sort((a, b) => a - b)
-                            : s.columns.length > 1
-                              ? s.columns.filter((x) => x !== i)
-                              : s.columns
-                        }))
-                      }
-                    />{" "}
-                    {i + 1}. {label}
-                  </label>
-                  <select
-                    aria-label={`Тип столбца ${i + 1} ${label}`}
-                    value={settings.types[i]}
-                    onChange={(e) => typeColumn(i, e.target.value as DataType)}
-                  >
-                    <option value="text">Текст</option>
-                    <option value="number">Число</option>
-                  </select>
-                </div>
-              ))}
+          )}
+          {error && <SystemMessage>{error}</SystemMessage>}
+          {notice && <SystemMessage kind="success">{notice}</SystemMessage>}
+        </div>
+        {table && settings && (
+          <>
+            <div className={styles.summary}>
+              <strong>{name}</strong> · {table.rows.length.toLocaleString("ru")} строк ·{" "}
+              {columns.length} колонок · после фильтра:{" "}
+              {result ? result.indexes.length.toLocaleString("ru") : "пересчёт"}
             </div>
-          </div>
-          <div className={styles.box}>
-            <h3>Фильтры и сортировка</h3>
-            <div className={styles.filters}>
-              {settings.filters.map((f, i) => (
-                <div className={styles.filter} key={i}>
+            <div className={styles.box}>
+              <h3>Столбцы и явные типы</h3>
+              <p className={styles.muted}>
+                По умолчанию все значения — текст. Идентификаторы остаются исходными строками; числа
+                распознаются только после выбора типа.
+              </p>
+              <div className={styles.columns}>
+                {columns.map((label, i) => (
+                  <div key={i} className={styles.column}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={settings.columns.includes(i)}
+                        onChange={(e) =>
+                          update((s) => ({
+                            ...s,
+                            columns: e.target.checked
+                              ? [...s.columns, i].sort((a, b) => a - b)
+                              : s.columns.length > 1
+                                ? s.columns.filter((x) => x !== i)
+                                : s.columns
+                          }))
+                        }
+                      />{" "}
+                      {i + 1}. {label}
+                    </label>
+                    <select
+                      aria-label={`Тип столбца ${i + 1} ${label}`}
+                      value={settings.types[i]}
+                      onChange={(e) => typeColumn(i, e.target.value as DataType)}
+                    >
+                      <option value="text">Текст</option>
+                      <option value="number">Число</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className={styles.box}>
+              <h3>Фильтры и сортировка</h3>
+              <div className={styles.filters}>
+                {settings.filters.map((f, i) => (
+                  <div className={styles.filter} key={i}>
+                    <select
+                      aria-label={`Столбец фильтра ${i + 1}`}
+                      value={f.column}
+                      onChange={(e) =>
+                        setFilter(i, { column: Number(e.target.value), operator: "contains" })
+                      }
+                    >
+                      {columns.map((label, j) => (
+                        <option key={j} value={j}>
+                          {j + 1}. {label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      aria-label={`Условие фильтра ${i + 1}`}
+                      value={f.operator}
+                      onChange={(e) => setFilter(i, { operator: e.target.value as DataOperator })}
+                    >
+                      <option value="contains">Содержит</option>
+                      <option value="equals">Равно</option>
+                      {settings.types[f.column] === "number" && (
+                        <>
+                          <option value="greater">≥ число</option>
+                          <option value="less">≤ число</option>
+                        </>
+                      )}
+                      <option value="empty">Пусто</option>
+                      <option value="nonempty">Не пусто</option>
+                    </select>
+                    {!["empty", "nonempty"].includes(f.operator) && (
+                      <input
+                        aria-label={`Значение фильтра ${i + 1}`}
+                        value={f.value}
+                        maxLength={200}
+                        onChange={(e) => setFilter(i, { value: e.target.value })}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      aria-label={`Удалить фильтр ${i + 1}`}
+                      onClick={() =>
+                        update((s) => ({ ...s, filters: s.filters.filter((_, j) => j !== i) }))
+                      }
+                    >
+                      Убрать
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={settings.filters.length >= 8}
+                onClick={() =>
+                  update((s) => ({
+                    ...s,
+                    filters: [...s.filters, { column: 0, operator: "contains", value: "" }]
+                  }))
+                }
+              >
+                Добавить фильтр
+              </button>
+              <div className={styles.controls}>
+                <label>
+                  Сортировать по{" "}
                   <select
-                    aria-label={`Столбец фильтра ${i + 1}`}
-                    value={f.column}
+                    value={settings.sort?.column ?? ""}
                     onChange={(e) =>
-                      setFilter(i, { column: Number(e.target.value), operator: "contains" })
+                      update((s) => ({
+                        ...s,
+                        sort:
+                          e.target.value === ""
+                            ? null
+                            : {
+                                column: Number(e.target.value),
+                                direction: s.sort?.direction ?? "asc"
+                              }
+                      }))
                     }
                   >
-                    {columns.map((label, j) => (
-                      <option key={j} value={j}>
-                        {j + 1}. {label}
+                    <option value="">По порядку файла</option>
+                    {columns.map((c, i) => (
+                      <option key={i} value={i}>
+                        {i + 1}. {c}
                       </option>
                     ))}
                   </select>
+                </label>
+                <label>
+                  Направление{" "}
                   <select
-                    aria-label={`Условие фильтра ${i + 1}`}
-                    value={f.operator}
-                    onChange={(e) => setFilter(i, { operator: e.target.value as DataOperator })}
+                    disabled={!settings.sort}
+                    value={settings.sort?.direction ?? "asc"}
+                    onChange={(e) =>
+                      update((s) => ({
+                        ...s,
+                        sort: s.sort
+                          ? { ...s.sort, direction: e.target.value as "asc" | "desc" }
+                          : null
+                      }))
+                    }
                   >
-                    <option value="contains">Содержит</option>
-                    <option value="equals">Равно</option>
-                    {settings.types[f.column] === "number" && (
+                    <option value="asc">По возрастанию</option>
+                    <option value="desc">По убыванию</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div className={styles.box}>
+              <h3>Статистика и группировка</h3>
+              <div className={styles.controls}>
+                <label>
+                  Числовая колонка{" "}
+                  <select
+                    value={settings.measure}
+                    onChange={(e) => update((s) => ({ ...s, measure: Number(e.target.value) }))}
+                  >
+                    {columns.map((c, i) => (
+                      <option key={i} value={i}>
+                        {i + 1}. {c}
+                        {settings.types[i] === "number" ? " (число)" : " (текст)"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Группировать по{" "}
+                  <select
+                    value={settings.group ?? ""}
+                    onChange={(e) =>
+                      update((s) => ({
+                        ...s,
+                        group: e.target.value === "" ? null : Number(e.target.value)
+                      }))
+                    }
+                  >
+                    <option value="">Без группировки</option>
+                    {columns.map((c, i) => (
+                      <option key={i} value={i}>
+                        {i + 1}. {c}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {settings.types[settings.measure] !== "number" ? (
+                <p role="status">
+                  Для числовой статистики укажите тип «Число» у выбранной колонки.
+                </p>
+              ) : (
+                result && (
+                  <>
+                    <dl className={styles.metrics}>
+                      {(
+                        [
+                          "scanned",
+                          "count",
+                          "missing",
+                          "invalid",
+                          "sum",
+                          "min",
+                          "max",
+                          "mean"
+                        ] as const
+                      ).map((key) => (
+                        <div key={key}>
+                          <dt>
+                            {
+                              {
+                                scanned: "Проверено",
+                                count: "Чисел",
+                                missing: "Пропуски",
+                                invalid: "Некорректные",
+                                sum: "Сумма",
+                                min: "Минимум",
+                                max: "Максимум",
+                                mean: "Среднее"
+                              }[key]
+                            }
+                          </dt>
+                          <dd>{textNumber(result.stats[key])}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {settings.group !== null && (
                       <>
-                        <option value="greater">≥ число</option>
-                        <option value="less">≤ число</option>
+                        <p>
+                          Групп: {result.groups.length} (максимум {DATA_LIMITS.groups}).
+                        </p>
+                        <div className={styles.tableWrap}>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Группа</th>
+                                <th>Чисел</th>
+                                <th>Пустых</th>
+                                <th>Ошибок</th>
+                                <th>Сумма</th>
+                                <th>Мин.</th>
+                                <th>Макс.</th>
+                                <th>Среднее</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {result.groups.slice(0, 40).map((g, i) => (
+                                <tr key={i}>
+                                  <td>{g.key || "(пусто)"}</td>
+                                  {(
+                                    [
+                                      "count",
+                                      "missing",
+                                      "invalid",
+                                      "sum",
+                                      "min",
+                                      "max",
+                                      "mean"
+                                    ] as const
+                                  ).map((key) => (
+                                    <td key={key}>{textNumber(g.stats[key])}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <small>
+                          Показаны до 40 групп; отчёт включает все {result.groups.length}.
+                        </small>
                       </>
                     )}
-                    <option value="empty">Пусто</option>
-                    <option value="nonempty">Не пусто</option>
-                  </select>
-                  {!["empty", "nonempty"].includes(f.operator) && (
-                    <input
-                      aria-label={`Значение фильтра ${i + 1}`}
-                      value={f.value}
-                      maxLength={200}
-                      onChange={(e) => setFilter(i, { value: e.target.value })}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    aria-label={`Удалить фильтр ${i + 1}`}
-                    onClick={() =>
-                      update((s) => ({ ...s, filters: s.filters.filter((_, j) => j !== i) }))
-                    }
-                  >
-                    Убрать
-                  </button>
-                </div>
-              ))}
+                  </>
+                )
+              )}
             </div>
-            <button
-              type="button"
-              disabled={settings.filters.length >= 8}
-              onClick={() =>
-                update((s) => ({
-                  ...s,
-                  filters: [...s.filters, { column: 0, operator: "contains", value: "" }]
-                }))
-              }
-            >
-              Добавить фильтр
-            </button>
-            <div className={styles.controls}>
-              <label>
-                Сортировать по{" "}
-                <select
-                  value={settings.sort?.column ?? ""}
-                  onChange={(e) =>
-                    update((s) => ({
-                      ...s,
-                      sort:
-                        e.target.value === ""
-                          ? null
-                          : {
-                              column: Number(e.target.value),
-                              direction: s.sort?.direction ?? "asc"
-                            }
-                    }))
-                  }
-                >
-                  <option value="">По порядку файла</option>
-                  {columns.map((c, i) => (
-                    <option key={i} value={i}>
-                      {i + 1}. {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Направление{" "}
-                <select
-                  disabled={!settings.sort}
-                  value={settings.sort?.direction ?? "asc"}
-                  onChange={(e) =>
-                    update((s) => ({
-                      ...s,
-                      sort: s.sort
-                        ? { ...s.sort, direction: e.target.value as "asc" | "desc" }
-                        : null
-                    }))
-                  }
-                >
-                  <option value="asc">По возрастанию</option>
-                  <option value="desc">По убыванию</option>
-                </select>
-              </label>
-            </div>
-          </div>
-          <div className={styles.box}>
-            <h3>Статистика и группировка</h3>
-            <div className={styles.controls}>
-              <label>
-                Числовая колонка{" "}
-                <select
-                  value={settings.measure}
-                  onChange={(e) => update((s) => ({ ...s, measure: Number(e.target.value) }))}
-                >
-                  {columns.map((c, i) => (
-                    <option key={i} value={i}>
-                      {i + 1}. {c}
-                      {settings.types[i] === "number" ? " (число)" : " (текст)"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Группировать по{" "}
-                <select
-                  value={settings.group ?? ""}
-                  onChange={(e) =>
-                    update((s) => ({
-                      ...s,
-                      group: e.target.value === "" ? null : Number(e.target.value)
-                    }))
-                  }
-                >
-                  <option value="">Без группировки</option>
-                  {columns.map((c, i) => (
-                    <option key={i} value={i}>
-                      {i + 1}. {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {settings.types[settings.measure] !== "number" ? (
-              <p role="status">Для числовой статистики укажите тип «Число» у выбранной колонки.</p>
-            ) : (
-              result && (
-                <>
-                  <dl className={styles.metrics}>
-                    {(
-                      [
-                        "scanned",
-                        "count",
-                        "missing",
-                        "invalid",
-                        "sum",
-                        "min",
-                        "max",
-                        "mean"
-                      ] as const
-                    ).map((key) => (
-                      <div key={key}>
-                        <dt>
-                          {
-                            {
-                              scanned: "Проверено",
-                              count: "Чисел",
-                              missing: "Пропуски",
-                              invalid: "Некорректные",
-                              sum: "Сумма",
-                              min: "Минимум",
-                              max: "Максимум",
-                              mean: "Среднее"
-                            }[key]
-                          }
-                        </dt>
-                        <dd>{textNumber(result.stats[key])}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {settings.group !== null && (
-                    <>
-                      <p>
-                        Групп: {result.groups.length} (максимум {DATA_LIMITS.groups}).
-                      </p>
-                      <div className={styles.tableWrap}>
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Группа</th>
-                              <th>Чисел</th>
-                              <th>Пустых</th>
-                              <th>Ошибок</th>
-                              <th>Сумма</th>
-                              <th>Мин.</th>
-                              <th>Макс.</th>
-                              <th>Среднее</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {result.groups.slice(0, 40).map((g, i) => (
-                              <tr key={i}>
-                                <td>{g.key || "(пусто)"}</td>
-                                {(
-                                  [
-                                    "count",
-                                    "missing",
-                                    "invalid",
-                                    "sum",
-                                    "min",
-                                    "max",
-                                    "mean"
-                                  ] as const
-                                ).map((key) => (
-                                  <td key={key}>{textNumber(g.stats[key])}</td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <small>
-                        Показаны до 40 групп; отчёт включает все {result.groups.length}.
-                      </small>
-                    </>
-                  )}
-                </>
-              )
-            )}
-          </div>
-          <div className={styles.box}>
-            <h3>Диаграмма</h3>
-            <div className={styles.controls}>
-              <label>
-                Вид{" "}
-                <select
-                  value={settings.chart.kind}
-                  onChange={(e) =>
-                    update((s) => ({
-                      ...s,
-                      chart: { ...s.chart, kind: e.target.value as DataChart["kind"] }
-                    }))
-                  }
-                >
-                  <option value="bar">Столбчатая</option>
-                  <option value="line">Линейная</option>
-                  <option value="scatter">Точечная (scatter)</option>
-                </select>
-              </label>
-              {(["x", "y"] as const).map((axis) => (
-                <label key={axis}>
-                  Ось {axis.toUpperCase()}{" "}
+            <div className={styles.box}>
+              <h3>Диаграмма</h3>
+              <div className={styles.controls}>
+                <label>
+                  Вид{" "}
                   <select
-                    value={
-                      settings.columns.includes(settings.chart[axis]) &&
-                      numericColumns.includes(settings.chart[axis])
-                        ? settings.chart[axis]
-                        : ""
+                    value={settings.chart.kind}
+                    onChange={(e) =>
+                      update((s) => ({
+                        ...s,
+                        chart: { ...s.chart, kind: e.target.value as DataChart["kind"] }
+                      }))
                     }
-                    onChange={(e) => {
-                      if (e.target.value !== "")
-                        update((s) => ({
-                          ...s,
-                          chart: { ...s.chart, [axis]: Number(e.target.value) }
-                        }));
-                    }}
                   >
-                    <option value="">Выберите числовую колонку</option>
-                    {settings.columns
-                      .filter((col) => numericColumns.includes(col))
-                      .map((i) => (
-                        <option key={i} value={i}>
-                          {i + 1}. {columns[i]}
-                        </option>
-                      ))}
+                    <option value="bar">Столбчатая</option>
+                    <option value="line">Линейная</option>
+                    <option value="scatter">Точечная (scatter)</option>
                   </select>
                 </label>
-              ))}
-            </div>
-            {!chartReady ? (
-              <p role="status">
-                Выберите две числовые колонки среди отмеченных и укажите оси X и Y.
-              </p>
-            ) : (
-              chartText && (
-                <>
-                  <div
-                    className={styles.chart}
-                    role="img"
-                    aria-label={`${settings.chart.kind}: ${columns[settings.chart.x]} по X, ${columns[settings.chart.y]} по Y`}
-                    dangerouslySetInnerHTML={{ __html: chartText.replace(/^<\?xml[^>]*>\s*/u, "") }}
-                  />
-                  <p>
-                    Числовых пар: {result?.plot.valid}; пропусков: {result?.plot.missing}; ошибок:{" "}
-                    {result?.plot.invalid}; точек на графике: {result?.plot.points.length}
-                    {result?.plot.sampled
-                      ? " (визуальная выборка, полный экспорт не ограничен)"
-                      : ""}
-                    . Линия упорядочена по X.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={busy || exporting}
-                    onClick={() =>
-                      download(
-                        new Blob([chartText], { type: "image/svg+xml" }),
-                        `${cleanFilename(name)}-chart.svg`
-                      )
-                    }
-                  >
-                    Скачать SVG
-                  </button>
-                </>
-              )
-            )}
-          </div>
-          <div className={styles.box}>
-            <h3>Таблица</h3>
-            <div className={styles.controls}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={editing}
-                  onChange={(event) => {
-                    setEditing(event.target.checked);
-                    setCellEdit(null);
-                  }}
-                />
-                Редактировать ячейки
-              </label>
-              <button
-                type="button"
-                disabled={busy || exporting || !undoEdits.length || !!cellEdit}
-                onClick={() => commitCell(undoEdits[undoEdits.length - 1]!, "undo")}
-              >
-                Отменить правку
-              </button>
-              <button
-                type="button"
-                disabled={busy || exporting || !redoEdits.length || !!cellEdit}
-                onClick={() => commitCell(redoEdits[redoEdits.length - 1]!, "redo")}
-              >
-                Повторить правку
-              </button>
-            </div>
-            {cellEdit && (
-              <div className={styles.cellEditor}>
-                <label htmlFor="data-cell-value">
-                  Строка {cellEdit.row + 1}, столбец {cellEdit.column + 1}:{" "}
-                  {columns[cellEdit.column]}
-                </label>
-                <textarea
-                  id="data-cell-value"
-                  aria-label="Новое значение ячейки"
-                  value={cellEdit.after}
-                  onChange={(event) => setCellEdit({ ...cellEdit, after: event.target.value })}
-                />
-                <div className={styles.controls}>
-                  <button
-                    type="button"
-                    disabled={busy || exporting}
-                    onClick={() => commitCell(cellEdit)}
-                  >
-                    Применить ячейку
-                  </button>
-                  <button type="button" onClick={() => setCellEdit(null)}>
-                    Отменить ввод
-                  </button>
-                </div>
+                {(["x", "y"] as const).map((axis) => (
+                  <label key={axis}>
+                    Ось {axis.toUpperCase()}{" "}
+                    <select
+                      value={
+                        settings.columns.includes(settings.chart[axis]) &&
+                        numericColumns.includes(settings.chart[axis])
+                          ? settings.chart[axis]
+                          : ""
+                      }
+                      onChange={(e) => {
+                        if (e.target.value !== "")
+                          update((s) => ({
+                            ...s,
+                            chart: { ...s.chart, [axis]: Number(e.target.value) }
+                          }));
+                      }}
+                    >
+                      <option value="">Выберите числовую колонку</option>
+                      {settings.columns
+                        .filter((col) => numericColumns.includes(col))
+                        .map((i) => (
+                          <option key={i} value={i}>
+                            {i + 1}. {columns[i]}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                ))}
               </div>
-            )}
-            <p>
-              {result
-                ? `Показано ${preview.length} из ${result.indexes.length} строк`
-                : "Идёт пересчёт…"}
-              . Просмотр постраничный, выгрузка всегда полная.
-            </p>
-            <div className={styles.tableWrap}>
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Строка</th>
-                    {settings.columns.map((col) => (
-                      <th key={col} scope="col">
-                        {col + 1}. {columns[col]}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.map((idx) => (
-                    <tr key={idx}>
-                      <th scope="row">{idx + 1}</th>
+              {!chartReady ? (
+                <p role="status">
+                  Выберите две числовые колонки среди отмеченных и укажите оси X и Y.
+                </p>
+              ) : (
+                chartText && (
+                  <>
+                    <div
+                      className={styles.chart}
+                      role="img"
+                      aria-label={`${settings.chart.kind}: ${columns[settings.chart.x]} по X, ${columns[settings.chart.y]} по Y`}
+                      dangerouslySetInnerHTML={{
+                        __html: chartText.replace(/^<\?xml[^>]*>\s*/u, "")
+                      }}
+                    />
+                    <p>
+                      Числовых пар: {result?.plot.valid}; пропусков: {result?.plot.missing}; ошибок:{" "}
+                      {result?.plot.invalid}; точек на графике: {result?.plot.points.length}
+                      {result?.plot.sampled
+                        ? " (визуальная выборка, полный экспорт не ограничен)"
+                        : ""}
+                      . Линия упорядочена по X.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy || exporting}
+                      onClick={() =>
+                        download(
+                          new Blob([chartText], { type: "image/svg+xml" }),
+                          `${cleanFilename(name)}-chart.svg`
+                        )
+                      }
+                    >
+                      Скачать SVG
+                    </button>
+                  </>
+                )
+              )}
+            </div>
+            <div className={styles.box}>
+              <h3>Таблица</h3>
+              <div className={styles.controls}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={editing}
+                    onChange={(event) => {
+                      setEditing(event.target.checked);
+                      setCellEdit(null);
+                    }}
+                  />
+                  Редактировать ячейки
+                </label>
+                <button
+                  type="button"
+                  disabled={busy || exporting || !undoEdits.length || !!cellEdit}
+                  onClick={() => commitCell(undoEdits[undoEdits.length - 1]!, "undo")}
+                >
+                  Отменить правку
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || exporting || !redoEdits.length || !!cellEdit}
+                  onClick={() => commitCell(redoEdits[redoEdits.length - 1]!, "redo")}
+                >
+                  Повторить правку
+                </button>
+              </div>
+              {cellEdit && (
+                <div className={styles.cellEditor}>
+                  <label htmlFor="data-cell-value">
+                    Строка {cellEdit.row + 1}, столбец {cellEdit.column + 1}:{" "}
+                    {columns[cellEdit.column]}
+                  </label>
+                  <textarea
+                    id="data-cell-value"
+                    aria-label="Новое значение ячейки"
+                    value={cellEdit.after}
+                    onChange={(event) => setCellEdit({ ...cellEdit, after: event.target.value })}
+                  />
+                  <div className={styles.controls}>
+                    <button
+                      type="button"
+                      disabled={busy || exporting}
+                      onClick={() => commitCell(cellEdit)}
+                    >
+                      Применить ячейку
+                    </button>
+                    <button type="button" onClick={() => setCellEdit(null)}>
+                      Отменить ввод
+                    </button>
+                  </div>
+                </div>
+              )}
+              <p>
+                {result
+                  ? `Показано ${preview.length} из ${result.indexes.length} строк`
+                  : "Идёт пересчёт…"}
+                . Просмотр постраничный, выгрузка всегда полная.
+              </p>
+              <div className={styles.tableWrap}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">Строка</th>
                       {settings.columns.map((col) => (
-                        <td key={col}>
-                          {editing ? (
-                            <button
-                              type="button"
-                              className={styles.cellButton}
-                              disabled={busy || exporting}
-                              aria-label={`Изменить ячейку: строка ${idx + 1}, столбец ${col + 1}`}
-                              onClick={() =>
-                                setCellEdit({
-                                  row: idx,
-                                  column: col,
-                                  before: table.rows[idx]![col]!,
-                                  after: table.rows[idx]![col]!
-                                })
-                              }
-                            >
-                              {table.rows[idx]?.[col] || "—"}
-                            </button>
-                          ) : (
-                            table.rows[idx]?.[col]
-                          )}
-                        </td>
+                        <th key={col} scope="col">
+                          {col + 1}. {columns[col]}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {preview.map((idx) => (
+                      <tr key={idx}>
+                        <th scope="row">{idx + 1}</th>
+                        {settings.columns.map((col) => (
+                          <td key={col}>
+                            {editing ? (
+                              <button
+                                type="button"
+                                className={styles.cellButton}
+                                disabled={busy || exporting}
+                                aria-label={`Изменить ячейку: строка ${idx + 1}, столбец ${col + 1}`}
+                                onClick={() =>
+                                  setCellEdit({
+                                    row: idx,
+                                    column: col,
+                                    before: table.rows[idx]![col]!,
+                                    after: table.rows[idx]![col]!
+                                  })
+                                }
+                              >
+                                {table.rows[idx]?.[col] || "—"}
+                              </button>
+                            ) : (
+                              table.rows[idx]?.[col]
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className={styles.controls}>
+                <button
+                  type="button"
+                  disabled={!page || busy}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  ← Назад
+                </button>
+                <span>
+                  Страница {page + 1} из{" "}
+                  {Math.max(1, Math.ceil((result?.indexes.length ?? 0) / 100))}
+                </span>
+                <button
+                  type="button"
+                  disabled={busy || (page + 1) * 100 >= (result?.indexes.length ?? 0)}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Далее →
+                </button>
+              </div>
             </div>
-            <div className={styles.controls}>
-              <button type="button" disabled={!page || busy} onClick={() => setPage((p) => p - 1)}>
-                ← Назад
-              </button>
-              <span>
-                Страница {page + 1} из {Math.max(1, Math.ceil((result?.indexes.length ?? 0) / 100))}
-              </span>
+            <div className={styles.box}>
+              <h3>Полный экспорт и сохранение</h3>
+              <p>
+                CSV/JSON (не более 32 МБ) выгружают все строки фильтра и все выбранные столбцы, без
+                ограничения страниц. Заголовки-дубликаты сохраняются в JSON через индексы.
+              </p>
+              <div className={styles.controls}>
+                <button
+                  type="button"
+                  disabled={!result || busy || exporting}
+                  onClick={() => void exportFile("csv")}
+                >
+                  Выгрузить CSV
+                </button>
+                <button
+                  type="button"
+                  disabled={!result || busy || exporting}
+                  onClick={() => void exportFile("json")}
+                >
+                  Выгрузить JSON
+                </button>
+                <button
+                  type="button"
+                  disabled={!result || busy || exporting}
+                  onClick={() =>
+                    download(
+                      new Blob([dataReport(name, table, settings, result!)], {
+                        type: "text/markdown;charset=utf-8"
+                      }),
+                      `${cleanFilename(name)}-report.md`
+                    )
+                  }
+                >
+                  Скачать отчёт
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || exporting}
+                  onClick={() => void saveWorkspace()}
+                >
+                  Сохранить workspace JSON
+                </button>
+              </div>
+              <p className={styles.muted}>
+                Сохраните проект вместе с таблицей и настройками, чтобы продолжить позже. Откройте
+                сохранённый JSON через выбор файла выше.
+              </p>
+            </div>
+            <div className={styles.box}>
+              <h3>В чат через скрепку</h3>
+              <label htmlFor="data-question">Задача для чата</label>
+              <textarea
+                id="data-question"
+                maxLength={1900}
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+              />
+              <p>
+                В чат попадёт выборка целых строк до 8 000 символов. Её размер и ограничения будут
+                указаны в сообщении.
+              </p>
               <button
                 type="button"
-                disabled={busy || (page + 1) * 100 >= (result?.indexes.length ?? 0)}
-                onClick={() => setPage((p) => p + 1)}
+                disabled={!result || busy || exporting || !question.trim()}
+                onClick={attach}
               >
-                Далее →
+                Подготовить CSV во вложении
               </button>
             </div>
-          </div>
-          <div className={styles.box}>
-            <h3>Полный экспорт и сохранение</h3>
-            <p>
-              CSV/JSON (не более 32 МБ) выгружают все строки фильтра и все выбранные столбцы, без
-              ограничения страниц. Заголовки-дубликаты сохраняются в JSON через индексы.
-            </p>
-            <div className={styles.controls}>
-              <button
-                type="button"
-                disabled={!result || busy || exporting}
-                onClick={() => void exportFile("csv")}
-              >
-                Выгрузить CSV
-              </button>
-              <button
-                type="button"
-                disabled={!result || busy || exporting}
-                onClick={() => void exportFile("json")}
-              >
-                Выгрузить JSON
-              </button>
-              <button
-                type="button"
-                disabled={!result || busy || exporting}
-                onClick={() =>
-                  download(
-                    new Blob([dataReport(name, table, settings, result!)], {
-                      type: "text/markdown;charset=utf-8"
-                    }),
-                    `${cleanFilename(name)}-report.md`
-                  )
-                }
-              >
-                Скачать отчёт
-              </button>
-              <button
-                type="button"
-                disabled={busy || exporting}
-                onClick={() => void saveWorkspace()}
-              >
-                Сохранить workspace JSON
-              </button>
-            </div>
-            <p className={styles.muted}>
-              Сохраните проект вместе с таблицей и настройками, чтобы продолжить позже. Откройте
-              сохранённый JSON через выбор файла выше.
-            </p>
-          </div>
-          <div className={styles.box}>
-            <h3>В чат через скрепку</h3>
-            <label htmlFor="data-question">Задача для чата</label>
-            <textarea
-              id="data-question"
-              maxLength={1900}
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-            />
-            <p>
-              В чат попадёт выборка целых строк до 8 000 символов. Её размер и ограничения будут
-              указаны в сообщении.
-            </p>
-            <button
-              type="button"
-              disabled={!result || busy || exporting || !question.trim()}
-              onClick={attach}
-            >
-              Подготовить CSV во вложении
-            </button>
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </fieldset>
     </section>
   );
 }
