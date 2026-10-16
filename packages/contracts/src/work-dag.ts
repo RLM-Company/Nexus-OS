@@ -34,6 +34,22 @@ export const WorkDagCloneSchema = Type.Object(
   { additionalProperties: false }
 );
 export type WorkDagClone = Static<typeof WorkDagCloneSchema>;
+export const WorkDagArchiveSchema = Type.Object(
+  {
+    expected_version: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+    archived: Type.Boolean()
+  },
+  { additionalProperties: false }
+);
+export type WorkDagArchive = Static<typeof WorkDagArchiveSchema>;
+export const WorkDagRenameSchema = Type.Object(
+  {
+    expected_version: WorkDagArchiveSchema.properties.expected_version,
+    title: WorkDagCreateSchema.properties.title
+  },
+  { additionalProperties: false }
+);
+export type WorkDagRename = Static<typeof WorkDagRenameSchema>;
 export const WorkDagEditSchema = Type.Object(
   { version: Type.Integer({ minimum: 1 }), nodes: WorkDagCreateSchema.properties.nodes },
   { additionalProperties: false }
@@ -90,6 +106,7 @@ export interface WorkDag {
   client_request_id: string;
   title: string;
   mode: "active" | "paused" | "cancelled";
+  archived_at?: string;
   copied_from?: { graph_id: string; version: number; skills: "source" | "project" };
   execution?: {
     status: "running" | "waiting" | "paused" | "stopped" | "completed" | "failed";

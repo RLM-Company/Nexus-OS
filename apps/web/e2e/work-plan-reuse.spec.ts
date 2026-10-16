@@ -14,6 +14,180 @@ const nodes = [
   { id: "b", title: "Документ", goal: "Использовать бриф", depends_on: ["a"] }
 ];
 
+test("renames literally once after a lost acknowledgement and preserves task IDs", async ({
+  page,
+  request
+}) => {
+  const id = await project(request),
+    base = `/api/v1/projects/${id}/work-dags`;
+  const created = await request.post(base, {
+    data: { client_request_id: randomUUID(), title: "Original title", nodes }
+  });
+  const source = (await created.json()) as WorkDag;
+  await page.goto(`/?project=${id}&view=plan`);
+  const panel = page.getByRole("region", { name: "План с зависимостями", exact: true });
+  await panel.getByRole("button", { name: "Переименовать план", exact: true }).click();
+  const title = "<script>window.renamedUnsafe=true</script>";
+  await panel.getByLabel("Новое название плана", { exact: true }).fill(title);
+  let writes = 0;
+  await page.route("**/work-dags/*/title", async (route) => {
+    writes++;
+    await route.fetch();
+    await route.fulfill({ status: 504, json: { error: "Lost acknowledgement" } });
+  });
+  await panel.getByRole("button", { name: "Сохранить название", exact: true }).click();
+  await expect(panel.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  await expect(panel.getByRole("form", { name: "Переименование плана", exact: true })).toHaveCount(
+    0
+  );
+  expect(writes).toBe(1);
+  expect(await page.evaluate(() => Object.hasOwn(window, "renamedUnsafe"))).toBe(false);
+  const saved = (await (await request.get(`${base}/${source.id}`)).json()) as WorkDag;
+  expect(saved.nodes.map((n) => n.id)).toEqual(nodes.map((n) => n.id));
+  expect(saved.nodes.every((n) => !n.attempts.length)).toBe(true);
+});
+
+test("archives once after lost acknowledgement, searches both collections and restores without execution", async ({
+  page,
+  request
+}) => {
+  const id = await project(request),
+    base = `/api/v1/projects/${id}/work-dags`;
+  const created = await request.post(base, {
+    data: { client_request_id: randomUUID(), title: "История брифа", nodes }
+  });
+  const source = (await created.json()) as WorkDag;
+  await page.goto(`/?project=${id}&view=plan`);
+  const panel = page.getByRole("region", { name: "План с зависимостями", exact: true });
+  await panel.getByLabel("Поиск планов", { exact: true }).fill("ИСПОЛЬЗОВАТЬ БРИФ");
+  await expect(panel.getByRole("heading", { name: source.title, exact: true })).toBeVisible();
+  let writes = 0;
+  await page.route("**/work-dags/*/archive", async (route) => {
+    writes++;
+    await route.fetch();
+    await route.fulfill({ status: 504, json: { error: "Lost acknowledgement" } });
+  });
+  await panel.getByRole("button", { name: "В архив", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Восстановить план", exact: true })).toBeVisible();
+  expect(writes).toBe(1);
+  await expect(panel.getByLabel("Раздел планов", { exact: true })).toHaveValue("archived");
+  await expect(panel.getByRole("button", { name: "Запустить шаг", exact: true })).toHaveCount(0);
+  await expect(
+    panel.getByRole("button", { name: "Редактировать не запущенные шаги", exact: true })
+  ).toBeDisabled();
+  await expect(panel.getByRole("link", { name: "Скачать JSON плана", exact: true })).toBeVisible();
+  await page.goto(`/?project=${id}&view=plan&plan=${source.id}`);
+  await expect(panel.getByLabel("Раздел планов", { exact: true })).toHaveValue("archived");
+  await expect(panel.getByRole("heading", { name: source.title, exact: true })).toBeVisible();
+  await panel.getByLabel("Раздел планов", { exact: true }).selectOption("active");
+  await expect(
+    panel.getByText("В этом разделе подходящих планов нет.", { exact: true })
+  ).toBeVisible();
+  await panel.getByLabel("Раздел планов", { exact: true }).selectOption("archived");
+  await panel.getByLabel("Поиск планов", { exact: true }).fill("нет совпадений");
+  await expect(panel.getByRole("heading", { name: source.title, exact: true })).toHaveCount(0);
+  await panel.getByLabel("Поиск планов", { exact: true }).fill("");
+  await panel.getByRole("button", { name: "Восстановить план", exact: true }).click();
+  await expect(panel.getByLabel("Раздел планов", { exact: true })).toHaveValue("active");
+  await expect(panel.getByRole("button", { name: "Запустить шаг", exact: true })).toBeVisible();
+  expect(writes).toBe(2);
+  const restored = (await (await request.get(`${base}/${source.id}`)).json()) as WorkDag;
+  expect(restored.archived_at).toBeUndefined();
+  expect(restored.nodes.every((n) => !n.attempts.length)).toBe(true);
+  expect(restored.execution).toBeUndefined();
+});
+
+test("a stale archive request cannot hide a plan edited in another tab", async ({
+  page,
+  request
+}) => {
+  const id = await project(request),
+    base = `/api/v1/projects/${id}/work-dags`;
+  const created = await request.post(base, {
+    data: { client_request_id: randomUUID(), title: "Concurrent plan", nodes }
+  });
+  const source = (await created.json()) as WorkDag;
+  await page.goto(`/?project=${id}&view=plan`);
+  const panel = page.getByRole("region", { name: "План с зависимостями", exact: true });
+  await page.route("**/work-dags/*/archive", async (route) => {
+    const current = (await (await request.get(`${base}/${source.id}`)).json()) as WorkDag;
+    const changed = await request.put(`${base}/${source.id}`, {
+      data: {
+        version: current.version,
+        nodes: [{ ...nodes[0], goal: "Changed in another tab" }, nodes[1]]
+      }
+    });
+    expect(changed.ok()).toBe(true);
+    await route.continue();
+  });
+  await panel.getByRole("button", { name: "В архив", exact: true }).click();
+  await expect(panel.getByRole("alert")).toContainText("План изменился");
+  const latest = (await (await request.get(`${base}/${source.id}`)).json()) as WorkDag;
+  expect(latest.archived_at).toBeUndefined();
+  expect(latest.nodes[0]?.goal).toBe("Changed in another tab");
+});
+
+test("copies to another project once after lost acknowledgement and opens that exact copy", async ({
+  page,
+  request
+}) => {
+  const id = await project(request),
+    target = await project(request),
+    base = `/api/v1/projects/${id}/work-dags`;
+  const skillResponse = await request.post("/api/v1/owner-skills", {
+    data: {
+      name: "Target " + randomUUID().slice(0, 8),
+      summary: "Target instructions",
+      instructions: "TARGET_PROJECT_INSTRUCTIONS"
+    }
+  });
+  expect(skillResponse.status()).toBe(201);
+  const skill = (await skillResponse.json()) as { id: string };
+  const selection = await request.put(`/api/v1/projects/${target}/work-skills`, {
+    data: { expected_version: 0, items: [{ skill_id: skill.id, version: 1 }] }
+  });
+  expect(selection.ok()).toBe(true);
+  const created = await request.post(base, {
+    data: { client_request_id: randomUUID(), title: "Оригинал", nodes }
+  });
+  const source = (await created.json()) as WorkDag;
+  await page.goto(`/?project=${id}&view=plan`);
+  const panel = page.getByRole("region", { name: "План с зависимостями", exact: true });
+  await panel.getByRole("button", { name: "Создать копию плана", exact: true }).click();
+  await panel.getByLabel("Проект для копии", { exact: true }).selectOption(target);
+  await panel.getByLabel("Название копии", { exact: true }).fill("Копия в другом проекте");
+  await panel.getByLabel("Инструкции для копии", { exact: true }).selectOption("project");
+  let posts = 0;
+  await page.route("**/work-dags/*/clone", async (route) => {
+    posts++;
+    await route.fetch();
+    await route.fulfill({ status: 504, json: { error: "Lost acknowledgement" } });
+  });
+  await panel.getByRole("button", { name: "Сохранить копию", exact: true }).click();
+  const link = panel.getByRole("link", { name: "Открыть сохранённую копию", exact: true });
+  await expect(link).toBeVisible();
+  expect(posts).toBe(1);
+  await expect(panel.getByRole("heading", { name: source.title, exact: true })).toBeVisible();
+  const copies = (
+    (await (await request.get(`/api/v1/projects/${target}/work-dags`)).json()) as {
+      items: WorkDag[];
+    }
+  ).items;
+  expect(copies).toHaveLength(1);
+  expect(copies[0]?.nodes.every((n) => !n.attempts.length)).toBe(true);
+  // A newer plan must not steal selection when following the saved-copy link.
+  await request.post(`/api/v1/projects/${target}/work-dags`, {
+    data: { client_request_id: randomUUID(), title: "Более новый план", nodes }
+  });
+  await link.click();
+  await expect(
+    page.getByRole("heading", { name: "Копия в другом проекте", exact: true })
+  ).toBeVisible();
+  const snapshot = page.getByLabel("Skills этого плана", { exact: true });
+  await snapshot.locator("summary").click();
+  await expect(snapshot.locator("pre")).toContainText("TARGET_PROJECT_INSTRUCTIONS");
+});
+
 test("Work pins the selected Skill and shows literal accepted plan instructions after catalog deletion", async ({
   page,
   request

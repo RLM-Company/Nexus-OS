@@ -186,7 +186,16 @@ describe("project Work Skills admission and API", () => {
         nodes: [{ id: "a", title: "A", goal: "File", depends_on: [] }]
       });
     const adapter = new WorkPrivacyAdapter(db.sqlite, coordinator);
+    const archived = coordinator.dag.archive(plan.id, owner, {
+      expected_version: plan.version,
+      archived: true
+    });
     const exported = await adapter.export(owner);
+    expect(exported.records.dags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: plan.id, state_json: JSON.stringify(archived) })
+      ])
+    );
     expect(exported.records.work_skills).toEqual(
       expect.arrayContaining([expect.objectContaining({ work_id: a.id })])
     );
@@ -200,6 +209,12 @@ describe("project Work Skills admission and API", () => {
       .run(owner);
     expect((await put([], 1)).statusCode).toBe(409);
     expect(() => accept()).toThrow("OWNER_DATA_FENCED");
+    expect(() =>
+      coordinator.dag.archive(plan.id, owner, {
+        expected_version: archived.version,
+        archived: false
+      })
+    ).toThrow("OWNER_DATA_FENCED");
     await new OwnerSkillPrivacyAdapter(db.sqlite).delete(owner, 1);
     expect(store.skills.forWork(a.id, owner)?.items[0]?.instructions).toBe("PINNED_V1");
     await adapter.delete(owner, 1);
@@ -207,7 +222,9 @@ describe("project Work Skills admission and API", () => {
       "work_skill_settings",
       "work_skill_selections",
       "manager_work_skill_snapshots",
-      "work_dag_skill_snapshots"
+      "work_dag_skill_snapshots",
+      "work_dags",
+      "work_dag_checkpoints"
     ])
       expect(db.sqlite.prepare(`SELECT * FROM ${t}`).all()).toEqual([]);
     expect(db.sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);

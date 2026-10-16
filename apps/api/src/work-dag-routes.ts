@@ -3,10 +3,14 @@ import {
   WorkDagEditSchema,
   WorkDagControlSchema,
   WorkDagCloneSchema,
+  WorkDagArchiveSchema,
+  WorkDagRenameSchema,
   WorkPlanImportSchema,
   WORK_PLAN_PACKAGE_MAX_BYTES,
   type WorkDagCreate,
   type WorkDagClone,
+  type WorkDagArchive,
+  type WorkDagRename,
   type WorkPlanImport,
   type WorkDagControl,
   type WorkDagNodeInput,
@@ -154,6 +158,32 @@ export function registerWorkDagRoutes(options: {
         return reply.code(404).send({ error: "DAG_NOT_FOUND" });
       return { items: coordinator.checkpoints(r.params.id, identityFor(r).owner_id) };
     }, reply)
+  );
+  app.put<{ Params: Params; Body: WorkDagArchive }>(
+    base + "/:id/archive",
+    { validatorCompiler: TypeBoxValidatorCompiler, schema: { params, body: WorkDagArchiveSchema } },
+    (r, reply) =>
+      safe(() => {
+        const owner = identityFor(r).owner_id;
+        if (!coordinator.owns(r.params.id, owner, r.params.projectId))
+          return reply.code(404).send({ error: "DAG_NOT_FOUND" });
+        return reply
+          .header("Cache-Control", "private, no-store")
+          .send(coordinator.archive(r.params.id, owner, r.body));
+      }, reply)
+  );
+  app.put<{ Params: Params; Body: WorkDagRename }>(
+    base + "/:id/title",
+    { validatorCompiler: TypeBoxValidatorCompiler, schema: { params, body: WorkDagRenameSchema } },
+    (r, reply) =>
+      safe(() => {
+        const owner = identityFor(r).owner_id;
+        if (!coordinator.owns(r.params.id, owner, r.params.projectId))
+          return reply.code(404).send({ error: "DAG_NOT_FOUND" });
+        return reply
+          .header("Cache-Control", "private, no-store")
+          .send(coordinator.rename(r.params.id, owner, r.body));
+      }, reply)
   );
   app.get<{ Params: Params }>(base + "/:id/results", { schema: { params } }, (r, reply) =>
     safe(() => {
