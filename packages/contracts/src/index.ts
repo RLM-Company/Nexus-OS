@@ -37,3 +37,4 @@ export * from "./chat-skills.js";
 export * from "./chat-branches.js";
 
 export * from "./work-skills.js";
+export * from "./work-plan-package.js";

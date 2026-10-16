@@ -9,7 +9,12 @@ import {
   openDatabase,
   runMigrations
 } from "@cosmora/db";
-import type { CreateManagerWork, ChatSkillReference, WorkDag } from "@cosmora/contracts";
+import type {
+  CreateManagerWork,
+  ChatSkillReference,
+  WorkDag,
+  WorkPlanPackage
+} from "@cosmora/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
@@ -356,5 +361,89 @@ describe("project Work Skills admission and API", () => {
     expect(copied.statusCode).toBe(201);
     expect(copied.json<{ mode: string }>().mode).toBe("active");
     expect(db.sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+  });
+  it("exports a portable plan and idempotently imports a fresh copy with current project Skills and no execution", async () => {
+    const source = plan();
+    const skill = catalog.create(owner, draft("CURRENT_IMPORT_SKILL"));
+    await put([{ skill_id: skill.id, version: 1 }]);
+    const response = await app.inject({
+      url: `/api/v1/projects/${project}/work-dags/${source.id}/package`
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.headers["content-disposition"]).toContain("work-plan.json");
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    const pkg = response.json<WorkPlanPackage>();
+    expect(Object.keys(pkg).sort()).toEqual(["format", "nodes", "title"]);
+    const payload = { client_request_id: "import", package: pkg };
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project}/work-dags/import`,
+      payload
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    const copy = first.json<WorkDag>();
+    expect(copy.id).not.toBe(source.id);
+    expect(copy.nodes.every((n) => n.attempts.length === 0 && n.artifacts.length === 0)).toBe(true);
+    expect(copy.execution).toBeUndefined();
+    expect(copy.usage).toBeUndefined();
+    expect(store.skills.forPlan(copy.id, owner)?.items[0]?.instructions).toBe(
+      "CURRENT_IMPORT_SKILL"
+    );
+    catalog.delete(owner, skill.id, 1);
+    const replay = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project}/work-dags/import`,
+      payload
+    });
+    expect(replay.statusCode).toBe(201);
+    expect(replay.json()).toEqual(copy);
+    expect(store.skills.forPlan(copy.id, owner)?.items[0]?.instructions).toBe(
+      "CURRENT_IMPORT_SKILL"
+    );
+    expect(store.list(project, owner)).toEqual([]);
+    const changed = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project}/work-dags/import`,
+      payload: { ...payload, package: { ...pkg, title: "Changed" } }
+    });
+    expect(changed.statusCode).toBe(409);
+    const other = projects.createProject("Other", randomUUID()).project.id;
+    expect(
+      (await app.inject({ url: `/api/v1/projects/${other}/work-dags/${source.id}/package` }))
+        .statusCode
+    ).toBe(404);
+  });
+  it("rejects invalid import authority, graph structure, owners, oversized transport and privacy fences", async () => {
+    const source = plan(),
+      pkg = {
+        format: "kosmora.work-plan.v1",
+        title: "Import",
+        nodes: source.nodes.map(({ id, title, goal, depends_on }) => ({
+          id,
+          title,
+          goal,
+          depends_on
+        }))
+      };
+    const post = (value: unknown, id = project) =>
+      app.inject({
+        method: "POST",
+        url: `/api/v1/projects/${id}/work-dags/import`,
+        payload: { client_request_id: "import", package: value }
+      });
+    expect((await post({ ...pkg, owner_id: "foreign" })).statusCode).toBe(400);
+    expect((await post({ ...pkg, skills: [{ instructions: "inject" }] })).statusCode).toBe(400);
+    expect(
+      (await post({ ...pkg, nodes: [{ ...pkg.nodes[0], depends_on: ["a"] }] })).statusCode
+    ).toBe(400);
+    expect(
+      (await post({ ...pkg, nodes: [{ ...pkg.nodes[0], depends_on: ["missing"] }] })).statusCode
+    ).toBe(400);
+    expect((await post({ ...pkg, title: "x".repeat(650_000) })).statusCode).toBe(413);
+    const foreign = projects.createProject("Foreign", randomUUID(), "foreign").project.id;
+    expect((await post(pkg, foreign)).statusCode).toBe(404);
+    db.sqlite.prepare("INSERT INTO work_owner_fences VALUES(?,1,1)").run(owner);
+    expect((await post(pkg)).statusCode).toBe(409);
+    expect(store.dag.list(project, owner)).toHaveLength(1);
   });
 });

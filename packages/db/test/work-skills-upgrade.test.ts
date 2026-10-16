@@ -80,6 +80,24 @@ describe("Work Skills additive migration and restart", () => {
       expect(store.skills.forPlan(graph.id, "owner")).toEqual(planSnap);
       expect(store.create(project, "owner", "owner", request)?.id).toBe(a.id);
       expect(store.skills.forWork("old-work", "owner")?.items).toEqual([]);
+      const legacyAttempt = store.create(
+        project,
+        "owner",
+        "owner",
+        { ...request, client_request_id: "legacy-attempt" },
+        true,
+        { graph_id: "old-plan", node_id: "a", attempt: 1, bound: false }
+      )!;
+      expect(store.skills.forWork(legacyAttempt.id, "owner")).toMatchObject({
+        source: "plan",
+        source_id: "old-plan",
+        items: []
+      });
+      expect(() =>
+        db.sqlite
+          .prepare("UPDATE work_dag_skill_snapshots SET skills_json='[]' WHERE graph_id=?")
+          .run(graph.id)
+      ).toThrow("SKILL_SNAPSHOT_IMMUTABLE");
       expect(db.sqlite.prepare("SELECT COUNT(*) AS n FROM __drizzle_migrations").get()).toEqual(
         count
       );

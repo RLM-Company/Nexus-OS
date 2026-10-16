@@ -181,3 +181,11 @@
     transition: none;
   }
 }
+
+.importPreview {
+  max-height: 320px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  padding-inline-start: 24px;
+}

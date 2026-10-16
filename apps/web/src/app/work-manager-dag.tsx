@@ -3,7 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AcceptedSkillView } from "./accepted-skill-view";
-import type { WorkDag, WorkDagNodeInput, WorkDagControl } from "@cosmora/contracts";
+import {
+  WORK_PLAN_PACKAGE_MAX_BYTES,
+  parseWorkPlanPackageText,
+  type WorkPlanPackage,
+  type WorkDag,
+  type WorkDagNodeInput,
+  type WorkDagControl
+} from "@cosmora/contracts";
 import { useExecutionGate } from "./use-execution-gate";
 import styles from "./work-manager.module.css";
 
@@ -100,6 +107,13 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     skills: "source" | "project";
     requestId: string;
   } | null>(null);
+  const [importDraft, setImportDraft] = useState<{
+    package: WorkPlanPackage;
+    requestId: string;
+    checked: boolean;
+  } | null>(null);
+  const [readingImport, setReadingImport] = useState(false);
+  const importEpoch = useRef(0);
   const [retry, setRetry] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [autoConfirmed, setAutoConfirmed] = useState(false);
@@ -191,6 +205,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       setSelected(result.id);
       setEditor(null);
       setCopy(null);
+      setImportDraft(null);
       setRetry(null);
       setAcknowledged(false);
       setAutoConfirmed(false);
@@ -223,6 +238,22 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           /* Keep the copy draft and its idempotency key for a later explicit retry. */
         }
       }
+      if (method === "POST" && url === base + "/import") {
+        try {
+          const data = body as { client_request_id: string };
+          const latest = await request<{ items: WorkDag[] }>(base);
+          const found = latest.items.find((g) => g.client_request_id === data.client_request_id);
+          if (found) {
+            setGraphs(latest.items);
+            setSelected(found.id);
+            setImportDraft(null);
+            setError("");
+            return;
+          }
+        } catch {
+          /* Preserve the reviewed file and key. No automatic second POST. */
+        }
+      }
       const control = body as Partial<WorkDagControl>;
       if (method === "POST" && control.action === "run_plan" && url.endsWith("/control")) {
         try {
@@ -245,6 +276,29 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     } finally {
       lock.current = false;
       setBusy(false);
+    }
+  }
+  async function loadImport(file: File | undefined) {
+    const epoch = ++importEpoch.current;
+    setImportDraft(null);
+    setError("");
+    if (!file) return;
+    if (!file.size || file.size > WORK_PLAN_PACKAGE_MAX_BYTES) {
+      setError("Выберите JSON плана размером до 600 КБ.");
+      return;
+    }
+    setReadingImport(true);
+    try {
+      const pkg = parseWorkPlanPackageText(await file.text());
+      if (epoch === importEpoch.current)
+        setImportDraft({ package: pkg, requestId: crypto.randomUUID(), checked: false });
+    } catch {
+      if (epoch === importEpoch.current)
+        setError(
+          "Файл не соответствует формату плана Kosmora или содержит недопустимые зависимости."
+        );
+    } finally {
+      if (epoch === importEpoch.current) setReadingImport(false);
     }
   }
   function act(action: WorkDagControl["action"], nodeId?: string) {
@@ -282,7 +336,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         {graph && (
           <button
             type="button"
-            disabled={busy || Boolean(editor) || Boolean(copy)}
+            disabled={
+              busy || Boolean(editor) || Boolean(copy) || Boolean(importDraft) || readingImport
+            }
             onClick={() =>
               setCopy({
                 sourceId: graph.id,
@@ -297,7 +353,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </button>
         )}
         <button
-          disabled={busy || Boolean(editor) || Boolean(copy)}
+          disabled={
+            busy || Boolean(editor) || Boolean(copy) || Boolean(importDraft) || readingImport
+          }
           onClick={() =>
             setEditor({
               graphId: null,
@@ -338,7 +396,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           Сохранённые планы
           <select
             value={graph?.id ?? ""}
-            disabled={busy || Boolean(editor) || Boolean(copy)}
+            disabled={
+              busy || Boolean(editor) || Boolean(copy) || Boolean(importDraft) || readingImport
+            }
             onChange={(e) => {
               setSelected(e.target.value);
               setRetry(null);
@@ -355,6 +415,73 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </select>
         </label>
       )}
+      <details>
+        <summary>Перенос плана через JSON</summary>
+        <p>
+          Файл содержит задачи и зависимости. После локального предпросмотра импорт создаст новый
+          план с текущим сохранённым выбором Skills Work проекта. Запуск выполняется отдельно.
+        </p>
+        <label>
+          JSON плана
+          <input
+            aria-label="JSON плана"
+            type="file"
+            accept=".json,application/json"
+            disabled={busy || Boolean(editor) || Boolean(copy) || readingImport}
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = "";
+              void loadImport(file);
+            }}
+          />
+        </label>
+        {readingImport && <p role="status">Проверка файла…</p>}
+        {importDraft && (
+          <form
+            aria-label="Предпросмотр импорта плана"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (importDraft.checked)
+                void mutate(base + "/import", "POST", {
+                  client_request_id: importDraft.requestId,
+                  package: importDraft.package
+                });
+            }}
+          >
+            <strong>{importDraft.package.title}</strong>
+            <ol className={styles.importPreview}>
+              {importDraft.package.nodes.map((n) => (
+                <li key={n.id}>
+                  <strong>{n.title}</strong>
+                  <p>{n.goal}</p>
+                  <p>
+                    Зависимости:{" "}
+                    {n.depends_on
+                      .map((id) => importDraft.package.nodes.find((x) => x.id === id)?.title ?? id)
+                      .join(", ") || "нет"}{" "}
+                    · {n.requires_critic ? "Критик обязателен" : "Критик по риску"}
+                  </p>
+                </li>
+              ))}
+            </ol>
+            <label>
+              <input
+                type="checkbox"
+                checked={importDraft.checked}
+                disabled={busy}
+                onChange={(e) => setImportDraft({ ...importDraft, checked: e.target.checked })}
+              />
+              Я проверил задачи и зависимости; использовать сохранённые Skills Work проекта
+            </label>
+            <button type="submit" disabled={busy || !importDraft.checked}>
+              Сохранить импортированный план
+            </button>
+            <button type="button" disabled={busy} onClick={() => setImportDraft(null)}>
+              Отмена импорта
+            </button>
+          </form>
+        )}
+      </details>
       {error && (
         <p role="alert" className={styles.error}>
           {error}
@@ -532,6 +659,12 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       {graph && (
         <>
           <h4>{graph.title}</h4>
+          <a
+            href={base + "/" + encodeURIComponent(graph.id) + "/package"}
+            download="work-plan.json"
+          >
+            Скачать JSON плана
+          </a>
           {graph.copied_from && (
             <p>
               Копия плана · исходная версия {graph.copied_from.version} ·{" "}

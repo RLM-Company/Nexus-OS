@@ -127,3 +127,23 @@ export interface WorkQuiescence {
   epoch: number;
   settled: true;
 }
+
+export function validateWorkDag(nodes: WorkDagNodeInput[]): void {
+  const map = new Map(nodes.map((n) => [n.id, n]));
+  if (!nodes.length || nodes.length > 32 || map.size !== nodes.length)
+    throw new Error("INVALID_DAG");
+  const visiting = new Set<string>(),
+    visited = new Set<string>();
+  function visit(id: string): void {
+    if (visited.has(id)) return;
+    if (visiting.has(id)) throw new Error("DAG_CYCLE");
+    const node = map.get(id);
+    if (!node || new Set(node.depends_on).size !== node.depends_on.length)
+      throw new Error("DAG_DEPENDENCY_MISSING");
+    visiting.add(id);
+    for (const dependency of node.depends_on) visit(dependency);
+    visiting.delete(id);
+    visited.add(id);
+  }
+  for (const id of map.keys()) visit(id);
+}

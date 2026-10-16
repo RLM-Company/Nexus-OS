@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
-import type {
-  WorkDag,
-  WorkDagControl,
-  WorkDagCreate,
-  WorkDagNodeInput,
-  WorkDagClone
+import {
+  createWorkPlanPackage,
+  parseWorkPlanPackage,
+  type WorkDag,
+  type WorkDagControl,
+  type WorkDagCreate,
+  type WorkDagNodeInput,
+  type WorkDagClone,
+  type WorkPlanImport
 } from "@cosmora/contracts";
 import { projectDagStatuses, validateWorkDag } from "@cosmora/core";
 import { WorkDagConflict, ManagerWorkConflict, type ManagerWorkStore } from "@cosmora/db";
@@ -30,6 +33,19 @@ export class WorkDagCoordinator {
   }
   clone(project: string, id: string, owner: string, actor: string, input: WorkDagClone): WorkDag {
     return this.works.dag.clone(project, id, owner, actor, input);
+  }
+  import(project: string, owner: string, actor: string, input: WorkPlanImport): WorkDag {
+    const pkg = parseWorkPlanPackage(input.package);
+    return this.create(project, owner, actor, {
+      client_request_id: input.client_request_id,
+      title: pkg.title,
+      nodes: pkg.nodes
+    });
+  }
+  package(id: string, owner: string, project: string) {
+    const graph = this.works.dag.get(id, owner);
+    if (!graph || graph.project_id !== project) throw new WorkDagConflict("DAG_NOT_FOUND");
+    return createWorkPlanPackage(graph);
   }
   owns(id: string, owner: string, project: string): boolean {
     return this.works.dag.get(id, owner)?.project_id === project;

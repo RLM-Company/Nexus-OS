@@ -1,7 +1,12 @@
 import { WorkSkillStore } from "./work-skill-store.js";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { WorkDag, WorkDagCreate, WorkDagClone } from "@cosmora/contracts";
+import {
+  createWorkPlanPackage,
+  type WorkDag,
+  type WorkDagCreate,
+  type WorkDagClone
+} from "@cosmora/contracts";
 export class WorkDagConflict extends Error {}
 export class WorkDagStore {
   constructor(private readonly sqlite: DatabaseSync) {}
@@ -78,13 +83,7 @@ export class WorkDagStore {
     const source = this.get(id, owner);
     if (!source || source.project_id !== sourceProject) throw new WorkDagConflict("DAG_NOT_FOUND");
     if (source.version !== input.expected_version) throw new WorkDagConflict("STALE_DAG");
-    const nodes = source.nodes.map(({ id, title, goal, depends_on, requires_critic }) => ({
-      id,
-      title,
-      goal,
-      depends_on: [...depends_on],
-      ...(requires_critic === undefined ? {} : { requires_critic })
-    }));
+    const { nodes } = createWorkPlanPackage(source);
     return this.create(
       target,
       owner,
