@@ -15,7 +15,12 @@ export class PresentationPrivacyAdapter implements PrivacyAdapter {
         "SELECT id,owner_id,title,theme,slides_json,version,created_at,updated_at FROM presentations WHERE owner_id=? ORDER BY created_at"
       )
       .all(ownerId) as Record<string, unknown>[];
-    return { records: { decks }, originals: [], complete: true };
+    const versions = this.sql
+      .prepare(
+        "SELECT presentation_id,owner_id,version,title,theme,slides_json,source,source_version,created_at FROM presentation_versions WHERE owner_id=? ORDER BY presentation_id,version"
+      )
+      .all(ownerId);
+    return { records: { decks, versions }, originals: [], complete: true };
   }
   async delete(ownerId: string, epoch: number): Promise<{ deleted_records: number }> {
     const fence = this.sql
@@ -24,7 +29,10 @@ export class PresentationPrivacyAdapter implements PrivacyAdapter {
       )
       .get(ownerId, epoch);
     if (!fence) throw Error("DELETION_FENCE_REQUIRED");
+    const versions = this.sql
+      .prepare("SELECT COUNT(*) AS n FROM presentation_versions WHERE owner_id=?")
+      .get(ownerId)!;
     const result = this.sql.prepare("DELETE FROM presentations WHERE owner_id=?").run(ownerId);
-    return { deleted_records: Number(result.changes) };
+    return { deleted_records: Number(result.changes) + Number(versions.n) };
   }
 }

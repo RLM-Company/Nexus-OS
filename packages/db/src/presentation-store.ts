@@ -21,7 +21,20 @@ export type PresentationSummary = {
   updated_at: string;
 };
 export type Presentation = PresentationSummary & { slides: PresentationSlide[] };
+export type PresentationContent = Pick<Presentation, "title" | "theme" | "slides">;
+export type PresentationRevisionSummary = {
+  version: number;
+  title: string;
+  theme: PresentationTheme;
+  slide_count: number;
+  source: "create" | "save" | "import" | "restore" | "migration";
+  source_version: number | null;
+  created_at: string;
+};
+export type PresentationRevision = PresentationRevisionSummary & { slides: PresentationSlide[] };
+type RevisionRow = Omit<PresentationRevision, "slides" | "slide_count"> & { slides_json: string };
 type Row = Omit<PresentationSummary, "slide_count"> & { slides_json: string };
+export const PRESENTATION_VERSION_LIMIT = 20;
 
 export class PresentationError extends Error {
   constructor(
@@ -33,9 +46,19 @@ export class PresentationError extends Error {
 }
 
 const validateTitle = (value: unknown): value is string =>
-  typeof value === "string" && value.trim().length > 0 && value.length <= 160;
+  text(value, 160) && value.trim().length > 0 && value.length <= 160;
 const text = (value: unknown, max: number): value is string =>
-  typeof value === "string" && value.length <= max && !value.includes("\u0000");
+  typeof value === "string" &&
+  value.length <= max &&
+  !Array.from(value).some((c) => {
+    const n = c.charCodeAt(0);
+    return (
+      (n < 32 && n !== 9 && n !== 10 && n !== 13) ||
+      n === 0xfffe ||
+      n === 0xffff ||
+      (n >= 0xd800 && n <= 0xdfff && c.length === 1)
+    );
+  });
 export function validatePresentation(input: unknown): asserts input is {
   title: string;
   theme: PresentationTheme;
@@ -45,7 +68,8 @@ export function validatePresentation(input: unknown): asserts input is {
   const value = input as Record<string, unknown>;
   if (
     !validateTitle(value.title) ||
-    !["paper", "night", "ocean"].includes(String(value.theme)) ||
+    typeof value.theme !== "string" ||
+    !["paper", "night", "ocean"].includes(value.theme) ||
     !Array.isArray(value.slides) ||
     value.slides.length < 1 ||
     value.slides.length > 50
@@ -59,7 +83,8 @@ export function validatePresentation(input: unknown): asserts input is {
       typeof slide.id !== "string" ||
       !/^[a-zA-Z0-9_-]{1,80}$/u.test(slide.id) ||
       ids.has(slide.id) ||
-      !["title", "content", "two-column", "quote"].includes(String(slide.layout)) ||
+      typeof slide.layout !== "string" ||
+      !["title", "content", "two-column", "quote"].includes(slide.layout) ||
       !text(slide.title, 180) ||
       !text(slide.body, 4000) ||
       !text(slide.aside, 4000) ||
@@ -125,6 +150,75 @@ export class PresentationStore {
 
   create(owner: string, title: string): Presentation {
     if (!validateTitle(title)) throw new PresentationError("INVALID_DECK");
+    return this.createContent(
+      owner,
+      {
+        title: title.trim(),
+        theme: "paper",
+        slides: [
+          { id: randomUUID(), layout: "title", title: title.trim(), body: "", aside: "", notes: "" }
+        ]
+      },
+      "create"
+    );
+  }
+
+  import(owner: string, input: unknown): Presentation {
+    validatePresentation(input);
+    return this.createContent(
+      owner,
+      {
+        title: input.title.trim(),
+        theme: input.theme,
+        slides: input.slides.map((slide) => ({
+          id: randomUUID(),
+          layout: slide.layout,
+          title: slide.title,
+          body: slide.body,
+          aside: slide.aside,
+          notes: slide.notes
+        }))
+      },
+      "import"
+    );
+  }
+
+  private checkpoint(
+    owner: string,
+    id: string,
+    version: number,
+    content: PresentationContent,
+    source: PresentationRevisionSummary["source"],
+    sourceVersion: number | null,
+    at: string
+  ): void {
+    this.sql
+      .prepare(
+        "INSERT INTO presentation_versions(presentation_id,owner_id,version,title,theme,slides_json,source,source_version,created_at) VALUES(?,?,?,?,?,?,?,?,?)"
+      )
+      .run(
+        id,
+        owner,
+        version,
+        content.title.trim(),
+        content.theme,
+        JSON.stringify(content.slides),
+        source,
+        sourceVersion,
+        at
+      );
+    this.sql
+      .prepare(
+        "DELETE FROM presentation_versions WHERE owner_id=? AND presentation_id=? AND version NOT IN (SELECT version FROM presentation_versions WHERE owner_id=? AND presentation_id=? ORDER BY version DESC LIMIT ?)"
+      )
+      .run(owner, id, owner, id, PRESENTATION_VERSION_LIMIT);
+  }
+
+  private createContent(
+    owner: string,
+    input: PresentationContent,
+    source: "create" | "import"
+  ): Presentation {
     this.sql.exec("BEGIN IMMEDIATE");
     try {
       this.writable(owner);
@@ -134,25 +228,14 @@ export class PresentationStore {
       if (Number(count.n) >= 40) throw new PresentationError("LIMIT_EXCEEDED");
       const at = this.now();
       const id = randomUUID();
-      const slides: PresentationSlide[] = [
-        { id: randomUUID(), layout: "title", title: title.trim(), body: "", aside: "", notes: "" }
-      ];
       this.sql
         .prepare(
-          "INSERT INTO presentations(id,owner_id,title,theme,slides_json,version,created_at,updated_at) VALUES(?,?,?,'paper',?,1,?,?)"
+          "INSERT INTO presentations(id,owner_id,title,theme,slides_json,version,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?)"
         )
-        .run(id, owner, title.trim(), JSON.stringify(slides), at, at);
+        .run(id, owner, input.title.trim(), input.theme, JSON.stringify(input.slides), at, at);
+      this.checkpoint(owner, id, 1, input, source, null, at);
       this.sql.exec("COMMIT");
-      return {
-        id,
-        title: title.trim(),
-        theme: "paper",
-        version: 1,
-        slide_count: 1,
-        slides,
-        created_at: at,
-        updated_at: at
-      };
+      return this.get(owner, id);
     } catch (error) {
       this.sql.exec("ROLLBACK");
       throw error;
@@ -161,6 +244,48 @@ export class PresentationStore {
 
   save(owner: string, id: string, expectedVersion: number, input: unknown): Presentation {
     validatePresentation(input);
+    return this.update(owner, id, expectedVersion, input, null);
+  }
+
+  versions(owner: string, id: string): PresentationRevisionSummary[] {
+    this.get(owner, id);
+    const rows = this.sql
+      .prepare(
+        "SELECT version,title,theme,slides_json,source,source_version,created_at FROM presentation_versions WHERE owner_id=? AND presentation_id=? ORDER BY version DESC LIMIT ?"
+      )
+      .all(owner, id, PRESENTATION_VERSION_LIMIT) as unknown as RevisionRow[];
+    return rows.map(({ slides_json, ...row }) => ({
+      ...row,
+      slide_count: (JSON.parse(slides_json) as unknown[]).length
+    }));
+  }
+
+  revision(owner: string, id: string, version: number): PresentationRevision {
+    if (!Number.isSafeInteger(version) || version < 1) throw new PresentationError("INVALID_DECK");
+    const row = this.sql
+      .prepare(
+        "SELECT version,title,theme,slides_json,source,source_version,created_at FROM presentation_versions WHERE owner_id=? AND presentation_id=? AND version=?"
+      )
+      .get(owner, id, version) as RevisionRow | undefined;
+    if (!row) throw new PresentationError("NOT_FOUND");
+    const { slides_json, ...summary } = row;
+    const slides = JSON.parse(slides_json) as PresentationSlide[];
+    return { ...summary, slides, slide_count: slides.length };
+  }
+
+  restore(owner: string, id: string, expectedVersion: number, sourceVersion: number): Presentation {
+    if (!Number.isSafeInteger(sourceVersion) || sourceVersion < 1)
+      throw new PresentationError("INVALID_DECK");
+    return this.update(owner, id, expectedVersion, null, sourceVersion);
+  }
+
+  private update(
+    owner: string,
+    id: string,
+    expectedVersion: number,
+    input: PresentationContent | null,
+    sourceVersion: number | null
+  ): Presentation {
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
       throw new PresentationError("INVALID_DECK");
     this.sql.exec("BEGIN IMMEDIATE");
@@ -171,20 +296,30 @@ export class PresentationStore {
         .get(owner, id) as { version: number } | undefined;
       if (!current) throw new PresentationError("NOT_FOUND");
       if (current.version !== expectedVersion) throw new PresentationError("CONFLICT");
+      const content = sourceVersion === null ? input! : this.revision(owner, id, sourceVersion);
       const at = this.now();
       this.sql
         .prepare(
           "UPDATE presentations SET title=?,theme=?,slides_json=?,version=version+1,updated_at=? WHERE owner_id=? AND id=? AND version=?"
         )
         .run(
-          input.title.trim(),
-          input.theme,
-          JSON.stringify(input.slides),
+          content.title.trim(),
+          content.theme,
+          JSON.stringify(content.slides),
           at,
           owner,
           id,
           expectedVersion
         );
+      this.checkpoint(
+        owner,
+        id,
+        expectedVersion + 1,
+        content,
+        sourceVersion === null ? "save" : "restore",
+        sourceVersion,
+        at
+      );
       this.sql.exec("COMMIT");
       return this.get(owner, id);
     } catch (error) {
