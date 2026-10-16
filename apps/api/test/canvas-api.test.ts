@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { loadServerConfig } from "@cosmora/config";
 import { CanvasArtifactStore, openDatabase, runMigrations } from "@cosmora/db";
 import { buildApp } from "../src/app.js";
@@ -8,6 +9,7 @@ describe("Canvas HTTP owner/auth/conflict/download", () => {
   let db: ReturnType<typeof openDatabase>;
   let app: ReturnType<typeof buildApp>;
   let foreign: ReturnType<typeof buildApp>;
+  let store: CanvasArtifactStore;
   beforeEach(async () => {
     db = openDatabase(":memory:");
     await runMigrations(db);
@@ -16,7 +18,7 @@ describe("Canvas HTTP owner/auth/conflict/download", () => {
         "INSERT INTO projects(id,owner_id,title,status,created_at,updated_at) VALUES ('p','local-owner','T','ACTIVE','now','now')"
       )
       .run();
-    const store = new CanvasArtifactStore(db.sqlite);
+    store = new CanvasArtifactStore(db.sqlite);
     const config = loadServerConfig({ NODE_ENV: "test" });
     app = buildApp({ config, database: db, canvasStore: store });
     foreign = buildApp({
@@ -30,6 +32,7 @@ describe("Canvas HTTP owner/auth/conflict/download", () => {
     });
   });
   afterEach(async () => {
+    vi.restoreAllMocks();
     await app.close();
     await foreign.close();
     db.close();
@@ -109,6 +112,71 @@ describe("Canvas HTTP owner/auth/conflict/download", () => {
       response.json()
     );
     expect((await foreign.inject({ method: "GET", url: `${base}/scope` })).statusCode).toBe(404);
+  });
+  it("downloads the exact historical version with its own title, format and checksum", async () => {
+    const base = "/api/v1/projects/p/canvas";
+    const content = "<script>unsafe()</script>\r\nТочная версия 🍋\n\n";
+    const created = await app.inject({
+      method: "POST",
+      url: base,
+      payload: { title: "История/первая", format: "html", content }
+    });
+    const id = created.json<{ artifact: { id: string } }>().artifact.id;
+    await app.inject({
+      method: "PUT",
+      url: `${base}/${id}`,
+      payload: { title: "Current", format: "text", content: "new", baseVersion: 1 }
+    });
+    const response = await app.inject({ method: "GET", url: `${base}/${id}/revisions/1/download` });
+    expect(response.statusCode).toBe(200);
+    expect(response.rawPayload).toEqual(Buffer.from(content));
+    expect(response.headers["content-type"]).toContain("text/plain");
+    expect(response.headers["content-security-policy"]).toContain("sandbox");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.headers["x-canvas-version"]).toBe("1");
+    expect(response.headers["x-canvas-sha256"]).toBe(
+      createHash("sha256").update(content).digest("hex")
+    );
+    expect(response.headers["content-disposition"]).toContain(
+      encodeURIComponent("История_первая-v1.html")
+    );
+    const current = (await app.inject({ method: "GET", url: `${base}/${id}` })).json<{
+      artifact: { version: number };
+      revision: { content: string };
+    }>();
+    expect(current.artifact.version).toBe(2);
+    expect(current.revision.content).toBe("new");
+    for (const url of [
+      `${base}/${id}/revisions/3/download`,
+      `/api/v1/projects/other/canvas/${id}/revisions/1/download`
+    ])
+      expect((await app.inject({ method: "GET", url })).statusCode).toBe(404);
+    expect(
+      (await foreign.inject({ method: "GET", url: `${base}/${id}/revisions/1/download` }))
+        .statusCode
+    ).toBe(404);
+    expect(
+      (await app.inject({ method: "GET", url: `${base}/${id}/revisions/0/download` })).statusCode
+    ).toBe(400);
+  });
+  it("rejects a corrupted historical download without returning its content", async () => {
+    const base = "/api/v1/projects/p/canvas";
+    const created = await app.inject({
+      method: "POST",
+      url: base,
+      payload: { title: "t", format: "text", content: "original" }
+    });
+    const id = created.json<{ artifact: { id: string } }>().artifact.id;
+    const revision = store.getRevision("p", "local-owner", id, 1)!;
+    vi.spyOn(store, "getRevision").mockReturnValue({
+      ...revision,
+      content: "corrupted-private-text"
+    });
+    const response = await app.inject({ method: "GET", url: `${base}/${id}/revisions/1/download` });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: { code: "CANVAS_REVISION_CORRUPT" } });
+    expect(response.body).not.toContain("corrupted-private-text");
   });
   it("returns a durable fence conflict for every editor mutation, including delete", async () => {
     const base = "/api/v1/projects/p/canvas";

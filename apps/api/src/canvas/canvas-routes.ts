@@ -210,6 +210,33 @@ export function registerCanvasRoutes(
       store.getRevision(req.params.projectId, owner(req), req.params.id, req.params.version) ??
       notFound(reply)
   );
+  app.get<{ Params: Path & { version: number } }>(
+    path + "/:id/revisions/:version/download",
+    { schema: { params: revisionParams } },
+    (req, reply) => {
+      const revision = store.getRevision(
+        req.params.projectId,
+        owner(req),
+        req.params.id,
+        req.params.version
+      );
+      if (!revision) return notFound(reply);
+      if (createHash("sha256").update(revision.content).digest("hex") !== revision.sha256)
+        return reply.code(409).send({ error: { code: "CANVAS_REVISION_CORRUPT" } });
+      return reply
+        .header(
+          "content-disposition",
+          filename(`${revision.title}-v${revision.version}`, revision.format)
+        )
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "no-store")
+        .header("content-security-policy", "default-src 'none'; sandbox")
+        .header("x-canvas-version", String(revision.version))
+        .header("x-canvas-sha256", revision.sha256)
+        .type("text/plain; charset=utf-8")
+        .send(revision.content);
+    }
+  );
   app.post<{ Params: Path; Body: { baseVersion: number; sourceVersion: number } }>(
     path + "/:id/restore",
     {
