@@ -35,3 +35,5 @@ export * from "./work-dag.js";
 export * from "./chat-memory.js";
 export * from "./chat-skills.js";
 export * from "./chat-branches.js";
+
+export * from "./work-skills.js";

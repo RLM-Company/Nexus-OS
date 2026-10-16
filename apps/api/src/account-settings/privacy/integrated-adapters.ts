@@ -122,6 +122,26 @@ export class WorkPrivacyAdapter implements PrivacyAdapter {
     return {
       records: {
         work: recordSet(this.sql, "SELECT * FROM manager_work WHERE owner_id=?", owner),
+        skill_settings: recordSet(
+          this.sql,
+          "SELECT s.* FROM work_skill_settings s JOIN projects p ON p.id=s.project_id WHERE p.owner_id=?",
+          owner
+        ),
+        skill_selections: recordSet(
+          this.sql,
+          "SELECT s.* FROM work_skill_selections s JOIN projects p ON p.id=s.project_id WHERE p.owner_id=?",
+          owner
+        ),
+        work_skills: recordSet(
+          this.sql,
+          "SELECT s.* FROM manager_work_skill_snapshots s JOIN manager_work w ON w.id=s.work_id JOIN projects p ON p.id=w.project_id WHERE w.owner_id=? AND p.owner_id=w.owner_id",
+          owner
+        ),
+        plan_skills: recordSet(
+          this.sql,
+          "SELECT s.* FROM work_dag_skill_snapshots s JOIN work_dags d ON d.id=s.graph_id JOIN projects p ON p.id=d.project_id WHERE d.owner_id=? AND p.owner_id=d.owner_id",
+          owner
+        ),
         work_files: recordSet(
           this.sql,
           "SELECT f.* FROM manager_work_files f JOIN manager_work w ON w.id=f.execution_id WHERE w.owner_id=?",
@@ -152,6 +172,20 @@ export class WorkPrivacyAdapter implements PrivacyAdapter {
   }
   async delete(owner: string, epoch: number) {
     epochValid(this.sql, owner, epoch);
+    const selectionRows = Number(
+      this.sql
+        .prepare(
+          "DELETE FROM work_skill_selections WHERE project_id IN (SELECT id FROM projects WHERE owner_id=?)"
+        )
+        .run(owner).changes
+    );
+    const settingsRows = Number(
+      this.sql
+        .prepare(
+          "DELETE FROM work_skill_settings WHERE project_id IN (SELECT id FROM projects WHERE owner_id=?)"
+        )
+        .run(owner).changes
+    );
     const memory = Number(
       this.sql.prepare("DELETE FROM project_memory WHERE owner_id=?").run(owner).changes
     );
@@ -165,7 +199,7 @@ export class WorkPrivacyAdapter implements PrivacyAdapter {
       this.sql.prepare("DELETE FROM work_project_controls WHERE owner_id=?").run(owner).changes
     );
     // FK cascade removes checkpoints, drafts and artifact versions, including old Work v1.
-    return { deleted_records: memory + works + dags + controls };
+    return { deleted_records: memory + works + dags + controls + selectionRows + settingsRows };
   }
 }
 

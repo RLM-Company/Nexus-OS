@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { AcceptedSkillView } from "./accepted-skill-view";
 import type { WorkDag, WorkDagNodeInput, WorkDagControl } from "@cosmora/contracts";
 import { useExecutionGate } from "./use-execution-gate";
 import styles from "./work-manager.module.css";
@@ -421,6 +422,11 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       {graph && (
         <>
           <h4>{graph.title}</h4>
+          <AcceptedSkillView
+            key={graph.id}
+            path={base + "/" + encodeURIComponent(graph.id) + "/skills"}
+            label="Skills этого плана"
+          />
           <p>
             {graph.mode === "active"
               ? "Проект активен"

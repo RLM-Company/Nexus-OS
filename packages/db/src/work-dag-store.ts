@@ -1,3 +1,4 @@
+import { WorkSkillStore } from "./work-skill-store.js";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { WorkDag, WorkDagCreate } from "@cosmora/contracts";
@@ -100,6 +101,7 @@ export class WorkDagStore {
           JSON.stringify(graph),
           JSON.stringify(input)
         );
+      new WorkSkillStore(this.sqlite).capturePlan(graph.id, project, owner);
       this.checkpoint(graph);
       return graph;
     });

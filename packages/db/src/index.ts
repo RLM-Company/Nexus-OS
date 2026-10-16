@@ -158,3 +158,4 @@ export * from "./owner-skill-store.js";
 
 export * from "./chat-workspace-store.js";
 export * from "./chat-skill-store.js";
+export * from "./work-skill-store.js";

@@ -1,3 +1,4 @@
+import { registerWorkSkillRoutes } from "./work-skill-routes.js";
 import { registerWorkDagRoutes } from "./work-dag-routes.js";
 import { registerProjectMemoryRoutes } from "./project-memory-routes.js";
 import { registerWorkRuntimeRoutes } from "./work-runtime-routes.js";
@@ -20,6 +21,7 @@ export function registerManagerWorkRoutes(options: {
 }): void {
   const { app, store, projects, coordinator, identityFor } = options;
   registerWorkDagRoutes({ app, projects, coordinator: coordinator.dag, identityFor });
+  registerWorkSkillRoutes(app, store.skills, identityFor);
   registerProjectMemoryRoutes({ app, memory: store.memory, projects, identityFor });
   registerWorkRuntimeRoutes({ app, store, projects, identityFor });
   const base = "/api/v1/projects/:projectId/work";
