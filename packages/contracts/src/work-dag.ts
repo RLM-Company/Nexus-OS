@@ -63,6 +63,7 @@ export const WorkDagControlSchema = Type.Object(
       Type.Literal("pause"),
       Type.Literal("resume"),
       Type.Literal("cancel"),
+      Type.Literal("cancel_step"),
       Type.Literal("approve_step"),
       Type.Literal("resume_step"),
       Type.Literal("run_plan"),

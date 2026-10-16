@@ -198,6 +198,21 @@ export function registerWorkDagRoutes(options: {
         .send(coordinator.results(r.params.id, owner));
     }, reply)
   );
+  app.get<{ Params: Params }>(base + "/:id/results.zip", { schema: { params } }, (r, reply) =>
+    safe(() => {
+      const owner = identityFor(r).owner_id;
+      if (!coordinator.owns(r.params.id, owner, r.params.projectId))
+        return reply.code(404).send({ error: "DAG_NOT_FOUND" });
+      const archive = coordinator.resultsArchive(r.params.id, owner);
+      return reply
+        .header("content-disposition", 'attachment; filename="work-results.zip"')
+        .header("cache-control", "private, no-store")
+        .header("x-content-type-options", "nosniff")
+        .header("content-length", String(archive.byteLength))
+        .type("application/zip")
+        .send(archive);
+    }, reply)
+  );
   app.put<{ Params: Params; Body: { version: number; nodes: WorkDagNodeInput[] } }>(
     base + "/:id",
     { schema: { params, body: WorkDagEditSchema } },

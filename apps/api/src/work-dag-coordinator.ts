@@ -14,6 +14,7 @@ import {
 import { projectDagStatuses, validateWorkDag } from "@cosmora/core";
 import { WorkDagConflict, ManagerWorkConflict, type ManagerWorkStore } from "@cosmora/db";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
+import { buildWorkResultsArchive } from "./work-results-archive.js";
 
 // One process, one Manager executor. DAG transitions are synchronous CAS writes;
 // nodes use the existing policy-checked, bounded file-producing Manager pipeline.
@@ -231,11 +232,19 @@ export class WorkDagCoordinator {
   results(id: string, owner: string) {
     const graph = this.get(id, owner);
     if (!graph) throw new WorkDagConflict("DAG_NOT_FOUND");
+    return this.resultsFor(graph);
+  }
+  resultsArchive(id: string, owner: string): Buffer {
+    const graph = this.get(id, owner);
+    if (!graph) throw new WorkDagConflict("DAG_NOT_FOUND");
+    return buildWorkResultsArchive(graph, this.resultsFor(graph).files);
+  }
+  private resultsFor(graph: WorkDag) {
     const files = graph.nodes
       .filter((node) => node.status === "completed")
       .flatMap((node) =>
         node.artifacts.map((artifact) => {
-          const file = this.works.runtime.artifact(graph.project_id, owner, artifact.id);
+          const file = this.works.runtime.artifact(graph.project_id, graph.owner_id, artifact.id);
           if (
             !file ||
             file.metadata.sha256 !== artifact.sha256 ||
@@ -283,7 +292,7 @@ export class WorkDagCoordinator {
         if (
           !child ||
           !["completed", "failed", "cancelled"].includes(child.status) ||
-          child.inflight_run_id
+          this.manager.hasActiveExecution(child.id)
         )
           throw new WorkDagConflict("PLAN_HAS_UNFINISHED_WORK");
       }
@@ -328,7 +337,7 @@ export class WorkDagCoordinator {
     }
     graph.nodes = nodes.map((n) => {
       const previous = graph.nodes.find((p) => p.id === n.id);
-      return previous?.attempts.length
+      return previous?.attempts.length || previous?.status === "cancelled"
         ? previous
         : { ...n, status: "pending", blocked_reason: null, attempts: [], artifacts: [] };
     });
@@ -340,6 +349,30 @@ export class WorkDagCoordinator {
   }
   control(id: string, owner: string, input: WorkDagControl, automated = false): WorkDag {
     let graph = this.current(id, owner, input.version);
+    if (input.action === "cancel_step") {
+      const node = graph.nodes.find((n) => n.id === input.node_id);
+      if (!node) throw new WorkDagConflict("STEP_NOT_FOUND");
+      if (node.status === "cancelled") return graph;
+      if (["completed", "failed"].includes(node.status)) throw new WorkDagConflict("TERMINAL_STEP");
+      const attempt = node.attempts.at(-1);
+      if (attempt) {
+        const child = this.works.get(attempt.work_id, owner);
+        if (!child) throw new WorkDagConflict("WORK_NOT_FOUND");
+        // Cancel the canonical child first. If the graph checkpoint fails,
+        // reconciliation observes the terminal child and stops automation.
+        this.manager.control(child.id, owner, child.version, "cancel");
+      }
+      node.status = "cancelled";
+      node.blocked_reason = "STEP_CANCELLED_BY_OWNER";
+      if (graph.execution) {
+        graph.execution.status = "stopped";
+        graph.execution.reason = "STEP_CANCELLED_BY_OWNER";
+      }
+      return this.works.dag.save(
+        projectDagStatuses(graph),
+        "Владелец отменил только шаг: " + node.title
+      );
+    }
     if (input.action === "run_plan" || input.action === "stop_plan") {
       if (input.action === "stop_plan") {
         if (!graph.execution) throw new WorkDagConflict("INVALID_TRANSITION");
