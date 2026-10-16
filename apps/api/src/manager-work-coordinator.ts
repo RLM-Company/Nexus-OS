@@ -154,6 +154,10 @@ export class ManagerWorkCoordinator {
       ? "EMERGENCY_STOP"
       : null;
   }
+  /** Single-process drain status; persisted inflight IDs may denote uncertain spend. */
+  hasActiveExecution(workId: string): boolean {
+    return this.active.has(workId);
+  }
   async stop(): Promise<void> {
     this.stopping = true;
     clearInterval(this.timer);

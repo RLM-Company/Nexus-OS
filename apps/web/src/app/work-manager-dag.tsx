@@ -47,6 +47,8 @@ const reasons: Record<string, string> = {
   INVALID_MODEL_OUTPUT: "Модель вернула недопустимый результат",
   UNSUPPORTED_ACTION: "Для задачи нужны недоступные действия",
   STEP_NOT_READY: "Шаг ещё не готов к запуску",
+  TERMINAL_STEP: "Шаг уже завершён. Его результат сохранён; отмена недоступна",
+  STEP_CANCELLED_BY_OWNER: "Шаг отменён владельцем; автозапуск этого плана остановлен",
   DEPENDENCIES_INCOMPLETE: "Зависимости не завершены",
   DAG_NOT_BOUND: "Подготовленная попытка ещё не привязана к графу",
   AUTO_PLAN_ACTIVE: "Сначала остановите автозапуск, чтобы изменить план или запустить шаг вручную",
@@ -128,6 +130,12 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   const [readingImport, setReadingImport] = useState(false);
   const importEpoch = useRef(0);
   const [retry, setRetry] = useState<string | null>(null);
+  const [cancellation, setCancellation] = useState<{
+    graphId: string;
+    nodeId: string;
+    version: number;
+    title: string;
+  } | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [autoConfirmed, setAutoConfirmed] = useState(false);
   const [requestLimit, setRequestLimit] = useState<number | null>(null);
@@ -150,6 +158,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     Boolean(copy) ||
     Boolean(importDraft) ||
     Boolean(rename) ||
+    Boolean(cancellation) ||
     readingImport;
   const automatic = graph?.execution && ["running", "waiting"].includes(graph.execution.status);
   const totalLimit =
@@ -166,6 +175,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     );
   useEffect(() => {
     setRetry(null);
+    setCancellation(null);
     setAcknowledged(false);
     setAutoConfirmed(false);
     setRequestLimit(null);
@@ -221,6 +231,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     setRename(null);
     setCopy(null);
     setImportDraft(null);
+    setCancellation(null);
     setRetry(null);
     setAcknowledged(false);
     setAutoConfirmed(false);
@@ -292,6 +303,24 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       acceptSaved(result);
     } catch (e) {
       // Lost acknowledgement: read canonical state, never repeat the command.
+      if (method === "POST" && url.endsWith("/control")) {
+        const expected = body as WorkDagControl;
+        if (expected.action === "cancel_step") {
+          try {
+            const latest = await request<WorkDag>(url.slice(0, -"/control".length));
+            setGraphs((current) => [latest, ...current.filter((g) => g.id !== latest.id)]);
+            if (
+              latest.version >= expected.version &&
+              latest.nodes.find((n) => n.id === expected.node_id)?.status === "cancelled"
+            ) {
+              acceptSaved(latest);
+              return;
+            }
+          } catch {
+            /* Preserve the confirmation and never repeat cancellation automatically. */
+          }
+        }
+      }
       if (method === "PUT" && url.endsWith("/title")) {
         try {
           const expected = body as { expected_version: number; title: string };
@@ -582,7 +611,14 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             aria-label="JSON плана"
             type="file"
             accept=".json,application/json"
-            disabled={busy || Boolean(editor) || Boolean(copy) || Boolean(rename) || readingImport}
+            disabled={
+              busy ||
+              Boolean(editor) ||
+              Boolean(copy) ||
+              Boolean(rename) ||
+              Boolean(cancellation) ||
+              readingImport
+            }
             onChange={(e) => {
               const file = e.currentTarget.files?.[0];
               e.currentTarget.value = "";
@@ -754,15 +790,20 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             />
           </label>
           {editor.nodes.map((node, index) => {
+            const savedNode =
+              graph?.id === editor.graphId ? graph.nodes.find((n) => n.id === node.id) : undefined;
             const started = Boolean(
-              graph?.id === editor.graphId &&
-              graph.nodes.find((n) => n.id === node.id)?.attempts.length
+              savedNode?.attempts.length || savedNode?.status === "cancelled"
             );
             return (
               <fieldset key={node.id} disabled={started || busy} className={styles.dagStep}>
                 <legend>
                   Шаг {index + 1}
-                  {started ? " · уже запущен" : ""}
+                  {savedNode?.status === "cancelled"
+                    ? " · отменён"
+                    : started
+                      ? " · уже запущен"
+                      : ""}
                 </legend>
                 <label>
                   Название
@@ -930,6 +971,12 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           >
             Скачать JSON плана
           </a>
+          <p>
+            <a href={base + "/" + encodeURIComponent(graph.id) + "/results.zip"}>
+              Скачать отчёт и файлы (ZIP)
+            </a>{" "}
+            — опубликованные результаты, версии и источники. Незавершённые шаги отмечены в отчёте.
+          </p>
           {graph.copied_from && (
             <p>
               Копия плана · исходная версия {graph.copied_from.version} ·{" "}
@@ -990,7 +1037,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                       min={3}
                       max={96}
                       value={totalLimit}
-                      disabled={busy}
+                      disabled={browsingLocked}
                       onChange={(e) => {
                         setRequestLimit(Number(e.target.value));
                         setAutoConfirmed(false);
@@ -1001,14 +1048,14 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                     <input
                       type="checkbox"
                       checked={autoConfirmed}
-                      disabled={busy}
+                      disabled={browsingLocked}
                       onChange={(e) => setAutoConfirmed(e.target.checked)}
                     />
                     Разрешаю выполнение оставшихся шагов в этом лимите с расходом токенов
                   </label>
                   <button
                     disabled={
-                      busy ||
+                      browsingLocked ||
                       gate !== "clear" ||
                       !autoConfirmed ||
                       totalLimit < 3 ||
@@ -1022,7 +1069,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                 </>
               )}
             {automatic && (
-              <button disabled={busy} onClick={() => act("stop_plan")}>
+              <button disabled={browsingLocked} onClick={() => act("stop_plan")}>
                 Остановить автозапуск
               </button>
             )}
@@ -1048,17 +1095,17 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </div>
           <div className={styles.actions}>
             {!graph.archived_at && graph.mode === "active" && (
-              <button disabled={busy} onClick={() => act("pause")}>
+              <button disabled={browsingLocked} onClick={() => act("pause")}>
                 Приостановить проект
               </button>
             )}
             {!graph.archived_at && graph.mode === "paused" && (
-              <button disabled={busy || gate !== "clear"} onClick={() => act("resume")}>
+              <button disabled={browsingLocked || gate !== "clear"} onClick={() => act("resume")}>
                 Продолжить проект
               </button>
             )}
             {!graph.archived_at && graph.mode !== "cancelled" && (
-              <button disabled={busy} onClick={() => act("cancel")}>
+              <button disabled={browsingLocked} onClick={() => act("cancel")}>
                 Отменить работы проекта
               </button>
             )}
@@ -1101,10 +1148,31 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                   </p>
                 )}
                 <div className={styles.actions}>
+                  {!graph.archived_at &&
+                    ["pending", "blocked", "running"].includes(node.status) && (
+                      <button
+                        type="button"
+                        disabled={browsingLocked}
+                        onClick={() => {
+                          setRetry(null);
+                          setCancellation({
+                            graphId: graph.id,
+                            nodeId: node.id,
+                            version: graph.version,
+                            title: node.title
+                          });
+                        }}
+                      >
+                        Отменить этот шаг…
+                      </button>
+                    )}
                   {!graph.archived_at && node.status === "pending" && (
                     <button
                       disabled={
-                        busy || graph.mode !== "active" || gate !== "clear" || Boolean(automatic)
+                        browsingLocked ||
+                        graph.mode !== "active" ||
+                        gate !== "clear" ||
+                        Boolean(automatic)
                       }
                       onClick={() => act("run", node.id)}
                     >
@@ -1115,7 +1183,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                     node.status === "blocked" &&
                     node.blocked_reason === "AWAITING_APPROVAL" && (
                       <button
-                        disabled={busy || graph.mode !== "active" || gate !== "clear"}
+                        disabled={browsingLocked || graph.mode !== "active" || gate !== "clear"}
                         onClick={() => act("approve_step", node.id)}
                       >
                         Подтвердить план Manager
@@ -1127,7 +1195,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                       node.blocked_reason ?? ""
                     ) && (
                       <button
-                        disabled={busy || graph.mode !== "active" || gate !== "clear"}
+                        disabled={browsingLocked || graph.mode !== "active" || gate !== "clear"}
                         onClick={() => act("resume_step", node.id)}
                       >
                         Продолжить шаг
@@ -1135,7 +1203,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                     )}
                   {!graph.archived_at && node.status === "failed" && (
                     <button
-                      disabled={busy || graph.mode !== "active" || gate !== "clear"}
+                      disabled={browsingLocked || graph.mode !== "active" || gate !== "clear"}
                       onClick={() => {
                         setRetry(node.id);
                         setAcknowledged(false);
@@ -1145,6 +1213,32 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                     </button>
                   )}
                 </div>
+                {cancellation?.graphId === graph.id && cancellation.nodeId === node.id && (
+                  <div role="group" aria-label="Подтверждение отмены шага">
+                    <p>
+                      Отменить «{cancellation.title}»? Автозапуск этого плана остановится. Зависимые
+                      шаги останутся заблокированы, готовые результаты сохранятся. Другие шаги и
+                      планы не отменяются. Уже отправленный запрос мог быть оплачен. Отменённый шаг
+                      нельзя продолжить; для нового запуска создайте копию плана.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void mutate(base + "/" + cancellation.graphId + "/control", "POST", {
+                          version: cancellation.version,
+                          action: "cancel_step",
+                          node_id: cancellation.nodeId
+                        })
+                      }
+                    >
+                      Подтвердить отмену шага
+                    </button>
+                    <button type="button" disabled={busy} onClick={() => setCancellation(null)}>
+                      Оставить шаг
+                    </button>
+                  </div>
+                )}
                 {retry === node.id && (
                   <div>
                     <label>
