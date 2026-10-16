@@ -60,5 +60,45 @@ document citations. No private source file or table is automatically sent to AI.
   label, and the older zero-POST assertion counted a routine navigation-pin
   migration. The final assertion still rejects all Data/model writes and permits
   only that unrelated idempotent navigation import.
-- Production build and deployment are recorded below after completion. Hosted CI
-  success is not asserted.
+- Production build and deployment passed as recorded below. Hosted CI success is
+  not asserted.
+
+## Production delivery and live acceptance
+
+Draft PR: https://github.com/RLM-Company/Nexus-OS/pull/353, based on
+`codex/work-autonomy-20261015`. Source revision
+`ea0f25d588ac22397802737aa3be20d6ae0b6013` is deployed as
+`cosmora-alpha-app:documents-data-web-ea0f25d`. No main merge was performed.
+
+The source archive contains only tracked `apps/web/src/app` files: 401,218 bytes,
+SHA-256 `7a0f501ef5ef5e6d1afe10d17589fbb5c6347798802be03dcbd55674dd7a9200`.
+It excludes credentials, environment files and user data. The production web image
+built with no network access and retained earlier hashed static assets. The
+release directory is `/opt/cosmora/releases/documents-data-ea0f25d`.
+
+Activation held the maintenance lock, checked the old image and new revision,
+saved the previous deployment wrapper and appended a web-only overlay. The new web
+container passed its health check. Exact API/login/Code executor container IDs and
+start times matched before and after activation. No API restart, migration,
+database modification or provider change was part of deployment. Rollback to the
+previous web image was prepared and was not needed.
+
+Acceptance through the actual authenticated site on 16 October:
+
+- Opened a synthetic three-row CSV, explicitly selected numeric types and a line
+  chart, changed source row 3 revenue from 160,000 to 185,000, undid and redid it,
+  switched document/table tabs, and downloaded its workspace. The UI recalculated
+  the sum from 425,000 to 450,000. The downloaded JSON independently confirmed the
+  exact edited row, settings and 450,000 total.
+- In the existing synthetic Work project
+  `cc150003-0001-4000-8000-000000000001`, imported `demo.md` into Canvas, edited it,
+  saved revision 2, downloaded DOCX, reloaded the page and reopened revision 2.
+  Exact textarea contents survived reload. The downloaded DOCX archive contains
+  the Russian title and latest added paragraph.
+- No model generation was invoked. Only synthetic acceptance documents were used.
+
+Local artifacts under `2026-10-16/kosmora-documents-data` in the owner's Codex
+workspace include `edited.workspace.json`, `edited.docx`, `table-live.png` and
+`canvas-live.png`, plus the source archive and release scripts. The live browser
+tabs were retained as deliverables. Canvas remains available from the project
+chat; table workspaces still require explicit save before closing the view.
