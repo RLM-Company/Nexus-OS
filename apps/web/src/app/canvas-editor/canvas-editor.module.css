@@ -1,4 +1,5 @@
 .root {
+  container-type: inline-size;
   font: 14px/1.6 var(--font-ui);
   color: var(--text, #282828);
   width: 100%;
@@ -363,5 +364,18 @@
 @media (prefers-reduced-motion: reduce) {
   .root button {
     transition: none;
+  }
+}
+
+@container (max-width: 640px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .files {
+    max-height: 230px;
+    overflow-y: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line, #e5e5e5);
+    padding: 0 0 12px;
   }
 }

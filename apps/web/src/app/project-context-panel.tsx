@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   isValidChatAttachments,
   attachmentContextSize,
+  sameChatAttachments,
   type ChatTextAttachment
 } from "@cosmora/contracts/chat-attachments";
 import {
@@ -12,6 +13,7 @@ import {
   useChatAttachments
 } from "./chat-attachments";
 import styles from "./project-context.module.css";
+import { ProjectArtifactPicker } from "./project-artifact-picker";
 
 type Materials = {
   project_id: string;
@@ -45,7 +47,10 @@ export function ProjectContextPanel({
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/materials`);
+      const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/materials`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000)
+      });
       if (!response.ok) throw new Error("Не удалось загрузить материалы проекта.");
       const value = (await response.json()) as Materials;
       if (
@@ -94,20 +99,47 @@ export function ProjectContextPanel({
     try {
       const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/materials`, {
         method: "PUT",
+        signal: AbortSignal.timeout(15000),
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ version: saved.version, instructions, attachments: files.files })
       });
-      if (!response.ok)
+      if (!response.ok) {
+        const detail = (await response.json().catch(() => null)) as {
+          error?: { code?: string };
+        } | null;
         throw new Error(
-          response.status === 409
-            ? "Материалы изменились в другом окне. Загрузите сохранённую версию перед повторным сохранением."
-            : "Не удалось сохранить материалы. Черновик оставлен в этом окне."
+          detail?.error?.code === "PROJECT_MATERIALS_OWNER_FENCED"
+            ? "Сохранение остановлено на время операции с данными владельца. Черновик оставлен в этом окне."
+            : response.status === 409
+              ? "Материалы изменились в другом окне. Загрузите сохранённую версию перед повторным сохранением."
+              : "Не удалось сохранить материалы. Черновик оставлен в этом окне."
         );
+      }
       const value = (await response.json()) as Materials;
       if (active.current !== projectId || id !== operation.current) return;
       setSaved(value);
       setNotice("Материалы сохранены. Они войдут в новые сообщения и задания проекта.");
     } catch (cause) {
+      // A lost response must never cause an automatic second mutation.
+      const canonical = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/materials`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000)
+      })
+        .then(async (response) => (response.ok ? ((await response.json()) as Materials) : null))
+        .catch(() => null);
+      if (active.current !== projectId || id !== operation.current) return;
+      if (
+        canonical?.version === saved.version + 1 &&
+        canonical.project_id === projectId &&
+        canonical.instructions === instructions &&
+        Array.isArray(canonical.attachments) &&
+        isValidChatAttachments(canonical.attachments) &&
+        sameChatAttachments(canonical.attachments, files.files)
+      ) {
+        setSaved(canonical);
+        setNotice("Материалы сохранены. Запись подтверждена чтением серверной версии.");
+        return;
+      }
       if (active.current === projectId && id === operation.current)
         setError(cause instanceof Error ? cause.message : "Ошибка сохранения");
     } finally {
@@ -163,6 +195,42 @@ export function ProjectContextPanel({
         сообщению в чате.
       </p>
       <ChatMessageAttachments files={files.files} />
+      <ProjectArtifactPicker
+        key={projectId}
+        projectId={projectId}
+        disabled={pending || files.reading || saved?.project_id !== projectId}
+        onAdd={(attachment) => {
+          const next = [...files.files, attachment];
+          if (
+            files.files.some(
+              (file) =>
+                file.name === attachment.name &&
+                "content" in file &&
+                file.content === attachment.content
+            )
+          ) {
+            setError("Этот снимок уже добавлен в форму.");
+            return false;
+          }
+          if (
+            !isValidChatAttachments(next) ||
+            new TextEncoder().encode(instructions).length +
+              next.reduce((sum, file) => sum + attachmentContextSize(file), 0) >
+              24000
+          ) {
+            setError(
+              "Снимок не помещается: не более 4 файлов и 24 КБ вместе с требованиями. Уменьшите фрагмент или удалите другой материал."
+            );
+            return false;
+          }
+          files.replace(next);
+          setError(null);
+          setNotice(
+            "Снимок добавлен в форму. Нажмите «Сохранить материалы», чтобы использовать его в новых запросах."
+          );
+          return true;
+        }}
+      />
       <div className={styles.modalActions}>
         <button
           type="button"
@@ -171,7 +239,23 @@ export function ProjectContextPanel({
         >
           Сохранить материалы
         </button>
-        <button type="button" disabled={pending || files.reading} onClick={() => void load()}>
+        <button
+          type="button"
+          disabled={pending || files.reading}
+          onClick={() => {
+            const dirty =
+              saved &&
+              (saved.instructions !== instructions ||
+                !sameChatAttachments(saved.attachments, files.files));
+            if (
+              !dirty ||
+              window.confirm(
+                "Заменить несохранённые требования и снимки сохранённой серверной версией?"
+              )
+            )
+              void load();
+          }}
+        >
           Загрузить сохранённую версию
         </button>
       </div>

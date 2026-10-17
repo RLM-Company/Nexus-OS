@@ -17,6 +17,11 @@ export class IdempotencyConflictError extends Error {
     this.name = "IdempotencyConflictError";
   }
 }
+export class ProjectMaterialsFencedError extends Error {
+  constructor() {
+    super("PROJECT_MATERIALS_OWNER_FENCED");
+  }
+}
 
 export class ModelUsageConflictError extends Error {
   constructor() {
@@ -247,6 +252,10 @@ export class ProjectStore {
       throw new Error("Invalid project materials");
     this.#sqlite.exec("BEGIN IMMEDIATE");
     try {
+      const lifecycle = this.#sqlite
+        .prepare("SELECT state FROM kosmora_owner_data_lifecycle WHERE owner_id=?")
+        .get(ownerId) as { state: string } | undefined;
+      if (lifecycle && lifecycle.state !== "active") throw new ProjectMaterialsFencedError();
       const current = this.getMaterials(projectId, ownerId);
       if (!current) {
         this.#sqlite.exec("ROLLBACK");

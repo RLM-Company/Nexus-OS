@@ -8,6 +8,7 @@ import {
   type CanvasFormat
 } from "@cosmora/contracts";
 import { type CanvasArtifactStore, CanvasConflictError, CanvasLimitError } from "@cosmora/db";
+import { registerDataWorkspaceRoutes } from "./data-workspace-routes.js";
 
 const idString = Type.String({ minLength: 1, maxLength: 128 });
 const params = Type.Object({ projectId: idString, id: idString }, { additionalProperties: false });
@@ -25,7 +26,13 @@ const formatSchema = Type.Union([
 const title = Type.String({ minLength: 1, maxLength: CANVAS_MAX_TITLE_BYTES });
 const content = Type.String({ maxLength: CANVAS_MAX_CONTENT_BYTES });
 const draftFields = { title, format: formatSchema, content };
-const draftBody = Type.Object(draftFields, { additionalProperties: false });
+const draftBody = Type.Object(
+  {
+    ...draftFields,
+    client_request_id: Type.Optional(Type.String({ pattern: "^[a-fA-F0-9-]{36}$" }))
+  },
+  { additionalProperties: false }
+);
 const updateBody = Type.Object(
   { ...draftFields, baseVersion: Type.Integer({ minimum: 1 }) },
   { additionalProperties: false }
@@ -74,6 +81,7 @@ export function registerCanvasRoutes(
   store: CanvasArtifactStore,
   identityFor: (request: FastifyRequest) => IdentityContext
 ): void {
+  registerDataWorkspaceRoutes(app, store, identityFor);
   const path = "/api/v1/projects/:projectId/canvas";
   const owner = (request: FastifyRequest) => identityFor(request).owner_id;
   const handle = (
@@ -86,7 +94,13 @@ export function registerCanvasRoutes(
         .send({ error: { code: "CANVAS_VERSION_CONFLICT", currentVersion: error.currentVersion } });
     if (error instanceof CanvasLimitError)
       return reply
-        .code(error.code === "CANVAS_OWNER_FENCED" ? 409 : 413)
+        .code(
+          /FENCED|CONFLICT/.test(error.code)
+            ? 409
+            : error.code.includes("EDITOR_REQUIRED")
+              ? 400
+              : 413
+        )
         .send({ error: { code: error.code } });
     if (error instanceof Error && error.message === "CANVAS_INVALID_CONTENT")
       return reply.code(400).send({ error: { code: "CANVAS_INVALID_CONTENT" } });
@@ -134,10 +148,13 @@ export function registerCanvasRoutes(
   );
   app.post<{
     Params: { projectId: string };
-    Body: { title: string; format: CanvasFormat; content: string };
+    Body: { title: string; format: CanvasFormat; content: string; client_request_id?: string };
   }>(path, { schema: { params: projectParams, body: draftBody } }, (req, reply) => {
     try {
-      const result = store.create(req.params.projectId, owner(req), req.body);
+      const result = store.create(req.params.projectId, owner(req), {
+        ...req.body,
+        ...(req.body.client_request_id ? { idempotency_id: req.body.client_request_id } : {})
+      });
       return result ? reply.code(201).send(result) : notFound(reply);
     } catch (error) {
       return handle(reply, error);

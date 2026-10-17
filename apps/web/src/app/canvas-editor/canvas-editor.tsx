@@ -14,14 +14,19 @@ import styles from "./canvas-editor.module.css";
 import { canvasDraftKey, parseCanvasDraft, type CanvasDraft } from "./canvas-draft-storage";
 import { CanvasPreview } from "./canvas-preview";
 import { CanvasComparison, type CanvasComparisonSide } from "./canvas-comparison";
-import { CANVAS_FILE_ACCEPT, canvasFileDraft } from "./canvas-file-import";
+import { CANVAS_FILE_ACCEPT } from "./canvas-file-import";
+import { readCanvasFile } from "./canvas-file";
+import { createDocxReport, downloadReport } from "../studio-files-report";
 import { ShiningText, SystemMessage } from "../ui/kosmora-controls";
 
 type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
 type Meta = Omit<CanvasRevision, "content">;
 type Candidate = {
   title: string;
-  source: Exclude<CanvasSource, { kind: "manual" } | { kind: "restore" }>;
+  source: Exclude<
+    CanvasSource,
+    { kind: "manual" } | { kind: "restore" } | { kind: "data_workspace" }
+  >;
 };
 type Draft = CanvasDraft;
 type Review = {
@@ -88,7 +93,13 @@ const sanitizeName = (value: string, format: CanvasFormat): string => {
   return `${base}.${extension}`;
 };
 
-export function CanvasEditor({ projectId }: { projectId: string }) {
+export function CanvasEditor({
+  projectId,
+  initialArtifactId
+}: {
+  projectId: string;
+  initialArtifactId?: string;
+}) {
   const [scope, setScope] = useState<{ projectId: string; ownerScope: string } | null>(null);
   const [scopeError, setScopeError] = useState("");
   useEffect(() => {
@@ -134,11 +145,20 @@ export function CanvasEditor({ projectId }: { projectId: string }) {
       key={`${scope.ownerScope}:${projectId}`}
       projectId={projectId}
       ownerScope={scope.ownerScope}
+      {...(initialArtifactId ? { initialArtifactId } : {})}
     />
   );
 }
 
-function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; ownerScope: string }) {
+function ScopedCanvasEditor({
+  projectId,
+  ownerScope,
+  initialArtifactId
+}: {
+  projectId: string;
+  ownerScope: string;
+  initialArtifactId?: string;
+}) {
   const lifecycle = useRef<AbortController | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -178,12 +198,14 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
     const second = await scopedRequest<{ items: CanvasArtifact[] }>(base + "?limit=100&offset=100");
     return [...first.items, ...second.items];
   }, [base, scopedRequest]);
-  const dirty = loaded
-    ? draft.title !== loaded.revision.title ||
-      draft.format !== loaded.revision.format ||
-      draft.content !== loaded.revision.content ||
-      draft.baseVersion !== loaded.artifact.version
-    : draft.title !== blank.title || draft.format !== blank.format || !!draft.content;
+  const dirty =
+    Boolean(draft.createRequestId) ||
+    (loaded
+      ? draft.title !== loaded.revision.title ||
+        draft.format !== loaded.revision.format ||
+        draft.content !== loaded.revision.content ||
+        draft.baseVersion !== loaded.artifact.version
+      : draft.title !== blank.title || draft.format !== blank.format || !!draft.content);
   const reviewedDraftMatches =
     review?.kind === "conflict" &&
     draft.title === review.after.title &&
@@ -216,6 +238,7 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
         if (active) {
           setItems(list);
           setCandidates(sources.items);
+          if (initialArtifactId) void open(initialArtifactId);
         }
       })
       .catch((e) => {
@@ -227,7 +250,7 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
     return () => {
       active = false;
     };
-  }, [base, readList, scopedRequest]);
+  }, [base, readList, scopedRequest, initialArtifactId]);
   useEffect(() => {
     const id = loaded?.artifact.id ?? "new";
     try {
@@ -256,6 +279,10 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
     setConflict(null);
     try {
       const next = await scopedRequest<Full>(`${base}/${encodeURIComponent(id)}`);
+      if (next.revision.source.kind === "data_workspace")
+        throw new Error(
+          "Откройте таблицу в Studio: текстовый редактор Canvas не меняет табличные снимки."
+        );
       const revisions = await scopedRequest<{ items: Meta[] }>(
         `${base}/${encodeURIComponent(id)}/revisions`
       );
@@ -334,7 +361,12 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
         setError(
           "Версия на сервере изменилась. Ваш черновик сохранён здесь: сравните, сохраните копию или подтвердите перезапись."
         );
-      } else setError(problem.message || "Не удалось сохранить");
+      } else
+        setError(
+          problem.message === "CANVAS_REQUEST_CONFLICT"
+            ? "Не удалось подтвердить предыдущее создание: с этим ключом уже сохранён другой текст. Обновите список и откройте сохранённый артефакт; черновик оставлен в браузере."
+            : problem.message || "Не удалось сохранить"
+        );
     } finally {
       setWorking(false);
     }
@@ -350,13 +382,44 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
       return;
     }
     const payload = { title: draft.title, format: draft.format, content: draft.content };
-    if (!selected || newCopy)
+    // An unresolved copy must keep creating that copy on an explicit retry,
+    // never update the source artifact which is still selected in this window.
+    if (!selected || newCopy || draft.createRequestId) {
+      const requestId = draft.createRequestId ?? crypto.randomUUID();
+      const pendingDraft = { ...draft, createRequestId: requestId };
+      setDraft(pendingDraft);
+      try {
+        // Persist before dispatch: a reload may happen before React's draft effect.
+        localStorage.setItem(localKey(projectId, selected || "new"), JSON.stringify(pendingDraft));
+      } catch {
+        /* Browser storage is optional; this window retains the request ID. */
+      }
       void perform(
-        () => scopedRequest<Full>(base, { method: "POST", body: JSON.stringify(payload) }),
+        async () => {
+          try {
+            return await scopedRequest<Full>(base, {
+              method: "POST",
+              body: JSON.stringify({ ...payload, client_request_id: requestId })
+            });
+          } catch (error) {
+            const canonical = await scopedRequest<Full>(
+              `${base}/${encodeURIComponent(requestId)}`
+            ).catch(() => null);
+            if (
+              canonical &&
+              canonical.revision.source.kind !== "data_workspace" &&
+              canonical.revision.content === payload.content &&
+              canonical.artifact.title === payload.title &&
+              canonical.artifact.format === payload.format
+            )
+              return canonical;
+            throw error;
+          }
+        },
         newCopy ? "Копия создана, прежний артефакт не изменён." : "Артефакт создан.",
         true
       );
-    else if (
+    } else if (
       (override &&
         conflict !== null &&
         review?.kind === "conflict" &&
@@ -365,17 +428,30 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
         review.baseVersion === conflict) ||
       (!override && conflict === null)
     ) {
-      void perform(
-        () =>
-          scopedRequest<Full>(`${base}/${encodeURIComponent(selected)}`, {
+      void perform(async () => {
+        const baseVersion = override ? review!.baseVersion : draft.baseVersion;
+        try {
+          return await scopedRequest<Full>(`${base}/${encodeURIComponent(selected)}`, {
             method: "PUT",
             body: JSON.stringify({
               ...payload,
-              baseVersion: override ? review!.baseVersion : draft.baseVersion
+              baseVersion
             })
-          }),
-        "Сохранена новая версия."
-      );
+          });
+        } catch (error) {
+          const canonical = await scopedRequest<Full>(
+            `${base}/${encodeURIComponent(selected)}`
+          ).catch(() => null);
+          if (
+            canonical?.artifact.version === baseVersion + 1 &&
+            canonical.revision.content === payload.content &&
+            canonical.artifact.title === payload.title &&
+            canonical.artifact.format === payload.format
+          )
+            return canonical;
+          throw error;
+        }
+      }, "Сохранена новая версия.");
     }
   };
   const createNew = () => {
@@ -556,8 +632,10 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
   };
   const openFile = async (file: File) => {
     if (working || loading) return;
-    if (file.size > CANVAS_MAX_CONTENT_BYTES) {
-      setError("Файл превышает лимит 512 КиБ.");
+    if (
+      file.size > (file.name.toLowerCase().endsWith(".docx") ? 20000000 : CANVAS_MAX_CONTENT_BYTES)
+    ) {
+      setError("Файл превышает лимит: текст 512 КиБ, исходный DOCX 20 МБ.");
       return;
     }
     if (dirty) {
@@ -577,7 +655,13 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
     setWorking(true);
     setError("");
     try {
-      const next = canvasFileDraft(file.name, new Uint8Array(await file.arrayBuffer()));
+      const signal = lifecycle.current?.signal;
+      if (!signal) throw new Error("Редактор ещё загружается.");
+      const content = await readCanvasFile(
+        file,
+        AbortSignal.any([signal, AbortSignal.timeout(60000)])
+      );
+      const next: Draft = { ...content, baseVersion: 0 };
       if (lifecycle.current?.signal.aborted) return;
       setSelected("");
       setLoaded(null);
@@ -650,11 +734,11 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
             </button>
           ))}
           <div className={styles.import}>
-            <label htmlFor="canvas-local-file">Открыть текстовый файл</label>
+            <label htmlFor="canvas-local-file">Открыть документ</label>
             <input
               id="canvas-local-file"
               type="file"
-              accept={CANVAS_FILE_ACCEPT}
+              accept={CANVAS_FILE_ACCEPT + ",.docx"}
               disabled={working || loading}
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -662,7 +746,10 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
                 if (file) void openFile(file);
               }}
             />
-            <small>UTF-8, до 512 КиБ. Файл откроется в новом черновике.</small>
+            <small>
+              Текст UTF-8 до 512 КиБ; DOCX до 20 МБ — без исходной вёрстки. Файл откроется в новом
+              черновике.
+            </small>
             <label htmlFor="canvas-source">Импорт из Work и чатов</label>
             <select
               id="canvas-source"
@@ -758,6 +845,25 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
             </button>
             <button type="button" onClick={download}>
               Скачать
+            </button>
+            <button
+              type="button"
+              disabled={working || loading}
+              onClick={() => {
+                try {
+                  downloadReport(
+                    createDocxReport([draft.content]),
+                    sanitizeName(draft.title, "text").replace(/\.txt$/, ".docx")
+                  );
+                  setNotice(
+                    "Скачан DOCX с текущим текстом, включая несохранённые правки. Markdown и код сохранены как текст."
+                  );
+                } catch {
+                  setError("Не удалось подготовить DOCX. Текст остаётся в редакторе.");
+                }
+              }}
+            >
+              Скачать DOCX
             </button>
             {selected && (
               <button type="button" onClick={remove} disabled={working}>

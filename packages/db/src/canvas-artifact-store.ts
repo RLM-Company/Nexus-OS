@@ -1,5 +1,12 @@
 import { randomUUID, createHash } from "node:crypto";
 import type { DatabaseSync, SQLOutputValue } from "node:sqlite";
+import type { ArtifactContextCandidate } from "@cosmora/contracts/artifact-context";
+import {
+  DATA_SERVER_BYTES,
+  DATA_SERVER_HISTORY_BYTES,
+  DATA_SERVER_REVISIONS,
+  parseDataWorkspace
+} from "@cosmora/contracts/data-workspace";
 import {
   CANVAS_MAX_IMPORT_BYTES,
   CANVAS_MAX_PROJECT_ARTIFACTS,
@@ -78,7 +85,13 @@ export class CanvasArtifactStore {
         .get(id, projectId, ownerId) as ArtifactRow | undefined) ?? null
     );
   }
-  list(projectId: string, ownerId: string, limit = 100, offset = 0): CanvasArtifact[] | null {
+  list(
+    projectId: string,
+    ownerId: string,
+    limit = 100,
+    offset = 0,
+    tables = false
+  ): CanvasArtifact[] | null {
     if (!this.ownedProject(projectId, ownerId)) return null;
     return (
       this.sqlite
@@ -86,15 +99,68 @@ export class CanvasArtifactStore {
           `SELECT a.* FROM canvas_artifacts a JOIN projects p
       ON p.id = a.project_id AND p.owner_id = a.owner_id
       WHERE a.owner_id = ? AND a.project_id = ?
+      AND EXISTS(SELECT 1 FROM canvas_revisions first WHERE first.artifact_id=a.id AND first.version=1
+        AND (json_extract(first.source_json,'$.kind')='data_workspace')=?)
       ORDER BY a.updated_at DESC, a.id DESC LIMIT ? OFFSET ?`
         )
         .all(
           ownerId,
           projectId,
+          Number(tables),
           Math.min(Math.max(limit, 1), 100),
           Math.max(offset, 0)
         ) as ArtifactRow[]
     ).map(artifact);
+  }
+  isTable(projectId: string, ownerId: string, id: string): boolean {
+    return this.getRevision(projectId, ownerId, id, 1)?.source.kind === "data_workspace";
+  }
+  contextCandidates(projectId: string, ownerId: string): ArtifactContextCandidate[] | null {
+    if (!this.ownedProject(projectId, ownerId)) return null;
+    return this.sqlite
+      .prepare(
+        `SELECT a.id, a.title, a.current_version AS version, r.sha256,
+      length(CAST(r.content AS BLOB)) AS bytes,
+      CASE WHEN json_extract(first.source_json,'$.kind')='data_workspace' THEN 'table' ELSE 'canvas' END AS kind
+      FROM canvas_artifacts a
+      JOIN projects p ON p.id=a.project_id AND p.owner_id=a.owner_id
+      JOIN canvas_revisions r ON r.artifact_id=a.id AND r.version=a.current_version
+      JOIN canvas_revisions first ON first.artifact_id=a.id AND first.version=1
+      WHERE a.project_id=? AND a.owner_id=? ORDER BY a.updated_at DESC, a.id DESC LIMIT 200`
+      )
+      .all(projectId, ownerId) as unknown as ArtifactContextCandidate[];
+  }
+  private validateInput(input: {
+    title: string;
+    format: CanvasFormat;
+    content: string;
+    source?: CanvasSource;
+  }) {
+    if (input.source?.kind !== "data_workspace") {
+      validateCanvasContent(input.title, input.format, input.content);
+      return;
+    }
+    validateCanvasContent(input.title, input.format, "");
+    if (input.format !== "code") throw new CanvasLimitError("DATA_WORKSPACE_INVALID");
+    if (canvasBytes(input.content) > DATA_SERVER_BYTES)
+      throw new CanvasLimitError("DATA_WORKSPACE_SIZE_LIMIT");
+    try {
+      parseDataWorkspace(input.content);
+    } catch {
+      throw new CanvasLimitError("DATA_WORKSPACE_INVALID");
+    }
+  }
+  private assertTableQuota(projectId: string, ownerId: string, content: string) {
+    const total = this.sqlite
+      .prepare(
+        `SELECT COALESCE(SUM(length(CAST(r.content AS BLOB))),0) AS bytes
+      FROM canvas_revisions r JOIN canvas_artifacts a ON a.id=r.artifact_id
+      WHERE a.project_id=? AND a.owner_id=? AND EXISTS(SELECT 1 FROM canvas_revisions first
+        WHERE first.artifact_id=a.id AND first.version=1 AND json_extract(first.source_json,'$.kind')='data_workspace')`
+      )
+      .get(projectId, ownerId) as { bytes: number };
+    if (total.bytes + canvasBytes(content) > DATA_SERVER_HISTORY_BYTES)
+      throw new CanvasLimitError("DATA_WORKSPACE_PROJECT_QUOTA");
   }
   get(
     projectId: string,
@@ -188,14 +254,53 @@ export class CanvasArtifactStore {
       idempotency_id?: string;
     }
   ): { artifact: CanvasArtifact; revision: CanvasRevision } | null {
-    validateCanvasContent(input.title, input.format, input.content);
+    this.validateInput(input);
     return this.tx(() => {
       this.assertOwnerActive(ownerId);
       if (!this.ownedProject(projectId, ownerId)) return null;
       if (input.idempotency_id) {
         const existing = this.get(projectId, ownerId, input.idempotency_id);
-        if (existing) return existing;
+        if (existing) {
+          const first = this.getRevision(projectId, ownerId, existing.artifact.id, 1)!;
+          // Chat transfer historically addresses one editor copy per source. Its
+          // later edits stay canonical; ordinary creates must match exactly.
+          const sameChat =
+            input.source?.kind === "chat" &&
+            first.source.kind === "chat" &&
+            input.source.chat_id === first.source.chat_id &&
+            input.source.message_id === first.source.message_id;
+          if (
+            !sameChat &&
+            ((input.source?.kind ?? "manual") !== first.source.kind ||
+              existing.revision.content !== input.content ||
+              existing.artifact.title !== input.title ||
+              existing.artifact.format !== input.format)
+          )
+            throw new CanvasLimitError(
+              input.source?.kind === "data_workspace"
+                ? "DATA_WORKSPACE_REQUEST_CONFLICT"
+                : "CANVAS_REQUEST_CONFLICT"
+            );
+          if (
+            input.source?.kind === "data_workspace" &&
+            (!this.isTable(projectId, ownerId, existing.artifact.id) ||
+              existing.revision.content !== input.content ||
+              existing.artifact.title !== input.title)
+          )
+            throw new CanvasLimitError("DATA_WORKSPACE_REQUEST_CONFLICT");
+          return existing;
+        }
+        if (
+          this.sqlite.prepare("SELECT 1 FROM canvas_artifacts WHERE id=?").get(input.idempotency_id)
+        )
+          throw new CanvasLimitError(
+            input.source?.kind === "data_workspace"
+              ? "DATA_WORKSPACE_REQUEST_CONFLICT"
+              : "CANVAS_REQUEST_CONFLICT"
+          );
       }
+      if (input.source?.kind === "data_workspace")
+        this.assertTableQuota(projectId, ownerId, input.content);
       const total = this.sqlite
         .prepare("SELECT COUNT(*) AS n FROM canvas_artifacts WHERE owner_id=? AND project_id=?")
         .get(ownerId, projectId) as { n: number };
@@ -234,12 +339,20 @@ export class CanvasArtifactStore {
       source?: CanvasSource;
     }
   ): { artifact: CanvasArtifact; revision: CanvasRevision } | null {
-    validateCanvasContent(input.title, input.format, input.content);
+    this.validateInput(input);
     return this.tx(() => {
       this.assertOwnerActive(ownerId);
       const a = this.ownedArtifact(projectId, ownerId, id);
       if (!a) return null;
+      const table = this.isTable(projectId, ownerId, id);
+      if (table !== (input.source?.kind === "data_workspace"))
+        throw new CanvasLimitError("DATA_WORKSPACE_EDITOR_REQUIRED");
       if (a.current_version !== input.baseVersion) throw new CanvasConflictError(a.current_version);
+      if (table) {
+        if (a.current_version >= DATA_SERVER_REVISIONS)
+          throw new CanvasLimitError("DATA_WORKSPACE_REVISION_LIMIT");
+        this.assertTableQuota(projectId, ownerId, input.content);
+      }
       if (a.current_version >= CANVAS_MAX_REVISIONS)
         throw new CanvasLimitError("CANVAS_REVISION_LIMIT");
       const next = a.current_version + 1,

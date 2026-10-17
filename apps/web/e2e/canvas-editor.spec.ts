@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { strFromU8, unzipSync } from "fflate";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import type { CanvasArtifact, CanvasRevision, CanvasSource } from "@cosmora/contracts";
 
@@ -19,6 +20,65 @@ async function openCanvas(page: Page, projectId: string) {
   await expect(canvas.getByLabel("Содержимое", { exact: true })).toBeEnabled();
   return canvas;
 }
+
+test("Canvas opens local documents as drafts and round-trips edited DOCX", async ({
+  page,
+  request
+}) => {
+  const projectId = await createProject(request);
+  const canvas = await openCanvas(page, projectId);
+  await canvas.getByLabel("Название", { exact: true }).fill("Черновик");
+  await canvas.getByLabel("Содержимое", { exact: true }).fill("Сохранить мой отдельный черновик");
+  await canvas
+    .getByLabel("Открыть документ", { exact: true })
+    .setInputFiles({ name: "invalid.txt", mimeType: "text/plain", buffer: Buffer.from([0xff]) });
+  await expect(canvas.getByRole("alert")).toContainText("Сначала сохраните текущий черновик");
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Артефакт создан");
+  await canvas
+    .getByLabel("Открыть документ", { exact: true })
+    .setInputFiles({ name: "invalid.txt", mimeType: "text/plain", buffer: Buffer.from([0xff]) });
+  await expect(canvas.getByRole("alert")).toContainText("UTF-8");
+  await expect(canvas.getByLabel("Содержимое", { exact: true })).toHaveValue(
+    "Сохранить мой отдельный черновик"
+  );
+  await canvas.getByLabel("Открыть документ", { exact: true }).setInputFiles({
+    name: "Бриф.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Бриф\nИсходный текст")
+  });
+  await expect(canvas.getByRole("status")).toContainText("Файл открыт в новом черновике");
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Артефакт создан");
+  const edited = "Редакция владельца & <данные>\nВторая строка на русском";
+  await canvas.getByLabel("Содержимое", { exact: true }).fill(edited);
+  const downloading = page.waitForEvent("download");
+  await canvas.getByRole("button", { name: "Скачать DOCX", exact: true }).click();
+  const bytes = await readFile(await (await downloading).path());
+  const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+  expect(xml).toContain("Редакция владельца &amp; &lt;данные&gt;");
+  expect(xml).toContain("Вторая строка на русском");
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
+  await canvas.getByLabel("Открыть документ", { exact: true }).setInputFiles({
+    name: "Редакция.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: bytes
+  });
+  await expect(canvas.getByRole("status")).toContainText("Файл открыт в новом черновике");
+  await expect(canvas.getByLabel("Содержимое", { exact: true })).toHaveValue(edited);
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Артефакт создан");
+  await canvas.getByLabel("Содержимое", { exact: true }).fill(edited + "\nГотово к передаче");
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
+  await page.reload();
+  await page.getByRole("button", { name: "Открыть Canvas", exact: true }).click();
+  await canvas.getByRole("button", { name: /Редакция.*v2/ }).click();
+  await expect(canvas.getByLabel("Содержимое", { exact: true })).toHaveValue(
+    edited + "\nГотово к передаче"
+  );
+});
 
 test("Canvas persists real versions, preserves a stale draft, restores a new revision and exports/deletes", async ({
   page,
@@ -259,7 +319,7 @@ test("Canvas opens a local UTF-8 file without saving and protects an unsaved dra
   const base = apiPath(projectId);
   const canvas = await openCanvas(page, projectId);
   const original = "\ufeff<script>window.fileImportExecuted = true</script>\r\nТочный файл 🍋";
-  await canvas.getByLabel("Открыть текстовый файл", { exact: true }).setInputFiles({
+  await canvas.getByLabel("Открыть документ", { exact: true }).setInputFiles({
     name: "source.html",
     mimeType: "text/html",
     buffer: Buffer.from(original)
@@ -273,7 +333,7 @@ test("Canvas opens a local UTF-8 file without saving and protects an unsaved dra
     canvas.getByLabel("Безопасный предпросмотр").locator("script,img,iframe")
   ).toHaveCount(0);
   expect(await page.evaluate(() => "fileImportExecuted" in window)).toBe(false);
-  await canvas.getByLabel("Открыть текстовый файл", { exact: true }).setInputFiles({
+  await canvas.getByLabel("Открыть документ", { exact: true }).setInputFiles({
     name: "other.txt",
     mimeType: "text/plain",
     buffer: Buffer.from("replacement")
@@ -287,11 +347,154 @@ test("Canvas opens a local UTF-8 file without saving and protects an unsaved dra
   const saved = (await (await request.get(`${base}/${items[0]!.id}`)).json()) as Full;
   expect(Buffer.from(saved.revision.content)).toEqual(Buffer.from(original));
   await canvas
-    .getByLabel("Открыть текстовый файл", { exact: true })
+    .getByLabel("Открыть документ", { exact: true })
     .setInputFiles({ name: "bad.txt", mimeType: "text/plain", buffer: Buffer.from([0xff, 0xfe]) });
   await expect(canvas.getByRole("alert")).toContainText("UTF-8");
   await expect(canvas.getByLabel("Название", { exact: true })).toHaveValue("source.html");
   expect(
     ((await (await request.get(base)).json()) as { items: CanvasArtifact[] }).items
   ).toHaveLength(1);
+});
+
+test("Canvas confirms lost create/update responses by reading without extra mutations", async ({
+  page,
+  request
+}) => {
+  const projectId = await createProject(request),
+    base = apiPath(projectId);
+  const canvas = await openCanvas(page, projectId);
+  let creates = 0,
+    updates = 0;
+  await page.route(`**${base}`, async (route) => {
+    if (route.request().method() === "POST") {
+      creates++;
+      expect((await route.fetch()).ok()).toBe(true);
+      await route.abort("connectionclosed");
+    } else await route.continue();
+  });
+  await canvas.getByLabel("Название", { exact: true }).fill("Recovered");
+  await canvas.getByLabel("Содержимое", { exact: true }).fill("first");
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Артефакт создан");
+  const items = ((await (await request.get(base)).json()) as { items: CanvasArtifact[] }).items;
+  expect(items).toHaveLength(1);
+  expect(creates).toBe(1);
+  await page.route(`**${base}/${items[0]!.id}`, async (route) => {
+    if (route.request().method() === "PUT") {
+      updates++;
+      expect((await route.fetch()).ok()).toBe(true);
+      await route.abort("connectionclosed");
+    } else await route.continue();
+  });
+  await canvas.getByLabel("Содержимое", { exact: true }).fill("second");
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
+  expect(updates).toBe(1);
+  expect(
+    ((await (await request.get(`${base}/${items[0]!.id}`)).json()) as Full).artifact.version
+  ).toBe(2);
+});
+
+test("Canvas retains an unresolved creation ID over reload and a user retry creates no duplicate", async ({
+  page,
+  request
+}) => {
+  const projectId = await createProject(request),
+    base = apiPath(projectId);
+  const canvas = await openCanvas(page, projectId);
+  let requestId = "",
+    blockRead = true;
+  await page.route(`**${base}`, async (route) => {
+    if (route.request().method() === "POST") {
+      const data = route.request().postDataJSON() as { client_request_id: string };
+      if (!requestId) requestId = data.client_request_id;
+      expect(data.client_request_id).toBe(requestId);
+      const accepted = await route.fetch();
+      expect(accepted.ok()).toBe(true);
+      if (blockRead) await route.abort("connectionclosed");
+      else await route.fulfill({ response: accepted });
+    } else await route.continue();
+  });
+  await page.route(`**${base}/*`, async (route) => {
+    if (
+      blockRead &&
+      route.request().method() === "GET" &&
+      route.request().url().endsWith(requestId)
+    )
+      await route.abort("connectionclosed");
+    else await route.continue();
+  });
+  await canvas.getByLabel("Название", { exact: true }).fill("Uncertain");
+  await canvas.getByLabel("Содержимое", { exact: true }).fill("protected draft");
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("alert")).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Открыть Canvas", exact: true }).click();
+  await expect(canvas.getByLabel("Содержимое", { exact: true })).toHaveValue("protected draft");
+  blockRead = false;
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Артефакт создан");
+  expect(
+    ((await (await request.get(base)).json()) as { items: CanvasArtifact[] }).items
+  ).toHaveLength(1);
+});
+
+test("Canvas retries a lost copy using the same ID and never overwrites the original", async ({
+  page,
+  request
+}) => {
+  const projectId = await createProject(request),
+    base = apiPath(projectId);
+  const source = (await (
+    await request.post(base, {
+      data: { title: "Original", format: "text", content: "original v1" }
+    })
+  ).json()) as Full;
+  const canvas = await openCanvas(page, projectId);
+  await canvas.getByRole("button", { name: /Original.*v1/ }).click();
+  await expect(canvas.getByLabel("Содержимое", { exact: true })).toHaveValue("original v1");
+  await canvas.getByLabel("Содержимое", { exact: true }).fill("my independent copy");
+  await request.put(`${base}/${source.artifact.id}`, {
+    data: { title: "Original", format: "text", content: "other writer", baseVersion: 1 }
+  });
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("alert")).toContainText("Конфликт версий");
+  let copyId = "",
+    allowRead = false;
+  await page.route(`**${base}`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const payload = route.request().postDataJSON() as { client_request_id: string };
+    if (!copyId) copyId = payload.client_request_id;
+    expect(payload.client_request_id).toBe(copyId);
+    const accepted = await route.fetch();
+    expect(accepted.ok()).toBe(true);
+    if (allowRead) await route.fulfill({ response: accepted });
+    else await route.abort("connectionclosed");
+  });
+  await page.route(`**${base}/*`, async (route) => {
+    if (!allowRead && route.request().method() === "GET" && route.request().url().endsWith(copyId))
+      await route.abort("connectionclosed");
+    else await route.continue();
+  });
+  await canvas.getByRole("button", { name: "Сохранить как копию", exact: true }).click();
+  await expect(
+    canvas.getByRole("button", { name: "Сохранить как копию", exact: true })
+  ).toBeEnabled();
+  await page.reload();
+  await page.getByRole("button", { name: "Открыть Canvas", exact: true }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await canvas.getByRole("button", { name: /Original.*v2/ }).click();
+  await expect(canvas.getByLabel("Содержимое", { exact: true })).toHaveValue("my independent copy");
+  allowRead = true;
+  await canvas.getByRole("button", { name: "Сохранить как копию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Копия создана");
+  const original = (await (await request.get(`${base}/${source.artifact.id}`)).json()) as Full;
+  expect(original.artifact.version).toBe(2);
+  expect(original.revision.content).toBe("other writer");
+  const copy = (await (await request.get(`${base}/${copyId}`)).json()) as Full;
+  expect(copy.artifact.version).toBe(1);
+  expect(copy.revision.content).toBe("my independent copy");
+  expect(
+    ((await (await request.get(base)).json()) as { items: CanvasArtifact[] }).items
+  ).toHaveLength(2);
 });

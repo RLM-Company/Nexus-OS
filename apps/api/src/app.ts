@@ -148,6 +148,7 @@ import {
 import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 import type { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
 import type { ManagerWorkStore } from "@cosmora/db";
+import { registerArtifactContextRoutes } from "./artifact-context-routes.js";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { registerManagerWorkRoutes } from "./manager-work-routes.js";
 import {
@@ -836,6 +837,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   if (dependencies.canvasStore) registerCanvasRoutes(app, dependencies.canvasStore, identityFor);
   if (dependencies.projectStore)
     registerProjectMaterialsRoutes(app, dependencies.projectStore, identityFor);
+  if (dependencies.projectStore && dependencies.canvasStore)
+    registerArtifactContextRoutes(
+      app,
+      dependencies.projectStore,
+      dependencies.canvasStore,
+      identityFor,
+      dependencies.managerWorkStore
+    );
 
   if (dependencies.identityStore) {
     const identityStore = dependencies.identityStore;

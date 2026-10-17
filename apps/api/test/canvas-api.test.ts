@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { loadServerConfig } from "@cosmora/config";
 import { CanvasArtifactStore, openDatabase, runMigrations } from "@cosmora/db";
 import { buildApp } from "../src/app.js";
@@ -215,5 +215,40 @@ describe("Canvas HTTP owner/auth/conflict/download", () => {
     }
     const result = await app.inject({ method: "GET", url: `${base}/${id}` });
     expect(result.json<{ revision: { content: string } }>().revision.content).toBe("original");
+  });
+  it("creates once with a durable request ID and rejects reused IDs with changed payloads or scope", async () => {
+    const base = "/api/v1/projects/p/canvas";
+    const id = randomUUID();
+    const payload = { client_request_id: id, title: "Canonical", format: "text", content: "exact" };
+    const create = () => app.inject({ method: "POST", url: base, payload });
+    expect((await create()).statusCode).toBe(201);
+    expect((await create()).json<{ artifact: { id: string } }>().artifact.id).toBe(id);
+    expect(store.history("p", "local-owner", id)).toHaveLength(1);
+    for (const change of [{ title: "Other" }, { format: "html" }, { content: "changed" }]) {
+      const result = await app.inject({
+        method: "POST",
+        url: base,
+        payload: { ...payload, ...change }
+      });
+      expect(result.statusCode).toBe(409);
+      expect(result.json()).toEqual({ error: { code: "CANVAS_REQUEST_CONFLICT" } });
+    }
+    db.sqlite
+      .prepare(
+        "INSERT INTO projects(id,owner_id,title,status,created_at,updated_at) VALUES ('q','local-owner','Q','ACTIVE','now','now')"
+      )
+      .run();
+    expect(
+      (await app.inject({ method: "POST", url: "/api/v1/projects/q/canvas", payload })).statusCode
+    ).toBe(409);
+    expect(store.get("p", "local-owner", id)?.revision.content).toBe("exact");
+    store.update("p", "local-owner", id, {
+      title: "Canonical",
+      format: "text",
+      content: "newer",
+      baseVersion: 1
+    });
+    expect((await create()).statusCode).toBe(409);
+    expect(store.get("p", "local-owner", id)?.revision.content).toBe("newer");
   });
 });
