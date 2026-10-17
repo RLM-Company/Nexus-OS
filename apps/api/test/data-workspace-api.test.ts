@@ -61,7 +61,7 @@ afterEach(async () => {
 });
 
 it("reads and downloads exact immutable versions with checked hashes, scope and version headers", async () => {
-  const { value, input } = await create(snapshot("001\r\n=1+1"));
+  const { value, input } = await create(snapshot("001\r\n=1+1 🚀 Ж"));
   const url = `${base}/${value.artifact.id}`;
   await app.inject({
     method: "PUT",
