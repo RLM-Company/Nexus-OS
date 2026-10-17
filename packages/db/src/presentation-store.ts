@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type {
+  PresentationWorkReference,
+  PresentationWorkSource
+} from "@cosmora/contracts/presentation-package";
 import type { DatabaseSync } from "node:sqlite";
 
 export type SlideLayout = "title" | "content" | "two-column" | "quote";
@@ -20,7 +24,10 @@ export type PresentationSummary = {
   created_at: string;
   updated_at: string;
 };
-export type Presentation = PresentationSummary & { slides: PresentationSlide[] };
+export type Presentation = PresentationSummary & {
+  slides: PresentationSlide[];
+  work_source: PresentationWorkSource | null;
+};
 export type PresentationContent = Pick<Presentation, "title" | "theme" | "slides">;
 export type PresentationRevisionSummary = {
   version: number;
@@ -39,7 +46,12 @@ export const PRESENTATION_VERSION_LIMIT = 20;
 export class PresentationError extends Error {
   constructor(
     readonly code:
-      "NOT_FOUND" | "INVALID_DECK" | "LIMIT_EXCEEDED" | "CONFLICT" | "OWNER_DATA_FENCED"
+      | "NOT_FOUND"
+      | "INVALID_DECK"
+      | "LIMIT_EXCEEDED"
+      | "CONFLICT"
+      | "OWNER_DATA_FENCED"
+      | "IMPORT_DELETED"
   ) {
     super(code);
   }
@@ -121,6 +133,7 @@ export class PresentationStore {
       version: row.version,
       slide_count: slides.length,
       slides,
+      work_source: this.workSource(row.id),
       created_at: row.created_at,
       updated_at: row.updated_at
     };
@@ -183,6 +196,53 @@ export class PresentationStore {
     );
   }
 
+  private workSource(id: string): PresentationWorkSource | null {
+    const row = this.sql
+      .prepare("SELECT source_json FROM presentation_work_imports WHERE presentation_id=?")
+      .get(id) as { source_json: string } | undefined;
+    return row ? (JSON.parse(row.source_json) as PresentationWorkSource) : null;
+  }
+
+  importedWork(owner: string, source: PresentationWorkReference): Presentation | null {
+    const key = JSON.stringify([
+      source.project_id,
+      source.work_id,
+      source.artifact_id,
+      source.version,
+      source.sha256
+    ]);
+    const row = this.sql
+      .prepare(
+        "SELECT presentation_id FROM presentation_work_imports WHERE owner_id=? AND source_key=?"
+      )
+      .get(owner, key) as { presentation_id: string | null } | undefined;
+    if (!row) return null;
+    if (!row.presentation_id) throw new PresentationError("IMPORT_DELETED");
+    return this.get(owner, row.presentation_id);
+  }
+
+  /** One immutable artifact imports once. A lost response never creates another deck. */
+  importWork(owner: string, input: unknown, source: PresentationWorkSource): Presentation {
+    validatePresentation(input);
+    const key = JSON.stringify([
+      source.project_id,
+      source.work_id,
+      source.artifact_id,
+      source.version,
+      source.sha256
+    ]);
+    return this.createContent(
+      owner,
+      {
+        title: input.title.trim(),
+        theme: input.theme,
+        slides: input.slides.map((slide) => ({ ...slide, id: randomUUID() }))
+      },
+      "import",
+      { key, source }
+    );
+  }
+
   private checkpoint(
     owner: string,
     id: string,
@@ -217,11 +277,29 @@ export class PresentationStore {
   private createContent(
     owner: string,
     input: PresentationContent,
-    source: "create" | "import"
+    source: "create" | "import",
+    workImport?: { key: string; source: PresentationWorkSource }
   ): Presentation {
     this.sql.exec("BEGIN IMMEDIATE");
     try {
       this.writable(owner);
+      if (workImport) {
+        const prior = this.sql
+          .prepare(
+            "SELECT presentation_id FROM presentation_work_imports WHERE owner_id=? AND source_key=?"
+          )
+          .get(owner, workImport.key) as { presentation_id: string | null } | undefined;
+        if (prior) {
+          if (!prior.presentation_id) throw new PresentationError("IMPORT_DELETED");
+          const existing = this.get(owner, prior.presentation_id);
+          this.sql.exec("COMMIT");
+          return existing;
+        }
+        const receipts = this.sql
+          .prepare("SELECT COUNT(*) n FROM presentation_work_imports WHERE owner_id=?")
+          .get(owner)!;
+        if (Number(receipts.n) >= 1000) throw new PresentationError("LIMIT_EXCEEDED");
+      }
       const count = this.sql
         .prepare("SELECT COUNT(*) AS n FROM presentations WHERE owner_id=?")
         .get(owner)!;
@@ -234,6 +312,12 @@ export class PresentationStore {
         )
         .run(id, owner, input.title.trim(), input.theme, JSON.stringify(input.slides), at, at);
       this.checkpoint(owner, id, 1, input, source, null, at);
+      if (workImport)
+        this.sql
+          .prepare(
+            "INSERT INTO presentation_work_imports(owner_id,source_key,presentation_id,source_json,created_at) VALUES(?,?,?,?,?)"
+          )
+          .run(owner, workImport.key, id, JSON.stringify(workImport.source), at);
       this.sql.exec("COMMIT");
       return this.get(owner, id);
     } catch (error) {

@@ -1,3 +1,4 @@
+import { validateGeneratedPresentation } from "@cosmora/contracts/presentation-package";
 import { WorkDagCoordinator } from "./work-dag-coordinator.js";
 import { createHash } from "node:crypto";
 import {
@@ -587,6 +588,18 @@ export class ManagerWorkCoordinator {
               }
             }
           }
+          if (work.request.output_contract?.kind === "presentation") {
+            try {
+              if (value.files.length !== 1 || value.files[0]!.name !== "presentation.json")
+                throw new Error("FORMAT");
+              validateGeneratedPresentation(
+                value.files[0]!.content,
+                work.request.output_contract.slide_count
+              );
+            } catch {
+              throw new Error("INVALID_PRESENTATION_RESULT");
+            }
+          }
           work.draft = value;
           work.stage = work.plan?.needs_critic ? "review" : "publish";
           work = this.checkpoint(work, "Черновики файлов подготовлены; структура проверена");
@@ -609,6 +622,7 @@ export class ManagerWorkCoordinator {
         "EMERGENCY_STOP",
         "EXECUTION_BUDGET_EXCEEDED",
         "INVALID_MODEL_OUTPUT",
+        "INVALID_PRESENTATION_RESULT",
         "UNSUPPORTED_ACTION",
         "POLICY_UNAVAILABLE",
         "GRAPH_UNAVAILABLE",

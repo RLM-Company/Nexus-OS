@@ -38,6 +38,11 @@
       "development": "./src/data-workspace.ts",
       "types": "./src/data-workspace.ts",
       "default": "./dist/data-workspace.js"
+    },
+    "./presentation-package": {
+      "development": "./src/presentation-package.ts",
+      "types": "./src/presentation-package.ts",
+      "default": "./dist/presentation-package.js"
     }
   },
   "files": [

@@ -172,6 +172,7 @@ import { registerDocumentLibraryRoutes } from "./document-library-routes.js";
 import { registerDocumentAnswerRoutes } from "./document-answer-routes.js";
 import type { DocumentAnswerService } from "./document-answer-service.js";
 import { registerChatHistorySearchRoutes } from "./chat-history-search-routes.js";
+import { registerPresentationWorkRoutes } from "./presentation-work-routes.js";
 import { registerPresentationRoutes } from "./presentation-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
@@ -812,6 +813,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerChatHistorySearchRoutes(app, dependencies.chatHistorySearchStore, identityFor);
   if (dependencies.presentationStore)
     registerPresentationRoutes(app, dependencies.presentationStore, identityFor);
+  if (dependencies.presentationStore && dependencies.managerWorkStore && dependencies.projectStore)
+    registerPresentationWorkRoutes({
+      app,
+      presentations: dependencies.presentationStore,
+      works: dependencies.managerWorkStore,
+      projects: dependencies.projectStore,
+      identityFor
+    });
   if (dependencies.notificationStore)
     registerNotificationRoutes(app, dependencies.notificationStore, identityFor);
   if (dependencies.ownerSkillStore)

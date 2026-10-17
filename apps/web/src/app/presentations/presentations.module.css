@@ -565,3 +565,57 @@
     max-width: 94vw;
   }
 }
+
+.aiWork {
+  max-width: 1650px;
+  margin: 0 auto 20px;
+  border: 1px solid #d7d7d7;
+  border-radius: 14px;
+  padding: 18px;
+  background: #fff;
+}
+.aiWork summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.aiWork fieldset {
+  border: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.aiWork label {
+  display: grid;
+  gap: 6px;
+}
+.aiWork .checkLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.aiWork input[type="checkbox"] {
+  width: auto;
+  flex-shrink: 0;
+}
+.aiWork button {
+  padding: 10px 14px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #f6f6f6;
+  color: #222;
+}
+.aiWork code,
+.sourceNote code {
+  overflow-wrap: anywhere;
+}
+.aiPreview {
+  display: grid;
+  gap: 16px;
+  max-width: 960px;
+}
+.sourceNote {
+  margin: 16px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

@@ -24,6 +24,7 @@ The AI executor does not execute arbitrary code or external actions.
 - optional private SearXNG search with source links/snippets attached only by an owner action;
 - private versioned personal Skills for ordinary chat and Work, immutable accepted instruction
   snapshots and literal per-answer/task provenance; historical mock catalog preview remains inert;
+- text-only AI presentation creation through the existing budgeted Work pipeline, strict local slide validation, reviewed immutable-result import and editable PPTX downloads;
 - Canvas text/code editor with immutable revisions, literal bounded version comparison, reviewed
   restore/conflict resolution, exact historical downloads and local UTF-8 file drafts;
 - local Image, Video and Sound prompt workspaces that do not send prompts to an external model while

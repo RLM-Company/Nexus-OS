@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPptx } from "./pptx";
 import { api, endpoint, json } from "./client";
+import { PresentationWork } from "./presentation-work";
+import {
+  presentationWorkReference,
+  type PresentationWorkReference
+} from "@cosmora/contracts/presentation-package";
 import { PresentationImport } from "./presentation-import";
 import { PresentationHistory } from "./presentation-history";
 import { SlidePreview } from "./slide-preview";
@@ -193,6 +198,32 @@ export default function PresentationsPage() {
       setBusy(false);
     }
   };
+  const importWork = async (source: PresentationWorkReference): Promise<boolean> => {
+    if (busy) return false;
+    if (
+      dirty &&
+      !window.confirm(
+        "Есть несохранённые изменения. Открыть презентацию Work после копирования своих правок?"
+      )
+    )
+      return false;
+    setBusy(true);
+    setError("");
+    try {
+      const created = await api<Deck>(`${endpoint}/from-work`, {
+        method: "POST",
+        ...json({ source: presentationWorkReference(source), reviewed: true })
+      });
+      editRevision.current++;
+      setDeck(created);
+      setSelected(0);
+      setDirty(false);
+      await refreshAfterMutation();
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  };
   const restore = async (sourceVersion: number): Promise<boolean> => {
     if (!deck || busy) return false;
     if (
@@ -346,6 +377,7 @@ export default function PresentationsPage() {
           {error}
         </p>
       )}
+      <PresentationWork busy={busy} onImport={importWork} />
       <div className={styles.workspace}>
         <aside className={styles.library}>
           <h2>Мои презентации</h2>
@@ -383,6 +415,13 @@ export default function PresentationsPage() {
         </aside>
         {deck && selectedSlide ? (
           <section className={styles.editor} aria-label="Редактор презентации">
+            {deck.work_source && (
+              <p className={styles.sourceNote}>
+                Источник: Work · {deck.work_source.name}, v{deck.work_source.version} · SHA-256:{" "}
+                <code>{deck.work_source.sha256}</code>. После правок презентация хранится независимо
+                от исходного результата.
+              </p>
+            )}
             <PresentationHistory
               key={deck.id}
               id={deck.id}
