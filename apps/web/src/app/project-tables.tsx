@@ -6,6 +6,8 @@ import { DATA_SERVER_BYTES, parseDataWorkspace } from "@cosmora/contracts/data-w
 import { CanvasEditor } from "./canvas-editor/canvas-editor";
 import styles from "./studio-data-workbench.module.css";
 import { SystemMessage } from "./ui/kosmora-controls";
+import { compareDataWorkspaces, type DataComparison } from "./studio-data-comparison";
+import { StudioDataComparison } from "./studio-data-comparison-view";
 
 type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
 type Revision = Omit<CanvasRevision, "content">;
@@ -44,7 +46,9 @@ async function call<T>(
       currentVersion: result?.error?.currentVersion
     });
   }
-  return response.json() as Promise<T>;
+  const result = (await response.json()) as T;
+  signal.throwIfAborted();
+  return result;
 }
 const errorText = (error: unknown) => {
   const problem = error as Error & { currentVersion?: number };
@@ -57,6 +61,8 @@ const errorText = (error: unknown) => {
     return "Достигнут предел 20 версий. Сохраните новую копию таблицы.";
   if (message.includes("QUOTA"))
     return "История таблиц проекта достигла 32 МиБ. Удалите ненужную таблицу или используйте другой проект.";
+  if (message.includes("REVISION_CORRUPT"))
+    return "Контрольная сумма сохранённой версии не совпала. Данные не загружены.";
   return message;
 };
 
@@ -67,6 +73,14 @@ export function ProjectTables(props: Props) {
   const [loaded, setLoaded] = useState<Full | null>(null);
   const [history, setHistory] = useState<Revision[]>([]);
   const [historyVersion, setHistoryVersion] = useState("");
+  const [review, setReview] = useState<{
+    artifactId: string;
+    before: CanvasRevision;
+    after: CanvasRevision;
+    localContent: string;
+    comparison: DataComparison;
+  } | null>(null);
+  const [allowLimitedRestore, setAllowLimitedRestore] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -84,6 +98,8 @@ export function ProjectTables(props: Props) {
     setChoice("");
     setHistory([]);
     setHistoryVersion("");
+    setReview(null);
+    setAllowLimitedRestore(false);
     saveAttempt.current = null;
   }, [props.sourceEpoch]);
   useEffect(() => {
@@ -148,6 +164,9 @@ export function ProjectTables(props: Props) {
     return id;
   }
   async function accept(value: Full, id: string, load = false) {
+    setReview(null);
+    setAllowLimitedRestore(false);
+    setHistoryVersion("");
     setLoaded(value);
     setChoice(value.artifact.id);
     if (load) props.onLoad(value.revision.content);
@@ -172,7 +191,7 @@ export function ProjectTables(props: Props) {
         .join("");
       const id = await ensureProject();
       let value: Full;
-      if (loaded && !copy) {
+      if (loaded && !copy && !saveAttempt.current) {
         try {
           value = await request<Full>(`${base(id)}/${loaded.artifact.id}`, "PUT", {
             title,
@@ -228,8 +247,41 @@ export function ProjectTables(props: Props) {
       setNotice(`Открыта версия ${value.artifact.version}.`);
     });
   };
-  const restore = () => {
+  const compare = () => {
     if (!project || !loaded || !historyVersion) return;
+    void run(async () => {
+      setReview(null);
+      setAllowLimitedRestore(false);
+      const [current, target, localContent] = await Promise.all([
+        request<Full>(`${base(project)}/${loaded.artifact.id}`),
+        request<CanvasRevision>(
+          `${base(project)}/${loaded.artifact.id}/revisions/${Number(historyVersion)}`
+        ),
+        props.snapshot()
+      ]);
+      setReview({
+        artifactId: loaded.artifact.id,
+        before: current.revision,
+        after: target,
+        localContent,
+        comparison: compareDataWorkspaces(
+          parseDataWorkspace(current.revision.content),
+          parseDataWorkspace(target.content)
+        )
+      });
+    });
+  };
+  const restore = () => {
+    if (
+      !project ||
+      !loaded ||
+      !review ||
+      review.artifactId !== loaded.artifact.id ||
+      review.after.version !== Number(historyVersion) ||
+      review.after.version === review.before.version ||
+      (!review.comparison.complete && !allowLimitedRestore)
+    )
+      return;
     if (
       !window.confirm(
         "Восстановить выбранную версию как новую и открыть её? Текущие несохранённые правки будут заменены."
@@ -237,10 +289,34 @@ export function ProjectTables(props: Props) {
     )
       return;
     void run(async () => {
-      const value = await request<Full>(`${base(project)}/${loaded.artifact.id}/restore`, "POST", {
-        baseVersion: loaded.artifact.version,
-        sourceVersion: Number(historyVersion)
-      });
+      if ((await props.snapshot()) !== review.localContent) {
+        setReview(null);
+        throw new Error(
+          "Локальная таблица изменилась после просмотра. Сравните выбранную версию заново перед восстановлением."
+        );
+      }
+      const path = `${base(project)}/${loaded.artifact.id}`;
+      let value: Full;
+      try {
+        value = await request<Full>(path + "/restore", "POST", {
+          baseVersion: review.before.version,
+          sourceVersion: review.after.version
+        });
+      } catch (error) {
+        const canonical = await request<Full>(path).catch(() => null);
+        if (
+          canonical?.artifact.version === review.before.version + 1 &&
+          canonical.revision.source.kind === "data_workspace" &&
+          canonical.revision.source.restored_from === review.after.version &&
+          canonical.revision.content === review.after.content &&
+          canonical.revision.title === review.after.title
+        )
+          value = canonical;
+        else {
+          setReview(null);
+          throw error;
+        }
+      }
       await accept(value, project, true);
       setHistoryVersion("");
       setNotice(`Восстановлено новой версией ${value.artifact.version}; история сохранена.`);
@@ -265,6 +341,7 @@ export function ProjectTables(props: Props) {
       setLoaded(null);
       setChoice("");
       setHistory([]);
+      setReview(null);
       await refresh(project);
       setNotice("Серверная таблица удалена. Открытые данные остались локально.");
     });
@@ -385,7 +462,11 @@ export function ProjectTables(props: Props) {
                   aria-label="История таблицы"
                   value={historyVersion}
                   disabled={working}
-                  onChange={(e) => setHistoryVersion(e.target.value)}
+                  onChange={(e) => {
+                    setHistoryVersion(e.target.value);
+                    setReview(null);
+                    setAllowLimitedRestore(false);
+                  }}
                 >
                   <option value="">Выберите версию</option>
                   {history.map((item) => (
@@ -398,15 +479,10 @@ export function ProjectTables(props: Props) {
               </label>
               <button
                 type="button"
-                disabled={
-                  working ||
-                  props.blocked ||
-                  !historyVersion ||
-                  Number(historyVersion) === loaded.artifact.version
-                }
-                onClick={restore}
+                disabled={working || props.blocked || !historyVersion}
+                onClick={compare}
               >
-                Восстановить таблицу новой версией
+                Сравнить выбранную версию
               </button>
               <a href={`${base(project!)}/${loaded.artifact.id}/download`} download>
                 Скачать серверный workspace
@@ -415,6 +491,61 @@ export function ProjectTables(props: Props) {
                 Удалить сохранённую таблицу
               </button>
             </div>
+            {review && (
+              <>
+                <StudioDataComparison
+                  before={review.before}
+                  after={review.after}
+                  comparison={review.comparison}
+                />
+                <div className={styles.controls}>
+                  <a
+                    href={`${base(project!)}/${review.artifactId}/revisions/${review.before.version}/download`}
+                    download
+                  >
+                    Скачать серверную v{review.before.version}
+                  </a>
+                  <a
+                    href={`${base(project!)}/${review.artifactId}/revisions/${review.after.version}/download`}
+                    download
+                  >
+                    Скачать выбранную v{review.after.version}
+                  </a>
+                </div>
+                <p>
+                  Восстановление создаст новую версию и заменит локально открытую таблицу. Сохраните
+                  несохранённые правки отдельной копией перед подтверждением.
+                </p>
+                {review.after.version === review.before.version && (
+                  <p>
+                    Выбрана текущая серверная версия. Её можно скачать; восстановление не требуется.
+                  </p>
+                )}
+                {!review.comparison.complete && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={allowLimitedRestore}
+                      disabled={working || props.blocked}
+                      onChange={(e) => setAllowLimitedRestore(e.target.checked)}
+                    />
+                    Я проверил полные снимки вне приложения и хочу восстановить выбранную версию
+                  </label>
+                )}
+                <button
+                  type="button"
+                  disabled={
+                    working ||
+                    props.blocked ||
+                    review.after.version === review.before.version ||
+                    (!review.comparison.complete && !allowLimitedRestore)
+                  }
+                  onClick={restore}
+                >
+                  Восстановить таблицу новой версией
+                </button>
+              </>
+            )}
           </>
         )}
       </section>
