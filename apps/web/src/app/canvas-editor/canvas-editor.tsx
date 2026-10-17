@@ -21,7 +21,10 @@ type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
 type Meta = Omit<CanvasRevision, "content">;
 type Candidate = {
   title: string;
-  source: Exclude<CanvasSource, { kind: "manual" } | { kind: "restore" }>;
+  source: Exclude<
+    CanvasSource,
+    { kind: "manual" } | { kind: "restore" } | { kind: "data_workspace" }
+  >;
 };
 type Draft = CanvasDraft;
 const blank: Draft = { title: "Без названия", format: "markdown", content: "", baseVersion: 0 };
@@ -71,7 +74,13 @@ const sanitizeName = (value: string, format: CanvasFormat): string => {
   return `${base}.${extension}`;
 };
 
-export function CanvasEditor({ projectId }: { projectId: string }) {
+export function CanvasEditor({
+  projectId,
+  initialArtifactId
+}: {
+  projectId: string;
+  initialArtifactId?: string;
+}) {
   const [scope, setScope] = useState<{ projectId: string; ownerScope: string } | null>(null);
   const [scopeError, setScopeError] = useState("");
   useEffect(() => {
@@ -117,11 +126,20 @@ export function CanvasEditor({ projectId }: { projectId: string }) {
       key={`${scope.ownerScope}:${projectId}`}
       projectId={projectId}
       ownerScope={scope.ownerScope}
+      {...(initialArtifactId ? { initialArtifactId } : {})}
     />
   );
 }
 
-function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; ownerScope: string }) {
+function ScopedCanvasEditor({
+  projectId,
+  ownerScope,
+  initialArtifactId
+}: {
+  projectId: string;
+  ownerScope: string;
+  initialArtifactId?: string;
+}) {
   const lifecycle = useRef<AbortController | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -191,6 +209,7 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
         if (active) {
           setItems(list);
           setCandidates(sources.items);
+          if (initialArtifactId) void open(initialArtifactId);
         }
       })
       .catch((e) => {
@@ -202,7 +221,7 @@ function ScopedCanvasEditor({ projectId, ownerScope }: { projectId: string; owne
     return () => {
       active = false;
     };
-  }, [base, readList, scopedRequest]);
+  }, [base, readList, scopedRequest, initialArtifactId]);
   useEffect(() => {
     const id = loaded?.artifact.id ?? "new";
     try {

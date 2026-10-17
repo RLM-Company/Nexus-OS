@@ -23,6 +23,11 @@
       "development": "./src/index.ts",
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./data-workspace": {
+      "development": "./src/data-workspace.ts",
+      "types": "./src/data-workspace.ts",
+      "default": "./dist/data-workspace.js"
     }
   },
   "files": [

@@ -7,6 +7,7 @@ export const CANVAS_MAX_REVISIONS = 500;
 export type CanvasFormat = "markdown" | "text" | "code" | "html";
 export type CanvasSource =
   | { kind: "manual" }
+  | { kind: "data_workspace"; restored_from?: number }
   | { kind: "work"; work_artifact_id: string }
   | { kind: "chat"; chat_id: string; message_id: string }
   | { kind: "project_chat"; message_id: string }
