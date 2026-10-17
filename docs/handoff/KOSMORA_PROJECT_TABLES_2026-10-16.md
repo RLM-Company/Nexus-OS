@@ -66,5 +66,48 @@ not a claim that every 32 MiB history can be exported in one privacy response.
   actual DOCX archive. A second scenario saves without a project and verifies no
   local data loss during project creation.
 - DB/API/web semantic typechecks passed. Scoped lint reports zero errors.
-  Secret/diff checks, production build and deployment are recorded below after
-  completion. Test providers are fixtures; no paid AI call was used.
+  Secret scan and diff checks passed. Test providers are fixtures; no paid AI
+  call was used.
+
+## Production activation and live acceptance
+
+Source `4a9ca43253bb5fc8209dab97693b4e62fc1d4389` was deployed on 16 October.
+Both offline production builds passed (`--network=none`). Active images are
+`cosmora-alpha-app:project-tables-api-4a9ca43` and
+`cosmora-alpha-app:project-tables-web-4a9ca43`; release directory is
+`/opt/cosmora/releases/project-tables-4a9ca43`.
+
+Source archive SHA-256:
+`5bf6df9dcd3fbe8527f6835d030d48c251977125c51f93f5f02031534f92a8db`.
+Consistent SQLite backup verification SHA-256:
+`9e7f423edb431fee807eb843b6f600c416d275c7199712e5ba0fb54b002371c18`.
+
+Activation checked the idle baseline, rehearsed against a database copy and
+compared existing canonical data. All 43 migration journal rows remained; this
+release adds no migration. Copied-database create/replay, compare-and-swap,
+restore and exact download passed. Existing Work rehearsal used six mock
+requests. Authenticated routes and the existing real Code executor check passed.
+Login and executor container identities/start times remained unchanged. Provider
+configuration, credentials and maintenance overlays were retained. No rollback
+was needed.
+
+Live UI acceptance created empty project `d4bf6aab-e080-4a6a-acd9-5f739b064f7b`
+without AI and saved table `2ccb2b09-3c44-44a8-8698-2132a6410438` as v1. Editing
+the third revenue value from 160000 to 185000 produced v2 (sum 450000). Its
+independent report opened in Canvas, accepted an editorial addition and saved
+as report v2, artifact `c5badbb9-6d74-45ae-bf94-fd34516f2be1`. The actual downloaded
+DOCX archive contained both the report sum and the saved editorial addition.
+
+Reopening from the server after a full navigation retained v2. Restoring v1
+created v3, preserving history [3, 2, 1]. A new browser tab on 17 October reopened
+v3 with three original rows, sum 425000, explicit number types and the line chart.
+The downloaded workspace preserved row values and chart settings. Authenticated
+API readback independently confirmed v3, `restored_from: 1`, immutable history,
+exact private/no-store download and separate report v2. Tables remained absent
+from the ordinary Canvas listing. No external AI call was made in this block.
+
+Local acceptance artifacts are in
+`C:/Users/Александр/Documents/Codex/2026-10-16/kosmora-project-tables/`:
+`project-tables-live.png`, `report-canvas-live.png`, `restored.workspace.json` and
+`edited-report.docx`. Logs are outside the checkout. Draft PR:
+https://github.com/RLM-Company/Nexus-OS/pull/354. No merge into `main` was performed.
