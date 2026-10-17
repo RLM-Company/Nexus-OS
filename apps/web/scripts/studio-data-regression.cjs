@@ -17,24 +17,28 @@ const names = [
   "studio-data-export.ts",
   "studio-data-worker.ts"
 ];
-const argumentsForTsc = [
-  "--ignoreConfig",
-  "--strict",
-  "--target",
-  "ES2022",
-  "--module",
-  "commonjs",
-  "--moduleResolution",
-  "node",
-  "--ignoreDeprecations",
-  "6.0",
-  "--lib",
-  "es2022,dom,webworker",
-  "--skipLibCheck",
-  "--outDir",
-  output,
-  ...names.map((name) => path.join(source, name))
-];
+const root = path.resolve(__dirname, "../../..");
+const contract = path.join(root, "packages/contracts/src/data-workspace.ts");
+const config = path.join(output, "tsconfig.json");
+fs.writeFileSync(
+  config,
+  JSON.stringify({
+    compilerOptions: {
+      strict: true,
+      target: "ES2022",
+      module: "commonjs",
+      moduleResolution: "node",
+      ignoreDeprecations: "6.0",
+      lib: ["es2022", "dom", "webworker"],
+      skipLibCheck: true,
+      rootDir: root,
+      outDir: output,
+      paths: { "@cosmora/contracts/data-workspace": [contract] }
+    },
+    files: [...names.map((name) => path.join(source, name)), contract]
+  })
+);
+const argumentsForTsc = ["--project", config];
 let compiler;
 try {
   compiler = require.resolve("typescript/bin/tsc", { paths: [__dirname] });
@@ -48,15 +52,28 @@ if (built.error || built.status !== 0) {
   console.error(built.stderr || built.stdout || built.error || "No TypeScript compiler in PATH");
   process.exit(1);
 }
-const C = require(path.join(output, "studio-data-core.js"));
-const E = require(path.join(output, "studio-data-export.js"));
+// The same shared validator is compiled from source; no installed/dist copy or
+// duplicate test-only schema is substituted for the real implementation.
+const contractOutput = path.join(output, "node_modules/@cosmora/contracts");
+fs.mkdirSync(contractOutput, { recursive: true });
+fs.writeFileSync(
+  path.join(contractOutput, "package.json"),
+  JSON.stringify({ exports: { "./data-workspace": "./data-workspace.js" } })
+);
+fs.copyFileSync(
+  path.join(output, "packages/contracts/src/data-workspace.js"),
+  path.join(contractOutput, "data-workspace.js")
+);
+const appOutput = path.join(output, "apps/web/src/app");
+const C = require(path.join(appOutput, "studio-data-core.js"));
+const E = require(path.join(appOutput, "studio-data-export.js"));
 let cases = 0;
 async function check(name, fn) {
   await fn();
   console.log(`PASS ${++cases}: ${name}`);
 }
 function newWorker() {
-  const entry = path.join(output, "studio-data-worker.js");
+  const entry = path.join(appOutput, "studio-data-worker.js");
   return new Worker(
     `const { parentPort } = require('node:worker_threads');\n` +
       `global.self = { postMessage: (v) => parentPort.postMessage(v) };\n` +

@@ -7,7 +7,11 @@ import {
   type ChatTextAttachment,
   type IdentityContext
 } from "@cosmora/contracts";
-import { IdempotencyConflictError, type ProjectStore } from "@cosmora/db";
+import {
+  IdempotencyConflictError,
+  ProjectMaterialsFencedError,
+  type ProjectStore
+} from "@cosmora/db";
 
 export function registerProjectMaterialsRoutes(
   app: FastifyInstance,
@@ -63,6 +67,8 @@ export function registerProjectMaterialsRoutes(
           ) ?? reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } })
         );
       } catch (error) {
+        if (error instanceof ProjectMaterialsFencedError)
+          return reply.code(409).send({ error: { code: error.message } });
         if (error instanceof IdempotencyConflictError)
           return reply.code(409).send({ error: { code: "CONFLICT" } });
         throw error;

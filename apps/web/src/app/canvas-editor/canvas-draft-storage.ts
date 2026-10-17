@@ -12,6 +12,7 @@ export type CanvasDraft = {
   format: CanvasFormat;
   content: string;
   baseVersion: number;
+  createRequestId?: string;
 };
 export const canvasDraftKey = (ownerScope: string, projectId: string, id: string): string =>
   `kosmora:canvas:draft:v2:${encodeURIComponent(ownerScope)}:${encodeURIComponent(projectId)}:${encodeURIComponent(id)}`;
@@ -36,10 +37,18 @@ export function parseCanvasDraft(
       canvasBytes(v.content) > CANVAS_MAX_CONTENT_BYTES ||
       canvasBytes(v.title) > CANVAS_MAX_TITLE_BYTES ||
       canvasHasControlCharacters(v.title) ||
-      v.content.includes("\0")
+      v.content.includes("\0") ||
+      (v.createRequestId !== undefined &&
+        (typeof v.createRequestId !== "string" || !/^[a-f0-9-]{36}$/i.test(v.createRequestId)))
     )
       return null;
-    return { title: v.title, format: v.format, content: v.content, baseVersion: v.baseVersion };
+    return {
+      title: v.title,
+      format: v.format,
+      content: v.content,
+      baseVersion: v.baseVersion,
+      ...(v.createRequestId ? { createRequestId: v.createRequestId } : {})
+    };
   } catch {
     return null;
   }

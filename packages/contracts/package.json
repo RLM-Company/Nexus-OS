@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./artifact-context": {
+      "development": "./src/artifact-context.ts",
+      "types": "./src/artifact-context.ts",
+      "default": "./dist/artifact-context.js"
+    },
     "./chat-memory": {
       "development": "./src/chat-memory.ts",
       "types": "./src/chat-memory.ts",
@@ -28,6 +33,11 @@
       "development": "./src/chat-skills.ts",
       "types": "./src/chat-skills.ts",
       "default": "./dist/chat-skills.js"
+    },
+    "./data-workspace": {
+      "development": "./src/data-workspace.ts",
+      "types": "./src/data-workspace.ts",
+      "default": "./dist/data-workspace.js"
     }
   },
   "files": [

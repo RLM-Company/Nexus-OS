@@ -37,6 +37,19 @@ describe("Canvas resource-inert preview", () => {
 });
 
 describe("Canvas browser draft validation and owner namespaces", () => {
+  it("retains an unresolved creation ID across draft restore and refuses malformed IDs", () => {
+    const draft = {
+      title: "Pending",
+      format: "text",
+      content: "saved draft",
+      baseVersion: 0,
+      createRequestId: "12345678-1234-1234-1234-123456789abc"
+    };
+    expect(parseCanvasDraft(JSON.stringify(draft), 0)).toEqual(draft);
+    expect(
+      parseCanvasDraft(JSON.stringify({ ...draft, createRequestId: "bad\nidentifier" }), 0)
+    ).toBeNull();
+  });
   const draft: CanvasDraft = {
     title: "Title",
     format: "markdown",
