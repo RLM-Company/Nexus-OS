@@ -53,5 +53,39 @@ that scope has resolved.
 - Web semantic typecheck, scoped source lint, formatting, diff check and secret
   scan passed. Generated Next dev declaration changes were excluded.
 
-No paid AI request was used. Deployment and live-download evidence follow after
-activation.
+## Production and live file acceptance
+
+Source `d98013959a8506aa5eb6f708c5fd2afbde7df3c8` is deployed as web image
+`cosmora-alpha-app:studio-excel-web-d980139`. The offline production build passed;
+release directory is `/opt/cosmora/releases/studio-excel-d980139`. The source
+archive contains tracked web application sources only (409200 bytes), SHA-256
+`1665e183bc616f06262efbc094cb3774536c5b31495a9817f03c136289b7f74e`.
+
+The first activation rolled back successfully because its verification tried the
+Next server's internal loopback API rewrite. That route also returned 500 on the
+unchanged baseline: production Caddy routes API requests directly to the separate
+API service. The verification was corrected to read that service in its container
+network, while checking the web root separately; no application source change was
+needed. The failed-attempt log and backup were retained.
+
+Final activation passed after an online consistent SQLite backup and integrity/hash
+verification (SHA-256
+`e6ffcb79954132a1fd7189902c2287b1bd5a1608265ea32ecb11ab60dead91aab`).
+Web root, authenticated API health/projects/chats and the existing table v3 passed.
+API, login, Code executor and edge container IDs/start times were compared before
+and after and remained identical. No API restart, migration, credential change or
+data rollback was required. Web and API were healthy at completion.
+
+The authenticated live browser reopened project
+`d4bf6aab-e080-4a6a-acd9-5f739b064f7b`, table
+`2ccb2b09-3c44-44a8-8698-2132a6410438` v3 and clicked `Выгрузить Excel`.
+It downloaded an actual 2348-byte XLSX. Independent `openpyxl` readback verified all
+three original rows, month/revenue numeric cell types, expense text cells, frozen
+header and filter range. Download SHA-256:
+`a4765345a2d1d9c04f86c7705a9faf4fe1cd3b32c5df4c6f3016ea619d6b3e16`.
+
+Local evidence:
+`C:/Users/Александр/Documents/Codex/2026-10-17/kosmora-excel/live-demo.xlsx`,
+`independent-reader.xlsx` and `excel-live.png`. Unit/browser/type/lint logs are
+outside the checkout. Draft PR: https://github.com/RLM-Company/Nexus-OS/pull/359.
+No merge into `main` and no paid AI request was used.
