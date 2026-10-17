@@ -35,13 +35,15 @@ export function registerPresentationRoutes(
     const status =
       cause.code === "NOT_FOUND"
         ? 404
-        : cause.code === "CONFLICT"
-          ? 409
-          : cause.code === "OWNER_DATA_FENCED"
-            ? 423
-            : cause.code === "LIMIT_EXCEEDED"
-              ? 413
-              : 400;
+        : cause.code === "IMPORT_DELETED"
+          ? 410
+          : cause.code === "CONFLICT"
+            ? 409
+            : cause.code === "OWNER_DATA_FENCED"
+              ? 423
+              : cause.code === "LIMIT_EXCEEDED"
+                ? 413
+                : 400;
     return reply.code(status).send({ error: { code: cause.code } });
   };
   const content = {
