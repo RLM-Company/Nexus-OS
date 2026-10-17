@@ -1,11 +1,51 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { strFromU8, unzipSync } from "fflate";
 
 async function openData(page: import("@playwright/test").Page) {
   await page.goto("/?surface=files");
   await page.getByRole("button", { name: "Таблицы и диаграммы" }).click();
   await expect(page.getByRole("heading", { name: "Таблицы и диаграммы" })).toBeVisible();
 }
+
+test("Data exports an actual Excel workbook with all sorted rows and typed values without an API write", async ({
+  page
+}) => {
+  await openData(page);
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET") writes.push(request.url());
+  });
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
+    name: "excel.tsv",
+    mimeType: "text/tab-separated-values",
+    buffer: Buffer.from(
+      "id\tamount\tformula\n" +
+        Array.from({ length: 180 }, (_, i) => `${String(i).padStart(4, "0")}\t${i},5\t=1+1`).join(
+          "\n"
+        )
+    )
+  });
+  await page.getByLabel("Тип столбца 2 amount").selectOption("number");
+  await page.getByLabel("Сортировать по").selectOption("1");
+  await page.getByLabel("Направление").selectOption("desc");
+  await expect(page.getByText(/после фильтра: 180$/)).toBeVisible();
+  const ready = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Выгрузить Excel", exact: true }).click();
+  const file = await ready;
+  expect(file.suggestedFilename()).toBe("excel.tsv-filtered.xlsx");
+  const xml = strFromU8(
+    unzipSync(new Uint8Array(await readFile(await file.path())))["xl/worksheets/sheet1.xml"]!
+  );
+  expect(xml.match(/<row /g)).toHaveLength(181);
+  expect(xml).toContain('<c r="A2" t="inlineStr"><is><t xml:space="preserve">0179</t>');
+  expect(xml).toContain('<c r="B2" t="n"><v>179.5</v></c>');
+  expect(xml).toContain('<c r="B181" t="n"><v>0.5</v></c>');
+  expect(xml).toContain('xml:space="preserve">=1+1</t>');
+  expect(xml).not.toContain("<f>");
+  await expect(page.getByText(/Экспортировано 180 полных строк/)).toBeVisible();
+  expect(writes).toEqual([]);
+});
 
 test("Data edits source rows under sorting, supports undo/redo and retains edits across tabs and workspace export", async ({
   page

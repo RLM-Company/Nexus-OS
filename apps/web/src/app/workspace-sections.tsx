@@ -1483,7 +1483,11 @@ export function WorkspaceSections(props: Props) {
       content = <Studio {...props} />;
       break;
     case "files":
-      content = (
+      // Resolve the URL's project before accepting local input. Otherwise a late
+      // project response remounts this scope and discards the selected file/tab.
+      content = props.loading ? (
+        <p role="status">Открываю рабочую область…</p>
+      ) : (
         <StudioDataSurface
           key={props.activeProjectId ?? "no-project"}
           projectId={props.activeProjectId}
