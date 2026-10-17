@@ -1,6 +1,8 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import { createHash } from "node:crypto";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import type { IdentityContext } from "@cosmora/contracts";
+import type { CanvasRevision } from "@cosmora/contracts/canvas-artifacts";
 import { DATA_SERVER_BYTES } from "@cosmora/contracts/data-workspace";
 import { type CanvasArtifactStore, CanvasConflictError, CanvasLimitError } from "@cosmora/db";
 
@@ -13,6 +15,10 @@ export function registerDataWorkspaceRoutes(
   const id = Type.String({ minLength: 1, maxLength: 128 });
   const project = Type.Object({ projectId: id }, { additionalProperties: false });
   const params = Type.Object({ projectId: id, id }, { additionalProperties: false });
+  const revisionParams = Type.Object(
+    { projectId: id, id, version: Type.Integer({ minimum: 1, maximum: 500 }) },
+    { additionalProperties: false }
+  );
   const fields = {
     title: Type.String({ minLength: 1, maxLength: 240 }),
     content: Type.String({ maxLength: DATA_SERVER_BYTES })
@@ -42,6 +48,23 @@ export function registerDataWorkspaceRoutes(
   };
   const ownTable = (request: FastifyRequest, path: Path) =>
     store.isTable(path.projectId, owner(request), path.id);
+  const verified = (revision: CanvasRevision) =>
+    createHash("sha256").update(revision.content).digest("hex") === revision.sha256;
+  const corrupt = (reply: FastifyReply) =>
+    reply.code(409).send({ error: { code: "DATA_WORKSPACE_REVISION_CORRUPT" } });
+  const download = (revision: CanvasRevision, reply: FastifyReply) => {
+    if (!verified(revision)) return corrupt(reply);
+    return reply
+      .header(
+        "content-disposition",
+        `attachment; filename="kosmora-table-v${revision.version}.workspace.json"`
+      )
+      .header("content-security-policy", "default-src 'none'; sandbox")
+      .header("x-table-version", String(revision.version))
+      .header("x-table-sha256", revision.sha256)
+      .type("application/json; charset=utf-8")
+      .send(revision.content);
+  };
   app.addHook("onSend", async (request, reply, payload) => {
     if (request.routeOptions.url?.startsWith(root))
       reply
@@ -93,11 +116,12 @@ export function registerDataWorkspaceRoutes(
       }
     }
   );
-  app.get<{ Params: Path }>(root + "/:id", { schema: { params } }, (req, reply) =>
-    ownTable(req, req.params)
-      ? store.get(req.params.projectId, owner(req), req.params.id)
-      : missing(reply)
-  );
+  app.get<{ Params: Path }>(root + "/:id", { schema: { params } }, (req, reply) => {
+    if (!ownTable(req, req.params)) return missing(reply);
+    const value = store.get(req.params.projectId, owner(req), req.params.id);
+    if (!value) return missing(reply);
+    return verified(value.revision) ? value : corrupt(reply);
+  });
   app.put<{ Params: Path; Body: { baseVersion: number; title: string; content: string } }>(
     root + "/:id",
     {
@@ -128,6 +152,35 @@ export function registerDataWorkspaceRoutes(
       ? { items: store.history(req.params.projectId, owner(req), req.params.id) }
       : missing(reply)
   );
+  app.get<{ Params: Path & { version: number } }>(
+    root + "/:id/revisions/:version",
+    { schema: { params: revisionParams } },
+    (req, reply) => {
+      if (!ownTable(req, req.params)) return missing(reply);
+      const revision = store.getRevision(
+        req.params.projectId,
+        owner(req),
+        req.params.id,
+        req.params.version
+      );
+      if (!revision) return missing(reply);
+      return verified(revision) ? revision : corrupt(reply);
+    }
+  );
+  app.get<{ Params: Path & { version: number } }>(
+    root + "/:id/revisions/:version/download",
+    { schema: { params: revisionParams } },
+    (req, reply) => {
+      if (!ownTable(req, req.params)) return missing(reply);
+      const revision = store.getRevision(
+        req.params.projectId,
+        owner(req),
+        req.params.id,
+        req.params.version
+      );
+      return revision ? download(revision, reply) : missing(reply);
+    }
+  );
   app.post<{ Params: Path; Body: { baseVersion: number; sourceVersion: number } }>(
     root + "/:id/restore",
     {
@@ -151,6 +204,7 @@ export function registerDataWorkspaceRoutes(
         req.body.sourceVersion
       );
       if (!original) return missing(reply);
+      if (!verified(original)) return corrupt(reply);
       try {
         return store.update(req.params.projectId, owner(req), req.params.id, {
           baseVersion: req.body.baseVersion,
@@ -168,11 +222,7 @@ export function registerDataWorkspaceRoutes(
     if (!ownTable(req, req.params)) return missing(reply);
     const value = store.get(req.params.projectId, owner(req), req.params.id);
     if (!value) return missing(reply);
-    return reply
-      .header("content-disposition", 'attachment; filename="kosmora-table.workspace.json"')
-      .header("content-security-policy", "default-src 'none'; sandbox")
-      .type("application/json; charset=utf-8")
-      .send(value.revision.content);
+    return download(value.revision, reply);
   });
   app.delete<{ Params: Path }>(root + "/:id", { schema: { params } }, (req, reply) => {
     if (!ownTable(req, req.params)) return missing(reply);

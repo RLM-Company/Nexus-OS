@@ -1,4 +1,5 @@
 "use client";
+import { ChatRunSkills } from "./chat-run-skills";
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
@@ -188,7 +189,11 @@ const replaceConsoleRoute = (
     : generalChatId
       ? `/?chat=${encodeURIComponent(generalChatId)}`
       : "/";
-  if (new URLSearchParams(window.location.search).get("context_preview") === "1")
+  const currentParams = new URLSearchParams(window.location.search);
+  const planId = currentParams.get("plan");
+  if (projectId && view === "plan" && currentParams.get("project") === projectId && planId)
+    route += `&plan=${encodeURIComponent(planId)}`;
+  if (currentParams.get("context_preview") === "1")
     route += `${route.includes("?") ? "&" : "?"}context_preview=1`;
   window.history.replaceState(window.history.state, "", route);
 };
@@ -2914,6 +2919,11 @@ export default function Home() {
                       <VoicePlayback text={message.content} />
                     )}
                     <ChatMessageAttachments files={message.attachments ?? []} />
+                    {message.role === "assistant" &&
+                      message.run_id &&
+                      message.status === "completed" && (
+                        <ChatRunSkills key={message.run_id} runId={message.run_id} />
+                      )}
                     {activeLocalChatId &&
                       message.role === "assistant" &&
                       message.status === "completed" && (

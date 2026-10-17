@@ -12,7 +12,9 @@ The AI executor does not execute arbitrary code or external actions.
 - responsive Next.js project shell with separately persisted ordinary chats and projects,
   server-side streaming, cancellation and restart recovery;
 - Manager work panel with plan, file drafts, optional Critic review, owner controls and saved task
-  history with downloads from earlier completed tasks;
+  history with downloads from earlier completed tasks; dependency plans support sequential execution,
+  independent copies across owned projects, reviewed portable JSON import/export, search, renaming
+  and reversible archival retaining results and accepted instructions;
 - server-persisted project instructions and text/code/PDF/DOCX materials, optimistic version checks
   and a material snapshot taken when each message or Manager work item is accepted;
 - chat text/code/PDF/DOCX attachments and PNG/JPEG multimodal payloads, safe Markdown/code downloads,
@@ -20,7 +22,11 @@ The AI executor does not execute arbitrary code or external actions.
 - owner-bound GitHub repository browsing, code import into unsent chat drafts, editing/new files,
   persisted before/after review and explicit publication to a new branch and draft PR;
 - optional private SearXNG search with source links/snippets attached only by an owner action;
-- mock-only Skills preview with read/preview permissions and disabled arbitrary execution;
+- private versioned personal Skills for ordinary chat and Work, immutable accepted instruction
+  snapshots and literal per-answer/task provenance; historical mock catalog preview remains inert;
+- text-only AI presentation creation through the existing budgeted Work pipeline, strict local slide validation, reviewed immutable-result import and editable PPTX downloads;
+- Canvas text/code editor with immutable revisions, literal bounded version comparison, reviewed
+  restore/conflict resolution, exact historical downloads and local UTF-8 file drafts;
 - local Image, Video and Sound prompt workspaces that do not send prompts to an external model while
   that model surface is disconnected;
 - Agent Studio catalogs, blueprints and owner/delegated proposal flows with idempotent writes and

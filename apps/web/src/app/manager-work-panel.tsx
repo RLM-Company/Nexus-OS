@@ -1,4 +1,6 @@
 "use client";
+import { PersonalSkillSettings } from "./chat-skill-settings";
+import { AcceptedSkillView } from "./accepted-skill-view";
 import { CodeFiles } from "./ui/code-files";
 
 import Link from "next/link";
@@ -48,6 +50,8 @@ const errors: Record<string, string> = {
     "Запрос был прерван. Чтобы не списать токены повторно, он не отправлен заново.",
   GRAPH_UNAVAILABLE:
     "Подключённый граф не вернул допустимый контекст. Запрос к модели не отправлен.",
+  INVALID_PRESENTATION_RESULT:
+    "Слайды не прошли локальную проверку формата, количества или размера текста. Автоматического платного повтора нет.",
   INVALID_ARTIFACT_CONTENT: "Файл JSON не прошёл проверку формата. Сохранение остановлено.",
   UNSUPPORTED_ACTION: "План требует недоступных действий. Сейчас поддерживается создание файлов.",
   ROUTE_UNAVAILABLE: "Настроенная модель недоступна для этой роли или задачи.",
@@ -230,6 +234,17 @@ export function ManagerWorkPanel({
           </Link>
         </p>
       )}
+      <details>
+        <summary>Skills Work</summary>
+        <PersonalSkillSettings
+          key={projectId}
+          path={`/api/v1/projects/${encodeURIComponent(projectId)}/work-skills`}
+          disabled={busy}
+          label="Skills Work проекта"
+          description="До трёх инструкций для новых задач и планов. Применяется сохранённый выбор. Принятые задачи, шаги сохранённых планов и их повторы используют исходный снимок. Новые версии подключаются явно."
+          emptyMessage="Создайте личный Skill, чтобы использовать его в Work."
+        />
+      </details>
       <label className="manager-work-field">
         Задача
         <textarea
@@ -310,6 +325,11 @@ export function ManagerWorkPanel({
       {work && (
         <>
           <WorkManagerProgress projectId={projectId} workId={work.id} version={work.version} />
+          <AcceptedSkillView
+            key={work.id}
+            path={base + "/" + encodeURIComponent(work.id) + "/skills"}
+            label="Skills этой задачи"
+          />
           <p className="manager-work-usage">Обращений к модели: {work.model_requests} / 3</p>
           {work.plan && (
             <div className="manager-work-plan">

@@ -148,6 +148,7 @@ import {
 import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 import type { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
 import type { ManagerWorkStore } from "@cosmora/db";
+import { registerArtifactContextRoutes } from "./artifact-context-routes.js";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { registerManagerWorkRoutes } from "./manager-work-routes.js";
 import {
@@ -171,6 +172,7 @@ import { registerDocumentLibraryRoutes } from "./document-library-routes.js";
 import { registerDocumentAnswerRoutes } from "./document-answer-routes.js";
 import type { DocumentAnswerService } from "./document-answer-service.js";
 import { registerChatHistorySearchRoutes } from "./chat-history-search-routes.js";
+import { registerPresentationWorkRoutes } from "./presentation-work-routes.js";
 import { registerPresentationRoutes } from "./presentation-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
@@ -811,6 +813,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerChatHistorySearchRoutes(app, dependencies.chatHistorySearchStore, identityFor);
   if (dependencies.presentationStore)
     registerPresentationRoutes(app, dependencies.presentationStore, identityFor);
+  if (dependencies.presentationStore && dependencies.managerWorkStore && dependencies.projectStore)
+    registerPresentationWorkRoutes({
+      app,
+      presentations: dependencies.presentationStore,
+      works: dependencies.managerWorkStore,
+      projects: dependencies.projectStore,
+      identityFor
+    });
   if (dependencies.notificationStore)
     registerNotificationRoutes(app, dependencies.notificationStore, identityFor);
   if (dependencies.ownerSkillStore)
@@ -836,6 +846,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   if (dependencies.canvasStore) registerCanvasRoutes(app, dependencies.canvasStore, identityFor);
   if (dependencies.projectStore)
     registerProjectMaterialsRoutes(app, dependencies.projectStore, identityFor);
+  if (dependencies.projectStore && dependencies.canvasStore)
+    registerArtifactContextRoutes(
+      app,
+      dependencies.projectStore,
+      dependencies.canvasStore,
+      identityFor,
+      dependencies.managerWorkStore
+    );
 
   if (dependencies.identityStore) {
     const identityStore = dependencies.identityStore;
@@ -3188,6 +3206,16 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   }
 
   app.setErrorHandler((error, request, reply) => {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      error.statusCode === 413
+    ) {
+      return reply
+        .status(413)
+        .send(errorBody(request.id, "VALIDATION_ERROR", "Request body is too large"));
+    }
     if (error instanceof IdempotencyConflictError) {
       return reply
         .status(409)

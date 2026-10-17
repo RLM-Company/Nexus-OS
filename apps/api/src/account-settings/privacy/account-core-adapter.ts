@@ -98,6 +98,15 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
         "SELECT p.* FROM kosmora_chat_preferences p JOIN general_chats c ON c.id=p.chat_id AND c.owner_id=p.owner_id WHERE c.owner_id=?"
       ),
       chats: select("SELECT * FROM general_chats WHERE owner_id=?"),
+      chat_skills: select(
+        "SELECT s.* FROM chat_skill_settings s JOIN general_chats c ON c.id=s.chat_id WHERE c.owner_id=?"
+      ),
+      chat_skill_selections: select(
+        "SELECT s.* FROM chat_skill_selections s JOIN general_chats c ON c.id=s.chat_id WHERE c.owner_id=?"
+      ),
+      chat_run_skills: select(
+        "SELECT s.* FROM chat_run_skill_snapshots s JOIN general_chat_runs r ON r.id=s.run_id JOIN general_chats c ON c.id=r.chat_id WHERE c.owner_id=?"
+      ),
       chat_memory: select(
         "SELECT m.* FROM chat_memory_notes m JOIN general_chats c ON c.id=m.chat_id WHERE c.owner_id=?"
       ),

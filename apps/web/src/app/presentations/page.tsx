@@ -3,6 +3,16 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPptx } from "./pptx";
+import { api, endpoint, json } from "./client";
+import { PresentationWork } from "./presentation-work";
+import {
+  presentationWorkReference,
+  type PresentationWorkReference
+} from "@cosmora/contracts/presentation-package";
+import { PresentationImport } from "./presentation-import";
+import { PresentationHistory } from "./presentation-history";
+import { SlidePreview } from "./slide-preview";
+import { presentationPackage, type PresentationPackage } from "./package";
 import {
   newSlide,
   slideOverflow,
@@ -25,24 +35,6 @@ const themes: { value: Theme; label: string }[] = [
   { value: "night", label: "Ночь" },
   { value: "ocean", label: "Графит" }
 ];
-const endpoint = "/api/v1/presentations";
-
-async function api<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, { cache: "no-store", ...options });
-  if (!response.ok) {
-    const result = (await response.json().catch(() => ({}))) as { error?: { code?: string } };
-    if (response.status === 409) throw Error("CONFLICT");
-    if (response.status === 401) throw Error("Сеанс завершён. Войдите снова.");
-    if (response.status === 423) throw Error("Данные аккаунта временно закрыты для изменений.");
-    if (response.status === 413) throw Error("Превышен лимит презентаций или объёма текста.");
-    throw Error(result.error?.code ?? "Не удалось сохранить данные.");
-  }
-  return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
-}
-const json = (value: unknown) => ({
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(value)
-});
 function download(name: string, data: BlobPart, mime: string) {
   const url = URL.createObjectURL(new Blob([data], { type: mime }));
   const link = document.createElement("a");
@@ -53,20 +45,6 @@ function download(name: string, data: BlobPart, mime: string) {
 }
 const fileName = (name: string) =>
   name.replace(/[^\p{L}\p{N}_.-]+/gu, "-").slice(0, 80) || "presentation";
-
-function SlidePreview({ slide, theme, number }: { slide: Slide; theme: Theme; number: number }) {
-  return (
-    <div className={`${styles.slide} ${styles[theme]} ${styles[slide.layout]}`}>
-      <span className={styles.slideAccent} />
-      <h2>{slide.title || "Заголовок"}</h2>
-      <div className={styles.slideColumns}>
-        <p>{slide.body || "Текст слайда"}</p>
-        {slide.layout === "two-column" && <p>{slide.aside || "Вторая колонка"}</p>}
-      </div>
-      <small>{number}</small>
-    </div>
-  );
-}
 
 export default function PresentationsPage() {
   const [items, setItems] = useState<DeckSummary[]>([]);
@@ -84,6 +62,13 @@ export default function PresentationsPage() {
     const result = await api<{ items: DeckSummary[] }>(endpoint);
     setItems(result.items);
   }, []);
+  const refreshAfterMutation = async () => {
+    try {
+      await refresh();
+    } catch {
+      setError("Действие выполнено. Не удалось обновить список презентаций; обновите страницу.");
+    }
+  };
   useEffect(() => {
     refresh()
       .catch((cause) => setError(String(cause)))
@@ -149,7 +134,7 @@ export default function PresentationsPage() {
       setDeck(created);
       setSelected(0);
       setDirty(false);
-      await refresh();
+      await refreshAfterMutation();
     } catch (cause) {
       setError(String(cause));
     } finally {
@@ -181,13 +166,92 @@ export default function PresentationsPage() {
             : current
         );
       }
-      await refresh();
+      await refreshAfterMutation();
     } catch (cause) {
       setError(
         cause instanceof Error && cause.message === "CONFLICT"
           ? "Презентация изменена в другом окне. Сохранение остановлено; откройте её заново после копирования своих правок."
           : String(cause)
       );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const importDeck = async (value: PresentationPackage): Promise<boolean> => {
+    if (busy) return false;
+    if (
+      dirty &&
+      !window.confirm("Есть несохранённые изменения. Импортировать новую копию и открыть её?")
+    )
+      return false;
+    setBusy(true);
+    setError("");
+    try {
+      const created = await api<Deck>(`${endpoint}/import`, { method: "POST", ...json(value) });
+      editRevision.current++;
+      setDeck(created);
+      setSelected(0);
+      setDirty(false);
+      await refreshAfterMutation();
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const importWork = async (source: PresentationWorkReference): Promise<boolean> => {
+    if (busy) return false;
+    if (
+      dirty &&
+      !window.confirm(
+        "Есть несохранённые изменения. Открыть презентацию Work после копирования своих правок?"
+      )
+    )
+      return false;
+    setBusy(true);
+    setError("");
+    try {
+      const created = await api<Deck>(`${endpoint}/from-work`, {
+        method: "POST",
+        ...json({ source: presentationWorkReference(source), reviewed: true })
+      });
+      editRevision.current++;
+      setDeck(created);
+      setSelected(0);
+      setDirty(false);
+      await refreshAfterMutation();
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const restore = async (sourceVersion: number): Promise<boolean> => {
+    if (!deck || busy) return false;
+    if (
+      !window.confirm(
+        `Восстановить версию ${sourceVersion}?${dirty ? " Несохранённые правки будут заменены." : ""} Текущая сохранённая версия останется в истории.`
+      )
+    )
+      return false;
+    setBusy(true);
+    setError("");
+    try {
+      const restored = await api<Deck>(`${endpoint}/${deck.id}/restore`, {
+        method: "POST",
+        ...json({ expected_version: deck.version, source_version: sourceVersion })
+      });
+      editRevision.current++;
+      setDeck(restored);
+      setSelected(0);
+      setDirty(false);
+      await refreshAfterMutation();
+      return true;
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "CONFLICT")
+        throw Error(
+          "Презентация изменена в другом окне. Восстановление остановлено; откройте актуальную версию.",
+          { cause }
+        );
+      throw cause;
     } finally {
       setBusy(false);
     }
@@ -200,7 +264,7 @@ export default function PresentationsPage() {
       await api<void>(`${endpoint}/${deck.id}?version=${deck.version}`, { method: "DELETE" });
       setDeck(null);
       setDirty(false);
-      await refresh();
+      await refreshAfterMutation();
     } catch (cause) {
       setError(String(cause));
     } finally {
@@ -255,7 +319,11 @@ export default function PresentationsPage() {
     try {
       const name = fileName(deck.title);
       if (kind === "json")
-        download(`${name}.json`, JSON.stringify(deck, null, 2), "application/json");
+        download(
+          `${name}.json`,
+          JSON.stringify(presentationPackage(deck), null, 2),
+          "application/json"
+        );
       else
         download(
           `${name}.pptx`,
@@ -309,6 +377,7 @@ export default function PresentationsPage() {
           {error}
         </p>
       )}
+      <PresentationWork busy={busy} onImport={importWork} />
       <div className={styles.workspace}>
         <aside className={styles.library}>
           <h2>Мои презентации</h2>
@@ -324,6 +393,7 @@ export default function PresentationsPage() {
               + Создать
             </button>
           </div>
+          <PresentationImport busy={busy} onImport={importDeck} />
           {loading && <p>Загружаем…</p>}
           <div className={styles.deckList}>
             {items.map((item) => (
@@ -345,107 +415,87 @@ export default function PresentationsPage() {
         </aside>
         {deck && selectedSlide ? (
           <section className={styles.editor} aria-label="Редактор презентации">
-            <div className={styles.deckBar}>
-              <label>
-                Название презентации
-                <input
-                  value={deck.title}
-                  maxLength={160}
-                  onChange={(event) => edit((value) => ({ ...value, title: event.target.value }))}
-                />
-              </label>
-              <label>
-                Тема
-                <select
-                  value={deck.theme}
-                  onChange={(event) =>
-                    edit((value) => ({ ...value, theme: event.target.value as Theme }))
-                  }
-                >
-                  {themes.map((theme) => (
-                    <option key={theme.value} value={theme.value}>
-                      {theme.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <span className={styles.saveState}>{dirty ? "Не сохранено" : "Сохранено"}</span>
-              <button
-                type="button"
-                className={styles.danger}
-                onClick={() => void remove()}
-                disabled={busy}
-              >
-                Удалить презентацию
-              </button>
-            </div>
-            <div className={styles.editGrid}>
-              <div className={styles.slidesPanel}>
-                <h2>
-                  Слайды <span>{deck.slides.length}/50</span>
-                </h2>
-                <ol>
-                  {deck.slides.map((slide, index) => (
-                    <li key={slide.id}>
-                      <button
-                        type="button"
-                        className={index === selected ? styles.selected : ""}
-                        onClick={() => setSelected(index)}
-                        aria-current={index === selected ? "true" : undefined}
-                      >
-                        <span>{index + 1}</span>
-                        <strong>{slide.title || "Без названия"}</strong>
-                        {slideOverflow(slide).length > 0 && (
-                          <em aria-label="Текст не помещается">!</em>
-                        )}
-                      </button>
-                    </li>
-                  ))}
-                </ol>
+            {deck.work_source && (
+              <p className={styles.sourceNote}>
+                Источник: Work · {deck.work_source.name}, v{deck.work_source.version} · SHA-256:{" "}
+                <code>{deck.work_source.sha256}</code>. После правок презентация хранится независимо
+                от исходного результата.
+              </p>
+            )}
+            <PresentationHistory
+              key={deck.id}
+              id={deck.id}
+              version={deck.version}
+              busy={busy}
+              onRestore={restore}
+            />
+            <fieldset disabled={busy} className={styles.editorFields}>
+              <div className={styles.deckBar}>
                 <label>
-                  Добавить слайд
+                  Название презентации
+                  <input
+                    value={deck.title}
+                    maxLength={160}
+                    onChange={(event) => edit((value) => ({ ...value, title: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Тема
                   <select
-                    value=""
-                    onChange={(event) => {
-                      if (event.target.value) add(event.target.value as Layout);
-                    }}
+                    value={deck.theme}
+                    onChange={(event) =>
+                      edit((value) => ({ ...value, theme: event.target.value as Theme }))
+                    }
                   >
-                    <option value="">Выберите макет…</option>
-                    {layouts.map((layout) => (
-                      <option key={layout.value} value={layout.value}>
-                        {layout.label}
+                    {themes.map((theme) => (
+                      <option key={theme.value} value={theme.value}>
+                        {theme.label}
                       </option>
                     ))}
                   </select>
                 </label>
+                <span className={styles.saveState}>{dirty ? "Не сохранено" : "Сохранено"}</span>
+                <button
+                  type="button"
+                  className={styles.danger}
+                  onClick={() => void remove()}
+                  disabled={busy}
+                >
+                  Удалить презентацию
+                </button>
               </div>
-              <div className={styles.canvas}>
-                <SlidePreview slide={selectedSlide} theme={deck.theme} number={selected + 1} />
-                <div className={styles.slideTools}>
-                  <button type="button" onClick={() => move(-1)} disabled={selected === 0}>
-                    ↑ Выше
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => move(1)}
-                    disabled={selected === deck.slides.length - 1}
-                  >
-                    ↓ Ниже
-                  </button>
-                  <button type="button" onClick={duplicate} disabled={deck.slides.length >= 50}>
-                    Дублировать
-                  </button>
-                  <button type="button" onClick={removeSlide} disabled={deck.slides.length === 1}>
-                    Удалить слайд
-                  </button>
-                </div>
-                <div className={styles.fields}>
+              <div className={styles.editGrid}>
+                <div className={styles.slidesPanel}>
+                  <h2>
+                    Слайды <span>{deck.slides.length}/50</span>
+                  </h2>
+                  <ol>
+                    {deck.slides.map((slide, index) => (
+                      <li key={slide.id}>
+                        <button
+                          type="button"
+                          className={index === selected ? styles.selected : ""}
+                          onClick={() => setSelected(index)}
+                          aria-current={index === selected ? "true" : undefined}
+                        >
+                          <span>{index + 1}</span>
+                          <strong>{slide.title || "Без названия"}</strong>
+                          {slideOverflow(slide).length > 0 && (
+                            <em aria-label="Текст не помещается">!</em>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
                   <label>
-                    Макет
+                    Добавить слайд
                     <select
-                      value={selectedSlide.layout}
-                      onChange={(event) => modifySlide({ layout: event.target.value as Layout })}
+                      value=""
+                      onChange={(event) => {
+                        if (event.target.value) add(event.target.value as Layout);
+                      }}
                     >
+                      <option value="">Выберите макет…</option>
                       {layouts.map((layout) => (
                         <option key={layout.value} value={layout.value}>
                           {layout.label}
@@ -453,56 +503,92 @@ export default function PresentationsPage() {
                       ))}
                     </select>
                   </label>
-                  <label>
-                    Заголовок
-                    <input
-                      value={selectedSlide.title}
-                      maxLength={180}
-                      onChange={(event) => modifySlide({ title: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    Основной текст
-                    <textarea
-                      value={selectedSlide.body}
-                      maxLength={4000}
-                      rows={5}
-                      onChange={(event) => modifySlide({ body: event.target.value })}
-                    />
-                  </label>
-                  {selectedSlide.layout === "two-column" && (
+                </div>
+                <div className={styles.canvas}>
+                  <SlidePreview slide={selectedSlide} theme={deck.theme} number={selected + 1} />
+                  <div className={styles.slideTools}>
+                    <button type="button" onClick={() => move(-1)} disabled={selected === 0}>
+                      ↑ Выше
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => move(1)}
+                      disabled={selected === deck.slides.length - 1}
+                    >
+                      ↓ Ниже
+                    </button>
+                    <button type="button" onClick={duplicate} disabled={deck.slides.length >= 50}>
+                      Дублировать
+                    </button>
+                    <button type="button" onClick={removeSlide} disabled={deck.slides.length === 1}>
+                      Удалить слайд
+                    </button>
+                  </div>
+                  <div className={styles.fields}>
                     <label>
-                      Вторая колонка
-                      <textarea
-                        value={selectedSlide.aside}
-                        maxLength={4000}
-                        rows={5}
-                        onChange={(event) => modifySlide({ aside: event.target.value })}
+                      Макет
+                      <select
+                        value={selectedSlide.layout}
+                        onChange={(event) => modifySlide({ layout: event.target.value as Layout })}
+                      >
+                        {layouts.map((layout) => (
+                          <option key={layout.value} value={layout.value}>
+                            {layout.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Заголовок
+                      <input
+                        value={selectedSlide.title}
+                        maxLength={180}
+                        onChange={(event) => modifySlide({ title: event.target.value })}
                       />
                     </label>
-                  )}
-                  <label>
-                    Заметки докладчика <small>Сохраняются в Kosmora и JSON</small>
-                    <textarea
-                      value={selectedSlide.notes}
-                      maxLength={4000}
-                      rows={3}
-                      onChange={(event) => modifySlide({ notes: event.target.value })}
-                    />
-                  </label>
-                </div>
-                {warnings.length > 0 && (
-                  <div className={styles.warnings} role="status">
-                    <strong>Проверьте размещение текста</strong>
-                    <ul>
-                      {warnings.map((warning) => (
-                        <li key={warning}>{warning}</li>
-                      ))}
-                    </ul>
+                    <label>
+                      Основной текст
+                      <textarea
+                        value={selectedSlide.body}
+                        maxLength={4000}
+                        rows={5}
+                        onChange={(event) => modifySlide({ body: event.target.value })}
+                      />
+                    </label>
+                    {selectedSlide.layout === "two-column" && (
+                      <label>
+                        Вторая колонка
+                        <textarea
+                          value={selectedSlide.aside}
+                          maxLength={4000}
+                          rows={5}
+                          onChange={(event) => modifySlide({ aside: event.target.value })}
+                        />
+                      </label>
+                    )}
+                    <label>
+                      Заметки докладчика <small>Входят в JSON и PPTX; на слайде не показаны</small>
+                      <textarea
+                        value={selectedSlide.notes}
+                        maxLength={4000}
+                        rows={3}
+                        onChange={(event) => modifySlide({ notes: event.target.value })}
+                      />
+                    </label>
                   </div>
-                )}
+                  {warnings.length > 0 && (
+                    <div className={styles.warnings} role="status">
+                      <strong>Проверьте размещение текста</strong>
+                      <ul>
+                        {warnings.map((warning) => (
+                          <li key={warning}>{warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            </fieldset>
           </section>
         ) : (
           <section className={styles.empty}>

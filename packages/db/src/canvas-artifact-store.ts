@@ -1,5 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import type { DatabaseSync, SQLOutputValue } from "node:sqlite";
+import type { ArtifactContextCandidate } from "@cosmora/contracts/artifact-context";
 import {
   DATA_SERVER_BYTES,
   DATA_SERVER_HISTORY_BYTES,
@@ -113,6 +114,21 @@ export class CanvasArtifactStore {
   }
   isTable(projectId: string, ownerId: string, id: string): boolean {
     return this.getRevision(projectId, ownerId, id, 1)?.source.kind === "data_workspace";
+  }
+  contextCandidates(projectId: string, ownerId: string): ArtifactContextCandidate[] | null {
+    if (!this.ownedProject(projectId, ownerId)) return null;
+    return this.sqlite
+      .prepare(
+        `SELECT a.id, a.title, a.current_version AS version, r.sha256,
+      length(CAST(r.content AS BLOB)) AS bytes,
+      CASE WHEN json_extract(first.source_json,'$.kind')='data_workspace' THEN 'table' ELSE 'canvas' END AS kind
+      FROM canvas_artifacts a
+      JOIN projects p ON p.id=a.project_id AND p.owner_id=a.owner_id
+      JOIN canvas_revisions r ON r.artifact_id=a.id AND r.version=a.current_version
+      JOIN canvas_revisions first ON first.artifact_id=a.id AND first.version=1
+      WHERE a.project_id=? AND a.owner_id=? ORDER BY a.updated_at DESC, a.id DESC LIMIT 200`
+      )
+      .all(projectId, ownerId) as unknown as ArtifactContextCandidate[];
   }
   private validateInput(input: {
     title: string;
@@ -245,6 +261,26 @@ export class CanvasArtifactStore {
       if (input.idempotency_id) {
         const existing = this.get(projectId, ownerId, input.idempotency_id);
         if (existing) {
+          const first = this.getRevision(projectId, ownerId, existing.artifact.id, 1)!;
+          // Chat transfer historically addresses one editor copy per source. Its
+          // later edits stay canonical; ordinary creates must match exactly.
+          const sameChat =
+            input.source?.kind === "chat" &&
+            first.source.kind === "chat" &&
+            input.source.chat_id === first.source.chat_id &&
+            input.source.message_id === first.source.message_id;
+          if (
+            !sameChat &&
+            ((input.source?.kind ?? "manual") !== first.source.kind ||
+              existing.revision.content !== input.content ||
+              existing.artifact.title !== input.title ||
+              existing.artifact.format !== input.format)
+          )
+            throw new CanvasLimitError(
+              input.source?.kind === "data_workspace"
+                ? "DATA_WORKSPACE_REQUEST_CONFLICT"
+                : "CANVAS_REQUEST_CONFLICT"
+            );
           if (
             input.source?.kind === "data_workspace" &&
             (!this.isTable(projectId, ownerId, existing.artifact.id) ||
@@ -254,6 +290,14 @@ export class CanvasArtifactStore {
             throw new CanvasLimitError("DATA_WORKSPACE_REQUEST_CONFLICT");
           return existing;
         }
+        if (
+          this.sqlite.prepare("SELECT 1 FROM canvas_artifacts WHERE id=?").get(input.idempotency_id)
+        )
+          throw new CanvasLimitError(
+            input.source?.kind === "data_workspace"
+              ? "DATA_WORKSPACE_REQUEST_CONFLICT"
+              : "CANVAS_REQUEST_CONFLICT"
+          );
       }
       if (input.source?.kind === "data_workspace")
         this.assertTableQuota(projectId, ownerId, input.content);

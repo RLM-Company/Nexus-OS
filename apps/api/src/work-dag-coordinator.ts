@@ -1,8 +1,20 @@
 import { createHash } from "node:crypto";
-import type { WorkDag, WorkDagControl, WorkDagCreate, WorkDagNodeInput } from "@cosmora/contracts";
+import {
+  createWorkPlanPackage,
+  parseWorkPlanPackage,
+  type WorkDag,
+  type WorkDagControl,
+  type WorkDagCreate,
+  type WorkDagNodeInput,
+  type WorkDagClone,
+  type WorkDagArchive,
+  type WorkDagRename,
+  type WorkPlanImport
+} from "@cosmora/contracts";
 import { projectDagStatuses, validateWorkDag } from "@cosmora/core";
 import { WorkDagConflict, ManagerWorkConflict, type ManagerWorkStore } from "@cosmora/db";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
+import { buildWorkResultsArchive } from "./work-results-archive.js";
 
 // One process, one Manager executor. DAG transitions are synchronous CAS writes;
 // nodes use the existing policy-checked, bounded file-producing Manager pipeline.
@@ -21,6 +33,22 @@ export class WorkDagCoordinator {
   create(project: string, owner: string, actor: string, input: WorkDagCreate): WorkDag {
     this.validate(input.nodes);
     return this.works.dag.create(project, owner, actor, input);
+  }
+  clone(project: string, id: string, owner: string, actor: string, input: WorkDagClone): WorkDag {
+    return this.works.dag.clone(project, id, owner, actor, input);
+  }
+  import(project: string, owner: string, actor: string, input: WorkPlanImport): WorkDag {
+    const pkg = parseWorkPlanPackage(input.package);
+    return this.create(project, owner, actor, {
+      client_request_id: input.client_request_id,
+      title: pkg.title,
+      nodes: pkg.nodes
+    });
+  }
+  package(id: string, owner: string, project: string) {
+    const graph = this.works.dag.get(id, owner);
+    if (!graph || graph.project_id !== project) throw new WorkDagConflict("DAG_NOT_FOUND");
+    return createWorkPlanPackage(graph);
   }
   owns(id: string, owner: string, project: string): boolean {
     return this.works.dag.get(id, owner)?.project_id === project;
@@ -119,7 +147,7 @@ export class WorkDagCoordinator {
     }
   }
   private reconcile(graph: WorkDag): WorkDag {
-    if (!this.works.ownerWritable(graph.owner_id)) return graph;
+    if (graph.archived_at || !this.works.ownerWritable(graph.owner_id)) return graph;
     const next = structuredClone(graph);
     const ids = new Set(next.nodes.flatMap((node) => node.attempts.map((a) => a.work_id)));
     next.usage = { model_requests: 0, reserved_input_tokens: 0, reserved_output_tokens: 0 };
@@ -204,11 +232,19 @@ export class WorkDagCoordinator {
   results(id: string, owner: string) {
     const graph = this.get(id, owner);
     if (!graph) throw new WorkDagConflict("DAG_NOT_FOUND");
+    return this.resultsFor(graph);
+  }
+  resultsArchive(id: string, owner: string): Buffer {
+    const graph = this.get(id, owner);
+    if (!graph) throw new WorkDagConflict("DAG_NOT_FOUND");
+    return buildWorkResultsArchive(graph, this.resultsFor(graph).files);
+  }
+  private resultsFor(graph: WorkDag) {
     const files = graph.nodes
       .filter((node) => node.status === "completed")
       .flatMap((node) =>
         node.artifacts.map((artifact) => {
-          const file = this.works.runtime.artifact(graph.project_id, owner, artifact.id);
+          const file = this.works.runtime.artifact(graph.project_id, graph.owner_id, artifact.id);
           if (
             !file ||
             file.metadata.sha256 !== artifact.sha256 ||
@@ -237,11 +273,49 @@ export class WorkDagCoordinator {
       throw new WorkDagConflict("RESULTS_LIMIT");
     return bundle;
   }
-  private current(id: string, owner: string, version: number): WorkDag {
+  rename(id: string, owner: string, input: WorkDagRename): WorkDag {
+    const graph = this.current(id, owner, input.expected_version);
+    if (graph.title === input.title) return graph;
+    graph.title = input.title;
+    return this.works.dag.save(graph, "Название плана изменено");
+  }
+  archive(id: string, owner: string, input: WorkDagArchive): WorkDag {
+    const graph = this.current(id, owner, input.expected_version, true);
+    if (Boolean(graph.archived_at) === input.archived) return graph;
+    if (input.archived) {
+      if (graph.execution && ["running", "waiting"].includes(graph.execution.status))
+        throw new WorkDagConflict("AUTO_PLAN_ACTIVE");
+      // Check canonical child records, including older attempts. A paused or
+      // awaiting-approval child is still resumable and cannot be hidden away.
+      for (const attempt of graph.nodes.flatMap((n) => n.attempts)) {
+        const child = this.works.get(attempt.work_id, owner);
+        if (
+          !child ||
+          !["completed", "failed", "cancelled"].includes(child.status) ||
+          this.manager.hasActiveExecution(child.id)
+        )
+          throw new WorkDagConflict("PLAN_HAS_UNFINISHED_WORK");
+      }
+      graph.archived_at = new Date().toISOString();
+    } else {
+      delete graph.archived_at;
+      graph.mode = this.works.dag.projectMode(graph.project_id, owner);
+    }
+    if (graph.execution && graph.execution.status !== "completed") {
+      graph.execution.status = "stopped";
+      graph.execution.reason = input.archived ? "PLAN_ARCHIVED" : "RESTORED_REQUIRES_START";
+    }
+    return this.works.dag.save(
+      projectDagStatuses(graph),
+      input.archived ? "План перемещён в архив" : "План восстановлен; запуск выполняется отдельно"
+    );
+  }
+  private current(id: string, owner: string, version: number, allowArchived = false): WorkDag {
     this.works.assertWritable(owner);
     const graph = this.works.dag.get(id, owner);
     if (!graph) throw new WorkDagConflict("DAG_NOT_FOUND");
     if (graph.version !== version) throw new WorkDagConflict("STALE_DAG");
+    if (graph.archived_at && !allowArchived) throw new WorkDagConflict("PLAN_ARCHIVED");
     return this.reconcile(graph);
   }
   edit(id: string, owner: string, version: number, nodes: WorkDagNodeInput[]): WorkDag {
@@ -263,7 +337,7 @@ export class WorkDagCoordinator {
     }
     graph.nodes = nodes.map((n) => {
       const previous = graph.nodes.find((p) => p.id === n.id);
-      return previous?.attempts.length
+      return previous?.attempts.length || previous?.status === "cancelled"
         ? previous
         : { ...n, status: "pending", blocked_reason: null, attempts: [], artifacts: [] };
     });
@@ -275,6 +349,30 @@ export class WorkDagCoordinator {
   }
   control(id: string, owner: string, input: WorkDagControl, automated = false): WorkDag {
     let graph = this.current(id, owner, input.version);
+    if (input.action === "cancel_step") {
+      const node = graph.nodes.find((n) => n.id === input.node_id);
+      if (!node) throw new WorkDagConflict("STEP_NOT_FOUND");
+      if (node.status === "cancelled") return graph;
+      if (["completed", "failed"].includes(node.status)) throw new WorkDagConflict("TERMINAL_STEP");
+      const attempt = node.attempts.at(-1);
+      if (attempt) {
+        const child = this.works.get(attempt.work_id, owner);
+        if (!child) throw new WorkDagConflict("WORK_NOT_FOUND");
+        // Cancel the canonical child first. If the graph checkpoint fails,
+        // reconciliation observes the terminal child and stops automation.
+        this.manager.control(child.id, owner, child.version, "cancel");
+      }
+      node.status = "cancelled";
+      node.blocked_reason = "STEP_CANCELLED_BY_OWNER";
+      if (graph.execution) {
+        graph.execution.status = "stopped";
+        graph.execution.reason = "STEP_CANCELLED_BY_OWNER";
+      }
+      return this.works.dag.save(
+        projectDagStatuses(graph),
+        "Владелец отменил только шаг: " + node.title
+      );
+    }
     if (input.action === "run_plan" || input.action === "stop_plan") {
       if (input.action === "stop_plan") {
         if (!graph.execution) throw new WorkDagConflict("INVALID_TRANSITION");
@@ -337,6 +435,7 @@ export class WorkDagCoordinator {
           );
       }
       for (const other of this.works.dag.list(graph.project_id, owner)) {
+        if (other.archived_at) continue;
         other.mode = mode;
         if (other.execution) {
           if (mode === "cancelled") {

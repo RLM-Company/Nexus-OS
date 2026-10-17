@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { parseDataWorkspace } from "@cosmora/contracts/data-workspace";
 import { loadServerConfig } from "@cosmora/config";
 import { CanvasArtifactStore, openDatabase, runMigrations } from "@cosmora/db";
@@ -54,9 +54,97 @@ beforeEach(async () => {
   });
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   await app.close();
   await foreign.close();
   db.close();
+});
+
+it("reads and downloads exact immutable versions with checked hashes, scope and version headers", async () => {
+  const { value, input } = await create(snapshot("001\r\n=1+1 🚀 Ж"));
+  const url = `${base}/${value.artifact.id}`;
+  await app.inject({
+    method: "PUT",
+    url,
+    payload: { baseVersion: 1, title: "new", content: snapshot("9") }
+  });
+  const read = await app.inject({ method: "GET", url: url + "/revisions/1" });
+  expect(read.statusCode).toBe(200);
+  expect(read.json<Full["revision"]>().content).toBe(input.content);
+  const download = await app.inject({ method: "GET", url: url + "/revisions/1/download" });
+  expect(download.statusCode).toBe(200);
+  expect(download.rawPayload.equals(Buffer.from(input.content))).toBe(true);
+  expect(download.headers["x-table-sha256"]).toBe(value.revision.sha256);
+  expect(download.headers["x-table-version"]).toBe("1");
+  expect(download.headers["content-disposition"]).toContain("v1.workspace.json");
+  expect(download.headers["cache-control"]).toBe("private, no-store");
+  expect(download.headers["x-content-type-options"]).toBe("nosniff");
+  expect(download.headers["content-security-policy"]).toContain("sandbox");
+  expect(store.history("p", "local-owner", value.artifact.id)).toHaveLength(2);
+  for (const suffix of ["/revisions/1", "/revisions/1/download"]) {
+    expect((await foreign.inject({ method: "GET", url: url + suffix })).statusCode).toBe(404);
+    expect(
+      (await app.inject({ method: "GET", url: url.replace("/p/", "/other/") + suffix })).statusCode
+    ).toBe(404);
+    expect(
+      (await app.inject({ method: "GET", url: url + suffix.replace("/1", "/999") })).statusCode
+    ).toBe(400);
+  }
+  expect((await app.inject({ method: "GET", url: url + "/revisions/20" })).statusCode).toBe(404);
+  expect((await app.inject({ method: "GET", url: url + "/revisions/0/download" })).statusCode).toBe(
+    400
+  );
+  const text = store.create("p", "local-owner", {
+    title: "text",
+    format: "text",
+    content: "secret"
+  })!;
+  expect(
+    (await app.inject({ method: "GET", url: `${base}/${text.artifact.id}/revisions/1/download` }))
+      .statusCode
+  ).toBe(404);
+});
+
+it("rejects corrupted historical reads/downloads/restores without returning content or appending a version", async () => {
+  const { value } = await create();
+  const url = `${base}/${value.artifact.id}`;
+  const original = store.getRevision.bind(store);
+  vi.spyOn(store, "getRevision").mockImplementation((...args) => {
+    const revision = original(...args);
+    return revision ? { ...revision, content: "corrupted-secret" } : null;
+  });
+  for (const suffix of ["/revisions/1", "/revisions/1/download"]) {
+    const result = await app.inject({ method: "GET", url: url + suffix });
+    expect(result.statusCode).toBe(409);
+    expect(result.body).not.toContain("corrupted-secret");
+  }
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: url + "/restore",
+        payload: { baseVersion: 1, sourceVersion: 1 }
+      })
+    ).statusCode
+  ).toBe(409);
+  expect(store.history("p", "local-owner", value.artifact.id)).toHaveLength(1);
+});
+
+it("refuses corrupted current snapshots on both JSON reads and attachment downloads", async () => {
+  const { value } = await create();
+  const url = `${base}/${value.artifact.id}`;
+  const original = store.get.bind(store);
+  vi.spyOn(store, "get").mockImplementation((...args) => {
+    const result = original(...args);
+    return result
+      ? { ...result, revision: { ...result.revision, content: "private-corrupted-snapshot" } }
+      : null;
+  });
+  for (const suffix of ["", "/download"]) {
+    const response = await app.inject({ method: "GET", url: url + suffix });
+    expect(response.statusCode).toBe(409);
+    expect(response.body).not.toContain("private-corrupted-snapshot");
+  }
 });
 const create = async (content = snapshot()) => {
   const input = { client_id: randomUUID(), title: "Table", content };
@@ -123,6 +211,18 @@ it("creates once after a repeated request, isolates owners/types, validates snap
       })
     ).statusCode
   ).toBe(413);
+  expect(store.get("p", "local-owner", id)!.revision.content).toBe(input.content);
+  const wrongType = await app.inject({
+    method: "POST",
+    url: "/api/v1/projects/p/canvas",
+    payload: {
+      client_request_id: id,
+      title: "Table",
+      format: "text",
+      content: "wrong editor"
+    }
+  });
+  expect(wrongType.statusCode).toBe(409);
   expect(store.get("p", "local-owner", id)!.revision.content).toBe(input.content);
 });
 
