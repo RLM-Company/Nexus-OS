@@ -3181,7 +3181,7 @@ export default function Home() {
             agentStudioHref={agentStudioHref}
             controlCenterHref={controlCenterHref}
             activeProjectId={activeProject?.id ?? null}
-            loading={loading}
+            loading={loading || !initialRouteReady}
             error={error}
             onRetry={() => void reloadShellData()}
             onOpenProject={(id, view) => void openProject(id, view)}

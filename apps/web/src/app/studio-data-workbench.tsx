@@ -326,7 +326,7 @@ export function DataWorkbench({
     setError("Операция отменена. Измените настройки, чтобы пересчитать результат.");
   }
 
-  async function exportFile(kind: "csv" | "json") {
+  async function exportFile(kind: "csv" | "json" | "xlsx") {
     if (!table || !settings || !result || exporting || busy) return;
     const controller = new AbortController();
     exportRef.current = controller;
@@ -334,17 +334,20 @@ export function DataWorkbench({
     setError("");
     setProgress("Формирую полный файл…");
     try {
-      const blob = await exportData(
-        table,
-        result.indexes,
-        settings,
-        kind,
-        controller.signal,
-        (value) => {
-          if (!controller.signal.aborted)
-            setProgress(`Выгружено ${value} из ${result.indexes.length} строк`);
-        }
-      );
+      const exportRows =
+        kind === "xlsx"
+          ? (await import("./studio-data-xlsx")).exportDataXlsx
+          : (
+              table: CsvTable,
+              indexes: readonly number[],
+              settings: DataSettings,
+              signal: AbortSignal,
+              progress: (rows: number) => void
+            ) => exportData(table, indexes, settings, kind, signal, progress);
+      const blob = await exportRows(table, result.indexes, settings, controller.signal, (value) => {
+        if (!controller.signal.aborted)
+          setProgress(`Выгружено ${value} из ${result.indexes.length} строк`);
+      });
       controller.signal.throwIfAborted();
       download(blob, `${cleanFilename(name)}-filtered.${kind}`);
       setNotice(`Экспортировано ${result.indexes.length} полных строк (${blob.size} байт).`);
@@ -999,8 +1002,9 @@ export function DataWorkbench({
             <div className={styles.box}>
               <h3>Полный экспорт и сохранение</h3>
               <p>
-                CSV/JSON (не более 32 МБ) выгружают все строки фильтра и все выбранные столбцы, без
-                ограничения страниц. Заголовки-дубликаты сохраняются в JSON через индексы.
+                CSV/JSON/XLSX (не более 32 МБ) выгружают все строки фильтра и все выбранные столбцы,
+                без ограничения страниц. Заголовки-дубликаты сохраняются в JSON через индексы. Excel
+                сохраняет текстовые идентификаторы и длинные числа без округления.
               </p>
               <div className={styles.controls}>
                 <button
@@ -1016,6 +1020,13 @@ export function DataWorkbench({
                   onClick={() => void exportFile("json")}
                 >
                   Выгрузить JSON
+                </button>
+                <button
+                  type="button"
+                  disabled={!result || busy || exporting}
+                  onClick={() => void exportFile("xlsx")}
+                >
+                  Выгрузить Excel
                 </button>
                 <button
                   type="button"

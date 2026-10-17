@@ -3,6 +3,53 @@ import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { strFromU8, unzipSync } from "fflate";
 
+test("Studio waits for its project before accepting a file and retains the table after slow navigation", async ({
+  page,
+  request
+}) => {
+  const projectId = randomUUID();
+  expect(
+    (
+      await request.post("/api/v1/projects/empty", {
+        data: { client_project_id: projectId, title: "Slow project" }
+      })
+    ).ok()
+  ).toBe(true);
+  let releaseProject: () => void = () => {};
+  const ready = new Promise<void>((resolve) => {
+    releaseProject = resolve;
+  });
+  await page.route(`**/api/v1/projects/${projectId}`, async (route) => {
+    await ready;
+    await route.continue();
+  });
+  await page.goto(`/?project=${projectId}&surface=files`);
+  const files = page.getByRole("region", { name: "Крупные файлы", exact: true });
+  try {
+    await expect(files.getByRole("status")).toContainText("Открываю рабочую область");
+    await expect(page.getByLabel("Открыть таблицу или сохранённый проект")).toHaveCount(0);
+  } finally {
+    releaseProject();
+  }
+  await page.getByRole("button", { name: "Таблицы и диаграммы", exact: true }).click();
+  await page
+    .getByLabel("Открыть таблицу или сохранённый проект")
+    .setInputFiles({
+      name: "retained.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("id,value\nKEEP,7")
+    });
+  await expect(page.getByRole("cell", { name: "KEEP", exact: true })).toBeVisible();
+  await page
+    .getByRole("region", { name: "Таблицы проекта", exact: true })
+    .getByRole("button", { name: "Сохранить в проекте", exact: true })
+    .click();
+  await expect(page.getByText("Сохранено в проекте: retained.csv, версия 1")).toBeVisible();
+  expect(
+    (await (await request.get(`/api/v1/projects/${projectId}/tables`)).json()).items
+  ).toHaveLength(1);
+});
+
 test("Project tables survive a lost save response, conflicts, reload and restore; reports open in Canvas", async ({
   page,
   request
@@ -35,13 +82,11 @@ test("Project tables survive a lost save response, conflicts, reload and restore
   await page.goto(`/?project=${projectId}&surface=files`);
   await page.getByRole("button", { name: "Таблицы и диаграммы", exact: true }).click();
   const panel = page.getByRole("region", { name: "Таблицы проекта", exact: true });
-  await page
-    .getByLabel("Открыть таблицу или сохранённый проект")
-    .setInputFiles({
-      name: "sales.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from("id,value\nA,5\nB,9")
-    });
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
+    name: "sales.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("id,value\nA,5\nB,9")
+  });
   await page.getByLabel("Тип столбца 2 value").selectOption("number");
   await page.getByLabel("Числовая колонка").selectOption("1");
   await panel.getByRole("button", { name: "Сохранить в проекте", exact: true }).click();
@@ -125,13 +170,11 @@ test("Saving a local table without a project creates a project without discardin
 }) => {
   await page.goto("/?surface=files");
   await page.getByRole("button", { name: "Таблицы и диаграммы", exact: true }).click();
-  await page
-    .getByLabel("Открыть таблицу или сохранённый проект")
-    .setInputFiles({
-      name: "local.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from("id,value\nKEEP,123")
-    });
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
+    name: "local.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("id,value\nKEEP,123")
+  });
   const panel = page.getByRole("region", { name: "Таблицы проекта", exact: true });
   await panel.getByRole("button", { name: "Сохранить в проекте", exact: true }).click();
   await expect(panel).toContainText("Сохранено в проекте: local.csv, версия 1");
