@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 export type SkillDraft = { name: string; summary: string; instructions: string };
@@ -15,7 +15,13 @@ export type SkillRevision = SkillDraft & { version: number; created_at: string }
 export class OwnerSkillError extends Error {
   constructor(
     readonly code:
-      "INVALID_SKILL" | "NOT_FOUND" | "VERSION_CONFLICT" | "LIMIT_REACHED" | "OWNER_DATA_FENCED"
+      | "INVALID_SKILL"
+      | "NOT_FOUND"
+      | "VERSION_CONFLICT"
+      | "LIMIT_REACHED"
+      | "OWNER_DATA_FENCED"
+      | "REQUEST_CONFLICT"
+      | "CREATION_DELETED"
   ) {
     super(code);
   }
@@ -87,9 +93,44 @@ export class OwnerSkillStore {
       .all(owner, id) as unknown as SkillRevision[];
     return { skill, versions };
   }
-  create(owner: string, input: SkillDraft): SavedSkill {
+  private requestId(value: string): void {
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value))
+      throw new OwnerSkillError("INVALID_SKILL");
+  }
+  /** Null means no accepted write; a tombstone is a terminal result, never permission to recreate. */
+  creation(owner: string, requestId: string): SavedSkill | null {
+    this.requestId(requestId);
+    this.fenced(owner);
+    const receipt = this.sql
+      .prepare("SELECT skill_id FROM owner_skill_creations WHERE owner_id=? AND request_id=?")
+      .get(owner, requestId) as { skill_id: string | null } | undefined;
+    if (!receipt) return null;
+    if (!receipt.skill_id) throw new OwnerSkillError("CREATION_DELETED");
+    return this.get(owner, receipt.skill_id).skill;
+  }
+  create(owner: string, input: SkillDraft, requestId?: string): SavedSkill {
     const draft = validate(input);
+    if (requestId !== undefined) this.requestId(requestId);
+    const fingerprint = createHash("sha256")
+      .update(JSON.stringify([draft.name, draft.summary, draft.instructions]))
+      .digest("hex");
     return this.transaction(owner, () => {
+      if (requestId !== undefined) {
+        const receipt = this.sql
+          .prepare(
+            "SELECT skill_id,draft_sha256 FROM owner_skill_creations WHERE owner_id=? AND request_id=?"
+          )
+          .get(owner, requestId) as { skill_id: string | null; draft_sha256: string } | undefined;
+        if (receipt) {
+          if (receipt.draft_sha256 !== fingerprint) throw new OwnerSkillError("REQUEST_CONFLICT");
+          if (!receipt.skill_id) throw new OwnerSkillError("CREATION_DELETED");
+          return this.get(owner, receipt.skill_id).skill;
+        }
+        const count = this.sql
+          .prepare("SELECT COUNT(*) n FROM owner_skill_creations WHERE owner_id=?")
+          .get(owner) as { n: number };
+        if (count.n >= 1000) throw new OwnerSkillError("LIMIT_REACHED");
+      }
       if (this.list(owner).length >= 50) throw new OwnerSkillError("LIMIT_REACHED");
       const id = randomUUID(),
         at = this.now();
@@ -103,6 +144,12 @@ export class OwnerSkillStore {
           "INSERT INTO owner_skill_versions(skill_id,owner_id,version,name,summary,instructions,created_at) VALUES(?,?,1,?,?,?,?)"
         )
         .run(id, owner, draft.name, draft.summary, draft.instructions, at);
+      if (requestId !== undefined)
+        this.sql
+          .prepare(
+            "INSERT INTO owner_skill_creations(owner_id,request_id,draft_sha256,skill_id,created_at) VALUES(?,?,?,?,?)"
+          )
+          .run(owner, requestId, fingerprint, id, at);
       return this.get(owner, id).skill;
     });
   }

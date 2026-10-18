@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import type { IdentityContext } from "@cosmora/contracts";
@@ -18,6 +19,14 @@ const draft = Type.Object(
 );
 const version = Type.Integer({ minimum: 1, maximum: 20 });
 const id = Type.String({ format: "uuid" });
+const creationHeaders = Type.Object(
+  {
+    "idempotency-key": Type.Optional(
+      Type.String({ pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$" })
+    )
+  },
+  { additionalProperties: true }
+);
 
 export function registerOwnerSkillRoutes(
   app: FastifyInstance,
@@ -33,20 +42,44 @@ export function registerOwnerSkillRoutes(
     const status =
       cause.code === "NOT_FOUND"
         ? 404
-        : cause.code === "VERSION_CONFLICT"
+        : cause.code === "VERSION_CONFLICT" || cause.code === "REQUEST_CONFLICT"
           ? 409
-          : cause.code === "LIMIT_REACHED"
-            ? 413
-            : cause.code === "OWNER_DATA_FENCED"
-              ? 423
-              : 400;
+          : cause.code === "CREATION_DELETED"
+            ? 410
+            : cause.code === "LIMIT_REACHED"
+              ? 413
+              : cause.code === "OWNER_DATA_FENCED"
+                ? 423
+                : 400;
     return reply.code(status).send({ error: { code: cause.code } });
   };
+  app.get(`${base}/scope`, (request) => ({
+    owner_scope: createHash("sha256")
+      .update(`kosmora:skills:${identityFor(request).owner_id}`)
+      .digest("hex")
+  }));
+  app.get<{ Params: { requestId: string } }>(
+    `${base}/creations/:requestId`,
+    {
+      schema: { params: Type.Object({ requestId: id }) }
+    },
+    (request, reply) => {
+      try {
+        const skill = store.creation(identityFor(request).owner_id, request.params.requestId);
+        if (!skill) throw new OwnerSkillError("NOT_FOUND");
+        reply.header("Cache-Control", "private, no-store");
+        return skill;
+      } catch (cause) {
+        return handle(reply, cause);
+      }
+    }
+  );
   app.get(base, (request) => ({ items: store.list(identityFor(request).owner_id) }));
-  app.post<{ Body: OwnerSkillPackage }>(
+  app.post<{ Body: OwnerSkillPackage; Headers: { "idempotency-key"?: string } }>(
     `${base}/import`,
     {
       schema: {
+        headers: creationHeaders,
         body: Type.Object(
           {
             format: Type.Literal("kosmora.skill.v1"),
@@ -65,7 +98,13 @@ export function registerOwnerSkillRoutes(
       try {
         return reply
           .code(201)
-          .send(store.create(identityFor(request).owner_id, verifyOwnerSkillPackage(request.body)));
+          .send(
+            store.create(
+              identityFor(request).owner_id,
+              verifyOwnerSkillPackage(request.body),
+              request.headers["idempotency-key"]
+            )
+          );
       } catch (cause) {
         return handle(reply, cause);
       }
@@ -97,17 +136,24 @@ export function registerOwnerSkillRoutes(
       }
     }
   );
-  app.post<{ Body: { name: string; summary: string; instructions: string } }>(
-    base,
-    { schema: { body: draft } },
-    (request, reply) => {
-      try {
-        return reply.code(201).send(store.create(identityFor(request).owner_id, request.body));
-      } catch (cause) {
-        return handle(reply, cause);
-      }
+  app.post<{
+    Body: { name: string; summary: string; instructions: string };
+    Headers: { "idempotency-key"?: string };
+  }>(base, { schema: { body: draft, headers: creationHeaders } }, (request, reply) => {
+    try {
+      return reply
+        .code(201)
+        .send(
+          store.create(
+            identityFor(request).owner_id,
+            request.body,
+            request.headers["idempotency-key"]
+          )
+        );
+    } catch (cause) {
+      return handle(reply, cause);
     }
-  );
+  });
   app.put<{
     Params: { id: string };
     Body: { expected_version: number; name: string; summary: string; instructions: string };
