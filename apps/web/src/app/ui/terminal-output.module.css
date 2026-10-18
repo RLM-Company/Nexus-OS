@@ -48,8 +48,8 @@
   border-radius: 5px;
   font-size: 10px;
 }
-.header button,
-.filters button {
+.terminal .header button,
+.terminal .filters button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -62,25 +62,25 @@
   font: 11px/1.4 var(--font-mono, ui-monospace, monospace);
   cursor: pointer;
 }
-.header button {
+.terminal .header button {
   min-width: 28px;
 }
 .header button svg {
   width: 13px;
   height: 13px;
 }
-.header button:hover:not(:disabled),
-.filters button:hover {
+.terminal .header button:hover:not(:disabled),
+.terminal .filters button:hover:not(:disabled) {
   background: #333;
   color: white;
 }
-.header button:disabled {
+.terminal .header button:disabled {
   opacity: 0.35;
   cursor: default;
 }
-.header button:focus-visible,
-.filters button:focus-visible,
-.stream pre:focus-visible {
+.terminal .header button:focus-visible,
+.terminal .filters button:focus-visible,
+.terminal .stream pre:focus-visible {
   outline: 2px solid #fff;
   outline-offset: -2px;
 }
@@ -92,7 +92,7 @@
   padding: 7px 10px;
   border-bottom: 1px solid #2c2c2c;
 }
-.filters button[aria-pressed="true"] {
+.terminal .filters button[aria-pressed="true"] {
   background: #333;
   color: #fff;
   border-color: #454545;

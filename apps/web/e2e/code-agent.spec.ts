@@ -180,6 +180,11 @@ async function prepare(page: Page) {
   await check.click();
   await expect(page.getByLabel("Результат проверки")).toContainText("syntax checked");
   const terminal = page.getByRole("region", { name: "Вывод исполнителя" });
+  expect(
+    await terminal
+      .getByRole("button", { name: "stdout", exact: true })
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+  ).toBe("rgba(0, 0, 0, 0)");
   await terminal.getByRole("button", { name: "stderr", exact: true }).click();
   await expect(terminal).toContainText("Поток stderr пуст.");
   await expect(terminal.getByLabel("Стандартный вывод", { exact: true })).toHaveCount(0);
