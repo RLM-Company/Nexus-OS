@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 import {
   extractLibraryPages,
@@ -23,12 +23,6 @@ import { ShiningText, SystemMessage } from "./ui/kosmora-controls";
 import { WorkspaceIcon } from "./workspace-icons";
 import { downloadBlob } from "./chat-response";
 import {
-  CollectionToolbar,
-  FileShareDialog,
-  FilterChips,
-  UploadDropzone
-} from "./ui/workspace-kit";
-import {
   runLibraryUploadQueue,
   LibraryUploadRejectedError,
   UPLOAD_STATE_LABELS,
@@ -44,11 +38,9 @@ type Props = {
 };
 
 export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }: Props) {
+  const uploader = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
   const [files, setFiles] = useState<LibraryFileView[]>([]);
-  const [fileQuery, setFileQuery] = useState("");
-  const [fileStatus, setFileStatus] = useState("all");
-  const [fileView, setFileView] = useState<"list" | "grid">("list");
   const [chosen, setChosen] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -89,8 +81,6 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
     const controller = new AbortController();
     abort.current = controller;
     setFiles([]);
-    setFileQuery("");
-    setFileStatus("all");
     setChosen([]);
     setHits([]);
     setSelected([]);
@@ -255,7 +245,9 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
     }
   });
 
-  const upload = async (selectedFiles: File[]) => {
+  const upload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
     if (!base || busy || !selectedFiles.length) return;
     abort.current?.abort();
     const controller = new AbortController();
@@ -545,15 +537,24 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
         </div>
       ) : (
         <>
-          <UploadDropzone
-            label="Добавить файлы"
-            accept=".pdf,.docx,.txt,.csv"
-            multiple
-            disabled={busy}
-            description="Перетащите PDF, DOCX, TXT или CSV · до 20 МБ на файл · до 100 МБ и 100 файлов в проекте"
-            onFiles={(items) => void upload(items)}
-          />
           <div className={styles.toolbar}>
+            <input
+              ref={uploader}
+              type="file"
+              multiple
+              hidden
+              accept=".pdf,.docx,.txt,.csv"
+              onChange={(event) => void upload(event)}
+            />
+            <button
+              className={styles.primary}
+              type="button"
+              disabled={busy}
+              onClick={() => uploader.current?.click()}
+            >
+              <WorkspaceIcon name="new-chat" />
+              Добавить файлы
+            </button>
             <button
               type="button"
               disabled={busy || !files.length}
@@ -572,11 +573,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   Отменить загрузку
                 </button>
               )}
-            {chosen.length > 0 && (
-              <button type="button" disabled={busy} onClick={() => setChosen([])}>
-                Снять выделение ({chosen.length})
-              </button>
-            )}
+            <small>До 20 МБ на файл · до 100 МБ и 100 файлов в проекте</small>
           </div>
           {status && <p role="status">{busy ? <ShiningText>{status}</ShiningText> : status}</p>}
           {error && <SystemMessage>{error}</SystemMessage>}
@@ -613,142 +610,51 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
               </ul>
             </section>
           )}
-          <CollectionToolbar
-            query={fileQuery}
-            onQuery={setFileQuery}
-            label="Найти документ"
-            count={`${files.length} файлов · выбрано ${chosen.length}`}
-          >
-            <select
-              aria-label="Статус документов"
-              value={fileStatus}
-              onChange={(event) => setFileStatus(event.target.value)}
-            >
-              <option value="all">Все статусы</option>
-              <option value="ready">Готовы</option>
-              <option value="processing">Обрабатываются</option>
-              <option value="failed">С ошибкой</option>
-            </select>
-            <button
-              type="button"
-              aria-label="Документы списком"
-              aria-pressed={fileView === "list"}
-              onClick={() => setFileView("list")}
-            >
-              <WorkspaceIcon name="list" />
-            </button>
-            <button
-              type="button"
-              aria-label="Документы сеткой"
-              aria-pressed={fileView === "grid"}
-              onClick={() => setFileView("grid")}
-            >
-              <WorkspaceIcon name="grid" />
-            </button>
-          </CollectionToolbar>
-          <FilterChips
-            chips={[
-              ...(fileQuery
-                ? [
-                    {
-                      id: "query",
-                      label: `Название: ${fileQuery}`,
-                      onRemove: () => setFileQuery("")
+          <div className={styles.files} role="group" aria-label="Сохранённые документы">
+            {files.map((file) => (
+              <div className={styles.file} key={file.id}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={chosen.includes(file.id)}
+                    disabled={busy || file.status !== "ready"}
+                    onChange={(event) =>
+                      setChosen((old) =>
+                        event.target.checked
+                          ? [...old, file.id]
+                          : old.filter((id) => id !== file.id)
+                      )
                     }
-                  ]
-                : []),
-              ...(fileStatus !== "all"
-                ? [
-                    {
-                      id: "status",
-                      label:
-                        { ready: "Готовы", processing: "Обрабатываются", failed: "С ошибкой" }[
-                          fileStatus
-                        ] ?? fileStatus,
-                      onRemove: () => setFileStatus("all")
-                    }
-                  ]
-                : [])
-            ]}
-            onClear={() => {
-              setFileQuery("");
-              setFileStatus("all");
-            }}
-          />
-          <div
-            className={styles.files}
-            data-view={fileView}
-            role="group"
-            aria-label="Сохранённые документы"
-          >
-            {files
-              .filter(
-                (file) =>
-                  file.name
-                    .toLocaleLowerCase("ru")
-                    .includes(fileQuery.trim().toLocaleLowerCase("ru")) &&
-                  (fileStatus === "all" || file.status === fileStatus)
-              )
-              .map((file) => (
-                <div className={styles.file} key={file.id}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={chosen.includes(file.id)}
-                      disabled={busy || file.status !== "ready"}
-                      onChange={(event) =>
-                        setChosen((old) =>
-                          event.target.checked
-                            ? [...old, file.id]
-                            : old.filter((id) => id !== file.id)
-                        )
-                      }
-                    />
-                    <WorkspaceIcon className={styles.fileIcon} name="files" />
-                    <span>
-                      <strong>{file.name}</strong>
-                      <small>
-                        {file.status === "ready"
-                          ? "Готов"
-                          : file.status === "processing"
-                            ? "Обрабатывается"
-                            : "Ошибка обработки"}{" "}
-                        · {(file.bytes / 1_000_000).toFixed(2)} МБ · {file.chunks} частей
-                      </small>
-                    </span>
-                  </label>
-                  <div className={styles.actions}>
-                    {file.status !== "ready" && (
-                      <button type="button" disabled={busy} onClick={() => void retry(file)}>
-                        Повторить
-                      </button>
-                    )}
-                    <a href={`${base}/${encodeURIComponent(file.id)}/download`}>Оригинал</a>
-                    <FileShareDialog
-                      name={file.name}
-                      path={`${base}/${encodeURIComponent(file.id)}/download`}
-                    />
-                    <button type="button" disabled={busy} onClick={() => void deleteFile(file.id)}>
-                      Удалить
+                  />
+                  <WorkspaceIcon className={styles.fileIcon} name="files" />
+                  <span>
+                    <strong>{file.name}</strong>
+                    <small>
+                      {file.status === "ready"
+                        ? "Готов"
+                        : file.status === "processing"
+                          ? "Обрабатывается"
+                          : "Ошибка обработки"}{" "}
+                      · {(file.bytes / 1_000_000).toFixed(2)} МБ · {file.chunks} частей
+                    </small>
+                  </span>
+                </label>
+                <div className={styles.actions}>
+                  {file.status !== "ready" && (
+                    <button type="button" disabled={busy} onClick={() => void retry(file)}>
+                      Повторить
                     </button>
-                  </div>
+                  )}
+                  <a href={`${base}/${encodeURIComponent(file.id)}/download`}>Оригинал</a>
+                  <button type="button" disabled={busy} onClick={() => void deleteFile(file.id)}>
+                    Удалить
+                  </button>
                 </div>
-              ))}
+              </div>
+            ))}
             {!files.length && (
               <p className={styles.empty}>В проекте пока нет сохранённых документов.</p>
             )}
-            {files.length > 0 &&
-              !files.some(
-                (file) =>
-                  file.name
-                    .toLocaleLowerCase("ru")
-                    .includes(fileQuery.trim().toLocaleLowerCase("ru")) &&
-                  (fileStatus === "all" || file.status === fileStatus)
-              ) && (
-                <p className={styles.empty}>
-                  Документы не найдены. Измените поиск или сбросьте фильтры.
-                </p>
-              )}
           </div>
           <div className={styles.query}>
             <label htmlFor="library-question">Вопрос к документам</label>

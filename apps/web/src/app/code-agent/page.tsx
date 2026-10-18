@@ -6,8 +6,6 @@ import { codePatchMessages, type CodePatchPreview } from "./patch-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./code-agent.module.css";
 import { codeAgentUnifiedDiff } from "./unified-diff";
-import { InlineDiff } from "../ui/inline-diff";
-import { TerminalOutput } from "../ui/terminal-output";
 
 type FileChange = { path: string; before: string | null; content: string };
 type Run = {
@@ -664,12 +662,11 @@ export default function CodeAgentPage() {
                 <p>
                   Проверенный снимок: <code>{run.proposal_check.snapshotDigest}</code>
                 </p>
-                <TerminalOutput
-                  stdout={run.proposal_check.stdout}
-                  stderr={run.proposal_check.stderr}
-                  status={run.proposal_check.status}
-                  truncated={run.proposal_check.truncated}
-                />
+                <pre>{run.proposal_check.stdout || run.proposal_check.stderr || "Нет вывода"}</pre>
+                {run.proposal_check.stdout && run.proposal_check.stderr && (
+                  <pre>{run.proposal_check.stderr}</pre>
+                )}
+                {run.proposal_check.truncated && <p>Вывод ограничен.</p>}
               </div>
             )}
             {run.proposal && !run.draft && editable && (
@@ -781,7 +778,7 @@ export default function CodeAgentPage() {
                     Объём изменений превышает лимит предпросмотра diff. Выберите меньше файлов.
                   </p>
                 ) : (
-                  <InlineDiff text={diffPreview.text} />
+                  <pre>{diffPreview.text || "Нет выбранных изменений."}</pre>
                 )}
               </details>
               <button
@@ -879,12 +876,9 @@ export default function CodeAgentPage() {
                   <p>
                     Проверенный снимок: <code>{run.check.snapshotDigest}</code>
                   </p>
-                  <TerminalOutput
-                    stdout={run.check.stdout}
-                    stderr={run.check.stderr}
-                    status={run.check.status}
-                    truncated={run.check.truncated}
-                  />
+                  <pre>{run.check.stdout || "Нет стандартного вывода"}</pre>
+                  {run.check.stderr && <pre>{run.check.stderr}</pre>}
+                  {run.check.truncated && <p>Вывод ограничен серверным лимитом.</p>}
                   {run.check.journal !== undefined && (
                     <details>
                       <summary>Журнал исполнителя</summary>

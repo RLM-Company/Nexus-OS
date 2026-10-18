@@ -10,8 +10,6 @@ import {
 } from "@cosmora/contracts/work-plan-package";
 import type { WorkDag, WorkDagNodeInput, WorkDagControl } from "@cosmora/contracts";
 import { useExecutionGate } from "./use-execution-gate";
-import { WorkPlanEditorTracker } from "./ui/work-plan-view";
-import { ActivityTimeline } from "./ui/activity-timeline";
 import styles from "./work-manager.module.css";
 
 const statuses: Record<string, string> = {
@@ -95,7 +93,6 @@ const freshStep = (): WorkDagNodeInput => ({
 });
 
 export function WorkManagerDag({ projectId }: { projectId: string }) {
-  const editorForm = useRef<HTMLFormElement>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work-dags";
   const gate = useExecutionGate(projectId);
   const [graphs, setGraphs] = useState<WorkDag[]>([]);
@@ -770,7 +767,6 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       )}
       {editor && (
         <form
-          ref={editorForm}
           onSubmit={(e) => {
             e.preventDefault();
             void mutate(
@@ -782,28 +778,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             );
           }}
         >
-          <WorkPlanEditorTracker
-            titleReady={Boolean(editor.title.trim())}
-            completedSteps={
-              editor.nodes.filter((node) => node.title.trim() && node.goal.trim()).length
-            }
-            totalSteps={editor.nodes.length}
-            onNavigate={(section) => {
-              const selector =
-                section === "title"
-                  ? 'input[name="plan-title"]'
-                  : section === "steps"
-                    ? "fieldset input:not(:disabled)"
-                    : 'button[type="submit"]';
-              const element = editorForm.current?.querySelector<HTMLElement>(selector);
-              element?.scrollIntoView({ block: "center" });
-              element?.focus({ preventScroll: true });
-            }}
-          />
           <label>
             Название плана
             <input
-              name="plan-title"
               required
               maxLength={160}
               disabled={Boolean(editor.graphId) || busy}
@@ -1321,14 +1298,13 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </ol>
           <details>
             <summary>История событий и checkpoints</summary>
-            <ActivityTimeline
-              label="События плана"
-              items={graph.events.map((event) => ({
-                id: event.sequence,
-                at: event.at,
-                title: event.message
-              }))}
-            />
+            <ol>
+              {graph.events.map((e) => (
+                <li key={e.sequence}>
+                  {new Date(e.at).toLocaleString("ru-RU")} · {e.message}
+                </li>
+              ))}
+            </ol>
             <p className={styles.checkpoint}>
               {checkpoints
                 .map((c) => "v" + c.version + " — " + new Date(c.at).toLocaleString("ru-RU"))

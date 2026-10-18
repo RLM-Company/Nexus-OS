@@ -173,24 +173,6 @@
 .column select {
   max-width: 100px;
 }
-.column {
-  flex-wrap: wrap;
-}
-.column label {
-  flex: 1;
-}
-.column .mappingConnector {
-  color: var(--muted);
-}
-.column .columnSample {
-  flex-basis: 100%;
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-  font: 11px/1.5 var(--font-mono);
-}
 .filters {
   display: grid;
   gap: 8px;
