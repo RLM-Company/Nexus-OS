@@ -5,174 +5,254 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { loadMockSkillCatalog } from "./skills-manifest";
 import styles from "./skills.module.css";
 
-type Draft = { name: string; summary: string; instructions: string };
-type Skill = {
-  id: string;
-  name: string;
-  summary: string;
-  current_version: number;
-  updated_at: string;
-};
-type Revision = Draft & { version: number; created_at: string };
-type Detail = { skill: Skill; versions: Revision[] };
-type SkillPackage = Draft & {
-  format: "kosmora.skill.v1";
-  execution: "disabled";
-  permissions: [];
-  sha256: string;
-};
-const empty: Draft = { name: "", summary: "", instructions: "" };
+import {
+  asDraft,
+  draftKey,
+  emptyDraft,
+  filterSkills,
+  normalizeDraft,
+  type Draft,
+  type Skill,
+  type Revision,
+  type Detail,
+  type SkillPackage
+} from "./skill-model";
+import { skillApi as api, SkillApiError, writeSkillVersion } from "./skill-client";
+import { createSkillPackage, downloadSkillPackage } from "./skill-package";
+import { SkillImport } from "./skill-import";
+import { SkillReview } from "./skill-review";
 const catalog = loadMockSkillCatalog();
-
-const errorLabel = (code: string) =>
-  ({
-    VERSION_CONFLICT:
-      "Другая версия уже сохранена. Откройте инструкцию заново и проверьте изменения.",
-    LIMIT_REACHED: "Достигнут лимит: 50 инструкций или 20 версий одной инструкции.",
-    INVALID_SKILL: "Заполните название, описание и инструкцию без управляющих символов.",
-    OWNER_DATA_FENCED: "Изменения временно заблокированы операцией с данными аккаунта.",
-    NOT_FOUND: "Инструкция или версия больше не существует. Обновите список."
-  })[code] ?? "Не удалось выполнить действие. Попробуйте ещё раз.";
-
-async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const response = await fetch(`/api/v1/owner-skills${path}`, {
-    method,
-    credentials: "same-origin",
-    cache: "no-store",
-    ...(body === undefined
-      ? {}
-      : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  });
-  if (!response.ok) {
-    const error = (await response.json().catch(() => ({}))) as { error?: { code?: string } };
-    throw Error(errorLabel(error.error?.code ?? ""));
-  }
-  return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>);
-}
 
 export default function SkillsPage() {
   const [items, setItems] = useState<Skill[]>([]);
   const [detail, setDetail] = useState<Detail | null>(null);
-  const [draft, setDraft] = useState<Draft>(empty);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [saved, setSaved] = useState(draftKey(emptyDraft()));
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const importInput = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [reviewVersion, setReviewVersion] = useState<number | null>(null);
+  const [uncertainCreation, setUncertainCreation] = useState(false);
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const lock = useRef(false);
+  const generation = useRef(0);
+  const dirty = draftKey(draft) !== saved;
+  const visibleItems = filterSkills(items, query);
   const refresh = useCallback(async () => {
+    const current = generation.current;
     const result = await api<{ items: Skill[] }>("");
-    setItems(result.items);
+    if (current === generation.current) setItems(result.items);
   }, []);
   useEffect(() => {
+    const current = generation.current;
     void refresh()
-      .catch((cause: Error) => setMessage(cause.message))
-      .finally(() => setLoading(false));
+      .catch((cause: Error) => {
+        if (current === generation.current) setMessage(cause.message);
+      })
+      .finally(() => {
+        if (current === generation.current) setLoading(false);
+      });
+    return () => {
+      generation.current++;
+    };
   }, [refresh]);
-  const open = async (id: string) => {
-    setMessage("");
-    try {
-      const value = await api<Detail>(`/${encodeURIComponent(id)}`);
-      setSelected(id);
-      setDetail(value);
-      const latest = value.versions[0];
-      setDraft(
-        latest
-          ? { name: latest.name, summary: latest.summary, instructions: latest.instructions }
-          : empty
-      );
-      setPreview(false);
-    } catch (cause) {
-      setMessage((cause as Error).message);
-    }
-  };
-  const createNew = () => {
-    setSelected(null);
-    setDetail(null);
-    setDraft(empty);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  const accept = (value: Detail) => {
+    const latest = value.versions.find(
+      (version) => version.version === value.skill.current_version
+    );
+    if (!latest)
+      throw Error("Не удалось прочитать актуальную версию. Черновик сохранён в редакторе.");
+    setSelected(value.skill.id);
+    setDetail(value);
+    setDraft(asDraft(latest));
+    setSaved(draftKey(latest));
     setPreview(false);
-    setMessage("");
+    setReviewVersion(null);
   };
-  const run = async (action: () => Promise<void>) => {
+  const discard = () =>
+    !dirty || window.confirm("Есть несохранённые изменения Skill. Заменить черновик?");
+  const run = async (action: (active: () => boolean) => Promise<void>) => {
+    if (lock.current) return false;
+    lock.current = true;
     setBusy(true);
     setMessage("");
+    const current = generation.current;
+    const active = () => current === generation.current;
     try {
-      await action();
-      await refresh();
+      await action(active);
+      return true;
     } catch (cause) {
-      setMessage((cause as Error).message);
+      if (active()) setMessage(cause instanceof Error ? cause.message : String(cause));
+      return false;
     } finally {
-      setBusy(false);
+      lock.current = false;
+      if (active()) setBusy(false);
     }
   };
-  const save = () =>
-    void run(async () => {
-      if (selected && detail) {
-        await api<Skill>(`/${encodeURIComponent(selected)}`, "PUT", {
-          ...draft,
-          expected_version: detail.skill.current_version
-        });
-        await open(selected);
-      } else {
-        const saved = await api<Skill>("", "POST", draft);
-        await open(saved.id);
+  const refreshAfter = async (active: () => boolean) => {
+    try {
+      await refresh();
+    } catch {
+      if (active())
+        setMessage("Действие выполнено, но список не обновился. Нажмите «Обновить список».");
+    }
+  };
+  const open = async (id: string) => {
+    if (lock.current || !discard()) return;
+    await run(async (active) => {
+      const value = await api<Detail>(`/${encodeURIComponent(id)}`);
+      if (active()) {
+        accept(value);
+        if (id === createdId) {
+          setCreatedId(null);
+          setUncertainCreation(false);
+        }
       }
-      setMessage("Версия сохранена.");
     });
-  const restore = (version: number) =>
-    void run(async () => {
-      if (!selected || !detail) return;
-      await api<Skill>(`/${encodeURIComponent(selected)}/restore`, "POST", {
-        expected_version: detail.skill.current_version,
-        source_version: version
-      });
-      await open(selected);
-      setMessage(`Версия ${version} восстановлена как новая версия.`);
+  };
+  const createNew = () => {
+    if (lock.current || !discard()) return;
+    setSelected(null);
+    setDetail(null);
+    setDraft(emptyDraft());
+    setSaved(draftKey(emptyDraft()));
+    setPreview(false);
+    setReviewVersion(null);
+    setMessage("");
+  };
+  const copy = () => {
+    if (lock.current) return;
+    setSelected(null);
+    setDetail(null);
+    setSaved(draftKey(emptyDraft()));
+    setReviewVersion(null);
+    setMessage(
+      "Независимый черновик подготовлен. Сохраните его как новую инструкцию; подключения исходного Skill не копируются."
+    );
+  };
+  const create = async (path: string, body: Draft | SkillPackage, active: () => boolean) => {
+    if (uncertainCreation)
+      throw Error("Сначала проверьте результат предыдущего создания в списке.");
+    setUncertainCreation(true);
+    setCreatedId(null);
+    let savedSkill: Skill;
+    try {
+      savedSkill = await api<Skill>(path, "POST", body);
+    } catch (cause) {
+      if (active() && cause instanceof SkillApiError && cause.status < 500)
+        setUncertainCreation(false);
+      else if (active()) {
+        await refresh().catch(() => {});
+        throw Error(
+          "Ответ на создание не получен. Инструкция могла сохраниться. Проверьте список перед новым созданием.",
+          { cause }
+        );
+      }
+      throw cause;
+    }
+    if (!active()) return;
+    setCreatedId(savedSkill.id);
+    const value = await api<Detail>(`/${encodeURIComponent(savedSkill.id)}`);
+    if (!active()) return;
+    accept(value);
+    setUncertainCreation(false);
+    setCreatedId(null);
+    setMessage("Новая инструкция сохранена.");
+    await refreshAfter(active);
+  };
+  const save = () =>
+    void run(async (active) => {
+      normalizeDraft(draft);
+      if (selected && detail) {
+        const value = await writeSkillVersion(selected, detail.skill.current_version, draft);
+        if (active()) {
+          accept(value);
+          setMessage("Версия сохранена.");
+          await refreshAfter(active);
+        }
+      } else await create("", draft, active);
     });
-  const remove = () =>
-    void run(async () => {
-      if (!selected || !detail || !window.confirm(`Удалить «${detail.skill.name}» и все версии?`))
-        return;
+  const restore = (version: number, expectedVersion: number, reviewedDraft: string) => {
+    if (
+      !selected ||
+      !detail ||
+      detail.skill.current_version !== expectedVersion ||
+      draftKey(draft) !== reviewedDraft
+    )
+      return;
+    const source = detail.versions.find((item) => item.version === version);
+    if (
+      !source ||
+      !window.confirm(
+        `Восстановить версию ${version} как новую? Несохранённый черновик будет заменён.`
+      )
+    )
+      return;
+    void run(async (active) => {
+      const value = await writeSkillVersion(selected, expectedVersion, source, version);
+      if (active()) {
+        accept(value);
+        setMessage(`Версия ${version} восстановлена как новая.`);
+        await refreshAfter(active);
+      }
+    });
+  };
+  const remove = () => {
+    if (
+      !selected ||
+      !detail ||
+      !window.confirm(
+        `Удалить «${detail.skill.name}» и все версии?${dirty ? " Несохранённые правки тоже будут потеряны." : ""}`
+      )
+    )
+      return;
+    void run(async (active) => {
       await api<void>(`/${encodeURIComponent(selected)}`, "DELETE", {
         expected_version: detail.skill.current_version
       });
-      createNew();
-      setMessage("Инструкция удалена.");
-    });
-  const exportSkill = () =>
-    void run(async () => {
-      if (!selected) return;
-      const pack = await api<SkillPackage>(`/${encodeURIComponent(selected)}/package`);
-      const blob = new Blob([JSON.stringify(pack, null, 2) + "\n"], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      try {
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `kosmora-skill-${selected}.json`;
-        link.click();
-      } finally {
-        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      if (active()) {
+        setSelected(null);
+        setDetail(null);
+        setDraft(emptyDraft());
+        setSaved(draftKey(emptyDraft()));
+        setReviewVersion(null);
+        setMessage("Инструкция удалена.");
+        await refreshAfter(active);
       }
     });
-  const importSkill = (file?: File) =>
-    void run(async () => {
-      if (!file) return;
-      if (file.size > 64_000) throw Error("Файл Skill слишком большой (максимум 64 КБ).");
-      let pack: unknown;
-      try {
-        pack = JSON.parse(await file.text());
-      } catch {
-        throw Error("Нужен корректный JSON-пакет Kosmora Skill.");
-      }
-      const saved = await api<Skill>("/import", "POST", pack);
-      await open(saved.id);
-      setMessage("Skill импортирован без прав на выполнение.");
+  };
+  const exportDraft = (value: Draft, name: string) =>
+    void run(async (active) => {
+      const pack = await createSkillPackage(value);
+      if (active()) downloadSkillPackage(pack, name);
     });
+  const importSkill = async (value: SkillPackage) => {
+    if (lock.current || !discard()) return false;
+    return run((active) => create("/import", value, active));
+  };
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
         <header className={styles.header}>
-          <Link className={styles.backLink} href="/">
+          <Link
+            className={styles.backLink}
+            href="/"
+            onClick={(event) => {
+              if (!discard()) event.preventDefault();
+            }}
+          >
             ← Назад в Kosmora
           </Link>
           <div>
@@ -195,40 +275,49 @@ export default function SkillsPage() {
           <aside className={styles.sidebar} aria-label="Мои Skills">
             <div className={styles.sidebarHeader}>
               <h2>Мои Skills</h2>
-              <button type="button" onClick={createNew}>
+              <button type="button" disabled={busy || loading} onClick={createNew}>
                 Новая
               </button>
             </div>
+            <SkillImport
+              busy={busy || loading}
+              blocked={uncertainCreation}
+              onImport={importSkill}
+            />
+            <label className={styles.search}>
+              Поиск Skills
+              <input
+                value={query}
+                maxLength={320}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Название или описание"
+              />
+            </label>
             <button
               type="button"
-              className={styles.importButton}
               disabled={busy}
-              onClick={() => importInput.current?.click()}
+              onClick={() =>
+                void run(async () => {
+                  await refresh();
+                })
+              }
             >
-              Импорт JSON
+              Обновить список
             </button>
-            <input
-              ref={importInput}
-              type="file"
-              accept="application/json,.json"
-              className={styles.fileInput}
-              aria-label="Выберите пакет Skill"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                importSkill(file);
-              }}
-            />
+            <p>
+              {visibleItems.length} из {items.length}
+            </p>
             {loading ? (
               <p>Загрузка…</p>
             ) : items.length === 0 ? (
               <p>Инструкций пока нет.</p>
             ) : (
-              items.map((item) => (
+              visibleItems.map((item) => (
                 <button
                   type="button"
                   key={item.id}
                   className={selected === item.id ? styles.activeSkill : styles.skillRow}
+                  disabled={busy}
                   onClick={() => void open(item.id)}
                 >
                   <strong>{item.name}</strong>
@@ -240,16 +329,62 @@ export default function SkillsPage() {
           <section className={styles.editor} aria-label="Редактор Skill">
             <div className={styles.editorHeading}>
               <h2>{selected ? "Редактирование" : "Новая инструкция"}</h2>
-              <span>{detail ? `v${detail.skill.current_version}` : "Черновик"}</span>
+              <span>
+                {detail ? `v${detail.skill.current_version}` : "Черновик"} ·{" "}
+                {dirty ? "Не сохранено" : "Без изменений"}
+              </span>
             </div>
             {message && (
               <p role="status" className={styles.message}>
                 {message}
               </p>
             )}
+            {uncertainCreation && (
+              <section className={styles.preview} aria-label="Проверка создания">
+                <p>
+                  Проверьте список: предыдущая инструкция могла сохраниться. Автоматического повтора
+                  не будет.
+                </p>
+                {createdId ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      if (!discard()) return;
+                      void run(async (active) => {
+                        const value = await api<Detail>(`/${encodeURIComponent(createdId)}`);
+                        if (active()) {
+                          accept(value);
+                          setCreatedId(null);
+                          setUncertainCreation(false);
+                        }
+                      });
+                    }}
+                  >
+                    Открыть созданную инструкцию
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Вы проверили список и убедились, что предыдущая инструкция не создана? Новая попытка может создать копию."
+                        )
+                      )
+                        setUncertainCreation(false);
+                    }}
+                  >
+                    Проверил список — разрешить новое создание
+                  </button>
+                )}
+              </section>
+            )}
             <label>
               Название
               <input
+                disabled={busy || loading}
                 value={draft.name}
                 maxLength={80}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
@@ -259,6 +394,7 @@ export default function SkillsPage() {
             <label>
               Краткое описание
               <input
+                disabled={busy || loading}
                 value={draft.summary}
                 maxLength={240}
                 onChange={(event) => setDraft({ ...draft, summary: event.target.value })}
@@ -268,6 +404,7 @@ export default function SkillsPage() {
             <label>
               Инструкция
               <textarea
+                disabled={busy || loading}
                 value={draft.instructions}
                 maxLength={20_000}
                 onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}
@@ -276,15 +413,42 @@ export default function SkillsPage() {
               />
             </label>
             <div className={styles.actions}>
-              <button type="button" disabled={busy || loading} onClick={save}>
+              <button
+                type="button"
+                disabled={busy || loading || !dirty || (!selected && uncertainCreation)}
+                onClick={save}
+              >
                 Сохранить версию
               </button>
               <button type="button" disabled={busy} onClick={() => setPreview(!preview)}>
                 {preview ? "Скрыть предпросмотр" : "Предпросмотр"}
               </button>
+              <button
+                type="button"
+                disabled={busy || loading}
+                onClick={() => exportDraft(draft, "kosmora-skill-draft")}
+              >
+                Скачать черновик
+              </button>
               {selected && (
-                <button type="button" disabled={busy} onClick={exportSkill}>
-                  Скачать пакет
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async (active) => {
+                      const pack = await api<SkillPackage>(
+                        `/${encodeURIComponent(selected)}/package`
+                      );
+                      if (active()) downloadSkillPackage(pack, "kosmora-skill-saved");
+                    })
+                  }
+                >
+                  Скачать сохранённый пакет
+                </button>
+              )}
+              {selected && (
+                <button type="button" disabled={busy} onClick={copy}>
+                  Копировать в новый черновик
                 </button>
               )}
               {selected && (
@@ -300,6 +464,21 @@ export default function SkillsPage() {
                 <pre>{draft.instructions}</pre>
               </section>
             )}
+            {detail &&
+              reviewVersion !== null &&
+              detail.versions.find((value) => value.version === reviewVersion) && (
+                <SkillReview
+                  id={detail.skill.id}
+                  currentVersion={detail.skill.current_version}
+                  draft={draft}
+                  revision={detail.versions.find((value) => value.version === reviewVersion)!}
+                  busy={busy}
+                  onRestore={restore}
+                  onDownload={(revision: Revision) =>
+                    exportDraft(revision, `kosmora-skill-v${revision.version}`)
+                  }
+                />
+              )}
             {detail && (
               <section className={styles.history} aria-label="История версий">
                 <h3>История версий</h3>
@@ -310,10 +489,10 @@ export default function SkillsPage() {
                     </span>
                     <button
                       type="button"
-                      disabled={busy || revision.version === detail.skill.current_version}
-                      onClick={() => restore(revision.version)}
+                      disabled={busy}
+                      onClick={() => setReviewVersion(revision.version)}
                     >
-                      Восстановить
+                      Посмотреть версию {revision.version}
                     </button>
                   </div>
                 ))}
