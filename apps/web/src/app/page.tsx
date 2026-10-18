@@ -2446,7 +2446,7 @@ export default function Home() {
             <InstallApp />
             {surface === "manager" && (
               <ChatHistoryActions
-                key={activeLocalChat?.id ?? activeProject?.id ?? "new-chat"}
+                key={`${activeLocalChat?.id ?? activeProject?.id ?? "new-chat"}:${activeLocalChat?.title ?? activeProject?.title ?? ""}`}
                 id={activeProject ? null : (activeLocalChat?.id ?? null)}
                 title={activeProject?.title ?? activeLocalChat?.title ?? "Новый чат"}
                 messages={activeProject ? messages : localChatMessages}
