@@ -45,6 +45,22 @@ export class AccountStore {
   /** Deliberately separate from the main Drizzle migration journal: integrator may apply SQL in its own migration. */
   migrate(): void {
     this.sqlite.exec(ACCOUNT_MIGRATION_SQL);
+    this.sqlite.exec(
+      "CREATE TABLE IF NOT EXISTS kosmora_reasoning_preferences (owner_id TEXT PRIMARY KEY, effort TEXT CHECK (effort IN ('low','medium','high')));"
+    );
+  }
+  getReasoning(owner: string): "low" | "medium" | "high" | null {
+    const row = this.sqlite
+      .prepare("SELECT effort FROM kosmora_reasoning_preferences WHERE owner_id=?")
+      .get(owner) as { effort: "low" | "medium" | "high" | null } | undefined;
+    return row?.effort ?? null;
+  }
+  setReasoning(owner: string, effort: "low" | "medium" | "high" | null): void {
+    this.sqlite
+      .prepare(
+        "INSERT INTO kosmora_reasoning_preferences(owner_id,effort) VALUES(?,?) ON CONFLICT(owner_id) DO UPDATE SET effort=excluded.effort"
+      )
+      .run(owner, effort);
   }
   get(owner: string): AccountPreferences {
     const row = this.sqlite

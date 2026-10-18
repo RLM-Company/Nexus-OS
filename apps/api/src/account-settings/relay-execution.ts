@@ -124,6 +124,12 @@ export class RelayExecution {
     const relay = this.store.getRelay(owner, chatId);
     const adjusted = {
       ...request,
+      constraints: {
+        ...request.constraints,
+        ...(this.store.getReasoning(owner)
+          ? { reasoning_effort: this.store.getReasoning(owner)! }
+          : {})
+      },
       routing: {
         ...request.routing,
         optimize_for: preference.optimize_for,

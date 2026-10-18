@@ -529,6 +529,37 @@ describe("ModelGateway", () => {
 });
 
 describe("OpenAICompatibleAdapter", () => {
+  it.each(["low", "medium", "high"] as const)(
+    "passes native reasoning effort %s without changing the token limit",
+    async (effort) => {
+      let sent: Record<string, unknown> = {};
+      const adapter = new OpenAICompatibleAdapter({
+        id: "fixture",
+        baseUrl: "https://provider.example/v1",
+        apiKey: "fixture-key",
+        model: "gpt-5.1",
+        fetchImplementation: (_url, init) => {
+          if (typeof init?.body !== "string") throw new Error("Expected JSON body");
+          sent = JSON.parse(init.body) as Record<string, unknown>;
+          return Promise.resolve(
+            new Response(
+              'data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+            )
+          );
+        }
+      });
+      await collectProvider(
+        adapter.stream(
+          request({
+            constraints: { timeout_ms: 1000, max_output_tokens: 500, reasoning_effort: effort }
+          }),
+          new AbortController().signal
+        )
+      );
+      expect(sent.reasoning_effort).toBe(effort);
+      expect(sent.max_tokens).toBe(500);
+    }
+  );
   it("parses text, usage and model from an SSE response", async () => {
     let authorization = "";
     const adapter = new OpenAICompatibleAdapter({

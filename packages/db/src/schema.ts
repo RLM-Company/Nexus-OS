@@ -418,6 +418,9 @@ export const generalChats = sqliteTable(
     id: text("id").primaryKey(),
     ownerId: text("owner_id").notNull(),
     title: text("title").notNull(),
+    mode: text("mode", { enum: ["kosmora", "work", "coscode"] })
+      .notNull()
+      .default("kosmora"),
     archived: integer("archived").notNull().default(0),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()

@@ -53,6 +53,52 @@ const routeFixture = async () => {
   return { app, store };
 };
 describe("owner account settings", () => {
+  it("saves supported native reasoning independently of Relay and isolates owners", async () => {
+    const store = await fixture();
+    const app = Fastify();
+    apps.push(app);
+    registerAccountRoutes(
+      app,
+      store,
+      () => ({ ...LOCAL_DEVELOPMENT_IDENTITY, owner_id: "owner", actor_id: "owner" }),
+      { provider: "fixture", model: "gpt-5.1", capabilities: { streaming: true } }
+    );
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/api/v1/personal-settings/reasoning",
+      payload: { effort: "high" }
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(store.getReasoning("owner")).toBe("high");
+    expect(store.getReasoning("other")).toBeNull();
+    expect(store.get("owner").relay_enabled).toBe(false);
+    store.update("owner", preferenceUpdate);
+    expect(store.getReasoning("owner")).toBe("high");
+    const settings = await app.inject({ method: "GET", url: "/api/v1/personal-settings" });
+    expect(settings.json<{ reasoning: unknown }>().reasoning).toEqual({
+      effort: "high",
+      supported_efforts: ["low", "medium", "high"]
+    });
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: "/api/v1/personal-settings/reasoning",
+          payload: { effort: "ultra" }
+        })
+      ).statusCode
+    ).toBe(400);
+    const { app: unsupported } = await routeFixture();
+    expect(
+      (
+        await unsupported.inject({
+          method: "PUT",
+          url: "/api/v1/personal-settings/reasoning",
+          payload: { effort: "low" }
+        })
+      ).statusCode
+    ).toBe(400);
+  });
   it("accepts real HTTP updates with null model defaults without coercing them to strings", async () => {
     const { app, store } = await routeFixture();
     const response = await app.inject({

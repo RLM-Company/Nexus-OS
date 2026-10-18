@@ -1,0 +1,143 @@
+/* Only the owner's explicit composer/sidebar corrections of 18 October 2026. */
+.product-shell {
+  --sidebar-icon-size: 18px;
+  --sidebar-heading-size: 12px;
+  --sidebar-label-size: 13px;
+  --sidebar-caption-size: 11px;
+}
+.product-shell .sidebar :is(.sidebar-tool, .projects-heading, .new-project, .account-trigger) > svg,
+.product-shell .sidebar .new-project > span > svg,
+.product-shell .sidebar .coscode-space-tools svg {
+  width: var(--sidebar-icon-size);
+  height: var(--sidebar-icon-size);
+  flex-shrink: 0;
+}
+.product-shell .sidebar .projects-heading {
+  font-size: var(--sidebar-heading-size);
+  font-weight: 550;
+}
+.product-shell .sidebar :is(.sidebar-tool, .new-project, .project-item strong) {
+  font-size: var(--sidebar-label-size);
+}
+.product-shell .sidebar .project-item strong {
+  font-weight: 450;
+}
+.product-shell .sidebar .project-item small {
+  font-size: var(--sidebar-caption-size);
+}
+.product-shell .sidebar .pinnable-navigation-item:has(details[open]) {
+  z-index: 75;
+}
+.product-shell .sidebar .pinnable-navigation-item {
+  position: relative;
+}
+.coscode-space-tools {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.coscode-space-tools a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: var(--sidebar-label-size);
+  border-radius: 8px;
+}
+.coscode-space-tools a:hover {
+  background: var(--surface);
+}
+.product-shell .chat-search-trigger {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.product-shell .chat-search-trigger:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.chat-search-trigger svg {
+  width: 18px;
+  height: 18px;
+}
+.product-shell .composer {
+  padding: 15px 14px 11px;
+  border-radius: 22px;
+}
+.product-shell .composer textarea {
+  min-height: 62px;
+  font-size: 15px;
+  line-height: 1.55;
+  padding: 2px 4px 8px;
+}
+.product-shell .composer-controls {
+  align-items: center;
+  gap: 8px;
+}
+.product-shell .composer-tools {
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 5px;
+}
+.product-shell .composer-footer {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+.product-shell .chat-attachment-picker .attachment-clip {
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+}
+.product-shell .chat-attachment-picker .attachment-clip svg {
+  width: 20px;
+  height: 20px;
+}
+.product-shell .composer-send-control > button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+.product-shell .composer-send-control > button > svg {
+  width: 20px;
+  height: 20px;
+}
+@media (max-width: 600px) {
+  .product-shell .composer-tools [data-model-picker] > div {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    width: auto;
+    max-height: min(440px, 65dvh);
+  }
+  .product-shell .composer {
+    padding: 12px 10px 9px;
+  }
+  .product-shell .composer textarea {
+    min-height: 56px;
+  }
+  .product-shell .composer-send-control > button {
+    width: 40px;
+    height: 40px;
+  }
+  .product-shell .chat-attachment-picker .attachment-clip {
+    width: 38px;
+    height: 38px;
+  }
+  .product-shell .composer-tools [data-model-picker] summary {
+    max-width: min(160px, 39vw);
+    padding: 5px 4px;
+  }
+}

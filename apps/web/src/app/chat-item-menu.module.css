@@ -1,0 +1,75 @@
+.menu {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.menu summary {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  list-style: none;
+  cursor: pointer;
+  color: var(--muted);
+}
+.menu summary::-webkit-details-marker {
+  display: none;
+}
+.menu summary:hover,
+.menu[open] summary {
+  background: var(--surface);
+  color: var(--text);
+}
+.menu summary svg {
+  width: 18px;
+  height: 18px;
+}
+.panel {
+  position: absolute;
+  top: 31px;
+  right: 0;
+  width: 216px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  border-radius: 12px;
+  box-shadow: var(--shadow-popover);
+  z-index: 70;
+}
+.panel button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.panel button:hover {
+  background: var(--surface);
+}
+.panel p {
+  margin: 6px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.panel label {
+  display: grid;
+  gap: 7px;
+  padding: 6px;
+  font-size: 12px;
+}
+.panel input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px;
+  background: var(--bg);
+  color: var(--text);
+}

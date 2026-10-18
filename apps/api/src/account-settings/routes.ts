@@ -38,11 +38,42 @@ export function registerAccountRoutes(
   identityFor: (request: FastifyRequest) => IdentityContext,
   model: { provider: string; model: string; capabilities: Record<string, boolean> }
 ): void {
+  const supportedEfforts = /^(gpt-[56]|o[1-9])/i.test(model.model) ? ["low", "medium", "high"] : [];
+  app.put(
+    "/api/v1/personal-settings/reasoning",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        body: Type.Object(
+          {
+            effort: Type.Union([
+              Type.Null(),
+              Type.Literal("low"),
+              Type.Literal("medium"),
+              Type.Literal("high")
+            ])
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    async (request, reply) => {
+      const { effort } = request.body as { effort: "low" | "medium" | "high" | null };
+      if (effort !== null && !supportedEfforts.includes(effort))
+        return reply.code(400).send(replyError("Selected model does not support reasoning effort"));
+      store.setReasoning(identityFor(request).owner_id, effort);
+      return { effort, supported_efforts: supportedEfforts };
+    }
+  );
   app.get("/api/v1/personal-settings", (request) =>
     Promise.resolve({
       settings: store.get(identityFor(request).owner_id),
       available_models: [model],
-      relay_default: false
+      relay_default: false,
+      reasoning: {
+        effort: store.getReasoning(identityFor(request).owner_id),
+        supported_efforts: supportedEfforts
+      }
     })
   );
   app.put(

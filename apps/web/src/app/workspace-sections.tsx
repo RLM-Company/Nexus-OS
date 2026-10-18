@@ -11,6 +11,10 @@ import { SpeechStudio } from "./voice/voice-playback";
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 
 export type ToolSurface =
+  | "research"
+  | "presentations"
+  | "sites"
+  | "games"
   | "work"
   | "code"
   | "multi-agent"
@@ -24,21 +28,27 @@ export type ToolSurface =
   | "features"
   | "settings";
 export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }[] = [
-  { id: "work", label: "Work", description: "Проекты и результаты" },
-  { id: "code", label: "Code", description: "Задачи разработки" },
-  { id: "multi-agent", label: "Мультиагент", description: "Команда и роли" },
+  { id: "work", label: "Kosmora Work", description: "Проекты и результаты" },
+  { id: "code", label: "Coscode", description: "Задачи разработки" },
+  { id: "multi-agent", label: "Multi-Agent", description: "Команда и роли" },
   { id: "skills", label: "Skills", description: "Навыки и специализации" },
   { id: "studio", label: "Kosmora Studio", description: "Изображения, видео и звук" },
-  { id: "files", label: "Крупные файлы", description: "Документы, данные и код" },
+  { id: "files", label: "Анализ файлов", description: "Документы, данные и код" },
   { id: "images", label: "Изображения", description: "Кадр, стиль и композиция" },
   { id: "video", label: "Видео", description: "Сцена и движение" },
   { id: "sound", label: "Sound", description: "Голос, музыка и атмосфера" },
+  { id: "research", label: "Deep Research", description: "Поиск, источники и отчёты" },
+  { id: "presentations", label: "Презентации", description: "Слайды и PPTX" },
+  { id: "sites", label: "Сайты", description: "Идея, структура и реализация" },
+  { id: "games", label: "Games", description: "Механика и прототипы игр" },
   { id: "apps", label: "Приложения", description: "Внешние сервисы" },
   { id: "features", label: "Возможности", description: "Что уже работает и что появится" },
   { id: "settings", label: "Настройки", description: "Ваше пространство" }
 ];
 export const STUDIO_ITEMS = TOOL_ITEMS.filter((item) =>
-  ["files", "images", "video", "sound"].includes(item.id)
+  ["files", "images", "video", "sound", "research", "presentations", "sites", "games"].includes(
+    item.id
+  )
 );
 export type UiPreferences = { compact: boolean; largeText: boolean };
 type OwnerSessionView = {
@@ -838,6 +848,26 @@ function Studio({ onNavigate }: Props) {
       description: "Задайте звучание, темп и атмосферу.",
       action: "Открыть редактор",
       status: "Редактор промпта"
+    },
+    research: {
+      description: "Исследуйте тему с источниками и отчётом.",
+      action: "Открыть Deep Research",
+      status: "Поиск и отчёты"
+    },
+    presentations: {
+      description: "Соберите слайды и экспортируйте PPTX.",
+      action: "Открыть презентации",
+      status: "Слайды"
+    },
+    sites: {
+      description: "Подготовьте структуру и задачу на создание сайта.",
+      action: "Создать сайт",
+      status: "Проектирование"
+    },
+    games: {
+      description: "Опишите механику и подготовьте задачу на прототип игры.",
+      action: "Создать игру",
+      status: "Прототипирование"
     }
   } as const;
   return (
@@ -896,7 +926,7 @@ function Team({ agentStudioHref, controlCenterHref, activeProjectId, onNavigate 
       <Header
         icon="multi-agent"
         eyebrow="У каждого своя задача"
-        title="Мультиагент"
+        title="Multi-Agent"
         action={
           <ActionLink primary href={agentStudioHref}>
             Настроить команду
@@ -1137,8 +1167,8 @@ function Features({ onNavigate }: Props) {
         `${item.title} ${item.description} ${item.area}`.toLocaleLowerCase("ru").includes(search))
   );
   const current = [
-    { id: "work", label: "Work", detail: "Проекты и ход работы", icon: "work" },
-    { id: "code", label: "Code", detail: "Черновик задачи разработки", icon: "code" },
+    { id: "work", label: "Kosmora Work", detail: "Проекты и ход работы", icon: "work" },
+    { id: "code", label: "Coscode", detail: "Черновик задачи разработки", icon: "code" },
     { id: "studio", label: "Studio", detail: "Редакторы промптов", icon: "studio" }
   ] as const;
   return (
@@ -1464,6 +1494,51 @@ function Settings({
   );
 }
 
+function StudioBuild({
+  surface,
+  onCompose
+}: {
+  surface: "sites" | "games";
+  onCompose: Props["onCompose"];
+}) {
+  const [brief, setBrief] = useState("");
+  const game = surface === "games";
+  return (
+    <>
+      <Header icon={surface} eyebrow="Kosmora Studio" title={game ? "Games" : "Сайты"}>
+        {game ? "От механики до игрового прототипа." : "От идеи до рабочего сайта."}
+      </Header>
+      <form
+        className={styles.note}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (brief.trim())
+            onCompose(
+              `${game ? "Помоги создать браузерную игру" : "Помоги создать сайт"}. Задача: ${brief.trim()}\nСначала подготовь структуру, затем код и план проверки. Не заявляй о выполнении запуска или публикации без реальной проверки.`
+            );
+        }}
+      >
+        <label htmlFor="studio-build-brief">
+          {game ? "Идея и механика игры" : "Задача и содержание сайта"}
+        </label>
+        <textarea
+          id="studio-build-brief"
+          rows={5}
+          value={brief}
+          onChange={(e) => setBrief(e.target.value)}
+          maxLength={10000}
+          placeholder={
+            game ? "Жанр, управление, цель игрока…" : "Для кого сайт, страницы, функции…"
+          }
+        />
+        <button type="submit" disabled={!brief.trim()}>
+          Продолжить с Kosmora
+        </button>
+      </form>
+    </>
+  );
+}
+
 export function WorkspaceSections(props: Props) {
   let content: ReactNode;
   switch (props.surface) {
@@ -1496,6 +1571,30 @@ export function WorkspaceSections(props: Props) {
           onProjectAvailable={props.onDataProjectAvailable}
         />
       );
+      break;
+    case "research":
+    case "presentations":
+      content = (
+        <Header
+          icon={props.surface}
+          eyebrow="Kosmora Studio"
+          title={props.surface === "research" ? "Deep Research" : "Презентации"}
+          action={
+            <ActionLink
+              primary
+              href={props.surface === "research" ? "/research-workspace" : "/presentations"}
+            >
+              Открыть
+            </ActionLink>
+          }
+        >
+          Рабочий инструмент Studio.
+        </Header>
+      );
+      break;
+    case "sites":
+    case "games":
+      content = <StudioBuild surface={props.surface} onCompose={props.onCompose} />;
       break;
     case "apps":
       content = <Apps {...props} />;

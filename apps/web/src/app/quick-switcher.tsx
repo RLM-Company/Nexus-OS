@@ -8,6 +8,7 @@ type Destination = { id: string; title: string };
 type Result = { key: string; label: string; group: string; run: () => void };
 
 export function QuickSwitcher({
+  hiddenTrigger = false,
   chats,
   projects,
   onNewChat,
@@ -15,6 +16,7 @@ export function QuickSwitcher({
   onOpenProject,
   onNavigate
 }: {
+  hiddenTrigger?: boolean;
   chats: Destination[];
   projects: Destination[];
   onNewChat: () => void;
@@ -116,6 +118,8 @@ export function QuickSwitcher({
     <>
       <button
         ref={trigger}
+        hidden={hiddenTrigger}
+        style={hiddenTrigger ? { display: "none" } : undefined}
         type="button"
         className={styles.trigger}
         aria-label="Быстрый переход"

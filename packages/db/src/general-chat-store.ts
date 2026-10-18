@@ -32,6 +32,7 @@ export class ChatBranchValidationError extends Error {}
 export interface StoredGeneralChat {
   id: string;
   title: string;
+  mode: "kosmora" | "work" | "coscode";
   created_at: string;
   updated_at: string;
 }
@@ -143,7 +144,7 @@ export class GeneralChatStore {
   ): Array<StoredGeneralChat & { last_message_preview: string | null }> {
     return this.#sqlite
       .prepare(
-        `SELECT c.id, c.title, c.created_at, c.updated_at,
+        `SELECT c.id, c.title, c.mode, c.created_at, c.updated_at,
           (SELECT substr(content, 1, 240) FROM general_chat_messages m
            WHERE m.chat_id = c.id ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1)
            AS last_message_preview
@@ -158,7 +159,7 @@ export class GeneralChatStore {
   getChat(chatId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChat | null {
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, created_at, updated_at FROM general_chats WHERE id = ? AND owner_id = ?"
+        "SELECT id, title, mode, created_at, updated_at FROM general_chats WHERE id = ? AND owner_id = ?"
       )
       .get(chatId, ownerId) as SqlRow | undefined;
     return row ? asChat(row) : null;
@@ -391,9 +392,9 @@ export class GeneralChatStore {
       const title = `${stem.slice(0, 130)} · вариант ${family.items.length}`;
       this.#sqlite
         .prepare(
-          "INSERT INTO general_chats(id,owner_id,title,created_at,updated_at) VALUES(?,?,?,?,?)"
+          "INSERT INTO general_chats(id,owner_id,title,mode,created_at,updated_at) VALUES(?,?,?,?,?,?)"
         )
-        .run(input.client_branch_id, ownerId, title, createdAt, createdAt);
+        .run(input.client_branch_id, ownerId, title, parent.mode, createdAt, createdAt);
       const copy = this.#sqlite.prepare(
         `INSERT INTO general_chat_messages(id,chat_id,owner_id,role,content_type,content,attachments_json,status,run_id,error_code,created_at,updated_at)
          VALUES(?,?,?,?,'text',?,?,?,NULL,?,?,?)`
@@ -455,16 +456,35 @@ export class GeneralChatStore {
     }
   }
 
+  deleteChat(chatId: string, ownerId: string): boolean {
+    if (!this.getChat(chatId, ownerId)) return false;
+    if (
+      this.#sqlite
+        .prepare(
+          "SELECT 1 FROM general_chat_runs WHERE chat_id=? AND status IN ('queued','running')"
+        )
+        .get(chatId)
+    )
+      throw new GeneralChatBusyError();
+    this.#sqlite
+      .prepare("DELETE FROM general_chats WHERE id=? AND owner_id=?")
+      .run(chatId, ownerId);
+    return true;
+  }
+
   createChat(
     initialMessage: string,
     clientMessageId: string,
     ownerId = LOCAL_OWNER_ID,
-    attachments: ChatAttachment[] = []
+    attachments: ChatAttachment[] = [],
+    mode: StoredGeneralChat["mode"] = "kosmora"
   ): AcceptedGeneralChatMessage {
     assertAttachments(attachments);
+    if (!["kosmora", "work", "coscode"].includes(mode)) throw new Error("Invalid chat mode");
     const existing = this.findByClientMessageId(clientMessageId, ownerId);
     if (existing) {
       if (
+        existing.chat.mode !== mode ||
         existing.userMessage.content !== initialMessage ||
         !sameAttachments(existing.userMessage, attachments)
       )
@@ -478,9 +498,9 @@ export class GeneralChatStore {
     try {
       this.#sqlite
         .prepare(
-          "INSERT INTO general_chats (id, owner_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+          "INSERT INTO general_chats (id, owner_id, title, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
         )
-        .run(chatId, ownerId, titleFor(initialMessage), createdAt, createdAt);
+        .run(chatId, ownerId, titleFor(initialMessage), mode, createdAt, createdAt);
       const accepted = this.#insertMessage(
         chatId,
         initialMessage,

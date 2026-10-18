@@ -83,6 +83,9 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
         })),
         ...(request.tools ? { tools: request.tools, tool_choice: "auto" } : {}),
         max_tokens: request.constraints.max_output_tokens,
+        ...(request.constraints.reasoning_effort && /^(gpt-[56]|o[1-9])/i.test(this.#model)
+          ? { reasoning_effort: request.constraints.reasoning_effort }
+          : {}),
         stream: true,
         stream_options: { include_usage: true }
       }),

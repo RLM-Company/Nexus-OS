@@ -60,7 +60,9 @@ test("composer order, hidden Relay/search, top-right settings and mobile fit", a
   await expect(page.locator(".topbar").getByLabel("Настройки чата", { exact: true })).toBeVisible();
   const model = await page.getByLabel("Выбор модели").boundingBox();
   const mic = await page.getByLabel("Голосовой ввод", { exact: true }).boundingBox();
-  const send = await page.getByRole("button", { name: "Отправить", exact: true }).boundingBox();
+  const send = await page
+    .getByRole("button", { name: "Открыть голосового помощника", exact: true })
+    .boundingBox();
   expect(model!.x + model!.width).toBeLessThan(mic!.x);
   expect(mic!.x + mic!.width).toBeLessThanOrEqual(send!.x + 4);
   await page.getByLabel("Настройки чата", { exact: true }).click();
@@ -82,17 +84,15 @@ test("composer order, hidden Relay/search, top-right settings and mobile fit", a
   await page.screenshot({ path: "../../qa/kosmora-composer-revised-mobile.png", fullPage: true });
 });
 
-test("right click switches empty send to assistant without recording or submitting", async ({
-  page
-}) => {
+test("empty composer opens assistant without recording or submitting", async ({ page }) => {
   await speechFixture(page);
   let posts = 0;
   page.on("request", (request) => {
-    if (request.method() === "POST") posts++;
+    if (request.method() === "POST" && /\/api\/v1\/(chats|projects)(?:[/?]|$)/.test(request.url()))
+      posts++;
   });
   await page.goto("/");
   await expect(page.getByLabel("Сообщение Kosmora")).toBeEnabled();
-  await page.getByLabel("Отправить", { exact: true }).click({ button: "right", force: true });
   const voice = page.getByRole("button", { name: "Открыть голосового помощника", exact: true });
   await expect(voice).toBeEnabled();
   await voice.click();
@@ -102,8 +102,8 @@ test("right click switches empty send to assistant without recording or submitti
   ).toBe(0);
   expect(posts).toBe(0);
   await page.getByRole("button", { name: "Вернуться в чат" }).click();
-  await voice.press("Shift+F10");
-  await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeDisabled();
+  await page.getByLabel("Сообщение Kosmora").fill("Текст меняет основную кнопку");
+  await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled();
 });
 
 test("speech turn sends once, names the real chat and speaks only its new answer", async ({
@@ -139,16 +139,17 @@ test("closing a recording suppresses late recognition and keeps an existing draf
   await speechFixture(page, 500);
   let posts = 0;
   page.on("request", (request) => {
-    if (request.method() === "POST") posts++;
+    if (request.method() === "POST" && /\/api\/v1\/(chats|projects)(?:[/?]|$)/.test(request.url()))
+      posts++;
   });
   await page.goto("/");
   await expect(page.getByLabel("Сообщение Kosmora")).toBeEnabled();
-  await page.getByLabel("Отправить", { exact: true }).click({ button: "right", force: true });
   await page.getByLabel("Открыть голосового помощника", { exact: true }).click();
   await page.getByRole("button", { name: "Говорить", exact: true }).click();
   await page.getByRole("button", { name: "Вернуться в чат" }).click();
   await page.getByLabel("Сообщение Kosmora").fill("Мой сохранённый черновик");
-  await page.getByLabel("Открыть голосового помощника", { exact: true }).click();
+  await page.getByLabel("Настройки чата", { exact: true }).click();
+  await page.getByRole("button", { name: "Голосовой помощник", exact: true }).click();
   await expect(page.getByRole("button", { name: "Говорить", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Вернуться в чат" }).click();
   await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Мой сохранённый черновик");

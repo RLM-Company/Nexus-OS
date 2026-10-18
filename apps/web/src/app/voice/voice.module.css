@@ -30,10 +30,15 @@
   display: grid;
   place-items: center;
   cursor: pointer;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   color: var(--muted);
+}
+.voiceMenu > summary svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.7;
 }
 .voiceMenu > summary::-webkit-details-marker {
   display: none;

@@ -12,9 +12,10 @@ import {
 } from "./workspace-sections";
 
 const WORKSPACE_MODES = [
-  { id: "manager", label: "Чат", icon: "chats", description: "Диалоги и идеи" },
-  { id: "work", label: "Work", icon: "work", description: "Задачи и материалы" },
-  { id: "code", label: "Code", icon: "code", description: "Код и репозитории" }
+  { id: "manager", label: "Kosmora", icon: "chats", description: "Диалоги и идеи" },
+  { id: "work", label: "Kosmora Work", icon: "work", description: "Задачи и материалы" },
+  { id: "code", label: "Coscode", icon: "code", description: "Код и репозитории" },
+  { id: "multi-agent", label: "Multi-Agent", icon: "multi-agent", description: "Команда и роли" }
 ] as const;
 
 type Surface = "manager" | ToolSurface;
@@ -28,7 +29,7 @@ export function WorkspaceModeMenu({
 }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const id = useId();
-  const mode = ["manager", "work", "code"].includes(surface) ? surface : null;
+  const mode = ["manager", "work", "code", "multi-agent"].includes(surface) ? surface : null;
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
       if (ref.current?.open && event.target instanceof Node && !ref.current.contains(event.target))
@@ -54,7 +55,7 @@ export function WorkspaceModeMenu({
         <span className="brand-mark">
           <Icon name="cosmora" />
         </span>
-        <span className="brand-name">Kosmora</span>
+        <span className="brand-name">{surface === "code" ? "Coscode" : "Kosmora"}</span>
         <svg className="brand-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
             d="m7 10 5 5 5-5"
@@ -89,48 +90,6 @@ export function WorkspaceModeMenu({
             {mode === item.id && <Icon name="check" />}
           </button>
         ))}
-        <div className={styles.utilities}>
-          <Link
-            href="/research-workspace"
-            className={styles.row}
-            aria-label="Глубокий поиск и отчёты"
-            onClick={() => {
-              if (ref.current) ref.current.open = false;
-            }}
-          >
-            <Icon name="search" />
-            <span>
-              <strong>Исследования</strong>
-              <small>Поиск, источники и отчёты</small>
-            </span>
-          </Link>
-          <Link
-            href="/presentations"
-            className={styles.row}
-            onClick={() => {
-              if (ref.current) ref.current.open = false;
-            }}
-          >
-            <Icon name="studio" />
-            <span>
-              <strong>Презентации</strong>
-              <small>Слайды и PPTX</small>
-            </span>
-          </Link>
-          <Link
-            href="/notifications"
-            className={styles.row}
-            onClick={() => {
-              if (ref.current) ref.current.open = false;
-            }}
-          >
-            <Icon name="bell" />
-            <span>
-              <strong>Уведомления</strong>
-              <small>Work и исследования</small>
-            </span>
-          </Link>
-        </div>
       </nav>
     </details>
   );
@@ -353,7 +312,8 @@ export function MobileNavigation({
           </section>
           <div className="drawer-links">
             {TOOL_ITEMS.filter(
-              (item) => !["work", "code", "files", "images", "video", "sound"].includes(item.id)
+              (item) =>
+                !["work", "code", "multi-agent", ...STUDIO_ITEMS.map((i) => i.id)].includes(item.id)
             ).map((item) => (
               <button
                 type="button"
@@ -378,14 +338,6 @@ export function MobileNavigation({
                   {item.label}
                 </button>
               ))}
-              <Link href="/presentations" className={styles.row} onClick={close}>
-                <Icon name="studio" />
-                Презентации
-              </Link>
-              <Link href="/notifications" className={styles.row} onClick={close}>
-                <Icon name="bell" />
-                Уведомления
-              </Link>
             </div>
           </section>
           <section>

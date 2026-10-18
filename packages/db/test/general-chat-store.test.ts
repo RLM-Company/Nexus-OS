@@ -1,12 +1,39 @@
 import { describe, expect, it } from "vitest";
 import {
   GeneralChatStore,
+  GeneralChatBusyError,
   IdempotencyConflictError,
   openDatabase,
   runMigrations
 } from "../src/index.js";
 
 describe("GeneralChatStore", () => {
+  it("persists workspace modes, rejects cross-mode idempotency and guards deletion", async () => {
+    const database = openDatabase(":memory:");
+    try {
+      await runMigrations(database);
+      const store = new GeneralChatStore(database.sqlite);
+      const created = store.createChat("Coding task", "mode-test", "owner-a", [], "coscode");
+      const work = store.createChat("Work task", "work-mode-test", "owner-a", [], "work");
+      expect(new GeneralChatStore(database.sqlite).getChat(created.chat.id, "owner-a")?.mode).toBe(
+        "coscode"
+      );
+      expect(store.listChats("owner-a").map((c) => c.mode)).toEqual(
+        expect.arrayContaining(["coscode", "work"])
+      );
+      expect(() => store.createChat("Coding task", "mode-test", "owner-a", [], "kosmora")).toThrow(
+        IdempotencyConflictError
+      );
+      expect(store.deleteChat(created.chat.id, "owner-b")).toBe(false);
+      expect(() => store.deleteChat(created.chat.id, "owner-a")).toThrow(GeneralChatBusyError);
+      store.cancelRun(created.run.id, "owner-a");
+      expect(store.deleteChat(created.chat.id, "owner-a")).toBe(true);
+      expect(store.listMessages(created.chat.id, "owner-a")).toEqual([]);
+      expect(store.getChat(work.chat.id, "owner-a")?.mode).toBe("work");
+    } finally {
+      database.close();
+    }
+  });
   it("persists files across store reloads, isolates owners and includes them in idempotency", async () => {
     const database = openDatabase(":memory:");
     try {

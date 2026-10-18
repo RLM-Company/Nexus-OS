@@ -80,7 +80,7 @@ export function VoiceOrb({ active, label }: { active: boolean; label: string }) 
   );
 }
 
-/** Reads and writes the existing account preference; no speculative models or reasoning levels. */
+/** Only configured models and server-supported effort values are selectable. */
 export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
   type Preferences = Record<string, unknown> & {
     version: number;
@@ -88,9 +88,13 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
     preferred_model: string | null;
   };
   type Route = { provider: string; model: string; capabilities: { streaming?: boolean } };
-  const [data, setData] = useState<{ settings: Preferences; available_models: Route[] } | null>(
-    null
-  );
+  type Effort = "low" | "medium" | "high";
+  const [query, setQuery] = useState("");
+  const [data, setData] = useState<{
+    settings: Preferences;
+    available_models: Route[];
+    reasoning?: { effort: Effort | null; supported_efforts: Effort[] };
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const menu = useRef<HTMLDetailsElement>(null);
@@ -172,6 +176,27 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
       setBusy(false);
     }
   };
+  const setEffort = async (effort: Effort | null) => {
+    if (!data || busy || disabled) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/v1/personal-settings/reasoning", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ effort })
+      });
+      if (!response.ok) throw new Error();
+      const reasoning = (await response.json()) as NonNullable<
+        NonNullable<typeof data>["reasoning"]
+      >;
+      setData((current) => (current ? { ...current, reasoning } : current));
+    } catch {
+      setError("Усилия не изменены. Повторите выбор.");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <details className={styles.modelPicker} ref={menu} data-model-picker>
       <summary
@@ -182,12 +207,32 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
         }}
         aria-disabled={disabled || busy}
       >
-        <span className={styles.modelBall} aria-hidden="true" />
-        <span>{busy ? "Сохраняю…" : (data?.settings.preferred_model ?? "Модель")}</span>
-        <span aria-hidden="true">⌄</span>
+        <span>
+          {busy
+            ? "Сохраняю…"
+            : (data?.settings.preferred_model ?? data?.available_models[0]?.model ?? "Модель")}
+        </span>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="m8 10 4 4 4-4"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </summary>
       <div id={id} className={styles.modelMenu}>
-        <strong>Модель для новых запросов</strong>
+        <strong>Модель</strong>
+        <label className={styles.modelSearch}>
+          <WorkspaceIcon name="search" />
+          <input
+            aria-label="Найти модель"
+            placeholder="Найти модель…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
         <button
           type="button"
           disabled={!data || disabled || busy}
@@ -197,7 +242,13 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
           По умолчанию
         </button>
         {data?.available_models
-          .filter((route) => route.capabilities.streaming)
+          .filter(
+            (route) =>
+              route.capabilities.streaming &&
+              `${route.model} ${route.provider}`
+                .toLocaleLowerCase()
+                .includes(query.trim().toLocaleLowerCase())
+          )
           .map((route) => (
             <button
               type="button"
@@ -217,6 +268,35 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
             </button>
           ))}
         {!data && <p>Настройки пока недоступны. Используется модель сервера.</p>}
+        <section className={styles.effortSection} aria-label="Усилия модели">
+          <strong>Усилия</strong>
+          <div className={styles.effortLevels} role="radiogroup" aria-label="Уровень усилий">
+            {([null, "low", "medium", "high"] as const).map((effort) => (
+              <button
+                type="button"
+                key={effort ?? "auto"}
+                role="radio"
+                aria-checked={(data?.reasoning?.effort ?? null) === effort}
+                disabled={
+                  !data?.reasoning ||
+                  disabled ||
+                  busy ||
+                  (effort !== null && !data.reasoning.supported_efforts.includes(effort))
+                }
+                onClick={() => void setEffort(effort)}
+              >
+                {effort === null
+                  ? "Авто"
+                  : { low: "Низкие", medium: "Средние", high: "Высокие" }[effort]}
+              </button>
+            ))}
+          </div>
+          <small>
+            {data?.reasoning?.supported_efforts.length
+              ? "Больше усилий — глубже проработка и дольше ответ."
+              : "Уровень усилий определяется выбранной моделью."}
+          </small>
+        </section>
         {error && <p role="alert">{error}</p>}
         <a href="/personal-settings">Все настройки модели</a>
       </div>
