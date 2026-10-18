@@ -1,6 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import type {
   IntelligenceGraphRevisionInfo,
+  IntelligenceGraphImportReceipt,
+  IntelligenceGraphImportResult,
   IntelligenceGraphWorkspace,
   IntelligenceGraphWorkspaceRepository
 } from "@cosmora/contracts";
@@ -36,35 +38,94 @@ export class SqliteIntelligenceGraphWorkspaceRepository implements IntelligenceG
   create(record: IntelligenceGraphWorkspace): IntelligenceGraphWorkspace | null {
     return this.inTransaction(() => {
       if (!this.projectExists(record.owner_id, record.project_id)) return null;
-      this.sqlite
-        .prepare(
-          `INSERT INTO intelligence_graph_workspaces
+      this.insert(record);
+      return structuredClone(record);
+    });
+  }
+
+  private insert(record: IntelligenceGraphWorkspace): void {
+    this.sqlite
+      .prepare(
+        `INSERT INTO intelligence_graph_workspaces
             (graph_id, owner_id, project_id, title, revision, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          record.graph_id,
-          record.owner_id,
-          record.project_id,
-          record.title,
-          record.revision,
-          record.created_at,
-          record.updated_at
-        );
-      this.sqlite
-        .prepare(
-          `INSERT INTO intelligence_graph_workspace_revisions
+      )
+      .run(
+        record.graph_id,
+        record.owner_id,
+        record.project_id,
+        record.title,
+        record.revision,
+        record.created_at,
+        record.updated_at
+      );
+    this.sqlite
+      .prepare(
+        `INSERT INTO intelligence_graph_workspace_revisions
             (graph_id, revision, snapshot_json, summary, restored_from_revision, created_at)
            VALUES (?, ?, ?, ?, NULL, ?)`
+      )
+      .run(
+        record.graph_id,
+        record.revision,
+        JSON.stringify(record),
+        "Graph created",
+        record.created_at
+      );
+  }
+
+  getImportReceipt(
+    ownerId: string,
+    projectId: string,
+    creationKey: string
+  ): IntelligenceGraphImportReceipt | null {
+    if (!this.projectExists(ownerId, projectId)) return null;
+    return (
+      (this.sqlite
+        .prepare(
+          `SELECT creation_key, package_sha256, graph_id FROM intelligence_graph_import_receipts
+      WHERE owner_id=? AND project_id=? AND creation_key=?`
+        )
+        .get(ownerId, projectId, creationKey) as IntelligenceGraphImportReceipt | undefined) ?? null
+    );
+  }
+
+  createImported(
+    record: IntelligenceGraphWorkspace,
+    creationKey: string,
+    packageSha256: string
+  ): IntelligenceGraphImportResult | null {
+    return this.inTransaction(() => {
+      if (!this.projectExists(record.owner_id, record.project_id)) return null;
+      const receipt = this.getImportReceipt(record.owner_id, record.project_id, creationKey);
+      if (receipt) {
+        if (receipt.package_sha256 !== packageSha256) return { kind: "conflict" };
+        const existing = receipt.graph_id
+          ? this.get(record.owner_id, record.project_id, receipt.graph_id)
+          : null;
+        return existing ? { kind: "replayed", graph: existing } : { kind: "deleted" };
+      }
+      const count = this.sqlite
+        .prepare(
+          "SELECT count(*) AS total FROM intelligence_graph_import_receipts WHERE owner_id=? AND project_id=?"
+        )
+        .get(record.owner_id, record.project_id) as { total: number };
+      if (count.total >= 1000) return { kind: "limit" };
+      this.insert(record);
+      this.sqlite
+        .prepare(
+          `INSERT INTO intelligence_graph_import_receipts(owner_id,project_id,creation_key,package_sha256,graph_id,created_at)
+        VALUES(?,?,?,?,?,?)`
         )
         .run(
+          record.owner_id,
+          record.project_id,
+          creationKey,
+          packageSha256,
           record.graph_id,
-          record.revision,
-          JSON.stringify(record),
-          "Graph created",
           record.created_at
         );
-      return structuredClone(record);
+      return { kind: "created", graph: structuredClone(record) };
     });
   }
 

@@ -35,6 +35,16 @@ export interface IntelligenceGraphRevisionInfo {
 /** Every implementation must enforce owner AND project on every read and write. */
 export interface IntelligenceGraphWorkspaceRepository {
   create(record: IntelligenceGraphWorkspace): IntelligenceGraphWorkspace | null;
+  getImportReceipt(
+    ownerId: string,
+    projectId: string,
+    creationKey: string
+  ): IntelligenceGraphImportReceipt | null;
+  createImported(
+    record: IntelligenceGraphWorkspace,
+    creationKey: string,
+    packageSha256: string
+  ): IntelligenceGraphImportResult | null;
   get(ownerId: string, projectId: string, graphId: string): IntelligenceGraphWorkspace | null;
   list(ownerId: string, projectId: string, limit: number): IntelligenceGraphWorkspace[];
   getRevision(
@@ -55,3 +65,14 @@ export interface IntelligenceGraphWorkspaceRepository {
     summary: string
   ): IntelligenceGraphWorkspace | null;
 }
+
+export interface IntelligenceGraphImportReceipt {
+  creation_key: string;
+  package_sha256: string;
+  graph_id: string | null;
+}
+export type IntelligenceGraphImportResult =
+  | { kind: "created" | "replayed"; graph: IntelligenceGraphWorkspace }
+  | { kind: "conflict" }
+  | { kind: "deleted" }
+  | { kind: "limit" };

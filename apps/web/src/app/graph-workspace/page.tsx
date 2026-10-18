@@ -9,6 +9,11 @@ import {
 } from "@cosmora/contracts";
 import { compareGraphRevisions } from "./revision-diff";
 import { IntelligenceGraphView } from "./graph-view";
+import {
+  parseGraphImportAttempt,
+  graphImportAttemptSlot,
+  type GraphImportAttempt
+} from "./import-attempt";
 
 const digest = async (text: string) =>
   [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))]
@@ -85,8 +90,19 @@ const request = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(url, { ...init, headers });
   if (!response.ok) {
     if (response.status === 404) throw new Error("Граф не найден либо функция ещё не подключена.");
-    if (response.status === 409)
+    if (response.status === 409) {
+      const failure: unknown = await response.json().catch(() => null);
+      if (
+        failure &&
+        typeof failure === "object" &&
+        "error" in failure &&
+        failure.error === "IMPORT_KEY_CONFLICT"
+      )
+        throw new Error("Этот ключ импорта уже связан с другим JSON.");
       throw new Error("Версия графа изменилась. Обновите его перед сохранением.");
+    }
+    if (response.status === 410)
+      throw new Error("Импортированный граф удалён. Этот ключ не создаст его заново.");
     if (response.status === 401 || response.status === 403)
       throw new Error("Требуется вход владельца.");
     if (response.status === 400) throw new Error("Проверьте введённые данные.");
@@ -119,7 +135,10 @@ export default function GraphWorkspacePage() {
     package: IntelligenceGraphPortablePackage;
     sha256: string;
     projectId: string;
+    creation_key: string;
   } | null>(null);
+  const [storageCorrupt, setStorageCorrupt] = useState(false);
+  const [pendingImport, setPendingImport] = useState<GraphImportAttempt | null>(null);
   const [importReviewed, setImportReviewed] = useState(false);
   const [importUncertain, setImportUncertain] = useState(false);
   const [restorePreview, setRestorePreview] = useState<{
@@ -135,6 +154,24 @@ export default function GraphWorkspacePage() {
     const id = new URLSearchParams(window.location.search).get("projectId") ?? "";
     setProjectId(id);
   }, []);
+  useEffect(() => {
+    if (!projectId) {
+      setPendingImport(null);
+      return;
+    }
+    setStorageCorrupt(false);
+    try {
+      setPendingImport(
+        parseGraphImportAttempt(sessionStorage.getItem(graphImportAttemptSlot(projectId)))
+      );
+    } catch {
+      setPendingImport(null);
+      setStorageCorrupt(true);
+      setNotice(
+        "Сохранённая попытка импорта недоступна. Проверьте список графов перед новым импортом."
+      );
+    }
+  }, [projectId]);
   const root = `/api/v1/projects/${encodeURIComponent(projectId)}/intelligence-graphs`;
   const graphUrl = selected ? `${root}/${encodeURIComponent(selected.graph_id)}` : "";
   const labels = new Map(
@@ -305,7 +342,7 @@ export default function GraphWorkspacePage() {
           type="file"
           accept=".json,application/json"
           aria-label="Импорт графа JSON"
-          disabled={busy || !projectId.trim() || importUncertain}
+          disabled={busy || !projectId.trim()}
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
             event.currentTarget.value = "";
@@ -321,7 +358,17 @@ export default function GraphWorkspacePage() {
               );
               const portable = parseIntelligenceGraphPackage(text);
               const sha256 = await digest(JSON.stringify(portable));
-              setImportPreview({ package: portable, sha256, projectId: targetProject });
+              if (pendingImport && pendingImport.sha256 !== sha256)
+                throw new Error(
+                  "Выберите исходный JSON незавершённой попытки либо сначала проверьте её результат."
+                );
+              setImportUncertain(false);
+              setImportPreview({
+                package: portable,
+                sha256,
+                projectId: targetProject,
+                creation_key: pendingImport?.creation_key ?? crypto.randomUUID()
+              });
             });
           }}
         />
@@ -347,30 +394,47 @@ export default function GraphWorkspacePage() {
             <button
               style={button}
               disabled={
-                busy || importUncertain || !importReviewed || importPreview.projectId !== projectId
+                busy ||
+                storageCorrupt ||
+                importUncertain ||
+                !importReviewed ||
+                importPreview.projectId !== projectId
               }
               onClick={() =>
                 void run(async () => {
+                  const attempt = {
+                    creation_key: importPreview.creation_key,
+                    sha256: importPreview.sha256
+                  };
+                  const slot = graphImportAttemptSlot(projectId);
+                  sessionStorage.setItem(slot, JSON.stringify(attempt));
+                  if (sessionStorage.getItem(slot) !== JSON.stringify(attempt))
+                    throw new Error("Не удалось сохранить ключ до отправки импорта.");
+                  setPendingImport(attempt);
                   setImportUncertain(true);
+                  let created: Graph;
                   try {
-                    const created = await request<Graph>(root + "/import", {
+                    created = await request<Graph>(root + "/import", {
                       method: "POST",
                       body: JSON.stringify({
                         package: importPreview.package,
-                        expected_sha256: importPreview.sha256
+                        expected_sha256: importPreview.sha256,
+                        creation_key: importPreview.creation_key
                       })
                     });
-                    setImportUncertain(false);
-                    setImportPreview(null);
-                    setImportReviewed(false);
-                    setSelected(created);
-                    await load(projectId, created.graph_id);
                   } catch (error) {
                     setNotice(
                       "Ответ импорта не подтверждён. Проверьте список графов перед новым импортом."
                     );
                     throw error;
                   }
+                  sessionStorage.removeItem(slot);
+                  setPendingImport(null);
+                  setImportUncertain(false);
+                  setImportPreview(null);
+                  setImportReviewed(false);
+                  setSelected(created);
+                  await load(projectId, created.graph_id);
                 })
               }
             >
@@ -383,7 +447,7 @@ export default function GraphWorkspacePage() {
                 if (
                   importUncertain &&
                   !window.confirm(
-                    "Ответ мог потеряться после создания. Вы проверили список графов? Повторный импорт может создать копию."
+                    "Закрыть только предпросмотр? Ключ сохранится; результат можно проверить без повторной записи."
                   )
                 )
                   return;
@@ -396,10 +460,88 @@ export default function GraphWorkspacePage() {
             </button>
             {importUncertain && (
               <p role="alert">
-                Результат импорта неизвестен. Откройте список графов; автоматического повтора нет.
-                Перед перезагрузкой проверьте список.
+                Результат импорта неизвестен. Проверьте сохранённый ключ ниже. Автоматического
+                повтора записи нет.
               </p>
             )}
+          </div>
+        )}
+        {storageCorrupt && (
+          <p role="alert">
+            Не удалось прочитать сохранённый ключ.
+            <button
+              style={button}
+              disabled={busy}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "Локальный ключ недоступен. Вы проверили список графов перед очисткой?"
+                  )
+                )
+                  return;
+                try {
+                  sessionStorage.removeItem(graphImportAttemptSlot(projectId));
+                  setStorageCorrupt(false);
+                } catch {
+                  setNotice("Хранилище вкладки недоступно.");
+                }
+              }}
+            >
+              Очистить недоступную локальную запись
+            </button>
+          </p>
+        )}
+        {pendingImport && (
+          <div role="status">
+            <h3>Незавершённая попытка импорта</h3>
+            <p style={{ overflowWrap: "anywhere" }}>
+              Ключ: {pendingImport.creation_key}. SHA-256: {pendingImport.sha256}.
+            </p>
+            <p>
+              Ключ переживает перезагрузку этой вкладки. Текст JSON не хранится: для явного повтора
+              выберите исходный файл. Повтор с тем же ключом вернёт тот же граф.
+            </p>
+            <button
+              style={button}
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const recovered = await request<{ graph: Graph; sha256: string }>(
+                    root + "/imports/" + encodeURIComponent(pendingImport.creation_key)
+                  );
+                  if (recovered.sha256 !== pendingImport.sha256)
+                    throw new Error("Хеш сохранённой попытки не совпал.");
+                  sessionStorage.removeItem(graphImportAttemptSlot(projectId));
+                  setPendingImport(null);
+                  setImportPreview(null);
+                  setImportReviewed(false);
+                  setImportUncertain(false);
+                  setSelected(recovered.graph);
+                  await load(projectId, recovered.graph.graph_id);
+                })
+              }
+            >
+              Проверить результат импорта
+            </button>
+            <button
+              style={button}
+              disabled={busy}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "Забыть только локальный ключ? Уже созданный граф останется на сервере. Перед новым импортом проверьте список."
+                  )
+                )
+                  return;
+                sessionStorage.removeItem(graphImportAttemptSlot(projectId));
+                setPendingImport(null);
+                setImportPreview(null);
+                setImportReviewed(false);
+                setImportUncertain(false);
+              }}
+            >
+              Забыть локальную попытку
+            </button>
           </div>
         )}
         {selected && (

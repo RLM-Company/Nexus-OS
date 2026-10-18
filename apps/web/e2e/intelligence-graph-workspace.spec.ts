@@ -182,3 +182,61 @@ test("map navigation distinguishes directed paths from reverse traversal", async
   await page.getByRole("button", { name: "Увеличить граф", exact: true }).click();
   await expect(page.getByText("125%", { exact: true })).toBeVisible();
 });
+
+test("import receipt survives reload and recovery only reads without a second POST", async ({
+  page
+}) => {
+  const initial = graph();
+  let imports = 0,
+    sha256 = "";
+  await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/import")) {
+      imports++;
+      sha256 = (route.request().postDataJSON() as { expected_sha256: string }).expected_sha256;
+      await route.abort("failed");
+    } else
+      await route.fulfill({
+        json: path.includes("/imports/")
+          ? { graph: initial, sha256 }
+          : path.endsWith("/revisions")
+            ? { items: [] }
+            : path.endsWith("/graph-a")
+              ? initial
+              : { items: [initial] }
+      });
+  });
+  await page.goto("/graph-workspace?projectId=project-a");
+  await page.getByLabel("Импорт графа JSON").setInputFiles({
+    name: "graph.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        format: "kosmora.intelligence-graph.v1",
+        title: "Import once",
+        nodes: [],
+        edges: []
+      })
+    )
+  });
+  await page.getByRole("checkbox", { name: "Текст и связи просмотрены" }).check();
+  await page.getByRole("button", { name: "Создать отдельный граф", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Незавершённая попытка импорта", exact: true })
+  ).toBeVisible();
+  expect(imports).toBe(1);
+  const stored = await page.evaluate(() =>
+    sessionStorage.getItem("kosmora.graph-import.v1:project-a")
+  );
+  expect(stored).not.toContain("Import once");
+  expect(stored).toContain("creation_key");
+  await page.reload();
+  await page.getByRole("button", { name: "Проверить результат импорта", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { level: 2 }).filter({ hasText: "Проект знаний" })
+  ).toBeVisible();
+  expect(imports).toBe(1);
+  expect(
+    await page.evaluate(() => sessionStorage.getItem("kosmora.graph-import.v1:project-a"))
+  ).toBeNull();
+});

@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { IntelligenceGraphWorkspaceService } from "@cosmora/core";
 import type {
   IntelligenceGraphRevisionInfo,
+  IntelligenceGraphImportReceipt,
+  IntelligenceGraphImportResult,
   IntelligenceGraphWorkspace,
   IntelligenceGraphWorkspaceRepository
 } from "@cosmora/contracts";
@@ -12,6 +14,33 @@ import { registerIntelligenceGraphWorkspaceRoutes } from "../src/intelligence-gr
 class MemoryStore implements IntelligenceGraphWorkspaceRepository {
   snapshots = new Map<string, IntelligenceGraphWorkspace>();
   history = new Map<string, IntelligenceGraphWorkspace[]>();
+  imports = new Map<string, IntelligenceGraphImportReceipt>();
+  getImportReceipt(owner: string, project: string, key: string) {
+    return this.imports.get(`${owner}|${project}|${key}`) ?? null;
+  }
+  createImported(
+    record: IntelligenceGraphWorkspace,
+    key: string,
+    sha256: string
+  ): IntelligenceGraphImportResult | null {
+    const receipt = this.getImportReceipt(record.owner_id, record.project_id, key);
+    if (receipt) {
+      if (receipt.package_sha256 !== sha256) return { kind: "conflict" };
+      const existing = receipt.graph_id
+        ? this.get(record.owner_id, record.project_id, receipt.graph_id)
+        : null;
+      return existing ? { kind: "replayed", graph: existing } : { kind: "deleted" };
+    }
+    const graph = this.create(record);
+    if (!graph) return null;
+    this.imports.set(`${record.owner_id}|${record.project_id}|${key}`, {
+      creation_key: key,
+      package_sha256: sha256,
+      graph_id: graph.graph_id
+    });
+    return { kind: "created", graph };
+  }
+
   create(record: IntelligenceGraphWorkspace) {
     this.snapshots.set(record.graph_id, structuredClone(record));
     this.history.set(record.graph_id, [structuredClone(record)]);
@@ -328,3 +357,79 @@ describe("graph authoring and transport HTTP", () => {
     }
   });
 });
+
+testImportRecovery();
+function testImportRecovery() {
+  describe("import receipt HTTP recovery", () => {
+    it("replays one graph and exposes scoped read-only recovery with no duplicate history", async () => {
+      const { app, store } = setup(true);
+      const root = "/api/v1/projects/project-a/intelligence-graphs";
+      try {
+        const portable = {
+          format: "kosmora.intelligence-graph.v1",
+          title: "Exactly once",
+          nodes: [],
+          edges: []
+        };
+        const packet = (
+          await app.inject({
+            method: "POST",
+            url: root + "/import/preview",
+            payload: { package: portable }
+          })
+        ).json<{ package: unknown; sha256: string }>();
+        const payload = {
+          package: packet.package,
+          expected_sha256: packet.sha256,
+          creation_key: "attempt_0123456789abcdef"
+        };
+        const first = await app.inject({ method: "POST", url: root + "/import", payload });
+        expect(first.statusCode).toBe(201);
+        const second = await app.inject({ method: "POST", url: root + "/import", payload });
+        expect(second.statusCode).toBe(201);
+        expect(second.json<IntelligenceGraphWorkspace>().graph_id).toBe(
+          first.json<IntelligenceGraphWorkspace>().graph_id
+        );
+        expect(store.snapshots.size).toBe(1);
+        const receipt = await app.inject({
+          method: "GET",
+          url: root + "/imports/" + payload.creation_key
+        });
+        expect(receipt.statusCode).toBe(200);
+        expect(receipt.headers["cache-control"]).toBe("no-store");
+        expect(receipt.json<{ sha256: string }>().sha256).toBe(packet.sha256);
+        const missing = await app.inject({
+          method: "GET",
+          url: root + "/imports/unknown_0123456789abcdef"
+        });
+        expect(missing.statusCode).toBe(404);
+        const changed = (
+          await app.inject({
+            method: "POST",
+            url: root + "/import/preview",
+            payload: { package: { ...portable, title: "Different" } }
+          })
+        ).json<{ sha256: string }>();
+        expect(
+          (
+            await app.inject({
+              method: "POST",
+              url: root + "/import",
+              payload: {
+                ...payload,
+                package: { ...portable, title: "Different" },
+                expected_sha256: changed.sha256
+              }
+            })
+          ).statusCode
+        ).toBe(409);
+        store.snapshots.delete(first.json<IntelligenceGraphWorkspace>().graph_id);
+        expect(
+          (await app.inject({ method: "POST", url: root + "/import", payload })).statusCode
+        ).toBe(410);
+      } finally {
+        await app.close();
+      }
+    });
+  });
+}
