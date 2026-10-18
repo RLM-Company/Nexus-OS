@@ -77,3 +77,106 @@ describe("graph history on durable SQLite", () => {
     }
   });
 });
+
+const recoveryProposal = readFileSync(
+  new URL("../../../docs/handoff/INTELLIGENCE_GRAPH_IMPORT_RECOVERY_PROPOSAL.sql", import.meta.url),
+  "utf8"
+);
+
+describe("durable import receipts", () => {
+  const packet = {
+    format: "kosmora.intelligence-graph.v1",
+    title: "Receipt",
+    nodes: [],
+    edges: []
+  };
+  const key = "attempt_0123456789abcdef";
+  it("survives reopen, keeps tombstones and fences receipt owners/projects", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graph-receipt-")),
+      filename = join(dir, "receipts.sqlite");
+    let db = new DatabaseSync(filename);
+    try {
+      db.exec(
+        "PRAGMA foreign_keys=ON; CREATE TABLE projects(id TEXT PRIMARY KEY,owner_id TEXT,status TEXT); INSERT INTO projects VALUES('project-a','owner-a','ACTIVE'),('project-b','owner-b','ACTIVE')"
+      );
+      db.exec(proposal);
+      db.exec(recoveryProposal);
+      const service = new IntelligenceGraphWorkspaceService(
+        new SqliteIntelligenceGraphWorkspaceRepository(db)
+      );
+      const preview = service.previewImport(packet);
+      const first = service.importPackage("owner-a", "project-a", packet, preview.sha256, key);
+      db.close();
+      db = new DatabaseSync(filename);
+      db.exec("PRAGMA foreign_keys=ON");
+      const store = new SqliteIntelligenceGraphWorkspaceRepository(db),
+        reopened = new IntelligenceGraphWorkspaceService(store);
+      expect(reopened.recoverImport("owner-a", "project-a", key).graph.graph_id).toBe(
+        first.graph_id
+      );
+      expect(
+        reopened.importPackage("owner-a", "project-a", packet, preview.sha256, key).graph_id
+      ).toBe(first.graph_id);
+      expect(store.getImportReceipt("owner-b", "project-a", key)).toBeNull();
+      expect(store.getImportReceipt("owner-a", "project-b", key)).toBeNull();
+      db.prepare("DELETE FROM intelligence_graph_workspaces WHERE graph_id=?").run(first.graph_id);
+      expect(store.getImportReceipt("owner-a", "project-a", key)?.graph_id).toBeNull();
+      expect(() => reopened.recoverImport("owner-a", "project-a", key)).toThrow("deleted");
+      expect(() =>
+        reopened.importPackage("owner-a", "project-a", packet, preview.sha256, key)
+      ).toThrow("deleted");
+      expect(store.list("owner-a", "project-a", 20)).toEqual([]);
+      db.prepare("DELETE FROM projects WHERE id='project-a'").run();
+      expect(
+        (
+          db.prepare("SELECT count(*) AS total FROM intelligence_graph_import_receipts").get() as {
+            total: number;
+          }
+        ).total
+      ).toBe(0);
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it("rolls back graph and revision on receipt failure and enforces the receipt quota", () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      db.exec(
+        "PRAGMA foreign_keys=ON; CREATE TABLE projects(id TEXT PRIMARY KEY,owner_id TEXT,status TEXT); INSERT INTO projects VALUES('project-a','owner-a','ACTIVE')"
+      );
+      db.exec(proposal);
+      db.exec(recoveryProposal);
+      const store = new SqliteIntelligenceGraphWorkspaceRepository(db),
+        service = new IntelligenceGraphWorkspaceService(store),
+        preview = service.previewImport(packet);
+      db.exec(
+        "CREATE TRIGGER fail_import BEFORE INSERT ON intelligence_graph_import_receipts BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END"
+      );
+      expect(() =>
+        service.importPackage("owner-a", "project-a", packet, preview.sha256, key)
+      ).toThrow("injected");
+      expect(store.list("owner-a", "project-a", 20)).toEqual([]);
+      expect(
+        (
+          db
+            .prepare("SELECT count(*) AS total FROM intelligence_graph_workspace_revisions")
+            .get() as { total: number }
+        ).total
+      ).toBe(0);
+      db.exec("DROP TRIGGER fail_import");
+      const insert = db.prepare(
+        "INSERT INTO intelligence_graph_import_receipts VALUES('owner-a','project-a',?,?,NULL,'2026-10-18T00:00:00Z')"
+      );
+      db.exec("BEGIN");
+      for (let i = 0; i < 1000; i++) insert.run("saved_attempt_key_" + i, preview.sha256);
+      db.exec("COMMIT");
+      expect(() =>
+        service.importPackage("owner-a", "project-a", packet, preview.sha256, key)
+      ).toThrow("limit");
+      expect(store.list("owner-a", "project-a", 20)).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});

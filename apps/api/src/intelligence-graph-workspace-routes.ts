@@ -83,7 +83,9 @@ const handleFailure = (reply: FastifyReply, error: unknown) => {
     BAD_INPUT: 400,
     NOT_FOUND: 404,
     REVISION_CONFLICT: 409,
-    GRAPH_LIMIT: 413
+    GRAPH_LIMIT: 413,
+    IMPORT_KEY_CONFLICT: 409,
+    IMPORT_DELETED: 410
   }[error.code];
   return reply.status(status).send({ error: error.code, message: error.message });
 };
@@ -314,7 +316,8 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
           body: Type.Object(
             {
               package: Type.Unknown(),
-              expected_sha256: Type.String({ pattern: "^[a-f0-9]{64}$" })
+              expected_sha256: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+              creation_key: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9_-]{16,128}$" }))
             },
             { additionalProperties: false }
           )
@@ -331,7 +334,37 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
                 owner,
                 request.params.projectId,
                 request.body.package,
-                request.body.expected_sha256
+                request.body.expected_sha256,
+                request.body.creation_key
+              )
+            );
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/imports/:creationKey",
+      {
+        schema: {
+          params: Type.Object(
+            { projectId: Id, creationKey: Type.String({ pattern: "^[A-Za-z0-9_-]{16,128}$" }) },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return reply
+            .header("Cache-Control", "no-store")
+            .send(
+              dependencies.service.recoverImport(
+                owner,
+                request.params.projectId,
+                request.params.creationKey
               )
             );
         } catch (error) {

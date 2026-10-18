@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type {
   IntelligenceGraphRevisionInfo,
+  IntelligenceGraphImportReceipt,
+  IntelligenceGraphImportResult,
   IntelligenceGraphWorkspace,
   IntelligenceGraphWorkspaceRepository
 } from "@cosmora/contracts";
@@ -15,6 +17,33 @@ class MemoryRepository implements IntelligenceGraphWorkspaceRepository {
   private key(owner: string, project: string, graph: string) {
     return `${owner}|${project}|${graph}`;
   }
+  imports = new Map<string, IntelligenceGraphImportReceipt>();
+  getImportReceipt(owner: string, project: string, key: string) {
+    return this.imports.get(`${owner}|${project}|${key}`) ?? null;
+  }
+  createImported(
+    record: IntelligenceGraphWorkspace,
+    key: string,
+    sha256: string
+  ): IntelligenceGraphImportResult | null {
+    const receipt = this.getImportReceipt(record.owner_id, record.project_id, key);
+    if (receipt) {
+      if (receipt.package_sha256 !== sha256) return { kind: "conflict" };
+      const existing = receipt.graph_id
+        ? this.get(record.owner_id, record.project_id, receipt.graph_id)
+        : null;
+      return existing ? { kind: "replayed", graph: existing } : { kind: "deleted" };
+    }
+    const graph = this.create(record);
+    if (!graph) return null;
+    this.imports.set(`${record.owner_id}|${record.project_id}|${key}`, {
+      creation_key: key,
+      package_sha256: sha256,
+      graph_id: graph.graph_id
+    });
+    return { kind: "created", graph };
+  }
+
   create(record: IntelligenceGraphWorkspace) {
     if (record.owner_id !== "owner-a" || record.project_id !== "project-a") return null;
     const key = this.key(record.owner_id, record.project_id, record.graph_id);
@@ -511,5 +540,41 @@ describe("portable workspace lifecycle", () => {
       "NOT_FOUND"
     );
     expect(service.list("owner-a", "project-a")).toEqual([]);
+  });
+});
+
+describe("reviewed import receipts", () => {
+  it("returns the same graph on retries, including after later edits, and rejects changed payloads", () => {
+    const { service } = suite();
+    const packet = service.previewImport({
+      format: "kosmora.intelligence-graph.v1",
+      title: "Once",
+      nodes: [],
+      edges: []
+    });
+    const key = "attempt_0123456789abcdef";
+    const first = service.importPackage("owner-a", "project-a", packet.package, packet.sha256, key);
+    const edited = service.edit("owner-a", "project-a", first.graph_id, 1, {
+      kind: "rename",
+      title: "Later"
+    });
+    expect(
+      service.importPackage("owner-a", "project-a", packet.package, packet.sha256, key)
+    ).toEqual(edited);
+    expect(service.recoverImport("owner-a", "project-a", key)).toEqual({
+      graph: edited,
+      sha256: packet.sha256
+    });
+    expect(service.list("owner-a", "project-a")).toHaveLength(1);
+    const other = service.previewImport({ ...packet.package, title: "Other" });
+    expectCode(
+      () => service.importPackage("owner-a", "project-a", other.package, other.sha256, key),
+      "IMPORT_KEY_CONFLICT"
+    );
+    expectCode(() => service.recoverImport("owner-b", "project-a", key), "NOT_FOUND");
+    expectCode(
+      () => service.importPackage("owner-a", "project-a", packet.package, packet.sha256, "bad"),
+      "BAD_INPUT"
+    );
   });
 });

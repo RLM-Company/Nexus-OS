@@ -43,7 +43,13 @@ export type IntelligenceGraphEdit =
 
 export class IntelligenceGraphWorkspaceError extends Error {
   constructor(
-    readonly code: "BAD_INPUT" | "NOT_FOUND" | "REVISION_CONFLICT" | "GRAPH_LIMIT",
+    readonly code:
+      | "BAD_INPUT"
+      | "NOT_FOUND"
+      | "REVISION_CONFLICT"
+      | "GRAPH_LIMIT"
+      | "IMPORT_KEY_CONFLICT"
+      | "IMPORT_DELETED",
     message: string
   ) {
     super(message);
@@ -405,7 +411,8 @@ export class IntelligenceGraphWorkspaceService {
     ownerId: string,
     projectId: string,
     input: unknown,
-    expectedSha256: string
+    expectedSha256: string,
+    creationKey?: string
   ): IntelligenceGraphWorkspace {
     const preview = this.previewImport(input);
     if (preview.sha256 !== expectedSha256)
@@ -475,7 +482,43 @@ export class IntelligenceGraphWorkspaceService {
       graph.edges.push(edge);
     }
     ensureLimits(graph);
-    return this.repository.create(graph) ?? this.notFound();
+    if (creationKey === undefined) return this.repository.create(graph) ?? this.notFound();
+    this.importKey(creationKey);
+    const result = this.repository.createImported(graph, creationKey, preview.sha256);
+    if (!result) return this.notFound();
+    if (result.kind === "conflict")
+      throw new IntelligenceGraphWorkspaceError(
+        "IMPORT_KEY_CONFLICT",
+        "Import key belongs to different reviewed content"
+      );
+    if (result.kind === "deleted")
+      throw new IntelligenceGraphWorkspaceError(
+        "IMPORT_DELETED",
+        "Imported graph was deleted; retry cannot recreate it"
+      );
+    if (result.kind === "limit")
+      throw new IntelligenceGraphWorkspaceError("GRAPH_LIMIT", "Import receipt limit reached");
+    return result.graph;
+  }
+
+  private importKey(key: string): void {
+    if (typeof key !== "string" || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return invalid("Invalid import creation key");
+  }
+
+  recoverImport(ownerId: string, projectId: string, creationKey: string) {
+    this.importKey(creationKey);
+    const receipt = this.repository.getImportReceipt(ownerId, projectId, creationKey);
+    if (!receipt) return this.notFound();
+    if (!receipt.graph_id)
+      throw new IntelligenceGraphWorkspaceError(
+        "IMPORT_DELETED",
+        "Imported graph was deleted; retry cannot recreate it"
+      );
+    return {
+      graph: this.get(ownerId, projectId, receipt.graph_id),
+      sha256: receipt.package_sha256
+    };
   }
 
   restore(
