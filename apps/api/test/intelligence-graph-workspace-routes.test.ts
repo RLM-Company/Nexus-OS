@@ -182,3 +182,149 @@ describe("graph workspace HTTP integration boundary", () => {
     await app.close();
   });
 });
+
+describe("graph authoring and transport HTTP", () => {
+  it("revises and removes nodes with strict bodies, exports reviewed content and historical revisions", async () => {
+    const { app } = setup(true);
+    const root = "/api/v1/projects/project-a/intelligence-graphs";
+    try {
+      let graph = (
+        await app.inject({ method: "POST", url: root, payload: { title: "Graph" } })
+      ).json<IntelligenceGraphWorkspace>();
+      const url = `${root}/${graph.graph_id}`;
+      graph = (
+        await app.inject({
+          method: "POST",
+          url: url + "/edits",
+          payload: {
+            expected_revision: graph.revision,
+            operation: {
+              kind: "add_node",
+              node_kind: "Claim",
+              label: "Original",
+              detail: "Exact\r\ntext"
+            }
+          }
+        })
+      ).json<IntelligenceGraphWorkspace>();
+      const node = { id: graph.nodes[0]!.node_id, version: 1 };
+      const revised = await app.inject({
+        method: "POST",
+        url: url + "/edits",
+        payload: {
+          expected_revision: graph.revision,
+          operation: { kind: "revise_node", node, label: "Changed", detail: "Changed" }
+        }
+      });
+      expect(revised.statusCode).toBe(200);
+      const historic = await app.inject({ method: "GET", url: url + "/revisions/2" });
+      expect(historic.statusCode).toBe(200);
+      expect(historic.json<IntelligenceGraphWorkspace>().records[0]?.text).toBe("Original");
+      const exported = await app.inject({ method: "GET", url: url + "/package?revision=2" });
+      expect(exported.statusCode).toBe(200);
+      const packet = exported.json<{ package: unknown; sha256: string }>();
+      const preview = await app.inject({
+        method: "POST",
+        url: root + "/import/preview",
+        payload: { package: packet.package }
+      });
+      expect(preview.statusCode).toBe(200);
+      expect(preview.json<{ sha256: string }>().sha256).toBe(packet.sha256);
+      const imported = await app.inject({
+        method: "POST",
+        url: root + "/import",
+        payload: { package: packet.package, expected_sha256: packet.sha256 }
+      });
+      expect(imported.statusCode).toBe(201);
+      expect(imported.json<IntelligenceGraphWorkspace>().graph_id).not.toBe(graph.graph_id);
+      expect(imported.json<IntelligenceGraphWorkspace>().nodes[0]?.verification_status).toBe(
+        "discovered"
+      );
+      const invalid = await app.inject({
+        method: "POST",
+        url: url + "/edits",
+        payload: {
+          expected_revision: 3,
+          operation: {
+            kind: "remove_node",
+            node: { ...node, version: 2 },
+            verification_status: "verified"
+          }
+        }
+      });
+      expect(invalid.statusCode).toBe(400);
+      const removed = await app.inject({
+        method: "POST",
+        url: url + "/edits",
+        payload: {
+          expected_revision: 3,
+          operation: { kind: "remove_node", node: { ...node, version: 2 } }
+        }
+      });
+      expect(removed.statusCode).toBe(200);
+      const stale = await app.inject({
+        method: "POST",
+        url: url + "/restore",
+        payload: { expected_revision: 3, from_revision: 2 }
+      });
+      expect(stale.statusCode).toBe(409);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("fails malformed hashes/packages and fences all transport endpoints while disabled or foreign", async () => {
+    const { app, store } = setup(true);
+    const root = "/api/v1/projects/project-a/intelligence-graphs";
+    const portable = {
+      format: "kosmora.intelligence-graph.v1",
+      title: "Graph",
+      nodes: [],
+      edges: []
+    };
+    try {
+      for (const payload of [
+        { package: portable, expected_sha256: "0".repeat(64) },
+        { package: { ...portable, owner_id: "foreign" }, expected_sha256: "0".repeat(64) }
+      ]) {
+        expect(
+          (await app.inject({ method: "POST", url: root + "/import", payload })).statusCode
+        ).toBe(400);
+      }
+      expect(store.snapshots.size).toBe(0);
+    } finally {
+      await app.close();
+    }
+    for (const [enabled, owner] of [
+      [false, "owner-a"],
+      [true, "owner-b"]
+    ] as const) {
+      const next = setup(enabled, owner);
+      try {
+        expect(
+          (
+            await next.app.inject({
+              method: "POST",
+              url: root + "/import/preview",
+              payload: { package: portable }
+            })
+          ).statusCode
+        ).toBe(404);
+        expect(
+          (
+            await next.app.inject({
+              method: "POST",
+              url: root + "/import",
+              payload: { package: portable, expected_sha256: "0".repeat(64) }
+            })
+          ).statusCode
+        ).toBe(404);
+        expect(
+          (await next.app.inject({ method: "GET", url: root + "/missing/revisions/1" })).statusCode
+        ).toBe(404);
+      } finally {
+        await next.app.close();
+      }
+    }
+  });
+});

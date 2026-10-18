@@ -81,6 +81,7 @@ const fixture = () => {
   const oldStorage = makeNode("claim-storage", "Claim", {
     node_version: 1,
     verification_status: "superseded",
+    previous_verification_status: "verified",
     valid_to: t1
   });
   const currentStorage = makeNode("claim-storage", "Claim", {
@@ -524,6 +525,7 @@ describe("Intelligence Graph retrieval", () => {
     )!;
     const oldEdge = data.edges.find((edge) => edge.edge_id === "edge-old-storage-source")!;
     oldEdge.verification_status = "superseded";
+    oldEdge.previous_verification_status = "verified";
     data.edges.push(
       makeEdge("edge-old-storage-source", "SUPPORTED_BY", current, source, {
         edge_version: 2,
@@ -562,5 +564,52 @@ describe("Intelligence Graph retrieval", () => {
     expect(currentPacket.edges.map((edge) => `${edge.edge_id}@${edge.edge_version}`)).not.toContain(
       "edge-old-storage-source@1"
     );
+  });
+});
+
+describe("historical verification cannot be invented by supersession", () => {
+  it.each([undefined, "discovered", "hypothesis", "disputed"] as const)(
+    "excludes a formerly %s node from verified-only history",
+    (prior) => {
+      const data = fixture();
+      const old = data.nodes.find((n) => n.node_id === "claim-storage" && n.node_version === 1)!;
+      if (prior === undefined) delete old.previous_verification_status;
+      else old.previous_verification_status = prior;
+      const index = new IntelligenceGraphIndex({
+        ownerId: "owner-1",
+        projectId: "project-1",
+        ...data
+      });
+      const packet = index.query({
+        owner_id: "owner-1",
+        project_id: "project-1",
+        text: "storage architecture choice in memory for early prototype",
+        mode: "temporal",
+        as_of: "2026-09-05T00:00:00.000Z",
+        verified_only: true
+      });
+      expect(
+        packet.nodes.some(({ node }) => node.node_id === old.node_id && node.node_version === 1)
+      ).toBe(false);
+    }
+  );
+  it("does not include a version at the exclusive end of its validity", () => {
+    const data = fixture();
+    const index = new IntelligenceGraphIndex({
+      ownerId: "owner-1",
+      projectId: "project-1",
+      ...data
+    });
+    const packet = index.query({
+      owner_id: "owner-1",
+      project_id: "project-1",
+      text: "storage architecture choice in memory for early prototype",
+      mode: "temporal",
+      as_of: t1,
+      verified_only: true
+    });
+    expect(
+      packet.nodes.some(({ node }) => node.node_id === "claim-storage" && node.node_version === 1)
+    ).toBe(false);
   });
 });

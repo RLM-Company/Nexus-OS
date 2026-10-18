@@ -1,6 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   validateIntelligenceGraphSnapshot,
+  parseIntelligenceGraphPackage,
+  INTELLIGENCE_GRAPH_PACKAGE_FORMAT,
+  type IntelligenceGraphPortablePackage,
   type IntelligenceGraphEdge,
   type IntelligenceGraphNode,
   type IntelligenceGraphRevisionInfo,
@@ -33,7 +36,10 @@ export type IntelligenceGraphEdit =
       from: IntelligenceGraphVersionRef;
       to: IntelligenceGraphVersionRef;
     }
-  | { kind: "remove_edge"; edge_id: string };
+  | { kind: "remove_edge"; edge_id: string }
+  | { kind: "revise_node"; node: IntelligenceGraphVersionRef; label: string; detail: string }
+  | { kind: "remove_node"; node: IntelligenceGraphVersionRef }
+  | { kind: "rename"; title: string };
 
 export class IntelligenceGraphWorkspaceError extends Error {
   constructor(
@@ -164,6 +170,9 @@ export class IntelligenceGraphWorkspaceService {
     if (previous.revision !== expectedRevision) return this.conflict();
     const graph = structuredClone(previous);
     const at = this.clock();
+    if (!Number.isFinite(Date.parse(at)) || Date.parse(at) < Date.parse(previous.updated_at)) {
+      return invalid("Edit time precedes the current graph revision");
+    }
     let summary: string;
     switch (operation.kind) {
       case "add_node": {
@@ -201,6 +210,82 @@ export class IntelligenceGraphWorkspaceService {
         summary = "Created an owner-entered unverified node";
         break;
       }
+      case "rename": {
+        graph.title = requireText(operation.title, 80, "title");
+        summary = "Renamed graph";
+        break;
+      }
+      case "revise_node":
+      case "remove_node": {
+        const old = activeNode(graph, operation.node);
+        const removed = operation.kind === "remove_node";
+        const label = removed ? null : requireText(operation.label, 120, "label");
+        const detail = removed ? null : requireText(operation.detail, 1000, "detail");
+        old.previous_verification_status = old.verification_status as
+          "discovered" | "hypothesis" | "verified" | "disputed";
+        old.verification_status = "superseded";
+        old.valid_to = at;
+        const next: IntelligenceGraphNode = {
+          ...structuredClone(old),
+          node_version: old.node_version + 1,
+          created_at: at,
+          observed_at: at,
+          valid_from: at,
+          valid_to: removed ? at : null,
+          verification_status: removed ? "deleted" : "discovered",
+          source_ref: {
+            source_id: old.node_id,
+            source_version: old.node_version + 1,
+            location: "owner_input"
+          },
+          provenance_kind: "owner_assertion",
+          confidence_method: "owner_direct",
+          supersedes: { id: old.node_id, version: old.node_version },
+          deleted_at: removed ? at : null
+        };
+        delete next.previous_verification_status;
+        graph.nodes.push(next);
+        if (!removed)
+          graph.records.push({
+            node: { id: next.node_id, version: next.node_version },
+            text: label!,
+            excerpt: detail!,
+            estimated_tokens: Math.max(1, Math.ceil((label!.length + detail!.length) / 4))
+          });
+        // Rebind only live relations. Earlier endpoints and evidence stay in historical versions.
+        for (const edge of [...graph.edges]) {
+          if (!current(edge.verification_status)) continue;
+          const touches = (ref: IntelligenceGraphVersionRef) =>
+            refKey(ref) === refKey(operation.node);
+          if (!touches(edge.from) && !touches(edge.to)) continue;
+          edge.valid_to = at;
+          if (removed) {
+            edge.verification_status = "deleted";
+            edge.deleted_at = at;
+          } else {
+            edge.previous_verification_status = edge.verification_status as
+              "discovered" | "hypothesis" | "verified" | "disputed";
+            edge.verification_status = "superseded";
+            const replace = (ref: IntelligenceGraphVersionRef) =>
+              touches(ref) ? { id: next.node_id, version: next.node_version } : ref;
+            const replacement = this.link(
+              graph,
+              edge.edge_id,
+              edge.edge_version + 1,
+              edge.type as IntelligenceGraphLinkType,
+              replace(edge.from),
+              replace(edge.to),
+              at
+            );
+            replacement.supersedes = { id: edge.edge_id, version: edge.edge_version };
+            graph.edges.push(replacement);
+          }
+        }
+        summary = removed
+          ? "Removed node and its live relations; history retained"
+          : "Revised node and rebound live relations as unverified versions";
+        break;
+      }
       case "add_edge": {
         activeNode(graph, operation.from);
         activeNode(graph, operation.to);
@@ -218,6 +303,8 @@ export class IntelligenceGraphWorkspaceService {
         if (!old) return invalid("Active relation not found");
         activeNode(graph, operation.from);
         activeNode(graph, operation.to);
+        old.previous_verification_status = old.verification_status as
+          "discovered" | "hypothesis" | "verified" | "disputed";
         old.verification_status = "superseded";
         old.valid_to = at;
         const next = this.link(
@@ -253,6 +340,142 @@ export class IntelligenceGraphWorkspaceService {
     graph.restored_from_revision = null;
     ensureLimits(graph);
     return this.repository.save(graph, expectedRevision, summary) ?? this.conflict();
+  }
+
+  revision(
+    ownerId: string,
+    projectId: string,
+    graphId: string,
+    revision: number
+  ): IntelligenceGraphWorkspace {
+    const graph = this.get(ownerId, projectId, graphId);
+    integer(revision, graph.revision, "revision");
+    return this.repository.getRevision(ownerId, projectId, graphId, revision) ?? this.notFound();
+  }
+
+  previewImport(input: unknown) {
+    try {
+      const portable = parseIntelligenceGraphPackage(input);
+      const sha256 = createHash("sha256").update(JSON.stringify(portable)).digest("hex");
+      return { package: portable, sha256 };
+    } catch (error) {
+      return invalid(error instanceof Error ? error.message : "Invalid graph package");
+    }
+  }
+
+  exportPackage(ownerId: string, projectId: string, graphId: string, revision?: number) {
+    const graph =
+      revision === undefined
+        ? this.get(ownerId, projectId, graphId)
+        : this.revision(ownerId, projectId, graphId, revision);
+    ensureLimits(graph);
+    const nodes = graph.nodes.filter((n) => current(n.verification_status));
+    const records = new Map(graph.records.map((r) => [refKey(r.node), r]));
+    const keys = new Map(
+      nodes.map((n, i) => [refKey({ id: n.node_id, version: n.node_version }), `n${i + 1}`])
+    );
+    const portable = {
+      format: INTELLIGENCE_GRAPH_PACKAGE_FORMAT,
+      title: graph.title,
+      nodes: nodes.map((n) => {
+        const record = records.get(refKey({ id: n.node_id, version: n.node_version }));
+        if (!record) return invalid("Missing source text for export");
+        return {
+          key: keys.get(refKey(record.node)),
+          kind: n.kind,
+          label: record.text,
+          detail: record.excerpt
+        };
+      }),
+      edges: graph.edges
+        .filter((e) => current(e.verification_status))
+        .map((e) => ({
+          relation: e.type,
+          from: keys.get(refKey(e.from)),
+          to: keys.get(refKey(e.to))
+        }))
+    };
+    return {
+      ...this.previewImport(portable),
+      source: { graph_id: graph.graph_id, revision: graph.revision }
+    };
+  }
+
+  importPackage(
+    ownerId: string,
+    projectId: string,
+    input: unknown,
+    expectedSha256: string
+  ): IntelligenceGraphWorkspace {
+    const preview = this.previewImport(input);
+    if (preview.sha256 !== expectedSha256)
+      return invalid("Graph package hash differs from reviewed content");
+    const portable: IntelligenceGraphPortablePackage = preview.package;
+    const now = this.clock();
+    const graph: IntelligenceGraphWorkspace = {
+      graph_id: randomUUID(),
+      owner_id: requireText(ownerId, 128, "ownerId"),
+      project_id: requireText(projectId, 128, "projectId"),
+      title: portable.title,
+      revision: 1,
+      created_at: now,
+      updated_at: now,
+      restored_from_revision: null,
+      nodes: [],
+      edges: [],
+      records: []
+    };
+    const refs = new Map<string, IntelligenceGraphVersionRef>();
+    for (const item of portable.nodes) {
+      const id = randomUUID();
+      refs.set(item.key, { id, version: 1 });
+      graph.nodes.push({
+        contract_version: 1,
+        node_id: id,
+        node_version: 1,
+        kind: item.kind,
+        owner_id: ownerId,
+        project_id: projectId,
+        scope: "project",
+        created_at: now,
+        observed_at: now,
+        valid_from: now,
+        valid_to: null,
+        verification_status: "discovered",
+        sensitivity: "D1_PROJECT",
+        source_ref: {
+          source_id: id,
+          source_version: 1,
+          location: `portable_import:sha256:${preview.sha256}`
+        },
+        provenance_kind: "owner_assertion",
+        confidence_method: "owner_direct",
+        extractor_version: "graph-workspace-v1",
+        supersedes: null,
+        deleted_at: null
+      });
+      graph.records.push({
+        node: { id, version: 1 },
+        text: item.label,
+        excerpt: item.detail,
+        estimated_tokens: Math.max(1, Math.ceil((item.label.length + item.detail.length) / 4))
+      });
+    }
+    for (const item of portable.edges) {
+      const edge = this.link(
+        graph,
+        randomUUID(),
+        1,
+        item.relation,
+        refs.get(item.from)!,
+        refs.get(item.to)!,
+        now
+      );
+      edge.evidence_ref.location = `portable_import:sha256:${preview.sha256}`;
+      graph.edges.push(edge);
+    }
+    ensureLimits(graph);
+    return this.repository.create(graph) ?? this.notFound();
   }
 
   restore(

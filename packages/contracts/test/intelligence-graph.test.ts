@@ -447,3 +447,64 @@ describe("Intelligence Graph deterministic kernel", () => {
     );
   });
 });
+
+describe("explicit historical verification state", () => {
+  it("accepts optional historical state for replaced records and rejects it on live versions", () => {
+    const live = node("claim", { previous_verification_status: "verified" });
+    expect(
+      validateIntelligenceGraphSnapshot({
+        ownerId: "owner-1",
+        projectId: "project-1",
+        nodes: [live],
+        edges: []
+      })
+    ).toContain(
+      "Previous verification status requires a superseded record and a live prior status"
+    );
+    const prior = node("claim", {
+      verification_status: "superseded",
+      previous_verification_status: "discovered",
+      valid_to: t1
+    });
+    const next = node("claim", {
+      node_version: 2,
+      created_at: t1,
+      observed_at: t1,
+      valid_from: t1,
+      supersedes: { id: "claim", version: 1 }
+    });
+    expect(Value.Check(IntelligenceGraphNodeSchema, prior)).toBe(true);
+    expect(
+      validateIntelligenceGraphSnapshot({
+        ownerId: "owner-1",
+        projectId: "project-1",
+        nodes: [prior, next],
+        edges: []
+      })
+    ).toEqual([]);
+  });
+  it("cannot smuggle model-only verification through a replaced record", () => {
+    const prior = node("claim", {
+      verification_status: "superseded",
+      previous_verification_status: "verified",
+      provenance_kind: "model_inference",
+      confidence_method: "model_only",
+      valid_to: t1
+    });
+    const next = node("claim", {
+      node_version: 2,
+      created_at: t1,
+      observed_at: t1,
+      valid_from: t1,
+      supersedes: { id: "claim", version: 1 }
+    });
+    expect(
+      validateIntelligenceGraphSnapshot({
+        ownerId: "owner-1",
+        projectId: "project-1",
+        nodes: [prior, next],
+        edges: []
+      }).some((issue) => issue.includes("model-only"))
+    ).toBe(true);
+  });
+});

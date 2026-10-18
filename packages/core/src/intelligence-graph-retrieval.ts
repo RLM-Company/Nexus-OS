@@ -168,7 +168,7 @@ const nodeVisibleAt = (node: IntelligenceGraphNode, asOf: string | null): boolea
   const instant = parseTime(asOf, "as_of");
   if (parseTime(node.created_at, `node ${node.node_id} created_at`) > instant) return false;
   if (node.valid_from !== null && parseTime(node.valid_from, "valid_from") > instant) return false;
-  if (node.valid_to !== null && parseTime(node.valid_to, "valid_to") < instant) return false;
+  if (node.valid_to !== null && parseTime(node.valid_to, "valid_to") <= instant) return false;
   if (node.deleted_at !== null && parseTime(node.deleted_at, "deleted_at") <= instant) return false;
   return node.verification_status !== "deleted";
 };
@@ -181,17 +181,19 @@ const edgeVisibleAt = (edge: IntelligenceGraphEdge, asOf: string | null): boolea
   const instant = parseTime(asOf, "as_of");
   if (parseTime(edge.created_at, `edge ${edge.edge_id} created_at`) > instant) return false;
   if (edge.valid_from !== null && parseTime(edge.valid_from, "valid_from") > instant) return false;
-  if (edge.valid_to !== null && parseTime(edge.valid_to, "valid_to") < instant) return false;
+  if (edge.valid_to !== null && parseTime(edge.valid_to, "valid_to") <= instant) return false;
   if (edge.deleted_at !== null && parseTime(edge.deleted_at, "deleted_at") <= instant) return false;
   return edge.verification_status !== "deleted";
 };
 
 const verifiedEnough = (
-  record: { verification_status: IntelligenceGraphNode["verification_status"] },
+  record: Pick<IntelligenceGraphNode, "verification_status" | "previous_verification_status">,
   asOf: string | null
 ): boolean =>
   record.verification_status === "verified" ||
-  (asOf !== null && record.verification_status === "superseded");
+  (asOf !== null &&
+    record.verification_status === "superseded" &&
+    record.previous_verification_status === "verified");
 
 export class IntelligenceGraphIndex {
   readonly #ownerId: string;

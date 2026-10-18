@@ -227,3 +227,289 @@ describe("editable graph workspace", () => {
     expectCode(() => service.restore("owner-a", "project-a", graph.graph_id, 1, 99), "BAD_INPUT");
   });
 });
+
+describe("node revision lifecycle", () => {
+  const populated = () => {
+    const { service, repository } = suite();
+    let graph = service.create("owner-a", "project-a", "Lifecycle");
+    for (const label of ["Alpha", "Beta", "Gamma"])
+      graph = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+        kind: "add_node",
+        node_kind: "Claim",
+        label,
+        detail: label + " evidence"
+      });
+    const [a, b, c] = graph.nodes.map((n) => ({ id: n.node_id, version: n.node_version }));
+    for (const [from, to] of [
+      [a!, b!],
+      [c!, a!]
+    ])
+      graph = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+        kind: "add_edge",
+        relation: "REFERENCES",
+        from: from!,
+        to: to!
+      });
+    return { service, repository, graph, a: a! };
+  };
+
+  it("rebinds incoming and outgoing relations while retaining exact historic text", () => {
+    const { service, graph, a } = populated();
+    const changed = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+      kind: "revise_node",
+      node: a,
+      label: "Новый Alpha",
+      detail: "Исправлено <script> $&"
+    });
+    expect(
+      changed.nodes.filter((n) => n.node_id === a.id).map((n) => n.verification_status)
+    ).toEqual(["superseded", "discovered"]);
+    expect(changed.edges.map((e) => e.verification_status)).toEqual([
+      "superseded",
+      "superseded",
+      "discovered",
+      "discovered"
+    ]);
+    expect(
+      changed.edges.slice(2).every((e) => (e.from.id === a.id ? e.from : e.to).version === 2)
+    ).toBe(true);
+    expect(changed.records.find((r) => r.node.id === a.id && r.node.version === 1)?.text).toBe(
+      "Alpha"
+    );
+    expect(changed.records.find((r) => r.node.id === a.id && r.node.version === 2)?.excerpt).toBe(
+      "Исправлено <script> $&"
+    );
+    expect(
+      service
+        .explain("owner-a", "project-a", graph.graph_id, "Новый")
+        .relationships.every((e) => !e.verified)
+    ).toBe(true);
+    expect(service.get("owner-a", "project-a", graph.graph_id).revision).toBe(graph.revision + 1);
+    expect(graph.nodes[0]?.verification_status).toBe("discovered");
+    expectCode(
+      () =>
+        service.edit("owner-a", "project-a", graph.graph_id, changed.revision, {
+          kind: "revise_node",
+          node: a,
+          label: "Stale node version",
+          detail: "No"
+        }),
+      "BAD_INPUT"
+    );
+  });
+
+  it("deletes a revised node without corrupting supersession or past relations, then restores", () => {
+    const { service, graph, a } = populated();
+    const changed = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+      kind: "revise_node",
+      node: a,
+      label: "Updated",
+      detail: "Updated"
+    });
+    const deleted = service.edit("owner-a", "project-a", graph.graph_id, changed.revision, {
+      kind: "remove_node",
+      node: { ...a, version: 2 }
+    });
+    expect(
+      deleted.nodes.filter((n) => n.node_id === a.id).map((n) => n.verification_status)
+    ).toEqual(["superseded", "superseded", "deleted"]);
+    expect(deleted.edges.map((e) => e.verification_status)).toEqual([
+      "superseded",
+      "superseded",
+      "deleted",
+      "deleted"
+    ]);
+    expect(
+      service.explain("owner-a", "project-a", graph.graph_id, "Updated").matched_nodes
+    ).toEqual([]);
+    expectCode(
+      () =>
+        service.edit("owner-a", "project-a", graph.graph_id, deleted.revision, {
+          kind: "remove_node",
+          node: { ...a, version: 3 }
+        }),
+      "BAD_INPUT"
+    );
+    const restored = service.restore(
+      "owner-a",
+      "project-a",
+      graph.graph_id,
+      deleted.revision,
+      graph.revision
+    );
+    expect(restored.nodes).toEqual(graph.nodes);
+    expect(restored.edges).toEqual(graph.edges);
+  });
+
+  it("rolls back an oversized revision and refuses stale or cross-owner operations", () => {
+    const { service, repository, graph, a } = populated();
+    const before = service.get("owner-a", "project-a", graph.graph_id);
+    expectCode(
+      () =>
+        service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+          kind: "revise_node",
+          node: a,
+          label: "x".repeat(121),
+          detail: "ok"
+        }),
+      "BAD_INPUT"
+    );
+    expectCode(
+      () =>
+        service.edit("owner-b", "project-a", graph.graph_id, graph.revision, {
+          kind: "remove_node",
+          node: a
+        }),
+      "NOT_FOUND"
+    );
+    expect(service.get("owner-a", "project-a", graph.graph_id)).toEqual(before);
+    const key = [...repository.current.keys()][0]!;
+    const full = structuredClone(before);
+    full.nodes = Array.from({ length: 150 }, (_, i) => ({
+      ...before.nodes[0]!,
+      node_id: "node-" + i
+    }));
+    full.edges = [];
+    full.records = [];
+    repository.current.set(key, full);
+    expectCode(
+      () =>
+        service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+          kind: "revise_node",
+          node: { id: "node-0", version: 1 },
+          label: "Edit",
+          detail: "Edit"
+        }),
+      "GRAPH_LIMIT"
+    );
+    expect(repository.current.get(key)).toEqual(full);
+  });
+
+  it("renames with CAS and rejects a clock rollback before changing history", () => {
+    const { service, repository, graph } = populated();
+    const renamed = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+      kind: "rename",
+      title: "Новое имя"
+    });
+    expect(renamed.title).toBe("Новое имя");
+    expect(renamed.nodes).toEqual(graph.nodes);
+    expectCode(
+      () =>
+        service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+          kind: "rename",
+          title: "Stale"
+        }),
+      "REVISION_CONFLICT"
+    );
+    const past = new IntelligenceGraphWorkspaceService(repository, () => "2020-01-01T00:00:00Z");
+    expectCode(
+      () =>
+        past.edit("owner-a", "project-a", graph.graph_id, renamed.revision, {
+          kind: "rename",
+          title: "Past"
+        }),
+      "BAD_INPUT"
+    );
+    expect(service.get("owner-a", "project-a", graph.graph_id)).toEqual(renamed);
+  });
+});
+
+describe("portable workspace lifecycle", () => {
+  it("exports active content, imports atomically with fresh identities and never copies verification", () => {
+    const { service } = suite();
+    let graph = service.create("owner-a", "project-a", "Перенос");
+    for (const label of ["Тезис", "Источник"])
+      graph = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+        kind: "add_node",
+        node_kind: "Claim",
+        label,
+        detail: "Текст\r\nстрока"
+      });
+    const [a, b] = graph.nodes.map((n) => ({ id: n.node_id, version: n.node_version }));
+    graph = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+      kind: "add_edge",
+      relation: "SUPPORTS",
+      from: b!,
+      to: a!
+    });
+    const first = service.exportPackage("owner-a", "project-a", graph.graph_id);
+    expect(first.package.nodes).toHaveLength(2);
+    expect(JSON.stringify(first.package)).not.toContain("owner-a");
+    expect(JSON.stringify(first.package)).not.toContain("verification_status");
+    const imported = service.importPackage("owner-a", "project-a", first.package, first.sha256);
+    expect(imported.revision).toBe(1);
+    expect(imported.graph_id).not.toBe(graph.graph_id);
+    expect(
+      imported.nodes.every(
+        (n) =>
+          n.verification_status === "discovered" &&
+          !graph.nodes.some((g) => n.node_id === g.node_id)
+      )
+    ).toBe(true);
+    expect(imported.edges[0]?.verification_status).toBe("discovered");
+    expect(imported.nodes[0]?.source_ref.location).toContain(first.sha256);
+    expect(service.exportPackage("owner-a", "project-a", imported.graph_id).package).toEqual(
+      first.package
+    );
+    expect(service.revisions("owner-a", "project-a", imported.graph_id)).toHaveLength(1);
+    const changed = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+      kind: "remove_node",
+      node: a!
+    });
+    expect(
+      service.exportPackage("owner-a", "project-a", graph.graph_id).package.nodes
+    ).toHaveLength(1);
+    expect(
+      service.exportPackage("owner-a", "project-a", graph.graph_id).package.edges
+    ).toHaveLength(0);
+    expect(service.exportPackage("owner-a", "project-a", graph.graph_id, graph.revision)).toEqual(
+      first
+    );
+    expectCode(
+      () => service.revision("owner-b", "project-a", graph.graph_id, graph.revision),
+      "NOT_FOUND"
+    );
+    expectCode(
+      () => service.restore("owner-a", "project-a", graph.graph_id, graph.revision, 1),
+      "REVISION_CONFLICT"
+    );
+    expect(changed.revision).toBeGreaterThan(graph.revision);
+  });
+
+  it("rejects changed reviewed content and invalid imports before creating any graph", () => {
+    const { service } = suite();
+    const portable = {
+      format: "kosmora.intelligence-graph.v1",
+      title: "Empty",
+      nodes: [],
+      edges: []
+    };
+    const preview = service.previewImport(portable);
+    expectCode(
+      () =>
+        service.importPackage(
+          "owner-a",
+          "project-a",
+          { ...portable, title: "Changed" },
+          preview.sha256
+        ),
+      "BAD_INPUT"
+    );
+    expectCode(
+      () =>
+        service.importPackage(
+          "owner-a",
+          "project-a",
+          { ...portable, owner_id: "foreign" },
+          preview.sha256
+        ),
+      "BAD_INPUT"
+    );
+    expect(service.list("owner-a", "project-a")).toEqual([]);
+    expectCode(
+      () => service.importPackage("owner-b", "project-a", portable, preview.sha256),
+      "NOT_FOUND"
+    );
+    expect(service.list("owner-a", "project-a")).toEqual([]);
+  });
+});

@@ -1,7 +1,7 @@
 import type {
   IntelligenceGraphEdge,
   IntelligenceGraphVersionRef,
-  IntelligenceGraphVerificationStatus
+  IntelligenceGraphNode
 } from "@cosmora/contracts";
 import type {
   IntelligenceGraphEvidencePacket,
@@ -48,8 +48,14 @@ const edgeRef = (edge: IntelligenceGraphEdge) => ({
   version: edge.edge_version
 });
 
-const verifiedAt = (status: IntelligenceGraphVerificationStatus, asOf: string | null): boolean =>
-  status === "verified" || (asOf !== null && status === "superseded");
+const verifiedAt = (
+  record: Pick<IntelligenceGraphNode, "verification_status" | "previous_verification_status">,
+  asOf: string | null
+): boolean =>
+  record.verification_status === "verified" ||
+  (asOf !== null &&
+    record.verification_status === "superseded" &&
+    record.previous_verification_status === "verified");
 
 const sortedRefs = (refs: IntelligenceGraphVersionRef[]): IntelligenceGraphVersionRef[] =>
   refs.sort((left, right) => key(left).localeCompare(key(right)));
@@ -108,17 +114,13 @@ export const runIntelligenceGraphCognitiveCycle = (
 
   const evidence = index.query({ ...query, verified_only: query.verified_only ?? true });
   const verifiedNodes = evidence.nodes
-    .filter(({ node }) => verifiedAt(node.verification_status, evidence.as_of))
+    .filter(({ node }) => verifiedAt(node, evidence.as_of))
     .map(({ node }) => node);
   const unverifiedNodes = evidence.nodes
-    .filter(({ node }) => !verifiedAt(node.verification_status, evidence.as_of))
+    .filter(({ node }) => !verifiedAt(node, evidence.as_of))
     .map(({ node }) => node);
-  const verifiedEdges = evidence.edges.filter((edge) =>
-    verifiedAt(edge.verification_status, evidence.as_of)
-  );
-  const unverifiedEdges = evidence.edges.filter(
-    (edge) => !verifiedAt(edge.verification_status, evidence.as_of)
-  );
+  const verifiedEdges = evidence.edges.filter((edge) => verifiedAt(edge, evidence.as_of));
+  const unverifiedEdges = evidence.edges.filter((edge) => !verifiedAt(edge, evidence.as_of));
   // Distinct source references, not claims of independent corroboration.
   const sourceIds = [...new Set(verifiedNodes.map((node) => node.source_ref.source_id))].sort();
   const invalidTargets = invalidPathTargets(evidence);
