@@ -10,6 +10,9 @@ export class OwnerSkillPrivacyAdapter implements PrivacyAdapter {
   export(ownerId: string): Promise<PrivacySection> {
     return Promise.resolve({
       records: {
+        creations: this.sql
+          .prepare("SELECT * FROM owner_skill_creations WHERE owner_id=?")
+          .all(ownerId),
         skills: this.sql.prepare("SELECT * FROM owner_skills WHERE owner_id=?").all(ownerId),
         versions: this.sql
           .prepare("SELECT * FROM owner_skill_versions WHERE owner_id=?")
@@ -28,12 +31,15 @@ export class OwnerSkillPrivacyAdapter implements PrivacyAdapter {
         .get(ownerId, epoch)
     )
       throw Error("DELETION_FENCE_REQUIRED");
+    const creations = Number(
+      this.sql.prepare("DELETE FROM owner_skill_creations WHERE owner_id=?").run(ownerId).changes
+    );
     const versions = Number(
       this.sql.prepare("DELETE FROM owner_skill_versions WHERE owner_id=?").run(ownerId).changes
     );
     const skills = Number(
       this.sql.prepare("DELETE FROM owner_skills WHERE owner_id=?").run(ownerId).changes
     );
-    return Promise.resolve({ deleted_records: skills + versions });
+    return Promise.resolve({ deleted_records: skills + versions + creations });
   }
 }

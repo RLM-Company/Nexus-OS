@@ -17,13 +17,52 @@ import {
   type Detail,
   type SkillPackage
 } from "./skill-model";
-import { skillApi as api, SkillApiError, writeSkillVersion } from "./skill-client";
+import {
+  skillApi as api,
+  SkillApiError,
+  writeSkillVersion,
+  createSkillOnce,
+  readSkillCreation
+} from "./skill-client";
 import { createSkillPackage, downloadSkillPackage } from "./skill-package";
 import { SkillImport } from "./skill-import";
 import { SkillReview } from "./skill-review";
+import {
+  clearPendingCreation,
+  readPendingCreation,
+  savePendingCreation,
+  type PendingCreation
+} from "./skill-creation";
 const catalog = loadMockSkillCatalog();
 
 export default function SkillsPage() {
+  const [scope, setScope] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void api<{ owner_scope: string }>("/scope")
+      .then((result) => {
+        if (!/^[a-f0-9]{64}$/.test(result.owner_scope))
+          throw Error("Не удалось проверить аккаунт.");
+        if (active) setScope(result.owner_scope);
+      })
+      .catch((cause: Error) => {
+        if (active) setError(cause.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (!scope)
+    return (
+      <main>
+        <p role="status">{error || "Проверяем аккаунт…"}</p>
+        <Link href="/">Назад в Kosmora</Link>
+      </main>
+    );
+  return <SkillsLibrary key={scope} ownerScope={scope} />;
+}
+function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
   const [items, setItems] = useState<Skill[]>([]);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -35,8 +74,10 @@ export default function SkillsPage() {
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
   const [reviewVersion, setReviewVersion] = useState<number | null>(null);
-  const [uncertainCreation, setUncertainCreation] = useState(false);
-  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [pendingCreation, setPendingCreation] = useState<PendingCreation | null>(null);
+  const [storageError, setStorageError] = useState(false);
+  const uncertainCreation = pendingCreation !== null || storageError;
+  const editorLocked = busy || uncertainCreation;
   const lock = useRef(false);
   const generation = useRef(0);
   const dirty = draftKey(draft) !== saved;
@@ -48,6 +89,19 @@ export default function SkillsPage() {
   }, []);
   useEffect(() => {
     const current = generation.current;
+    try {
+      const pending = readPendingCreation(window.sessionStorage, ownerScope);
+      setPendingCreation(pending);
+      if (pending) {
+        setDraft(pending.draft);
+        setMessage(
+          "Найдена незавершённая попытка создания. Проверьте результат или повторите её с тем же ключом."
+        );
+      }
+    } catch (cause) {
+      setStorageError(true);
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    }
     void refresh()
       .catch((cause: Error) => {
         if (current === generation.current) setMessage(cause.message);
@@ -58,16 +112,16 @@ export default function SkillsPage() {
     return () => {
       generation.current++;
     };
-  }, [refresh]);
+  }, [refresh, ownerScope]);
   useEffect(() => {
-    if (!dirty) return;
+    if (!dirty && !uncertainCreation) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  }, [dirty, uncertainCreation]);
   const accept = (value: Detail) => {
     const latest = value.versions.find(
       (version) => version.version === value.skill.current_version
@@ -110,20 +164,16 @@ export default function SkillsPage() {
     }
   };
   const open = async (id: string) => {
-    if (lock.current || !discard()) return;
+    if (lock.current || uncertainCreation || !discard()) return;
     await run(async (active) => {
       const value = await api<Detail>(`/${encodeURIComponent(id)}`);
       if (active()) {
         accept(value);
-        if (id === createdId) {
-          setCreatedId(null);
-          setUncertainCreation(false);
-        }
       }
     });
   };
   const createNew = () => {
-    if (lock.current || !discard()) return;
+    if (lock.current || uncertainCreation || !discard()) return;
     setSelected(null);
     setDetail(null);
     setDraft(emptyDraft());
@@ -133,7 +183,7 @@ export default function SkillsPage() {
     setMessage("");
   };
   const copy = () => {
-    if (lock.current) return;
+    if (lock.current || uncertainCreation) return;
     setSelected(null);
     setDetail(null);
     setSaved(draftKey(emptyDraft()));
@@ -142,38 +192,61 @@ export default function SkillsPage() {
       "Независимый черновик подготовлен. Сохраните его как новую инструкцию; подключения исходного Skill не копируются."
     );
   };
-  const create = async (path: string, body: Draft | SkillPackage, active: () => boolean) => {
-    if (uncertainCreation)
-      throw Error("Сначала проверьте результат предыдущего создания в списке.");
-    setUncertainCreation(true);
-    setCreatedId(null);
-    let savedSkill: Skill;
-    try {
-      savedSkill = await api<Skill>(path, "POST", body);
-    } catch (cause) {
-      if (active() && cause instanceof SkillApiError && cause.status < 500)
-        setUncertainCreation(false);
-      else if (active()) {
-        await refresh().catch(() => {});
-        throw Error(
-          "Ответ на создание не получен. Инструкция могла сохраниться. Проверьте список перед новым созданием.",
-          { cause }
-        );
-      }
-      throw cause;
-    }
+  const finishCreation = async (value: Detail, active: () => boolean) => {
     if (!active()) return;
-    setCreatedId(savedSkill.id);
-    const value = await api<Detail>(`/${encodeURIComponent(savedSkill.id)}`);
-    if (!active()) return;
+    // Clear the durable local key only after canonical detail was read successfully.
+    clearPendingCreation(window.sessionStorage, ownerScope);
+    setPendingCreation(null);
     accept(value);
-    setUncertainCreation(false);
-    setCreatedId(null);
-    setMessage("Новая инструкция сохранена.");
+    setMessage("Инструкция сохранена. Открыта её актуальная версия.");
     await refreshAfter(active);
+  };
+  const create = async (path: string, body: Draft | SkillPackage, active: () => boolean) => {
+    if (uncertainCreation) throw Error("Сначала завершите предыдущую попытку создания.");
+    const pending = { requestId: crypto.randomUUID(), draft: normalizeDraft(body) };
+    savePendingCreation(window.sessionStorage, ownerScope, pending);
+    setPendingCreation(pending);
+    try {
+      await finishCreation(
+        await createSkillOnce(pending.draft, pending.requestId, path, body),
+        active
+      );
+    } catch (cause) {
+      if (cause instanceof SkillApiError) throw cause;
+      throw new Error(
+        "Ответ на создание не получен. Проверьте результат или повторите сохранённую попытку.",
+        { cause }
+      );
+    }
+  };
+  const recoverCreation = (retry: boolean) =>
+    void run(async (active) => {
+      if (!pendingCreation) return;
+      const value = retry
+        ? await createSkillOnce(pendingCreation.draft, pendingCreation.requestId)
+        : await readSkillCreation(pendingCreation.requestId);
+      await finishCreation(value, active);
+    });
+  const forgetCreation = () => {
+    if (
+      lock.current ||
+      !window.confirm(
+        "Сбросить локальную попытку? Уже созданная инструкция останется в списке. Новое создание будет отдельной копией."
+      )
+    )
+      return;
+    try {
+      clearPendingCreation(window.sessionStorage, ownerScope);
+      setPendingCreation(null);
+      setStorageError(false);
+      setMessage("Локальная попытка сброшена. Проверьте список перед созданием новой копии.");
+    } catch {
+      setMessage("Не удалось сбросить попытку в этой вкладке.");
+    }
   };
   const save = () =>
     void run(async (active) => {
+      if (uncertainCreation) return;
       normalizeDraft(draft);
       if (selected && detail) {
         const value = await writeSkillVersion(selected, detail.skill.current_version, draft);
@@ -239,7 +312,7 @@ export default function SkillsPage() {
       if (active()) downloadSkillPackage(pack, name);
     });
   const importSkill = async (value: SkillPackage) => {
-    if (lock.current || !discard()) return false;
+    if (lock.current || uncertainCreation || !discard()) return false;
     return run((active) => create("/import", value, active));
   };
   return (
@@ -275,7 +348,7 @@ export default function SkillsPage() {
           <aside className={styles.sidebar} aria-label="Мои Skills">
             <div className={styles.sidebarHeader}>
               <h2>Мои Skills</h2>
-              <button type="button" disabled={busy || loading} onClick={createNew}>
+              <button type="button" disabled={editorLocked || loading} onClick={createNew}>
                 Новая
               </button>
             </div>
@@ -317,7 +390,7 @@ export default function SkillsPage() {
                   type="button"
                   key={item.id}
                   className={selected === item.id ? styles.activeSkill : styles.skillRow}
-                  disabled={busy}
+                  disabled={editorLocked}
                   onClick={() => void open(item.id)}
                 >
                   <strong>{item.name}</strong>
@@ -342,49 +415,38 @@ export default function SkillsPage() {
             {uncertainCreation && (
               <section className={styles.preview} aria-label="Проверка создания">
                 <p>
-                  Проверьте список: предыдущая инструкция могла сохраниться. Автоматического повтора
-                  не будет.
+                  Попытка сохранена в этой вкладке. Проверка только читает сервер; повтор использует
+                  прежний ключ и не создаёт дубликат.
                 </p>
-                {createdId ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      if (!discard()) return;
-                      void run(async (active) => {
-                        const value = await api<Detail>(`/${encodeURIComponent(createdId)}`);
-                        if (active()) {
-                          accept(value);
-                          setCreatedId(null);
-                          setUncertainCreation(false);
-                        }
-                      });
-                    }}
-                  >
-                    Открыть созданную инструкцию
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          "Вы проверили список и убедились, что предыдущая инструкция не создана? Новая попытка может создать копию."
-                        )
-                      )
-                        setUncertainCreation(false);
-                    }}
-                  >
-                    Проверил список — разрешить новое создание
-                  </button>
+                {pendingCreation && (
+                  <>
+                    <h3>{pendingCreation.draft.name}</h3>
+                    <p>{pendingCreation.draft.summary}</p>
+                    <pre>{pendingCreation.draft.instructions}</pre>
+                    <button type="button" disabled={busy} onClick={() => recoverCreation(false)}>
+                      Проверить результат создания
+                    </button>
+                    <button type="button" disabled={busy} onClick={() => recoverCreation(true)}>
+                      Повторить сохранённую попытку
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => exportDraft(pendingCreation.draft, "kosmora-skill-pending")}
+                    >
+                      Скачать текст попытки
+                    </button>
+                  </>
                 )}
+                <button type="button" disabled={busy} onClick={forgetCreation}>
+                  Сбросить локальную попытку
+                </button>
               </section>
             )}
             <label>
               Название
               <input
-                disabled={busy || loading}
+                disabled={editorLocked || loading}
                 value={draft.name}
                 maxLength={80}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
@@ -394,7 +456,7 @@ export default function SkillsPage() {
             <label>
               Краткое описание
               <input
-                disabled={busy || loading}
+                disabled={editorLocked || loading}
                 value={draft.summary}
                 maxLength={240}
                 onChange={(event) => setDraft({ ...draft, summary: event.target.value })}
@@ -404,7 +466,7 @@ export default function SkillsPage() {
             <label>
               Инструкция
               <textarea
-                disabled={busy || loading}
+                disabled={editorLocked || loading}
                 value={draft.instructions}
                 maxLength={20_000}
                 onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}
@@ -413,11 +475,7 @@ export default function SkillsPage() {
               />
             </label>
             <div className={styles.actions}>
-              <button
-                type="button"
-                disabled={busy || loading || !dirty || (!selected && uncertainCreation)}
-                onClick={save}
-              >
+              <button type="button" disabled={editorLocked || loading || !dirty} onClick={save}>
                 Сохранить версию
               </button>
               <button type="button" disabled={busy} onClick={() => setPreview(!preview)}>
@@ -425,7 +483,7 @@ export default function SkillsPage() {
               </button>
               <button
                 type="button"
-                disabled={busy || loading}
+                disabled={editorLocked || loading}
                 onClick={() => exportDraft(draft, "kosmora-skill-draft")}
               >
                 Скачать черновик
@@ -447,12 +505,12 @@ export default function SkillsPage() {
                 </button>
               )}
               {selected && (
-                <button type="button" disabled={busy} onClick={copy}>
+                <button type="button" disabled={editorLocked} onClick={copy}>
                   Копировать в новый черновик
                 </button>
               )}
               {selected && (
-                <button type="button" disabled={busy} onClick={remove}>
+                <button type="button" disabled={editorLocked} onClick={remove}>
                   Удалить
                 </button>
               )}
@@ -472,7 +530,7 @@ export default function SkillsPage() {
                   currentVersion={detail.skill.current_version}
                   draft={draft}
                   revision={detail.versions.find((value) => value.version === reviewVersion)!}
-                  busy={busy}
+                  busy={editorLocked}
                   onRestore={restore}
                   onDownload={(revision: Revision) =>
                     exportDraft(revision, `kosmora-skill-v${revision.version}`)
