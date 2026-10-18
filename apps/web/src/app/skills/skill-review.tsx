@@ -11,6 +11,7 @@ export function SkillReview({
   id,
   currentVersion,
   draft,
+  draftEpoch = 0,
   revision,
   busy,
   onRestore,
@@ -19,6 +20,7 @@ export function SkillReview({
   id: string;
   currentVersion: number;
   draft: Draft;
+  draftEpoch?: number;
   revision: Revision;
   busy: boolean;
   onRestore: (version: number, expectedVersion: number, reviewedDraft: string) => void;
@@ -29,6 +31,7 @@ export function SkillReview({
     id,
     currentVersion,
     draftKey(draft),
+    draftEpoch,
     revision.version,
     draftKey(revision)
   ]);

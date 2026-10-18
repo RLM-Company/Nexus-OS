@@ -33,6 +33,9 @@ import {
   savePendingCreation,
   type PendingCreation
 } from "./skill-creation";
+import { emptySkillHistory, recordSkillEdit, travelSkillHistory } from "./skill-history";
+import { SkillSearchPanel } from "./skill-search-panel";
+import type { SkillMatch } from "./skill-search";
 const catalog = loadMockSkillCatalog();
 
 export default function SkillsPage() {
@@ -78,6 +81,9 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
   const [storageError, setStorageError] = useState(false);
   const uncertainCreation = pendingCreation !== null || storageError;
   const editorLocked = busy || uncertainCreation;
+  const history = useRef(emptySkillHistory());
+  const editEpoch = useRef(0);
+  const fields = useRef<Partial<Record<keyof Draft, HTMLInputElement | HTMLTextAreaElement>>>({});
   const lock = useRef(false);
   const generation = useRef(0);
   const dirty = draftKey(draft) !== saved;
@@ -122,12 +128,42 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, uncertainCreation]);
-  const accept = (value: Detail) => {
+  const endEditGroup = () => {
+    history.current.group = null;
+  };
+  const editDraft = (next: Draft, group: keyof Draft | null = null) => {
+    if (lock.current || uncertainCreation || loading || draftKey(next) === draftKey(draft)) return;
+    history.current = recordSkillEdit(history.current, draft, next, group);
+    editEpoch.current++;
+    setDraft(asDraft(next));
+    setMessage("");
+  };
+  const undoRedo = (direction: "undo" | "redo") => {
+    if (lock.current || uncertainCreation || loading) return;
+    const result = travelSkillHistory(history.current, draft, direction);
+    if (!result) return;
+    history.current = result.history;
+    editEpoch.current++;
+    setDraft(result.draft);
+    setMessage("");
+  };
+  const selectMatch = (match: SkillMatch) => {
+    const field = fields.current[match.field];
+    if (!field || editorLocked || loading) return;
+    field.focus();
+    field.setSelectionRange(match.start, match.end);
+  };
+  const accept = (value: Detail, keepHistory = false) => {
     const latest = value.versions.find(
       (version) => version.version === value.skill.current_version
     );
     if (!latest)
       throw Error("Не удалось прочитать актуальную версию. Черновик сохранён в редакторе.");
+    history.current = keepHistory
+      ? recordSkillEdit(history.current, draft, asDraft(latest))
+      : emptySkillHistory();
+    endEditGroup();
+    editEpoch.current++;
     setSelected(value.skill.id);
     setDetail(value);
     setDraft(asDraft(latest));
@@ -174,6 +210,8 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
   };
   const createNew = () => {
     if (lock.current || uncertainCreation || !discard()) return;
+    history.current = emptySkillHistory();
+    editEpoch.current++;
     setSelected(null);
     setDetail(null);
     setDraft(emptyDraft());
@@ -184,6 +222,8 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
   };
   const copy = () => {
     if (lock.current || uncertainCreation) return;
+    history.current = emptySkillHistory();
+    editEpoch.current++;
     setSelected(null);
     setDetail(null);
     setSaved(draftKey(emptyDraft()));
@@ -194,10 +234,10 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
   };
   const finishCreation = async (value: Detail, active: () => boolean) => {
     if (!active()) return;
-    // Clear the durable local key only after canonical detail was read successfully.
+    // Validate and accept canonical detail before removing the only local recovery key.
+    accept(value);
     clearPendingCreation(window.sessionStorage, ownerScope);
     setPendingCreation(null);
-    accept(value);
     setMessage("Инструкция сохранена. Открыта её актуальная версия.");
     await refreshAfter(active);
   };
@@ -251,7 +291,7 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
       if (selected && detail) {
         const value = await writeSkillVersion(selected, detail.skill.current_version, draft);
         if (active()) {
-          accept(value);
+          accept(value, true);
           setMessage("Версия сохранена.");
           await refreshAfter(active);
         }
@@ -296,6 +336,8 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
         expected_version: detail.skill.current_version
       });
       if (active()) {
+        history.current = emptySkillHistory();
+        editEpoch.current++;
         setSelected(null);
         setDetail(null);
         setDraft(emptyDraft());
@@ -399,13 +441,46 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
               ))
             )}
           </aside>
-          <section className={styles.editor} aria-label="Редактор Skill">
+          <section
+            className={styles.editor}
+            aria-label="Редактор Skill"
+            onKeyDown={(event) => {
+              if (
+                event.nativeEvent.isComposing ||
+                event.altKey ||
+                !(event.ctrlKey || event.metaKey)
+              )
+                return;
+              const target = event.target as HTMLElement;
+              if (!target.closest("[data-skill-field], [data-skill-history]")) return;
+              const key = event.key.toLowerCase();
+              if (key !== "z" && key !== "y") return;
+              event.preventDefault();
+              undoRedo(key === "y" || event.shiftKey ? "redo" : "undo");
+            }}
+          >
             <div className={styles.editorHeading}>
               <h2>{selected ? "Редактирование" : "Новая инструкция"}</h2>
               <span>
                 {detail ? `v${detail.skill.current_version}` : "Черновик"} ·{" "}
                 {dirty ? "Не сохранено" : "Без изменений"}
               </span>
+            </div>
+            <div className={styles.actions} data-skill-history>
+              <button
+                type="button"
+                disabled={editorLocked || loading || !history.current.past.length}
+                onClick={() => undoRedo("undo")}
+              >
+                Отменить правку
+              </button>
+              <button
+                type="button"
+                disabled={editorLocked || loading || !history.current.future.length}
+                onClick={() => undoRedo("redo")}
+              >
+                Повторить правку
+              </button>
             </div>
             {message && (
               <p role="status" className={styles.message}>
@@ -447,9 +522,14 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
               Название
               <input
                 disabled={editorLocked || loading}
+                data-skill-field
+                ref={(element) => {
+                  if (element) fields.current.name = element;
+                }}
+                onBlur={endEditGroup}
                 value={draft.name}
                 maxLength={80}
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                onChange={(event) => editDraft({ ...draft, name: event.target.value }, "name")}
                 placeholder="Например, проверка документа"
               />
             </label>
@@ -457,9 +537,16 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
               Краткое описание
               <input
                 disabled={editorLocked || loading}
+                data-skill-field
+                ref={(element) => {
+                  if (element) fields.current.summary = element;
+                }}
+                onBlur={endEditGroup}
                 value={draft.summary}
                 maxLength={240}
-                onChange={(event) => setDraft({ ...draft, summary: event.target.value })}
+                onChange={(event) =>
+                  editDraft({ ...draft, summary: event.target.value }, "summary")
+                }
                 placeholder="Что помогает сделать инструкция"
               />
             </label>
@@ -467,9 +554,16 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
               Инструкция
               <textarea
                 disabled={editorLocked || loading}
+                data-skill-field
+                ref={(element) => {
+                  if (element) fields.current.instructions = element;
+                }}
+                onBlur={endEditGroup}
                 value={draft.instructions}
                 maxLength={20_000}
-                onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}
+                onChange={(event) =>
+                  editDraft({ ...draft, instructions: event.target.value }, "instructions")
+                }
                 rows={13}
                 placeholder="Опишите шаги и ожидаемый результат…"
               />
@@ -515,6 +609,16 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
                 </button>
               )}
             </div>
+            <SkillSearchPanel
+              key={`${selected ?? "new"}:${detail?.skill.current_version ?? 0}`}
+              draft={draft}
+              epoch={editEpoch.current}
+              busy={editorLocked || loading}
+              onSelect={selectMatch}
+              onApply={(before, next, epoch) => {
+                if (epoch === editEpoch.current && before === draftKey(draft)) editDraft(next);
+              }}
+            />
             {preview && (
               <section className={styles.preview} aria-label="Предпросмотр инструкции">
                 <h3>{draft.name || "Без названия"}</h3>
@@ -529,6 +633,7 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
                   id={detail.skill.id}
                   currentVersion={detail.skill.current_version}
                   draft={draft}
+                  draftEpoch={editEpoch.current}
                   revision={detail.versions.find((value) => value.version === reviewVersion)!}
                   busy={editorLocked}
                   onRestore={restore}
