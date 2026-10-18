@@ -286,3 +286,94 @@ test("an accepted but deleted attempt never recreates a Skill after reload", asy
   const items = ((await (await request.get(base)).json()) as { items: { name: string }[] }).items;
   expect(items.filter((item) => item.name === value.name)).toHaveLength(0);
 });
+
+test("undo after save preserves the latest server version; redo and copy remain independent", async ({
+  page,
+  request
+}) => {
+  const source = await seed(request);
+  await open(page, source.draft.name);
+  const text = editor(page).getByRole("textbox", { name: "Инструкция", exact: true });
+  await text.fill("Версия два");
+  await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(editor(page).getByText("v2 · Без изменений", { exact: true })).toBeVisible();
+  await editor(page).getByRole("button", { name: "Отменить правку", exact: true }).click();
+  await expect(text).toHaveValue(source.draft.instructions);
+  await expect(editor(page).getByText("v2 · Не сохранено", { exact: true })).toBeVisible();
+  await editor(page).getByRole("button", { name: "Повторить правку", exact: true }).click();
+  await expect(text).toHaveValue("Версия два");
+  await expect(editor(page).getByText("v2 · Без изменений", { exact: true })).toBeVisible();
+  await text.press("Control+z");
+  await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(editor(page).getByText("v3 · Без изменений", { exact: true })).toBeVisible();
+  const canonical = (await (await request.get(`${base}/${source.id}`)).json()) as {
+    versions: { instructions: string }[];
+  };
+  expect(canonical.versions[0]!.instructions).toBe(source.draft.instructions);
+  await editor(page)
+    .getByRole("button", { name: "Копировать в новый черновик", exact: true })
+    .click();
+  await expect(
+    editor(page).getByRole("button", { name: "Отменить правку", exact: true })
+  ).toBeDisabled();
+});
+test("literal replacement requires current review, changes only a draft and can be undone in one action", async ({
+  page,
+  request
+}) => {
+  const source = await seed(request);
+  await open(page, source.draft.name);
+  const text = editor(page).getByRole("textbox", { name: "Инструкция", exact: true });
+  await text.fill("тест тест\n<literal>");
+  await page.getByText("Поиск и замена в Skill", { exact: true }).click();
+  await page.getByRole("textbox", { name: "Найти в Skill", exact: true }).fill("тест");
+  await page.getByRole("textbox", { name: "Заменить на", exact: true }).fill("$& <literal>");
+  await page.getByRole("button", { name: "Просмотреть замену всех", exact: true }).click();
+  const apply = page.getByRole("button", { name: "Применить замену к черновику", exact: true });
+  await expect(apply).toBeDisabled();
+  await page.getByLabel("Проверил замену Skill", { exact: true }).check();
+  await apply.click();
+  await expect(text).toHaveValue("$& <literal> $& <literal>\n<literal>");
+  const saved = (await (await request.get(`${base}/${source.id}`)).json()) as {
+    skill: { current_version: number };
+  };
+  expect(saved.skill.current_version).toBe(1);
+  await editor(page).getByRole("button", { name: "Отменить правку", exact: true }).click();
+  await expect(text).toHaveValue("тест тест\n<literal>");
+  await editor(page).getByRole("button", { name: "Повторить правку", exact: true }).click();
+  await expect(text).toHaveValue("$& <literal> $& <literal>\n<literal>");
+});
+test("review is invalidated by edits and undo, and switching Skills clears local undo", async ({
+  page,
+  request
+}) => {
+  const source = await seed(request);
+  const other = await seed(request);
+  await open(page, source.draft.name);
+  const text = editor(page).getByRole("textbox", { name: "Инструкция", exact: true });
+  await text.fill("тест");
+  await page.getByText("Поиск и замена в Skill", { exact: true }).click();
+  await page.getByRole("textbox", { name: "Найти в Skill", exact: true }).fill("тест");
+  await page.getByRole("textbox", { name: "Заменить на", exact: true }).fill("замена");
+  await page.getByRole("button", { name: "Просмотреть замену всех", exact: true }).click();
+  await page.getByLabel("Проверил замену Skill", { exact: true }).check();
+  await text.fill("другой текст");
+  await editor(page).getByRole("button", { name: "Отменить правку", exact: true }).click();
+  await expect(text).toHaveValue("тест");
+  await expect(page.getByRole("region", { name: "Предпросмотр замены Skill" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Просмотреть замену всех", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Применить замену к черновику", exact: true })
+  ).toBeDisabled();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page
+    .getByRole("complementary", { name: "Мои Skills" })
+    .getByRole("button", { name: `${other.draft.name} Версия 1`, exact: true })
+    .click();
+  await expect(editor(page).getByRole("textbox", { name: "Название", exact: true })).toHaveValue(
+    other.draft.name
+  );
+  await expect(
+    editor(page).getByRole("button", { name: "Отменить правку", exact: true })
+  ).toBeDisabled();
+});
