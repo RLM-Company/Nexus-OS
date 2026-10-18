@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   CANVAS_MAX_CONTENT_BYTES,
   CANVAS_MAX_TITLE_BYTES,
@@ -16,7 +16,8 @@ import { CanvasPreview } from "./canvas-preview";
 import { CanvasComparison, type CanvasComparisonSide } from "./canvas-comparison";
 import { CANVAS_FILE_ACCEPT } from "./canvas-file-import";
 import { readCanvasFile } from "./canvas-file";
-import { createDocxReport, downloadReport } from "../studio-files-report";
+import { createDocxReport, createPdfReport, downloadReport } from "../studio-files-report";
+import { MarkdownToolbar } from "./markdown-toolbar";
 import { ShiningText, SystemMessage } from "../ui/kosmora-controls";
 
 type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
@@ -29,6 +30,12 @@ type Candidate = {
   >;
 };
 type Draft = CanvasDraft;
+export type CanvasSeed = {
+  storageId: string;
+  title: string;
+  content: string;
+  format: CanvasFormat;
+};
 type Review = {
   kind: "compare" | "restore" | "conflict";
   artifactId: string;
@@ -95,10 +102,12 @@ const sanitizeName = (value: string, format: CanvasFormat): string => {
 
 export function CanvasEditor({
   projectId,
-  initialArtifactId
+  initialArtifactId,
+  initialDraft
 }: {
   projectId: string;
   initialArtifactId?: string;
+  initialDraft?: CanvasSeed;
 }) {
   const [scope, setScope] = useState<{ projectId: string; ownerScope: string } | null>(null);
   const [scopeError, setScopeError] = useState("");
@@ -146,6 +155,7 @@ export function CanvasEditor({
       projectId={projectId}
       ownerScope={scope.ownerScope}
       {...(initialArtifactId ? { initialArtifactId } : {})}
+      {...(initialDraft ? { initialDraft } : {})}
     />
   );
 }
@@ -153,11 +163,13 @@ export function CanvasEditor({
 function ScopedCanvasEditor({
   projectId,
   ownerScope,
-  initialArtifactId
+  initialArtifactId,
+  initialDraft
 }: {
   projectId: string;
   ownerScope: string;
   initialArtifactId?: string;
+  initialDraft?: CanvasSeed;
 }) {
   const lifecycle = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -173,7 +185,17 @@ function ScopedCanvasEditor({
       throw new DOMException("Canvas scope changed", "AbortError");
     return request<T>(url, { ...options, signal: controller.signal });
   }, []);
-  const localKey = (projectId: string, id: string) => canvasDraftKey(ownerScope, projectId, id);
+  const localKey = (projectId: string, id: string) =>
+    canvasDraftKey(
+      ownerScope,
+      projectId,
+      id === "new" && initialDraft ? initialDraft.storageId : id
+    );
+  const textEditor = useRef<HTMLTextAreaElement>(null);
+  const editorId = useId();
+  const reportLinkKey = initialDraft
+    ? canvasDraftKey(ownerScope, projectId, `${initialDraft.storageId}:saved`)
+    : null;
   const parseDraft = parseCanvasDraft;
   const [items, setItems] = useState<CanvasArtifact[]>([]);
   const [selected, setSelected] = useState<string>("");
@@ -190,6 +212,7 @@ function ScopedCanvasEditor({
   const [conflict, setConflict] = useState<number | null>(null);
   const [working, setWorking] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const base = useMemo(() => endpoint(projectId), [projectId]);
@@ -230,7 +253,17 @@ function ScopedCanvasEditor({
     } catch {
       /* optional */
     }
-    setDraft(newDraft ?? blank);
+    setDraft(
+      newDraft ??
+        (initialDraft
+          ? {
+              title: initialDraft.title,
+              content: initialDraft.content,
+              format: initialDraft.format,
+              baseVersion: 0
+            }
+          : blank)
+    );
     setDraftStorageReady(true);
     setConflict(null);
     setLoading(true);
@@ -240,7 +273,16 @@ function ScopedCanvasEditor({
         if (active) {
           setItems(list);
           setCandidates(sources.items);
+          let linked: string | null = null;
+          if (reportLinkKey) {
+            try {
+              linked = localStorage.getItem(reportLinkKey);
+            } catch {
+              /* Optional browser preference. */
+            }
+          }
           if (initialArtifactId) void open(initialArtifactId);
+          else if (linked && list.some((item) => item.id === linked)) void open(linked);
         }
       })
       .catch((e) => {
@@ -252,7 +294,7 @@ function ScopedCanvasEditor({
     return () => {
       active = false;
     };
-  }, [base, readList, scopedRequest, initialArtifactId]);
+  }, [base, readList, scopedRequest, initialArtifactId, initialDraft, reportLinkKey]);
   useEffect(() => {
     // The initial blank render must not delete a restored draft before hydration
     // completes, including React Strict Mode's repeated mount effects.
@@ -336,6 +378,7 @@ function ScopedCanvasEditor({
     try {
       localStorage.removeItem(localKey(projectId, result.artifact.id));
       if (consumeDraft) localStorage.removeItem(localKey(projectId, selected || "new"));
+      if (consumeDraft && reportLinkKey) localStorage.setItem(reportLinkKey, result.artifact.id);
     } catch {
       /* optional */
     }
@@ -622,6 +665,30 @@ function ScopedCanvasEditor({
       setError("Буфер обмена недоступен. Выделите текст вручную.");
     }
   };
+  const exportPdf = async () => {
+    if (exportingPdf) return;
+    if (draft.content.length > 100_000) {
+      setError(
+        "PDF: максимум 100 000 символов. Для полного большого документа используйте Markdown или DOCX."
+      );
+      return;
+    }
+    setExportingPdf(true);
+    const snapshot = { ...draft };
+    try {
+      const pdf = await createPdfReport(snapshot.content.split(/\r?\n/));
+      if (lifecycle.current?.signal.aborted) return;
+      downloadReport(pdf, sanitizeName(snapshot.title, "text").replace(/\.txt$/, ".pdf"));
+      setNotice(
+        "Скачан PDF с текущим текстом. Текст PDF растровый; для редактирования используйте Markdown или DOCX."
+      );
+    } catch {
+      if (!lifecycle.current?.signal.aborted)
+        setError("Не удалось подготовить PDF. Текст остаётся в редакторе.");
+    } finally {
+      if (!lifecycle.current?.signal.aborted) setExportingPdf(false);
+    }
+  };
   const download = () => {
     downloadSnapshot(draft);
     setNotice("Скачан текущий текст редактора (включая несохранённые правки).");
@@ -739,9 +806,9 @@ function ScopedCanvasEditor({
             </button>
           ))}
           <div className={styles.import}>
-            <label htmlFor="canvas-local-file">Открыть документ</label>
+            <label htmlFor={`${editorId}-file`}>Открыть документ</label>
             <input
-              id="canvas-local-file"
+              id={`${editorId}-file`}
               type="file"
               accept={CANVAS_FILE_ACCEPT + ",.docx"}
               disabled={working || loading}
@@ -755,9 +822,9 @@ function ScopedCanvasEditor({
               Текст UTF-8 до 512 КиБ; DOCX до 20 МБ — без исходной вёрстки. Файл откроется в новом
               черновике.
             </small>
-            <label htmlFor="canvas-source">Импорт из Work и чатов</label>
+            <label htmlFor={`${editorId}-source`}>Импорт из Work и чатов</label>
             <select
-              id="canvas-source"
+              id={`${editorId}-source`}
               value={selectedSource}
               onChange={(e) => setSelectedSource(e.target.value)}
             >
@@ -813,11 +880,21 @@ function ScopedCanvasEditor({
               </select>
             </label>
           </div>
-          <label className={styles.textLabel} htmlFor="canvas-body">
+          <label className={styles.textLabel} htmlFor={`${editorId}-body`}>
             Содержимое
           </label>
+          {draft.format === "markdown" && (
+            <MarkdownToolbar
+              editor={textEditor}
+              value={draft.content}
+              disabled={working || loading}
+              onChange={(content) => setDraft((d) => ({ ...d, content }))}
+              onError={setError}
+            />
+          )}
           <textarea
-            id="canvas-body"
+            ref={textEditor}
+            id={`${editorId}-body`}
             spellCheck={draft.format !== "code"}
             className={styles.textarea}
             disabled={working || loading}
@@ -869,6 +946,13 @@ function ScopedCanvasEditor({
               }}
             >
               Скачать DOCX
+            </button>
+            <button
+              type="button"
+              disabled={working || loading || exportingPdf}
+              onClick={() => void exportPdf()}
+            >
+              {exportingPdf ? "Подготовка PDF…" : "Скачать PDF"}
             </button>
             {selected && (
               <button type="button" onClick={remove} disabled={working}>

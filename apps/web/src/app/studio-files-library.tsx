@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 import {
   extractLibraryPages,
@@ -22,6 +22,8 @@ import styles from "./studio-files-library.module.css";
 import { ShiningText, SystemMessage } from "./ui/kosmora-controls";
 import { WorkspaceIcon } from "./workspace-icons";
 import { downloadBlob } from "./chat-response";
+import { ReportCanvas } from "./canvas-editor/report-canvas";
+import { LibraryFilePreview } from "./library-file-preview";
 import {
   runLibraryUploadQueue,
   LibraryUploadRejectedError,
@@ -245,9 +247,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
     }
   });
 
-  const upload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(event.currentTarget.files ?? []);
-    event.currentTarget.value = "";
+  const upload = async (selectedFiles: File[]) => {
     if (!base || busy || !selectedFiles.length) return;
     abort.current?.abort();
     const controller = new AbortController();
@@ -537,14 +537,27 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
         </div>
       ) : (
         <>
-          <div className={styles.toolbar}>
+          <div
+            className={`${styles.toolbar} ${styles.dropzone}`}
+            onDragOver={(event) => {
+              event.preventDefault();
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (!busy) void upload(Array.from(event.dataTransfer.files));
+            }}
+          >
             <input
               ref={uploader}
               type="file"
               multiple
               hidden
               accept=".pdf,.docx,.txt,.csv"
-              onChange={(event) => void upload(event)}
+              onChange={(event) => {
+                const files = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = "";
+                void upload(files);
+              }}
             />
             <button
               className={styles.primary}
@@ -573,7 +586,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   Отменить загрузку
                 </button>
               )}
-            <small>До 20 МБ на файл · до 100 МБ и 100 файлов в проекте</small>
+            <small>Перетащите PDF, DOCX, TXT или CSV сюда · до 20 МБ на файл</small>
           </div>
           {status && <p role="status">{busy ? <ShiningText>{status}</ShiningText> : status}</p>}
           {error && <SystemMessage>{error}</SystemMessage>}
@@ -640,6 +653,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   </span>
                 </label>
                 <div className={styles.actions}>
+                  <LibraryFilePreview base={base} file={file} disabled={busy} />
                   {file.status !== "ready" && (
                     <button type="button" disabled={busy} onClick={() => void retry(file)}>
                       Повторить
@@ -765,6 +779,13 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   >
                     Экспорт ответа CSV
                   </button>
+                  <ReportCanvas
+                    key={saved.id}
+                    projectId={projectId}
+                    title={saved.question}
+                    content={answerReportLines(saved).join("\n\n")}
+                    disabled={saved.status !== "done"}
+                  />
                 </div>
               </>
             )}
@@ -778,6 +799,13 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                 <button type="button" onClick={() => setPreview((value) => !value)}>
                   Предпросмотр исходных фрагментов
                 </button>
+                <ReportCanvas
+                  projectId={projectId}
+                  title={`Источники: ${question}`}
+                  content={reportLines(question, material).join("\n\n")}
+                  disabled={!material.length}
+                  label="Редактировать подборку в Canvas"
+                />
                 <button
                   type="button"
                   disabled={!material.length}

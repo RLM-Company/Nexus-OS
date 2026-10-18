@@ -9,6 +9,12 @@
   line-height: 1.6;
   min-width: 0;
 }
+.dropzone {
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background: var(--panel);
+}
 .header {
   display: flex;
   align-items: start;

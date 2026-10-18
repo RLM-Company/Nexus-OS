@@ -1,0 +1,29 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  margin: 0 0 8px;
+}
+.toolbar.toolbar button {
+  min-width: 32px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.toolbar.toolbar button:hover:not(:disabled) {
+  background: var(--bg);
+}
+.toolbar span {
+  margin-left: auto;
+  padding-right: 8px;
+  font-size: 10px;
+  color: var(--muted);
+}
