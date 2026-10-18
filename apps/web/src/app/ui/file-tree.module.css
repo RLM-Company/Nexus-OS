@@ -1,101 +1,52 @@
 .tree {
   display: grid;
-  align-content: start;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
-  padding-block: 3px;
 }
 .tree button[role="treeitem"] {
   display: flex;
   align-items: center;
-  gap: 7px;
-  min-height: 33px;
+  gap: 6px;
+  min-height: 30px;
   width: 100%;
   text-align: left;
-  padding: 5px 9px;
-  border: 1px solid transparent;
+  padding: 5px 8px;
+  border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--muted, #666);
-  font: 12px/1.5 var(--font-mono, ui-monospace, monospace);
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    color 120ms ease;
+  color: var(--muted);
+  font-size: 12px;
 }
-.tree button[role="treeitem"]:hover:not(:disabled) {
-  background: var(--surface-hover, #eee);
-  color: var(--text, #171717);
-}
-.tree button[data-folder="true"] {
-  color: var(--text, #171717);
-  font-weight: 500;
+.tree button:hover {
+  background: var(--surface);
+  color: var(--text);
 }
 .tree button[aria-selected="true"] {
-  border-color: var(--line, #ddd);
-  background: var(--bg, #fff);
-  color: var(--text, #171717);
-  box-shadow: 0 1px 2px #00000004;
+  background: var(--surface-hover);
+  color: var(--text);
   font-weight: 550;
 }
 .tree button:focus-visible {
-  outline: 2px solid var(--text, #171717);
-  outline-offset: -3px;
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
 }
-.tree button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.tree button[role="treeitem"] > svg {
+.tree button[role="treeitem"] svg {
   width: 14px;
   height: 14px;
   flex: 0 0 14px;
-  opacity: 0.7;
 }
 .chevron {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: 9px;
   flex: 0 0 9px;
-}
-.chevron svg {
-  width: 11px;
-  height: 11px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  transition: transform 140ms ease;
-}
-.chevron svg[data-open="true"] {
-  transform: rotate(90deg);
+  text-align: center;
 }
 .name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.selected {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  margin-left: auto;
-  flex: 0 0 4px;
-  background: currentColor;
-}
-@media (pointer: coarse) {
-  .tree button[role="treeitem"] {
-    min-height: 42px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .tree button[role="treeitem"],
-  .chevron svg {
-    transition: none;
-  }
-}
-@media (forced-colors: active) {
-  .tree button[aria-selected="true"] {
-    border-color: Highlight;
+@media (max-width: 600px) {
+  .tree button {
+    min-height: 38px;
   }
 }

@@ -86,8 +86,6 @@ export function FileTree({
           aria-level={node.level}
           aria-selected={!node.folder && node.path === selected}
           aria-expanded={node.folder ? !collapsed.has(node.path) : undefined}
-          title={node.path}
-          data-folder={node.folder || undefined}
           tabIndex={
             (visible.some((item) => item.path === focused) ? focused === node.path : index === 0)
               ? 0
@@ -118,17 +116,10 @@ export function FileTree({
           }}
         >
           <span className={styles.chevron} aria-hidden="true">
-            {node.folder && (
-              <svg viewBox="0 0 16 16" data-open={!collapsed.has(node.path) || undefined}>
-                <path d="m6 4 4 4-4 4" />
-              </svg>
-            )}
+            {node.folder ? (collapsed.has(node.path) ? "›" : "⌄") : ""}
           </span>
           <WorkspaceIcon name={node.folder ? "projects" : "files"} aria-hidden="true" />
           <span className={styles.name}>{node.name}</span>
-          {node.path === selected && !node.folder && (
-            <span className={styles.selected} aria-hidden="true" />
-          )}
         </button>
       ))}
     </div>

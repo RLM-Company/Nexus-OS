@@ -3,15 +3,6 @@
   --radius-control: 9px;
   --radius-container: 16px;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
-  --control-height: 36px;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --shadow-panel: 0 1px 3px #00000004;
-  --motion-panel: 180ms;
 }
 .product-shell .sidebar {
   background: #f7f7f7;
@@ -45,39 +36,6 @@
   box-shadow:
     0 10px 35px #00000010,
     0 2px 5px #00000005;
-}
-.product-shell .sidebar :is(.sidebar-tool, .project-item, .nav-item) {
-  min-width: 0;
-}
-.product-shell .sidebar .project-item[aria-current="page"] {
-  background: #eaeaea;
-}
-.product-shell .sidebar :is(.sidebar-tool, .project-item, .brand, .account-trigger):focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: -2px;
-}
-.product-shell .sidebar .brand-mark {
-  border-color: var(--line);
-  background: var(--bg);
-  box-shadow: var(--shadow-panel);
-}
-.product-shell .topbar {
-  background: var(--bg);
-  border-bottom-color: #f0f0f0;
-}
-.product-shell .topbar h1 {
-  font-weight: 550;
-  letter-spacing: -0.025em;
-}
-.product-shell .hero h2 {
-  font-weight: 550;
-  letter-spacing: -0.035em;
-}
-.product-shell .account-menu {
-  background: var(--bg);
-}
-.workspace-modes :is(button, a)[aria-current="page"] {
-  box-shadow: none;
 }
 .workspace-modes :is(button, a),
 .account-menu :is(button, a) {
@@ -218,11 +176,6 @@
   50% {
     opacity: 0.3;
     transform: scale(0.8);
-  }
-}
-@media (pointer: coarse) {
-  :root {
-    --control-height: 44px;
   }
 }
 @keyframes stream-appear {

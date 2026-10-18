@@ -6,10 +6,8 @@ import { codePatchMessages, type CodePatchPreview } from "./patch-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./code-agent.module.css";
 import { codeAgentUnifiedDiff } from "./unified-diff";
-import { CodeWindow } from "../ui/code-window";
 import { InlineDiff } from "../ui/inline-diff";
 import { TerminalOutput } from "../ui/terminal-output";
-import { WorkspaceIcon } from "../workspace-icons";
 
 type FileChange = { path: string; before: string | null; content: string };
 type Run = {
@@ -421,15 +419,11 @@ export default function CodeAgentPage() {
     <main className={styles.page}>
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>
-            <WorkspaceIcon name="code" /> Kosmora Code
-          </p>
+          <p className={styles.eyebrow}>Kosmora / инструменты</p>
           <h1>Code-агент</h1>
           <p>Задача → просмотр изменений → разрешённая проверка → черновик PR</p>
         </div>
-        <Link href="/github" className={styles.repositoryLink}>
-          Репозиторий <span aria-hidden="true">↗</span>
-        </Link>
+        <Link href="/github">GitHub</Link>
       </header>
       {error && (
         <p className={styles.notice} role="alert">
@@ -760,16 +754,8 @@ export default function CodeAgentPage() {
                   </label>
                   <div className={styles.diff}>
                     <div>
-                      <h3>До изменения{file.before === null ? " · новый файл" : ""}</h3>
-                      {file.before === null ? (
-                        <p className={styles.newFile}>Файл будет создан</p>
-                      ) : (
-                        <CodeWindow
-                          content={file.before}
-                          language={file.path.split(".").at(-1) ?? "txt"}
-                          title={file.path}
-                        />
-                      )}
+                      <h3>− До изменения{file.before === null ? " (новый файл)" : ""}</h3>
+                      <pre>{file.before ?? "Файл отсутствует"}</pre>
                     </div>
                     <label>
                       + Итоговое содержимое: {file.path}

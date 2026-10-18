@@ -1,16 +1,16 @@
 .keyword {
   font-weight: 650;
-  color: var(--text, #222);
+  color: #222;
 }
 .string {
-  color: var(--muted, #555);
+  color: #555;
 }
 .number {
-  color: var(--text, #333);
+  color: #333;
   font-weight: 550;
 }
 .comment {
-  color: var(--muted, #737373);
+  color: #737373;
   font-style: italic;
 }
 @media (forced-colors: active) {

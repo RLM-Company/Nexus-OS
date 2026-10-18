@@ -100,29 +100,6 @@ test("table cell dialog cancels without data loss and filter chips update the re
   await page.screenshot({ path: info.outputPath("data-workbench-desktop.png"), fullPage: true });
 });
 
-test("Enter in model search cannot submit the chat draft", async ({ page }) => {
-  await page.goto("/");
-  const draft = page.getByLabel("Сообщение Kosmora", { exact: true });
-  await expect(draft).toBeEnabled();
-  await draft.fill("Это черновик, который нельзя отправлять из поиска модели");
-  const writes: string[] = [];
-  page.on("request", (request) => {
-    if (
-      request.method() !== "GET" &&
-      /\/api\/v1\/(?:chats|projects)(?:\/|$)/.test(new URL(request.url()).pathname)
-    )
-      writes.push(request.url());
-  });
-  await page.getByLabel("Выбор модели", { exact: true }).click();
-  const search = page.getByLabel("Найти модель", { exact: true });
-  await search.fill("несуществующая модель");
-  await search.press("Enter");
-  await expect(search).toBeFocused();
-  await expect(draft).toHaveValue("Это черновик, который нельзя отправлять из поиска модели");
-  await expect(page.locator(".topbar h1")).toHaveText("Новый чат");
-  expect(writes).toEqual([]);
-});
-
 test("Canvas toolbar formats the selection, supports undo and leaves the document unsaved", async ({
   page,
   request

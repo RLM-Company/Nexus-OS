@@ -17,6 +17,18 @@
   border-bottom: 1px solid #333;
   background: #1e1e1e;
 }
+.dots {
+  display: inline-flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.dots i {
+  width: 7px;
+  height: 7px;
+  border: 1px solid #777;
+  border-radius: 50%;
+  background: #555;
+}
 .title {
   display: flex;
   align-items: center;

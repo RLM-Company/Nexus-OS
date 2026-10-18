@@ -43,7 +43,7 @@
   background: var(--surface-hover);
 }
 .page button[aria-pressed="true"] {
-  background: var(--repo-panel);
+  background: var(--accent-soft);
   border-color: var(--line-strong);
   color: var(--text);
 }
@@ -62,19 +62,19 @@
   transition: border-color 140ms ease;
 }
 .page :is(button, input, select, textarea, a):focus-visible {
-  outline: 2px solid var(--repo-ink);
+  outline: 2px solid var(--accent-strong);
   outline-offset: 3px;
 }
 .page :is(input, select, textarea):focus-visible {
   outline-offset: 1px;
 }
 .page button.primary {
-  background: var(--repo-ink);
-  border-color: var(--repo-ink);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
   color: white;
 }
 .page button.primary:not(:disabled):hover {
-  background: var(--text);
+  background: var(--accent-hover);
 }
 .repository,
 .editor label {
@@ -101,7 +101,6 @@
   border: 1px solid var(--line);
   border-radius: 0.875rem;
   background: var(--bg);
-  box-shadow: 0 4px 20px #00000004;
 }
 .files {
   max-height: 36rem;
@@ -207,7 +206,7 @@
   padding: 0.25rem 0;
 }
 .review input[type="checkbox"] {
-  accent-color: var(--repo-ink);
+  accent-color: var(--accent-strong);
 }
 .review code {
   font-size: 0.75rem;
@@ -223,7 +222,7 @@
   font-weight: 600;
 }
 .review a {
-  color: var(--repo-ink);
+  color: var(--accent-strong);
   text-decoration: underline;
 }
 .diff > div {
@@ -234,7 +233,7 @@
   border-left: 3px dashed #b0b0b0;
 }
 .diff > div:last-child pre {
-  background: var(--repo-panel);
+  background: #fafafa;
   border-left: 3px solid #555555;
 }
 .diff {
@@ -445,7 +444,7 @@
 }
 
 .section a {
-  color: var(--repo-ink);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 
@@ -588,7 +587,7 @@
 }
 .filePane {
   min-width: 0;
-  background: var(--repo-panel);
+  background: #fafafa;
   border-right: 1px solid var(--line);
 }
 .panelHeading,
@@ -614,21 +613,6 @@
   height: 1rem;
   color: var(--muted);
   flex-shrink: 0;
-}
-.editorHeading h2 {
-  padding: 5px 9px;
-  border: 1px solid var(--repo-line);
-  border-radius: 5px;
-  background: var(--repo-panel);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-}
-.panelHeading {
-  color: var(--repo-muted);
-  background: var(--repo-panel);
-}
-.filePane .files {
-  padding: 8px;
 }
 .editor > label {
   padding: 1rem 1rem 0;

@@ -10,8 +10,8 @@ import {
 } from "@cosmora/contracts/work-plan-package";
 import type { WorkDag, WorkDagNodeInput, WorkDagControl } from "@cosmora/contracts";
 import { useExecutionGate } from "./use-execution-gate";
+import { WorkPlanEditorTracker } from "./ui/work-plan-view";
 import { ActivityTimeline } from "./ui/activity-timeline";
-import { WorkPlanEditorTracker, WorkPlanOverview, WorkPlanStepHeading } from "./ui/work-plan-view";
 import styles from "./work-manager.module.css";
 
 const statuses: Record<string, string> = {
@@ -95,6 +95,7 @@ const freshStep = (): WorkDagNodeInput => ({
 });
 
 export function WorkManagerDag({ projectId }: { projectId: string }) {
+  const editorForm = useRef<HTMLFormElement>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work-dags";
   const gate = useExecutionGate(projectId);
   const [graphs, setGraphs] = useState<WorkDag[]>([]);
@@ -129,9 +130,6 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   } | null>(null);
   const [readingImport, setReadingImport] = useState(false);
   const importEpoch = useRef(0);
-  const editorTitleRef = useRef<HTMLInputElement>(null);
-  const editorStepsRef = useRef<HTMLDivElement>(null);
-  const editorSaveRef = useRef<HTMLButtonElement>(null);
   const [retry, setRetry] = useState<string | null>(null);
   const [cancellation, setCancellation] = useState<{
     graphId: string;
@@ -479,23 +477,12 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   }
   return (
     <section className={styles.panel} aria-label="План с зависимостями">
-      <header className={styles.panelHeader}>
-        <div>
-          <span className={styles.eyebrow}>Work · Планирование</span>
-          <h3>План проекта</h3>
-          <p>
-            От задачи к результату: соберите шаги, свяжите зависимости и управляйте выполнением.
-          </p>
-        </div>
-        <span className={styles.libraryCount}>
-          {graphs.length}{" "}
-          {graphs.length % 10 === 1 && graphs.length % 100 !== 11
-            ? "план"
-            : [2, 3, 4].includes(graphs.length % 10) && ![12, 13, 14].includes(graphs.length % 100)
-              ? "плана"
-              : "планов"}
-        </span>
-      </header>
+      <h3>План проекта</h3>
+      <p>
+        Создайте шаги и зависимости, затем выполните план целиком или запускайте шаги отдельно.
+        Каждый шаг создаёт файлы через Manager: до 3 запросов, 32 000 входных и 6 000 выходных
+        токенов. Повторы запускаются вручную.
+      </p>
       <div className={styles.actions}>
         {graph && (
           <button
@@ -516,7 +503,6 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </button>
         )}
         <button
-          className={styles.primaryAction}
           disabled={browsingLocked}
           onClick={() =>
             setEditor({
@@ -553,7 +539,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         )}
       </div>
       {graphs.length > 0 && (
-        <div className={styles.planLibrary}>
+        <>
           <label>
             Раздел планов
             <select
@@ -613,9 +599,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
               </select>
             </label>
           )}
-        </div>
+        </>
       )}
-      <details className={styles.transfer}>
+      <details>
         <summary>Перенос плана через JSON</summary>
         <p>
           Файл содержит задачи и зависимости. После локального предпросмотра импорт создаст новый
@@ -784,8 +770,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       )}
       {editor && (
         <form
-          className={styles.planEditor}
-          aria-label={editor.graphId ? "Редактирование плана" : "Новый план"}
+          ref={editorForm}
           onSubmit={(e) => {
             e.preventDefault();
             void mutate(
@@ -797,10 +782,6 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             );
           }}
         >
-          <div className={styles.editorHeading}>
-            <strong>{editor.graphId ? "Редактирование плана" : "Новый план"}</strong>
-            <span>Сохранение не запускает задачи</span>
-          </div>
           <WorkPlanEditorTracker
             titleReady={Boolean(editor.title.trim())}
             completedSteps={
@@ -808,22 +789,21 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             }
             totalSteps={editor.nodes.length}
             onNavigate={(section) => {
-              const target =
+              const selector =
                 section === "title"
-                  ? editorTitleRef.current
-                  : section === "save"
-                    ? editorSaveRef.current
-                    : editorStepsRef.current?.querySelector<HTMLInputElement>(
-                        "input:not(:disabled)"
-                      );
-              target?.scrollIntoView({ block: "center", behavior: "instant" });
-              target?.focus({ preventScroll: true });
+                  ? 'input[name="plan-title"]'
+                  : section === "steps"
+                    ? "fieldset input:not(:disabled)"
+                    : 'button[type="submit"]';
+              const element = editorForm.current?.querySelector<HTMLElement>(selector);
+              element?.scrollIntoView({ block: "center" });
+              element?.focus({ preventScroll: true });
             }}
           />
           <label>
             Название плана
             <input
-              ref={editorTitleRef}
+              name="plan-title"
               required
               maxLength={160}
               disabled={Boolean(editor.graphId) || busy}
@@ -831,93 +811,89 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
               onChange={(e) => setEditor({ ...editor, title: e.target.value })}
             />
           </label>
-          <div ref={editorStepsRef} className={styles.editorSteps}>
-            {editor.nodes.map((node, index) => {
-              const savedNode =
-                graph?.id === editor.graphId
-                  ? graph.nodes.find((n) => n.id === node.id)
-                  : undefined;
-              const started = Boolean(
-                savedNode?.attempts.length || savedNode?.status === "cancelled"
-              );
-              return (
-                <fieldset key={node.id} disabled={started || busy} className={styles.dagStep}>
-                  <legend>
-                    Шаг {index + 1}
-                    {savedNode?.status === "cancelled"
-                      ? " · отменён"
-                      : started
-                        ? " · уже запущен"
-                        : ""}
-                  </legend>
-                  <label>
-                    Название
-                    <input
-                      required
-                      maxLength={160}
-                      value={node.title}
-                      onChange={(e) => update(index, { title: e.target.value })}
-                    />
-                  </label>
-                  <label>
-                    Задача для Manager
-                    <textarea
-                      required
-                      maxLength={4000}
-                      rows={3}
-                      value={node.goal}
-                      onChange={(e) => update(index, { goal: e.target.value })}
-                    />
-                  </label>
-                  <p>Запуск после завершения:</p>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(node.requires_critic)}
-                      onChange={(e) => update(index, { requires_critic: e.target.checked })}
-                    />
-                    Проверить результат Критиком
-                  </label>
-                  {editor.nodes
-                    .filter((n) => n.id !== node.id)
-                    .map((dependency) => (
-                      <label key={dependency.id}>
-                        <input
-                          type="checkbox"
-                          checked={node.depends_on.includes(dependency.id)}
-                          onChange={(e) =>
-                            update(index, {
-                              depends_on: e.target.checked
-                                ? [...node.depends_on, dependency.id]
-                                : node.depends_on.filter((d) => d !== dependency.id)
-                            })
-                          }
-                        />
-                        {dependency.title || "Без названия"}
-                      </label>
-                    ))}
-                  <button
-                    type="button"
-                    disabled={editor.nodes.length === 1}
-                    onClick={() =>
-                      setEditor({
-                        ...editor,
-                        nodes: editor.nodes
-                          .filter((n) => n.id !== node.id)
-                          .map((n) => ({
-                            ...n,
-                            depends_on: n.depends_on.filter((d) => d !== node.id)
-                          }))
-                      })
-                    }
-                  >
-                    Удалить шаг из плана
-                  </button>
-                </fieldset>
-              );
-            })}
-          </div>
-          <div className={`${styles.actions} ${styles.editorActions}`}>
+          {editor.nodes.map((node, index) => {
+            const savedNode =
+              graph?.id === editor.graphId ? graph.nodes.find((n) => n.id === node.id) : undefined;
+            const started = Boolean(
+              savedNode?.attempts.length || savedNode?.status === "cancelled"
+            );
+            return (
+              <fieldset key={node.id} disabled={started || busy} className={styles.dagStep}>
+                <legend>
+                  Шаг {index + 1}
+                  {savedNode?.status === "cancelled"
+                    ? " · отменён"
+                    : started
+                      ? " · уже запущен"
+                      : ""}
+                </legend>
+                <label>
+                  Название
+                  <input
+                    required
+                    maxLength={160}
+                    value={node.title}
+                    onChange={(e) => update(index, { title: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Задача для Manager
+                  <textarea
+                    required
+                    maxLength={4000}
+                    rows={3}
+                    value={node.goal}
+                    onChange={(e) => update(index, { goal: e.target.value })}
+                  />
+                </label>
+                <p>Запуск после завершения:</p>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(node.requires_critic)}
+                    onChange={(e) => update(index, { requires_critic: e.target.checked })}
+                  />
+                  Проверить результат Критиком
+                </label>
+                {editor.nodes
+                  .filter((n) => n.id !== node.id)
+                  .map((dependency) => (
+                    <label key={dependency.id}>
+                      <input
+                        type="checkbox"
+                        checked={node.depends_on.includes(dependency.id)}
+                        onChange={(e) =>
+                          update(index, {
+                            depends_on: e.target.checked
+                              ? [...node.depends_on, dependency.id]
+                              : node.depends_on.filter((d) => d !== dependency.id)
+                          })
+                        }
+                      />
+                      {dependency.title || "Без названия"}
+                    </label>
+                  ))}
+                <button
+                  type="button"
+                  disabled={editor.nodes.length === 1}
+                  onClick={() =>
+                    setEditor({
+                      ...editor,
+                      nodes: editor.nodes
+                        .filter((n) => n.id !== node.id)
+                        .map((n) => ({
+                          ...n,
+                          depends_on: n.depends_on.filter((d) => d !== node.id)
+                        }))
+                    })
+                  }
+                >
+                  Удалить шаг из плана
+                </button>
+              </fieldset>
+            );
+          })}
+          <div className={styles.actions}>
             <button
               type="button"
               disabled={busy || editor.nodes.length >= 32}
@@ -925,12 +901,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             >
               Добавить шаг
             </button>
-            <button
-              ref={editorSaveRef}
-              className={styles.primaryAction}
-              disabled={busy}
-              type="submit"
-            >
+            <button disabled={busy} type="submit">
               Сохранить план
             </button>
             <button disabled={busy} type="button" onClick={() => setEditor(null)}>
@@ -971,77 +942,63 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       )}
       {graph && (
         <>
-          <div className={styles.savedPlanHeading}>
-            <h4>{graph.title}</h4>
-            <span className={styles.planMode}>
-              {graph.archived_at
-                ? "В архиве"
-                : graph.mode === "active"
-                  ? "Активен"
-                  : graph.mode === "paused"
-                    ? "На паузе"
-                    : "Отменён"}
-            </span>
-          </div>
-          <div className={styles.planTools}>
-            {!graph.archived_at && (
-              <button
-                type="button"
-                disabled={browsingLocked}
-                onClick={() =>
-                  setRename({ id: graph.id, version: graph.version, title: graph.title })
-                }
-              >
-                Переименовать план
-              </button>
-            )}
-
-            {graph.archived_at && (
-              <p role="status">
-                В архиве с {new Date(graph.archived_at).toLocaleString("ru-RU")}. Файлы и история
-                сохранены. Для запуска восстановите план.
-              </p>
-            )}
+          <h4>{graph.title}</h4>
+          {!graph.archived_at && (
             <button
               type="button"
-              disabled={
-                browsingLocked ||
-                (!graph.archived_at &&
-                  (Boolean(automatic) ||
-                    graph.nodes.some(
-                      (n) =>
-                        n.attempts.length &&
-                        !["completed", "failed", "cancelled"].includes(n.status)
-                    )))
-              }
+              disabled={browsingLocked}
               onClick={() =>
-                void mutate(base + "/" + graph.id + "/archive", "PUT", {
-                  expected_version: graph.version,
-                  archived: !graph.archived_at
-                })
+                setRename({ id: graph.id, version: graph.version, title: graph.title })
               }
             >
-              {graph.archived_at ? "Восстановить план" : "В архив"}
+              Переименовать план
             </button>
-            {!graph.archived_at && (
-              <p>
-                Архив сохраняет результаты и историю. Начатые шаги должны быть завершены или
-                отменены, автозапуск — остановлен.
-              </p>
-            )}
-            <a
-              href={base + "/" + encodeURIComponent(graph.id) + "/package"}
-              download="work-plan.json"
-            >
-              Скачать JSON плана
-            </a>
-            <p className={styles.planMeta}>
-              <a href={base + "/" + encodeURIComponent(graph.id) + "/results.zip"}>
-                Скачать отчёт и файлы (ZIP)
-              </a>{" "}
-              — опубликованные результаты, версии и источники. Незавершённые шаги отмечены в отчёте.
+          )}
+
+          {graph.archived_at && (
+            <p role="status">
+              В архиве с {new Date(graph.archived_at).toLocaleString("ru-RU")}. Файлы и история
+              сохранены. Для запуска восстановите план.
             </p>
-          </div>
+          )}
+          <button
+            type="button"
+            disabled={
+              browsingLocked ||
+              (!graph.archived_at &&
+                (Boolean(automatic) ||
+                  graph.nodes.some(
+                    (n) =>
+                      n.attempts.length && !["completed", "failed", "cancelled"].includes(n.status)
+                  )))
+            }
+            onClick={() =>
+              void mutate(base + "/" + graph.id + "/archive", "PUT", {
+                expected_version: graph.version,
+                archived: !graph.archived_at
+              })
+            }
+          >
+            {graph.archived_at ? "Восстановить план" : "В архив"}
+          </button>
+          {!graph.archived_at && (
+            <p>
+              Архив сохраняет результаты и историю. Начатые шаги должны быть завершены или отменены,
+              автозапуск — остановлен.
+            </p>
+          )}
+          <a
+            href={base + "/" + encodeURIComponent(graph.id) + "/package"}
+            download="work-plan.json"
+          >
+            Скачать JSON плана
+          </a>
+          <p>
+            <a href={base + "/" + encodeURIComponent(graph.id) + "/results.zip"}>
+              Скачать отчёт и файлы (ZIP)
+            </a>{" "}
+            — опубликованные результаты, версии и источники. Незавершённые шаги отмечены в отчёте.
+          </p>
           {graph.copied_from && (
             <p>
               Копия плана · исходная версия {graph.copied_from.version} ·{" "}
@@ -1055,15 +1012,22 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             path={base + "/" + encodeURIComponent(graph.id) + "/skills"}
             label="Skills этого плана"
           />
-          <p className={styles.planMeta}>
-            {graph.archived_at ? "Состояние при архивировании · " : ""}
-            Версия {graph.version}
+          <p>
+            {graph.archived_at ? "Состояние при архивировании: " : ""}
+            {graph.mode === "active"
+              ? "Проект активен"
+              : graph.mode === "paused"
+                ? "Проект на паузе"
+                : "Проект отменён"}{" "}
+            · версия {graph.version} · завершено{" "}
+            {graph.nodes.filter((n) => n.status === "completed").length} из {graph.nodes.length}
           </p>
-          <WorkPlanOverview nodes={graph.nodes} />
-          <div
-            className={`${styles.entry} ${styles.executionPanel}`}
-            aria-label="Автоматическое выполнение плана"
-          >
+          <progress
+            aria-label="Прогресс плана"
+            value={graph.nodes.filter((n) => n.status === "completed").length}
+            max={graph.nodes.length}
+          />
+          <div className={styles.entry} aria-label="Автоматическое выполнение плана">
             <strong>
               {graph.execution?.status === "completed"
                 ? "План выполнен"
@@ -1073,8 +1037,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             </strong>
             <p>
               Шаги идут по зависимостям последовательно. Подтверждения планов и разрешений остаются
-              явными; ошибки не вызывают автоматического повтора. На шаг — до 3 запросов, 32 000
-              входных и 6 000 выходных токенов.
+              явными; ошибки не вызывают автоматического повтора.
             </p>
             {graph.execution?.reason && (
               <p role="status">{workDagReason(graph.execution.reason, graph)}</p>
@@ -1113,7 +1076,6 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                     Разрешаю выполнение оставшихся шагов в этом лимите с расходом токенов
                   </label>
                   <button
-                    className={styles.primaryAction}
                     disabled={
                       browsingLocked ||
                       gate !== "clear" ||
@@ -1179,216 +1141,185 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
               .
             </p>
           )}
-          <ol
-            className={`${styles.entries} ${styles.planSteps}`}
-            aria-label="Шаги плана и зависимости"
-          >
-            {graph.nodes.map((node, index) => (
-              <li
-                className={`${styles.entry} ${styles.planStep}`}
-                data-state={node.status}
-                key={node.id}
-              >
-                <WorkPlanStepHeading
-                  index={index}
-                  title={node.title}
-                  status={node.status}
-                  statusLabel={statuses[node.status] ?? node.status}
-                />
-                <div className={styles.stepBody}>
-                  <p className={styles.stepGoal}>{node.goal}</p>
-                  {node.depends_on.length > 0 && (
-                    <div className={styles.dependencies} aria-label="Зависимости шага">
-                      <span>После:</span>
-                      {node.depends_on.map((id) => {
-                        const dependency = graph.nodes.find((item) => item.id === id);
-                        return (
-                          <span
-                            className={styles.dependency}
-                            data-ready={dependency?.status === "completed"}
-                            key={id}
-                          >
-                            {dependency?.status === "completed" && (
-                              <span aria-hidden="true">✓ </span>
-                            )}
-                            {dependency?.title ?? id}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {node.blocked_reason && (
-                    <p className={styles.stepNotice}>{workDagReason(node.blocked_reason, graph)}</p>
-                  )}
-                  {node.result?.plan_summary && (
-                    <details>
-                      <summary>План Manager</summary>
-                      <p>{node.result.plan_summary}</p>
-                      <p>{node.result.plan_instructions}</p>
-                    </details>
-                  )}
-                  {node.result?.review && (
-                    <p>
-                      Критик: {node.result.review.verdict} — {node.result.review.reason}
-                    </p>
-                  )}
-                  <div className={styles.actions}>
-                    {!graph.archived_at &&
-                      ["pending", "blocked", "running"].includes(node.status) && (
-                        <button
-                          type="button"
-                          disabled={browsingLocked}
-                          onClick={() => {
-                            setRetry(null);
-                            setCancellation({
-                              graphId: graph.id,
-                              nodeId: node.id,
-                              version: graph.version,
-                              title: node.title
-                            });
-                          }}
-                        >
-                          Отменить этот шаг…
-                        </button>
-                      )}
-                    {!graph.archived_at && node.status === "pending" && (
-                      <button
-                        disabled={
-                          browsingLocked ||
-                          graph.mode !== "active" ||
-                          gate !== "clear" ||
-                          Boolean(automatic)
-                        }
-                        onClick={() => act("run", node.id)}
-                      >
-                        Запустить шаг
-                      </button>
-                    )}
-                    {!graph.archived_at &&
-                      node.status === "blocked" &&
-                      node.blocked_reason === "AWAITING_APPROVAL" && (
-                        <button
-                          disabled={browsingLocked || graph.mode !== "active" || gate !== "clear"}
-                          onClick={() => act("approve_step", node.id)}
-                        >
-                          Подтвердить план Manager
-                        </button>
-                      )}
-                    {!graph.archived_at &&
-                      node.status === "blocked" &&
-                      ["PAUSED", "DENIED", "WAITING_CONFIRMATION"].includes(
-                        node.blocked_reason ?? ""
-                      ) && (
-                        <button
-                          disabled={browsingLocked || graph.mode !== "active" || gate !== "clear"}
-                          onClick={() => act("resume_step", node.id)}
-                        >
-                          Продолжить шаг
-                        </button>
-                      )}
-                    {!graph.archived_at && node.status === "failed" && (
-                      <button
-                        disabled={browsingLocked || graph.mode !== "active" || gate !== "clear"}
-                        onClick={() => {
-                          setRetry(node.id);
-                          setAcknowledged(false);
-                        }}
-                      >
-                        Повторить этот шаг…
-                      </button>
-                    )}
-                  </div>
-                  {cancellation?.graphId === graph.id && cancellation.nodeId === node.id && (
-                    <div role="group" aria-label="Подтверждение отмены шага">
-                      <p>
-                        Отменить «{cancellation.title}»? Автозапуск этого плана остановится.
-                        Зависимые шаги останутся заблокированы, готовые результаты сохранятся.
-                        Другие шаги и планы не отменяются. Уже отправленный запрос мог быть оплачен.
-                        Отменённый шаг нельзя продолжить; для нового запуска создайте копию плана.
-                      </p>
+          <ol className={styles.entries}>
+            {graph.nodes.map((node) => (
+              <li className={styles.entry} key={node.id}>
+                <strong>
+                  {node.title} · {statuses[node.status]}
+                </strong>
+                <p>{node.goal}</p>
+                {node.depends_on.length > 0 && (
+                  <small>
+                    Зависимости:{" "}
+                    {node.depends_on
+                      .map((d) => graph.nodes.find((n) => n.id === d)?.title ?? d)
+                      .join(", ")}
+                  </small>
+                )}
+                {node.blocked_reason && <p>{workDagReason(node.blocked_reason, graph)}</p>}
+                {node.result?.plan_summary && (
+                  <details>
+                    <summary>План Manager</summary>
+                    <p>{node.result.plan_summary}</p>
+                    <p>{node.result.plan_instructions}</p>
+                  </details>
+                )}
+                {node.result?.review && (
+                  <p>
+                    Критик: {node.result.review.verdict} — {node.result.review.reason}
+                  </p>
+                )}
+                <div className={styles.actions}>
+                  {!graph.archived_at &&
+                    ["pending", "blocked", "running"].includes(node.status) && (
                       <button
                         type="button"
-                        disabled={busy}
-                        onClick={() =>
-                          void mutate(base + "/" + cancellation.graphId + "/control", "POST", {
-                            version: cancellation.version,
-                            action: "cancel_step",
-                            node_id: cancellation.nodeId
-                          })
-                        }
+                        disabled={browsingLocked}
+                        onClick={() => {
+                          setRetry(null);
+                          setCancellation({
+                            graphId: graph.id,
+                            nodeId: node.id,
+                            version: graph.version,
+                            title: node.title
+                          });
+                        }}
                       >
-                        Подтвердить отмену шага
+                        Отменить этот шаг…
                       </button>
-                      <button type="button" disabled={busy} onClick={() => setCancellation(null)}>
-                        Оставить шаг
-                      </button>
-                    </div>
+                    )}
+                  {!graph.archived_at && node.status === "pending" && (
+                    <button
+                      disabled={
+                        browsingLocked ||
+                        graph.mode !== "active" ||
+                        gate !== "clear" ||
+                        Boolean(automatic)
+                      }
+                      onClick={() => act("run", node.id)}
+                    >
+                      Запустить шаг
+                    </button>
                   )}
-                  {retry === node.id && (
-                    <div>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={acknowledged}
-                          onChange={(e) => setAcknowledged(e.target.checked)}
-                        />
-                        Разрешаю новую попытку этого шага с возможным расходом токенов. Предыдущий
-                        запрос мог быть оплачен.
-                      </label>
+                  {!graph.archived_at &&
+                    node.status === "blocked" &&
+                    node.blocked_reason === "AWAITING_APPROVAL" && (
                       <button
-                        disabled={
-                          !acknowledged || busy || gate !== "clear" || graph.mode !== "active"
-                        }
-                        onClick={() => act("retry", node.id)}
+                        disabled={browsingLocked || graph.mode !== "active" || gate !== "clear"}
+                        onClick={() => act("approve_step", node.id)}
                       >
-                        Запустить новую попытку
+                        Подтвердить план Manager
                       </button>
-                    </div>
-                  )}
-                  <ul className={styles.artifacts}>
-                    {node.artifacts.map((a) => (
-                      <li key={a.id}>
-                        <a
-                          href={
-                            "/api/v1/projects/" +
-                            encodeURIComponent(projectId) +
-                            "/work-artifacts/" +
-                            a.id +
-                            "/download"
-                          }
-                        >
-                          {a.name} · версия {a.version}
-                        </a>
-                        <small>
-                          Источник: Work {a.work_id}; SHA-256 {a.sha256}; {a.bytes} байт
-                        </small>
-                      </li>
-                    ))}
-                  </ul>
-                  {node.result?.sources.map((s) => (
-                    <small key={s.run_id}>
-                      Источник модели: {s.provider} / {s.model}; запрос {s.run_id}; этап {s.stage}
-                    </small>
-                  ))}
-                  {node.attempts.length > 0 && (
-                    <details className={styles.attempts}>
-                      <summary>Попытки ({node.attempts.length})</summary>
-                      <ActivityTimeline
-                        label={`Попытки шага «${node.title}»`}
-                        items={node.attempts.map((attempt) => ({
-                          id: attempt.work_id,
-                          at: attempt.started_at,
-                          title: `Попытка ${attempt.number}`,
-                          detail: `Work ${attempt.work_id}${attempt.source_artifact_ids.length ? " · использованные артефакты: " + attempt.source_artifact_ids.join(", ") : ""}`
-                        }))}
-                      />
-                    </details>
+                    )}
+                  {!graph.archived_at &&
+                    node.status === "blocked" &&
+                    ["PAUSED", "DENIED", "WAITING_CONFIRMATION"].includes(
+                      node.blocked_reason ?? ""
+                    ) && (
+                      <button
+                        disabled={browsingLocked || graph.mode !== "active" || gate !== "clear"}
+                        onClick={() => act("resume_step", node.id)}
+                      >
+                        Продолжить шаг
+                      </button>
+                    )}
+                  {!graph.archived_at && node.status === "failed" && (
+                    <button
+                      disabled={browsingLocked || graph.mode !== "active" || gate !== "clear"}
+                      onClick={() => {
+                        setRetry(node.id);
+                        setAcknowledged(false);
+                      }}
+                    >
+                      Повторить этот шаг…
+                    </button>
                   )}
                 </div>
+                {cancellation?.graphId === graph.id && cancellation.nodeId === node.id && (
+                  <div role="group" aria-label="Подтверждение отмены шага">
+                    <p>
+                      Отменить «{cancellation.title}»? Автозапуск этого плана остановится. Зависимые
+                      шаги останутся заблокированы, готовые результаты сохранятся. Другие шаги и
+                      планы не отменяются. Уже отправленный запрос мог быть оплачен. Отменённый шаг
+                      нельзя продолжить; для нового запуска создайте копию плана.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void mutate(base + "/" + cancellation.graphId + "/control", "POST", {
+                          version: cancellation.version,
+                          action: "cancel_step",
+                          node_id: cancellation.nodeId
+                        })
+                      }
+                    >
+                      Подтвердить отмену шага
+                    </button>
+                    <button type="button" disabled={busy} onClick={() => setCancellation(null)}>
+                      Оставить шаг
+                    </button>
+                  </div>
+                )}
+                {retry === node.id && (
+                  <div>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={acknowledged}
+                        onChange={(e) => setAcknowledged(e.target.checked)}
+                      />
+                      Разрешаю новую попытку этого шага с возможным расходом токенов. Предыдущий
+                      запрос мог быть оплачен.
+                    </label>
+                    <button
+                      disabled={
+                        !acknowledged || busy || gate !== "clear" || graph.mode !== "active"
+                      }
+                      onClick={() => act("retry", node.id)}
+                    >
+                      Запустить новую попытку
+                    </button>
+                  </div>
+                )}
+                <ul className={styles.artifacts}>
+                  {node.artifacts.map((a) => (
+                    <li key={a.id}>
+                      <a
+                        href={
+                          "/api/v1/projects/" +
+                          encodeURIComponent(projectId) +
+                          "/work-artifacts/" +
+                          a.id +
+                          "/download"
+                        }
+                      >
+                        {a.name} · версия {a.version}
+                      </a>
+                      <small>
+                        Источник: Work {a.work_id}; SHA-256 {a.sha256}; {a.bytes} байт
+                      </small>
+                    </li>
+                  ))}
+                </ul>
+                {node.result?.sources.map((s) => (
+                  <small key={s.run_id}>
+                    Источник модели: {s.provider} / {s.model}; запрос {s.run_id}; этап {s.stage}
+                  </small>
+                ))}
+                {node.attempts.map((a) => (
+                  <small key={a.work_id}>
+                    Попытка {a.number}: {a.work_id} ·{" "}
+                    {new Date(a.started_at).toLocaleString("ru-RU")}
+                    {a.source_artifact_ids.length
+                      ? " · использованные артефакты: " + a.source_artifact_ids.join(", ")
+                      : ""}
+                  </small>
+                ))}
               </li>
             ))}
           </ol>
-          <details className={styles.history}>
+          <details>
             <summary>История событий и checkpoints</summary>
             <ActivityTimeline
               label="События плана"

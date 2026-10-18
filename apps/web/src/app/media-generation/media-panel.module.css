@@ -1,31 +1,25 @@
 .panel {
   margin-top: 24px;
   padding: 22px;
-  border: 1px solid var(--line);
+  border: 1px solid #777;
   border-radius: 16px;
-  background: var(--bg);
-  color: var(--text);
+  background: #111;
+  color: #f5f5f5;
   display: grid;
   gap: 12px;
-  min-width: 0;
-  font: 14px/1.6 var(--font-ui);
 }
 .panel h3,
 .panel h4 {
   margin: 0;
-  font-size: 17px;
-  font-weight: 550;
-  letter-spacing: -0.025em;
 }
 .panel p {
   margin: 0;
-  color: var(--muted);
+  color: #d6d6d6;
   line-height: 1.55;
 }
 .status {
   padding: 10px 12px;
-  border: 1px solid var(--line);
-  background: var(--panel);
+  border: 1px solid #555;
   border-radius: 8px;
 }
 .check {
@@ -36,7 +30,7 @@
 }
 .check input {
   margin-top: 4px;
-  accent-color: var(--text);
+  accent-color: #fff;
 }
 .actions {
   display: flex;
@@ -45,10 +39,9 @@
 }
 .actions button,
 .history button {
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--line);
-  min-height: 38px;
+  background: #f6f6f6;
+  color: #101010;
+  border: 1px solid #999;
   padding: 10px 14px;
   border-radius: 8px;
   cursor: pointer;
@@ -67,11 +60,11 @@
   width: auto;
   height: auto;
   object-fit: contain;
-  border: 1px solid var(--line);
+  border: 1px solid #777;
   border-radius: 8px;
 }
 .asset a {
-  color: var(--text);
+  color: #fff;
   text-decoration: underline;
 }
 .history {
@@ -79,26 +72,22 @@
   gap: 8px;
 }
 .history button {
-  background: var(--panel);
-  color: var(--text);
+  background: #202020;
+  color: #f6f6f6;
   text-align: left;
 }
-.panel button:hover:not(:disabled) {
-  background: var(--surface);
-  border-color: var(--line-strong);
-}
-.panel button:focus-visible,
-.panel a:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 3px;
-}
-@media (max-width: 600px) {
+@media (prefers-color-scheme: light) {
   .panel {
-    padding: 14px;
+    background: #fff;
+    color: #111;
   }
-}
-@media (pointer: coarse) {
-  .panel button {
-    min-height: 44px;
+  .panel p {
+    color: #444;
+  }
+  .status {
+    border-color: #bbb;
+  }
+  .asset a {
+    color: #111;
   }
 }

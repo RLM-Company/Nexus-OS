@@ -1,7 +1,6 @@
 "use client";
 
 import { useId, useState } from "react";
-import { WindowDots } from "./code-window";
 import { WorkspaceIcon } from "../workspace-icons";
 import styles from "./terminal-output.module.css";
 
@@ -39,7 +38,11 @@ export function TerminalOutput({
   return (
     <section className={styles.terminal} aria-label="Вывод исполнителя">
       <div className={styles.header}>
-        <WindowDots />
+        <span className={styles.dots} aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
         <span className={styles.title}>
           <span aria-hidden="true">›_</span> Терминал
         </span>

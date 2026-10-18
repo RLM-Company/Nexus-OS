@@ -1,7 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { CodeViewer } from "./code-window";
 import { InlineDiff } from "./inline-diff";
 import { TerminalOutput } from "./terminal-output";
 
@@ -9,7 +8,6 @@ describe("untrusted code and executor output", () => {
   const payload = '<img src="https://invalid.test/pixel"><script>bad()</script>';
   it("renders code, diff and terminal output as inert text", () => {
     for (const element of [
-      createElement(CodeViewer, { content: payload, language: "html" }),
       createElement(InlineDiff, { text: `@@ -0,0 +1 @@\n+${payload}\n` }),
       createElement(TerminalOutput, { stdout: payload, stderr: payload })
     ]) {
@@ -17,11 +15,6 @@ describe("untrusted code and executor output", () => {
       expect(html).not.toMatch(/<(?:img|script|iframe)\b/);
       expect(html).toContain("&lt;script&gt;");
     }
-  });
-  it("keeps oversized code intact in its plain-text fallback", () => {
-    const content = `${"x".repeat(100_001)}\nEND-OF-ORIGINAL`;
-    const html = renderToStaticMarkup(createElement(CodeViewer, { content }));
-    expect(html).toContain(content);
   });
   it("keeps stdout and stderr separate and reports server truncation", () => {
     const html = renderToStaticMarkup(

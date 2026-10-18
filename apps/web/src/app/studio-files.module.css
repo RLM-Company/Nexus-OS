@@ -69,16 +69,8 @@
   gap: 4px 24px;
   align-items: start;
   text-align: left;
-  padding: 20px;
+  padding: 24px;
   background: var(--file-panel);
-  border-style: dashed;
-  transition:
-    background var(--motion-fast) var(--motion-ease),
-    border-color var(--motion-fast) var(--motion-ease);
-}
-.upload[data-dragging] {
-  background: var(--surface-hover);
-  border-color: var(--text);
 }
 .root .upload > button {
   grid-row: 1 / 4;

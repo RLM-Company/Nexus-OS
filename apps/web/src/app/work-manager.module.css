@@ -1,279 +1,29 @@
 .panel {
-  min-width: 0;
-  margin: 16px 0;
-  padding: 20px;
   border: 1px solid var(--line);
   border-radius: var(--radius-container);
+  padding: 16px;
+  margin: 16px 0;
   background: var(--bg);
   color: var(--text);
-  font-size: 14px;
-  line-height: 1.6;
 }
 .panel h3 {
-  margin: 0 0 8px;
-  font-size: 20px;
-  line-height: 1.35;
-  font-weight: 550;
-  letter-spacing: -0.025em;
-}
-.panel h4 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 550;
-  line-height: 1.4;
-  letter-spacing: -0.02em;
-  overflow-wrap: anywhere;
+  margin: 0 0 12px;
+  font-size: 17px;
 }
 .panel p {
   color: var(--muted);
-  line-height: 1.65;
-}
-.panel a {
-  color: var(--text);
-  text-underline-offset: 3px;
+  line-height: 1.5;
 }
 .panel progress {
-  display: block;
   width: 100%;
-  height: 5px;
+  height: 10px;
   accent-color: var(--text);
-}
-.panel button {
-  min-height: 38px;
-  padding: 8px 12px;
-  border: 1px solid var(--line-strong, var(--line));
-  border-radius: var(--radius-control);
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-  cursor: pointer;
-  transition:
-    background var(--motion-fast, 120ms) var(--motion-ease, ease),
-    border-color var(--motion-fast, 120ms) var(--motion-ease, ease);
-}
-.panel button:hover:not(:disabled) {
-  background: var(--surface);
-  border-color: var(--muted);
-}
-.panel button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.panel :is(button, input, textarea, select, summary, a):focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 3px;
-}
-.panel :is(input, textarea, select) {
-  box-sizing: border-box;
-  min-width: 0;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--line-strong, var(--line));
-  border-radius: var(--radius-control);
-  color: var(--text);
-  background: var(--bg);
-  font: inherit;
-  font-size: 13px;
-}
-.panel :is(input:not([type="checkbox"]), select) {
-  min-height: 40px;
-}
-.panel textarea {
-  resize: vertical;
-  line-height: 1.65;
-}
-.panel label {
-  display: grid;
-  gap: 6px;
-  margin: 12px 0;
-  font-size: 12px;
-  font-weight: 450;
-}
-.panel label:has(input[type="checkbox"]) {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-}
-.panel input[type="checkbox"] {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-  margin: 3px 0 0;
-  accent-color: var(--text);
-}
-.panel summary {
-  padding: 7px 0;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-}
-.panel details[open] > summary {
-  margin-bottom: 5px;
-}
-.panelHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 18px;
-}
-.panelHeader p {
-  margin: 0;
-  max-width: 60ch;
-  font-size: 13px;
-}
-.eyebrow {
-  display: block;
-  margin-bottom: 7px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-.libraryCount {
-  flex-shrink: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-}
-.panel .primaryAction {
-  border-color: var(--text);
-  background: var(--text);
-  color: var(--bg);
-  font-weight: 500;
-}
-.panel .primaryAction:hover:not(:disabled) {
-  background: var(--text);
-  border-color: var(--text);
-  opacity: 0.85;
-}
-.planLibrary {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1.2fr);
-  gap: 12px;
-  margin: 20px 0 12px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-}
-.planLibrary label {
-  margin: 0;
-}
-.transfer {
-  margin: 16px 0;
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-}
-.transfer > p {
-  font-size: 12px;
-}
-.importPreview {
-  max-height: 320px;
-  padding-inline-start: 24px;
-  overflow: auto;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-.planEditor {
-  margin: 22px 0;
-  padding: 18px;
-  border: 1px solid var(--line-strong, var(--line));
-  border-radius: var(--radius-container);
-}
-.editorHeading {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 6px 16px;
-}
-.editorHeading > strong {
-  font-size: 15px;
-  font-weight: 550;
-}
-.editorHeading > span {
-  color: var(--muted);
-  font-size: 11px;
-}
-.editorSteps {
-  margin: 20px 0;
-}
-.dagStep {
-  min-width: 0;
-  margin: 16px 0;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-}
-.dagStep legend {
-  max-width: 100%;
-  padding: 0 6px;
-  font-size: 12px;
-  font-weight: 550;
-  overflow-wrap: anywhere;
-}
-.dagStep:disabled {
-  opacity: 0.65;
-}
-.editorActions {
-  border-top: 1px solid var(--line);
-  padding-top: 16px;
-}
-.savedPlanHeading {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 26px 0 14px;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
-}
-.planMode {
-  padding: 2px 7px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.planMeta {
-  font-size: 12px;
-}
-.planTools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.planTools > a {
-  padding: 8px 4px;
-  font-size: 12px;
-}
-.planTools > p {
-  flex-basis: 100%;
-  margin: 4px 0;
-  font-size: 12px;
 }
 .tasks {
-  display: grid;
-  gap: 8px;
   padding: 0;
   list-style: none;
+  display: grid;
+  gap: 8px;
 }
 .tasks li {
   display: flex;
@@ -287,18 +37,66 @@
   margin-top: 4px;
   color: var(--muted);
 }
+.panel button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.panel button:focus-visible,
+.panel input:focus-visible,
+.panel textarea:focus-visible,
+.panel select:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.panel input,
+.panel textarea,
+.panel select {
+  box-sizing: border-box;
+  width: 100%;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  padding: 9px;
+  font: inherit;
+}
+.panel label {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+}
+.panel label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+}
+.panel input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--text);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
 .entries {
+  list-style: none;
+  padding: 0;
   display: grid;
   gap: 12px;
-  padding: 0;
-  list-style: none;
 }
 .entry {
-  min-width: 0;
-  padding: 16px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  overflow-wrap: anywhere;
 }
 .entry p {
   white-space: pre-wrap;
@@ -309,217 +107,69 @@
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.executionPanel {
-  padding: 18px;
-}
-.executionPanel > strong {
-  font-size: 14px;
-  font-weight: 550;
-}
-.executionPanel > p {
-  margin: 8px 0;
-  font-size: 12px;
-}
-.executionPanel label:has(input[type="number"]) {
-  max-width: 240px;
-}
-.planSteps {
-  gap: 14px;
-  margin: 24px 0;
-}
-.planStep {
-  position: relative;
-  padding: 16px;
-  border-radius: var(--radius-container);
-}
-.planStep:not(:last-child)::before {
-  content: "";
-  position: absolute;
-  left: 29px;
-  top: 51px;
-  bottom: -15px;
-  width: 1px;
-  background: var(--line);
-}
-.planStep[data-state="running"] {
-  border-color: var(--text);
-}
-.stepBody {
-  margin-left: 40px;
-  min-width: 0;
-}
-.stepGoal {
-  margin: 10px 0 12px;
-  font-size: 13px;
-}
-.dependencies {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0 14px;
-  color: var(--muted);
-  font-size: 11px;
-}
-.dependency {
-  max-width: 100%;
-  padding: 2px 7px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  color: var(--muted);
-  background: var(--surface);
-  overflow-wrap: anywhere;
-}
-.dependency[data-ready="true"] {
-  color: var(--text);
-}
-.stepNotice {
-  padding: 10px 12px;
-  border-left: 2px solid var(--text);
-  border-radius: 0 6px 6px 0;
-  background: var(--surface);
-  font-size: 12px;
-}
-.stepBody > details {
-  margin-top: 12px;
-}
-.stepBody > small {
-  margin-top: 8px;
-  font-size: 10px;
-}
-.attempts {
-  margin: 16px 0 0;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-.history {
-  padding: 12px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-container);
-  background: var(--surface);
-}
 .error {
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--text);
-  border-radius: var(--radius-control);
   color: var(--text);
-  background: var(--surface);
-  font-size: 13px;
+  border-left: 3px solid var(--text);
+  padding-left: 10px;
 }
 .artifacts {
-  margin: 16px 0;
-  padding: 0;
   list-style: none;
+  padding: 0;
 }
 .artifacts li {
-  padding: 10px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--line);
 }
-.artifacts li:last-child {
-  border-bottom: 0;
-}
 .artifacts a {
-  font-size: 12px;
-  font-weight: 500;
-}
-.artifacts small {
-  margin-top: 5px;
-  font-size: 10px;
-  line-height: 1.7;
+  color: var(--text);
+  text-decoration: underline;
 }
 .checkpoint {
-  margin-top: 16px;
+  font-size: 13px;
   color: var(--muted);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-.runtimeSteps {
-  list-style: none;
-  padding: 0;
-  margin: 22px 0;
-}
-.runtimeSteps > li {
-  position: relative;
-  padding: 0 0 22px;
-}
-.runtimeSteps > li:not(:last-child)::before {
-  content: "";
-  position: absolute;
-  left: 13px;
-  top: 31px;
-  bottom: 3px;
-  width: 1px;
-  background: var(--line);
-}
-.runtimeDependency {
-  margin: 8px 0 0 40px;
-  font-size: 12px;
-}
-.runtimeStatus {
-  font-size: 12px;
-}
-@media (max-width: 800px) {
-  .planLibrary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .planLibrary label:last-child {
-    grid-column: 1 / -1;
-  }
 }
 @media (max-width: 600px) {
   .panel {
     padding: 12px;
   }
-  .panelHeader {
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .panel h3 {
-    font-size: 20px;
-  }
-  .planLibrary {
-    grid-template-columns: 1fr;
-    padding: 12px;
-  }
-  .planEditor {
-    padding: 12px;
-  }
-  .dagStep {
-    padding: 10px 12px;
-  }
   .tasks li {
     flex-direction: column;
     gap: 4px;
   }
-  .planStep {
-    padding: 12px;
-  }
-  .stepBody {
-    margin-left: 0;
-  }
-  .planStep::before {
-    display: none;
-  }
-  .executionPanel {
-    padding: 14px;
-  }
-  .actions {
-    gap: 6px;
-  }
-  .actions > button {
-    max-width: 100%;
-    text-align: left;
-  }
-  .runtimeSteps > li:not(:last-child)::before {
-    bottom: 0;
-  }
-  .runtimeDependency {
-    margin-left: 36px;
-  }
+}
+.dagStep {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  margin: 12px 0;
+  padding: 12px;
+  min-width: 0;
+}
+
+.panel {
+  font-size: 14px;
+  line-height: 1.6;
+  min-width: 0;
+}
+.panel h3 {
+  font-weight: 550;
+  letter-spacing: -0.02em;
+}
+.panel :is(button, input:not([type="checkbox"]), select) {
+  min-height: 40px;
+}
+.panel button {
+  font: inherit;
+  font-size: 13px;
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+.panel button:hover:not(:disabled) {
+  background: var(--surface);
+}
+.panel .entry {
+  overflow-wrap: anywhere;
 }
 @media (pointer: coarse) {
-  .panel :is(button, input:not([type="checkbox"]), select, summary) {
+  .panel :is(button, input:not([type="checkbox"]), select) {
     min-height: 44px;
   }
   .panel :is(input:not([type="checkbox"]), textarea, select) {
@@ -530,4 +180,12 @@
   .panel button {
     transition: none;
   }
+}
+
+.importPreview {
+  max-height: 320px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  padding-inline-start: 24px;
 }
