@@ -6,6 +6,10 @@ import { codePatchMessages, type CodePatchPreview } from "./patch-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./code-agent.module.css";
 import { codeAgentUnifiedDiff } from "./unified-diff";
+import { CodeWindow } from "../ui/code-window";
+import { InlineDiff } from "../ui/inline-diff";
+import { TerminalOutput } from "../ui/terminal-output";
+import { WorkspaceIcon } from "../workspace-icons";
 
 type FileChange = { path: string; before: string | null; content: string };
 type Run = {
@@ -417,11 +421,15 @@ export default function CodeAgentPage() {
     <main className={styles.page}>
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Kosmora / инструменты</p>
+          <p className={styles.eyebrow}>
+            <WorkspaceIcon name="code" /> Kosmora Code
+          </p>
           <h1>Code-агент</h1>
           <p>Задача → просмотр изменений → разрешённая проверка → черновик PR</p>
         </div>
-        <Link href="/github">GitHub</Link>
+        <Link href="/github" className={styles.repositoryLink}>
+          Репозиторий <span aria-hidden="true">↗</span>
+        </Link>
       </header>
       {error && (
         <p className={styles.notice} role="alert">
@@ -662,11 +670,12 @@ export default function CodeAgentPage() {
                 <p>
                   Проверенный снимок: <code>{run.proposal_check.snapshotDigest}</code>
                 </p>
-                <pre>{run.proposal_check.stdout || run.proposal_check.stderr || "Нет вывода"}</pre>
-                {run.proposal_check.stdout && run.proposal_check.stderr && (
-                  <pre>{run.proposal_check.stderr}</pre>
-                )}
-                {run.proposal_check.truncated && <p>Вывод ограничен.</p>}
+                <TerminalOutput
+                  stdout={run.proposal_check.stdout}
+                  stderr={run.proposal_check.stderr}
+                  status={run.proposal_check.status}
+                  truncated={run.proposal_check.truncated}
+                />
               </div>
             )}
             {run.proposal && !run.draft && editable && (
@@ -751,8 +760,16 @@ export default function CodeAgentPage() {
                   </label>
                   <div className={styles.diff}>
                     <div>
-                      <h3>− До изменения{file.before === null ? " (новый файл)" : ""}</h3>
-                      <pre>{file.before ?? "Файл отсутствует"}</pre>
+                      <h3>До изменения{file.before === null ? " · новый файл" : ""}</h3>
+                      {file.before === null ? (
+                        <p className={styles.newFile}>Файл будет создан</p>
+                      ) : (
+                        <CodeWindow
+                          content={file.before}
+                          language={file.path.split(".").at(-1) ?? "txt"}
+                          title={file.path}
+                        />
+                      )}
                     </div>
                     <label>
                       + Итоговое содержимое: {file.path}
@@ -778,7 +795,7 @@ export default function CodeAgentPage() {
                     Объём изменений превышает лимит предпросмотра diff. Выберите меньше файлов.
                   </p>
                 ) : (
-                  <pre>{diffPreview.text || "Нет выбранных изменений."}</pre>
+                  <InlineDiff text={diffPreview.text} />
                 )}
               </details>
               <button
@@ -876,9 +893,12 @@ export default function CodeAgentPage() {
                   <p>
                     Проверенный снимок: <code>{run.check.snapshotDigest}</code>
                   </p>
-                  <pre>{run.check.stdout || "Нет стандартного вывода"}</pre>
-                  {run.check.stderr && <pre>{run.check.stderr}</pre>}
-                  {run.check.truncated && <p>Вывод ограничен серверным лимитом.</p>}
+                  <TerminalOutput
+                    stdout={run.check.stdout}
+                    stderr={run.check.stderr}
+                    status={run.check.status}
+                    truncated={run.check.truncated}
+                  />
                   {run.check.journal !== undefined && (
                     <details>
                       <summary>Журнал исполнителя</summary>

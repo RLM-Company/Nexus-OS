@@ -82,6 +82,37 @@
   gap: 12px;
   padding: 12px 0;
   flex-wrap: wrap;
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+.file:hover,
+.file:has(input:checked) {
+  background: var(--panel);
+}
+.files[data-view="grid"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
+  gap: 10px;
+}
+.files[data-view="grid"] .file {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  align-items: start;
+}
+.files[data-view="grid"] .file label {
+  flex-basis: 100%;
+}
+.files[data-view="grid"] .actions {
+  padding-top: 12px;
+  width: 100%;
+}
+.library button[aria-pressed="true"] {
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+.library > [role="group"][aria-label="Активные фильтры"] button {
+  min-height: 30px;
+  font-size: 12px;
 }
 .queue {
   padding: 14px;

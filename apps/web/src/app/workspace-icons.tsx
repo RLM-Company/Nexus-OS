@@ -27,6 +27,10 @@ export type IconName =
   | "search"
   | "arrow"
   | "download"
+  | "upload"
+  | "share"
+  | "grid"
+  | "list"
   | "copy"
   | "close"
   | "more"
@@ -159,6 +163,25 @@ const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
   ),
   arrow: <path d="M4 12h16m-6-6 6 6-6 6" />,
   download: <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" />,
+  upload: <path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5" />,
+  share: (
+    <>
+      <path d="M12 15V3m-4 4 4-4 4 4M5 11H3v10h18V11h-2" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </>
+  ),
+  list: (
+    <>
+      <path d="M8 5h13M8 12h13M8 19h13M3 5h.1M3 12h.1M3 19h.1" />
+    </>
+  ),
   copy: (
     <>
       <rect x="8" y="8" width="13" height="13" rx="2" />

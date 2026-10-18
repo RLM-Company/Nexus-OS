@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 import { WorkspaceIcon } from "./workspace-icons";
 import { LoadingDots } from "./ui/feedback";
 import styles from "./chat-code.module.css";
-import { CodeText } from "./ui/code-text";
+import { CodeWindow } from "./ui/code-window";
 
 export function downloadText(content: string, name: string, mimeType = "text/plain;charset=utf-8") {
   downloadBlob(new Blob([content], { type: mimeType }), name);
@@ -59,7 +59,7 @@ function CopyButton({ content, label }: { content: string; label: string }) {
     </button>
   );
 }
-function CodeBlock({ children, node }: ComponentProps<"pre"> & ExtraProps) {
+function CodeBlock({ node }: ComponentProps<"pre"> & ExtraProps) {
   const first = node?.children[0];
   const code = first?.type === "element" ? first : undefined;
   const content = (code?.children ?? [])
@@ -71,55 +71,22 @@ function CodeBlock({ children, node }: ComponentProps<"pre"> & ExtraProps) {
     : undefined;
   const name = language?.slice(9).replace(/[^a-z0-9]/gi, "") || "txt";
   const diff = name === "diff" || name === "patch";
-  const lines = content.replace(/\n$/, "").split("\n");
-  const added = diff
-    ? lines.filter((line) => line.startsWith("+") && !line.startsWith("+++")).length
-    : 0;
-  const removed = diff
-    ? lines.filter((line) => line.startsWith("-") && !line.startsWith("---")).length
-    : 0;
   return (
-    <div className={styles.panel}>
-      <div className={styles.toolbar}>
-        <span className={styles.language}>
-          <WorkspaceIcon name="code" />
-          {name}
-        </span>
-        {diff && (
-          <span className={styles.counts} aria-label={`${added} добавлено, ${removed} удалено`}>
-            +{added} / −{removed}
-          </span>
-        )}
-        <CopyButton content={content} label="Копировать код" />
-        <button
-          type="button"
-          onClick={() => downloadText(content, `kosmora-code.${diff ? "patch" : name}`)}
-        >
-          <WorkspaceIcon name="download" /> Скачать код
-        </button>
-      </div>
-      <pre className={styles.body}>
-        {content && lines.length <= 2000 ? (
-          <code>
-            {lines.map((line, index) => (
-              <span
-                className={`${styles.line} ${diff && line.startsWith("+") && !line.startsWith("+++") ? styles.added : diff && line.startsWith("-") && !line.startsWith("---") ? styles.removed : ""}`}
-                key={index}
-              >
-                <span className={styles.number} aria-hidden="true">
-                  {index + 1}
-                </span>
-                <span className={styles.text}>
-                  {diff ? line || "\u00a0" : <CodeText text={line || "\u00a0"} language={name} />}
-                </span>
-              </span>
-            ))}
-          </code>
-        ) : (
-          children
-        )}
-      </pre>
-    </div>
+    <CodeWindow
+      content={content}
+      language={name}
+      actions={
+        <>
+          <CopyButton content={content} label="Копировать код" />
+          <button
+            type="button"
+            onClick={() => downloadText(content, `kosmora-code.${diff ? "patch" : name}`)}
+          >
+            <WorkspaceIcon name="download" /> Скачать код
+          </button>
+        </>
+      }
+    />
   );
 }
 export function ChatResponse({

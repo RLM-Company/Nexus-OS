@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { codePatchRequest, type CodePatchPreview } from "./patch-client";
+import { InlineDiff } from "../ui/inline-diff";
 
 /** Reusable Code adapter; parsing always happens on the server's immutable snapshot. */
 export function CodePatchEditor(props: {
@@ -87,7 +88,7 @@ export function CodePatchEditor(props: {
           <p>
             Снимок проверки: <code>{preview.resultDigest}</code>
           </p>
-          <pre>{preview.normalizedDiff}</pre>
+          <InlineDiff text={preview.normalizedDiff} label="Проверенный diff" />
         </>
       )}
     </details>

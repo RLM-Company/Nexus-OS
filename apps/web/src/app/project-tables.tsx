@@ -394,9 +394,11 @@ export function ProjectTables(props: Props) {
         <p>
           {project
             ? "Сохранённые версии доступны после перезагрузки и с другого устройства."
-            : "При первом сохранении создадим проект «Таблицы Studio» без обращения к AI."}{" "}
-          До 2 МиБ на таблицу, 20 версий и 32 МиБ истории на проект.
+            : "Откройте файл и сохраните его в проекте «Таблицы Studio»."}
         </p>
+        <small className={styles.muted}>
+          До 2 МиБ на таблицу · 20 версий · 32 МиБ истории на проект
+        </small>
         {error && <SystemMessage>{error}</SystemMessage>}
         {notice && <SystemMessage kind="success">{notice}</SystemMessage>}
         <div className={styles.controls}>

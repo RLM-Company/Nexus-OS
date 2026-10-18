@@ -25,6 +25,7 @@ import styles from "./studio-data-workbench.module.css";
 import { ShiningText, SystemMessage } from "./ui/kosmora-controls";
 import { WorkspaceIcon } from "./workspace-icons";
 import { ProjectTables } from "./project-tables";
+import { FilterChips, SurfaceDialog, UploadDropzone } from "./ui/workspace-kit";
 
 type Response =
   | { id: number; kind: "loaded"; name: string; table: CsvTable; settings: DataSettings }
@@ -123,6 +124,7 @@ export function DataWorkbench({
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState(false);
   const [cellEdit, setCellEdit] = useState<DataCellEdit | null>(null);
+  const [cellError, setCellError] = useState("");
   const [undoEdits, setUndoEdits] = useState<DataCellEdit[]>([]);
   const [redoEdits, setRedoEdits] = useState<DataCellEdit[]>([]);
   const [serverBusy, setServerBusy] = useState(false);
@@ -264,6 +266,7 @@ export function DataWorkbench({
 
   function commitCell(edit: DataCellEdit, action: "edit" | "undo" | "redo" = "edit") {
     if (!table || busy || exporting) return;
+    setCellError("");
     try {
       const next = applyDataCellEdit(table, edit, action === "undo");
       if (next === table) {
@@ -286,7 +289,9 @@ export function DataWorkbench({
         "Таблица изменена. Сохраните workspace JSON или выгрузите результат, чтобы сохранить правки."
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Не удалось изменить ячейку.");
+      const message = reason instanceof Error ? reason.message : "Не удалось изменить ячейку.";
+      if (cellEdit && action === "edit") setCellError(message);
+      else setError(message);
     }
   }
 
@@ -465,23 +470,16 @@ export function DataWorkbench({
           </div>
         </header>
         <div className={styles.box}>
-          <label className={styles.fileLabel} htmlFor="data-file">
-            Открыть таблицу или сохранённый проект
-          </label>
-          <input
+          <UploadDropzone
             id="data-file"
-            type="file"
+            label="Открыть таблицу или сохранённый проект"
             accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void loadFile(file);
-              e.target.value = "";
+            description="Перетащите CSV или TSV до 8 МБ · 80 000 строк, 100 столбцов, 1 млн ячеек. Сохранённый проект до 16 МБ; выгрузка до 32 МБ."
+            disabled={serverBusy}
+            onFiles={(files) => {
+              if (files[0]) void loadFile(files[0]);
             }}
           />
-          <small>
-            CSV и TSV в UTF-8 до 8 МБ: 80 000 строк, 100 столбцов, 1 млн ячеек. Сохранённый проект —
-            до 16 МБ; выгрузка — до 32 МБ.
-          </small>
           {(busy || exporting) && (
             <button type="button" onClick={cancel}>
               Отменить обработку
@@ -534,6 +532,9 @@ export function DataWorkbench({
                       />{" "}
                       {i + 1}. {label}
                     </label>
+                    <span className={styles.mappingConnector} aria-hidden="true">
+                      →
+                    </span>
                     <select
                       aria-label={`Тип столбца ${i + 1} ${label}`}
                       value={settings.types[i]}
@@ -542,12 +543,24 @@ export function DataWorkbench({
                       <option value="text">Текст</option>
                       <option value="number">Число</option>
                     </select>
+                    <small className={styles.columnSample} title={table.rows[0]?.[i] ?? ""}>
+                      Пример: {table.rows[0]?.[i] || "пусто"}
+                    </small>
                   </div>
                 ))}
               </div>
             </div>
             <div className={styles.box}>
               <h3>Фильтры и сортировка</h3>
+              <FilterChips
+                chips={settings.filters.map((filter, index) => ({
+                  id: String(index),
+                  label: `${columns[filter.column]} · ${{ contains: "содержит", equals: "равно", greater: "≥", less: "≤", empty: "пусто", nonempty: "не пусто" }[filter.operator]} ${filter.value}`,
+                  onRemove: () =>
+                    update((s) => ({ ...s, filters: s.filters.filter((_, i) => i !== index) }))
+                }))}
+                onClear={() => update((s) => ({ ...s, filters: [] }))}
+              />
               <div className={styles.filters}>
                 {settings.filters.map((f, i) => (
                   <div className={styles.filter} key={i}>
@@ -902,30 +915,41 @@ export function DataWorkbench({
                 </button>
               </div>
               {cellEdit && (
-                <div className={styles.cellEditor}>
-                  <label htmlFor="data-cell-value">
-                    Строка {cellEdit.row + 1}, столбец {cellEdit.column + 1}:{" "}
-                    {columns[cellEdit.column]}
-                  </label>
-                  <textarea
-                    id="data-cell-value"
-                    aria-label="Новое значение ячейки"
-                    value={cellEdit.after}
-                    onChange={(event) => setCellEdit({ ...cellEdit, after: event.target.value })}
-                  />
-                  <div className={styles.controls}>
-                    <button
-                      type="button"
-                      disabled={busy || exporting}
-                      onClick={() => commitCell(cellEdit)}
-                    >
-                      Применить ячейку
-                    </button>
-                    <button type="button" onClick={() => setCellEdit(null)}>
-                      Отменить ввод
-                    </button>
+                <SurfaceDialog
+                  open
+                  onClose={() => setCellEdit(null)}
+                  title="Редактирование ячейки"
+                  description={`Строка ${cellEdit.row + 1} · ${columns[cellEdit.column]}`}
+                >
+                  <div className={styles.cellEditor}>
+                    <label htmlFor="data-cell-value">
+                      Строка {cellEdit.row + 1}, столбец {cellEdit.column + 1}:{" "}
+                      {columns[cellEdit.column]}
+                    </label>
+                    <textarea
+                      id="data-cell-value"
+                      aria-label="Новое значение ячейки"
+                      value={cellEdit.after}
+                      onChange={(event) => {
+                        setCellError("");
+                        setCellEdit({ ...cellEdit, after: event.target.value });
+                      }}
+                    />
+                    {cellError && <SystemMessage>{cellError}</SystemMessage>}
+                    <div className={styles.controls}>
+                      <button
+                        type="button"
+                        disabled={busy || exporting}
+                        onClick={() => commitCell(cellEdit)}
+                      >
+                        Применить ячейку
+                      </button>
+                      <button type="button" onClick={() => setCellEdit(null)}>
+                        Отменить ввод
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </SurfaceDialog>
               )}
               <p>
                 {result
@@ -957,14 +981,15 @@ export function DataWorkbench({
                                 className={styles.cellButton}
                                 disabled={busy || exporting}
                                 aria-label={`Изменить ячейку: строка ${idx + 1}, столбец ${col + 1}`}
-                                onClick={() =>
+                                onClick={() => {
+                                  setCellError("");
                                   setCellEdit({
                                     row: idx,
                                     column: col,
                                     before: table.rows[idx]![col]!,
                                     after: table.rows[idx]![col]!
-                                  })
-                                }
+                                  });
+                                }}
                               >
                                 {table.rows[idx]?.[col] || "—"}
                               </button>

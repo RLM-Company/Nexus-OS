@@ -160,6 +160,7 @@ export function StudioFiles({
   onProjectCreated?: (id: string) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  const [fileDragging, setFileDragging] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const operationId = useRef(0);
   const [document, setDocument] = useState<DocumentState | null>(null);
@@ -362,7 +363,27 @@ export function StudioFiles({
         onCompose={onCompose}
         {...(onProjectCreated ? { onProjectCreated } : {})}
       />
-      <section className={styles.upload} aria-label="Загрузка документа">
+      <section
+        className={styles.upload}
+        data-dragging={fileDragging || undefined}
+        aria-label="Загрузка документа"
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes("Files")) {
+            event.preventDefault();
+            setFileDragging(true);
+          }
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+            setFileDragging(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setFileDragging(false);
+          const file = event.dataTransfer.files[0];
+          if (file) void load(file);
+        }}
+      >
         <input
           ref={input}
           type="file"
@@ -381,7 +402,7 @@ export function StudioFiles({
           <Icon name="paperclip" />
           {document ? "Выбрать другой файл" : "Выбрать файл"}
         </button>
-        <p>PDF, DOCX, CSV, текст и код · до 20 МБ</p>
+        <p>Перетащите PDF, DOCX, CSV, текст или код · до 20 МБ</p>
         <p>
           <small>
             До 500 страниц PDF, 8 МБ DOCX XML и 2 миллионов символов текста. Без скрытого обрезания.

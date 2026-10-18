@@ -1,0 +1,99 @@
+.shell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--line, #e7e7e7);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: var(--panel, #f8f8f8);
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.toolbar > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px !important;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 0;
+  background: transparent;
+  color: var(--text, #242424);
+  font-size: 14px;
+  line-height: 1;
+}
+.toolbar > button:hover:not(:disabled) {
+  background: var(--surface-hover, #ebebeb);
+  border-color: var(--line, #e7e7e7);
+}
+.toolbar > button:focus-visible {
+  outline: 2px solid var(--text, #242424);
+  outline-offset: -2px;
+}
+.toolbar > button:disabled {
+  opacity: 0.35;
+}
+.toolbar [data-tool="bold"] {
+  font-weight: 750;
+}
+.toolbar [data-tool="italic"] {
+  font-family: Georgia, serif;
+  font-style: italic;
+}
+.toolbar [data-tool="heading"] {
+  font-weight: 650;
+}
+.toolbar [data-tool="code"] {
+  font:
+    12px ui-monospace,
+    Consolas,
+    monospace;
+}
+.toolbar [data-tool="quote"] {
+  font:
+    24px Georgia,
+    serif;
+}
+.separator {
+  width: 1px;
+  height: 16px;
+  flex-shrink: 0;
+  margin: 0 4px;
+  background: var(--line-strong, #cdcdcd);
+}
+.hint {
+  padding: 0 4px;
+  color: var(--muted, #626262);
+  font-size: 11px;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .toolbar > button {
+    flex-basis: 40px;
+    width: 40px;
+    height: 40px;
+    min-height: 40px !important;
+  }
+}
+@media (max-width: 420px) {
+  .hint {
+    display: none;
+  }
+  .shell {
+    padding-inline: 4px;
+  }
+  .toolbar {
+    gap: 1px;
+  }
+}

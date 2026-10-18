@@ -18,6 +18,7 @@ import { CANVAS_FILE_ACCEPT } from "./canvas-file-import";
 import { readCanvasFile } from "./canvas-file";
 import { createDocxReport, downloadReport } from "../studio-files-report";
 import { ShiningText, SystemMessage } from "../ui/kosmora-controls";
+import { EditorToolbar } from "../ui/editor-toolbar";
 
 type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
 type Meta = Omit<CanvasRevision, "content">;
@@ -179,6 +180,7 @@ function ScopedCanvasEditor({
   const [selected, setSelected] = useState<string>("");
   const [loaded, setLoaded] = useState<Full | null>(null);
   const [draft, setDraft] = useState<Draft>(blank);
+  const contentInput = useRef<HTMLTextAreaElement>(null);
   const [draftStorageReady, setDraftStorageReady] = useState(false);
   const [history, setHistory] = useState<Meta[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -816,8 +818,19 @@ function ScopedCanvasEditor({
           <label className={styles.textLabel} htmlFor="canvas-body">
             Содержимое
           </label>
+          <EditorToolbar
+            key={`${selected || "new"}:${draft.baseVersion}:${draft.format}`}
+            textareaRef={contentInput}
+            value={draft.content}
+            markdown={draft.format === "markdown"}
+            disabled={working || loading}
+            maxBytes={CANVAS_MAX_CONTENT_BYTES}
+            onChange={(content) => setDraft((current) => ({ ...current, content }))}
+            onLimit={() => setError("Форматирование превысит лимит 512 КиБ. Текст не изменён.")}
+          />
           <textarea
             id="canvas-body"
+            ref={contentInput}
             spellCheck={draft.format !== "code"}
             className={styles.textarea}
             disabled={working || loading}

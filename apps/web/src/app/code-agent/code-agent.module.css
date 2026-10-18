@@ -1,10 +1,12 @@
 .page {
   min-height: 100dvh;
-  padding: clamp(20px, 4vw, 48px);
-  color: var(--text, #161616);
+  width: min(100%, 1200px);
+  margin-inline: auto;
+  padding: clamp(20px, 3vw, 40px);
+  color: var(--text, #171717);
   background: var(--bg, #fff);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.65;
 }
 .header {
   display: flex;
@@ -14,36 +16,67 @@
   margin-bottom: 28px;
 }
 .header h1 {
-  margin: 0;
-  font-size: clamp(28px, 4vw, 40px);
-  letter-spacing: -1.4px;
+  margin: 4px 0;
+  font-size: clamp(24px, 3vw, 30px);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.3;
 }
 .header p {
   margin: 4px 0;
   color: var(--muted, #666);
-}
-.eyebrow {
   font-size: 12px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+}
+.header .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+.eyebrow svg {
+  width: 14px;
+  height: 14px;
+}
+.repositoryLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 8px;
+  background: var(--panel, #fafafa);
+  text-decoration: none;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.repositoryLink:hover {
+  background: var(--surface-hover, #eee);
 }
 .panel {
-  margin: 20px 0;
-  padding: clamp(16px, 3vw, 28px);
-  border: 1px solid var(--line, #ddd);
-  border-radius: 16px;
-  background: var(--panel, #fafafa);
+  margin: 18px 0;
+  padding: clamp(16px, 2.5vw, 24px);
+  border: 1px solid var(--line, #e3e3e3);
+  border-radius: 14px;
+  background: var(--bg, #fff);
+  box-shadow: 0 2px 8px #00000003;
   min-width: 0;
 }
 .panel h2 {
   margin: 0 0 12px;
-  font-size: 19px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
   overflow-wrap: anywhere;
 }
 .fields {
   display: grid;
-  grid-template-columns: 1fr 1.5fr 1fr;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 14px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--line, #e4e4e4);
+  margin-bottom: 16px;
 }
 .page label {
   display: flex;
@@ -51,50 +84,65 @@
   gap: 7px;
   margin: 12px 0;
   min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
 }
-.page input:not([type="checkbox"]),
-.page textarea,
-.page select {
+.page :where(input:not([type="checkbox"]), textarea, select) {
   width: 100%;
   box-sizing: border-box;
   padding: 10px 12px;
-  border: 1px solid var(--line, #ccc);
+  border: 1px solid var(--line, #ddd);
   border-radius: 8px;
   background: var(--bg, #fff);
   color: inherit;
   font: inherit;
+  font-weight: 400;
   min-width: 0;
+  transition: border-color 140ms ease;
+}
+.page :where(input[readonly]) {
+  background: var(--panel, #fafafa);
+  color: var(--muted, #666);
 }
 .page textarea {
   resize: vertical;
+  line-height: 1.7;
 }
-.page button {
-  min-height: 42px;
-  padding: 9px 16px;
-  border: 1px solid var(--line, #ccc);
-  border-radius: 8px;
+.page :where(button) {
+  max-width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 7px;
   font: inherit;
+  font-size: 12px;
+  font-weight: 500;
   color: inherit;
   background: var(--bg, #fff);
+  overflow-wrap: anywhere;
   cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
 }
-.page button:hover:not(:disabled) {
+.page :where(button:hover:not(:disabled)) {
   background: var(--surface-hover, #eee);
 }
-.page button:disabled {
+.page :where(button:disabled) {
   opacity: 0.45;
   cursor: default;
 }
 .page button.primary {
-  background: var(--text, #151515);
-  border-color: var(--text, #151515);
+  background: var(--text, #171717);
+  border-color: var(--text, #171717);
   color: var(--bg, #fff);
+  padding-inline: 16px;
 }
 .page button.primary:hover:not(:disabled) {
   opacity: 0.85;
 }
-.page :is(button, input, textarea, select, a):focus-visible {
-  outline: 2px solid var(--text, #111);
+.page :where(button, input, textarea, select, a):focus-visible {
+  outline: 2px solid var(--text, #171717);
   outline-offset: 3px;
 }
 .page a {
@@ -106,19 +154,21 @@
   align-items: flex-start;
   gap: 10px;
   overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 400;
 }
 .checkbox input {
   flex-shrink: 0;
-  width: 17px;
-  height: 17px;
-  margin-top: 4px;
-  accent-color: #222;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  accent-color: var(--text, #171717);
 }
 .row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 .row > div {
   flex: 1;
@@ -126,78 +176,147 @@
 }
 .muted {
   color: var(--muted, #666);
-  font-size: 13px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 .file {
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line, #ddd);
+  padding: 12px 0 18px;
+  border-top: 1px solid var(--line, #e4e4e4);
+  margin-top: 14px;
+}
+.file > .checkbox {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 500;
 }
 .diff {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
   min-width: 0;
 }
 .diff > div {
   min-width: 0;
 }
 .diff h3 {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 500;
+  color: var(--muted, #666);
   margin: 12px 0 7px;
 }
-.diff textarea,
-.page pre,
-.page code {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
+.diff > label {
+  margin-bottom: 0;
 }
-.page pre {
+.diff > div > section {
+  margin-top: 7px;
+}
+.diff textarea {
+  font: 12px/1.8 var(--font-mono, ui-monospace, Consolas, monospace);
+  background: var(--panel, #fafafa);
+  min-height: 180px;
+  tab-size: 2;
+}
+.page :where(pre:not([class])) {
   max-height: 420px;
   overflow: auto;
   padding: 12px;
   border: 1px solid var(--line, #ddd);
   border-radius: 8px;
   margin: 0 0 12px;
-  background: var(--bg, #fff);
+  background: var(--panel, #fafafa);
+  font: 11px/1.7 var(--font-mono, ui-monospace, Consolas, monospace);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.page code {
+.page :where(code) {
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 .page hr {
   border: 0;
-  border-top: 1px solid var(--line, #ddd);
+  border-top: 1px solid var(--line, #e4e4e4);
   margin: 28px 0;
 }
 .notice {
-  padding: 14px;
-  border: 1px solid var(--text, #444);
+  padding: 14px 16px;
+  border: 1px solid var(--line, #ddd);
+  border-left: 3px solid var(--text, #171717);
   border-radius: 8px;
+  background: var(--panel, #fafafa);
   margin: 14px 0;
   overflow-wrap: anywhere;
 }
 .history {
   max-width: 700px;
 }
+.page details {
+  margin-block: 12px;
+}
 .page summary {
+  padding-block: 7px;
   cursor: pointer;
+  color: var(--muted, #666);
+  font-size: 12px;
+  font-weight: 500;
+}
+.page summary:hover {
+  color: var(--text, #171717);
 }
 .page time {
   color: var(--muted, #666);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.newFile {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  margin: 7px 0 0;
+  padding: 24px;
+  border: 1px dashed var(--line, #ddd);
+  border-radius: 10px;
+  color: var(--muted, #666);
   font-size: 12px;
+  background: var(--panel, #fafafa);
 }
 @media (max-width: 760px) {
   .fields,
   .diff {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .header {
     align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
   }
   .page {
-    padding: 18px 12px;
+    padding: 20px 12px;
+  }
+  .panel {
+    border-radius: 11px;
+  }
+}
+@media (pointer: coarse) {
+  .page :where(button, input:not([type="checkbox"]), select) {
+    min-height: 44px;
+  }
+  .page :where(input, select, textarea) {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page :where(button, input, textarea, select) {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .panel,
+  .notice,
+  .repositoryLink,
+  .file,
+  .fields,
+  .newFile {
+    border-color: CanvasText;
   }
 }

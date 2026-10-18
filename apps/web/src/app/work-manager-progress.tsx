@@ -6,7 +6,9 @@ import type {
 } from "@cosmora/contracts";
 import { useEffect, useState } from "react";
 import styles from "./work-manager.module.css";
-import { AgentPipeline, SystemMessage } from "./ui/kosmora-controls";
+import { SystemMessage } from "./ui/kosmora-controls";
+import { WorkPlanStepHeading } from "./ui/work-plan-view";
+import { ActivityTimeline } from "./ui/activity-timeline";
 
 type Detail = {
   progress: WorkRuntimeProgress;
@@ -28,6 +30,16 @@ const workStatusLabels: Record<string, string> = {
   awaiting_approval: "Ожидает подтверждения",
   blocked: "Нужно разрешение",
   completed: "Готово",
+  failed: "Ошибка",
+  cancelled: "Отменено"
+};
+const taskStatusLabels: Record<string, string> = {
+  pending: "Ожидает",
+  ready: "В очереди",
+  running: "Выполняется",
+  waiting: "Ожидает решения",
+  completed: "Готово",
+  skipped: "Не требуется",
   failed: "Ошибка",
   cancelled: "Отменено"
 };
@@ -83,13 +95,23 @@ export function WorkManagerProgress({
   const detail = state?.key === key ? state.detail : null;
   return (
     <section className={styles.panel} aria-label="Прогресс Work">
-      <h3>План и результат</h3>
+      <header className={styles.panelHeader}>
+        <div>
+          <span className={styles.eyebrow}>Work · Выполнение</span>
+          <h3>План и результат</h3>
+        </div>
+        {detail && (
+          <span className={styles.libraryCount}>
+            {detail.progress.completed} / {detail.progress.total} этапов
+          </span>
+        )}
+      </header>
       {error && <SystemMessage>{error}</SystemMessage>}
       {!detail ? (
         <p>Загружаем этапы…</p>
       ) : (
         <>
-          <p role="status">
+          <p role="status" className={styles.runtimeStatus}>
             Завершено этапов: {detail.progress.completed} / {detail.progress.total}
           </p>
           <progress
@@ -97,20 +119,32 @@ export function WorkManagerProgress({
             value={detail.progress.completed}
             max={detail.progress.total}
           />
-          {detail.progress.waiting_decision && <p>{decisions[detail.progress.waiting_decision]}</p>}
-          <AgentPipeline
-            steps={detail.progress.tasks.map((task) => ({
-              id: task.task_id,
-              title: task.title,
-              status: task.status,
-              detail: task.depends_on.length
-                ? "После: " +
-                  task.depends_on
-                    .map((id) => detail.progress.tasks.find((t) => t.task_id === id)?.title ?? id)
-                    .join(", ")
-                : undefined
-            }))}
-          />
+          {detail.progress.waiting_decision && (
+            <p className={styles.stepNotice}>{decisions[detail.progress.waiting_decision]}</p>
+          )}
+          <ol className={styles.runtimeSteps} aria-label="Задачи и зависимости">
+            {detail.progress.tasks.map((task, index) => (
+              <li key={task.task_id} data-state={task.status}>
+                <WorkPlanStepHeading
+                  index={index}
+                  title={task.title}
+                  status={task.status}
+                  statusLabel={taskStatusLabels[task.status] ?? task.status}
+                />
+                {task.depends_on.length > 0 && (
+                  <p className={styles.runtimeDependency}>
+                    После:{" "}
+                    {task.depends_on
+                      .map(
+                        (id) =>
+                          detail.progress.tasks.find((item) => item.task_id === id)?.title ?? id
+                      )
+                      .join(", ")}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
           <p className={styles.checkpoint}>
             Память при принятии: {detail.memory.included} записей
             {detail.memory.omitted ? `; не вошло в лимит: ${detail.memory.omitted}` : ""}. Команда
@@ -143,17 +177,17 @@ export function WorkManagerProgress({
               </ul>
             </>
           )}
-          <details>
+          <details className={styles.history}>
             <summary>Точки сохранения и история восстановления</summary>
-            <ul>
-              {detail.checkpoints.map((c) => (
-                <li key={c.version} className={styles.checkpoint}>
-                  Версия {c.version} · {stageLabels[c.stage]} · {workStatusLabels[c.status]} ·{" "}
-                  {new Date(c.at).toLocaleString("ru-RU")}
-                  {c.inflight_run_id ? " · запрос не завершён" : ""}
-                </li>
-              ))}
-            </ul>
+            <ActivityTimeline
+              label="Точки сохранения Work"
+              items={detail.checkpoints.map((checkpoint) => ({
+                id: checkpoint.version,
+                at: checkpoint.at,
+                title: `Версия ${checkpoint.version} · ${stageLabels[checkpoint.stage]} · ${workStatusLabels[checkpoint.status]}`,
+                detail: `Запросов модели: ${checkpoint.model_requests}${checkpoint.inflight_run_id ? " · запрос не завершён" : ""}`
+              }))}
+            />
           </details>
         </>
       )}

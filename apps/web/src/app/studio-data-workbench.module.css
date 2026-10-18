@@ -157,18 +157,32 @@
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
 }
 .column {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14px 94px;
   gap: 8px;
   align-items: center;
   justify-content: space-between;
   border: 1px solid var(--line);
-  padding: 8px;
+  padding: 12px;
   border-radius: var(--radius-control);
   min-width: 0;
 }
 .column label {
   word-break: break-word;
   min-width: 0;
+}
+.mappingConnector {
+  color: var(--muted);
+  font-size: 14px;
+}
+.column .columnSample {
+  grid-column: 1 / -1;
+  font: 11px/1.5 var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  opacity: 0.85;
 }
 .column select {
   max-width: 100px;
@@ -222,7 +236,8 @@
 .metrics div {
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  padding: 9px;
+  padding: 14px;
+  background: var(--panel);
   min-width: 0;
 }
 .metrics dt {
@@ -231,7 +246,9 @@
 }
 .metrics dd {
   margin: 4px 0 0;
-  font-weight: 600;
+  font-weight: 550;
+  font-size: 20px;
+  letter-spacing: -0.035em;
   overflow-wrap: anywhere;
 }
 .tableWrap {
@@ -246,8 +263,9 @@
   font-size: 13px;
 }
 .tableWrap :is(th, td) {
-  border: 1px solid var(--line);
-  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
   text-align: left;
   min-width: 90px;
   vertical-align: top;
@@ -259,6 +277,14 @@
   z-index: 1;
   background: var(--panel);
   color: var(--text);
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: inset 0 -1px var(--line);
+}
+.tableWrap tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
 }
 .tableWrap tbody th[scope="row"] {
   position: sticky;

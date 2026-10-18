@@ -1,0 +1,72 @@
+.timeline {
+  padding: 4px 0;
+  margin: 12px 0 0;
+  list-style: none;
+}
+.timeline li {
+  display: flex;
+  position: relative;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 0 0 20px;
+  min-width: 0;
+}
+.timeline li:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 13px;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+.timeline li:last-child {
+  padding-bottom: 0;
+}
+.dot {
+  position: relative;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  flex-shrink: 0;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: 50%;
+  background: var(--bg);
+}
+.timeline li:last-child .dot {
+  background: var(--text);
+  border-color: var(--text);
+}
+.content {
+  min-width: 0;
+}
+.content strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 450;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.content time {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.detail {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.empty {
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 13px;
+}

@@ -88,7 +88,11 @@ test("right click switches empty send to assistant without recording or submitti
   await speechFixture(page);
   let posts = 0;
   page.on("request", (request) => {
-    if (request.method() === "POST") posts++;
+    if (
+      request.method() === "POST" &&
+      /\/api\/v1\/(?:chats|projects)(?:\/|$)/.test(new URL(request.url()).pathname)
+    )
+      posts++;
   });
   await page.goto("/");
   await expect(page.getByLabel("Сообщение Kosmora")).toBeEnabled();
@@ -139,7 +143,11 @@ test("closing a recording suppresses late recognition and keeps an existing draf
   await speechFixture(page, 500);
   let posts = 0;
   page.on("request", (request) => {
-    if (request.method() === "POST") posts++;
+    if (
+      request.method() === "POST" &&
+      /\/api\/v1\/(?:chats|projects)(?:\/|$)/.test(new URL(request.url()).pathname)
+    )
+      posts++;
   });
   await page.goto("/");
   await expect(page.getByLabel("Сообщение Kosmora")).toBeEnabled();

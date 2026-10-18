@@ -93,6 +93,7 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [modelQuery, setModelQuery] = useState("");
   const menu = useRef<HTMLDetailsElement>(null);
   const id = useId();
   useEffect(() => {
@@ -186,8 +187,50 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
         <span>{busy ? "Сохраняю…" : (data?.settings.preferred_model ?? "Модель")}</span>
         <span aria-hidden="true">⌄</span>
       </summary>
-      <div id={id} className={styles.modelMenu}>
-        <strong>Модель для новых запросов</strong>
+      <div
+        id={id}
+        className={styles.modelMenu}
+        onKeyDown={(event) => {
+          if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+          if (event.target instanceof HTMLInputElement && ["Home", "End"].includes(event.key))
+            return;
+          const items = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>("input, button:not(:disabled), a")
+          );
+          const index = items.indexOf(document.activeElement as HTMLElement);
+          if (!items.length) return;
+          event.preventDefault();
+          const next =
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? items.length - 1
+                : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+          items[next]?.focus();
+        }}
+      >
+        <div className={styles.modelMenuHeading}>
+          <strong>Выберите модель</strong>
+          <span>Для новых запросов</span>
+        </div>
+        <label className={styles.modelSearch}>
+          <WorkspaceIcon name="search" />
+          <input
+            type="search"
+            aria-label="Найти модель"
+            onKeyDown={(event) => {
+              // The selector lives inside the chat form. Searching must never submit a draft.
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}
+            placeholder="Найти модель…"
+            maxLength={100}
+            value={modelQuery}
+            onChange={(event) => setModelQuery(event.target.value)}
+          />
+        </label>
         <button
           type="button"
           disabled={!data || disabled || busy}
@@ -197,7 +240,13 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
           По умолчанию
         </button>
         {data?.available_models
-          .filter((route) => route.capabilities.streaming)
+          .filter(
+            (route) =>
+              route.capabilities.streaming &&
+              `${route.model} ${route.provider}`
+                .toLocaleLowerCase()
+                .includes(modelQuery.trim().toLocaleLowerCase())
+          )
           .map((route) => (
             <button
               type="button"
@@ -211,12 +260,21 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
             >
               <span>
                 {route.model}
-                <small>{route.provider}</small>
+                <small>{route.provider} · потоковый ответ</small>
               </span>
               {data.settings.preferred_model === route.model && <WorkspaceIcon name="check" />}
             </button>
           ))}
         {!data && <p>Настройки пока недоступны. Используется модель сервера.</p>}
+        {data &&
+          modelQuery.trim() &&
+          !data.available_models.some(
+            (route) =>
+              route.capabilities.streaming &&
+              `${route.model} ${route.provider}`
+                .toLocaleLowerCase()
+                .includes(modelQuery.trim().toLocaleLowerCase())
+          ) && <p>Модели не найдены.</p>}
         {error && <p role="alert">{error}</p>}
         <a href="/personal-settings">Все настройки модели</a>
       </div>
