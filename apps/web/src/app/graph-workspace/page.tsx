@@ -8,6 +8,7 @@ import {
   type IntelligenceGraphPortablePackage
 } from "@cosmora/contracts";
 import { compareGraphRevisions } from "./revision-diff";
+import { IntelligenceGraphView } from "./graph-view";
 
 const digest = async (text: string) =>
   [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))]
@@ -459,6 +460,10 @@ export default function GraphWorkspacePage() {
                 Переименовать
               </button>
             </form>
+            <IntelligenceGraphView
+              key={`${selected.graph_id}:${selected.revision}`}
+              graph={selected}
+            />
             <h3>Узлы</h3>
             <input
               aria-label="Поиск узлов"

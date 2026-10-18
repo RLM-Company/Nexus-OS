@@ -111,13 +111,11 @@ test("selecting JSON only previews; import requires review and a matching projec
     nodes: [],
     edges: []
   };
-  await page
-    .getByLabel("Импорт графа JSON")
-    .setInputFiles({
-      name: "graph.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(portable))
-    });
+  await page.getByLabel("Импорт графа JSON").setInputFiles({
+    name: "graph.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(portable))
+  });
   const create = page.getByRole("button", { name: "Создать отдельный граф" });
   await expect(create).toBeDisabled();
   expect(imports).toBe(0);
@@ -128,4 +126,59 @@ test("selecting JSON only previews; import requires review and a matching projec
     page.getByRole("heading", { level: 2 }).filter({ hasText: "Проект знаний" })
   ).toBeVisible();
   expect(imports).toBe(1);
+});
+
+test("map navigation distinguishes directed paths from reverse traversal", async ({ page }) => {
+  const initial = {
+    ...graph(),
+    nodes: ["a", "b", "c"].map((id) => ({
+      node_id: id,
+      node_version: 1,
+      kind: "Claim",
+      verification_status: "discovered"
+    })),
+    records: ["a", "b", "c"].map((id) => ({
+      node: { id, version: 1 },
+      text: "Узел " + id,
+      excerpt: "Текст " + id
+    })),
+    edges: [
+      {
+        edge_id: "ab",
+        edge_version: 1,
+        type: "REFERENCES",
+        from: { id: "a", version: 1 },
+        to: { id: "b", version: 1 },
+        verification_status: "discovered"
+      },
+      {
+        edge_id: "bc",
+        edge_version: 1,
+        type: "SUPPORTS",
+        from: { id: "b", version: 1 },
+        to: { id: "c", version: 1 },
+        verification_status: "discovered"
+      }
+    ]
+  };
+  await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({
+      json: path.endsWith("/revisions")
+        ? { items: [] }
+        : path.endsWith("/graph-a")
+          ? initial
+          : { items: [initial] }
+    });
+  });
+  await open(page);
+  await page.getByRole("button", { name: "Выбрать узел: Узел c", exact: true }).click();
+  const aside = page.getByRole("complementary", { name: "Выбранный узел" });
+  await expect(aside).toContainText("Текст c");
+  await page.getByLabel("Конечный узел пути").selectOption("a");
+  await expect(aside).toContainText("Путь в выбранном направлении и пределах глубины не найден.");
+  await page.getByLabel("Направление поиска пути").selectOption("either");
+  await expect(aside.getByText("пройдено против стрелки", { exact: false })).toHaveCount(2);
+  await page.getByRole("button", { name: "Увеличить граф", exact: true }).click();
+  await expect(page.getByText("125%", { exact: true })).toBeVisible();
 });
