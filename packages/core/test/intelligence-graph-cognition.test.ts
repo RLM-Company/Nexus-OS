@@ -163,3 +163,47 @@ describe("Intelligence Graph cognitive evidence gate", () => {
     expect(truncated.verified_node_refs).toEqual([{ id: "claim", version: 1 }]);
   });
 });
+
+describe("historical cognitive evidence", () => {
+  it.each([undefined, "discovered", "verified"] as const)(
+    "uses recorded prior status %s when assessing a replaced node",
+    (prior) => {
+      const old = {
+        ...node("claim"),
+        verification_status: "superseded" as const,
+        valid_to: "2026-09-10T00:00:00.000Z",
+        ...(prior === undefined ? {} : { previous_verification_status: prior })
+      };
+      const next = {
+        ...node("claim"),
+        node_version: 2,
+        created_at: "2026-09-10T00:00:00.000Z",
+        observed_at: "2026-09-10T00:00:00.000Z",
+        valid_from: "2026-09-10T00:00:00.000Z",
+        supersedes: { id: "claim", version: 1 }
+      };
+      const index = new IntelligenceGraphIndex({
+        ownerId: "owner-1",
+        projectId: "project-1",
+        nodes: [old, next],
+        edges: [],
+        records: [old, next].map((n) => ({
+          node: { id: n.node_id, version: n.node_version },
+          text: n.node_version === 1 ? "history" : "current",
+          excerpt: "Historic evidence",
+          estimated_tokens: 4
+        }))
+      });
+      const result = runIntelligenceGraphCognitiveCycle(index, {
+        owner_id: "owner-1",
+        project_id: "project-1",
+        mode: "temporal",
+        as_of: "2026-09-05T00:00:00.000Z",
+        text: "history",
+        verified_only: false
+      });
+      expect(result.readiness).toBe(prior === "verified" ? "grounded_context" : "abstain");
+      expect(result.verified_node_refs).toHaveLength(prior === "verified" ? 1 : 0);
+    }
+  );
+});

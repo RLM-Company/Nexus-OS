@@ -102,6 +102,15 @@ export const IntelligenceGraphNodeSchema = Type.Object(
     valid_from: nullableTime,
     valid_to: nullableTime,
     verification_status: IntelligenceGraphVerificationStatusSchema,
+    // Explicit pre-replacement status; missing legacy history cannot establish verification.
+    previous_verification_status: Type.Optional(
+      Type.Union([
+        Type.Literal("discovered"),
+        Type.Literal("hypothesis"),
+        Type.Literal("verified"),
+        Type.Literal("disputed")
+      ])
+    ),
     sensitivity: RuntimeDataClassSchema,
     source_ref: IntelligenceGraphEvidenceRefSchema,
     provenance_kind: IntelligenceGraphProvenanceKindSchema,
@@ -130,6 +139,15 @@ export const IntelligenceGraphEdgeSchema = Type.Object(
     valid_from: nullableTime,
     valid_to: nullableTime,
     verification_status: IntelligenceGraphVerificationStatusSchema,
+    // Explicit pre-replacement status; missing legacy history cannot establish verification.
+    previous_verification_status: Type.Optional(
+      Type.Union([
+        Type.Literal("discovered"),
+        Type.Literal("hypothesis"),
+        Type.Literal("verified"),
+        Type.Literal("disputed")
+      ])
+    ),
     sensitivity: RuntimeDataClassSchema,
     evidence_ref: IntelligenceGraphEvidenceRefSchema,
     provenance_kind: IntelligenceGraphProvenanceKindSchema,
@@ -240,6 +258,24 @@ const validateVerification = (input: {
   return issues;
 };
 
+const validatePriorVerification = (
+  record: IntelligenceGraphNode | IntelligenceGraphEdge
+): string[] => {
+  const prior = record.previous_verification_status;
+  if (prior === undefined) return [];
+  if (
+    record.verification_status !== "superseded" ||
+    !["discovered", "hypothesis", "verified", "disputed"].includes(prior)
+  )
+    return ["Previous verification status requires a superseded record and a live prior status"];
+  return validateVerification({
+    label: "Historical record",
+    status: prior,
+    provenance: record.provenance_kind,
+    confidence: record.confidence_method
+  });
+};
+
 export const validateIntelligenceGraphSnapshot = (input: {
   ownerId: string;
   projectId: string | null;
@@ -259,6 +295,7 @@ export const validateIntelligenceGraphSnapshot = (input: {
       continue;
     }
     nodes.set(key, node);
+    issues.push(...validatePriorVerification(node));
 
     if (node.owner_id !== input.ownerId) {
       issues.push(`Node ${key} belongs to another owner`);
@@ -307,6 +344,7 @@ export const validateIntelligenceGraphSnapshot = (input: {
       continue;
     }
     edges.set(key, edge);
+    issues.push(...validatePriorVerification(edge));
 
     if (edge.owner_id !== input.ownerId) {
       issues.push(`Edge ${key} belongs to another owner`);

@@ -2,6 +2,27 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import {
+  parseIntelligenceGraphPackage,
+  INTELLIGENCE_GRAPH_PACKAGE_MAX_BYTES,
+  type IntelligenceGraphPortablePackage
+} from "@cosmora/contracts";
+import { compareGraphRevisions } from "./revision-diff";
+
+const digest = async (text: string) =>
+  [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))]
+    .map((n) => n.toString(16).padStart(2, "0"))
+    .join("");
+const download = (value: unknown, filename: string) => {
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(value, null, 2) + "\n"], { type: "application/json;charset=utf-8" })
+  );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
 
 type Ref = { id: string; version: number };
 type Node = { node_id: string; node_version: number; kind: string; verification_status: string };
@@ -86,8 +107,26 @@ export default function GraphWorkspacePage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [edgeToRevise, setEdgeToRevise] = useState("");
+  const [nodeToEdit, setNodeToEdit] = useState<Ref | null>(null);
+  const [nodeLabelDraft, setNodeLabelDraft] = useState("");
+  const [nodeDetailDraft, setNodeDetailDraft] = useState("");
+  const [renameDraft, setRenameDraft] = useState("");
+  const [nodeSearch, setNodeSearch] = useState("");
   const [query, setQuery] = useState("");
   const [explanation, setExplanation] = useState<Explanation | null>(null);
+  const [importPreview, setImportPreview] = useState<{
+    package: IntelligenceGraphPortablePackage;
+    sha256: string;
+    projectId: string;
+  } | null>(null);
+  const [importReviewed, setImportReviewed] = useState(false);
+  const [importUncertain, setImportUncertain] = useState(false);
+  const [restorePreview, setRestorePreview] = useState<{
+    source: Graph;
+    base: Graph;
+    projectId: string;
+  } | null>(null);
+  const [restoreReviewed, setRestoreReviewed] = useState(false);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -125,6 +164,14 @@ export default function GraphWorkspacePage() {
     if (choice) {
       const graph = await request<Graph>(`${base}/${encodeURIComponent(choice)}`);
       setSelected(graph);
+      setNodeToEdit(null);
+      setRestorePreview(null);
+      setRestoreReviewed(false);
+      setRenameDraft(graph.title);
+      setFrom("");
+      setTo("");
+      setEdgeToRevise("");
+      setExplanation(null);
       const revisions = await request<{ items: History[] }>(
         `${base}/${encodeURIComponent(choice)}/revisions`
       );
@@ -146,15 +193,18 @@ export default function GraphWorkspacePage() {
       setBusy(false);
     }
   };
-  const edit = (operation: object) =>
+  const edit = (operation: object, after?: () => void) =>
     run(async () => {
       if (!selected) return;
       const changed = await request<Graph>(`${graphUrl}/edits`, {
         method: "POST",
         body: JSON.stringify({ expected_revision: selected.revision, operation })
       });
-      await load(projectId, changed.graph_id);
+      // Accept the write before auxiliary history/list reads, which can fail independently.
+      setSelected(changed);
       setExplanation(null);
+      after?.();
+      await load(projectId, changed.graph_id);
     });
 
   return (
@@ -184,7 +234,15 @@ export default function GraphWorkspacePage() {
             id="project-id"
             style={{ ...field, flex: "1 1 270px" }}
             value={projectId}
-            onChange={(event) => setProjectId(event.target.value)}
+            disabled={busy}
+            onChange={(event) => {
+              setProjectId(event.target.value);
+              setSelected(null);
+              setGraphs([]);
+              setHistory([]);
+              setNodeToEdit(null);
+              setExplanation(null);
+            }}
             placeholder="Существующий ID проекта"
           />
           <button
@@ -236,6 +294,133 @@ export default function GraphWorkspacePage() {
           </button>
         </form>
       </section>
+      <section style={{ ...panel, marginTop: 18 }}>
+        <h2>Перенос графа</h2>
+        <p>
+          JSON переносит текущий текст и связи. Новый граф получит отдельную историю; все записи
+          останутся непроверенными.
+        </p>
+        <input
+          type="file"
+          accept=".json,application/json"
+          aria-label="Импорт графа JSON"
+          disabled={busy || !projectId.trim() || importUncertain}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (!file) return;
+            const targetProject = projectId;
+            void run(async () => {
+              setImportPreview(null);
+              setImportReviewed(false);
+              if (file.size > INTELLIGENCE_GRAPH_PACKAGE_MAX_BYTES)
+                throw new Error("Файл превышает 800 000 байт.");
+              const text = new TextDecoder("utf-8", { fatal: true }).decode(
+                await file.arrayBuffer()
+              );
+              const portable = parseIntelligenceGraphPackage(text);
+              const sha256 = await digest(JSON.stringify(portable));
+              setImportPreview({ package: portable, sha256, projectId: targetProject });
+            });
+          }}
+        />
+        {importPreview && (
+          <div>
+            <p>
+              Проект: {importPreview.projectId}. Узлов: {importPreview.package.nodes.length},
+              связей: {importPreview.package.edges.length}.
+            </p>
+            <p style={{ overflowWrap: "anywhere" }}>SHA-256: {importPreview.sha256}</p>
+            <pre style={{ whiteSpace: "pre-wrap", maxHeight: 340, overflow: "auto" }}>
+              {JSON.stringify(importPreview.package, null, 2)}
+            </pre>
+            <label>
+              <input
+                type="checkbox"
+                checked={importReviewed}
+                disabled={busy || importUncertain}
+                onChange={(event) => setImportReviewed(event.target.checked)}
+              />{" "}
+              Текст и связи просмотрены
+            </label>
+            <button
+              style={button}
+              disabled={
+                busy || importUncertain || !importReviewed || importPreview.projectId !== projectId
+              }
+              onClick={() =>
+                void run(async () => {
+                  setImportUncertain(true);
+                  try {
+                    const created = await request<Graph>(root + "/import", {
+                      method: "POST",
+                      body: JSON.stringify({
+                        package: importPreview.package,
+                        expected_sha256: importPreview.sha256
+                      })
+                    });
+                    setImportUncertain(false);
+                    setImportPreview(null);
+                    setImportReviewed(false);
+                    setSelected(created);
+                    await load(projectId, created.graph_id);
+                  } catch (error) {
+                    setNotice(
+                      "Ответ импорта не подтверждён. Проверьте список графов перед новым импортом."
+                    );
+                    throw error;
+                  }
+                })
+              }
+            >
+              Создать отдельный граф
+            </button>
+            <button
+              style={button}
+              disabled={busy}
+              onClick={() => {
+                if (
+                  importUncertain &&
+                  !window.confirm(
+                    "Ответ мог потеряться после создания. Вы проверили список графов? Повторный импорт может создать копию."
+                  )
+                )
+                  return;
+                setImportPreview(null);
+                setImportReviewed(false);
+                setImportUncertain(false);
+              }}
+            >
+              Закрыть предпросмотр
+            </button>
+            {importUncertain && (
+              <p role="alert">
+                Результат импорта неизвестен. Откройте список графов; автоматического повтора нет.
+                Перед перезагрузкой проверьте список.
+              </p>
+            )}
+          </div>
+        )}
+        {selected && (
+          <button
+            style={button}
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                const exported = await request<{ package: unknown; sha256: string }>(
+                  graphUrl + "/package"
+                );
+                const portable = parseIntelligenceGraphPackage(exported.package);
+                if ((await digest(JSON.stringify(portable))) !== exported.sha256)
+                  throw new Error("Хеш выгрузки не совпал.");
+                download(portable, `graph-${selected.graph_id}-v${selected.revision}.json`);
+              })
+            }
+          >
+            Скачать текущий граф JSON
+          </button>
+        )}
+      </section>
       {notice && (
         <p role="alert" style={{ marginTop: 15, fontWeight: 600 }}>
           {notice}
@@ -251,22 +436,159 @@ export default function GraphWorkspacePage() {
             <p>
               Узлов: {activeNodes.length}, активных связей: {activeEdges.length}.
             </p>
-            <h3>Узлы</h3>
-            <ul>
-              {activeNodes.map((node) => (
-                <li key={node.node_id}>
-                  <strong>{nodeLabel({ id: node.node_id, version: node.node_version })}</strong> ·{" "}
-                  {node.kind} · {node.verification_status}
-                </li>
-              ))}
-            </ul>
-            {activeNodes.length === 0 && <p>Граф пуст. Добавьте первый узел вручную.</p>}
             <form
               onSubmit={(event) => {
                 event.preventDefault();
-                void edit({ kind: "add_node", node_kind: nodeKind, label, detail });
-                setLabel("");
-                setDetail("");
+                void edit({ kind: "rename", title: renameDraft });
+              }}
+              style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+            >
+              <input
+                aria-label="Новое название графа"
+                style={{ ...field, flex: 1 }}
+                maxLength={80}
+                value={renameDraft}
+                disabled={busy}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                required
+              />
+              <button
+                style={button}
+                disabled={busy || !renameDraft.trim() || renameDraft === selected.title}
+              >
+                Переименовать
+              </button>
+            </form>
+            <h3>Узлы</h3>
+            <input
+              aria-label="Поиск узлов"
+              style={field}
+              value={nodeSearch}
+              maxLength={200}
+              onChange={(event) => setNodeSearch(event.target.value)}
+              placeholder="Поиск по названию, описанию и типу"
+            />
+            <ul>
+              {activeNodes
+                .filter((node) => {
+                  const record = selected.records.find(
+                    (r) => r.node.id === node.node_id && r.node.version === node.node_version
+                  );
+                  return [record?.text, record?.excerpt, node.kind]
+                    .join(" ")
+                    .toLocaleLowerCase()
+                    .includes(nodeSearch.toLocaleLowerCase());
+                })
+                .map((node) => (
+                  <li key={node.node_id}>
+                    <strong>{nodeLabel({ id: node.node_id, version: node.node_version })}</strong> ·{" "}
+                    {node.kind} · {node.verification_status}
+                    <button
+                      style={button}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        if (
+                          nodeToEdit &&
+                          !window.confirm("Оставить несохранённый текст выбранного узла?")
+                        )
+                          return;
+                        const record = selected.records.find(
+                          (r) => r.node.id === node.node_id && r.node.version === node.node_version
+                        );
+                        setNodeToEdit({ id: node.node_id, version: node.node_version });
+                        setNodeLabelDraft(record?.text ?? "");
+                        setNodeDetailDraft(record?.excerpt ?? "");
+                      }}
+                    >
+                      Изменить
+                    </button>
+                  </li>
+                ))}
+            </ul>
+            {activeNodes.length === 0 && <p>Граф пуст. Добавьте первый узел вручную.</p>}
+            {nodeToEdit && (
+              <form
+                style={{ display: "grid", gap: 8 }}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void edit(
+                    {
+                      kind: "revise_node",
+                      node: nodeToEdit,
+                      label: nodeLabelDraft,
+                      detail: nodeDetailDraft
+                    },
+                    () => setNodeToEdit(null)
+                  );
+                }}
+              >
+                <h3>Изменить узел · v{nodeToEdit.version}</h3>
+                <p>
+                  Текст и связи получат новые непроверенные версии. Предыдущие версии сохранятся.
+                </p>
+                <input
+                  aria-label="Название выбранного узла"
+                  style={field}
+                  value={nodeLabelDraft}
+                  maxLength={120}
+                  disabled={busy}
+                  onChange={(event) => setNodeLabelDraft(event.target.value)}
+                  required
+                />
+                <textarea
+                  aria-label="Описание выбранного узла"
+                  style={field}
+                  rows={4}
+                  value={nodeDetailDraft}
+                  maxLength={1000}
+                  disabled={busy}
+                  onChange={(event) => setNodeDetailDraft(event.target.value)}
+                  required
+                />
+                <button
+                  style={button}
+                  disabled={busy || !nodeLabelDraft.trim() || !nodeDetailDraft.trim()}
+                >
+                  Сохранить новую версию узла
+                </button>
+                <button
+                  style={button}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setNodeToEdit(null)}
+                >
+                  Закрыть правку
+                </button>
+                <button
+                  style={button}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    const count = activeEdges.filter(
+                      (e) => e.from.id === nodeToEdit.id || e.to.id === nodeToEdit.id
+                    ).length;
+                    if (
+                      window.confirm(
+                        `Удалить узел и его действующие связи (${count})? Прежние версии сохранятся.`
+                      )
+                    )
+                      void edit({ kind: "remove_node", node: nodeToEdit }, () =>
+                        setNodeToEdit(null)
+                      );
+                  }}
+                >
+                  Удалить узел и связи
+                </button>
+              </form>
+            )}
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void edit({ kind: "add_node", node_kind: nodeKind, label, detail }, () => {
+                  setLabel("");
+                  setDetail("");
+                });
               }}
               style={{ display: "grid", gap: 8 }}
             >
@@ -420,30 +742,102 @@ export default function GraphWorkspacePage() {
                       disabled={busy}
                       onClick={() =>
                         void run(async () => {
-                          if (
-                            !window.confirm(
-                              `Вернуть содержимое версии ${version.revision}? Текущая версия сохранится в истории.`
-                            )
-                          )
-                            return;
-                          await request(`${graphUrl}/restore`, {
-                            method: "POST",
-                            body: JSON.stringify({
-                              expected_revision: selected.revision,
-                              from_revision: version.revision
-                            })
-                          });
-                          await load(projectId, selected.graph_id);
+                          const source = await request<Graph>(
+                            `${graphUrl}/revisions/${version.revision}`
+                          );
+                          setRestorePreview({ source, base: selected, projectId });
+                          setRestoreReviewed(false);
                         })
                       }
                     >
-                      Восстановить
+                      Сравнить перед восстановлением
                     </button>
                   )}
                 </li>
               ))}
             </ul>
           </section>
+          {restorePreview && (
+            <section style={panel}>
+              <h2>
+                Восстановление v{restorePreview.source.revision} поверх v
+                {restorePreview.base.revision}
+              </h2>
+              <p>Ниже изменения текущего содержимого. Предыдущие ревизии сохранятся.</p>
+              {compareGraphRevisions(restorePreview.base, restorePreview.source).map((change) => (
+                <div key={`${change.kind}:${change.id}`}>
+                  <strong>
+                    {change.kind} · {change.id}
+                  </strong>
+                  <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                    Сейчас: {change.before ?? "Отсутствует"}
+                  </pre>
+                  <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                    После: {change.after ?? "Отсутствует"}
+                  </pre>
+                </div>
+              ))}
+              {compareGraphRevisions(restorePreview.base, restorePreview.source).length === 0 && (
+                <p>Текущее содержимое совпадает.</p>
+              )}
+              <label>
+                <input
+                  type="checkbox"
+                  checked={restoreReviewed}
+                  disabled={busy}
+                  onChange={(event) => setRestoreReviewed(event.target.checked)}
+                />{" "}
+                Изменения просмотрены
+              </label>
+              <button
+                style={button}
+                disabled={
+                  busy ||
+                  !restoreReviewed ||
+                  restorePreview.projectId !== projectId ||
+                  restorePreview.base.graph_id !== selected.graph_id ||
+                  restorePreview.base.revision !== selected.revision
+                }
+                onClick={() =>
+                  void run(async () => {
+                    const restored = await request<Graph>(graphUrl + "/restore", {
+                      method: "POST",
+                      body: JSON.stringify({
+                        expected_revision: restorePreview.base.revision,
+                        from_revision: restorePreview.source.revision
+                      })
+                    });
+                    setSelected(restored);
+                    setRestorePreview(null);
+                    setRestoreReviewed(false);
+                    await load(projectId, restored.graph_id);
+                  })
+                }
+              >
+                Подтвердить восстановление
+              </button>
+              <button
+                style={button}
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const exported = await request<{ package: unknown; sha256: string }>(
+                      `${graphUrl}/package?revision=${restorePreview.source.revision}`
+                    );
+                    const portable = parseIntelligenceGraphPackage(exported.package);
+                    if ((await digest(JSON.stringify(portable))) !== exported.sha256)
+                      throw new Error("Хеш выгрузки не совпал.");
+                    download(
+                      portable,
+                      `graph-${selected.graph_id}-v${restorePreview.source.revision}.json`
+                    );
+                  })
+                }
+              >
+                Скачать выбранную ревизию JSON
+              </button>
+            </section>
+          )}
           <section style={panel}>
             <h2>Объяснение графа</h2>
             <form

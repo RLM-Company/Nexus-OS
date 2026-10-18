@@ -18,6 +18,20 @@ const GraphScope = Type.Object({ projectId: Id, graphId: Id }, { additionalPrope
 const Revision = Type.Integer({ minimum: 1 });
 const Edit = Type.Union([
   Type.Object(
+    { kind: Type.Literal("rename"), title: Type.String({ minLength: 1, maxLength: 80 }) },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("revise_node"),
+      node: Ref,
+      label: Type.String({ minLength: 1, maxLength: 120 }),
+      detail: Type.String({ minLength: 1, maxLength: 1000 })
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object({ kind: Type.Literal("remove_node"), node: Ref }, { additionalProperties: false }),
+  Type.Object(
     {
       kind: Type.Literal("add_node"),
       node_kind: Type.Union(
@@ -206,6 +220,120 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
               request.query.limit ?? 20
             )
           };
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/revisions/:revision",
+      {
+        schema: {
+          params: Type.Object(
+            { projectId: Id, graphId: Id, revision: Revision },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return dependencies.service.revision(
+            owner,
+            request.params.projectId,
+            request.params.graphId,
+            request.params.revision
+          );
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/package",
+      {
+        schema: {
+          params: GraphScope,
+          querystring: Type.Object(
+            { revision: Type.Optional(Revision) },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return reply
+            .header("Cache-Control", "no-store")
+            .send(
+              dependencies.service.exportPackage(
+                owner,
+                request.params.projectId,
+                request.params.graphId,
+                request.query.revision
+              )
+            );
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+
+    route.post(
+      "/api/v1/projects/:projectId/intelligence-graphs/import/preview",
+      {
+        bodyLimit: 850_000,
+        schema: {
+          params: Scope,
+          body: Type.Object({ package: Type.Unknown() }, { additionalProperties: false })
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return reply
+            .header("Cache-Control", "no-store")
+            .send(dependencies.service.previewImport(request.body.package));
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+
+    route.post(
+      "/api/v1/projects/:projectId/intelligence-graphs/import",
+      {
+        bodyLimit: 850_000,
+        schema: {
+          params: Scope,
+          body: Type.Object(
+            {
+              package: Type.Unknown(),
+              expected_sha256: Type.String({ pattern: "^[a-f0-9]{64}$" })
+            },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return reply
+            .status(201)
+            .send(
+              dependencies.service.importPackage(
+                owner,
+                request.params.projectId,
+                request.body.package,
+                request.body.expected_sha256
+              )
+            );
         } catch (error) {
           return handleFailure(reply, error);
         }
