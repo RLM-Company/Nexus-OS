@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { WorkspaceIcon } from "../workspace-icons";
 import styles from "./kosmora-controls.module.css";
+import { EffortSlider } from "./effort-slider";
 
 export function Switch({
   checked,
@@ -269,28 +270,12 @@ export function ModelPicker({ disabled = false }: { disabled?: boolean }) {
           ))}
         {!data && <p>Настройки пока недоступны. Используется модель сервера.</p>}
         <section className={styles.effortSection} aria-label="Усилия модели">
-          <strong>Усилия</strong>
-          <div className={styles.effortLevels} role="radiogroup" aria-label="Уровень усилий">
-            {([null, "low", "medium", "high"] as const).map((effort) => (
-              <button
-                type="button"
-                key={effort ?? "auto"}
-                role="radio"
-                aria-checked={(data?.reasoning?.effort ?? null) === effort}
-                disabled={
-                  !data?.reasoning ||
-                  disabled ||
-                  busy ||
-                  (effort !== null && !data.reasoning.supported_efforts.includes(effort))
-                }
-                onClick={() => void setEffort(effort)}
-              >
-                {effort === null
-                  ? "Авто"
-                  : { low: "Низкие", medium: "Средние", high: "Высокие" }[effort]}
-              </button>
-            ))}
-          </div>
+          <EffortSlider
+            value={data?.reasoning?.effort ?? null}
+            supported={data?.reasoning?.supported_efforts ?? []}
+            disabled={!data?.reasoning || disabled || busy}
+            onCommit={(effort) => void setEffort(effort)}
+          />
           <small>
             {data?.reasoning?.supported_efforts.length
               ? "Больше усилий — глубже проработка и дольше ответ."

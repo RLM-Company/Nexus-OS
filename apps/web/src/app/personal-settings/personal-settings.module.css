@@ -23,8 +23,12 @@
   font-size: 16px;
 }
 .page section {
-  border-top: 1px solid #d6d6d6;
-  padding: 24px 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg);
+  padding: 24px;
+  margin: 18px 0;
+  scroll-margin-top: 80px;
 }
 .page label {
   display: grid;
@@ -93,4 +97,39 @@
 }
 .danger {
   border-color: #555 !important;
+}
+.sectionsNav {
+  position: sticky;
+  top: 8px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 22px 0;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 2px 7px #00000004;
+}
+.sectionsNav a {
+  padding: 7px 11px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 12px;
+}
+.sectionsNav a:hover,
+.sectionsNav a:focus-visible {
+  background: var(--bg);
+}
+@media (max-width: 600px) {
+  .page {
+    padding: 24px 14px;
+  }
+  .page section {
+    padding: 16px;
+  }
+  .sectionsNav a {
+    padding: 6px 8px;
+  }
 }

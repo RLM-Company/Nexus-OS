@@ -28,7 +28,7 @@ export type ToolSurface =
   | "features"
   | "settings";
 export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }[] = [
-  { id: "work", label: "Kosmora Work", description: "Проекты и результаты" },
+  { id: "work", label: "Koswork", description: "Проекты и результаты" },
   { id: "code", label: "Coscode", description: "Задачи разработки" },
   { id: "multi-agent", label: "Multi-Agent", description: "Команда и роли" },
   { id: "skills", label: "Skills", description: "Навыки и специализации" },
@@ -1167,7 +1167,7 @@ function Features({ onNavigate }: Props) {
         `${item.title} ${item.description} ${item.area}`.toLocaleLowerCase("ru").includes(search))
   );
   const current = [
-    { id: "work", label: "Kosmora Work", detail: "Проекты и ход работы", icon: "work" },
+    { id: "work", label: "Koswork", detail: "Проекты и ход работы", icon: "work" },
     { id: "code", label: "Coscode", detail: "Черновик задачи разработки", icon: "code" },
     { id: "studio", label: "Studio", detail: "Редакторы промптов", icon: "studio" }
   ] as const;

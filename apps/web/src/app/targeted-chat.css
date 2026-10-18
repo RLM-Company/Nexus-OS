@@ -1,4 +1,82 @@
 /* Only the owner's explicit composer/sidebar corrections of 18 October 2026. */
+@media (min-width: 861px) {
+  .product-shell .sidebar {
+    width: var(--sidebar-width, 244px);
+  }
+  .product-shell .workspace {
+    margin-left: var(--sidebar-width, 244px);
+    width: calc(100% - var(--sidebar-width, 244px));
+  }
+}
+.product-shell .brand-mark {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.product-shell .brand-mark svg {
+  width: 28px;
+  height: 28px;
+}
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  z-index: 85;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after,
+.sidebar-resizer[data-resizing]::after {
+  background: var(--line-strong);
+}
+.chat-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  margin-right: 12px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.chat-mode-switch button {
+  padding: 4px 10px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.4;
+  background: transparent;
+  color: var(--muted);
+}
+.chat-mode-switch button[aria-pressed="true"] {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 3px #0001;
+}
+@media (max-width: 600px) {
+  .chat-mode-switch {
+    margin-right: 4px;
+  }
+  .chat-mode-switch button {
+    padding: 4px 7px;
+  }
+}
 .product-shell {
   --sidebar-icon-size: 18px;
   --sidebar-heading-size: 12px;

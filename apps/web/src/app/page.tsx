@@ -2,8 +2,16 @@
 import { ChatRunSkills } from "./chat-run-skills";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent
+} from "react";
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
+import { SidebarResize, useSidebarWidth } from "./sidebar-resize";
 import { InstallApp } from "./install-app";
 import { ChatResponse } from "./chat-response";
 import { VoiceComposer } from "./voice/voice-composer";
@@ -172,7 +180,7 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
   files: "Анализ файлов",
   skills: "Skills",
   code: "Coscode",
-  work: "Kosmora Work",
+  work: "Koswork",
   images: "Изображения",
   video: "Видео",
   sound: "Sound",
@@ -533,6 +541,7 @@ export default function Home() {
   useEffect(() => {
     setContextPreview(new URLSearchParams(window.location.search).get("context_preview") === "1");
   }, []);
+  const sidebarWidth = useSidebarWidth();
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
   const [chatMode, setChatMode] = useState<ChatMode>("kosmora");
   const [codeSpace, setCodeSpace] = useState(false);
@@ -2120,8 +2129,10 @@ export default function Home() {
   return (
     <div
       className={`app-shell product-shell${preferences.compact ? " compact-navigation" : ""}${preferences.largeText ? " large-text" : ""}`}
+      style={{ "--sidebar-width": `${sidebarWidth.width}px` } as CSSProperties}
     >
       <aside className="sidebar" data-space={codeSpace ? "coscode" : "kosmora"}>
+        <SidebarResize width={sidebarWidth.width} onChange={sidebarWidth.setWidth} />
         <WorkspaceModeMenu
           surface={
             surface === "manager"
@@ -2447,6 +2458,24 @@ export default function Home() {
                 : SURFACE_TITLE[surface]}
             </h1>
           </div>
+          {surface === "manager" && !activeProject && !activeLocalChatId && !codeSpace && (
+            <div className="chat-mode-switch" role="group" aria-label="Режим нового чата">
+              <button
+                type="button"
+                aria-pressed={chatMode === "kosmora"}
+                onClick={() => selectSurface("manager")}
+              >
+                Чат
+              </button>
+              <button
+                type="button"
+                aria-pressed={chatMode === "work"}
+                onClick={() => selectSurface("work")}
+              >
+                Работа
+              </button>
+            </div>
+          )}
           <div className="topbar-actions">
             <InstallApp />
             {surface === "manager" && (

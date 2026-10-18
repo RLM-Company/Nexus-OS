@@ -13,7 +13,7 @@ import {
 
 const WORKSPACE_MODES = [
   { id: "manager", label: "Kosmora", icon: "chats", description: "Диалоги и идеи" },
-  { id: "work", label: "Kosmora Work", icon: "work", description: "Задачи и материалы" },
+  { id: "work", label: "Koswork", icon: "work", description: "Задачи и материалы" },
   { id: "code", label: "Coscode", icon: "code", description: "Код и репозитории" },
   { id: "multi-agent", label: "Multi-Agent", icon: "multi-agent", description: "Команда и роли" }
 ] as const;

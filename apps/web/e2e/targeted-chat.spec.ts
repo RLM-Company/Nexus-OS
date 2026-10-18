@@ -65,7 +65,7 @@ test("Kosmora and Work share navigation; Coscode isolates its chats and includes
   await page
     .getByLabel("Сообщение Kosmora", { exact: true })
     .fill("Сохранить черновик при смене режима");
-  await mode(page, "Kosmora Work");
+  await mode(page, "Koswork");
   await expect(sidebar).toHaveAttribute("data-space", "kosmora");
   await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toHaveValue(
     "Сохранить черновик при смене режима"
@@ -146,11 +146,11 @@ test("model and effort picker persists the effort and fits mobile; Studio routes
     "false"
   );
   await page.getByLabel("Выбор модели", { exact: true }).click();
-  await page.getByRole("radio", { name: "Высокие", exact: true }).click();
-  await expect(page.getByRole("radio", { name: "Высокие", exact: true })).toHaveAttribute(
-    "aria-checked",
-    "true"
-  );
+  const slider = page.getByRole("slider", { name: "Уровень усилий" });
+  await slider.focus();
+  await slider.press("End");
+  await expect(slider).toHaveAttribute("aria-valuetext", "Высокие");
+  await expect(slider).toBeEnabled();
   expect(effort).toBe("high");
   await page.screenshot({ path: "../../qa/targeted-model-desktop.png" });
   await page.setViewportSize({ width: 390, height: 844 });
