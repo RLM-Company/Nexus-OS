@@ -25,6 +25,16 @@
 .product-shell .sidebar .project-item small {
   font-size: var(--sidebar-caption-size);
 }
+.product-shell .sidebar .projects-heading small {
+  font-size: var(--sidebar-caption-size);
+}
+.product-shell .sidebar .navigation-search input {
+  font-size: var(--sidebar-label-size);
+}
+.product-shell .sidebar .navigation-pin svg {
+  width: var(--sidebar-icon-size);
+  height: var(--sidebar-icon-size);
+}
 .product-shell .sidebar .pinnable-navigation-item:has(details[open]) {
   z-index: 75;
 }

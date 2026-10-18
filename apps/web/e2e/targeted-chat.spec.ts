@@ -110,6 +110,11 @@ test("chat ellipsis supports rename, pin and cancellation of deletion; current c
   await menu.getByLabel("Название чата").fill(title + " изменён");
   await menu.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect(page.locator(".topbar h1")).toHaveText(title + " изменён");
+  await page.getByLabel("Настройки чата", { exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Название чата", exact: true })).toHaveValue(
+    title + " изменён"
+  );
+  await page.getByLabel("Настройки чата", { exact: true }).press("Escape");
   const next = page.getByLabel(`Действия с чатом «${title} изменён»`, { exact: true });
   await next.click();
   await page
@@ -155,7 +160,15 @@ test("model and effort picker persists the effort and fits mobile; Studio routes
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
   await page.screenshot({ path: "../../qa/targeted-model-mobile.png" });
   await page.getByLabel("Выбор модели", { exact: true }).press("Escape");
-  await page.goto("/?surface=studio");
+  await page.goto("/?mode=kosmora");
+  await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toBeEnabled();
+  await page
+    .getByRole("navigation", { name: "Мобильная навигация" })
+    .getByRole("button", { name: "Studio", exact: true })
+    .click();
+  await expect(page).toHaveURL(/surface=studio/);
+  expect(new URL(page.url()).searchParams.has("mode")).toBe(false);
+  await page.reload();
   await expect(
     page.getByRole("heading", { name: "Kosmora Studio", exact: true, level: 2 })
   ).toBeVisible();

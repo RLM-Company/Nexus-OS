@@ -887,14 +887,17 @@ export default function Home() {
     try {
       const params = new URLSearchParams(window.location.search);
       const requestedMode = params.get("mode");
-      if (["kosmora", "work", "coscode"].includes(requestedMode ?? "")) {
+      const requestedSurface = params.get("surface");
+      if (
+        !isToolSurface(requestedSurface) &&
+        ["kosmora", "work", "coscode"].includes(requestedMode ?? "")
+      ) {
         setChatMode(requestedMode as ChatMode);
         setCodeSpace(requestedMode === "coscode" || params.get("space") === "coscode");
         setSurface("manager");
         setWorkspaceSurfaceHydrated(true);
         return;
       }
-      const requestedSurface = params.get("surface");
       if (requestedSurface === "work" || requestedSurface === "code") {
         setChatMode(requestedSurface === "code" ? "coscode" : "work");
         setCodeSpace(requestedSurface === "code");
@@ -2104,6 +2107,8 @@ export default function Home() {
     if (["studio", "files", "images", "video", "sound"].includes(nextSurface))
       setStudioExpanded(true);
     const route = new URL(window.location.href);
+    route.searchParams.delete("mode");
+    route.searchParams.delete("space");
     route.searchParams.set("surface", nextSurface);
     window.history.replaceState(
       window.history.state,
