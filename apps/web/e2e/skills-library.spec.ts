@@ -1,0 +1,179 @@
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+const base = "/api/v1/owner-skills";
+const editor = (page: Page) => page.getByRole("region", { name: "Редактор Skill", exact: true });
+const draft = (name = `Skill ${randomUUID()}`) => ({
+  name,
+  summary: "Конспект истории",
+  instructions: "Точная инструкция 😀\r\n<literal>"
+});
+async function seed(request: APIRequestContext) {
+  const value = draft();
+  const response = await request.post(base, { data: value });
+  expect(response.status()).toBe(201);
+  return { draft: value, id: ((await response.json()) as { id: string }).id };
+}
+async function open(page: Page, name: string) {
+  await page.goto("/skills");
+  await page
+    .getByRole("complementary", { name: "Мои Skills" })
+    .getByRole("button", { name: `${name} Версия 1`, exact: true })
+    .click();
+  await expect(editor(page).getByRole("textbox", { name: "Название", exact: true })).toHaveValue(
+    name
+  );
+}
+test("file selection previews and verifies locally, then imports once after explicit review", async ({
+  page
+}) => {
+  await page.goto("/skills");
+  const value = draft();
+  const pack = {
+    format: "kosmora.skill.v1",
+    ...value,
+    execution: "disabled",
+    permissions: [],
+    sha256: createHash("sha256")
+      .update(JSON.stringify([value.name, value.summary, value.instructions]))
+      .digest("hex")
+  };
+  let writes = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith(`${base}/import`)) writes++;
+  });
+  const file = page.getByLabel("Выберите пакет Skill");
+  await file.setInputFiles({
+    name: "bad.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({ ...pack, instructions: "changed" }))
+  });
+  await expect(page.getByRole("alert")).toContainText("SHA-256");
+  expect(writes).toBe(0);
+  await file.setInputFiles({
+    name: "skill.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(pack))
+  });
+  const submit = page.getByRole("button", { name: "Импортировать новую копию", exact: true });
+  await expect(submit).toBeDisabled();
+  expect(writes).toBe(0);
+  await page.getByLabel("Проверил текст импортируемой инструкции").check();
+  await submit.click();
+  await expect(editor(page).getByRole("textbox", { name: "Название", exact: true })).toHaveValue(
+    value.name
+  );
+  expect(writes).toBe(1);
+});
+test("copy preserves draft text, saves a new identity and leaves source unchanged", async ({
+  page,
+  request
+}) => {
+  const source = await seed(request);
+  await open(page, source.draft.name);
+  await editor(page)
+    .getByRole("textbox", { name: "Инструкция", exact: true })
+    .fill("Новый черновик");
+  await editor(page)
+    .getByRole("button", { name: "Копировать в новый черновик", exact: true })
+    .click();
+  await expect(editor(page).getByRole("textbox", { name: "Инструкция", exact: true })).toHaveValue(
+    "Новый черновик"
+  );
+  const created = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().endsWith(base)
+  );
+  await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  const copy = (await (await created).json()) as { id: string };
+  expect(copy.id).not.toBe(source.id);
+  const unchanged = (await (await request.get(`${base}/${source.id}`)).json()) as {
+    versions: { instructions: string }[];
+  };
+  expect(unchanged.versions[0]!.instructions).toBe(source.draft.instructions);
+  await page.getByRole("textbox", { name: "Поиск Skills", exact: true }).fill("НЕСУЩЕСТВУЮЩЕЕ");
+  await expect(
+    page.getByRole("complementary", { name: "Мои Skills" }).getByText(/^0 из/)
+  ).toBeVisible();
+});
+test("restoration review is invalidated by edits; lost response is read back without second restore", async ({
+  page,
+  request
+}) => {
+  const source = await seed(request);
+  await open(page, source.draft.name);
+  await editor(page).getByRole("textbox", { name: "Инструкция", exact: true }).fill("Версия два");
+  await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(
+    editor(page).getByRole("button", { name: "Сохранить версию", exact: true })
+  ).toBeDisabled();
+  await editor(page).getByRole("button", { name: "Посмотреть версию 1", exact: true }).click();
+  await page.getByLabel("Проверил изменения Skill").check();
+  await editor(page).getByRole("textbox", { name: "Инструкция", exact: true }).fill("Ещё правка");
+  const restore = page.getByRole("button", { name: "Восстановить версию 1", exact: true });
+  await expect(restore).toBeDisabled();
+  await page.getByLabel("Проверил изменения Skill").check();
+  let restores = 0;
+  await page.route(`**${base}/${source.id}/restore`, async (route) => {
+    restores++;
+    expect((await route.fetch()).status()).toBe(200);
+    await route.abort("failed");
+  });
+  page.once("dialog", (dialog) => void dialog.accept());
+  await restore.click();
+  await expect(editor(page).getByText("v3 · Без изменений", { exact: true })).toBeVisible();
+  expect(restores).toBe(1);
+});
+test("dirty navigation can be cancelled and conflicts leave an exportable draft", async ({
+  page,
+  request
+}) => {
+  const source = await seed(request);
+  await open(page, source.draft.name);
+  const text = editor(page).getByRole("textbox", { name: "Инструкция", exact: true });
+  await text.fill("Локальные правки");
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await page.getByRole("button", { name: "Новая", exact: true }).click();
+  await expect(text).toHaveValue("Локальные правки");
+  expect(
+    (
+      await request.put(`${base}/${source.id}`, {
+        data: { ...source.draft, instructions: "Другой клиент", expected_version: 1 }
+      })
+    ).status()
+  ).toBe(200);
+  await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(editor(page).getByRole("status")).toContainText("Другая версия");
+  await expect(text).toHaveValue("Локальные правки");
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать черновик", exact: true }).click();
+  const exported = JSON.parse(await readFile((await (await downloading).path())!, "utf8")) as {
+    instructions: string;
+  };
+  expect(exported.instructions).toBe("Локальные правки");
+});
+test("unknown creation never automatically repeats a POST", async ({ page, request }) => {
+  await page.goto("/skills");
+  const value = draft();
+  await editor(page).getByRole("textbox", { name: "Название", exact: true }).fill(value.name);
+  await editor(page)
+    .getByRole("textbox", { name: "Краткое описание", exact: true })
+    .fill(value.summary);
+  await editor(page)
+    .getByRole("textbox", { name: "Инструкция", exact: true })
+    .fill(value.instructions);
+  let creates = 0;
+  await page.route(`**${base}`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    creates++;
+    expect((await route.fetch()).status()).toBe(201);
+    await route.abort("failed");
+  });
+  await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(editor(page).getByRole("status")).toContainText("могла сохраниться");
+  await expect(
+    editor(page).getByRole("button", { name: "Сохранить версию", exact: true })
+  ).toBeDisabled();
+  expect(creates).toBe(1);
+  const items = ((await (await request.get(base)).json()) as { items: { name: string }[] }).items;
+  expect(items.filter((item) => item.name === value.name)).toHaveLength(1);
+});
