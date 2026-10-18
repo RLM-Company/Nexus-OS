@@ -70,3 +70,71 @@ it("successful writes still refuse a newer competing version instead of replacin
     code: "VERSION_CONFLICT"
   });
 });
+
+it("recovers a lost creation response via receipt, without repeating POST or guessing from the list", async () => {
+  const { createSkillOnce } = await import("./skill-client");
+  const calls: { path: string; method: string; key: string | undefined }[] = [];
+  const request: typeof skillApi = async <T>(
+    path: string,
+    method = "GET",
+    _body?: unknown,
+    key?: string
+  ): Promise<T> => {
+    await Promise.resolve();
+    calls.push({ path, method, key });
+    if (method === "POST") throw Error("lost response");
+    return (path.startsWith("/creations/") ? detail.skill : detail) as T;
+  };
+  expect(await createSkillOnce(draft, "request", "", draft, request)).toBe(detail);
+  expect(calls).toEqual([
+    { path: "", method: "POST", key: "request" },
+    { path: "/creations/request", method: "GET", key: undefined },
+    { path: "/a", method: "GET", key: undefined }
+  ]);
+});
+it("receipt checks never write; an explicit retry reuses the original request key", async () => {
+  const { createSkillOnce, readSkillCreation } = await import("./skill-client");
+  const calls: { method: string; key: string | undefined }[] = [];
+  const request: typeof skillApi = async <T>(
+    path: string,
+    method = "GET",
+    _body?: unknown,
+    key?: string
+  ): Promise<T> => {
+    await Promise.resolve();
+    calls.push({ method, key });
+    return (path === "/a" ? detail : detail.skill) as T;
+  };
+  await readSkillCreation("original", request);
+  expect(calls.map((v) => v.method)).toEqual(["GET", "GET"]);
+  await createSkillOnce(draft, "original", "", draft, request);
+  expect(calls[2]).toEqual({ method: "POST", key: "original" });
+});
+it.each([400, 401, 403, 409, 410, 413, 423])(
+  "does not mask definitive creation rejection (%s)",
+  async (status) => {
+    const { createSkillOnce } = await import("./skill-client");
+    let calls = 0;
+    const original = new SkillApiError(status, "CREATION_DELETED");
+    const request: typeof skillApi = async <T>(): Promise<T> => {
+      await Promise.resolve();
+      calls++;
+      throw original;
+    };
+    await expect(createSkillOnce(draft, "original", "", draft, request)).rejects.toBe(original);
+    expect(calls).toBe(1);
+  }
+);
+it("retains an unknown creation error when its receipt cannot be read", async () => {
+  const { createSkillOnce } = await import("./skill-client");
+  const original = Error("lost response"),
+    methods: string[] = [];
+  const request: typeof skillApi = async <T>(_path: string, method = "GET"): Promise<T> => {
+    await Promise.resolve();
+    methods.push(method);
+    if (method === "POST") throw original;
+    throw new SkillApiError(404, "NOT_FOUND");
+  };
+  await expect(createSkillOnce(draft, "original", "", draft, request)).rejects.toBe(original);
+  expect(methods).toEqual(["POST", "GET"]);
+});

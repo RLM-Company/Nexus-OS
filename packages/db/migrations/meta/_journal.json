@@ -337,6 +337,13 @@
       "when": 1791580800024,
       "tag": "0049_chat_modes_reasoning",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1791580800025,
+      "tag": "0050_owner_skill_creations",
+      "breakpoints": true
     }
   ]
 }

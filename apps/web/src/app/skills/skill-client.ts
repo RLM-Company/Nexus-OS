@@ -1,5 +1,7 @@
 import { matchesSuccessor, type Detail, type Draft, type Skill } from "./skill-model";
 const labels: Record<string, string> = {
+  REQUEST_CONFLICT: "Этот ключ уже использован для другого текста. Исходная попытка сохранена.",
+  CREATION_DELETED: "Созданная инструкция уже удалена. Повтор не восстановит её.",
   VERSION_CONFLICT:
     "Другая версия уже сохранена. Черновик оставлен: скачайте его или создайте копию перед повторным открытием.",
   LIMIT_REACHED: "Достигнут лимит: 50 инструкций или 20 версий одной инструкции.",
@@ -15,14 +17,25 @@ export class SkillApiError extends Error {
     super(labels[code] ?? "Не удалось выполнить действие. Попробуйте ещё раз.");
   }
 }
-export async function skillApi<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+export async function skillApi<T>(
+  path: string,
+  method = "GET",
+  body?: unknown,
+  requestId?: string
+): Promise<T> {
   const response = await fetch(`/api/v1/owner-skills${path}`, {
     method,
     credentials: "same-origin",
     cache: "no-store",
     ...(body === undefined
       ? {}
-      : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+      : {
+          headers: {
+            "content-type": "application/json",
+            ...(requestId ? { "idempotency-key": requestId } : {})
+          },
+          body: JSON.stringify(body)
+        })
   });
   if (!response.ok) {
     const error = (await response.json().catch(() => ({}))) as { error?: { code?: string } };
@@ -62,4 +75,31 @@ export async function writeSkillVersion(
   if (!matchesSuccessor(stored, id, expectedVersion, draft))
     throw new SkillApiError(409, "VERSION_CONFLICT");
   return stored;
+}
+
+/** Lookup only: never creates or repeats a write during reconciliation. */
+export async function readSkillCreation(requestId: string, request = skillApi): Promise<Detail> {
+  const skill = await request<Skill>(`/creations/${encodeURIComponent(requestId)}`);
+  return request<Detail>(`/${encodeURIComponent(skill.id)}`);
+}
+export async function createSkillOnce(
+  draft: Draft,
+  requestId: string,
+  path = "",
+  body: unknown = draft,
+  request = skillApi
+): Promise<Detail> {
+  let skill: Skill;
+  try {
+    skill = await request<Skill>(path, "POST", body, requestId);
+  } catch (cause) {
+    if (cause instanceof SkillApiError && cause.status < 500) throw cause;
+    try {
+      return await readSkillCreation(requestId, request);
+    } catch {
+      /* Keep the original failure and pending request. */
+    }
+    throw cause;
+  }
+  return request<Detail>(`/${encodeURIComponent(skill.id)}`);
 }

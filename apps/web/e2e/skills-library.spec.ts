@@ -151,7 +151,10 @@ test("dirty navigation can be cancelled and conflicts leave an exportable draft"
   };
   expect(exported.instructions).toBe("Локальные правки");
 });
-test("unknown creation never automatically repeats a POST", async ({ page, request }) => {
+test("lost creation response is resolved by its server receipt without another POST", async ({
+  page,
+  request
+}) => {
   await page.goto("/skills");
   const value = draft();
   await editor(page).getByRole("textbox", { name: "Название", exact: true }).fill(value.name);
@@ -169,11 +172,117 @@ test("unknown creation never automatically repeats a POST", async ({ page, reque
     await route.abort("failed");
   });
   await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
-  await expect(editor(page).getByRole("status")).toContainText("могла сохраниться");
+  await expect(editor(page).getByRole("status")).toContainText("Инструкция сохранена");
   await expect(
     editor(page).getByRole("button", { name: "Сохранить версию", exact: true })
   ).toBeDisabled();
   expect(creates).toBe(1);
   const items = ((await (await request.get(base)).json()) as { items: { name: string }[] }).items;
   expect(items.filter((item) => item.name === value.name)).toHaveLength(1);
+});
+
+test("a lost creation and receipt read survive reload; retry reuses the same key", async ({
+  page,
+  request
+}) => {
+  await page.goto("/skills");
+  const value = draft();
+  await editor(page).getByRole("textbox", { name: "Название", exact: true }).fill(value.name);
+  await editor(page)
+    .getByRole("textbox", { name: "Краткое описание", exact: true })
+    .fill(value.summary);
+  await editor(page)
+    .getByRole("textbox", { name: "Инструкция", exact: true })
+    .fill(value.instructions);
+  const keys: string[] = [];
+  await page.route(`**${base}`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    keys.push(route.request().headers()["idempotency-key"]!);
+    expect((await route.fetch()).status()).toBe(201);
+    await route.abort("failed");
+  });
+  await page.route(`**${base}/creations/*`, (route) => route.abort("failed"));
+  await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Проверка создания" })).toBeVisible();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Проверка создания" })).toContainText(value.name);
+  await expect(editor(page).getByRole("textbox", { name: "Название", exact: true })).toBeDisabled();
+  await page.unroute(`**${base}`);
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith(base))
+      keys.push(request.headers()["idempotency-key"]!);
+  });
+  await page.getByRole("button", { name: "Повторить сохранённую попытку", exact: true }).click();
+  await expect(editor(page).getByRole("status")).toContainText("Инструкция сохранена");
+  expect(keys).toHaveLength(2);
+  expect(keys[1]).toBe(keys[0]);
+  const items = ((await (await request.get(base)).json()) as { items: { name: string }[] }).items;
+  expect(items.filter((item) => item.name === value.name)).toHaveLength(1);
+});
+test("an unaccepted attempt retries explicitly and receipt checks do not create anything", async ({
+  page,
+  request
+}) => {
+  await page.goto("/skills");
+  const value = draft();
+  await editor(page).getByRole("textbox", { name: "Название", exact: true }).fill(value.name);
+  await editor(page)
+    .getByRole("textbox", { name: "Краткое описание", exact: true })
+    .fill(value.summary);
+  await editor(page)
+    .getByRole("textbox", { name: "Инструкция", exact: true })
+    .fill(value.instructions);
+  let posts = 0;
+  await page.route(`**${base}`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    await route.abort("failed");
+  });
+  await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Проверка создания" })).toBeVisible();
+  await page.getByRole("button", { name: "Проверить результат создания", exact: true }).click();
+  await expect(editor(page).getByRole("status")).toContainText("больше не существует");
+  expect(posts).toBe(1);
+  const before = ((await (await request.get(base)).json()) as { items: { name: string }[] }).items;
+  expect(before.filter((item) => item.name === value.name)).toHaveLength(0);
+  await page.unroute(`**${base}`);
+  await page.getByRole("button", { name: "Повторить сохранённую попытку", exact: true }).click();
+  await expect(editor(page).getByRole("status")).toContainText("Инструкция сохранена");
+  const after = ((await (await request.get(base)).json()) as { items: { name: string }[] }).items;
+  expect(after.filter((item) => item.name === value.name)).toHaveLength(1);
+});
+test("an accepted but deleted attempt never recreates a Skill after reload", async ({
+  page,
+  request
+}) => {
+  await page.goto("/skills");
+  const value = draft();
+  await editor(page).getByRole("textbox", { name: "Название", exact: true }).fill(value.name);
+  await editor(page)
+    .getByRole("textbox", { name: "Краткое описание", exact: true })
+    .fill(value.summary);
+  await editor(page)
+    .getByRole("textbox", { name: "Инструкция", exact: true })
+    .fill(value.instructions);
+  let createdId = "";
+  await page.route(`**${base}`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const result = await route.fetch();
+    createdId = ((await result.json()) as { id: string }).id;
+    await route.abort("failed");
+  });
+  await page.route(`**${base}/creations/*`, (route) => route.abort("failed"));
+  await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Проверка создания" })).toBeVisible();
+  expect(
+    (await request.delete(`${base}/${createdId}`, { data: { expected_version: 1 } })).status()
+  ).toBe(204);
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.reload();
+  await page.unroute(`**${base}`);
+  await page.getByRole("button", { name: "Повторить сохранённую попытку", exact: true }).click();
+  await expect(editor(page).getByRole("status")).toContainText("уже удалена");
+  const items = ((await (await request.get(base)).json()) as { items: { name: string }[] }).items;
+  expect(items.filter((item) => item.name === value.name)).toHaveLength(0);
 });
