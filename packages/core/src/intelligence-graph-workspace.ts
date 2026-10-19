@@ -842,9 +842,11 @@ export class IntelligenceGraphWorkspaceService {
   ): IntelligenceGraphWorkspace {
     const previous = this.get(ownerId, projectId, graphId);
     if (previous.revision !== expectedRevision) return this.conflict();
+    ensureLimits(previous);
     integer(fromRevision, previous.revision, "fromRevision");
     const historical = this.repository.getRevision(ownerId, projectId, graphId, fromRevision);
     if (!historical) return this.notFound();
+    ensureLimits(historical);
     const at = this.clock();
     if (!Number.isFinite(Date.parse(at)) || Date.parse(at) < Date.parse(previous.updated_at))
       return invalid("Restore time precedes the current graph revision");

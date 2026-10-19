@@ -1418,3 +1418,25 @@ it.each(["invalid", "2026-02-30T00:00:00.000Z", "2026-10-19"])(
     expect(repository.current.size).toBe(0);
   }
 );
+
+it.each(["current", "historical"])(
+  "rejects corrupt %s allocator state before restoring metadata over it",
+  (where) => {
+    const { service, repository } = suite();
+    const first = service.create("owner-a", "project-a", "Integrity");
+    const changed = service.edit("owner-a", "project-a", first.graph_id, 1, {
+      kind: "rename",
+      title: "Later"
+    });
+    const key = `owner-a|project-a|${first.graph_id}`;
+    if (where === "current") repository.current.get(key)!.version_floor = 1000;
+    else repository.revisions.get(key)![0]!.version_floor = 1000;
+    const before = service.get("owner-a", "project-a", first.graph_id);
+    expectCode(
+      () => service.restore("owner-a", "project-a", first.graph_id, changed.revision, 1),
+      "BAD_INPUT"
+    );
+    expect(service.get("owner-a", "project-a", first.graph_id)).toEqual(before);
+    expect(service.revisions("owner-a", "project-a", first.graph_id)).toHaveLength(2);
+  }
+);

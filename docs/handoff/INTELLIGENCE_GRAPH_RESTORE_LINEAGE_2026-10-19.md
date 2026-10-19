@@ -18,10 +18,10 @@ Portable content does not include allocator metadata, so reviewed package hashes
 
 ## Time integrity
 
-Create/import now validate even empty workspaces before persistence. Root dates must be canonical ISO UTC, real dates, and ordered; node/edge creation cannot follow the containing snapshot time. Restore rejects time rollback relative to the current graph before appending history or changing the library order. Floor, root revision and restored revision references are validated on mutations and in full privacy export.
+Create/import now validate even empty workspaces before persistence. Root dates must be canonical ISO UTC, real dates, and ordered; node/edge creation cannot follow the containing snapshot time. Restore rejects time rollback relative to the current graph before appending history or changing the library order. Floor, root revision and restored revision references are validated on mutations and in full privacy export. Restore validates both the current and selected historical snapshot before replacing any metadata, so corrupt allocator state cannot be hidden by the restore.
 
 ## Verification
 
-285 focused tests across 21 files pass on exact graph source. Added cases cover modern/legacy restore plus rename, repeated restores, all evidence/relation mutation paths, stable content per node/edge version across every saved revision, unchanged historical portable hash, floor survival across SQLite reopen, rollback with no write, malformed dates, invalid allocator state in complete privacy export, and the original regression.
+287 focused tests across 21 files pass on exact graph source. Added cases cover modern/legacy restore plus rename, repeated restores, all evidence/relation mutation paths, stable content per node/edge version across every saved revision, unchanged historical portable hash, floor survival across SQLite reopen, rollback with no write, malformed dates, invalid allocator state in complete privacy export, and the original regression.
 
 Backend package/API builds, API/web/E2E TypeScript, scoped ESLint/Prettier, secrets/diff and complete production Next webpack build pass. Ten browser scenarios remain discovered/type-checked; execution without Chromium is unconfirmed. Hosted CI pass is not claimed; earlier graph PR runs terminate before any step with runner_id=0.
