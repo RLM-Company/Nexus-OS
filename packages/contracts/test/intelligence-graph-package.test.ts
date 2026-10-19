@@ -78,3 +78,44 @@ describe("portable exact citations", () => {
       ).toThrow();
   });
 });
+
+describe("portable conflict content", () => {
+  const content = () => ({
+    ...valid(),
+    nodes: [
+      ...valid().nodes,
+      { key: "c", kind: "Claim", label: "Вторая позиция", detail: "Текст" },
+      { key: "d", kind: "Decision", label: "Решение", detail: "Обоснование" }
+    ],
+    conflicts: [{ subject: "b", positions: ["a", "c"], resolution: "d" as string | null }]
+  });
+  it("canonicalizes optional conflict content without adding fields to legacy packages", () => {
+    expect(parseIntelligenceGraphPackage(content())).toEqual(content());
+    const input = content();
+    input.conflicts[0]!.resolution = null;
+    expect(parseIntelligenceGraphPackage(JSON.stringify(input))).toEqual(input);
+    expect(Object.hasOwn(parseIntelligenceGraphPackage(valid()), "conflicts")).toBe(false);
+  });
+  it.each([
+    { subject: "missing", positions: ["a", "c"], resolution: null },
+    { subject: "b", positions: ["a", "a"], resolution: null },
+    { subject: "b", positions: ["a", "b"], resolution: null },
+    { subject: "b", positions: ["a"], resolution: null },
+    { subject: "b", positions: ["a", "c"], resolution: "a" },
+    { subject: "b", positions: ["a", "c"], resolution: "foreign" },
+    { subject: "b", positions: ["a", "c"], resolution: null, status: "verified" },
+    { subject: "b", positions: ["a", "c"], resolution: null, owner_id: "foreign" }
+  ])("rejects malformed references and authority metadata: %o", (conflict) => {
+    expect(() => parseIntelligenceGraphPackage({ ...content(), conflicts: [conflict] })).toThrow();
+  });
+  it("bounds conflict count and rejects malformed list", () => {
+    const input = content();
+    expect(() =>
+      parseIntelligenceGraphPackage({
+        ...input,
+        conflicts: Array.from({ length: 51 }, () => input.conflicts[0])
+      })
+    ).toThrow();
+    expect(() => parseIntelligenceGraphPackage({ ...input, conflicts: null })).toThrow();
+  });
+});

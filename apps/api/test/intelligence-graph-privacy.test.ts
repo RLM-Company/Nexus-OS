@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import { LOCAL_DEVELOPMENT_IDENTITY, StaticIdentityResolver } from "../src/identity.js";
 import { registerIntelligenceGraphWorkspaceRoutes } from "../src/intelligence-graph-workspace-routes.js";
 import { describe, expect, it } from "vitest";
-import { IntelligenceGraphWorkspaceService } from "@cosmora/core";
+import { IntelligenceGraphWorkspaceService, type IntelligenceGraphEdit } from "@cosmora/core";
 import { SqliteIntelligenceGraphWorkspaceRepository } from "@cosmora/db";
 import { intelligenceGraphPrivacyAdapter } from "../src/intelligence-graph-privacy.js";
 
@@ -310,3 +310,84 @@ describe("graph HTTP privacy prerequisites", () => {
     }
   });
 });
+
+it("persists every conflict review across restart, exports all versions and deletes them under the fence", async () => {
+  const f = fixture();
+  let restarted: DatabaseSync | undefined;
+  try {
+    let graph = f.changed;
+    const edit = (operation: IntelligenceGraphEdit) =>
+      (graph = f.service.edit("owner-a", "p-a", graph.graph_id, graph.revision, operation));
+    edit({
+      kind: "add_node",
+      node_kind: "Claim",
+      label: "Other position",
+      detail: "Different text"
+    });
+    const refs = graph.nodes.map((n) => ({ id: n.node_id, version: n.node_version }));
+    edit({ kind: "open_conflict", subject: refs[0]!, positions: [refs[0]!, refs[1]!] });
+    const openRevision = graph.revision,
+      id = graph.conflicts![0]!.conflict_id;
+    edit({
+      kind: "add_node",
+      node_kind: "Decision",
+      label: "Resolution",
+      detail: "Owner rationale"
+    });
+    edit({
+      kind: "resolve_conflict",
+      conflict_id: id,
+      resolution: { id: graph.nodes.at(-1)!.node_id, version: 1 }
+    });
+    restarted = new DatabaseSync(f.filename);
+    const store = new SqliteIntelligenceGraphWorkspaceRepository(restarted);
+    expect(store.get("owner-a", "p-a", graph.graph_id)?.conflicts).toEqual(graph.conflicts);
+    expect(
+      store.getRevision("owner-a", "p-a", graph.graph_id, openRevision)?.conflicts![0]!.status
+    ).toBe("open");
+    f.fence("quiescing", 20);
+    await f.adapter.quiesce("owner-a", 20);
+    const exported = await f.adapter.export("owner-a");
+    expect(exported.records.intelligence_graph_revisions).toHaveLength(graph.revision);
+    expect(JSON.stringify(exported)).toContain("Owner rationale");
+    f.fence("deleting", 20);
+    await f.adapter.delete("owner-a", 20);
+    expect(store.getRevision("owner-a", "p-a", graph.graph_id, openRevision)).toBeNull();
+    expect(f.store.get("owner-b", "p-b", f.second.graph_id)).toEqual(f.second);
+  } finally {
+    restarted?.close();
+    close(f);
+  }
+});
+
+it.each(["foreign_owner", "foreign_position", "duplicate_id", "malformed", "invalid_time"])(
+  "rejects corrupt historical conflicts in complete privacy export: %s",
+  async (kind) => {
+    const f = fixture();
+    try {
+      const content = {
+        ...packet,
+        nodes: [...packet.nodes, { key: "b", kind: "Claim", label: "B", detail: "B" }],
+        conflicts: [{ subject: "a", positions: ["a", "b"], resolution: null }]
+      };
+      const preview = f.service.previewImport(content);
+      const graph = f.service.importPackage("owner-a", "p-a", content, preview.sha256);
+      const conflict = graph.conflicts![0]!;
+      if (kind === "foreign_owner") conflict.owner_id = "owner-b";
+      if (kind === "foreign_position") conflict.position_refs[0] = { id: "foreign", version: 1 };
+      if (kind === "duplicate_id") graph.conflicts!.push(structuredClone(conflict));
+      if (kind === "invalid_time") conflict.created_at = "2026-99-99T00:00:00Z";
+      const corrupt = kind === "malformed" ? { ...graph, conflicts: [null] } : graph;
+      f.db
+        .prepare(
+          "UPDATE intelligence_graph_workspace_revisions SET snapshot_json=? WHERE graph_id=?"
+        )
+        .run(JSON.stringify(corrupt), graph.graph_id);
+      f.fence("quiescing", 21);
+      await f.adapter.quiesce("owner-a", 21);
+      await expect(f.adapter.export("owner-a")).rejects.toThrow("INCONSISTENT");
+    } finally {
+      close(f);
+    }
+  }
+);

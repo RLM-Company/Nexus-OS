@@ -612,3 +612,74 @@ describe("bounded graph library HTTP", () => {
     }
   });
 });
+
+it("exposes strict owner-scoped conflict review and rejects stale/foreign/authority writes", async () => {
+  const { app } = setup(true);
+  try {
+    const base = "/api/v1/projects/project-a/intelligence-graphs";
+    let graph = (
+      await app.inject({ method: "POST", url: base, payload: { title: "Review" } })
+    ).json<IntelligenceGraphWorkspace>();
+    const edit = async (operation: unknown, revision = graph.revision) =>
+      app.inject({
+        method: "POST",
+        url: `${base}/${graph.graph_id}/edits`,
+        payload: { expected_revision: revision, operation }
+      });
+    for (const [node_kind, label] of [
+      ["Entity", "Topic"],
+      ["Claim", "A"],
+      ["Claim", "B"]
+    ]) {
+      const added = await edit({ kind: "add_node", node_kind, label, detail: label });
+      expect(added.statusCode).toBe(200);
+      graph = added.json<IntelligenceGraphWorkspace>();
+    }
+    const refs = graph.nodes.map((n) => ({ id: n.node_id, version: n.node_version }));
+    const operation = { kind: "open_conflict", subject: refs[0], positions: [refs[1], refs[2]] };
+    expect((await edit({ ...operation, verification_status: "verified" })).statusCode).toBe(400);
+    expect((await edit({ ...operation, positions: [refs[1]] })).statusCode).toBe(400);
+    expect((await edit({ ...operation, subject: { id: "foreign", version: 1 } })).statusCode).toBe(
+      400
+    );
+    const opened = await edit(operation);
+    expect(opened.statusCode).toBe(200);
+    graph = opened.json<IntelligenceGraphWorkspace>();
+    const id = graph.conflicts![0]!.conflict_id;
+    expect(
+      (await edit({ kind: "resolve_conflict", conflict_id: id, resolution: refs[1] })).statusCode
+    ).toBe(400);
+    graph = (
+      await edit({
+        kind: "add_node",
+        node_kind: "Decision",
+        label: "Decision",
+        detail: "Rationale"
+      })
+    ).json<IntelligenceGraphWorkspace>();
+    const resolution = { id: graph.nodes.at(-1)!.node_id, version: 1 };
+    expect(
+      (await edit({ kind: "resolve_conflict", conflict_id: id, resolution }, graph.revision - 1))
+        .statusCode
+    ).toBe(409);
+    graph = (
+      await edit({ kind: "resolve_conflict", conflict_id: id, resolution })
+    ).json<IntelligenceGraphWorkspace>();
+    expect(graph.conflicts![0]!.status).toBe("resolved");
+    expect(graph.nodes.every((n) => n.verification_status === "discovered")).toBe(true);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/api/v1/projects/foreign/intelligence-graphs/${graph.graph_id}`
+        })
+      ).statusCode
+    ).toBe(404);
+    graph = (
+      await edit({ kind: "reopen_conflict", conflict_id: id })
+    ).json<IntelligenceGraphWorkspace>();
+    expect(graph.conflicts![0]!.resolution_ref).toBeNull();
+  } finally {
+    await app.close();
+  }
+});

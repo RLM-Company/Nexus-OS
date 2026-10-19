@@ -119,7 +119,7 @@ test("selecting JSON only previews; import requires review and a matching projec
   const create = page.getByRole("button", { name: "Создать отдельный граф" });
   await expect(create).toBeDisabled();
   expect(imports).toBe(0);
-  await page.getByRole("checkbox", { name: "Текст и связи просмотрены" }).check();
+  await page.getByRole("checkbox", { name: "Текст, связи и решения просмотрены" }).check();
   await expect(create).toBeEnabled();
   await create.click();
   await expect(
@@ -219,7 +219,7 @@ test("import receipt survives reload and recovery only reads without a second PO
       })
     )
   });
-  await page.getByRole("checkbox", { name: "Текст и связи просмотрены" }).check();
+  await page.getByRole("checkbox", { name: "Текст, связи и решения просмотрены" }).check();
   await page.getByRole("button", { name: "Создать отдельный граф", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Незавершённая попытка импорта", exact: true })
@@ -354,4 +354,112 @@ test("library loads older metadata pages without duplicates and opens an older g
   );
   await expect(page.getByRole("button", { name: "Older graph · v2", exact: true })).toBeVisible();
   await expect(page.getByLabel("Название выбранного узла")).toHaveValue("Не потерять черновик");
+});
+
+test("conflict submission requires reviewed exact versions and retains selections after CAS rejection", async ({
+  page
+}) => {
+  const initial = {
+    ...graph(),
+    nodes: [
+      ...graph().nodes,
+      { node_id: "claim-b", node_version: 1, kind: "Claim", verification_status: "discovered" }
+    ],
+    records: [
+      ...graph().records,
+      { node: { id: "claim-b", version: 1 }, text: "Вторая позиция", excerpt: "Другая цитата" }
+    ]
+  };
+  let body: unknown = null;
+  await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/edits")) {
+      body = route.request().postDataJSON();
+      await route.fulfill({ status: 409, json: { error: "REVISION_CONFLICT" } });
+    } else
+      await route.fulfill({
+        json: path.endsWith("/revisions")
+          ? { items: [] }
+          : path.endsWith("/graph-a")
+            ? initial
+            : { items: [initial] }
+      });
+  });
+  await open(page);
+  const section = page.getByRole("region", { name: "Разбор противоречий", exact: true });
+  await section.getByRole("combobox", { name: "Тема противоречия" }).selectOption("claim-a@1");
+  await section.getByRole("checkbox", { name: "Исходный тезис · v1", exact: true }).check();
+  await section.getByRole("checkbox", { name: "Вторая позиция · v1", exact: true }).check();
+  const save = section.getByRole("button", { name: "Открыть противоречие", exact: true });
+  await expect(save).toBeDisabled();
+  await section.getByRole("checkbox", { name: "Тема и точные версии позиций просмотрены" }).check();
+  await save.click();
+  await expect(page.getByRole("alert")).toContainText("Версия графа изменилась");
+  expect(body).toEqual({
+    expected_revision: 2,
+    operation: {
+      kind: "open_conflict",
+      subject: { id: "claim-a", version: 1 },
+      positions: [
+        { id: "claim-a", version: 1 },
+        { id: "claim-b", version: 1 }
+      ]
+    }
+  });
+  await expect(
+    section.getByRole("checkbox", { name: "Вторая позиция · v1", exact: true })
+  ).toBeChecked();
+});
+
+test("superseded conflict positions remain visible and prevent resolution", async ({ page }) => {
+  const initial = {
+    ...graph(),
+    nodes: [
+      { ...graph().nodes[0]!, verification_status: "superseded" },
+      { ...graph().nodes[0]!, node_version: 2 },
+      { node_id: "claim-b", node_version: 1, kind: "Claim", verification_status: "discovered" }
+    ],
+    records: [
+      ...graph().records,
+      { node: { id: "claim-a", version: 2 }, text: "Обновлённый тезис", excerpt: "Новый текст" },
+      { node: { id: "claim-b", version: 1 }, text: "Вторая позиция", excerpt: "Другая цитата" }
+    ],
+    conflicts: [
+      {
+        conflict_id: "conflict-a",
+        subject_ref: { id: "claim-b", version: 1 },
+        position_refs: [
+          { id: "claim-a", version: 1 },
+          { id: "claim-b", version: 1 }
+        ],
+        status: "open",
+        resolution_ref: null,
+        created_at: "2026-10-19T00:00:00Z",
+        resolved_at: null
+      }
+    ]
+  };
+  await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({
+      json: path.endsWith("/revisions")
+        ? { items: [] }
+        : path.endsWith("/graph-a")
+          ? initial
+          : { items: [initial] }
+    });
+  });
+  await open(page);
+  const section = page.getByRole("region", { name: "Разбор противоречий", exact: true });
+  await expect(section.getByText("Исходная цитата", { exact: true })).toBeVisible();
+  await expect(
+    section.getByRole("button", { name: "Записать решение", exact: true })
+  ).toBeDisabled();
+  await section.getByRole("button", { name: "Пересмотреть позиции", exact: true }).click();
+  await expect(
+    section.getByRole("heading", { name: "Пересмотреть позиции", exact: true })
+  ).toBeVisible();
+  await expect(
+    section.getByRole("checkbox", { name: "Обновлённый тезис · v2", exact: true })
+  ).not.toBeChecked();
 });

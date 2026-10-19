@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { IntelligenceGraphEdit } from "../src/intelligence-graph-workspace.js";
 import type {
   IntelligenceGraphRevisionInfo,
   IntelligenceGraphLibraryQuery,
@@ -832,5 +833,209 @@ describe("scoped graph library continuation", () => {
       expectCode(() => service.library(owner!, project!, { q: q!, after }), "BAD_INPUT");
     expectCode(() => service.library("owner-a", "project-a", { after: "%%%" }), "BAD_INPUT");
     expectCode(() => service.library("owner-a", "project-a", { limit: 21 }), "BAD_INPUT");
+  });
+});
+
+describe("manual conflict lifecycle", () => {
+  const setupConflict = () => {
+    const { service, repository } = suite();
+    let graph = service.create("owner-a", "project-a", "Противоречия");
+    const edit = (operation: IntelligenceGraphEdit) =>
+      (graph = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, operation));
+    for (const [node_kind, label] of [
+      ["Entity", "Тема"],
+      ["Claim", "Первая позиция"],
+      ["Claim", "Вторая позиция"],
+      ["Decision", "Старое решение"]
+    ] as const)
+      edit({ kind: "add_node", node_kind, label, detail: label + "\r\nТочный текст" });
+    const refs = graph.nodes.map((n) => ({ id: n.node_id, version: n.node_version }));
+    const open = () =>
+      edit({ kind: "open_conflict", subject: refs[0]!, positions: [refs[1]!, refs[2]!] });
+    const get = () => graph;
+    return { service, repository, edit, refs, open, get };
+  };
+  it("records exact positions, a later owner decision, reopens and restores without promotion", () => {
+    const { service, edit, refs, open, get } = setupConflict();
+    const opened = open(),
+      id = opened.conflicts![0]!.conflict_id;
+    expectCode(
+      () => edit({ kind: "resolve_conflict", conflict_id: id, resolution: refs[3]! }),
+      "BAD_INPUT"
+    );
+    const withDecision = edit({
+      kind: "add_node",
+      node_kind: "Decision",
+      label: "Обоснованное решение",
+      detail: "Ручной разбор"
+    });
+    const resolution = { id: withDecision.nodes.at(-1)!.node_id, version: 1 };
+    const resolved = edit({ kind: "resolve_conflict", conflict_id: id, resolution });
+    expect(resolved.conflicts![0]).toMatchObject({
+      status: "resolved",
+      resolution_ref: resolution
+    });
+    expect(resolved.nodes.every((n) => n.verification_status === "discovered")).toBe(true);
+    expectCode(() => edit({ kind: "resolve_conflict", conflict_id: id, resolution }), "BAD_INPUT");
+    expect(
+      service.revision("owner-a", "project-a", opened.graph_id, opened.revision).conflicts![0]!
+        .status
+    ).toBe("open");
+    const reopened = edit({ kind: "reopen_conflict", conflict_id: id });
+    expect(reopened.conflicts![0]).toMatchObject({
+      status: "open",
+      resolution_ref: null,
+      resolved_at: null
+    });
+    expect(reopened.nodes).toEqual(resolved.nodes);
+    expectCode(() => edit({ kind: "reopen_conflict", conflict_id: id }), "BAD_INPUT");
+    const restored = service.restore(
+      "owner-a",
+      "project-a",
+      get().graph_id,
+      get().revision,
+      resolved.revision
+    );
+    expect(restored.conflicts).toEqual(resolved.conflicts);
+    expect(restored.revision).toBeGreaterThan(reopened.revision);
+  });
+  it("pins edited/deleted positions and blocks stale resolution until explicitly revised", () => {
+    const { service, edit, refs, open, get } = setupConflict();
+    const opened = open(),
+      id = opened.conflicts![0]!.conflict_id;
+    const withDecision = edit({
+      kind: "add_node",
+      node_kind: "Decision",
+      label: "Решение",
+      detail: "Обоснование"
+    });
+    const resolution = { id: withDecision.nodes.at(-1)!.node_id, version: 1 };
+    edit({ kind: "revise_node", node: refs[1]!, label: "Новая позиция", detail: "Новый текст" });
+    edit({ kind: "remove_node", node: refs[0]! });
+    expect(get().conflicts![0]!.position_refs[0]).toEqual(refs[1]);
+    const before = get();
+    expectCode(() => edit({ kind: "resolve_conflict", conflict_id: id, resolution }), "BAD_INPUT");
+    expect(service.get("owner-a", "project-a", before.graph_id)).toEqual(before);
+    edit({
+      kind: "revise_conflict",
+      conflict_id: id,
+      subject: refs[2]!,
+      positions: [{ id: refs[1]!.id, version: 2 }, refs[2]!]
+    });
+    expect(
+      edit({ kind: "resolve_conflict", conflict_id: id, resolution }).conflicts![0]!.status
+    ).toBe("resolved");
+    expectCode(
+      () =>
+        edit({
+          kind: "revise_conflict",
+          conflict_id: id,
+          subject: refs[2]!,
+          positions: [refs[1]!, refs[2]!]
+        }),
+      "BAD_INPUT"
+    );
+  });
+  it("rejects foreign, duplicate, wrong-kind, insufficient and superseded positions atomically", () => {
+    const { service, edit, refs, get } = setupConflict();
+    const before = get();
+    for (const positions of [
+      [refs[1]!],
+      [refs[1]!, refs[1]!],
+      [refs[1]!, refs[3]!],
+      [refs[1]!, { id: "foreign", version: 1 }],
+      Array.from({ length: 21 }, () => refs[1]!)
+    ])
+      expectCode(() => edit({ kind: "open_conflict", subject: refs[0]!, positions }), "BAD_INPUT");
+    expectCode(
+      () =>
+        edit({
+          kind: "open_conflict",
+          subject: { id: "other-graph", version: 1 },
+          positions: [refs[1]!, refs[2]!]
+        }),
+      "BAD_INPUT"
+    );
+    expect(service.get("owner-a", "project-a", before.graph_id)).toEqual(before);
+    edit({ kind: "revise_node", node: refs[1]!, label: "V2", detail: "New" });
+    expectCode(
+      () => edit({ kind: "open_conflict", subject: refs[0]!, positions: [refs[1]!, refs[2]!] }),
+      "BAD_INPUT"
+    );
+    expectCode(
+      () =>
+        service.edit("owner-b", "project-a", before.graph_id, before.revision, {
+          kind: "reopen_conflict",
+          conflict_id: "x"
+        }),
+      "NOT_FOUND"
+    );
+  });
+  it("enforces the conflict cap and stale graph CAS without adding revisions", () => {
+    const { service, edit, refs, open, get } = setupConflict();
+    for (let i = 0; i < 50; i++) open();
+    const before = get();
+    expectCode(open, "GRAPH_LIMIT");
+    expect(service.get("owner-a", "project-a", before.graph_id)).toEqual(before);
+    expectCode(
+      () =>
+        service.edit("owner-a", "project-a", before.graph_id, before.revision - 1, {
+          kind: "open_conflict",
+          subject: refs[0]!,
+          positions: [refs[1]!, refs[2]!]
+        }),
+      "REVISION_CONFLICT"
+    );
+    expectCode(() => edit({ kind: "reopen_conflict", conflict_id: "foreign" }), "BAD_INPUT");
+  });
+  it("round trips pinned historical texts and resolution as newly scoped unverified content", () => {
+    const { service, edit, refs, open, get } = setupConflict();
+    const opened = open(),
+      id = opened.conflicts![0]!.conflict_id;
+    const withDecision = edit({
+      kind: "add_node",
+      node_kind: "Decision",
+      label: "Вывод",
+      detail: "Решение по цитатам"
+    });
+    const resolution = { id: withDecision.nodes.at(-1)!.node_id, version: 1 };
+    edit({ kind: "resolve_conflict", conflict_id: id, resolution });
+    edit({ kind: "remove_node", node: refs[1]! });
+    edit({ kind: "revise_node", node: resolution, label: "Новый вывод", detail: "Другая версия" });
+    const exported = service.exportPackage("owner-a", "project-a", get().graph_id);
+    expect(exported.package.conflicts).toHaveLength(1);
+    const conflict = exported.package.conflicts![0]!;
+    expect(exported.package.nodes.find((n) => n.key === conflict.positions[0])?.label).toBe(
+      "Первая позиция"
+    );
+    expect(exported.package.nodes.find((n) => n.key === conflict.resolution)?.label).toBe("Вывод");
+    const imported = service.importPackage(
+      "owner-a",
+      "project-a",
+      exported.package,
+      exported.sha256,
+      "conflict_roundtrip_key_1"
+    );
+    expect(imported.graph_id).not.toBe(get().graph_id);
+    expect(imported.conflicts![0]!.conflict_id).not.toBe(id);
+    expect(imported.conflicts![0]!.status).toBe("resolved");
+    expect(imported.nodes.every((n) => n.verification_status === "discovered")).toBe(true);
+    expect(imported.nodes.some((n) => get().nodes.some((old) => old.node_id === n.node_id))).toBe(
+      false
+    );
+    const replayed = service.importPackage(
+      "owner-a",
+      "project-a",
+      exported.package,
+      exported.sha256,
+      "conflict_roundtrip_key_1"
+    );
+    expect(replayed).toEqual(imported);
+    const changed = structuredClone(exported.package);
+    changed.conflicts![0]!.resolution = null;
+    expectCode(
+      () => service.importPackage("owner-a", "project-a", changed, exported.sha256),
+      "BAD_INPUT"
+    );
   });
 });

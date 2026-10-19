@@ -68,3 +68,34 @@ it("shows exact quote and source changes before restoring a graph revision", () 
   expect(changes[0]?.after).toContain("<b> Точная\r\nцитата $&");
   expect(changes[0]?.after).toContain("страница 4");
 });
+
+it("compares exact conflict positions, resolution and reopening without reordering noise", () => {
+  const before = graph(),
+    after = graph();
+  const conflict = {
+    conflict_id: "c",
+    subject_ref: { id: "b", version: 1 },
+    position_refs: [
+      { id: "a", version: 1 },
+      { id: "c", version: 1 }
+    ],
+    status: "open" as const,
+    resolution_ref: null,
+    created_at: "2026-10-19T00:00:00Z",
+    resolved_at: null
+  };
+  before.conflicts = [structuredClone(conflict)];
+  after.conflicts = [structuredClone(conflict)];
+  after.conflicts[0]!.position_refs.reverse();
+  expect(compareGraphRevisions(before, after)).toEqual([]);
+  after.conflicts[0]!.status = "resolved";
+  after.conflicts[0]!.resolution_ref = { id: "d", version: 2 };
+  after.conflicts[0]!.resolved_at = "2026-10-19T01:00:00Z";
+  const changes = compareGraphRevisions(before, after);
+  expect(changes).toHaveLength(1);
+  expect(changes[0]!.kind).toBe("conflict");
+  expect(changes[0]!.after).toContain("d@2");
+  expect(compareGraphRevisions(after, before)[0]!.after).toContain("open");
+  after.conflicts[0]!.position_refs[0]!.version = 3;
+  expect(compareGraphRevisions(before, after)[0]!.after).toContain("c@3");
+});

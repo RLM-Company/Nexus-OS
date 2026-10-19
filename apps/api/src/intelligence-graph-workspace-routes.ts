@@ -19,6 +19,31 @@ const Revision = Type.Integer({ minimum: 1 });
 const Edit = Type.Union([
   Type.Object(
     {
+      kind: Type.Literal("open_conflict"),
+      subject: Ref,
+      positions: Type.Array(Ref, { minItems: 2, maxItems: 20, uniqueItems: true })
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("revise_conflict"),
+      conflict_id: Id,
+      subject: Ref,
+      positions: Type.Array(Ref, { minItems: 2, maxItems: 20, uniqueItems: true })
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    { kind: Type.Literal("resolve_conflict"), conflict_id: Id, resolution: Ref },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    { kind: Type.Literal("reopen_conflict"), conflict_id: Id },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
       kind: Type.Literal("cite_edge"),
       edge_id: Id,
       source: Ref,

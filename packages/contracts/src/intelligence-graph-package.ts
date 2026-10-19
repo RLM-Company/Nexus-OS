@@ -30,6 +30,8 @@ export interface IntelligenceGraphPortablePackage {
     to: string;
     evidence?: { source: string; location: string; excerpt: string };
   }[];
+  /** Organizational decisions are content relationships, never verification authority. */
+  conflicts?: { subject: string; positions: string[]; resolution: string | null }[];
 }
 const fail = (message: string): never => {
   throw new Error(message);
@@ -68,7 +70,7 @@ export function parseIntelligenceGraphPackage(input: unknown): IntelligenceGraph
           return JSON.parse(input) as unknown;
         })()
       : input;
-  const root = object(value, ["format", "title", "nodes", "edges"]);
+  const root = object(value, ["format", "title", "nodes", "edges"], ["conflicts"]);
   if (root.format !== INTELLIGENCE_GRAPH_PACKAGE_FORMAT)
     return fail("Unsupported graph package format");
   const title = text(root.title, 80);
@@ -134,6 +136,27 @@ export function parseIntelligenceGraphPackage(input: unknown): IntelligenceGraph
     nodes,
     edges
   };
+  if (Object.hasOwn(root, "conflicts")) {
+    if (!Array.isArray(root.conflicts) || root.conflicts.length > 50)
+      return fail("Graph package exceeds conflict limit");
+    result.conflicts = root.conflicts.map((entry) => {
+      const item = object(entry, ["subject", "positions", "resolution"]);
+      const subject = text(item.subject, 128);
+      if (!keys.has(subject)) return fail("Missing conflict subject");
+      if (!Array.isArray(item.positions) || item.positions.length < 2 || item.positions.length > 20)
+        return fail("Conflict requires 2–20 positions");
+      const positions = item.positions.map((p) => text(p, 128));
+      if (
+        new Set(positions).size !== positions.length ||
+        positions.some((p) => nodes.find((n) => n.key === p)?.kind !== "Claim")
+      )
+        return fail("Conflict positions must be distinct Claim nodes");
+      const resolution = item.resolution === null ? null : text(item.resolution, 128);
+      if (resolution !== null && nodes.find((n) => n.key === resolution)?.kind !== "Decision")
+        return fail("Conflict resolution must be a Decision node");
+      return { subject, positions, resolution };
+    });
+  }
   if (
     new TextEncoder().encode(JSON.stringify(result)).length > INTELLIGENCE_GRAPH_PACKAGE_MAX_BYTES
   )
