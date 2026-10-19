@@ -3,7 +3,17 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPptx } from "./pptx";
+import { savePresentation } from "./save-recovery";
+import {
+  applySnapshot,
+  contentKey,
+  emptyHistory,
+  recordEdit,
+  snapshot,
+  travel
+} from "./editor-history";
 import { api, endpoint, json } from "./client";
+import { PresentationSearch } from "./presentation-search";
 import { PresentationWork } from "./presentation-work";
 import {
   presentationWorkReference,
@@ -58,6 +68,19 @@ export default function PresentationsPage() {
   const [presenting, setPresenting] = useState(false);
   const [fullScreenSlide, setFullScreenSlide] = useState(0);
   const editRevision = useRef(0);
+  const history = useRef(emptyHistory());
+  const savedContent = useRef("");
+  const acceptDeck = (value: Deck | null) => {
+    history.current = emptyHistory();
+    savedContent.current = value ? contentKey(value) : "";
+    editRevision.current++;
+    setDeck(value);
+    setSelected(0);
+    setDirty(false);
+  };
+  const endEditGroup = () => {
+    history.current.group = null;
+  };
   const refresh = useCallback(async () => {
     const result = await api<{ items: DeckSummary[] }>(endpoint);
     setItems(result.items);
@@ -92,28 +115,52 @@ export default function PresentationsPage() {
       ) ?? [],
     [deck]
   );
-  const edit = (modify: (value: Deck) => Deck) => {
+  const edit = (
+    modify: (value: Deck) => Deck,
+    group: string | null = null,
+    nextSelected = selected
+  ) => {
+    if (!deck || busy) return;
+    const updated = modify(deck);
+    const before = snapshot(deck, selected);
+    const after = snapshot(updated, nextSelected);
+    if (contentKey(before) === contentKey(after)) return;
+    history.current = recordEdit(history.current, before, after, group);
     editRevision.current++;
-    setDeck((previous) => (previous ? modify(previous) : null));
-    setDirty(true);
+    setDeck({ ...updated, slide_count: updated.slides.length });
+    setSelected(nextSelected);
+    setDirty(contentKey(updated) !== savedContent.current);
     setError("");
   };
-  const modifySlide = (patch: Partial<Slide>) =>
-    edit((value) => ({
-      ...value,
-      slides: value.slides.map((slide, index) =>
-        index === selected ? { ...slide, ...patch } : slide
-      )
-    }));
+  const undoRedo = (direction: "undo" | "redo") => {
+    if (!deck || busy || presenting) return;
+    const result = travel(history.current, snapshot(deck, selected), direction);
+    if (!result) return;
+    history.current = result.history;
+    const updated = applySnapshot(deck, result.value);
+    editRevision.current++;
+    setDeck(updated);
+    setSelected(Math.max(0, Math.min(result.value.selected, updated.slides.length - 1)));
+    setDirty(contentKey(updated) !== savedContent.current);
+    setError("");
+  };
+  const modifySlide = (patch: Partial<Slide>, group: string | null = null) =>
+    edit(
+      (value) => ({
+        ...value,
+        slides: value.slides.map((slide, index) =>
+          index === selected ? { ...slide, ...patch } : slide
+        )
+      }),
+      group ? `${selectedSlide?.id}:${group}` : null
+    );
   const open = async (id: string) => {
     if (dirty && !window.confirm("Есть несохранённые изменения. Открыть другую презентацию?"))
       return;
     setBusy(true);
     setError("");
     try {
-      setDeck(await api<Deck>(`${endpoint}/${id}`));
-      setSelected(0);
-      setDirty(false);
+      acceptDeck(await api<Deck>(`${endpoint}/${id}`));
     } catch (cause) {
       setError(String(cause));
     } finally {
@@ -131,9 +178,7 @@ export default function PresentationsPage() {
         method: "POST",
         ...json({ title: title.trim() })
       });
-      setDeck(created);
-      setSelected(0);
-      setDirty(false);
+      acceptDeck(created);
       await refreshAfterMutation();
     } catch (cause) {
       setError(String(cause));
@@ -143,19 +188,13 @@ export default function PresentationsPage() {
   };
   const save = async () => {
     if (!deck || !dirty || busy) return;
+    endEditGroup();
     const savingRevision = editRevision.current;
     setBusy(true);
     setError("");
     try {
-      const updated = await api<Deck>(`${endpoint}/${deck.id}`, {
-        method: "PUT",
-        ...json({
-          version: deck.version,
-          title: deck.title,
-          theme: deck.theme,
-          slides: deck.slides
-        })
-      });
+      const updated = await savePresentation(deck);
+      savedContent.current = contentKey(updated);
       if (editRevision.current === savingRevision) {
         setDeck(updated);
         setDirty(false);
@@ -188,10 +227,7 @@ export default function PresentationsPage() {
     setError("");
     try {
       const created = await api<Deck>(`${endpoint}/import`, { method: "POST", ...json(value) });
-      editRevision.current++;
-      setDeck(created);
-      setSelected(0);
-      setDirty(false);
+      acceptDeck(created);
       await refreshAfterMutation();
       return true;
     } finally {
@@ -214,18 +250,21 @@ export default function PresentationsPage() {
         method: "POST",
         ...json({ source: presentationWorkReference(source), reviewed: true })
       });
-      editRevision.current++;
-      setDeck(created);
-      setSelected(0);
-      setDirty(false);
+      acceptDeck(created);
       await refreshAfterMutation();
       return true;
     } finally {
       setBusy(false);
     }
   };
-  const restore = async (sourceVersion: number): Promise<boolean> => {
+  const restore = async (
+    sourceVersion: number,
+    expectedVersion: number,
+    reviewedContent: string
+  ): Promise<boolean> => {
     if (!deck || busy) return false;
+    if (deck.version !== expectedVersion || contentKey(deck) !== reviewedContent)
+      throw Error("Презентация изменилась. Проверьте восстановление заново.");
     if (
       !window.confirm(
         `Восстановить версию ${sourceVersion}?${dirty ? " Несохранённые правки будут заменены." : ""} Текущая сохранённая версия останется в истории.`
@@ -237,12 +276,9 @@ export default function PresentationsPage() {
     try {
       const restored = await api<Deck>(`${endpoint}/${deck.id}/restore`, {
         method: "POST",
-        ...json({ expected_version: deck.version, source_version: sourceVersion })
+        ...json({ expected_version: expectedVersion, source_version: sourceVersion })
       });
-      editRevision.current++;
-      setDeck(restored);
-      setSelected(0);
-      setDirty(false);
+      acceptDeck(restored);
       await refreshAfterMutation();
       return true;
     } catch (cause) {
@@ -262,8 +298,7 @@ export default function PresentationsPage() {
     setError("");
     try {
       await api<void>(`${endpoint}/${deck.id}?version=${deck.version}`, { method: "DELETE" });
-      setDeck(null);
-      setDirty(false);
+      acceptDeck(null);
       await refreshAfterMutation();
     } catch (cause) {
       setError(String(cause));
@@ -278,37 +313,49 @@ export default function PresentationsPage() {
       return;
     }
     const next = newSlide(layout);
-    edit((value) => ({
-      ...value,
-      slides: [...value.slides.slice(0, selected + 1), next, ...value.slides.slice(selected + 1)]
-    }));
-    setSelected(selected + 1);
+    edit(
+      (value) => ({
+        ...value,
+        slides: [...value.slides.slice(0, selected + 1), next, ...value.slides.slice(selected + 1)]
+      }),
+      null,
+      selected + 1
+    );
   };
   const move = (direction: -1 | 1) => {
     if (!deck || selected + direction < 0 || selected + direction >= deck.slides.length) return;
-    edit((value) => {
-      const slides = [...value.slides];
-      [slides[selected], slides[selected + direction]] = [
-        slides[selected + direction]!,
-        slides[selected]!
-      ];
-      return { ...value, slides };
-    });
-    setSelected(selected + direction);
+    edit(
+      (value) => {
+        const slides = [...value.slides];
+        [slides[selected], slides[selected + direction]] = [
+          slides[selected + direction]!,
+          slides[selected]!
+        ];
+        return { ...value, slides };
+      },
+      null,
+      selected + direction
+    );
   };
   const duplicate = () => {
     if (!deck || !selectedSlide || deck.slides.length >= 50) return;
     const next = { ...selectedSlide, id: crypto.randomUUID() };
-    edit((value) => ({
-      ...value,
-      slides: [...value.slides.slice(0, selected + 1), next, ...value.slides.slice(selected + 1)]
-    }));
-    setSelected(selected + 1);
+    edit(
+      (value) => ({
+        ...value,
+        slides: [...value.slides.slice(0, selected + 1), next, ...value.slides.slice(selected + 1)]
+      }),
+      null,
+      selected + 1
+    );
   };
   const removeSlide = () => {
     if (!deck || deck.slides.length <= 1) return;
-    edit((value) => ({ ...value, slides: value.slides.filter((_, index) => index !== selected) }));
-    setSelected(Math.max(0, selected - 1));
+    edit(
+      (value) => ({ ...value, slides: value.slides.filter((_, index) => index !== selected) }),
+      null,
+      Math.max(0, selected - 1)
+    );
   };
   const exportDeck = (kind: "pptx" | "json") => {
     if (!deck) return;
@@ -414,7 +461,24 @@ export default function PresentationsPage() {
           </div>
         </aside>
         {deck && selectedSlide ? (
-          <section className={styles.editor} aria-label="Редактор презентации">
+          <section
+            className={styles.editor}
+            aria-label="Редактор презентации"
+            onBlur={endEditGroup}
+            onKeyDown={(event) => {
+              if ((event.target as HTMLElement).closest("[data-native-undo]")) return;
+              if (
+                event.nativeEvent.isComposing ||
+                event.altKey ||
+                !(event.ctrlKey || event.metaKey)
+              )
+                return;
+              const key = event.key.toLowerCase();
+              if (key !== "z" && key !== "y") return;
+              event.preventDefault();
+              undoRedo(key === "y" || event.shiftKey ? "redo" : "undo");
+            }}
+          >
             {deck.work_source && (
               <p className={styles.sourceNote}>
                 Источник: Work · {deck.work_source.name}, v{deck.work_source.version} · SHA-256:{" "}
@@ -422,13 +486,41 @@ export default function PresentationsPage() {
                 от исходного результата.
               </p>
             )}
-            <PresentationHistory
+            <div className={styles.slideTools} aria-label="История правок">
+              <button
+                type="button"
+                onClick={() => undoRedo("undo")}
+                disabled={busy || !history.current.past.length}
+              >
+                Отменить правку
+              </button>
+              <button
+                type="button"
+                onClick={() => undoRedo("redo")}
+                disabled={busy || !history.current.future.length}
+              >
+                Повторить правку
+              </button>
+              <small>До 40 правок в этой вкладке · Ctrl/⌘ Z, Ctrl/⌘ Shift Z</small>
+            </div>
+            <PresentationSearch
               key={deck.id}
-              id={deck.id}
-              version={deck.version}
+              deck={deck}
+              selected={selected}
               busy={busy}
-              onRestore={restore}
+              onReplace={(updated) => edit(() => updated)}
+              onSelect={(index, field, start, end) => {
+                endEditGroup();
+                setSelected(index);
+                requestAnimationFrame(() => {
+                  const input = document.getElementById(`slide-${field}`) as
+                    HTMLInputElement | HTMLTextAreaElement | null;
+                  input?.focus();
+                  input?.setSelectionRange(start, end);
+                });
+              }}
             />
+            <PresentationHistory key={deck.id} deck={deck} busy={busy} onRestore={restore} />
             <fieldset disabled={busy} className={styles.editorFields}>
               <div className={styles.deckBar}>
                 <label>
@@ -436,7 +528,9 @@ export default function PresentationsPage() {
                   <input
                     value={deck.title}
                     maxLength={160}
-                    onChange={(event) => edit((value) => ({ ...value, title: event.target.value }))}
+                    onChange={(event) =>
+                      edit((value) => ({ ...value, title: event.target.value }), "deck-title")
+                    }
                   />
                 </label>
                 <label>
@@ -475,7 +569,10 @@ export default function PresentationsPage() {
                         <button
                           type="button"
                           className={index === selected ? styles.selected : ""}
-                          onClick={() => setSelected(index)}
+                          onClick={() => {
+                            endEditGroup();
+                            setSelected(index);
+                          }}
                           aria-current={index === selected ? "true" : undefined}
                         >
                           <span>{index + 1}</span>
@@ -541,38 +638,42 @@ export default function PresentationsPage() {
                     <label>
                       Заголовок
                       <input
+                        id="slide-title"
                         value={selectedSlide.title}
                         maxLength={180}
-                        onChange={(event) => modifySlide({ title: event.target.value })}
+                        onChange={(event) => modifySlide({ title: event.target.value }, "title")}
                       />
                     </label>
                     <label>
                       Основной текст
                       <textarea
+                        id="slide-body"
                         value={selectedSlide.body}
                         maxLength={4000}
                         rows={5}
-                        onChange={(event) => modifySlide({ body: event.target.value })}
+                        onChange={(event) => modifySlide({ body: event.target.value }, "body")}
                       />
                     </label>
-                    {selectedSlide.layout === "two-column" && (
+                    {(selectedSlide.layout === "two-column" || selectedSlide.aside.length > 0) && (
                       <label>
                         Вторая колонка
                         <textarea
+                          id="slide-aside"
                           value={selectedSlide.aside}
                           maxLength={4000}
                           rows={5}
-                          onChange={(event) => modifySlide({ aside: event.target.value })}
+                          onChange={(event) => modifySlide({ aside: event.target.value }, "aside")}
                         />
                       </label>
                     )}
                     <label>
                       Заметки докладчика <small>Входят в JSON и PPTX; на слайде не показаны</small>
                       <textarea
+                        id="slide-notes"
                         value={selectedSlide.notes}
                         maxLength={4000}
                         rows={3}
-                        onChange={(event) => modifySlide({ notes: event.target.value })}
+                        onChange={(event) => modifySlide({ notes: event.target.value }, "notes")}
                       />
                     </label>
                   </div>
