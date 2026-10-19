@@ -151,6 +151,8 @@ import type { ManagerWorkStore } from "@cosmora/db";
 import { registerArtifactContextRoutes } from "./artifact-context-routes.js";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { registerManagerWorkRoutes } from "./manager-work-routes.js";
+import { registerIntelligenceGraphWorkspaceRoutes } from "./intelligence-graph-workspace-routes.js";
+import type { IntelligenceGraphWorkspaceService } from "@cosmora/core";
 import {
   autonomyProfileStepUpChallenge,
   projectUsageLimitStepUpChallenge
@@ -245,6 +247,8 @@ export interface AppDependencies {
   mediaService?: MediaService;
   canvasStore?: CanvasArtifactStore;
   now?: () => string;
+  /** Explicit integration-only switch; absent is OFF. */
+  intelligenceGraphWorkspace?: { enabled: boolean; service: IntelligenceGraphWorkspaceService };
 }
 
 const stepUpToken = (value: string | string[] | undefined): string | null =>
@@ -693,6 +697,16 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     }
     requestIdentities.set(request, identity);
   });
+
+  if (dependencies.intelligenceGraphWorkspace?.enabled) {
+    if (!dependencies.projectStore) throw new Error("Graph workspace requires ProjectStore");
+    registerIntelligenceGraphWorkspaceRoutes(app, {
+      enabled: true,
+      service: dependencies.intelligenceGraphWorkspace.service,
+      projects: dependencies.projectStore,
+      identity: identityResolver
+    });
+  }
 
   app.get(
     "/api/v1/navigation-context",

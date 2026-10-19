@@ -143,6 +143,7 @@ export * from "./manager-work-store.js";
 export * from "./pattern-library-store.js";
 export * from "./policy-store.js";
 export * from "./project-store.js";
+export * from "./intelligence-graph-workspace-store.js";
 export * from "./step-up-proof-store.js";
 export * from "./usage-store.js";
 export * from "./project-memory-store.js";

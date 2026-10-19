@@ -1,6 +1,11 @@
 export * from "./manager-runtime-scenario-runner.js";
 export * from "./manager-runtime-suite-runner.js";
 export * from "./manager-runtime-task-readiness.js";
+export * from "./intelligence-graph-retrieval.js";
+export * from "./intelligence-graph-fixture.js";
+export * from "./intelligence-graph-evaluation.js";
+export * from "./intelligence-graph-cognition.js";
+export * from "./intelligence-graph-workspace.js";
 export * from "./manager.js";
 export * from "./chat.js";
 export { ContextTooLargeError } from "./conversation-window.js";
