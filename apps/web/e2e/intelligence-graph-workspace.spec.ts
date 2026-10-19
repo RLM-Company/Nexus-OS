@@ -240,3 +240,77 @@ test("import receipt survives reload and recovery only reads without a second PO
     await page.evaluate(() => sessionStorage.getItem("kosmora.graph-import.v1:project-a"))
   ).toBeNull();
 });
+
+test("a reviewed citation submits the original source line endings and displays HTML literally", async ({
+  page
+}) => {
+  let saved = {
+    ...graph(),
+    nodes: [
+      { node_id: "a", node_version: 1, kind: "Claim", verification_status: "discovered" },
+      { node_id: "b", node_version: 1, kind: "Claim", verification_status: "discovered" },
+      { node_id: "source", node_version: 1, kind: "Source", verification_status: "discovered" }
+    ],
+    records: [
+      { node: { id: "a", version: 1 }, text: "Alpha", excerpt: "First claim" },
+      { node: { id: "b", version: 1 }, text: "Beta", excerpt: "Second claim" },
+      {
+        node: { id: "source", version: 1 },
+        text: "Primary source",
+        excerpt: "Exact\r\nquote <b> $&"
+      }
+    ],
+    edges: [
+      {
+        edge_id: "link",
+        edge_version: 1,
+        type: "SUPPORTS",
+        from: { id: "a", version: 1 },
+        to: { id: "b", version: 1 },
+        verification_status: "discovered",
+        evidence_ref: { source_id: "link", source_version: 1, location: "owner_input" },
+        evidence_excerpt: undefined as string | undefined
+      }
+    ]
+  };
+  let submitted: string | null = null;
+  await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/edits")) {
+      const body = route.request().postDataJSON() as { operation: { excerpt: string } };
+      submitted = body.operation.excerpt;
+      saved = {
+        ...saved,
+        revision: 3,
+        edges: [
+          {
+            ...saved.edges[0]!,
+            edge_version: 2,
+            evidence_ref: { source_id: "source", source_version: 1, location: "page 1" },
+            evidence_excerpt: submitted
+          }
+        ]
+      };
+      await route.fulfill({ json: saved });
+    } else
+      await route.fulfill({
+        json: path.endsWith("/revisions")
+          ? { items: [] }
+          : path.endsWith("/graph-a")
+            ? saved
+            : { items: [saved] }
+      });
+  });
+  await open(page);
+  await page.getByLabel("Связь для цитаты").selectOption("link");
+  await page.getByLabel("Источник цитаты").selectOption("source");
+  await page.getByLabel("Место в источнике").fill("page 1");
+  await page.getByLabel("Точная цитата").fill("Exact\nquote <b> $&");
+  const save = page.getByRole("button", { name: "Прикрепить цитату новой версией", exact: true });
+  await expect(save).toBeDisabled();
+  await page.getByRole("checkbox", { name: "Источник, место и цитата просмотрены" }).check();
+  await save.click();
+  await expect(page.locator("blockquote").first()).toContainText("quote <b> $&");
+  expect(submitted).toBe("Exact\r\nquote <b> $&");
+  await expect(page.locator("blockquote b")).toHaveCount(0);
+});

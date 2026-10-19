@@ -24,16 +24,25 @@ export interface IntelligenceGraphPortablePackage {
   format: typeof INTELLIGENCE_GRAPH_PACKAGE_FORMAT;
   title: string;
   nodes: { key: string; kind: IntelligenceGraphPortableKind; label: string; detail: string }[];
-  edges: { relation: IntelligenceGraphPortableRelation; from: string; to: string }[];
+  edges: {
+    relation: IntelligenceGraphPortableRelation;
+    from: string;
+    to: string;
+    evidence?: { source: string; location: string; excerpt: string };
+  }[];
 }
 const fail = (message: string): never => {
   throw new Error(message);
 };
-const object = (value: unknown, keys: string[]): Record<string, unknown> => {
+const object = (
+  value: unknown,
+  keys: string[],
+  optional: string[] = []
+): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return fail("Expected object");
   const record = value as Record<string, unknown>;
   if (
-    Object.keys(record).length !== keys.length ||
+    Object.keys(record).some((key) => !keys.includes(key) && !optional.includes(key)) ||
     !keys.every((key) => Object.hasOwn(record, key))
   )
     return fail("Unknown or missing package field");
@@ -87,7 +96,7 @@ export function parseIntelligenceGraphPackage(input: unknown): IntelligenceGraph
     };
   });
   const edges = root.edges.map((entry) => {
-    const item = object(entry, ["relation", "from", "to"]);
+    const item = object(entry, ["relation", "from", "to"], ["evidence"]);
     if (
       !INTELLIGENCE_GRAPH_EDITABLE_RELATIONS.includes(
         item.relation as IntelligenceGraphPortableRelation
@@ -98,7 +107,26 @@ export function parseIntelligenceGraphPackage(input: unknown): IntelligenceGraph
       to = text(item.to, 128);
     if (!keys.has(from) || !keys.has(to) || from === to)
       return fail("Missing endpoint or self-link");
-    return { relation: item.relation as IntelligenceGraphPortableRelation, from, to };
+    const edge: IntelligenceGraphPortablePackage["edges"][number] = {
+      relation: item.relation as IntelligenceGraphPortableRelation,
+      from,
+      to
+    };
+    if (Object.hasOwn(item, "evidence")) {
+      const citation = object(item.evidence, ["source", "location", "excerpt"]);
+      const source = text(citation.source, 128),
+        location = text(citation.location, 256),
+        excerpt = text(citation.excerpt, 1000);
+      const document = nodes.find((n) => n.key === source);
+      if (
+        !document ||
+        !["Source", "Document"].includes(document.kind) ||
+        !document.detail.includes(excerpt)
+      )
+        return fail("Citation must match exact text in a Source/Document node");
+      edge.evidence = { source, location, excerpt };
+    }
+    return edge;
   });
   const result: IntelligenceGraphPortablePackage = {
     format: INTELLIGENCE_GRAPH_PACKAGE_FORMAT,

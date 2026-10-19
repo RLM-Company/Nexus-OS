@@ -433,3 +433,88 @@ function testImportRecovery() {
     });
   });
 }
+
+describe("exact evidence HTTP authoring", () => {
+  it("requires an exact source fragment, rejects authority fields and preserves quote history", async () => {
+    const { app } = setup(true);
+    const root = "/api/v1/projects/project-a/intelligence-graphs";
+    try {
+      let g = (
+        await app.inject({ method: "POST", url: root, payload: { title: "Citations" } })
+      ).json<IntelligenceGraphWorkspace>();
+      const url = root + "/" + g.graph_id;
+      for (const [label, kind, detail] of [
+        ["Alpha", "Claim", "First"],
+        ["Beta", "Claim", "Second"],
+        ["Primary source", "Source", "Exact\r\nquote <b> $&"]
+      ])
+        g = (
+          await app.inject({
+            method: "POST",
+            url: url + "/edits",
+            payload: {
+              expected_revision: g.revision,
+              operation: { kind: "add_node", node_kind: kind, label, detail }
+            }
+          })
+        ).json<IntelligenceGraphWorkspace>();
+      const [a, b, source] = g.nodes.map((n) => ({ id: n.node_id, version: n.node_version }));
+      g = (
+        await app.inject({
+          method: "POST",
+          url: url + "/edits",
+          payload: {
+            expected_revision: g.revision,
+            operation: { kind: "add_edge", relation: "SUPPORTS", from: a, to: b }
+          }
+        })
+      ).json<IntelligenceGraphWorkspace>();
+      const op = {
+        kind: "cite_edge",
+        edge_id: g.edges[0]!.edge_id,
+        source,
+        location: "page 1",
+        excerpt: "Exact\r\nquote <b> $&"
+      };
+      const rejected = await app.inject({
+        method: "POST",
+        url: url + "/edits",
+        payload: { expected_revision: g.revision, operation: { ...op, excerpt: "Invented" } }
+      });
+      expect(rejected.statusCode).toBe(400);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: url + "/edits",
+            payload: { expected_revision: g.revision, operation: { ...op, verified: true } }
+          })
+        ).statusCode
+      ).toBe(400);
+      const response = await app.inject({
+        method: "POST",
+        url: url + "/edits",
+        payload: { expected_revision: g.revision, operation: op }
+      });
+      expect(response.statusCode).toBe(200);
+      const quoted = response.json<IntelligenceGraphWorkspace>();
+      expect(quoted.edges.at(-1)?.evidence_excerpt).toBe(op.excerpt);
+      expect(quoted.edges.at(-1)?.verification_status).toBe("discovered");
+      const exported = (await app.inject({ method: "GET", url: url + "/package" })).json<{
+        package: { edges: { evidence: { excerpt: string } }[] };
+      }>();
+      expect(exported.package.edges[0]?.evidence.excerpt).toBe(op.excerpt);
+      expect(
+        (await app.inject({ method: "GET", url: url + "/explain?q=Alpha" })).json<{
+          relationships: { quote: string }[];
+        }>().relationships[0]?.quote
+      ).toBe(op.excerpt);
+      const old = (
+        await app.inject({ method: "GET", url: url + "/revisions/" + g.revision })
+      ).json<IntelligenceGraphWorkspace>();
+      expect(old.edges[0]?.evidence_excerpt).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
+});

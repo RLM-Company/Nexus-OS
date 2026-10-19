@@ -9,6 +9,7 @@ import {
 } from "@cosmora/contracts";
 import { compareGraphRevisions } from "./revision-diff";
 import { IntelligenceGraphView } from "./graph-view";
+import { GraphEvidenceEditor } from "./graph-evidence-editor";
 import {
   parseGraphImportAttempt,
   graphImportAttemptSlot,
@@ -39,6 +40,8 @@ type Edge = {
   from: Ref;
   to: Ref;
   verification_status: string;
+  evidence_ref?: { source_id: string; source_version: number; location: string };
+  evidence_excerpt?: string;
 };
 type RecordEntry = { node: Ref; text: string; excerpt: string };
 type Graph = {
@@ -57,7 +60,14 @@ type Explanation = {
   explanation: string;
   truncated: boolean;
   matched_nodes: { id: string; label: string; detail: string | null; status: string }[];
-  relationships: { edge_id: string; description: string; status: string; note: string }[];
+  relationships: {
+    edge_id: string;
+    description: string;
+    status: string;
+    note: string;
+    quote?: string | null;
+    source_status?: string | null;
+  }[];
 };
 const panel: React.CSSProperties = {
   border: "1px solid #d1d1d1",
@@ -780,6 +790,12 @@ export default function GraphWorkspacePage() {
           </section>
           <section style={panel}>
             <h2>Связи</h2>
+            <GraphEvidenceEditor
+              key={`${selected.graph_id}:${selected.revision}`}
+              graph={selected}
+              busy={busy}
+              onEdit={edit}
+            />
             <ul>
               {activeEdges.map((edge) => (
                 <li key={edge.edge_id}>
@@ -1020,6 +1036,12 @@ export default function GraphWorkspacePage() {
                   {explanation.relationships.map((relation) => (
                     <li key={relation.edge_id}>
                       {relation.description} — {relation.status}. {relation.note}
+                      {relation.quote && (
+                        <blockquote style={{ whiteSpace: "pre-wrap" }}>{relation.quote}</blockquote>
+                      )}
+                      {relation.source_status === "superseded" && (
+                        <p>Цитата относится к прежней сохранённой версии источника.</p>
+                      )}
                     </li>
                   ))}
                 </ul>
