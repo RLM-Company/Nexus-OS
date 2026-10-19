@@ -3,7 +3,7 @@ import {
   IntelligenceGraphWorkspaceError,
   type IntelligenceGraphWorkspaceService
 } from "@cosmora/core";
-import type { ProjectStore } from "@cosmora/db";
+import { IntelligenceGraphPrivacyError, type ProjectStore } from "@cosmora/db";
 import { Type } from "typebox";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { canAccessOwnerApi, type RequestIdentityResolver } from "./identity.js";
@@ -78,6 +78,10 @@ export interface GraphWorkspaceRouteDependencies {
 }
 
 const handleFailure = (reply: FastifyReply, error: unknown) => {
+  if (error instanceof IntelligenceGraphPrivacyError)
+    return reply
+      .status(error.code === "GRAPH_OWNER_FENCED" ? 423 : 503)
+      .send({ error: error.code });
   if (!(error instanceof IntelligenceGraphWorkspaceError)) throw error;
   const status = {
     BAD_INPUT: 400,

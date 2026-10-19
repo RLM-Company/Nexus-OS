@@ -25,6 +25,9 @@ const fixture = () => {
     "INSERT INTO projects VALUES ('project-a', 'owner-a', 'ACTIVE'), ('project-b', 'owner-b', 'ACTIVE'), ('archived', 'owner-a', 'ARCHIVED')"
   );
   db.exec(schemaSql);
+  db.exec(
+    "CREATE TABLE kosmora_owner_data_lifecycle(owner_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, state TEXT NOT NULL)"
+  );
   return { db, filename, store: new SqliteIntelligenceGraphWorkspaceRepository(db) };
 };
 const graph = (id: string): IntelligenceGraphWorkspace => ({
