@@ -189,18 +189,18 @@ test("opens and dismisses the owner menu and persists UI preferences", async ({ 
 test("recovers from invalid Studio drafts and UI preferences", async ({ page }) => {
   await page.addInitScript(() => {
     sessionStorage.setItem(
-      "cosmora:studio-draft:sound",
-      JSON.stringify({ prompt: 123, format: "16:9", style: "invalid" })
+      "kosmora:studio-settings:images",
+      JSON.stringify({ prompt: 123, ratio: "invalid", style: "invalid" })
     );
     localStorage.setItem(
       "cosmora:ui-preferences",
       JSON.stringify({ compact: "true", largeText: [] })
     );
-    localStorage.setItem("cosmora:workspace-surface", "sound");
+    localStorage.setItem("cosmora:workspace-surface", "images");
   });
   await page.goto("/");
-  await expect(page.getByLabel("Промпт для аудио")).toHaveValue("");
-  await expect(page.getByRole("button", { name: "Короткий", exact: true })).toHaveAttribute(
+  await expect(page.getByLabel("Описание изображения", { exact: true })).toHaveValue("");
+  await expect(page.getByRole("button", { name: "1:1", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true"
   );
