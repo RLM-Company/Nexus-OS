@@ -578,3 +578,164 @@ describe("reviewed import receipts", () => {
     );
   });
 });
+
+describe("evidence-grounded owner citations", () => {
+  const prepared = () => {
+    const { service, repository } = suite();
+    let graph = service.create("owner-a", "project-a", "Quoted evidence");
+    for (const [label, detail, kind] of [
+      ["Тезис Alpha", "First claim", "Claim"],
+      ["Тезис Beta", "Second claim", "Claim"],
+      ["Источник", "Начало.\r\nТочная цитата <b> $&\r\nКонец.", "Source"]
+    ] as const)
+      graph = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+        kind: "add_node",
+        node_kind: kind,
+        label,
+        detail
+      });
+    const [a, b, source] = graph.nodes.map((n) => ({ id: n.node_id, version: n.node_version }));
+    graph = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+      kind: "add_edge",
+      relation: "SUPPORTS",
+      from: a!,
+      to: b!
+    });
+    const edge = graph.edges[0]!.edge_id;
+    return { service, repository, graph, a: a!, source: source!, edge };
+  };
+  it("pins exact source text/version and location while leaving evidence unverified", () => {
+    const { service, graph, source, edge } = prepared();
+    const quote = "\r\nТочная цитата <b> $&\r\n";
+    const changed = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+      kind: "cite_edge",
+      edge_id: edge,
+      source,
+      location: "страница 4, строки 2–3",
+      excerpt: quote
+    });
+    const cited = changed.edges.at(-1)!;
+    expect(cited.evidence_ref).toEqual({
+      source_id: source.id,
+      source_version: 1,
+      location: "страница 4, строки 2–3"
+    });
+    expect(cited.evidence_excerpt).toBe(quote);
+    expect(cited.verification_status).toBe("discovered");
+    expect(cited.supersedes).toEqual({ id: edge, version: 1 });
+    const explanation = service.explain("owner-a", "project-a", graph.graph_id, "Тезис Alpha");
+    expect(explanation.relationships).toContainEqual(
+      expect.objectContaining({ quote, verified: false, source_status: "discovered" })
+    );
+    expect(
+      service.revision("owner-a", "project-a", graph.graph_id, graph.revision).edges[0]
+        ?.evidence_excerpt
+    ).toBeUndefined();
+    const restored = service.restore(
+      "owner-a",
+      "project-a",
+      graph.graph_id,
+      changed.revision,
+      graph.revision
+    );
+    expect(restored.edges[0]?.evidence_excerpt).toBeUndefined();
+  });
+  it("retains quoted old source versions during portable export and imports fresh unverified content", () => {
+    const { service, graph, source, edge } = prepared();
+    const cited = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+      kind: "cite_edge",
+      edge_id: edge,
+      source,
+      location: "p.1",
+      excerpt: "Точная цитата <b> $&"
+    });
+    const changed = service.edit("owner-a", "project-a", graph.graph_id, cited.revision, {
+      kind: "revise_node",
+      node: source,
+      label: "Источник исправлен",
+      detail: "Новый текст без прежней цитаты"
+    });
+    expect(
+      service.explain("owner-a", "project-a", graph.graph_id, "Тезис Alpha").relationships.at(-1)
+        ?.source_status
+    ).toBe("superseded");
+    const exported = service.exportPackage("owner-a", "project-a", graph.graph_id);
+    expect(exported.package.nodes).toHaveLength(4);
+    const evidence = exported.package.edges[0]!.evidence!;
+    expect(exported.package.nodes.find((n) => n.key === evidence.source)?.detail).toContain(
+      evidence.excerpt
+    );
+    const copied = service.importPackage("owner-a", "project-a", exported.package, exported.sha256);
+    expect(copied.nodes.every((n) => n.verification_status === "discovered")).toBe(true);
+    expect(copied.edges[0]?.evidence_excerpt).toBe(evidence.excerpt);
+    expect(copied.edges[0]?.evidence_ref.source_id).not.toBe(source.id);
+    expect(service.exportPackage("owner-a", "project-a", copied.graph_id).package).toEqual(
+      exported.package
+    );
+    expect(changed.revision).toBe(cited.revision + 1);
+  });
+  it("retracts live evidence when its source is deleted, preserving history", () => {
+    const { service, graph, source, edge } = prepared();
+    const cited = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+      kind: "cite_edge",
+      edge_id: edge,
+      source,
+      location: "p.1",
+      excerpt: "Точная цитата"
+    });
+    const deleted = service.edit("owner-a", "project-a", graph.graph_id, cited.revision, {
+      kind: "remove_node",
+      node: source
+    });
+    expect(deleted.edges.at(-1)?.evidence_excerpt).toBeUndefined();
+    expect(deleted.edges.at(-1)?.verification_status).toBe("discovered");
+    expect(
+      service.revision("owner-a", "project-a", graph.graph_id, cited.revision).edges.at(-1)
+        ?.evidence_excerpt
+    ).toBe("Точная цитата");
+    expect(
+      service.exportPackage("owner-a", "project-a", graph.graph_id).package.nodes
+    ).toHaveLength(2);
+  });
+  it("rejects fabricated/foreign/stale citations and clears reviewed quotes as a new revision", () => {
+    const { service, graph, source, edge, a } = prepared();
+    for (const op of [
+      { source: a, excerpt: "First claim" },
+      { source: { id: "foreign", version: 1 }, excerpt: "Точная цитата" },
+      { source, excerpt: "Not in the source" },
+      { source, excerpt: " ".repeat(1001) }
+    ])
+      expectCode(
+        () =>
+          service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+            kind: "cite_edge",
+            edge_id: edge,
+            location: "p.1",
+            ...op
+          }),
+        "BAD_INPUT"
+      );
+    expect(service.get("owner-a", "project-a", graph.graph_id)).toEqual(graph);
+    const cited = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+      kind: "cite_edge",
+      edge_id: edge,
+      source,
+      location: "p.1",
+      excerpt: "Точная цитата"
+    });
+    expectCode(
+      () =>
+        service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+          kind: "clear_edge_evidence",
+          edge_id: edge
+        }),
+      "REVISION_CONFLICT"
+    );
+    const cleared = service.edit("owner-a", "project-a", graph.graph_id, cited.revision, {
+      kind: "clear_edge_evidence",
+      edge_id: edge
+    });
+    expect(cleared.edges.at(-1)?.evidence_excerpt).toBeUndefined();
+    expect(cleared.edges.at(-2)?.verification_status).toBe("superseded");
+  });
+});

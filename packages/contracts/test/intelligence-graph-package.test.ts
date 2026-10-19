@@ -50,3 +50,31 @@ describe("portable graph content", () => {
     expect(() => parseIntelligenceGraphPackage(input)).toThrow();
   });
 });
+
+describe("portable exact citations", () => {
+  it("retains an exact source fragment and canonical metadata", () => {
+    const input = valid();
+    const cited = {
+      ...input,
+      edges: [
+        {
+          ...input.edges[0]!,
+          evidence: { source: "b", location: "страница 4, строки 1–2", excerpt: "Точная цитата" }
+        }
+      ]
+    };
+    expect(parseIntelligenceGraphPackage(cited)).toEqual(cited);
+  });
+  it("rejects missing/wrong-kind sources, invented quotes and verification fields", () => {
+    const input = valid();
+    for (const evidence of [
+      { source: "missing", location: "p.1", excerpt: "Точная цитата" },
+      { source: "a", location: "p.1", excerpt: "😀 <b> $&" },
+      { source: "b", location: "p.1", excerpt: "Несуществующий фрагмент" },
+      { source: "b", location: "p.1", excerpt: "Точная цитата", verified: true }
+    ])
+      expect(() =>
+        parseIntelligenceGraphPackage({ ...input, edges: [{ ...input.edges[0]!, evidence }] })
+      ).toThrow();
+  });
+});

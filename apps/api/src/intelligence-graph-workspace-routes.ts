@@ -18,6 +18,20 @@ const GraphScope = Type.Object({ projectId: Id, graphId: Id }, { additionalPrope
 const Revision = Type.Integer({ minimum: 1 });
 const Edit = Type.Union([
   Type.Object(
+    {
+      kind: Type.Literal("cite_edge"),
+      edge_id: Id,
+      source: Ref,
+      location: Type.String({ minLength: 1, maxLength: 256 }),
+      excerpt: Type.String({ minLength: 1, maxLength: 1000 })
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    { kind: Type.Literal("clear_edge_evidence"), edge_id: Id },
+    { additionalProperties: false }
+  ),
+  Type.Object(
     { kind: Type.Literal("rename"), title: Type.String({ minLength: 1, maxLength: 80 }) },
     { additionalProperties: false }
   ),

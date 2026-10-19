@@ -508,3 +508,39 @@ describe("explicit historical verification state", () => {
     ).toBe(true);
   });
 });
+
+describe("quoted source references", () => {
+  it("accepts a pinned Source quote and rejects missing/claim/deleted source references", () => {
+    const a = node("a"),
+      b = node("b"),
+      source = node("document", { kind: "Source" });
+    const quoted = edge("quoted", a, b, {
+      evidence_ref: { source_id: source.node_id, source_version: 1, location: "page 1" },
+      evidence_excerpt: "Exact <b> $&"
+    });
+    expect(Value.Check(IntelligenceGraphEdgeSchema, quoted)).toBe(true);
+    expect(
+      validateIntelligenceGraphSnapshot({
+        ownerId: "owner-1",
+        projectId: "project-1",
+        nodes: [a, b, source],
+        edges: [quoted]
+      })
+    ).toEqual([]);
+    for (const from of [
+      undefined,
+      { ...source, kind: "Claim" as const },
+      { ...source, verification_status: "deleted" as const, deleted_at: t2 }
+    ]) {
+      const nodes = from ? [a, b, from] : [a, b];
+      expect(
+        validateIntelligenceGraphSnapshot({
+          ownerId: "owner-1",
+          projectId: "project-1",
+          nodes,
+          edges: [quoted]
+        }).some((issue) => issue.includes("invalid quoted"))
+      ).toBe(true);
+    }
+  });
+});

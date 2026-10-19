@@ -57,3 +57,14 @@ describe("graph restore comparison", () => {
     expect(compareGraphRevisions(before, after)).toEqual(result);
   });
 });
+
+it("shows exact quote and source changes before restoring a graph revision", () => {
+  const before = graph(),
+    after = graph();
+  after.edges[0]!.evidence_ref = { source_id: "b", source_version: 1, location: "страница 4" };
+  after.edges[0]!.evidence_excerpt = "<b> Точная\r\nцитата $&";
+  const changes = compareGraphRevisions(before, after);
+  expect(changes).toHaveLength(1);
+  expect(changes[0]?.after).toContain("<b> Точная\r\nцитата $&");
+  expect(changes[0]?.after).toContain("страница 4");
+});

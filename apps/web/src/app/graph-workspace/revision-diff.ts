@@ -9,6 +9,8 @@ export interface GraphForComparison {
     from: Ref;
     to: Ref;
     verification_status: string;
+    evidence_ref?: { source_id: string; source_version: number; location: string };
+    evidence_excerpt?: string;
   }[];
   records: { node: Ref; text: string; excerpt: string }[];
 }
@@ -44,7 +46,7 @@ export function compareGraphRevisions(
         .filter((e) => active(e.verification_status))
         .map((e) => [
           e.edge_id,
-          `${e.type} · ${e.verification_status} · v${e.edge_version}\n${e.from.id}@${e.from.version} → ${e.to.id}@${e.to.version}`
+          `${e.type} · ${e.verification_status} · v${e.edge_version}\n${e.from.id}@${e.from.version} → ${e.to.id}@${e.to.version}${e.evidence_excerpt === undefined ? "" : `\nИсточник: ${e.evidence_ref?.source_id}@${e.evidence_ref?.source_version}, ${e.evidence_ref?.location}\nЦитата: ${e.evidence_excerpt}`}`
         ])
     );
   const changes: GraphRevisionChange[] =

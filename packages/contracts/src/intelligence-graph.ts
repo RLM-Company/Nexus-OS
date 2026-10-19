@@ -150,6 +150,7 @@ export const IntelligenceGraphEdgeSchema = Type.Object(
     ),
     sensitivity: RuntimeDataClassSchema,
     evidence_ref: IntelligenceGraphEvidenceRefSchema,
+    evidence_excerpt: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
     provenance_kind: IntelligenceGraphProvenanceKindSchema,
     confidence_method: IntelligenceGraphConfidenceMethodSchema,
     extractor_version: nullableExtractor,
@@ -384,6 +385,24 @@ export const validateIntelligenceGraphSnapshot = (input: {
         confidence: edge.confidence_method
       })
     );
+
+    if (edge.evidence_excerpt !== undefined) {
+      const source = nodes.get(
+        versionKey({ id: edge.evidence_ref.source_id, version: edge.evidence_ref.source_version })
+      );
+      if (
+        typeof edge.evidence_excerpt !== "string" ||
+        !edge.evidence_excerpt.trim() ||
+        edge.evidence_excerpt.length > 1000 ||
+        !source ||
+        !["Source", "Document"].includes(source.kind) ||
+        source.verification_status === "deleted" ||
+        source.owner_id !== edge.owner_id ||
+        source.project_id !== edge.project_id ||
+        source.scope !== edge.scope
+      )
+        issues.push(`Edge ${key} has an invalid quoted source reference`);
+    }
 
     const from = nodes.get(versionKey(edge.from));
     const to = nodes.get(versionKey(edge.to));

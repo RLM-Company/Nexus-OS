@@ -37,6 +37,14 @@ export type IntelligenceGraphEdit =
       to: IntelligenceGraphVersionRef;
     }
   | { kind: "remove_edge"; edge_id: string }
+  | {
+      kind: "cite_edge";
+      edge_id: string;
+      source: IntelligenceGraphVersionRef;
+      location: string;
+      excerpt: string;
+    }
+  | { kind: "clear_edge_evidence"; edge_id: string }
   | { kind: "revise_node"; node: IntelligenceGraphVersionRef; label: string; detail: string }
   | { kind: "remove_node"; node: IntelligenceGraphVersionRef }
   | { kind: "rename"; title: string };
@@ -93,6 +101,7 @@ const ensureLimits = (graph: IntelligenceGraphWorkspace): void => {
   ) {
     throw new IntelligenceGraphWorkspaceError("GRAPH_LIMIT", "Graph size limit reached");
   }
+  assertCitations(graph);
   const issues = validateIntelligenceGraphSnapshot({
     ownerId: graph.owner_id,
     projectId: graph.project_id,
@@ -111,6 +120,17 @@ const ensureLimits = (graph: IntelligenceGraphWorkspace): void => {
     if (!record.text.trim() || !record.excerpt.trim()) return invalid("Empty graph search record");
     records.add(key);
   }
+};
+const assertCitations = (graph: IntelligenceGraphWorkspace): void => {
+  const records = new Map(graph.records.map((r) => [refKey(r.node), r]));
+  for (const edge of graph.edges)
+    if (edge.evidence_excerpt !== undefined) {
+      const source = records.get(
+        refKey({ id: edge.evidence_ref.source_id, version: edge.evidence_ref.source_version })
+      );
+      if (!source || !source.excerpt.includes(edge.evidence_excerpt))
+        return invalid("Citation no longer matches its exact source version");
+    }
 };
 const activeNode = (
   graph: IntelligenceGraphWorkspace,
@@ -263,7 +283,30 @@ export class IntelligenceGraphWorkspaceService {
           if (!current(edge.verification_status)) continue;
           const touches = (ref: IntelligenceGraphVersionRef) =>
             refKey(ref) === refKey(operation.node);
-          if (!touches(edge.from) && !touches(edge.to)) continue;
+          if (!touches(edge.from) && !touches(edge.to)) {
+            if (
+              removed &&
+              edge.evidence_excerpt !== undefined &&
+              edge.evidence_ref.source_id === old.node_id
+            ) {
+              edge.previous_verification_status = edge.verification_status as
+                "discovered" | "hypothesis" | "verified" | "disputed";
+              edge.verification_status = "superseded";
+              edge.valid_to = at;
+              const replacement = this.link(
+                graph,
+                edge.edge_id,
+                edge.edge_version + 1,
+                edge.type as IntelligenceGraphLinkType,
+                edge.from,
+                edge.to,
+                at
+              );
+              replacement.supersedes = { id: edge.edge_id, version: edge.edge_version };
+              graph.edges.push(replacement);
+            }
+            continue;
+          }
           edge.valid_to = at;
           if (removed) {
             edge.verification_status = "deleted";
@@ -327,6 +370,50 @@ export class IntelligenceGraphWorkspaceService {
         summary = "Replaced relation endpoints; old version remains in history";
         break;
       }
+      case "cite_edge":
+      case "clear_edge_evidence": {
+        const old = graph.edges.find(
+          (e) => e.edge_id === operation.edge_id && current(e.verification_status)
+        );
+        if (!old) return invalid("Active relation not found");
+        const next = this.link(
+          graph,
+          old.edge_id,
+          old.edge_version + 1,
+          old.type as IntelligenceGraphLinkType,
+          old.from,
+          old.to,
+          at
+        );
+        if (operation.kind === "cite_edge") {
+          const source = activeNode(graph, operation.source);
+          const record = graph.records.find((r) => refKey(r.node) === refKey(operation.source));
+          requireText(operation.excerpt, 1000, "excerpt");
+          if (
+            operation.excerpt.length > 1000 ||
+            !["Source", "Document"].includes(source.kind) ||
+            !record?.excerpt.includes(operation.excerpt)
+          )
+            return invalid("Citation must match exact text in an active Source/Document");
+          next.evidence_ref = {
+            source_id: source.node_id,
+            source_version: source.node_version,
+            location: requireText(operation.location, 256, "location")
+          };
+          next.evidence_excerpt = operation.excerpt;
+        } else if (old.evidence_excerpt === undefined) return invalid("Relation has no citation");
+        old.previous_verification_status = old.verification_status as
+          "discovered" | "hypothesis" | "verified" | "disputed";
+        old.verification_status = "superseded";
+        old.valid_to = at;
+        next.supersedes = { id: old.edge_id, version: old.edge_version };
+        graph.edges.push(next);
+        summary =
+          operation.kind === "cite_edge"
+            ? "Attached exact source quote as unverified evidence"
+            : "Retracted current evidence quote; history retained";
+        break;
+      }
       case "remove_edge": {
         const old = graph.edges.find(
           (edge) => edge.edge_id === operation.edge_id && current(edge.verification_status)
@@ -375,7 +462,18 @@ export class IntelligenceGraphWorkspaceService {
         ? this.get(ownerId, projectId, graphId)
         : this.revision(ownerId, projectId, graphId, revision);
     ensureLimits(graph);
-    const nodes = graph.nodes.filter((n) => current(n.verification_status));
+    const cited = new Set(
+      graph.edges
+        .filter((e) => current(e.verification_status) && e.evidence_excerpt !== undefined)
+        .map((e) =>
+          refKey({ id: e.evidence_ref.source_id, version: e.evidence_ref.source_version })
+        )
+    );
+    const nodes = graph.nodes.filter(
+      (n) =>
+        current(n.verification_status) ||
+        cited.has(refKey({ id: n.node_id, version: n.node_version }))
+    );
     const records = new Map(graph.records.map((r) => [refKey(r.node), r]));
     const keys = new Map(
       nodes.map((n, i) => [refKey({ id: n.node_id, version: n.node_version }), `n${i + 1}`])
@@ -398,7 +496,18 @@ export class IntelligenceGraphWorkspaceService {
         .map((e) => ({
           relation: e.type,
           from: keys.get(refKey(e.from)),
-          to: keys.get(refKey(e.to))
+          to: keys.get(refKey(e.to)),
+          ...(e.evidence_excerpt === undefined
+            ? {}
+            : {
+                evidence: {
+                  source: keys.get(
+                    refKey({ id: e.evidence_ref.source_id, version: e.evidence_ref.source_version })
+                  ),
+                  location: e.evidence_ref.location,
+                  excerpt: e.evidence_excerpt
+                }
+              })
         }))
     };
     return {
@@ -479,6 +588,15 @@ export class IntelligenceGraphWorkspaceService {
         now
       );
       edge.evidence_ref.location = `portable_import:sha256:${preview.sha256}`;
+      if (item.evidence) {
+        const source = refs.get(item.evidence.source)!;
+        edge.evidence_ref = {
+          source_id: source.id,
+          source_version: source.version,
+          location: item.evidence.location
+        };
+        edge.evidence_excerpt = item.evidence.excerpt;
+      }
       graph.edges.push(edge);
     }
     ensureLimits(graph);
@@ -596,6 +714,13 @@ export class IntelligenceGraphWorkspaceService {
         verified: edge.verification_status === "verified",
         status: edge.verification_status,
         source: edge.evidence_ref,
+        quote: edge.evidence_excerpt ?? null,
+        source_status:
+          graph.nodes.find(
+            (n) =>
+              n.node_id === edge.evidence_ref.source_id &&
+              n.node_version === edge.evidence_ref.source_version
+          )?.verification_status ?? null,
         note:
           edge.verification_status === "verified"
             ? "Graph relation marked verified; check primary evidence independently"
