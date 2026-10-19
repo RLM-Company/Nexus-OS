@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   validateIntelligenceGraphSnapshot,
+  validateIntelligenceGraphWorkspaceConflicts,
   parseIntelligenceGraphPackage,
   INTELLIGENCE_GRAPH_PACKAGE_FORMAT,
   type IntelligenceGraphPortablePackage,
@@ -19,6 +20,19 @@ export type IntelligenceGraphLinkType =
   "SUPPORTS" | "CONTRADICTS" | "DEPENDS_ON" | "IMPLEMENTS" | "REFERENCES";
 
 export type IntelligenceGraphEdit =
+  | {
+      kind: "open_conflict";
+      subject: IntelligenceGraphVersionRef;
+      positions: IntelligenceGraphVersionRef[];
+    }
+  | {
+      kind: "revise_conflict";
+      conflict_id: string;
+      subject: IntelligenceGraphVersionRef;
+      positions: IntelligenceGraphVersionRef[];
+    }
+  | { kind: "resolve_conflict"; conflict_id: string; resolution: IntelligenceGraphVersionRef }
+  | { kind: "reopen_conflict"; conflict_id: string }
   | {
       kind: "add_node";
       node_kind: "Claim" | "Entity" | "Source" | "Document" | "Decision" | "Goal" | "Task";
@@ -98,17 +112,21 @@ const ensureLimits = (graph: IntelligenceGraphWorkspace): void => {
   if (
     graph.nodes.length > MAX_NODES ||
     graph.edges.length > MAX_EDGES ||
-    graph.records.length > MAX_RECORDS
+    graph.records.length > MAX_RECORDS ||
+    (graph.conflicts?.length ?? 0) > 50
   ) {
     throw new IntelligenceGraphWorkspaceError("GRAPH_LIMIT", "Graph size limit reached");
   }
   assertCitations(graph);
-  const issues = validateIntelligenceGraphSnapshot({
-    ownerId: graph.owner_id,
-    projectId: graph.project_id,
-    nodes: graph.nodes,
-    edges: graph.edges
-  });
+  const issues = [
+    ...validateIntelligenceGraphSnapshot({
+      ownerId: graph.owner_id,
+      projectId: graph.project_id,
+      nodes: graph.nodes,
+      edges: graph.edges
+    }),
+    ...validateIntelligenceGraphWorkspaceConflicts(graph)
+  ];
   if (issues.length > 0) return invalid(`Invalid graph: ${issues[0]}`);
   const ids = new Set(
     graph.nodes.map((node) => refKey({ id: node.node_id, version: node.node_version }))
@@ -267,6 +285,72 @@ export class IntelligenceGraphWorkspaceService {
     }
     let summary: string;
     switch (operation.kind) {
+      case "open_conflict":
+      case "revise_conflict": {
+        activeNode(graph, operation.subject);
+        if (
+          !Array.isArray(operation.positions) ||
+          operation.positions.length < 2 ||
+          operation.positions.length > 20 ||
+          new Set(operation.positions.map((p) => p.id)).size !== operation.positions.length
+        )
+          return invalid("Conflict requires 2–20 distinct active Claims");
+        for (const position of operation.positions)
+          if (activeNode(graph, position).kind !== "Claim")
+            return invalid("Conflict position must be a Claim");
+        graph.conflicts ??= [];
+        if (operation.kind === "revise_conflict") {
+          const conflict = graph.conflicts.find((c) => c.conflict_id === operation.conflict_id);
+          if (!conflict || conflict.status !== "open") return invalid("Open conflict not found");
+          conflict.subject_ref = structuredClone(operation.subject);
+          conflict.position_refs = structuredClone(operation.positions);
+          summary = "Revised exact positions of an open conflict; prior review retained in history";
+        } else {
+          graph.conflicts.push({
+            contract_version: 1,
+            conflict_id: randomUUID(),
+            owner_id: ownerId,
+            project_id: projectId,
+            scope: "project",
+            subject_ref: structuredClone(operation.subject),
+            position_refs: structuredClone(operation.positions),
+            status: "open",
+            resolution_ref: null,
+            created_at: at,
+            resolved_at: null
+          });
+          summary = "Opened a manual conflict without changing verification";
+        }
+        break;
+      }
+      case "resolve_conflict":
+      case "reopen_conflict": {
+        const conflict = graph.conflicts?.find((c) => c.conflict_id === operation.conflict_id);
+        if (!conflict) return invalid("Conflict not found");
+        if (operation.kind === "resolve_conflict") {
+          if (conflict.status !== "open") return invalid("Conflict is already resolved");
+          activeNode(graph, conflict.subject_ref);
+          for (const position of conflict.position_refs) activeNode(graph, position);
+          const resolution = activeNode(graph, operation.resolution);
+          if (
+            resolution.kind !== "Decision" ||
+            Date.parse(resolution.created_at) < Date.parse(conflict.created_at)
+          )
+            return invalid("Resolution must be an active Decision created after the conflict");
+          conflict.status = "resolved";
+          conflict.resolution_ref = structuredClone(operation.resolution);
+          conflict.resolved_at = at;
+          summary =
+            "Recorded an owner decision for exact conflict positions; no verification promotion";
+        } else {
+          if (conflict.status !== "resolved") return invalid("Conflict is already open");
+          conflict.status = "open";
+          conflict.resolution_ref = null;
+          conflict.resolved_at = null;
+          summary = "Reopened conflict; previous decision retained in revision history";
+        }
+        break;
+      }
       case "add_node": {
         const label = requireText(operation.label, 120, "label");
         const detail = requireText(operation.detail, 1000, "detail");
@@ -538,7 +622,12 @@ export class IntelligenceGraphWorkspaceService {
     const nodes = graph.nodes.filter(
       (n) =>
         current(n.verification_status) ||
-        cited.has(refKey({ id: n.node_id, version: n.node_version }))
+        cited.has(refKey({ id: n.node_id, version: n.node_version })) ||
+        (graph.conflicts ?? []).some((c) =>
+          [c.subject_ref, ...c.position_refs, ...(c.resolution_ref ? [c.resolution_ref] : [])].some(
+            (r) => r.id === n.node_id && r.version === n.node_version
+          )
+        )
     );
     const records = new Map(graph.records.map((r) => [refKey(r.node), r]));
     const keys = new Map(
@@ -574,7 +663,16 @@ export class IntelligenceGraphWorkspaceService {
                   excerpt: e.evidence_excerpt
                 }
               })
-        }))
+        })),
+      ...((graph.conflicts?.length ?? 0) === 0
+        ? {}
+        : {
+            conflicts: graph.conflicts!.map((c) => ({
+              subject: keys.get(refKey(c.subject_ref)),
+              positions: c.position_refs.map((r) => keys.get(refKey(r))),
+              resolution: c.resolution_ref ? keys.get(refKey(c.resolution_ref)) : null
+            }))
+          })
     };
     return {
       ...this.previewImport(portable),
@@ -665,6 +763,20 @@ export class IntelligenceGraphWorkspaceService {
       }
       graph.edges.push(edge);
     }
+    if (portable.conflicts !== undefined)
+      graph.conflicts = portable.conflicts.map((c) => ({
+        contract_version: 1,
+        conflict_id: randomUUID(),
+        owner_id: ownerId,
+        project_id: projectId,
+        scope: "project",
+        subject_ref: refs.get(c.subject)!,
+        position_refs: c.positions.map((p) => refs.get(p)!),
+        status: c.resolution === null ? "open" : "resolved",
+        resolution_ref: c.resolution === null ? null : refs.get(c.resolution)!,
+        created_at: now,
+        resolved_at: c.resolution === null ? null : now
+      }));
     ensureLimits(graph);
     if (creationKey === undefined) return this.repository.create(graph) ?? this.notFound();
     this.importKey(creationKey);

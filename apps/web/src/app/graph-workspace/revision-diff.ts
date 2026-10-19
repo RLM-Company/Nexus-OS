@@ -1,7 +1,22 @@
 type Ref = { id: string; version: number };
+export interface GraphConflict {
+  conflict_id: string;
+  subject_ref: Ref;
+  position_refs: Ref[];
+  status: "open" | "resolved";
+  resolution_ref: Ref | null;
+  created_at: string;
+  resolved_at: string | null;
+}
 export interface GraphForComparison {
   title: string;
-  nodes: { node_id: string; node_version: number; kind: string; verification_status: string }[];
+  nodes: {
+    node_id: string;
+    node_version: number;
+    kind: string;
+    verification_status: string;
+    created_at?: string;
+  }[];
   edges: {
     edge_id: string;
     edge_version: number;
@@ -13,9 +28,10 @@ export interface GraphForComparison {
     evidence_excerpt?: string;
   }[];
   records: { node: Ref; text: string; excerpt: string }[];
+  conflicts?: GraphConflict[];
 }
 export interface GraphRevisionChange {
-  kind: "title" | "node" | "edge";
+  kind: "title" | "node" | "edge" | "conflict";
   id: string;
   before: string | null;
   after: string | null;
@@ -53,9 +69,22 @@ export function compareGraphRevisions(
     before.title === after.title
       ? []
       : [{ kind: "title", id: "title", before: before.title, after: after.title }];
+  const conflictText = (g: GraphForComparison) =>
+    new Map(
+      (g.conflicts ?? []).map((c) => [
+        c.conflict_id,
+        `${c.status}\nТема: ${c.subject_ref.id}@${c.subject_ref.version}\nПозиции: ${c.position_refs
+          .map((r) => `${r.id}@${r.version}`)
+          .sort()
+          .join(
+            ", "
+          )}\nРешение: ${c.resolution_ref ? `${c.resolution_ref.id}@${c.resolution_ref.version}` : "—"}\n${c.created_at} → ${c.resolved_at ?? "—"}`
+      ])
+    );
   for (const [kind, left, right] of [
     ["node", nodeText(before), nodeText(after)],
-    ["edge", edgeText(before), edgeText(after)]
+    ["edge", edgeText(before), edgeText(after)],
+    ["conflict", conflictText(before), conflictText(after)]
   ] as const) {
     for (const id of new Set([...left.keys(), ...right.keys()])) {
       const a = left.get(id) ?? null,

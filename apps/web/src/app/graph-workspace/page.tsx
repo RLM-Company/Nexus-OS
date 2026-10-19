@@ -8,7 +8,8 @@ import {
   type IntelligenceGraphPortablePackage,
   type IntelligenceGraphSummary
 } from "@cosmora/contracts";
-import { compareGraphRevisions } from "./revision-diff";
+import { compareGraphRevisions, type GraphConflict } from "./revision-diff";
+import { GraphConflictEditor } from "./graph-conflict-editor";
 import { IntelligenceGraphView } from "./graph-view";
 import { GraphEvidenceEditor } from "./graph-evidence-editor";
 import { mergeGraphSummaryPages } from "./library-pages";
@@ -34,7 +35,13 @@ const download = (value: unknown, filename: string) => {
 };
 
 type Ref = { id: string; version: number };
-type Node = { node_id: string; node_version: number; kind: string; verification_status: string };
+type Node = {
+  node_id: string;
+  node_version: number;
+  kind: string;
+  verification_status: string;
+  created_at?: string;
+};
 type Edge = {
   edge_id: string;
   edge_version: number;
@@ -55,6 +62,7 @@ type Graph = {
   nodes: Node[];
   edges: Edge[];
   records: RecordEntry[];
+  conflicts?: GraphConflict[];
 };
 type History = { revision: number; summary: string; restored_from_revision: number | null };
 type Explanation = {
@@ -460,7 +468,8 @@ export default function GraphWorkspacePage() {
           <div>
             <p>
               Проект: {importPreview.projectId}. Узлов: {importPreview.package.nodes.length},
-              связей: {importPreview.package.edges.length}.
+              связей: {importPreview.package.edges.length}, разборов противоречий:{" "}
+              {importPreview.package.conflicts?.length ?? 0}.
             </p>
             <p style={{ overflowWrap: "anywhere" }}>SHA-256: {importPreview.sha256}</p>
             <pre style={{ whiteSpace: "pre-wrap", maxHeight: 340, overflow: "auto" }}>
@@ -473,7 +482,7 @@ export default function GraphWorkspacePage() {
                 disabled={busy || importUncertain}
                 onChange={(event) => setImportReviewed(event.target.checked)}
               />{" "}
-              Текст и связи просмотрены
+              Текст, связи и решения просмотрены
             </label>
             <button
               style={button}
@@ -832,7 +841,21 @@ export default function GraphWorkspacePage() {
               >
                 {["Claim", "Entity", "Source", "Document", "Decision", "Goal", "Task"].map(
                   (kind) => (
-                    <option key={kind}>{kind}</option>
+                    <option key={kind} value={kind}>
+                      {
+                        (
+                          {
+                            Claim: "Утверждение",
+                            Entity: "Сущность",
+                            Source: "Источник",
+                            Document: "Документ",
+                            Decision: "Решение",
+                            Goal: "Цель",
+                            Task: "Задача"
+                          } as Record<string, string>
+                        )[kind]
+                      }
+                    </option>
                   )
                 )}
               </select>
@@ -864,6 +887,12 @@ export default function GraphWorkspacePage() {
           </section>
           <section style={panel}>
             <h2>Связи</h2>
+            <GraphConflictEditor
+              key={`conflicts:${selected.graph_id}:${selected.revision}`}
+              graph={selected}
+              busy={busy}
+              onEdit={edit}
+            />
             <GraphEvidenceEditor
               key={`${selected.graph_id}:${selected.revision}`}
               graph={selected}
