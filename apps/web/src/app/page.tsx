@@ -30,6 +30,7 @@ import {
   ChatToCanvas
 } from "./chat-workspace";
 import { ChatItemMenu } from "./chat-item-menu";
+import { CreateProjectDialog } from "./create-project-dialog";
 import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -545,6 +546,7 @@ export default function Home() {
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
   const [chatMode, setChatMode] = useState<ChatMode>("kosmora");
   const [codeSpace, setCodeSpace] = useState(false);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [greeting, setGreeting] = useState("Чем могу помочь?");
   const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
   const chatNavigation = useChatNavigation();
@@ -2246,6 +2248,7 @@ export default function Home() {
                       pinned={pins.chats.includes(chat.id)}
                       disabled={!pinsHydrated || (sending && activeLocalChatId === chat.id)}
                       onPin={() => changePin("chats", chat.id)}
+                      onOpen={() => void openLocalChat(chat.id)}
                       onRename={(title) =>
                         setLocalChats((current) =>
                           current.map((item) => (item.id === chat.id ? { ...item, title } : item))
@@ -2289,6 +2292,15 @@ export default function Home() {
             </button>
             {projectsExpanded && (
               <div className="project-list" id="sidebar-project-list">
+                <button
+                  type="button"
+                  className="sidebar-create-project"
+                  onClick={() => setCreateProjectOpen(true)}
+                >
+                  <WorkspaceIcon name="projects" />
+                  <span>Создать проект</span>
+                  <span aria-hidden="true">+</span>
+                </button>
                 {matchingProjects.map((project) => (
                   <div className="pinnable-navigation-item" key={project.id}>
                     <button
@@ -2443,7 +2455,9 @@ export default function Home() {
         }
         id="workspace"
       >
-        <header className="topbar">
+        <header
+          className={`topbar${surface === "manager" && !activeProject && !activeLocalChatId && !codeSpace ? " has-mode-switch" : ""}`}
+        >
           <div>
             <span className="eyebrow">
               {surface === "manager"
@@ -3354,6 +3368,17 @@ export default function Home() {
         )}
       </main>
 
+      {createProjectOpen && (
+        <CreateProjectDialog
+          onClose={() => setCreateProjectOpen(false)}
+          onCreated={(id) => {
+            setCreateProjectOpen(false);
+            setProjectsExpanded(true);
+            void loadProjects().catch(() => undefined);
+            void openProject(id);
+          }}
+        />
+      )}
       <MobileNavigation
         surface={
           surface === "manager"

@@ -6,8 +6,8 @@ import { WorkspaceIcon as Icon, type IconName } from "./workspace-icons";
 import { PLANNED_CAPABILITIES, type CapabilityArea } from "./workspace-capabilities";
 import styles from "./workspace-sections.module.css";
 import { StudioDataSurface } from "./studio-data-workbench";
-import { MediaGenerationPanel } from "./media-generation/media-panel";
-import { SpeechStudio } from "./voice/voice-playback";
+import { MediaWorkbench } from "./media-generation/media-workbench";
+
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 
 export type ToolSurface =
@@ -598,233 +598,8 @@ function Code({ onCompose }: Props) {
   );
 }
 
-const MEDIA = {
-  images: {
-    label: "изображения",
-    title: "Создание изображений",
-    hint: "Опишите объект, композицию, свет и настроение.",
-    sample: "Космическая обсерватория в горах на рассвете, мягкий свет, широкая композиция",
-    formats: ["1:1", "16:9", "9:16", "4:3"],
-    styles: ["Авто", "Фотореализм", "Иллюстрация", "Кино"],
-    prompt: "Кадр, который вы представляете…"
-  },
-  video: {
-    label: "видео",
-    title: "Видео",
-    hint: "Продумайте сцену, последовательность действий и движение камеры.",
-    sample:
-      "Камера медленно приближается к обсерватории. Купол открывается, в небе появляются звёзды",
-    formats: ["16:9", "9:16", "1:1"],
-    styles: ["Авто", "Кино", "Анимация", "Документальный"],
-    prompt: "Что происходит в сцене и как движется камера…"
-  },
-  sound: {
-    label: "аудио",
-    title: "Sound",
-    hint: "Задайте характер звука, темп и атмосферу.",
-    sample: "Спокойная электронная композиция для ночной работы, мягкий синтезатор, без вокала",
-    formats: ["Короткий", "Средний", "Длинный"],
-    styles: ["Авто", "Голос", "Музыка", "Атмосфера"],
-    prompt: "Как должен звучать результат…"
-  }
-};
-type MediaSurface = keyof typeof MEDIA;
-function Media({ surface }: { surface: MediaSurface }) {
-  const config = MEDIA[surface];
-  const [prompt, setPrompt] = useState("");
-  const [format, setFormat] = useState<string>(
-    config.formats[0] ?? (surface === "sound" ? "Короткий" : "1:1")
-  );
-  const [style, setStyle] = useState("Авто");
-  const [output, setOutput] = useState("");
-  const [notice, setNotice] = useState("");
-  const [hydrated, setHydrated] = useState(false);
-  const [storageAvailable, setStorageAvailable] = useState(true);
-  const key = `cosmora:studio-draft:${surface}`;
-  useEffect(() => {
-    try {
-      const raw = window.sessionStorage.getItem(key);
-      if (raw && raw.length <= 15000) {
-        const saved: unknown = JSON.parse(raw);
-        if (saved && typeof saved === "object") {
-          const value = saved as Record<string, unknown>;
-          if (typeof value.prompt === "string" && value.prompt.length <= 8000)
-            setPrompt(value.prompt);
-          if (typeof value.format === "string" && config.formats.includes(value.format))
-            setFormat(value.format);
-          if (typeof value.style === "string" && config.styles.includes(value.style))
-            setStyle(value.style);
-        }
-      }
-    } catch {
-      setStorageAvailable(false);
-    }
-    setHydrated(true);
-  }, [key, config]);
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      window.sessionStorage.setItem(key, JSON.stringify({ prompt, format, style }));
-    } catch {
-      setStorageAvailable(false);
-    }
-  }, [key, prompt, format, style, hydrated]);
-  const copyPrompt = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(output);
-      setNotice("Промпт скопирован.");
-    } catch {
-      setNotice("Копирование недоступно. Скачайте промпт или выделите текст.");
-    }
-  };
-  const invalidate = () => {
-    setOutput("");
-    setNotice("");
-  };
-  return (
-    <>
-      <Header icon={surface} eyebrow="Kosmora Studio / Редактор промпта" title={config.title}>
-        {config.hint}
-      </Header>
-      <div className={styles.split}>
-        <form
-          className={styles.panel}
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!prompt.trim()) return;
-            setOutput(
-              `Задача: создание ${config.label}\nФормат: ${format}\nСтиль: ${style}\n\n${prompt.trim()}`
-            );
-            setNotice(`Промпт для ${config.label} подготовлен локально.`);
-          }}
-        >
-          <label className={styles.field}>
-            Что вы хотите создать?
-            <textarea
-              aria-label={`Промпт для ${config.label}`}
-              placeholder={config.prompt}
-              value={prompt}
-              disabled={!hydrated}
-              maxLength={8000}
-              rows={8}
-              onChange={(e) => {
-                setPrompt(e.target.value);
-                invalidate();
-              }}
-            />
-          </label>
-          <button
-            type="button"
-            className={styles.textButton}
-            onClick={() => {
-              setPrompt(config.sample);
-              invalidate();
-            }}
-          >
-            Попробовать пример
-          </button>
-          <fieldset className={styles.fieldset}>
-            <legend>{surface === "sound" ? "Длительность" : "Соотношение сторон"}</legend>
-            <div className={styles.segments}>
-              {config.formats.map((v) => (
-                <button
-                  type="button"
-                  key={v}
-                  aria-pressed={format === v}
-                  onClick={() => {
-                    setFormat(v);
-                    invalidate();
-                  }}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <label className={styles.field}>
-            Стиль
-            <select
-              value={style}
-              onChange={(e) => {
-                setStyle(e.target.value);
-                invalidate();
-              }}
-            >
-              {config.styles.map((v) => (
-                <option key={v}>{v}</option>
-              ))}
-            </select>
-          </label>
-          <div className={styles.formFooter}>
-            <span>
-              {storageAvailable
-                ? "Черновик сохраняется в этой вкладке"
-                : "Хранение черновика недоступно"}
-            </span>
-            <button className={styles.primary} disabled={!hydrated || !prompt.trim()}>
-              Подготовить промпт
-              <Icon name="arrow" />
-            </button>
-          </div>
-        </form>
-        <aside className={styles.aside}>
-          <div className={styles.resultPanel}>
-            <div className={styles.sectionHeading}>
-              <h3>Готовый промпт</h3>
-              <span className={styles.badge}>Текст</span>
-            </div>
-            {output ? (
-              <>
-                <pre className={styles.output}>{output}</pre>
-                <div className={styles.actions}>
-                  <button className={styles.secondary} onClick={() => void copyPrompt()}>
-                    <Icon name="copy" />
-                    Копировать
-                  </button>
-                  <button
-                    className={styles.secondary}
-                    onClick={() => {
-                      const url = URL.createObjectURL(
-                        new Blob([output], { type: "text/plain;charset=utf-8" })
-                      );
-                      const link = document.createElement("a");
-                      link.href = url;
-                      link.download = `kosmora-${surface}-prompt.txt`;
-                      link.click();
-                      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-                      setNotice("Промпт подготовлен для скачивания.");
-                    }}
-                  >
-                    <Icon name="download" />
-                    Скачать .txt
-                  </button>
-                </div>
-              </>
-            ) : (
-              <Empty icon={surface} title="От идеи к точному запросу">
-                Добавьте описание и параметры. Здесь появится текст для копирования или скачивания.
-              </Empty>
-            )}
-            <p className={styles.notice} role="status">
-              {notice}
-            </p>
-          </div>
-          <div className={styles.note}>
-            <Icon name="shield" />
-            <strong>Редактор промпта</strong>
-            <p>
-              Подготовка промпта работает локально и не вызывает модель. Реальная генерация
-              изображений и голоса доступна отдельно ниже, только при разрешённой конфигурации.
-            </p>
-          </div>
-        </aside>
-      </div>
-      {surface === "images" && (
-        <MediaGenerationPanel prompt={`Формат: ${format}; стиль: ${style}. ${prompt}`} />
-      )}
-      {surface === "sound" && <SpeechStudio />}
-    </>
-  );
+function Media({ surface }: { surface: "images" | "video" | "sound" }) {
+  return <MediaWorkbench key={surface} surface={surface} />;
 }
 
 function Studio({ onNavigate }: Props) {
@@ -835,19 +610,19 @@ function Studio({ onNavigate }: Props) {
       status: "Локальный анализ"
     },
     images: {
-      description: "Соберите композицию, стиль и формат будущего изображения.",
-      action: "Открыть редактор",
-      status: "Редактор промпта"
+      description: "Создавайте изображения: описание, параметры, референсы и результат.",
+      action: "Открыть студию",
+      status: "Медиа-студия"
     },
     video: {
-      description: "Опишите сцену, движение и последовательность кадров.",
-      action: "Открыть редактор",
-      status: "Редактор промпта"
+      description: "Настройте сцену, формат, длительность и визуальные референсы.",
+      action: "Открыть студию",
+      status: "Медиа-студия"
     },
     sound: {
-      description: "Задайте звучание, темп и атмосферу.",
-      action: "Открыть редактор",
-      status: "Редактор промпта"
+      description: "Озвучивайте текст и сохраняйте записи.",
+      action: "Открыть студию",
+      status: "Медиа-студия"
     },
     research: {
       description: "Исследуйте тему с источниками и отчётом.",
@@ -911,7 +686,10 @@ function Studio({ onNavigate }: Props) {
         })}
       </div>
       <div className={styles.studioFooter}>
-        <p>Медиа-редакторы готовят и экспортируют текст. Генерация медиа пока не подключена.</p>
+        <p>
+          Доступность генерации зависит от подключённой модели. Параметры и результаты собраны
+          внутри каждого инструмента.
+        </p>
         <button type="button" onClick={() => onNavigate("features")}>
           Возможности Studio <Icon name="arrow" />
         </button>
@@ -1169,7 +947,7 @@ function Features({ onNavigate }: Props) {
   const current = [
     { id: "work", label: "Koswork", detail: "Проекты и ход работы", icon: "work" },
     { id: "code", label: "Coscode", detail: "Черновик задачи разработки", icon: "code" },
-    { id: "studio", label: "Studio", detail: "Редакторы промптов", icon: "studio" }
+    { id: "studio", label: "Studio", detail: "Файлы и медиа-инструменты", icon: "studio" }
   ] as const;
   return (
     <>

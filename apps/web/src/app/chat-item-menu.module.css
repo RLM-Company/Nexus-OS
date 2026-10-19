@@ -27,19 +27,22 @@
   height: 18px;
 }
 .panel {
-  position: absolute;
-  top: 31px;
-  right: 0;
-  width: 216px;
+  position: fixed;
+  width: 248px;
   padding: 6px;
   border: 1px solid var(--line);
-  background: var(--bg);
+  background: var(--bg, #fff);
+  color: var(--text, #171717);
   border-radius: 12px;
   box-shadow: var(--shadow-popover);
-  z-index: 70;
+  z-index: 250;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .panel button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   padding: 8px 10px;
   border: 0;
@@ -51,6 +54,41 @@
 }
 .panel button:hover {
   background: var(--surface);
+}
+.panel button svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+.panel button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.panel .destructive {
+  color: var(--text, #171717);
+}
+.panel hr {
+  border: 0;
+  border-top: 1px solid var(--line, #ddd);
+  margin: 6px 4px;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 3px 6px 9px;
+}
+.heading strong {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.heading button {
+  width: 28px;
+  padding: 5px;
 }
 .panel p {
   margin: 6px 8px;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./media-panel.module.css";
 
 export type MediaJob = {
@@ -31,12 +31,12 @@ const statusName: Record<MediaJob["status"], string> = {
 };
 const unavailableName = (reason: string | null) =>
   ({
-    REGISTRY_UNAVAILABLE: "Модель не разрешена в media registry",
-    STORAGE_UNAVAILABLE: "Не настроено постоянное хранение файлов",
-    CREDENTIAL_UNAVAILABLE: "Не подключены медиа-ключи",
-    PAID_EXECUTION_DISABLED: "Платные медиа-вызовы отключены",
+    REGISTRY_UNAVAILABLE: "Модель генерации пока не подключена",
+    STORAGE_UNAVAILABLE: "Хранилище результатов пока недоступно",
+    CREDENTIAL_UNAVAILABLE: "Провайдер генерации пока не подключён",
+    PAID_EXECUTION_DISABLED: "Генерация пока не включена",
     EMERGENCY_STOP: "Действует аварийная остановка",
-    BUDGET_UNAVAILABLE: "Не подключён общий учёт расходов. Платная функция заблокирована",
+    BUDGET_UNAVAILABLE: "Генерация временно недоступна",
     MEDIA_STOPPED: "Работа медиа временно остановлена"
   })[reason ?? ""] ?? "Возможность недоступна";
 
@@ -63,6 +63,8 @@ export function useMediaCapabilities() {
 }
 
 export function useMediaJob() {
+  const starting = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
   const [job, setJob] = useState<MediaJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -87,6 +89,9 @@ export function useMediaJob() {
     };
   }, [job]);
   const start = useCallback(async (kind: "image" | "speech", value: string) => {
+    if (starting.current) return;
+    starting.current = true;
+    setSubmitting(true);
     setError(null);
     try {
       const response = await fetch(`/api/v1/media/${kind === "image" ? "images" : "speech"}`, {
@@ -102,6 +107,9 @@ export function useMediaJob() {
       setJob((await response.json()) as MediaJob);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось запустить задачу.");
+    } finally {
+      starting.current = false;
+      setSubmitting(false);
     }
   }, []);
   const cancel = useCallback(async () => {
@@ -116,12 +124,18 @@ export function useMediaJob() {
       setError("Не удалось отменить задачу.");
     }
   }, [job]);
-  return { job, setJob, error, setError, start, cancel };
+  return { job, setJob, error, setError, start, cancel, submitting };
 }
 
-export function MediaGenerationPanel({ prompt }: { prompt: string }) {
+export function MediaGenerationPanel({
+  prompt,
+  blockedReason
+}: {
+  prompt: string;
+  blockedReason?: string | undefined;
+}) {
   const caps = useMediaCapabilities();
-  const { job, setJob, error, start, cancel } = useMediaJob();
+  const { job, setJob, error, start, cancel, submitting } = useMediaJob();
   const [consent, setConsent] = useState(false);
   const [history, setHistory] = useState<MediaJob[]>([]);
   const [revision, setRevision] = useState(0);
@@ -150,24 +164,22 @@ export function MediaGenerationPanel({ prompt }: { prompt: string }) {
   };
   return (
     <section className={styles.panel} aria-label="Генерация изображений">
-      <h3>Создание настоящего изображения</h3>
-      <p>
-        Серверный результат — PNG, сохранённый в приватной библиотеке артефактов. Текст промпта не
-        считается изображением.
-      </p>
+      <h3>Результат</h3>
+      <p>Созданное изображение появится здесь. Его можно скачать и открыть из истории.</p>
       <p role="status" className={styles.status}>
         {ready
-          ? `Разрешён маршрут ${caps?.image_generation.model}; доступ провайдера ещё не проверен`
+          ? `Модель: ${caps?.image_generation.model}`
           : unavailableName(caps?.image_generation?.reason ?? null)}
       </p>
-      {ready && (
+      {blockedReason && <p role="status">{blockedReason}</p>}
+      {ready && !blockedReason && (
         <label className={styles.check}>
           <input
             type="checkbox"
             checked={consent}
             onChange={(event) => setConsent(event.target.checked)}
           />
-          Разрешаю этот платный запрос. Цена заранее не подтверждена, автоматических повторов нет.
+          Подтверждаю генерацию с расходом баланса.
         </label>
       )}
       {prompt.trim().length > 2000 && (
@@ -180,6 +192,8 @@ export function MediaGenerationPanel({ prompt }: { prompt: string }) {
           type="button"
           disabled={
             !ready ||
+            Boolean(blockedReason) ||
+            submitting ||
             !consent ||
             !prompt.trim() ||
             prompt.trim().length > 2000 ||
@@ -190,7 +204,7 @@ export function MediaGenerationPanel({ prompt }: { prompt: string }) {
             setConsent(false);
           }}
         >
-          Сгенерировать изображение
+          {submitting ? "Запускаем…" : "Сгенерировать изображение"}
         </button>
         {job && ["queued", "running"].includes(job.status) && (
           <button type="button" onClick={() => void cancel()}>

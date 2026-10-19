@@ -1,36 +1,27 @@
 import { expect, test } from "@playwright/test";
 
-test("keeps every media prompt local until a model is connected", async ({ page }) => {
+test("keeps media configuration local until explicit generation is available", async ({ page }) => {
   const writes: string[] = [];
   page.on("request", (request) => {
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method())) {
-      writes.push(request.url());
-    }
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method()))
+      if (!request.url().endsWith("/chat-navigation/import-pins")) writes.push(request.url());
   });
-
-  await page.goto("/");
-  const sidebar = page.locator(".sidebar-tools");
-  await sidebar.getByRole("button", { name: /Kosmora Studio/ }).click();
-  const media = [
-    ["Изображения", "изображения"],
-    ["Видео", "видео"],
-    ["Sound", "аудио"]
-  ] as const;
-
-  for (const [surface, label] of media) {
-    await sidebar.getByRole("button", { name: surface, exact: true }).click();
-    await page.getByLabel(`Промпт для ${label}`).fill(`Безопасный локальный prompt: ${label}`);
-    await page.getByRole("button", { name: "Подготовить промпт" }).click();
-    await expect(
-      page.getByRole("status").filter({ hasText: "подготовлен локально" })
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Скачать .txt", exact: true })).toBeEnabled();
-    if (surface === "Изображения") {
-      await expect(
-        page.getByRole("button", { name: "Сгенерировать изображение", exact: true })
-      ).toBeDisabled();
-    }
-  }
-
+  await page.goto("/?surface=images");
+  await page.getByLabel("Описание изображения", { exact: true }).fill("Лунная станция");
+  await page.getByRole("button", { name: "16:9", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Сгенерировать изображение", exact: true })
+  ).toBeDisabled();
+  await page.goto("/?surface=video");
+  await page.getByLabel("Описание сцены", { exact: true }).fill("Камера приближается к станции");
+  await page.getByRole("combobox", { name: "Длительность", exact: true }).selectOption("10");
+  await expect(
+    page.getByRole("button", { name: "Сгенерировать видео", exact: true })
+  ).toBeDisabled();
+  await page.goto("/?surface=sound");
+  await expect(
+    page.getByRole("heading", { name: "Озвучивание текста", exact: true })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Подготовить промпт" })).toHaveCount(0);
   expect(writes).toEqual([]);
 });

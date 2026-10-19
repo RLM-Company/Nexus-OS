@@ -34,9 +34,36 @@ export type IconName =
   | "copy"
   | "close"
   | "more"
-  | "check";
+  | "check"
+  | "pin"
+  | "edit"
+  | "link"
+  | "archive"
+  | "trash";
 
 const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
+  pin: <path d="m9 3 10 10-3 1-3 4-3-3-6 6m6-6-3-3 4-3 1-3Z" />,
+  edit: (
+    <>
+      <path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 14v6Z" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="m10 13 4-4M8 15l-2 2a3 3 0 0 0 4 4l4-4a3 3 0 0 0 0-4M16 9l2-2a3 3 0 0 0-4-4l-4 4a3 3 0 0 0 0 4" />
+    </>
+  ),
+  archive: (
+    <>
+      <rect x="3" y="3" width="18" height="4" rx="1" />
+      <path d="M5 7v13h14V7M9 11h6" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7" />
+    </>
+  ),
   research: (
     <>
       <circle cx="10.5" cy="10.5" r="6.5" />
