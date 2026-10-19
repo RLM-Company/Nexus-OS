@@ -1,0 +1,58 @@
+.search {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 8px 10px;
+  margin: 0 0 10px;
+}
+.search summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 550;
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.fields label {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+}
+.controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}
+.search .controls button {
+  font-size: 11px;
+  min-height: 30px;
+  padding: 4px 8px;
+}
+.controls span,
+.search p {
+  font-size: 11px;
+  color: var(--muted);
+}
+.search .case {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  font-size: 11px;
+}
+.search .case input {
+  width: 14px;
+  min-width: 14px;
+  padding: 0;
+  accent-color: var(--text);
+}
+@container (max-width:440px) {
+  .fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

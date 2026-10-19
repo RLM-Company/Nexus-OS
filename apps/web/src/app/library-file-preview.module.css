@@ -70,6 +70,12 @@
   background: var(--panel);
   font: 13px/1.7 var(--font-mono, monospace);
 }
+.dialog mark {
+  background: var(--line);
+  color: inherit;
+  border-bottom: 1px solid var(--text);
+  padding: 1px 0;
+}
 .dialog footer {
   display: flex;
   gap: 12px;

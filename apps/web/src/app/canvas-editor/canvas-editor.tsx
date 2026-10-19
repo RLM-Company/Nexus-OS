@@ -18,6 +18,7 @@ import { CANVAS_FILE_ACCEPT } from "./canvas-file-import";
 import { readCanvasFile } from "./canvas-file";
 import { createDocxReport, createPdfReport, downloadReport } from "../studio-files-report";
 import { MarkdownToolbar } from "./markdown-toolbar";
+import { CanvasSearch } from "./canvas-search";
 import { ShiningText, SystemMessage } from "../ui/kosmora-controls";
 
 type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
@@ -883,6 +884,14 @@ function ScopedCanvasEditor({
           <label className={styles.textLabel} htmlFor={`${editorId}-body`}>
             Содержимое
           </label>
+          <CanvasSearch
+            key={selected || initialDraft?.storageId || "new"}
+            editor={textEditor}
+            value={draft.content}
+            disabled={working || loading}
+            onChange={(content) => setDraft((d) => ({ ...d, content }))}
+            onError={setError}
+          />
           {draft.format === "markdown" && (
             <MarkdownToolbar
               editor={textEditor}

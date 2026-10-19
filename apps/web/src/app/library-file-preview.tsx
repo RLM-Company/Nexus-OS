@@ -1,26 +1,38 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { searchText } from "./canvas-editor/text-search";
 import {
   extractLibraryPages,
   type IndexedPage,
   type LibraryFileView
 } from "./studio-files-library-client";
 import styles from "./library-file-preview.module.css";
+import {
+  sourceLineRange,
+  previewPart,
+  PREVIEW_PART_SIZE,
+  type SourceLocation
+} from "./library-source-location";
 export function LibraryFilePreview({
   base,
   file,
-  disabled
+  disabled,
+  location
 }: {
   base: string;
   file: LibraryFileView;
   disabled: boolean;
+  location?: SourceLocation;
 }) {
   const modal = useRef<HTMLDialogElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const pending = useRef<AbortController | null>(null);
+  const marker = useRef<HTMLElement>(null);
+  const reader = useRef<HTMLPreElement>(null);
   const [visible, setVisible] = useState(false);
   const [pages, setPages] = useState<IndexedPage[]>([]);
   const [index, setIndex] = useState(0);
+  const [part, setPart] = useState(0);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -60,6 +72,13 @@ export function LibraryFilePreview({
       );
       controller.signal.throwIfAborted();
       setPages(extracted);
+      if (location)
+        setIndex(
+          Math.max(
+            0,
+            extracted.findIndex((page) => page.page === location.page)
+          )
+        );
       setStatus("");
     } catch (cause) {
       if (!controller.signal.aborted) {
@@ -73,6 +92,35 @@ export function LibraryFilePreview({
     .map((page, index) => ({ ...page, index }))
     .filter((page) => !match || page.text.toLocaleLowerCase("ru").includes(match));
   const selected = available.find((page) => page.index === index) ?? available[0];
+  const candidateRange =
+    location && selected?.page === location.page
+      ? sourceLineRange(selected.text, location.line_start, location.line_end)
+      : null;
+  const range =
+    candidateRange &&
+    (!location?.content ||
+      selected!.text
+        .slice(candidateRange.start, candidateRange.end)
+        .replace(/\r\n?/g, "\n")
+        .includes(location.content.replace(/\r\n?/g, "\n")))
+      ? candidateRange
+      : null;
+  const partView = previewPart(selected?.text ?? "", part);
+  const found = useMemo(
+    () => (match ? searchText(selected?.text ?? "", query.trim()).matches[0] : null),
+    [selected?.text, match, query]
+  );
+  const focusRange = match ? found : range;
+  const markStart = focusRange ? Math.max(partView.start, focusRange.start) : 0;
+  const markEnd = focusRange ? Math.min(partView.end, focusRange.end) : 0;
+  useEffect(() => {
+    const offset = focusRange?.start ?? 0;
+    setPart(Math.floor(Math.max(0, offset) / PREVIEW_PART_SIZE));
+  }, [selected?.index, match, pages, focusRange?.start]);
+  useEffect(() => {
+    if (visible && focusRange && marker.current) marker.current.scrollIntoView({ block: "center" });
+    else if (reader.current) reader.current.scrollTop = 0;
+  }, [visible, selected?.index, pages, focusRange?.start, focusRange?.end, partView.index, match]);
   return (
     <>
       <button
@@ -80,9 +128,13 @@ export function LibraryFilePreview({
         type="button"
         disabled={disabled}
         onClick={() => void open()}
-        aria-label={`Предпросмотр ${file.name}`}
+        aria-label={
+          location
+            ? `Открыть источник ${location.citation ?? file.name}`
+            : `Предпросмотр ${file.name}`
+        }
       >
-        Просмотр
+        {location ? "Открыть источник" : "Просмотр"}
       </button>
       <dialog
         ref={modal}
@@ -140,10 +192,50 @@ export function LibraryFilePreview({
                   <span>
                     {available.length} из {pages.length}
                   </span>
+                  {partView.count > 1 && (
+                    <select
+                      aria-label="Часть текста оригинала"
+                      value={partView.index}
+                      onChange={(event) => setPart(Number(event.target.value))}
+                    >
+                      {Array.from({ length: partView.count }, (_, i) => (
+                        <option key={i} value={i}>
+                          Часть {i + 1} из {partView.count}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-                <pre tabIndex={0} aria-label="Текст оригинала">
-                  {selected?.text ?? "Совпадений не найдено."}
+                <pre ref={reader} tabIndex={0} aria-label="Текст оригинала">
+                  {selected ? (
+                    focusRange && markEnd > markStart ? (
+                      <>
+                        {selected.text.slice(partView.start, markStart)}
+                        <mark
+                          ref={marker}
+                          aria-label={match ? "Найденный текст" : "Цитируемые строки"}
+                        >
+                          {selected.text.slice(markStart, markEnd)}
+                        </mark>
+                        {selected.text.slice(markEnd, partView.end)}
+                      </>
+                    ) : (
+                      selected.text.slice(partView.start, partView.end)
+                    )
+                  ) : (
+                    "Совпадений не найдено."
+                  )}
                 </pre>
+                {partView.count > 1 && (
+                  <p>Предпросмотр показан частями. Полный текст сохраняется в оригинале.</p>
+                )}
+                {location && (
+                  <p>
+                    {range
+                      ? `${location.page === null ? "Текст" : `Страница ${location.page}`} · строки ${location.line_start}–${location.line_end}`
+                      : "Указанные строки не найдены в текущем извлечённом тексте. Цитата сохранена в отчёте."}
+                  </p>
+                )}
               </>
             )}
             <footer>
