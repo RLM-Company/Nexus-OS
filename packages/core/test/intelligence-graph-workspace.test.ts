@@ -1042,6 +1042,45 @@ describe("manual conflict lifecycle", () => {
 });
 
 describe("conflict-aware revision readings", () => {
+  it("finds exact source-body text, follows its candidate relation and includes the search version in reports", () => {
+    const { service } = suite();
+    let graph = service.create("owner-a", "project-a", "Поиск по источникам");
+    const edit = (operation: IntelligenceGraphEdit) =>
+      (graph = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, operation));
+    edit({
+      kind: "add_node",
+      node_kind: "Source",
+      label: "Приложение 7",
+      detail: "Квантовый протокол\r\nТочная строка"
+    });
+    edit({ kind: "add_node", node_kind: "Claim", label: "Нагрузка", detail: "Нужно измерение" });
+    const from = { id: graph.nodes[0]!.node_id, version: 1 },
+      to = { id: graph.nodes[1]!.node_id, version: 1 };
+    edit({ kind: "add_edge", relation: "SUPPORTS", from, to });
+    edit({
+      kind: "cite_edge",
+      edge_id: graph.edges[0]!.edge_id,
+      source: from,
+      location: "строка 1",
+      excerpt: "Квантовый протокол"
+    });
+    const reading = service.explain("owner-a", "project-a", graph.graph_id, "КВАНТОВЫЙ");
+    expect(reading.matched_nodes.map((n) => n.label)).toContain("Приложение 7");
+    expect(reading.relationships[0]).toMatchObject({
+      quote: "Квантовый протокол",
+      verified: false
+    });
+    expect(reading.matched_nodes.find((n) => n.id === from.id)!.detail).toBe(
+      "Квантовый протокол\r\nТочная строка"
+    );
+    expect(reading.budget).toMatchObject({ matched_candidates: 1, unreturned_candidates: 0 });
+    expect(reading.search_version).toBe("title-and-saved-text-v2");
+    expect(
+      service.report("owner-a", "project-a", graph.graph_id, "КВАНТОВЫЙ", graph.revision).report
+        .reading
+    ).toEqual(reading);
+    expect(reading.readiness).toBe("abstain");
+  });
   const packet = () => ({
     format: "kosmora.intelligence-graph.v1",
     title: "Точное чтение",

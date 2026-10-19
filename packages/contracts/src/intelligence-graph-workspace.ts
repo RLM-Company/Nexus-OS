@@ -90,6 +90,7 @@ export interface IntelligenceGraphRevisionInfo {
 
 /** A bounded deterministic reading of one saved revision; organizational review is not proof. */
 export interface IntelligenceGraphWorkspaceExplanation {
+  search_version: string;
   graph_id: string;
   graph_title: string;
   revision: number;
@@ -162,6 +163,8 @@ export interface IntelligenceGraphWorkspaceExplanation {
     returned_edges: number;
     estimated_context_tokens: number;
     truncated: boolean;
+    matched_candidates?: number;
+    unreturned_candidates?: number;
   };
   truncated: boolean;
   explanation: string;

@@ -4,6 +4,7 @@ import {
   type IntelligenceGraphNode,
   type IntelligenceGraphVersionRef
 } from "@cosmora/contracts";
+import { compileGraphSearch, graphRecordScore } from "./intelligence-graph-search.js";
 
 export type IntelligenceGraphQueryMode = "baseline" | "local" | "multi_hop" | "temporal";
 
@@ -60,6 +61,9 @@ export interface IntelligenceGraphEvidencePacket {
     returned_edges: number;
     estimated_context_tokens: number;
     truncated: boolean;
+    /** Lexical candidates are counted after owner/version/verification filters. */
+    matched_candidates?: number;
+    unreturned_candidates?: number;
   };
 }
 
@@ -88,23 +92,6 @@ const edgeRef = (edge: IntelligenceGraphEdge): IntelligenceGraphVersionRef => ({
   id: edge.edge_id,
   version: edge.edge_version
 });
-
-const tokenize = (value: string): string[] => [
-  ...new Set(value.toLocaleLowerCase().match(/[\p{L}\p{N}_-]+/gu) ?? [])
-];
-
-const lexicalScore = (query: string, record: IntelligenceGraphSearchRecord): number => {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const normalizedText = record.text.trim().toLocaleLowerCase();
-  if (!normalizedQuery || !normalizedText) return 0;
-
-  const queryTokens = tokenize(normalizedQuery);
-  if (queryTokens.length === 0) return 0;
-  const textTokens = new Set(tokenize(normalizedText));
-  const overlap = queryTokens.filter((token) => textTokens.has(token)).length;
-  const exactBonus = normalizedText.includes(normalizedQuery) ? queryTokens.length * 2 : 0;
-  return overlap + exactBonus;
-};
 
 const safeInteger = (
   value: number | undefined,
@@ -275,12 +262,13 @@ export class IntelligenceGraphIndex {
     if (asOf !== null) parseTime(asOf, "as_of");
 
     const budget = resolveBudget(query.budget);
+    const lexicalQuery = compileGraphSearch(query.text);
     const candidates = [...this.#records.values()]
       .map((record) => {
         const node = this.#nodes.get(versionKey(record.node));
         if (!node || !nodeVisibleAt(node, asOf)) return null;
         if (query.verified_only && !verifiedEnough(node, asOf)) return null;
-        return { record, node, score: lexicalScore(query.text, record) };
+        return { record, node, score: graphRecordScore(lexicalQuery, record) };
       })
       .filter(
         (
@@ -382,7 +370,7 @@ export class IntelligenceGraphIndex {
 
           const nextPath = [...current.path, edgeRef(edge)];
           const record = this.#records.get(nextKey);
-          const score = record ? lexicalScore(query.text, record) : 0;
+          const score = record ? graphRecordScore(lexicalQuery, record) : 0;
           if (!addNode(nextNode, score, current.seed, nextPath)) continue;
 
           if (!selectedEdges.has(versionKey(edgeRef(edge)))) {
@@ -413,6 +401,10 @@ export class IntelligenceGraphIndex {
     }
 
     const nodes = [...selectedNodes.values()];
+    const unreturnedCandidates = candidates.filter(
+      (c) => !selectedNodes.has(versionKey(c.record.node))
+    ).length;
+    truncated ||= unreturnedCandidates > 0;
     const unresolvedNodeIds = nodes
       .filter(
         ({ node }) =>
@@ -441,6 +433,8 @@ export class IntelligenceGraphIndex {
         visited_nodes: nodes.length,
         returned_edges: selectedEdges.size,
         estimated_context_tokens: estimatedContextTokens,
+        matched_candidates: candidates.length,
+        unreturned_candidates: unreturnedCandidates,
         truncated
       }
     };

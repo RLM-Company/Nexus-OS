@@ -142,6 +142,12 @@ export function GraphExplanationView({
           {e.budget.returned_edges} / {e.budget.max_edges}; глубина до {e.budget.max_depth}; оценка
           контекста: {e.budget.estimated_context_tokens} / {e.budget.max_context_tokens} токенов.
         </p>
+        {e.budget.matched_candidates !== undefined && (
+          <p>
+            Совпадений по названиям и тексту: {e.budget.matched_candidates}. Осталось вне выборки:{" "}
+            {e.budget.unreturned_candidates ?? 0}.
+          </p>
+        )}
         <p>
           Лимит разбора: {e.conflict_review.max_conflicts} конфликтов /{" "}
           {e.conflict_review.max_nodes} уникальных версий узлов.
