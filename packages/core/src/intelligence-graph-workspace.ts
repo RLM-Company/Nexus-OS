@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   validateIntelligenceGraphSnapshot,
   validateIntelligenceGraphWorkspaceConflicts,
+  validateIntelligenceGraphWorkspaceVersionState,
   parseIntelligenceGraphPackage,
   INTELLIGENCE_GRAPH_PACKAGE_FORMAT,
   type IntelligenceGraphPortablePackage,
@@ -131,7 +132,8 @@ const ensureLimits = (graph: IntelligenceGraphWorkspace): void => {
       nodes: graph.nodes,
       edges: graph.edges
     }),
-    ...validateIntelligenceGraphWorkspaceConflicts(graph)
+    ...validateIntelligenceGraphWorkspaceConflicts(graph),
+    ...validateIntelligenceGraphWorkspaceVersionState(graph)
   ];
   if (issues.length > 0) return invalid(`Invalid graph: ${issues[0]}`);
   const ids = new Set(
@@ -167,6 +169,8 @@ const activeNode = (
   if (!node || !current(node.verification_status)) return invalid("Referenced node is unavailable");
   return node;
 };
+const nextVersion = (graph: IntelligenceGraphWorkspace, version: number): number =>
+  Math.max(version + 1, graph.version_floor ?? 1);
 
 export class IntelligenceGraphWorkspaceService {
   constructor(
@@ -185,10 +189,12 @@ export class IntelligenceGraphWorkspaceService {
       created_at: now,
       updated_at: now,
       restored_from_revision: null,
+      version_floor: 1,
       nodes: [],
       edges: [],
       records: []
     };
+    ensureLimits(graph);
     return this.repository.create(graph) ?? this.notFound();
   }
 
@@ -285,6 +291,9 @@ export class IntelligenceGraphWorkspaceService {
     const previous = this.get(ownerId, projectId, graphId);
     if (previous.revision !== expectedRevision) return this.conflict();
     const graph = structuredClone(previous);
+    // Older draft snapshots had no allocator state, including after a restore plus rename.
+    // Their prior versions are bounded by the workspace revision, so reserve a fresh range.
+    graph.version_floor ??= previous.revision + 1;
     const at = this.clock();
     if (!Number.isFinite(Date.parse(at)) || Date.parse(at) < Date.parse(previous.updated_at)) {
       return invalid("Edit time precedes the current graph revision");
@@ -409,7 +418,7 @@ export class IntelligenceGraphWorkspaceService {
         old.valid_to = at;
         const next: IntelligenceGraphNode = {
           ...structuredClone(old),
-          node_version: old.node_version + 1,
+          node_version: nextVersion(graph, old.node_version),
           created_at: at,
           observed_at: at,
           valid_from: at,
@@ -417,7 +426,7 @@ export class IntelligenceGraphWorkspaceService {
           verification_status: removed ? "deleted" : "discovered",
           source_ref: {
             source_id: old.node_id,
-            source_version: old.node_version + 1,
+            source_version: nextVersion(graph, old.node_version),
             location: "owner_input"
           },
           provenance_kind: "owner_assertion",
@@ -452,7 +461,7 @@ export class IntelligenceGraphWorkspaceService {
               const replacement = this.link(
                 graph,
                 edge.edge_id,
-                edge.edge_version + 1,
+                nextVersion(graph, edge.edge_version),
                 edge.type as IntelligenceGraphLinkType,
                 edge.from,
                 edge.to,
@@ -476,7 +485,7 @@ export class IntelligenceGraphWorkspaceService {
             const replacement = this.link(
               graph,
               edge.edge_id,
-              edge.edge_version + 1,
+              nextVersion(graph, edge.edge_version),
               edge.type as IntelligenceGraphLinkType,
               replace(edge.from),
               replace(edge.to),
@@ -515,7 +524,7 @@ export class IntelligenceGraphWorkspaceService {
         const next = this.link(
           graph,
           old.edge_id,
-          old.edge_version + 1,
+          nextVersion(graph, old.edge_version),
           old.type as IntelligenceGraphLinkType,
           operation.from,
           operation.to,
@@ -535,7 +544,7 @@ export class IntelligenceGraphWorkspaceService {
         const next = this.link(
           graph,
           old.edge_id,
-          old.edge_version + 1,
+          nextVersion(graph, old.edge_version),
           old.type as IntelligenceGraphLinkType,
           old.from,
           old.to,
@@ -707,6 +716,7 @@ export class IntelligenceGraphWorkspaceService {
       created_at: now,
       updated_at: now,
       restored_from_revision: null,
+      version_floor: 1,
       nodes: [],
       edges: [],
       records: []
@@ -835,6 +845,9 @@ export class IntelligenceGraphWorkspaceService {
     integer(fromRevision, previous.revision, "fromRevision");
     const historical = this.repository.getRevision(ownerId, projectId, graphId, fromRevision);
     if (!historical) return this.notFound();
+    const at = this.clock();
+    if (!Number.isFinite(Date.parse(at)) || Date.parse(at) < Date.parse(previous.updated_at))
+      return invalid("Restore time precedes the current graph revision");
     const restored: IntelligenceGraphWorkspace = {
       ...structuredClone(historical),
       graph_id: previous.graph_id,
@@ -842,8 +855,9 @@ export class IntelligenceGraphWorkspaceService {
       project_id: previous.project_id,
       created_at: previous.created_at,
       revision: previous.revision + 1,
-      updated_at: this.clock(),
-      restored_from_revision: fromRevision
+      updated_at: at,
+      restored_from_revision: fromRevision,
+      version_floor: previous.revision + 1
     };
     ensureLimits(restored);
     return (

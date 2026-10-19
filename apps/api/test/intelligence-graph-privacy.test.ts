@@ -360,34 +360,37 @@ it("persists every conflict review across restart, exports all versions and dele
   }
 });
 
-it.each(["foreign_owner", "foreign_position", "duplicate_id", "malformed", "invalid_time"])(
-  "rejects corrupt historical conflicts in complete privacy export: %s",
-  async (kind) => {
-    const f = fixture();
-    try {
-      const content = {
-        ...packet,
-        nodes: [...packet.nodes, { key: "b", kind: "Claim", label: "B", detail: "B" }],
-        conflicts: [{ subject: "a", positions: ["a", "b"], resolution: null }]
-      };
-      const preview = f.service.previewImport(content);
-      const graph = f.service.importPackage("owner-a", "p-a", content, preview.sha256);
-      const conflict = graph.conflicts![0]!;
-      if (kind === "foreign_owner") conflict.owner_id = "owner-b";
-      if (kind === "foreign_position") conflict.position_refs[0] = { id: "foreign", version: 1 };
-      if (kind === "duplicate_id") graph.conflicts!.push(structuredClone(conflict));
-      if (kind === "invalid_time") conflict.created_at = "2026-99-99T00:00:00Z";
-      const corrupt = kind === "malformed" ? { ...graph, conflicts: [null] } : graph;
-      f.db
-        .prepare(
-          "UPDATE intelligence_graph_workspace_revisions SET snapshot_json=? WHERE graph_id=?"
-        )
-        .run(JSON.stringify(corrupt), graph.graph_id);
-      f.fence("quiescing", 21);
-      await f.adapter.quiesce("owner-a", 21);
-      await expect(f.adapter.export("owner-a")).rejects.toThrow("INCONSISTENT");
-    } finally {
-      close(f);
-    }
+it.each([
+  "foreign_owner",
+  "foreign_position",
+  "duplicate_id",
+  "malformed",
+  "invalid_time",
+  "invalid_floor"
+])("rejects corrupt historical conflicts in complete privacy export: %s", async (kind) => {
+  const f = fixture();
+  try {
+    const content = {
+      ...packet,
+      nodes: [...packet.nodes, { key: "b", kind: "Claim", label: "B", detail: "B" }],
+      conflicts: [{ subject: "a", positions: ["a", "b"], resolution: null }]
+    };
+    const preview = f.service.previewImport(content);
+    const graph = f.service.importPackage("owner-a", "p-a", content, preview.sha256);
+    const conflict = graph.conflicts![0]!;
+    if (kind === "foreign_owner") conflict.owner_id = "owner-b";
+    if (kind === "foreign_position") conflict.position_refs[0] = { id: "foreign", version: 1 };
+    if (kind === "duplicate_id") graph.conflicts!.push(structuredClone(conflict));
+    if (kind === "invalid_time") conflict.created_at = "2026-99-99T00:00:00Z";
+    if (kind === "invalid_floor") graph.version_floor = 1000;
+    const corrupt = kind === "malformed" ? { ...graph, conflicts: [null] } : graph;
+    f.db
+      .prepare("UPDATE intelligence_graph_workspace_revisions SET snapshot_json=? WHERE graph_id=?")
+      .run(JSON.stringify(corrupt), graph.graph_id);
+    f.fence("quiescing", 21);
+    await f.adapter.quiesce("owner-a", 21);
+    await expect(f.adapter.export("owner-a")).rejects.toThrow("INCONSISTENT");
+  } finally {
+    close(f);
   }
-);
+});

@@ -1,7 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
   validateIntelligenceGraphSnapshot,
-  validateIntelligenceGraphWorkspaceConflicts
+  validateIntelligenceGraphWorkspaceConflicts,
+  validateIntelligenceGraphWorkspaceVersionState
 } from "@cosmora/contracts";
 import type {
   IntelligenceGraphRevisionInfo,
@@ -171,7 +172,8 @@ export class SqliteIntelligenceGraphWorkspaceRepository implements IntelligenceG
             nodes: workspace.nodes,
             edges: workspace.edges
           }).length ||
-          validateIntelligenceGraphWorkspaceConflicts(workspace).length
+          validateIntelligenceGraphWorkspaceConflicts(workspace).length ||
+          validateIntelligenceGraphWorkspaceVersionState(workspace).length
         )
           throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_INCONSISTENT");
         append(revisions, {

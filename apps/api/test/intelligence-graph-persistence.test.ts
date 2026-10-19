@@ -73,7 +73,34 @@ describe("graph history on durable SQLite", () => {
       expect(restored.nodes).toEqual(first.nodes);
       expect(restored.edges).toEqual(first.edges);
       expect(reopened.revision("owner-a", "project-a", first.graph_id, 3)).toEqual(last);
-      expect(() => reopened.get("owner-b", "project-a", first.graph_id)).toThrow("not found");
+      expect(restored.version_floor).toBe(4);
+      const renamed = reopened.edit("owner-a", "project-a", first.graph_id, 4, {
+        kind: "rename",
+        title: "After restore"
+      });
+      db.close();
+      db = new DatabaseSync(filename);
+      db.exec("PRAGMA foreign_keys=ON");
+      const afterRestart = new IntelligenceGraphWorkspaceService(
+        new SqliteIntelligenceGraphWorkspaceRepository(db)
+      );
+      expect(afterRestart.get("owner-a", "project-a", first.graph_id)).toEqual(renamed);
+      const reedited = afterRestart.edit("owner-a", "project-a", first.graph_id, 5, {
+        kind: "revise_node",
+        node: a,
+        label: "New branch",
+        detail: "Other content"
+      });
+      expect(
+        reedited.nodes.find((n) => n.node_id === a.id && n.verification_status === "discovered")!
+          .node_version
+      ).toBeGreaterThan(3);
+      expect(
+        reedited.edges.find((e) => e.verification_status === "discovered")!.edge_version
+      ).toBeGreaterThan(3);
+      expect(afterRestart.revision("owner-a", "project-a", first.graph_id, 2)).toEqual(changed);
+
+      expect(() => afterRestart.get("owner-b", "project-a", first.graph_id)).toThrow("not found");
     } finally {
       db.close();
       rmSync(dir, { recursive: true, force: true });

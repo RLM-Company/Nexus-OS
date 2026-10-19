@@ -1271,3 +1271,150 @@ describe("conflict-aware revision readings", () => {
     }
   });
 });
+
+it.each([false, true])(
+  "never reuses published node/edge version identities after restore plus rename (legacy=%s)",
+  (legacy) => {
+    const { service, repository } = suite();
+    let graph = service.create("owner-a", "project-a", "Lineage");
+    const edit = (operation: IntelligenceGraphEdit) =>
+      (graph = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, operation));
+    edit({ kind: "add_node", node_kind: "Source", label: "A", detail: "Exact A" });
+    edit({ kind: "add_node", node_kind: "Claim", label: "B", detail: "Exact B" });
+    const a = { id: graph.nodes[0]!.node_id, version: 1 },
+      b = { id: graph.nodes[1]!.node_id, version: 1 };
+    edit({ kind: "add_edge", relation: "SUPPORTS", from: a, to: b });
+    const initialRevision = graph.revision,
+      edgeId = graph.edges[0]!.edge_id;
+    const branch = edit({ kind: "revise_node", node: a, label: "Branch A", detail: "Branch text" });
+    graph = service.restore(
+      "owner-a",
+      "project-a",
+      graph.graph_id,
+      graph.revision,
+      initialRevision
+    );
+    edit({ kind: "rename", title: "Intervening rename" });
+    if (legacy) delete repository.current.get(`owner-a|project-a|${graph.graph_id}`)!.version_floor;
+    const changed = edit({ kind: "revise_node", node: a, label: "Other A", detail: "Other text" });
+    const newNode = changed.nodes.find(
+      (n) => n.node_id === a.id && n.verification_status === "discovered"
+    )!;
+    const priorNode = branch.nodes.find(
+      (n) => n.node_id === a.id && n.verification_status === "discovered"
+    )!;
+    expect(newNode.node_version).toBeGreaterThan(priorNode.node_version);
+    const nextEdge = changed.edges.find(
+      (e) => e.edge_id === edgeId && e.verification_status === "discovered"
+    )!;
+    const priorEdge = branch.edges.find(
+      (e) => e.edge_id === edgeId && e.verification_status === "discovered"
+    )!;
+    expect(nextEdge.edge_version).toBeGreaterThan(priorEdge.edge_version);
+    expect(nextEdge.from).toEqual({ id: a.id, version: newNode.node_version });
+    expect(service.revision("owner-a", "project-a", graph.graph_id, branch.revision)).toEqual(
+      branch
+    );
+  }
+);
+
+it("retains a fresh allocation floor through multiple restores and every relation evidence mutation", () => {
+  const { service } = suite();
+  const input = {
+    format: "kosmora.intelligence-graph.v1",
+    title: "Lineage evidence",
+    nodes: [
+      { key: "s", kind: "Source", label: "Source", detail: "Exact quote" },
+      { key: "a", kind: "Claim", label: "A", detail: "A detail" },
+      { key: "b", kind: "Claim", label: "B", detail: "B detail" }
+    ],
+    edges: [
+      {
+        relation: "SUPPORTS",
+        from: "a",
+        to: "b",
+        evidence: { source: "s", location: "line 1", excerpt: "Exact quote" }
+      }
+    ]
+  };
+  const preview = service.previewImport(input);
+  let graph = service.importPackage("owner-a", "project-a", input, preview.sha256);
+  const initialHash = service.exportPackage("owner-a", "project-a", graph.graph_id).sha256;
+  const source = { id: graph.nodes[0]!.node_id, version: 1 },
+    a = { id: graph.nodes[1]!.node_id, version: 1 },
+    b = { id: graph.nodes[2]!.node_id, version: 1 },
+    edgeId = graph.edges[0]!.edge_id;
+  const edit = (operation: IntelligenceGraphEdit) =>
+    (graph = service.edit("owner-a", "project-a", graph.graph_id, graph.revision, operation));
+  edit({ kind: "clear_edge_evidence", edge_id: edgeId });
+  edit({
+    kind: "cite_edge",
+    edge_id: edgeId,
+    source,
+    location: "other line",
+    excerpt: "Exact quote"
+  });
+  graph = service.restore("owner-a", "project-a", graph.graph_id, graph.revision, 1);
+  const floor = graph.version_floor!;
+  edit({ kind: "remove_node", node: source });
+  expect(graph.nodes.at(-1)!.node_version).toBeGreaterThanOrEqual(floor);
+  expect(graph.edges.at(-1)!.edge_version).toBeGreaterThanOrEqual(floor);
+  expect(graph.edges.at(-1)!.evidence_excerpt).toBeUndefined();
+  graph = service.restore("owner-a", "project-a", graph.graph_id, graph.revision, 1);
+  expect(graph.version_floor).toBeGreaterThan(floor);
+  edit({ kind: "revise_edge", edge_id: edgeId, from: b, to: a });
+  edit({ kind: "cite_edge", edge_id: edgeId, source, location: "line 1", excerpt: "Exact quote" });
+  edit({ kind: "clear_edge_evidence", edge_id: edgeId });
+  const nodeContents = new Map<string, string>(),
+    edgeContents = new Map<string, string>();
+  for (let revision = 1; revision <= graph.revision; revision++) {
+    const snapshot = service.revision("owner-a", "project-a", graph.graph_id, revision);
+    for (const r of snapshot.records) {
+      const key = `${r.node.id}@${r.node.version}`,
+        content = JSON.stringify([r.text, r.excerpt]);
+      if (nodeContents.has(key)) expect(content).toBe(nodeContents.get(key));
+      nodeContents.set(key, content);
+    }
+    for (const e of snapshot.edges) {
+      const key = `${e.edge_id}@${e.edge_version}`,
+        content = JSON.stringify([e.from, e.to, e.type, e.evidence_ref, e.evidence_excerpt]);
+      if (edgeContents.has(key)) expect(content).toBe(edgeContents.get(key));
+      edgeContents.set(key, content);
+    }
+  }
+  expect(service.exportPackage("owner-a", "project-a", graph.graph_id, 1).sha256).toBe(initialHash);
+  const exported = service.exportPackage("owner-a", "project-a", graph.graph_id);
+  expect(Object.hasOwn(exported.package, "version_floor")).toBe(false);
+});
+
+it("rejects restore clock rollback without moving the library order or appending history", () => {
+  const repository = new MemoryRepository();
+  let now = "2026-10-19T00:00:00.000Z";
+  const service = new IntelligenceGraphWorkspaceService(repository, () => now);
+  const first = service.create("owner-a", "project-a", "Clock");
+  now = "2026-10-19T00:00:02.000Z";
+  const changed = service.edit("owner-a", "project-a", first.graph_id, 1, {
+    kind: "rename",
+    title: "Later"
+  });
+  now = "2026-10-19T00:00:01.000Z";
+  expectCode(() => service.restore("owner-a", "project-a", first.graph_id, 2, 1), "BAD_INPUT");
+  expect(service.get("owner-a", "project-a", first.graph_id)).toEqual(changed);
+  expect(service.revisions("owner-a", "project-a", first.graph_id)).toHaveLength(2);
+});
+
+it.each(["invalid", "2026-02-30T00:00:00.000Z", "2026-10-19"])(
+  "rejects invalid workspace clocks before persisting empty graphs or imports: %s",
+  (at) => {
+    const repository = new MemoryRepository(),
+      service = new IntelligenceGraphWorkspaceService(repository, () => at);
+    expectCode(() => service.create("owner-a", "project-a", "Clock"), "BAD_INPUT");
+    const input = { format: "kosmora.intelligence-graph.v1", title: "Empty", nodes: [], edges: [] };
+    const preview = service.previewImport(input);
+    expectCode(
+      () => service.importPackage("owner-a", "project-a", input, preview.sha256),
+      "BAD_INPUT"
+    );
+    expect(repository.current.size).toBe(0);
+  }
+);
