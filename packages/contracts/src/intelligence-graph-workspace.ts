@@ -32,6 +32,71 @@ export interface IntelligenceGraphWorkspace {
   records: IntelligenceGraphWorkspaceRecord[];
   /** Absent in older snapshots. References pin exact versions, including superseded content. */
   conflicts?: IntelligenceGraphConflict[];
+  /** Internal allocator floor retained after restores; version numbers may have gaps. */
+  version_floor?: number;
+}
+
+/** Versions allocated by this workspace never exceed its revision; restores reserve a fresh range. */
+export function validateIntelligenceGraphWorkspaceVersionState(
+  graph: Pick<
+    IntelligenceGraphWorkspace,
+    | "revision"
+    | "version_floor"
+    | "nodes"
+    | "edges"
+    | "created_at"
+    | "updated_at"
+    | "restored_from_revision"
+  >
+): string[] {
+  const issues: string[] = [];
+  if (!Number.isSafeInteger(graph.revision) || graph.revision < 1)
+    issues.push("Invalid workspace revision");
+  if (
+    graph.version_floor !== undefined &&
+    (!Number.isSafeInteger(graph.version_floor) ||
+      graph.version_floor < 1 ||
+      graph.version_floor > graph.revision)
+  )
+    issues.push("Invalid restored version floor");
+  if (
+    graph.restored_from_revision !== null &&
+    (!Number.isSafeInteger(graph.restored_from_revision) ||
+      graph.restored_from_revision < 1 ||
+      graph.restored_from_revision >= graph.revision)
+  )
+    issues.push("Invalid restored revision reference");
+  const validTime = (v: string) => {
+    if (typeof v !== "string" || !Number.isFinite(Date.parse(v))) return false;
+    const canonical = new Date(v).toISOString();
+    return canonical === v || canonical.replace(".000Z", "Z") === v;
+  };
+  if (
+    !validTime(graph.created_at) ||
+    !validTime(graph.updated_at) ||
+    Date.parse(graph.updated_at) < Date.parse(graph.created_at)
+  )
+    issues.push("Invalid workspace clock");
+  if (
+    graph.nodes.some(
+      (n) =>
+        !Number.isSafeInteger(n.node_version) ||
+        n.node_version < 1 ||
+        n.node_version > graph.revision ||
+        !validTime(n.created_at) ||
+        Date.parse(n.created_at) > Date.parse(graph.updated_at)
+    ) ||
+    graph.edges.some(
+      (e) =>
+        !Number.isSafeInteger(e.edge_version) ||
+        e.edge_version < 1 ||
+        e.edge_version > graph.revision ||
+        !validTime(e.created_at) ||
+        Date.parse(e.created_at) > Date.parse(graph.updated_at)
+    )
+  )
+    issues.push("Node/edge version or creation time exceeds workspace revision");
+  return issues;
 }
 
 /** Shared by edits/restores and full privacy export; malformed snapshots fail closed. */
