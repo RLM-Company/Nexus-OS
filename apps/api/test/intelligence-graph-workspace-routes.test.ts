@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { IntelligenceGraphWorkspaceService } from "@cosmora/core";
 import type {
   IntelligenceGraphRevisionInfo,
+  IntelligenceGraphLibraryQuery,
   IntelligenceGraphImportReceipt,
   IntelligenceGraphImportResult,
   IntelligenceGraphWorkspace,
@@ -57,6 +58,43 @@ class MemoryStore implements IntelligenceGraphWorkspaceRepository {
       .filter((row) => row.owner_id === owner && row.project_id === project)
       .slice(0, limit)
       .map((row) => structuredClone(row));
+  }
+  listPage(owner: string, project: string, query: IntelligenceGraphLibraryQuery) {
+    const rows = [...this.snapshots.values()].filter(
+      (g) =>
+        g.owner_id === owner &&
+        g.project_id === project &&
+        g.title.normalize("NFC").toLocaleLowerCase("ru-RU").includes(query.query)
+    );
+    rows.sort((a, b) =>
+      a.updated_at === b.updated_at
+        ? a.graph_id < b.graph_id
+          ? 1
+          : a.graph_id > b.graph_id
+            ? -1
+            : 0
+        : a.updated_at < b.updated_at
+          ? 1
+          : -1
+    );
+    const candidates = rows.filter(
+      (g) =>
+        !query.before ||
+        g.updated_at < query.before.updated_at ||
+        (g.updated_at === query.before.updated_at && g.graph_id < query.before.graph_id)
+    );
+    return {
+      items: candidates
+        .slice(0, query.limit)
+        .map(({ graph_id, title, revision, created_at, updated_at }) => ({
+          graph_id,
+          title,
+          revision,
+          created_at,
+          updated_at
+        })),
+      has_more: candidates.length > query.limit
+    };
   }
   getRevision(owner: string, project: string, graph: string, revision: number) {
     return (
@@ -513,6 +551,62 @@ describe("exact evidence HTTP authoring", () => {
         await app.inject({ method: "GET", url: url + "/revisions/" + g.revision })
       ).json<IntelligenceGraphWorkspace>();
       expect(old.edges[0]?.evidence_excerpt).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("bounded graph library HTTP", () => {
+  it("paginates metadata, searches Cyrillic names and keeps foreign projects hidden", async () => {
+    const { app } = setup(true);
+    const root = "/api/v1/projects/project-a/intelligence-graphs";
+    try {
+      for (let i = 0; i < 25; i++)
+        expect(
+          (await app.inject({ method: "POST", url: root, payload: { title: "ЁЖИК " + i } }))
+            .statusCode
+        ).toBe(201);
+      const first = await app.inject({
+        method: "GET",
+        url: root + "/library?limit=20&q=" + encodeURIComponent("ёжик")
+      });
+      expect(first.statusCode).toBe(200);
+      expect(first.headers["cache-control"]).toBe("no-store");
+      const page = first.json<{ items: { graph_id: string }[]; next_cursor: string }>();
+      expect(page.items).toHaveLength(20);
+      expect(JSON.stringify(page.items)).not.toContain("nodes");
+      const second = await app.inject({
+        method: "GET",
+        url:
+          root +
+          "/library?limit=20&q=" +
+          encodeURIComponent("ЁЖИК") +
+          "&after=" +
+          encodeURIComponent(page.next_cursor)
+      });
+      expect(second.statusCode).toBe(200);
+      expect(second.json<{ items: unknown[]; next_cursor: null }>().items).toHaveLength(5);
+      expect(second.json<{ next_cursor: null }>().next_cursor).toBeNull();
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: root + "/library?q=Other&after=" + encodeURIComponent(page.next_cursor)
+          })
+        ).statusCode
+      ).toBe(400);
+      expect(
+        (await app.inject({ method: "GET", url: root + "/library?limit=21" })).statusCode
+      ).toBe(400);
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/v1/projects/foreign/intelligence-graphs/library"
+          })
+        ).statusCode
+      ).toBe(404);
     } finally {
       await app.close();
     }

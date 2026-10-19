@@ -2,6 +2,8 @@ import type { DatabaseSync } from "node:sqlite";
 import { validateIntelligenceGraphSnapshot } from "@cosmora/contracts";
 import type {
   IntelligenceGraphRevisionInfo,
+  IntelligenceGraphSummary,
+  IntelligenceGraphLibraryQuery,
   IntelligenceGraphImportReceipt,
   IntelligenceGraphImportResult,
   IntelligenceGraphWorkspace,
@@ -34,7 +36,11 @@ export interface IntelligenceGraphPrivacySnapshot {
  * All reads/writes are fenced by BOTH owner and project.
  */
 export class SqliteIntelligenceGraphWorkspaceRepository implements IntelligenceGraphWorkspaceRepository {
-  constructor(private readonly sqlite: DatabaseSync) {}
+  constructor(private readonly sqlite: DatabaseSync) {
+    this.sqlite.function("kosmora_graph_title_fold", { deterministic: true }, (value) =>
+      typeof value === "string" ? value.normalize("NFC").toLocaleLowerCase("ru-RU") : ""
+    );
+  }
 
   private lifecycle(owner: string): { state: string; epoch: number } {
     if (
@@ -370,6 +376,43 @@ export class SqliteIntelligenceGraphWorkspaceRepository implements IntelligenceG
       )
       .all(ownerId, projectId, limit) as { snapshot_json: string }[];
     return rows.map((row) => JSON.parse(row.snapshot_json) as IntelligenceGraphWorkspace);
+  }
+
+  listPage(
+    ownerId: string,
+    projectId: string,
+    query: IntelligenceGraphLibraryQuery
+  ): { items: IntelligenceGraphSummary[]; has_more: boolean } {
+    if (
+      !Number.isSafeInteger(query.limit) ||
+      query.limit < 1 ||
+      query.limit > 20 ||
+      typeof query.query !== "string" ||
+      query.query.length > 120
+    )
+      throw new RangeError("Invalid graph library page bounds");
+    const search = query.query.normalize("NFC").toLocaleLowerCase("ru-RU"),
+      before = query.before;
+    const rows = this.sqlite
+      .prepare(
+        `SELECT g.graph_id,g.title,g.revision,g.created_at,g.updated_at
+      FROM intelligence_graph_workspaces g JOIN projects p ON p.id=g.project_id AND p.owner_id=g.owner_id
+      WHERE g.owner_id=? AND g.project_id=? AND (?='' OR instr(kosmora_graph_title_fold(g.title),?)>0)
+      AND (? IS NULL OR g.updated_at<? OR (g.updated_at=? AND g.graph_id<?))
+      ORDER BY g.updated_at DESC,g.graph_id DESC LIMIT ?`
+      )
+      .all(
+        ownerId,
+        projectId,
+        search,
+        search,
+        before?.updated_at ?? null,
+        before?.updated_at ?? null,
+        before?.updated_at ?? null,
+        before?.graph_id ?? null,
+        query.limit + 1
+      ) as unknown as IntelligenceGraphSummary[];
+    return { items: rows.slice(0, query.limit), has_more: rows.length > query.limit };
   }
 
   getRevision(

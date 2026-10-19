@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   IntelligenceGraphRevisionInfo,
+  IntelligenceGraphLibraryQuery,
   IntelligenceGraphImportReceipt,
   IntelligenceGraphImportResult,
   IntelligenceGraphWorkspace,
@@ -59,6 +60,43 @@ class MemoryRepository implements IntelligenceGraphWorkspaceRepository {
       .filter(([key]) => key.startsWith(`${owner}|${project}|`))
       .map(([, value]) => structuredClone(value))
       .slice(0, limit);
+  }
+  listPage(owner: string, project: string, query: IntelligenceGraphLibraryQuery) {
+    const rows = [...this.current.values()].filter(
+      (g) =>
+        g.owner_id === owner &&
+        g.project_id === project &&
+        g.title.normalize("NFC").toLocaleLowerCase("ru-RU").includes(query.query)
+    );
+    rows.sort((a, b) =>
+      a.updated_at === b.updated_at
+        ? a.graph_id < b.graph_id
+          ? 1
+          : a.graph_id > b.graph_id
+            ? -1
+            : 0
+        : a.updated_at < b.updated_at
+          ? 1
+          : -1
+    );
+    const candidates = rows.filter(
+      (g) =>
+        !query.before ||
+        g.updated_at < query.before.updated_at ||
+        (g.updated_at === query.before.updated_at && g.graph_id < query.before.graph_id)
+    );
+    return {
+      items: candidates
+        .slice(0, query.limit)
+        .map(({ graph_id, title, revision, created_at, updated_at }) => ({
+          graph_id,
+          title,
+          revision,
+          created_at,
+          updated_at
+        })),
+      has_more: candidates.length > query.limit
+    };
   }
   getRevision(owner: string, project: string, graph: string, revision: number) {
     return structuredClone(
@@ -737,5 +775,62 @@ describe("evidence-grounded owner citations", () => {
     });
     expect(cleared.edges.at(-1)?.evidence_excerpt).toBeUndefined();
     expect(cleared.edges.at(-2)?.verification_status).toBe("superseded");
+  });
+});
+
+describe("scoped graph library continuation", () => {
+  it("enumerates more than twenty graphs through metadata-only pages", () => {
+    const { service } = suite();
+    for (let i = 0; i < 45; i++) service.create("owner-a", "project-a", "Graph " + i);
+    const ids: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = service.library("owner-a", "project-a", {
+        limit: 7,
+        ...(cursor ? { after: cursor } : {})
+      });
+      expect(page.items.length).toBeLessThanOrEqual(7);
+      for (const row of page.items) {
+        ids.push(row.graph_id);
+        expect(Object.keys(row).sort()).toEqual([
+          "created_at",
+          "graph_id",
+          "revision",
+          "title",
+          "updated_at"
+        ]);
+      }
+      cursor = page.next_cursor ?? undefined;
+    } while (cursor);
+    expect(ids).toHaveLength(45);
+    expect(new Set(ids).size).toBe(45);
+    expect(service.library("owner-b", "project-a").items).toEqual([]);
+  });
+  it("orders ties by graph ID and binds cursors to owner/project/query", () => {
+    const store = new MemoryRepository(),
+      service = new IntelligenceGraphWorkspaceService(store, () => "2026-10-19T00:00:00.000Z");
+    const created = Array.from({ length: 8 }, () =>
+      service.create("owner-a", "project-a", "Ёжик history")
+    );
+    const expected = created
+      .map((g) => g.graph_id)
+      .sort()
+      .reverse();
+    const first = service.library("owner-a", "project-a", { limit: 3, q: "ёЖИК" });
+    expect(first.items.map((g) => g.graph_id)).toEqual(expected.slice(0, 3));
+    const after = first.next_cursor!;
+    expect(
+      service
+        .library("owner-a", "project-a", { limit: 3, q: "ЁЖИК", after })
+        .items.map((g) => g.graph_id)
+    ).toEqual(expected.slice(3, 6));
+    for (const [owner, project, q] of [
+      ["owner-b", "project-a", "ёЖИК"],
+      ["owner-a", "project-b", "ёЖИК"],
+      ["owner-a", "project-a", "Other"]
+    ])
+      expectCode(() => service.library(owner!, project!, { q: q!, after }), "BAD_INPUT");
+    expectCode(() => service.library("owner-a", "project-a", { after: "%%%" }), "BAD_INPUT");
+    expectCode(() => service.library("owner-a", "project-a", { limit: 21 }), "BAD_INPUT");
   });
 });

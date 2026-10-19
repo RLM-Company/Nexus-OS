@@ -47,6 +47,11 @@ export interface IntelligenceGraphWorkspaceRepository {
   ): IntelligenceGraphImportResult | null;
   get(ownerId: string, projectId: string, graphId: string): IntelligenceGraphWorkspace | null;
   list(ownerId: string, projectId: string, limit: number): IntelligenceGraphWorkspace[];
+  listPage(
+    ownerId: string,
+    projectId: string,
+    query: IntelligenceGraphLibraryQuery
+  ): { items: IntelligenceGraphSummary[]; has_more: boolean };
   getRevision(
     ownerId: string,
     projectId: string,
@@ -76,3 +81,16 @@ export type IntelligenceGraphImportResult =
   | { kind: "conflict" }
   | { kind: "deleted" }
   | { kind: "limit" };
+
+export interface IntelligenceGraphSummary {
+  graph_id: string;
+  title: string;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+export interface IntelligenceGraphLibraryQuery {
+  limit: number;
+  query: string;
+  before?: { updated_at: string; graph_id: string };
+}

@@ -105,3 +105,53 @@ describe("SQLite intelligence graph workspace store", () => {
     db.close();
   });
 });
+
+describe("metadata graph library pages", () => {
+  it("uses stable keyset continuation with same-time rows and literal Unicode title search", () => {
+    const { db, store } = fixture();
+    try {
+      const titles = ["ЁЖИК — История", "ёжик — 100%", "Exact_100%", "Other title"];
+      for (let i = 0; i < 45; i++)
+        store.create({
+          ...graph("graph-" + String(i).padStart(3, "0")),
+          title: titles[i % titles.length]!
+        });
+      const first = store.listPage("owner-a", "project-a", { limit: 20, query: "" });
+      expect(first.items).toHaveLength(20);
+      expect(first.has_more).toBe(true);
+      const last = first.items.at(-1)!;
+      const second = store.listPage("owner-a", "project-a", {
+        limit: 20,
+        query: "",
+        before: { graph_id: last.graph_id, updated_at: last.updated_at }
+      });
+      const final = store.listPage("owner-a", "project-a", {
+        limit: 20,
+        query: "",
+        before: {
+          graph_id: second.items.at(-1)!.graph_id,
+          updated_at: second.items.at(-1)!.updated_at
+        }
+      });
+      expect(final.items).toHaveLength(5);
+      expect(final.has_more).toBe(false);
+      expect(
+        new Set([...first.items, ...second.items, ...final.items].map((g) => g.graph_id)).size
+      ).toBe(45);
+      expect(
+        store
+          .listPage("owner-a", "project-a", { limit: 20, query: "ЁжИк" })
+          .items.every((g) => g.title.toLocaleLowerCase("ru-RU").includes("ёжик"))
+      ).toBe(true);
+      const percent = store.listPage("owner-a", "project-a", { limit: 20, query: "%" });
+      expect(percent.items.length).toBeGreaterThan(0);
+      expect(percent.items.every((g) => g.title.includes("%"))).toBe(true);
+      expect(store.listPage("owner-b", "project-a", { limit: 20, query: "" }).items).toEqual([]);
+      expect(store.listPage("owner-a", "project-b", { limit: 20, query: "" }).items).toEqual([]);
+      expect(() => store.listPage("owner-a", "project-a", { limit: 100, query: "" })).toThrow();
+      expect(JSON.stringify(first.items)).not.toContain("nodes");
+    } finally {
+      db.close();
+    }
+  });
+});
