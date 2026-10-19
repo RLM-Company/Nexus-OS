@@ -17,6 +17,10 @@ import {
 } from "@cosmora/contracts";
 import { IntelligenceGraphIndex } from "./intelligence-graph-retrieval.js";
 import { runIntelligenceGraphCognitiveCycle } from "./intelligence-graph-cognition.js";
+import {
+  graphSearchTokens,
+  INTELLIGENCE_GRAPH_SEARCH_VERSION
+} from "./intelligence-graph-search.js";
 
 export type IntelligenceGraphLinkType =
   "SUPPORTS" | "CONTRADICTS" | "DEPENDS_ON" | "IMPLEMENTS" | "REFERENCES";
@@ -917,18 +921,14 @@ export class IntelligenceGraphWorkspaceService {
       };
     });
     const matchedIds = new Set(result.evidence.nodes.map((n) => n.node.node_id));
-    const queryTokens = normalized.toLocaleLowerCase("ru-RU").match(/[\p{L}\p{N}_-]+/gu) ?? [];
+    const queryTokens = graphSearchTokens(normalized);
     const relevant = (graph.conflicts ?? [])
       .filter((c) =>
         [c.subject_ref, ...c.position_refs, ...(c.resolution_ref ? [c.resolution_ref] : [])].some(
           (ref) => {
             if (matchedIds.has(ref.id)) return true;
             const r = records.get(refKey(ref));
-            const tokens = new Set(
-              `${r?.text ?? ""} ${r?.excerpt ?? ""}`
-                .toLocaleLowerCase("ru-RU")
-                .match(/[\p{L}\p{N}_-]+/gu) ?? []
-            );
+            const tokens = new Set(graphSearchTokens(`${r?.text ?? ""} ${r?.excerpt ?? ""}`));
             return queryTokens.some((t) => tokens.has(t));
           }
         )
@@ -1000,6 +1000,7 @@ export class IntelligenceGraphWorkspaceService {
         : result.readiness;
     return {
       graph_id: graph.graph_id,
+      search_version: INTELLIGENCE_GRAPH_SEARCH_VERSION,
       graph_title: graph.title,
       revision: graph.revision,
       graph_updated_at: graph.updated_at,

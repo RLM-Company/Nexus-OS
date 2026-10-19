@@ -613,3 +613,160 @@ describe("historical verification cannot be invented by supersession", () => {
     ).toBe(false);
   });
 });
+
+describe("field-aware saved-text search", () => {
+  const indexFor = (
+    nodes: IntelligenceGraphNode[],
+    records: IntelligenceGraphSearchRecord[],
+    edges: IntelligenceGraphEdge[] = []
+  ) =>
+    new IntelligenceGraphIndex({
+      ownerId: "owner-1",
+      projectId: "project-1",
+      nodes,
+      records,
+      edges
+    });
+  const record = (
+    node: IntelligenceGraphNode,
+    text: string,
+    excerpt: string
+  ): IntelligenceGraphSearchRecord => ({
+    node: { id: node.node_id, version: node.node_version },
+    text,
+    excerpt,
+    estimated_tokens: 10
+  });
+  const query = (text: string) => ({
+    owner_id: "owner-1",
+    project_id: "project-1",
+    mode: "baseline" as const,
+    text,
+    verified_only: true
+  });
+  it("finds a literal term stored only in source text without changing the saved Unicode/CRLF bytes", () => {
+    const node = makeNode("source-body", "Source"),
+      body = "Первая строка\r\nКвантовый протокол <b> $&";
+    const r = record(node, "Приложение 7", body),
+      index = indexFor([node], [r]);
+    const packet = index.query(query("квантовый"));
+    expect(packet.nodes.map((n) => n.node.node_id)).toEqual(["source-body"]);
+    expect(packet.nodes[0]!.excerpt).toBe(body);
+    expect(r.excerpt).toBe(body);
+    expect(packet.budget).toMatchObject({
+      matched_candidates: 1,
+      unreturned_candidates: 0,
+      truncated: false
+    });
+  });
+  it("ranks title matches above body-only matches and prevents term-frequency stuffing", () => {
+    const title = makeNode("z-title", "Claim"),
+      body = makeNode("a-body", "Source"),
+      repeat = makeNode("b-repeat", "Document");
+    const index = indexFor(
+      [title, body, repeat],
+      [
+        record(title, "Уникальный протокол", "Описание"),
+        record(body, "Заметка", "Уникальный протокол"),
+        record(repeat, "Заметка", "Уникальный протокол ".repeat(100))
+      ]
+    );
+    const packet = index.query(query("Уникальный протокол"));
+    expect(packet.nodes[0]!.node.node_id).toBe("z-title");
+    expect(packet.nodes[1]!.lexical_score).toBe(packet.nodes[2]!.lexical_score);
+    expect(packet.nodes[0]!.lexical_score).toBeGreaterThan(packet.nodes[1]!.lexical_score);
+  });
+  it("normalizes composed/decomposed Cyrillic and Latin only for matching", () => {
+    const a = makeNode("a", "Source"),
+      b = makeNode("b", "Document");
+    const nfd = "И\u0306од cafe\u0301";
+    const index = indexFor(
+      [a, b],
+      [record(a, "Архив", nfd), record(b, "ЙОД CAFÉ", "Другой текст")]
+    );
+    const packet = index.query(query("йод café"));
+    expect(packet.nodes).toHaveLength(2);
+    expect(packet.nodes[0]!.node.node_id).toBe("b");
+    expect(packet.nodes[1]!.excerpt).toBe(nfd);
+    expect(index.query(query(".*")).nodes).toEqual([]);
+  });
+  it("filters verification, scope and exact temporal versions before counting body candidates", () => {
+    const old = makeNode("versioned", "Source", {
+      verification_status: "superseded",
+      previous_verification_status: "verified",
+      valid_to: t2
+    });
+    const next = makeNode("versioned", "Source", {
+      node_version: 2,
+      created_at: t2,
+      observed_at: t2,
+      valid_from: t2,
+      supersedes: { id: "versioned", version: 1 }
+    });
+    const candidate = makeNode("candidate", "Claim", {
+      verification_status: "discovered",
+      confidence_method: "owner_direct",
+      provenance_kind: "owner_assertion"
+    });
+    const index = indexFor(
+      [old, next, candidate],
+      [
+        record(old, "Log", "Исторический термин"),
+        record(next, "Log", "Современный текст"),
+        record(candidate, "Draft", "Исторический термин")
+      ]
+    );
+    expect(index.query(query("Исторический")).budget.matched_candidates).toBe(0);
+    const temporal = index.query({ ...query("Исторический"), mode: "temporal", as_of: t1 });
+    expect(temporal.nodes.map((n) => [n.node.node_id, n.node.node_version])).toEqual([
+      ["versioned", 1]
+    ]);
+    expect(temporal.budget.matched_candidates).toBe(1);
+    const exploratory = index.query({ ...query("Исторический"), verified_only: false });
+    expect(exploratory.nodes[0]!.node.node_id).toBe("candidate");
+    expect(exploratory.budget.matched_candidates).toBe(1);
+    expect(() => index.query({ ...query("Исторический"), owner_id: "foreign" })).toThrow("scope");
+  });
+  it("reports disconnected lexical matches omitted by the multi-hop seed limit", () => {
+    const nodes = Array.from({ length: 4 }, (_, i) => makeNode("n" + i, "Claim"));
+    const records = nodes.map((n) => record(n, "Запись", "Совпадение"));
+    const packet = indexFor(nodes, records).query({ ...query("Совпадение"), mode: "multi_hop" });
+    expect(packet.nodes).toHaveLength(3);
+    expect(packet.budget).toMatchObject({
+      matched_candidates: 4,
+      unreturned_candidates: 1,
+      truncated: true
+    });
+    const connected = indexFor(nodes, records, [
+      makeEdge("bridge", "SUPPORTS", nodes[2]!, nodes[3]!)
+    ]).query({ ...query("Совпадение"), mode: "multi_hop" });
+    expect(connected.nodes).toHaveLength(4);
+    expect(connected.budget).toMatchObject({
+      matched_candidates: 4,
+      unreturned_candidates: 0,
+      truncated: false
+    });
+  });
+  it("respects node and context budgets when every match occurs only in record body", () => {
+    const nodes = Array.from({ length: 5 }, (_, i) => makeNode("n" + i, "Claim"));
+    const index = indexFor(
+      nodes,
+      nodes.map((n) => record(n, "Record", "Найди меня"))
+    );
+    const byNodes = index.query({ ...query("Найди"), budget: { max_nodes: 1 } });
+    expect(byNodes.nodes).toHaveLength(1);
+    expect(byNodes.budget).toMatchObject({
+      matched_candidates: 5,
+      unreturned_candidates: 4,
+      truncated: true
+    });
+    const byTokens = index.query({ ...query("Найди"), budget: { max_context_tokens: 9 } });
+    expect(byTokens.nodes).toHaveLength(0);
+    expect(byTokens.budget).toMatchObject({
+      matched_candidates: 5,
+      unreturned_candidates: 5,
+      estimated_context_tokens: 0,
+      truncated: true
+    });
+  });
+});
