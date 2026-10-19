@@ -21,6 +21,9 @@ describe("graph history on durable SQLite", () => {
         "PRAGMA foreign_keys=ON; CREATE TABLE projects(id TEXT PRIMARY KEY, owner_id TEXT, status TEXT); INSERT INTO projects VALUES('project-a','owner-a','ACTIVE')"
       );
       db.exec(proposal);
+      db.exec(
+        "CREATE TABLE kosmora_owner_data_lifecycle(owner_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, state TEXT NOT NULL)"
+      );
       let tick = 0;
       const service = new IntelligenceGraphWorkspaceService(
         new SqliteIntelligenceGraphWorkspaceRepository(db),
@@ -100,6 +103,9 @@ describe("durable import receipts", () => {
         "PRAGMA foreign_keys=ON; CREATE TABLE projects(id TEXT PRIMARY KEY,owner_id TEXT,status TEXT); INSERT INTO projects VALUES('project-a','owner-a','ACTIVE'),('project-b','owner-b','ACTIVE')"
       );
       db.exec(proposal);
+      db.exec(
+        "CREATE TABLE kosmora_owner_data_lifecycle(owner_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, state TEXT NOT NULL)"
+      );
       db.exec(recoveryProposal);
       const service = new IntelligenceGraphWorkspaceService(
         new SqliteIntelligenceGraphWorkspaceRepository(db)
@@ -146,6 +152,9 @@ describe("durable import receipts", () => {
         "PRAGMA foreign_keys=ON; CREATE TABLE projects(id TEXT PRIMARY KEY,owner_id TEXT,status TEXT); INSERT INTO projects VALUES('project-a','owner-a','ACTIVE')"
       );
       db.exec(proposal);
+      db.exec(
+        "CREATE TABLE kosmora_owner_data_lifecycle(owner_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, state TEXT NOT NULL)"
+      );
       db.exec(recoveryProposal);
       const store = new SqliteIntelligenceGraphWorkspaceRepository(db),
         service = new IntelligenceGraphWorkspaceService(store),

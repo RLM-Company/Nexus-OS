@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { validateIntelligenceGraphSnapshot } from "@cosmora/contracts";
 import type {
   IntelligenceGraphRevisionInfo,
   IntelligenceGraphImportReceipt,
@@ -7,6 +8,26 @@ import type {
   IntelligenceGraphWorkspaceRepository
 } from "@cosmora/contracts";
 
+export class IntelligenceGraphPrivacyError extends Error {
+  constructor(
+    readonly code:
+      | "GRAPH_OWNER_FENCED"
+      | "GRAPH_PRIVACY_UNAVAILABLE"
+      | "GRAPH_PRIVACY_FENCE_MISMATCH"
+      | "GRAPH_PRIVACY_EXPORT_LIMIT"
+      | "GRAPH_PRIVACY_INCONSISTENT",
+    message: string = code
+  ) {
+    super(message);
+    this.name = "IntelligenceGraphPrivacyError";
+  }
+}
+export interface IntelligenceGraphPrivacySnapshot {
+  records: Record<string, unknown[]>;
+  originals: [];
+  complete: true;
+}
+
 /**
  * SQLite adapter. Tables are owned by a managed migration, never created by
  * runtime code. Do not instantiate until the migration is installed.
@@ -14,6 +35,199 @@ import type {
  */
 export class SqliteIntelligenceGraphWorkspaceRepository implements IntelligenceGraphWorkspaceRepository {
   constructor(private readonly sqlite: DatabaseSync) {}
+
+  private lifecycle(owner: string): { state: string; epoch: number } {
+    if (
+      !this.sqlite
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='kosmora_owner_data_lifecycle'"
+        )
+        .get()
+    ) {
+      throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_UNAVAILABLE");
+    }
+    const row = this.sqlite
+      .prepare("SELECT state,epoch FROM kosmora_owner_data_lifecycle WHERE owner_id=?")
+      .get(owner) as { state: string; epoch: number } | undefined;
+    if (!row) return { state: "active", epoch: 0 };
+    if (
+      !Number.isSafeInteger(row.epoch) ||
+      row.epoch < 0 ||
+      !["active", "quiescing", "deleting", "deleted", "error"].includes(row.state)
+    )
+      throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_UNAVAILABLE");
+    return row;
+  }
+
+  private assertWritable(owner: string): void {
+    if (this.lifecycle(owner).state !== "active")
+      throw new IntelligenceGraphPrivacyError("GRAPH_OWNER_FENCED");
+  }
+
+  private assertFence(owner: string, epoch: number, state: "quiescing" | "deleting"): void {
+    const row = this.lifecycle(owner);
+    if (!Number.isSafeInteger(epoch) || epoch < 1 || row.epoch !== epoch || row.state !== state)
+      throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_FENCE_MISMATCH");
+  }
+
+  privacyQuiesce(owner: string, epoch: number): { drained: true; fence_epoch: number } {
+    return this.inTransaction(() => {
+      this.assertFence(owner, epoch, "quiescing");
+      // Acquiring the SQLite writer lock drains synchronous writes from other connections too.
+      return { drained: true, fence_epoch: epoch };
+    });
+  }
+
+  privacyExport(
+    owner: string,
+    epoch: number,
+    options: { maxRecords?: number; maxBytes?: number } = {}
+  ): IntelligenceGraphPrivacySnapshot {
+    const maxRecords = options.maxRecords ?? 10000,
+      maxBytes = options.maxBytes ?? 12 * 1024 * 1024;
+    if (
+      !Number.isSafeInteger(maxRecords) ||
+      maxRecords < 1 ||
+      maxRecords > 100000 ||
+      !Number.isSafeInteger(maxBytes) ||
+      maxBytes < 1 ||
+      maxBytes > 64 * 1024 * 1024
+    )
+      throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_EXPORT_LIMIT");
+    return this.inTransaction(() => {
+      this.assertFence(owner, epoch, "quiescing");
+      // All three sections are mandatory, including archived projects and receipt tombstones.
+      const totals = this.privacyCounts(owner);
+      const raw = this.sqlite
+        .prepare(
+          `SELECT COALESCE(sum(length(CAST(r.snapshot_json AS BLOB))),0) AS bytes
+        FROM intelligence_graph_workspace_revisions r JOIN intelligence_graph_workspaces g ON g.graph_id=r.graph_id WHERE g.owner_id=?`
+        )
+        .get(owner) as { bytes: number };
+      if (totals.graphs + totals.revisions + totals.receipts > maxRecords || raw.bytes > maxBytes)
+        throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_EXPORT_LIMIT");
+      const workspaces: unknown[] = [],
+        revisions: unknown[] = [],
+        receipts: unknown[] = [];
+      let bytes = 0;
+      const append = (target: unknown[], row: unknown) => {
+        bytes += Buffer.byteLength(JSON.stringify(row), "utf8") + 1;
+        if (bytes > maxBytes) throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_EXPORT_LIMIT");
+        target.push(row);
+      };
+      const graphIds = new Map<string, { project_id: string; revision: number }>();
+      for (const row of this.sqlite
+        .prepare(
+          "SELECT graph_id,owner_id,project_id,title,revision,created_at,updated_at FROM intelligence_graph_workspaces WHERE owner_id=? ORDER BY graph_id"
+        )
+        .iterate(owner)) {
+        graphIds.set(row.graph_id as string, {
+          project_id: row.project_id as string,
+          revision: row.revision as number
+        });
+        append(workspaces, row);
+      }
+      const currentSeen = new Set<string>();
+      for (const row of this.sqlite
+        .prepare(
+          `SELECT r.graph_id,r.revision,r.snapshot_json,r.summary,r.restored_from_revision,r.created_at
+        FROM intelligence_graph_workspace_revisions r JOIN intelligence_graph_workspaces g ON g.graph_id=r.graph_id WHERE g.owner_id=? ORDER BY r.graph_id,r.revision`
+        )
+        .iterate(owner)) {
+        const snapshot: unknown = JSON.parse(row.snapshot_json as string);
+        const meta = graphIds.get(row.graph_id as string);
+        if (
+          !meta ||
+          !snapshot ||
+          typeof snapshot !== "object" ||
+          !("owner_id" in snapshot) ||
+          snapshot.owner_id !== owner ||
+          !("project_id" in snapshot) ||
+          snapshot.project_id !== meta.project_id ||
+          !("graph_id" in snapshot) ||
+          snapshot.graph_id !== row.graph_id ||
+          !("revision" in snapshot) ||
+          snapshot.revision !== row.revision
+        )
+          throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_INCONSISTENT");
+        if (row.revision === meta.revision) currentSeen.add(row.graph_id as string);
+        const workspace = snapshot as IntelligenceGraphWorkspace;
+        if (
+          !Array.isArray(workspace.nodes) ||
+          !Array.isArray(workspace.edges) ||
+          !Array.isArray(workspace.records) ||
+          validateIntelligenceGraphSnapshot({
+            ownerId: owner,
+            projectId: meta.project_id,
+            nodes: workspace.nodes,
+            edges: workspace.edges
+          }).length
+        )
+          throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_INCONSISTENT");
+        append(revisions, {
+          graph_id: row.graph_id,
+          revision: row.revision,
+          snapshot,
+          summary: row.summary,
+          restored_from_revision: row.restored_from_revision,
+          created_at: row.created_at
+        });
+      }
+      if (currentSeen.size !== graphIds.size)
+        throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_INCONSISTENT");
+      for (const row of this.sqlite
+        .prepare(
+          "SELECT owner_id,project_id,creation_key,package_sha256,graph_id,created_at FROM intelligence_graph_import_receipts WHERE owner_id=? ORDER BY project_id,creation_key"
+        )
+        .iterate(owner)) {
+        if (
+          row.graph_id !== null &&
+          graphIds.get(row.graph_id as string)?.project_id !== row.project_id
+        )
+          throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_INCONSISTENT");
+        append(receipts, row);
+      }
+      const result: IntelligenceGraphPrivacySnapshot = {
+        records: {
+          intelligence_graph_workspaces: workspaces,
+          intelligence_graph_revisions: revisions,
+          intelligence_graph_import_receipts: receipts
+        },
+        originals: [],
+        complete: true
+      };
+      if (Buffer.byteLength(JSON.stringify(result), "utf8") > maxBytes)
+        throw new IntelligenceGraphPrivacyError("GRAPH_PRIVACY_EXPORT_LIMIT");
+      this.assertFence(owner, epoch, "quiescing");
+      return result;
+    });
+  }
+
+  private privacyCounts(owner: string): { graphs: number; revisions: number; receipts: number } {
+    const count = (sql: string) => (this.sqlite.prepare(sql).get(owner) as { total: number }).total;
+    return {
+      graphs: count("SELECT count(*) AS total FROM intelligence_graph_workspaces WHERE owner_id=?"),
+      revisions: count(
+        "SELECT count(*) AS total FROM intelligence_graph_workspace_revisions r JOIN intelligence_graph_workspaces g ON g.graph_id=r.graph_id WHERE g.owner_id=?"
+      ),
+      receipts: count(
+        "SELECT count(*) AS total FROM intelligence_graph_import_receipts WHERE owner_id=?"
+      )
+    };
+  }
+
+  privacyDelete(owner: string, epoch: number): { deleted_records: number } {
+    return this.inTransaction(() => {
+      this.assertFence(owner, epoch, "deleting");
+      const counts = this.privacyCounts(owner);
+      this.sqlite
+        .prepare("DELETE FROM intelligence_graph_import_receipts WHERE owner_id=?")
+        .run(owner);
+      this.sqlite.prepare("DELETE FROM intelligence_graph_workspaces WHERE owner_id=?").run(owner);
+      this.assertFence(owner, epoch, "deleting");
+      return { deleted_records: counts.graphs + counts.revisions + counts.receipts };
+    });
+  }
 
   private projectExists(ownerId: string, projectId: string): boolean {
     return Boolean(
@@ -37,6 +251,7 @@ export class SqliteIntelligenceGraphWorkspaceRepository implements IntelligenceG
 
   create(record: IntelligenceGraphWorkspace): IntelligenceGraphWorkspace | null {
     return this.inTransaction(() => {
+      this.assertWritable(record.owner_id);
       if (!this.projectExists(record.owner_id, record.project_id)) return null;
       this.insert(record);
       return structuredClone(record);
@@ -96,6 +311,7 @@ export class SqliteIntelligenceGraphWorkspaceRepository implements IntelligenceG
     packageSha256: string
   ): IntelligenceGraphImportResult | null {
     return this.inTransaction(() => {
+      this.assertWritable(record.owner_id);
       if (!this.projectExists(record.owner_id, record.project_id)) return null;
       const receipt = this.getImportReceipt(record.owner_id, record.project_id, creationKey);
       if (receipt) {
@@ -197,6 +413,7 @@ export class SqliteIntelligenceGraphWorkspaceRepository implements IntelligenceG
     summary: string
   ): IntelligenceGraphWorkspace | null {
     return this.inTransaction(() => {
+      this.assertWritable(record.owner_id);
       const changed = this.sqlite
         .prepare(
           `UPDATE intelligence_graph_workspaces AS g
