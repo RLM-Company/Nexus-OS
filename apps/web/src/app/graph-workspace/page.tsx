@@ -6,10 +6,13 @@ import {
   parseIntelligenceGraphPackage,
   INTELLIGENCE_GRAPH_PACKAGE_MAX_BYTES,
   type IntelligenceGraphPortablePackage,
-  type IntelligenceGraphSummary
+  type IntelligenceGraphSummary,
+  type IntelligenceGraphWorkspaceExplanation,
+  type IntelligenceGraphWorkspaceReport
 } from "@cosmora/contracts";
 import { compareGraphRevisions, type GraphConflict } from "./revision-diff";
 import { GraphConflictEditor } from "./graph-conflict-editor";
+import { GraphExplanationView } from "./graph-explanation";
 import { IntelligenceGraphView } from "./graph-view";
 import { GraphEvidenceEditor } from "./graph-evidence-editor";
 import { mergeGraphSummaryPages } from "./library-pages";
@@ -65,20 +68,7 @@ type Graph = {
   conflicts?: GraphConflict[];
 };
 type History = { revision: number; summary: string; restored_from_revision: number | null };
-type Explanation = {
-  readiness: "grounded_context" | "review_required" | "abstain";
-  explanation: string;
-  truncated: boolean;
-  matched_nodes: { id: string; label: string; detail: string | null; status: string }[];
-  relationships: {
-    edge_id: string;
-    description: string;
-    status: string;
-    note: string;
-    quote?: string | null;
-    source_status?: string | null;
-  }[];
-};
+type Explanation = IntelligenceGraphWorkspaceExplanation;
 const panel: React.CSSProperties = {
   border: "1px solid #d1d1d1",
   borderRadius: 12,
@@ -1111,7 +1101,7 @@ export default function GraphWorkspacePage() {
                 event.preventDefault();
                 void run(async () => {
                   const result = await request<Explanation>(
-                    `${graphUrl}/explain?q=${encodeURIComponent(query)}`
+                    `${graphUrl}/explain?q=${encodeURIComponent(query)}&revision=${selected.revision}`
                   );
                   setExplanation(result);
                 });
@@ -1131,27 +1121,32 @@ export default function GraphWorkspacePage() {
               </button>
             </form>
             {explanation && (
-              <div aria-live="polite" style={{ marginTop: 16 }}>
-                <strong>Оценка: {explanation.readiness}</strong>
-                <p>{explanation.explanation}</p>
-                {explanation.truncated && <p>Выборка ограничена. Показана только часть графа.</p>}
-                <ul>
-                  {explanation.relationships.map((relation) => (
-                    <li key={relation.edge_id}>
-                      {relation.description} — {relation.status}. {relation.note}
-                      {relation.quote && (
-                        <blockquote style={{ whiteSpace: "pre-wrap" }}>{relation.quote}</blockquote>
-                      )}
-                      {relation.source_status === "superseded" && (
-                        <p>Цитата относится к прежней сохранённой версии источника.</p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                {explanation.relationships.length === 0 && (
-                  <p>Релевантных связей для этого запроса не найдено.</p>
-                )}
-              </div>
+              <GraphExplanationView
+                explanation={explanation}
+                busy={busy}
+                onDownload={() =>
+                  run(async () => {
+                    const result = await request<{
+                      report: IntelligenceGraphWorkspaceReport;
+                      sha256: string;
+                    }>(
+                      `${root}/${encodeURIComponent(explanation.graph_id)}/report?q=${encodeURIComponent(explanation.query)}&revision=${explanation.revision}`
+                    );
+                    if (
+                      result.report.format !== "kosmora.intelligence-graph-report.v1" ||
+                      result.report.reading.graph_id !== explanation.graph_id ||
+                      result.report.reading.revision !== explanation.revision ||
+                      result.report.reading.query !== explanation.query ||
+                      (await digest(JSON.stringify(result.report))) !== result.sha256
+                    )
+                      throw new Error("Отчёт не совпал с выбранной ревизией и запросом.");
+                    download(
+                      result.report,
+                      `graph-${explanation.graph_id}-v${explanation.revision}-report.json`
+                    );
+                  })
+                }
+              />
             )}
           </section>
         </div>

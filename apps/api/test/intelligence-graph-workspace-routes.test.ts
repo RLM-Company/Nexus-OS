@@ -683,3 +683,47 @@ it("exposes strict owner-scoped conflict review and rejects stale/foreign/author
     await app.close();
   }
 });
+
+it("serves immutable query reports with no-store, explicit revision and strict scope", async () => {
+  const { app } = setup(true);
+  try {
+    const base = "/api/v1/projects/project-a/intelligence-graphs";
+    const graph = (
+      await app.inject({ method: "POST", url: base, payload: { title: "Original" } })
+    ).json<IntelligenceGraphWorkspace>();
+    const reportUrl = `${base}/${graph.graph_id}/report?q=Query&revision=1`;
+    const first = await app.inject({ method: "GET", url: reportUrl });
+    expect(first.statusCode).toBe(200);
+    expect(first.headers["cache-control"]).toBe("no-store");
+    expect(
+      (await app.inject({ method: "GET", url: reportUrl.replace("&revision=1", "") })).statusCode
+    ).toBe(400);
+    expect(
+      (await app.inject({ method: "GET", url: reportUrl + "&owner_id=foreign" })).statusCode
+    ).toBe(400);
+    expect(
+      (await app.inject({ method: "GET", url: reportUrl.replace("project-a", "foreign") }))
+        .statusCode
+    ).toBe(404);
+    expect(
+      (await app.inject({ method: "GET", url: reportUrl.replace("revision=1", "revision=2") }))
+        .statusCode
+    ).toBe(400);
+    await app.inject({
+      method: "POST",
+      url: `${base}/${graph.graph_id}/edits`,
+      payload: { expected_revision: 1, operation: { kind: "rename", title: "New" } }
+    });
+    const later = await app.inject({ method: "GET", url: reportUrl });
+    expect(later.body).toBe(first.body);
+    const explanation = await app.inject({
+      method: "GET",
+      url: `${base}/${graph.graph_id}/explain?q=Query&revision=1`
+    });
+    expect(explanation.statusCode).toBe(200);
+    expect(explanation.headers["cache-control"]).toBe("no-store");
+    expect(explanation.json<{ graph_title: string }>().graph_title).toBe("Original");
+  } finally {
+    await app.close();
+  }
+});

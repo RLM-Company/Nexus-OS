@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createHash } from "node:crypto";
 
 const graph = () => ({
   graph_id: "graph-a",
@@ -462,4 +463,76 @@ test("superseded conflict positions remain visible and prevent resolution", asyn
   await expect(
     section.getByRole("checkbox", { name: "Обновлённый тезис · v2", exact: true })
   ).not.toBeChecked();
+});
+
+test("report download uses the displayed query and saved revision after the search draft changes", async ({
+  page
+}) => {
+  const initial = graph();
+  const reading = {
+    graph_id: "graph-a",
+    graph_title: initial.title,
+    revision: 2,
+    graph_updated_at: initial.updated_at,
+    query: "Исходный",
+    readiness: "abstain",
+    concerns: ["NO_VERIFIED_NODES"],
+    matched_nodes: [],
+    relationships: [],
+    conflicts: [],
+    conflict_nodes: [],
+    stale_conflict_ids: [],
+    conflict_review: {
+      relevant: 0,
+      returned: 0,
+      returned_nodes: 0,
+      max_conflicts: 10,
+      max_nodes: 60,
+      truncated: false
+    },
+    paths: [],
+    budget: {
+      max_depth: 2,
+      max_nodes: 24,
+      max_edges: 40,
+      max_fan_out: 8,
+      max_context_tokens: 2400,
+      visited_nodes: 0,
+      returned_edges: 0,
+      estimated_context_tokens: 0,
+      truncated: false
+    },
+    truncated: false,
+    explanation: "Недостаточно данных"
+  };
+  const report = { format: "kosmora.intelligence-graph-report.v1", reading };
+  const sha256 = createHash("sha256").update(JSON.stringify(report)).digest("hex");
+  let reportQuery = "";
+  await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/report")) {
+      reportQuery = url.search;
+      await route.fulfill({ json: { report, sha256 } });
+    } else
+      await route.fulfill({
+        json: url.pathname.endsWith("/explain")
+          ? reading
+          : url.pathname.endsWith("/revisions")
+            ? { items: [] }
+            : url.pathname.endsWith("/graph-a")
+              ? initial
+              : { items: [initial] }
+      });
+  });
+  await open(page);
+  await page.getByPlaceholder("Что искать в графе?").fill("Исходный");
+  await page.getByRole("button", { name: "Объяснить", exact: true }).click();
+  await expect(page.getByText("Запрос: Исходный", { exact: true })).toBeVisible();
+  await page.getByPlaceholder("Что искать в графе?").fill("Другой черновик");
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать отчёт этой ревизии", exact: true }).click();
+  const file = await pending;
+  expect(file.suggestedFilename()).toBe("graph-graph-a-v2-report.json");
+  expect(new URLSearchParams(reportQuery).get("q")).toBe("Исходный");
+  expect(new URLSearchParams(reportQuery).get("revision")).toBe("2");
 });
