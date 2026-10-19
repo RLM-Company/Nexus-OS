@@ -5,11 +5,13 @@ import Link from "next/link";
 import {
   parseIntelligenceGraphPackage,
   INTELLIGENCE_GRAPH_PACKAGE_MAX_BYTES,
-  type IntelligenceGraphPortablePackage
+  type IntelligenceGraphPortablePackage,
+  type IntelligenceGraphSummary
 } from "@cosmora/contracts";
 import { compareGraphRevisions } from "./revision-diff";
 import { IntelligenceGraphView } from "./graph-view";
 import { GraphEvidenceEditor } from "./graph-evidence-editor";
+import { mergeGraphSummaryPages } from "./library-pages";
 import {
   parseGraphImportAttempt,
   graphImportAttemptSlot,
@@ -111,6 +113,8 @@ const request = async <T,>(url: string, init?: RequestInit): Promise<T> => {
         throw new Error("Этот ключ импорта уже связан с другим JSON.");
       throw new Error("Версия графа изменилась. Обновите его перед сохранением.");
     }
+    if (response.status === 423)
+      throw new Error("Изменения временно заблокированы: идёт операция с данными аккаунта.");
     if (response.status === 410)
       throw new Error("Импортированный граф удалён. Этот ключ не создаст его заново.");
     if (response.status === 401 || response.status === 403)
@@ -123,7 +127,11 @@ const request = async <T,>(url: string, init?: RequestInit): Promise<T> => {
 
 export default function GraphWorkspacePage() {
   const [projectId, setProjectId] = useState("");
-  const [graphs, setGraphs] = useState<Graph[]>([]);
+  const [graphs, setGraphs] = useState<IntelligenceGraphSummary[]>([]);
+  const [libraryQuery, setLibraryQuery] = useState("");
+  const [appliedLibraryQuery, setAppliedLibraryQuery] = useState("");
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selected, setSelected] = useState<Graph | null>(null);
   const [history, setHistory] = useState<History[]>([]);
   const [title, setTitle] = useState("");
@@ -203,12 +211,8 @@ export default function GraphWorkspacePage() {
     return { id: node.node_id, version: node.node_version };
   };
 
-  const load = async (id: string, selectId?: string) => {
-    if (!id.trim()) throw new Error("Укажите ID проекта.");
+  const openGraph = async (id: string, choice: string) => {
     const base = `/api/v1/projects/${encodeURIComponent(id.trim())}/intelligence-graphs`;
-    const result = await request<{ items: Graph[] }>(base);
-    setGraphs(result.items);
-    const choice = selectId ?? selected?.graph_id;
     if (choice) {
       const graph = await request<Graph>(`${base}/${encodeURIComponent(choice)}`);
       setSelected(graph);
@@ -228,6 +232,24 @@ export default function GraphWorkspacePage() {
       setSelected(null);
       setHistory([]);
     }
+  };
+  const load = async (
+    id: string,
+    selectId?: string,
+    search = appliedLibraryQuery,
+    refreshSelection = true
+  ) => {
+    if (!id.trim()) throw new Error("Укажите ID проекта.");
+    const base = `/api/v1/projects/${encodeURIComponent(id.trim())}/intelligence-graphs`;
+    const q = search.trim();
+    const result = await request<{ items: IntelligenceGraphSummary[]; next_cursor: string | null }>(
+      `${base}/library?${new URLSearchParams({ limit: "20", q })}`
+    );
+    setGraphs(result.items);
+    setNextCursor(result.next_cursor ?? null);
+    setAppliedLibraryQuery(q);
+    setLibraryLoaded(true);
+    if (refreshSelection) await openGraph(id, selectId ?? selected?.graph_id ?? "");
   };
   const run = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -287,6 +309,10 @@ export default function GraphWorkspacePage() {
               setProjectId(event.target.value);
               setSelected(null);
               setGraphs([]);
+              setNextCursor(null);
+              setLibraryLoaded(false);
+              setAppliedLibraryQuery("");
+              setLibraryQuery("");
               setHistory([]);
               setNodeToEdit(null);
               setExplanation(null);
@@ -296,11 +322,38 @@ export default function GraphWorkspacePage() {
           <button
             style={button}
             disabled={busy}
-            onClick={() => void run(() => load(projectId, ""))}
+            onClick={() => void run(() => load(projectId, "", libraryQuery))}
           >
             Открыть графы
           </button>
         </div>
+        <form
+          style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void run(() => load(projectId, selected?.graph_id ?? "", libraryQuery, false));
+          }}
+        >
+          <input
+            style={{ ...field, flex: "1 1 240px" }}
+            aria-label="Поиск графов по названию"
+            value={libraryQuery}
+            maxLength={120}
+            disabled={busy}
+            onChange={(event) => setLibraryQuery(event.target.value)}
+            placeholder="Название графа"
+          />
+          <button style={button} disabled={busy || !projectId.trim()} type="submit">
+            Найти графы
+          </button>
+        </form>
+        {libraryLoaded && (
+          <p>
+            Загружено графов: {graphs.length}
+            {appliedLibraryQuery ? ` · поиск: ${appliedLibraryQuery}` : ""}
+          </p>
+        )}
+        {libraryLoaded && graphs.length === 0 && <p>Графов с таким названием не найдено.</p>}
         {graphs.length > 0 && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
             {graphs.map((graph) => (
@@ -308,12 +361,33 @@ export default function GraphWorkspacePage() {
                 key={graph.graph_id}
                 style={button}
                 aria-pressed={selected?.graph_id === graph.graph_id}
-                onClick={() => void run(() => load(projectId, graph.graph_id))}
+                onClick={() => void run(() => openGraph(projectId, graph.graph_id))}
               >
                 {graph.title} · v{graph.revision}
               </button>
             ))}
           </div>
+        )}
+        {nextCursor && (
+          <button
+            style={{ ...button, marginTop: 14 }}
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                const page = await request<{
+                  items: IntelligenceGraphSummary[];
+                  next_cursor: string | null;
+                }>(
+                  `${root}/library?${new URLSearchParams({ limit: "20", q: appliedLibraryQuery, after: nextCursor })}`
+                );
+                setGraphs((current) => mergeGraphSummaryPages(current, page.items));
+                setNextCursor(page.next_cursor ?? null);
+              })
+            }
+          >
+            Загрузить ещё графы
+          </button>
         )}
         <form
           onSubmit={(event) => {

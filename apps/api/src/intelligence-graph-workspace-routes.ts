@@ -172,6 +172,34 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
       }
     );
 
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/library",
+      {
+        schema: {
+          params: Scope,
+          querystring: Type.Object(
+            {
+              limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
+              q: Type.Optional(Type.String({ maxLength: 120 })),
+              after: Type.Optional(Type.String({ minLength: 1, maxLength: 1024 }))
+            },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return reply
+            .header("Cache-Control", "no-store")
+            .send(dependencies.service.library(owner, request.params.projectId, request.query));
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+
     route.post(
       "/api/v1/projects/:projectId/intelligence-graphs",
       {

@@ -314,3 +314,44 @@ test("a reviewed citation submits the original source line endings and displays 
   expect(submitted).toBe("Exact\r\nquote <b> $&");
   await expect(page.locator("blockquote b")).toHaveCount(0);
 });
+
+test("library loads older metadata pages without duplicates and opens an older graph", async ({
+  page
+}) => {
+  const a = graph(),
+    b = { ...graph(), graph_id: "graph-b", title: "Second graph" },
+    c = { ...graph(), graph_id: "graph-c", title: "Older graph" };
+  await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+    const url = new URL(route.request().url());
+    let value: unknown;
+    if (url.pathname.endsWith("/library"))
+      value =
+        url.searchParams.get("q") === "Older"
+          ? { items: [c], next_cursor: null }
+          : url.searchParams.has("after")
+            ? { items: [b, c], next_cursor: null }
+            : { items: [a, b], next_cursor: "page-2" };
+    else if (url.pathname.endsWith("/revisions")) value = { items: [] };
+    else value = url.pathname.endsWith("/graph-c") ? c : a;
+    await route.fulfill({ json: value });
+  });
+  await page.goto("/graph-workspace?projectId=project-a");
+  await page.getByRole("button", { name: "Открыть графы", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Older graph · v2", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Загрузить ещё графы", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Second graph · v2", exact: true })).toHaveCount(1);
+  await page.getByRole("button", { name: "Older graph · v2", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { level: 2 }).filter({ hasText: "Older graph" })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Проект знаний · v2", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Изменить", exact: true }).click();
+  await page.getByLabel("Название выбранного узла").fill("Не потерять черновик");
+  await page.getByLabel("Поиск графов по названию").fill("Older");
+  await page.getByRole("button", { name: "Найти графы", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Проект знаний · v2", exact: true })).toHaveCount(
+    0
+  );
+  await expect(page.getByRole("button", { name: "Older graph · v2", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Название выбранного узла")).toHaveValue("Не потерять черновик");
+});

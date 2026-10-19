@@ -4,6 +4,7 @@ import {
   parseIntelligenceGraphPackage,
   INTELLIGENCE_GRAPH_PACKAGE_FORMAT,
   type IntelligenceGraphPortablePackage,
+  type IntelligenceGraphLibraryQuery,
   type IntelligenceGraphEdge,
   type IntelligenceGraphNode,
   type IntelligenceGraphRevisionInfo,
@@ -173,6 +174,71 @@ export class IntelligenceGraphWorkspaceService {
 
   list(ownerId: string, projectId: string, limit = 20): IntelligenceGraphWorkspace[] {
     return this.repository.list(ownerId, projectId, integer(limit, 20, "limit"));
+  }
+
+  library(
+    ownerId: string,
+    projectId: string,
+    options: { limit?: number; q?: string; after?: string } = {}
+  ) {
+    const limit = integer(options.limit ?? 20, 20, "limit");
+    const raw = options.q ?? "";
+    if (typeof raw !== "string") return invalid("q must be text");
+    const query = !raw.trim()
+      ? ""
+      : requireText(raw, 120, "q").normalize("NFC").toLocaleLowerCase("ru-RU");
+    const filterHash = createHash("sha256")
+      .update(JSON.stringify([ownerId, projectId, query]))
+      .digest("hex");
+    let before: IntelligenceGraphLibraryQuery["before"];
+    if (options.after !== undefined) {
+      if (typeof options.after !== "string" || !/^[A-Za-z0-9_-]{1,1024}$/.test(options.after))
+        return invalid("Invalid graph library cursor");
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(Buffer.from(options.after, "base64url").toString("utf8"));
+      } catch {
+        return invalid("Invalid graph library cursor");
+      }
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed) ||
+        Object.keys(parsed).length !== 3 ||
+        !("filter_hash" in parsed) ||
+        parsed.filter_hash !== filterHash ||
+        !("updated_at" in parsed) ||
+        typeof parsed.updated_at !== "string" ||
+        parsed.updated_at.length > 40 ||
+        !Number.isFinite(Date.parse(parsed.updated_at)) ||
+        !("graph_id" in parsed) ||
+        typeof parsed.graph_id !== "string" ||
+        parsed.graph_id.length > 128 ||
+        !parsed.graph_id.trim()
+      )
+        return invalid("Graph library cursor does not match this query/scope");
+      before = { updated_at: parsed.updated_at, graph_id: parsed.graph_id };
+    }
+    const page = this.repository.listPage(ownerId, projectId, {
+      limit,
+      query,
+      ...(before ? { before } : {})
+    });
+    const last = page.items.at(-1);
+    return {
+      items: page.items,
+      next_cursor:
+        page.has_more && last
+          ? Buffer.from(
+              JSON.stringify({
+                filter_hash: filterHash,
+                updated_at: last.updated_at,
+                graph_id: last.graph_id
+              }),
+              "utf8"
+            ).toString("base64url")
+          : null
+    };
   }
 
   revisions(
