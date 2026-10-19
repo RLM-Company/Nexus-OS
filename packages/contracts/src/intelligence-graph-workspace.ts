@@ -1,5 +1,6 @@
 import type {
   IntelligenceGraphConflict,
+  IntelligenceGraphEvidenceRef,
   IntelligenceGraphEdge,
   IntelligenceGraphNode,
   IntelligenceGraphVersionRef
@@ -85,6 +86,90 @@ export interface IntelligenceGraphRevisionInfo {
   created_at: string;
   summary: string;
   restored_from_revision: number | null;
+}
+
+/** A bounded deterministic reading of one saved revision; organizational review is not proof. */
+export interface IntelligenceGraphWorkspaceExplanation {
+  graph_id: string;
+  graph_title: string;
+  revision: number;
+  graph_updated_at: string;
+  query: string;
+  readiness: "grounded_context" | "review_required" | "abstain";
+  concerns: string[];
+  matched_nodes: {
+    id: string;
+    version: number;
+    kind: string;
+    status: string;
+    label: string;
+    detail: string | null;
+    source: IntelligenceGraphEvidenceRef;
+    known: boolean;
+  }[];
+  relationships: {
+    edge_id: string;
+    version: number;
+    from: string;
+    to: string;
+    relation: string;
+    description: string;
+    verified: boolean;
+    status: string;
+    source: IntelligenceGraphEvidenceRef;
+    quote: string | null;
+    source_status: string | null;
+    note: string;
+  }[];
+  conflicts: Pick<
+    IntelligenceGraphConflict,
+    | "conflict_id"
+    | "subject_ref"
+    | "position_refs"
+    | "status"
+    | "resolution_ref"
+    | "created_at"
+    | "resolved_at"
+  >[];
+  conflict_nodes: {
+    ref: IntelligenceGraphVersionRef;
+    kind: string;
+    status: string;
+    label: string;
+    detail: string | null;
+  }[];
+  stale_conflict_ids: string[];
+  conflict_review: {
+    relevant: number;
+    returned: number;
+    returned_nodes: number;
+    max_conflicts: number;
+    max_nodes: number;
+    truncated: boolean;
+  };
+  paths: {
+    seed: IntelligenceGraphVersionRef;
+    target: IntelligenceGraphVersionRef;
+    edges: IntelligenceGraphVersionRef[];
+  }[];
+  budget: {
+    max_depth: number;
+    max_nodes: number;
+    max_edges: number;
+    max_fan_out: number;
+    max_context_tokens: number;
+    visited_nodes: number;
+    returned_edges: number;
+    estimated_context_tokens: number;
+    truncated: boolean;
+  };
+  truncated: boolean;
+  explanation: string;
+}
+
+export interface IntelligenceGraphWorkspaceReport {
+  format: "kosmora.intelligence-graph-report.v1";
+  reading: IntelligenceGraphWorkspaceExplanation;
 }
 
 /** Every implementation must enforce owner AND project on every read and write. */

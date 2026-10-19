@@ -513,7 +513,8 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
           params: GraphScope,
           querystring: Type.Object(
             {
-              q: Type.String({ minLength: 1, maxLength: 500 })
+              q: Type.String({ minLength: 1, maxLength: 500 }),
+              revision: Type.Optional(Revision)
             },
             { additionalProperties: false }
           )
@@ -523,12 +524,48 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
         const owner = await authenticate(request, reply, request.params.projectId);
         if (!owner) return;
         try {
-          return dependencies.service.explain(
-            owner,
-            request.params.projectId,
-            request.params.graphId,
-            request.query.q
-          );
+          return reply
+            .header("Cache-Control", "no-store")
+            .send(
+              dependencies.service.explain(
+                owner,
+                request.params.projectId,
+                request.params.graphId,
+                request.query.q,
+                request.query.revision
+              )
+            );
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/report",
+      {
+        schema: {
+          params: GraphScope,
+          querystring: Type.Object(
+            { q: Type.String({ minLength: 1, maxLength: 500 }), revision: Revision },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return reply
+            .header("Cache-Control", "no-store")
+            .send(
+              dependencies.service.report(
+                owner,
+                request.params.projectId,
+                request.params.graphId,
+                request.query.q,
+                request.query.revision
+              )
+            );
         } catch (error) {
           return handleFailure(reply, error);
         }

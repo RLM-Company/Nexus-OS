@@ -11,6 +11,8 @@ import {
   type IntelligenceGraphRevisionInfo,
   type IntelligenceGraphVersionRef,
   type IntelligenceGraphWorkspace,
+  type IntelligenceGraphWorkspaceExplanation,
+  type IntelligenceGraphWorkspaceReport,
   type IntelligenceGraphWorkspaceRepository
 } from "@cosmora/contracts";
 import { IntelligenceGraphIndex } from "./intelligence-graph-retrieval.js";
@@ -849,8 +851,17 @@ export class IntelligenceGraphWorkspaceService {
     );
   }
 
-  explain(ownerId: string, projectId: string, graphId: string, query: string) {
-    const graph = this.get(ownerId, projectId, graphId);
+  explain(
+    ownerId: string,
+    projectId: string,
+    graphId: string,
+    query: string,
+    revision?: number
+  ): IntelligenceGraphWorkspaceExplanation {
+    const graph =
+      revision === undefined
+        ? this.get(ownerId, projectId, graphId)
+        : this.revision(ownerId, projectId, graphId, revision);
     const normalized = requireText(query, 500, "query");
     ensureLimits(graph);
     const records = new Map(graph.records.map((record) => [refKey(record.node), record]));
@@ -901,15 +912,100 @@ export class IntelligenceGraphWorkspaceService {
           )?.verification_status ?? null,
         note:
           edge.verification_status === "verified"
-            ? "Graph relation marked verified; check primary evidence independently"
-            : "Owner-entered or proposed relationship, not independently verified"
+            ? "Связь помечена проверенной; содержательно проверьте первичные источники."
+            : "Ручная или предложенная связь; независимая проверка не выполнена."
       };
     });
+    const matchedIds = new Set(result.evidence.nodes.map((n) => n.node.node_id));
+    const queryTokens = normalized.toLocaleLowerCase("ru-RU").match(/[\p{L}\p{N}_-]+/gu) ?? [];
+    const relevant = (graph.conflicts ?? [])
+      .filter((c) =>
+        [c.subject_ref, ...c.position_refs, ...(c.resolution_ref ? [c.resolution_ref] : [])].some(
+          (ref) => {
+            if (matchedIds.has(ref.id)) return true;
+            const r = records.get(refKey(ref));
+            const tokens = new Set(
+              `${r?.text ?? ""} ${r?.excerpt ?? ""}`
+                .toLocaleLowerCase("ru-RU")
+                .match(/[\p{L}\p{N}_-]+/gu) ?? []
+            );
+            return queryTokens.some((t) => tokens.has(t));
+          }
+        )
+      )
+      .sort((a, b) =>
+        a.created_at < b.created_at
+          ? -1
+          : a.created_at > b.created_at
+            ? 1
+            : a.conflict_id < b.conflict_id
+              ? -1
+              : a.conflict_id > b.conflict_id
+                ? 1
+                : 0
+      );
+    const conflicts: IntelligenceGraphWorkspaceExplanation["conflicts"] = [];
+    const conflictNodes = new Map<
+      string,
+      IntelligenceGraphWorkspaceExplanation["conflict_nodes"][number]
+    >();
+    const staleIds: string[] = [];
+    for (const c of relevant) {
+      const refs = [
+        c.subject_ref,
+        ...c.position_refs,
+        ...(c.resolution_ref ? [c.resolution_ref] : [])
+      ];
+      const newKeys = new Set(refs.map(refKey).filter((k) => !conflictNodes.has(k)));
+      // Each selected review is complete: never show only one side to fit the budget.
+      if (conflicts.length >= 10 || conflictNodes.size + newKeys.size > 60) continue;
+      conflicts.push({
+        conflict_id: c.conflict_id,
+        subject_ref: c.subject_ref,
+        position_refs: c.position_refs,
+        status: c.status,
+        resolution_ref: c.resolution_ref,
+        created_at: c.created_at,
+        resolved_at: c.resolved_at
+      });
+      if (refs.some((r) => !current(vertices.get(refKey(r))!.verification_status)))
+        staleIds.push(c.conflict_id);
+      for (const ref of refs) {
+        const node = vertices.get(refKey(ref))!;
+        const record = records.get(refKey(ref));
+        conflictNodes.set(refKey(ref), {
+          ref,
+          kind: node.kind,
+          status: node.verification_status,
+          label: record?.text ?? ref.id,
+          detail: record?.excerpt ?? null
+        });
+      }
+    }
+    const concerns: string[] = [...result.concerns];
+    if (relevant.some((c) => c.status === "open")) concerns.push("OPEN_CONFLICTS");
+    if (
+      relevant.some((c) =>
+        [c.subject_ref, ...c.position_refs, ...(c.resolution_ref ? [c.resolution_ref] : [])].some(
+          (r) => !current(vertices.get(refKey(r))!.verification_status)
+        )
+      )
+    )
+      concerns.push("STALE_CONFLICTS");
+    const conflictTruncated = conflicts.length < relevant.length;
+    if (conflictTruncated) concerns.push("TRUNCATED_CONFLICT_REVIEW");
+    const readiness =
+      result.readiness === "grounded_context" && concerns.length > 0
+        ? "review_required"
+        : result.readiness;
     return {
       graph_id: graph.graph_id,
+      graph_title: graph.title,
       revision: graph.revision,
-      readiness: result.readiness,
-      concerns: result.concerns,
+      graph_updated_at: graph.updated_at,
+      query: normalized,
+      readiness,
+      concerns,
       matched_nodes: result.evidence.nodes.map(({ node, excerpt }) => ({
         id: node.node_id,
         version: node.node_version,
@@ -923,14 +1019,38 @@ export class IntelligenceGraphWorkspaceService {
         known: vertices.has(refKey({ id: node.node_id, version: node.node_version }))
       })),
       relationships: explanations,
-      truncated: result.evidence.budget.truncated,
+      conflicts,
+      conflict_nodes: [...conflictNodes.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([, n]) => n),
+      stale_conflict_ids: staleIds,
+      conflict_review: {
+        relevant: relevant.length,
+        returned: conflicts.length,
+        returned_nodes: conflictNodes.size,
+        max_conflicts: 10,
+        max_nodes: 60,
+        truncated: conflictTruncated
+      },
+      paths: result.evidence.paths,
+      budget: result.evidence.budget,
+      truncated: result.evidence.budget.truncated || conflictTruncated,
       explanation:
-        result.readiness === "abstain"
+        readiness === "abstain"
           ? "Недостаточно подтверждённых данных. Связи не считаются доказанными."
-          : result.readiness === "review_required"
+          : readiness === "review_required"
             ? "Найдены предварительные связи. Требуется проверка источников."
             : "Контекст прошёл формальную проверку; выводы ещё требуют содержательной проверки."
     };
+  }
+
+  report(ownerId: string, projectId: string, graphId: string, query: string, revision: number) {
+    const report: IntelligenceGraphWorkspaceReport = {
+      format: "kosmora.intelligence-graph-report.v1",
+      reading: this.explain(ownerId, projectId, graphId, query, revision)
+    };
+    const sha256 = createHash("sha256").update(JSON.stringify(report)).digest("hex");
+    return { report, sha256 };
   }
 
   private link(

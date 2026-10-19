@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import type { IntelligenceGraphEdit } from "../src/intelligence-graph-workspace.js";
 import type {
   IntelligenceGraphRevisionInfo,
@@ -1037,5 +1038,197 @@ describe("manual conflict lifecycle", () => {
       () => service.importPackage("owner-a", "project-a", changed, exported.sha256),
       "BAD_INPUT"
     );
+  });
+});
+
+describe("conflict-aware revision readings", () => {
+  const packet = () => ({
+    format: "kosmora.intelligence-graph.v1",
+    title: "Точное чтение",
+    nodes: [
+      { key: "topic", kind: "Entity", label: "Архитектура", detail: "Тема" },
+      {
+        key: "a",
+        kind: "Claim",
+        label: "Архитектура: позиция A",
+        detail: "Исходная позиция\r\nТочная строка"
+      },
+      { key: "b", kind: "Claim", label: "Конкурирующая позиция", detail: "<script> $&" },
+      { key: "d", kind: "Decision", label: "Решение", detail: "Ручное обоснование" }
+    ],
+    edges: [],
+    conflicts: [{ subject: "topic", positions: ["a", "b"], resolution: null as string | null }]
+  });
+  const fixture = () => {
+    const { service, repository } = suite();
+    const p = packet();
+    const preview = service.previewImport(p);
+    const graph = service.importPackage("owner-a", "project-a", p, preview.sha256);
+    return { service, repository, graph };
+  };
+  it("returns all pinned positions when only one side matches and never upgrades evidence", () => {
+    const { service, graph } = fixture();
+    const reading = service.explain("owner-a", "project-a", graph.graph_id, "Архитектура");
+    expect(reading.conflicts).toHaveLength(1);
+    expect(reading.conflict_nodes.map((n) => n.label)).toContain("Конкурирующая позиция");
+    expect(reading.conflict_nodes.map((n) => n.detail)).toContain("<script> $&");
+    expect(reading.conflict_review).toMatchObject({ relevant: 1, returned: 1, truncated: false });
+    expect(reading.concerns).toContain("OPEN_CONFLICTS");
+    expect(reading.readiness).toBe("abstain");
+    expect(reading.query).toBe("Архитектура");
+    expect(reading.matched_nodes.every((n) => n.status === "discovered")).toBe(true);
+  });
+  it("finds pinned historical text after deletion and reports stale versions", () => {
+    const { service, graph } = fixture();
+    const a = graph.nodes[1]!;
+    const changed = service.edit("owner-a", "project-a", graph.graph_id, 1, {
+      kind: "remove_node",
+      node: { id: a.node_id, version: 1 }
+    });
+    const reading = service.explain("owner-a", "project-a", graph.graph_id, "Исходная");
+    expect(reading.matched_nodes).toHaveLength(0);
+    expect(reading.conflicts).toHaveLength(1);
+    expect(reading.stale_conflict_ids).toEqual([changed.conflicts![0]!.conflict_id]);
+    expect(reading.conflict_nodes.find((n) => n.ref.id === a.node_id)).toMatchObject({
+      status: "superseded",
+      detail: "Исходная позиция\r\nТочная строка"
+    });
+    expect(reading.concerns).toContain("STALE_CONFLICTS");
+    expect(
+      service.explain("owner-a", "project-a", graph.graph_id, "Несвязанный запрос").conflicts
+    ).toEqual([]);
+  });
+  it("requires review for an open conflict even when upstream nodes passed independent verification", () => {
+    const { service, repository, graph } = fixture();
+    const stored = repository.current.get(`owner-a|project-a|${graph.graph_id}`)!;
+    for (const n of stored.nodes) {
+      n.verification_status = "verified";
+      n.provenance_kind = "human_verification";
+      n.confidence_method = "human_review";
+    }
+    const conflicts = stored.conflicts;
+    stored.conflicts = [];
+    expect(service.explain("owner-a", "project-a", graph.graph_id, "Архитектура").readiness).toBe(
+      "grounded_context"
+    );
+    stored.conflicts = conflicts;
+    const reading = service.explain("owner-a", "project-a", graph.graph_id, "Архитектура");
+    expect(reading.readiness).toBe("review_required");
+    expect(reading.concerns).toContain("OPEN_CONFLICTS");
+    expect(stored.nodes.every((n) => n.verification_status === "verified")).toBe(true);
+  });
+  it("pins exact query/revision report bytes across later edits and rejects foreign/future revisions", () => {
+    const { service, graph } = fixture();
+    const first = service.report("owner-a", "project-a", graph.graph_id, "  Архитектура  ", 1);
+    service.edit("owner-a", "project-a", graph.graph_id, 1, {
+      kind: "rename",
+      title: "Новое название"
+    });
+    expect(service.report("owner-a", "project-a", graph.graph_id, "Архитектура", 1)).toEqual(first);
+    expect(first.report).toMatchObject({
+      format: "kosmora.intelligence-graph-report.v1",
+      reading: { revision: 1, graph_title: "Точное чтение", query: "Архитектура" }
+    });
+    expect(
+      service.report("owner-a", "project-a", graph.graph_id, "Архитектура", 2).sha256
+    ).not.toBe(first.sha256);
+    expect(
+      service.report("owner-a", "project-a", graph.graph_id, "Конкурирующая", 1).sha256
+    ).not.toBe(first.sha256);
+    expect(JSON.stringify(first)).not.toContain("owner-a");
+    expect(first.sha256).toBe(
+      createHash("sha256").update(JSON.stringify(first.report)).digest("hex")
+    );
+    expectCode(
+      () => service.report("owner-b", "project-a", graph.graph_id, "Архитектура", 1),
+      "NOT_FOUND"
+    );
+    expectCode(
+      () => service.report("owner-a", "project-a", graph.graph_id, "Архитектура", 3),
+      "BAD_INPUT"
+    );
+  });
+  it("keeps resolved decisions as organizational context and flags a superseded decision", () => {
+    const { service } = suite();
+    const p = packet();
+    p.conflicts[0]!.resolution = "d";
+    const preview = service.previewImport(p),
+      graph = service.importPackage("owner-a", "project-a", p, preview.sha256);
+    const clean = service.explain("owner-a", "project-a", graph.graph_id, "Архитектура");
+    expect(clean.concerns).not.toContain("OPEN_CONFLICTS");
+    expect(clean.conflicts[0]!.resolution_ref).not.toBeNull();
+    expect(clean.readiness).toBe("abstain");
+    const decision = graph.nodes[3]!;
+    service.edit("owner-a", "project-a", graph.graph_id, 1, {
+      kind: "revise_node",
+      node: { id: decision.node_id, version: 1 },
+      label: "Новое решение",
+      detail: "Новый текст"
+    });
+    const stale = service.explain("owner-a", "project-a", graph.graph_id, "Архитектура");
+    expect(stale.concerns).toContain("STALE_CONFLICTS");
+    expect(stale.conflict_nodes.find((n) => n.ref.id === decision.node_id)!.detail).toBe(
+      "Ручное обоснование"
+    );
+    expect(service.explain("owner-a", "project-a", graph.graph_id, "Архитектура", 1)).toEqual(
+      clean
+    );
+  });
+  it("bounds conflict count, preserves complete sides and deduplicates repeated node texts", () => {
+    const { service } = suite();
+    const p = packet();
+    p.conflicts = Array.from({ length: 12 }, () => ({ ...p.conflicts[0]! }));
+    const preview = service.previewImport(p),
+      graph = service.importPackage("owner-a", "project-a", p, preview.sha256);
+    const reading = service.explain("owner-a", "project-a", graph.graph_id, "Архитектура");
+    expect(reading.conflict_review).toMatchObject({
+      relevant: 12,
+      returned: 10,
+      returned_nodes: 3,
+      truncated: true
+    });
+    expect(reading.conflicts.every((c) => c.position_refs.length === 2)).toBe(true);
+    expect(reading.concerns).toContain("TRUNCATED_CONFLICT_REVIEW");
+    expect(reading.truncated).toBe(true);
+  });
+  it("limits unique context nodes without returning half a conflict or omitting its decision", () => {
+    const { service } = suite();
+    const nodes = Array.from({ length: 84 }, (_, i) => ({
+      key: "n" + i,
+      kind: i % 21 === 20 ? "Decision" : "Claim",
+      label: "Общая тема " + i,
+      detail: "Текст " + i
+    }));
+    const conflicts = Array.from({ length: 4 }, (_, group) => ({
+      subject: "n" + group * 21,
+      positions: Array.from({ length: 20 }, (_, i) => "n" + (group * 21 + i)),
+      resolution: "n" + (group * 21 + 20)
+    }));
+    const p = {
+      format: "kosmora.intelligence-graph.v1",
+      title: "Лимиты",
+      nodes,
+      edges: [],
+      conflicts
+    };
+    const preview = service.previewImport(p),
+      graph = service.importPackage("owner-a", "project-a", p, preview.sha256);
+    const reading = service.explain("owner-a", "project-a", graph.graph_id, "Общая");
+    expect(reading.conflict_nodes).toHaveLength(42);
+    expect(reading.conflict_review).toMatchObject({
+      relevant: 4,
+      returned: 2,
+      truncated: true,
+      max_nodes: 60
+    });
+    for (const c of reading.conflicts) {
+      expect(c.position_refs).toHaveLength(20);
+      expect(reading.conflict_nodes.some((n) => n.ref.id === c.resolution_ref!.id)).toBe(true);
+      expect(
+        c.position_refs.every((p) =>
+          reading.conflict_nodes.some((n) => n.ref.id === p.id && n.ref.version === p.version)
+        )
+      ).toBe(true);
+    }
   });
 });
