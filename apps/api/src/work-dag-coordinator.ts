@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   createWorkPlanPackage,
   parseWorkPlanPackage,
+  scheduledReadyWorkNodes,
   type WorkDag,
   type WorkDagControl,
   type WorkDagCreate,
@@ -117,10 +118,7 @@ export class WorkDagCoordinator {
           this.works.dag.save(graph, "Автозапуск остановлен до снятия ограничения");
           continue;
         }
-        const next = graph.execution_waves
-          ?.flat()
-          .map((id) => graph.nodes.find((node) => node.id === id)!)
-          .find((node) => node.status === "pending" && !node.attempts.length);
+        const next = scheduledReadyWorkNodes(graph)[0];
         if (!next) continue;
         if (this.allocatedRequests(graph) + 3 > graph.execution.max_model_requests) {
           graph.execution.status = "stopped";
@@ -331,7 +329,9 @@ export class WorkDagCoordinator {
         updated.title !== old.title ||
         updated.goal !== old.goal ||
         JSON.stringify(updated.depends_on) !== JSON.stringify(old.depends_on) ||
-        updated.requires_critic !== old.requires_critic
+        updated.requires_critic !== old.requires_critic ||
+        (updated.priority ?? "normal") !== (old.priority ?? "normal") ||
+        (updated.deadline ?? null) !== (old.deadline ?? null)
       )
         throw new WorkDagConflict("STEP_ALREADY_STARTED");
     }

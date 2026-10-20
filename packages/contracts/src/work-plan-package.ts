@@ -43,12 +43,16 @@ export function createWorkPlanPackage(graph: Pick<WorkDag, "title" | "nodes">): 
   return parseWorkPlanPackage({
     format: "kosmora.work-plan.v1",
     title: graph.title,
-    nodes: graph.nodes.map(({ id, title, goal, depends_on, requires_critic }) => ({
-      id,
-      title,
-      goal,
-      depends_on: [...depends_on],
-      ...(requires_critic === undefined ? {} : { requires_critic })
-    }))
+    nodes: graph.nodes.map(
+      ({ id, title, goal, depends_on, requires_critic, priority, deadline }) => ({
+        id,
+        title,
+        goal,
+        depends_on: [...depends_on],
+        ...(requires_critic === undefined ? {} : { requires_critic }),
+        ...(priority === undefined ? {} : { priority }),
+        ...(deadline === undefined ? {} : { deadline })
+      })
+    )
   });
 }

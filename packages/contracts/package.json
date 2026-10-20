@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./work-schedule": {
+      "development": "./src/work-schedule.ts",
+      "types": "./src/work-schedule.ts",
+      "default": "./dist/work-schedule.js"
+    },
     "./intelligence-graph-package": {
       "development": "./src/intelligence-graph-package.ts",
       "types": "./src/intelligence-graph-package.ts",

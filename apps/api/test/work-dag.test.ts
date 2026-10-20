@@ -166,6 +166,95 @@ async function fixture(
   };
 }
 
+describe("Work priorities and deadlines", () => {
+  it("selects ready steps by priority after explicit launch, without bypassing dependencies", async () => {
+    const f = await fixture();
+    let graph = f.dag.create(f.project.id, owner, owner, {
+      client_request_id: "scheduled-plan",
+      title: "Scheduled plan",
+      nodes: nodes.map((node) => ({
+        ...node,
+        priority: node.id === "document" ? "urgent" : node.id === "independent" ? "high" : "normal",
+        deadline: "2020-01-01T12:00:00Z"
+      }))
+    });
+    f.dag.advance();
+    expect(f.calls).toHaveLength(0);
+    expect(f.dag.get(graph.id, owner)!.nodes.every((node) => !node.attempts.length)).toBe(true);
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "run_plan",
+      acknowledge_cost: true,
+      max_model_requests: 9
+    });
+    for (const expected of ["independent", "brief", "document"]) {
+      f.dag.advance();
+      const active = f.dag.get(graph.id, owner)!;
+      expect(
+        active.nodes.filter((node) => node.status === "running").map((node) => node.id)
+      ).toEqual([expected]);
+      for (const child of f.store.pending()) await f.coordinator.execute(child.id, owner);
+    }
+    expect(f.dag.get(graph.id, owner)!.nodes.every((node) => node.status === "completed")).toBe(
+      true
+    );
+    expect(f.calls).toHaveLength(6);
+  });
+
+  it("persists metadata and explicit clearing, preserves CAS and freezes started nodes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kosmora-schedule-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const path = join(dir, "work.db");
+    const f = await fixture({ path });
+    let graph = f.create();
+    const scheduled: WorkDagNodeInput[] = nodes.map((node) => ({
+      ...node,
+      priority: "high",
+      deadline: "2028-02-29T12:00:00.000Z"
+    }));
+    graph = f.dag.edit(graph.id, owner, graph.version, scheduled);
+    expect(f.dag.get(graph.id, "other-owner")).toBeNull();
+    expect(() => f.dag.edit(graph.id, owner, graph.version - 1, nodes)).toThrow("STALE_DAG");
+    expect(() =>
+      f.dag.edit(graph.id, owner, graph.version, [
+        { ...scheduled[0]!, deadline: "2026-02-30T12:00:00Z" },
+        ...scheduled.slice(1)
+      ])
+    ).toThrow("INVALID_DAG_DEADLINE");
+    expect(() =>
+      f.dag.edit(graph.id, owner, graph.version, [
+        { ...scheduled[0]!, priority: "invalid" as "high" },
+        ...scheduled.slice(1)
+      ])
+    ).toThrow("INVALID_DAG_PRIORITY");
+    const id = graph.id;
+    f.close();
+    const reopened = await fixture({ path });
+    graph = reopened.dag.get(id, owner)!;
+    expect(graph.nodes[0]).toMatchObject({
+      priority: "high",
+      deadline: "2028-02-29T12:00:00.000Z"
+    });
+    graph = reopened.dag.edit(
+      id,
+      owner,
+      graph.version,
+      scheduled.map((node) => ({ ...node, deadline: null }))
+    );
+    expect(graph.nodes.every((node) => node.deadline === null)).toBe(true);
+    graph = await reopened.execute(graph, "brief");
+    expect(() =>
+      reopened.dag.edit(
+        id,
+        owner,
+        graph.version,
+        scheduled.map((node) => ({ ...node, deadline: null, priority: "urgent" }))
+      )
+    ).toThrow("STEP_ALREADY_STARTED");
+    expect(reopened.dag.get(id, owner)!.nodes[0]!.priority).toBe("high");
+  });
+});
+
 describe("executable durable Work DAG", () => {
   it("cancels one unstarted step, freezes its identity across edits and preserves other plans and results", async () => {
     const f = await fixture();

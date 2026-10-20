@@ -8,7 +8,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "test": "node --test test/*.test.cjs",
-    "check": "node --check main.cjs && node --check preload.cjs && node --check connection-policy.cjs && node --check smoke-mode.cjs && node --check connection.js && node --check desktop-state.cjs && node --check desktop-recovery.cjs && node --check draft-store.cjs && node --check draft-session-gate.cjs && node --check owner-session.cjs && node --check update-policy.cjs && node --check update-service.cjs && node --check ci/create-signed-update.cjs && node --test test/*.test.cjs",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check downloads-preload.cjs && node --check download-history.cjs && node --check download-center.cjs && node --check downloads.js && node --check connection-policy.cjs && node --check smoke-mode.cjs && node --check connection.js && node --check desktop-state.cjs && node --check desktop-recovery.cjs && node --check draft-store.cjs && node --check draft-session-gate.cjs && node --check owner-session.cjs && node --check update-policy.cjs && node --check update-service.cjs && node --check ci/create-signed-update.cjs && node --test test/*.test.cjs",
     "pack:win": "electron-builder --win nsis --x64 --publish never",
     "verify:unsigned": "node ci/verify-unsigned-policy.cjs",
     "pack:unsigned:win": "powershell -NoProfile -File ci/build-unsigned.ps1"
@@ -31,6 +31,12 @@
     },
     "files": [
       "main.cjs",
+      "download-history.cjs",
+      "download-center.cjs",
+      "downloads-preload.cjs",
+      "downloads.html",
+      "downloads.css",
+      "downloads.js",
       "preload.cjs",
       "connection-policy.cjs",
       "smoke-mode.cjs",

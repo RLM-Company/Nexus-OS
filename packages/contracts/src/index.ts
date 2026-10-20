@@ -34,6 +34,7 @@ export * from "./manager-work.js";
 export * from "./work-runtime.js";
 export * from "./canvas-artifacts.js";
 export * from "./work-dag.js";
+export * from "./work-schedule.js";
 export * from "./chat-memory.js";
 export * from "./chat-skills.js";
 export * from "./chat-branches.js";
