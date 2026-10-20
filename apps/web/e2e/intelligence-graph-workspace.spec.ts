@@ -46,7 +46,7 @@ test("a rejected node edit retains its unsaved text and cannot silently overwrit
     .getByRole("textbox", { name: "Название выбранного узла" })
     .fill("Мой несохранённый тезис");
   await page.getByRole("button", { name: "Сохранить новую версию узла", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Версия графа изменилась");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("Версия графа изменилась");
   await expect(page.getByRole("textbox", { name: "Название выбранного узла" })).toHaveValue(
     "Мой несохранённый тезис"
   );
@@ -82,7 +82,7 @@ test("restore requires reviewed changes and submits the previewed base revision"
   await expect(page.getByText("После: Отсутствует", { exact: true })).toBeVisible();
   await page.getByRole("checkbox", { name: "Изменения просмотрены" }).check();
   await confirm.click();
-  await expect(page.getByRole("alert")).toContainText("Версия графа изменилась");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("Версия графа изменилась");
   expect(expectedRevision).toBe(2);
 });
 
@@ -208,6 +208,9 @@ test("import receipt survives reload and recovery only reads without a second PO
       });
   });
   await page.goto("/graph-workspace?projectId=project-a");
+  await expect(page.getByRole("textbox", { name: "ID проекта", exact: true })).toHaveValue(
+    "project-a"
+  );
   await page.getByLabel("Импорт графа JSON").setInputFiles({
     name: "graph.json",
     mimeType: "application/json",
@@ -395,7 +398,7 @@ test("conflict submission requires reviewed exact versions and retains selection
   await expect(save).toBeDisabled();
   await section.getByRole("checkbox", { name: "Тема и точные версии позиций просмотрены" }).check();
   await save.click();
-  await expect(page.getByRole("alert")).toContainText("Версия графа изменилась");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("Версия графа изменилась");
   expect(body).toEqual({
     expected_revision: 2,
     operation: {

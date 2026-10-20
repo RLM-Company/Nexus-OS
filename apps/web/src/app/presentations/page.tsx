@@ -504,7 +504,7 @@ export default function PresentationsPage() {
               <small>До 40 правок в этой вкладке · Ctrl/⌘ Z, Ctrl/⌘ Shift Z</small>
             </div>
             <PresentationSearch
-              key={deck.id}
+              key={`search:${deck.id}`}
               deck={deck}
               selected={selected}
               busy={busy}
@@ -520,7 +520,12 @@ export default function PresentationsPage() {
                 });
               }}
             />
-            <PresentationHistory key={deck.id} deck={deck} busy={busy} onRestore={restore} />
+            <PresentationHistory
+              key={`history:${deck.id}`}
+              deck={deck}
+              busy={busy}
+              onRestore={restore}
+            />
             <fieldset disabled={busy} className={styles.editorFields}>
               <div className={styles.deckBar}>
                 <label>
@@ -639,6 +644,7 @@ export default function PresentationsPage() {
                       Заголовок
                       <input
                         id="slide-title"
+                        aria-label="Заголовок"
                         value={selectedSlide.title}
                         maxLength={180}
                         onChange={(event) => modifySlide({ title: event.target.value }, "title")}
@@ -648,6 +654,7 @@ export default function PresentationsPage() {
                       Основной текст
                       <textarea
                         id="slide-body"
+                        aria-label="Основной текст"
                         value={selectedSlide.body}
                         maxLength={4000}
                         rows={5}
@@ -659,6 +666,7 @@ export default function PresentationsPage() {
                         Вторая колонка
                         <textarea
                           id="slide-aside"
+                          aria-label="Вторая колонка"
                           value={selectedSlide.aside}
                           maxLength={4000}
                           rows={5}
@@ -670,6 +678,7 @@ export default function PresentationsPage() {
                       Заметки докладчика <small>Входят в JSON и PPTX; на слайде не показаны</small>
                       <textarea
                         id="slide-notes"
+                        aria-label="Заметки докладчика"
                         value={selectedSlide.notes}
                         maxLength={4000}
                         rows={3}

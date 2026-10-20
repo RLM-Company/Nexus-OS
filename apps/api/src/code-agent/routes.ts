@@ -1,3 +1,4 @@
+import { githubIssueContextSchema, type GithubIssueContext } from "../github-issue-context.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { CodeDiffError } from "@cosmora/tool-runtime";
@@ -185,6 +186,7 @@ export function registerCodeAgentRoutes(
     Params: Params;
     Body: {
       client_request_id?: string;
+      issue_context?: GithubIssueContext;
       task: string;
       base_branch: string;
       files?: string[];
@@ -203,6 +205,7 @@ export function registerCodeAgentRoutes(
                   "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$"
               })
             ),
+            issue_context: Type.Optional(githubIssueContextSchema),
             auto_check: Type.Optional(autoCheck),
             task: Type.String({ minLength: 1, maxLength: 8000 }),
             base_branch: Type.String({ minLength: 1, maxLength: 240 }),

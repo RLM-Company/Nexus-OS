@@ -191,6 +191,14 @@ export function IntelligenceGraphView({ graph }: { graph: GraphForComparison }) 
             <title>
               {node.label} · {node.kind} · {node.verification_status}
             </title>
+            <rect
+              x={node.x - 110}
+              y={node.y - 24}
+              width={220}
+              height={70}
+              fill="transparent"
+              pointerEvents="all"
+            />
             <circle
               cx={node.x}
               cy={node.y}

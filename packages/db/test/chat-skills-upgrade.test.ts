@@ -39,7 +39,9 @@ describe("chat Skills additive upgrade and restart", () => {
       });
       const before = db.sqlite.prepare("SELECT * FROM general_chats").all();
       await runMigrations(db);
-      expect(db.sqlite.prepare("SELECT * FROM general_chats").all()).toEqual(before);
+      expect(db.sqlite.prepare("SELECT * FROM general_chats").all()).toEqual(
+        before.map((row) => ({ ...row, mode: "kosmora" }))
+      );
       let store = new GeneralChatStore(db.sqlite);
       expect(store.skills.forRun("legacy-run", "owner")).toEqual({
         selection_version: 0,

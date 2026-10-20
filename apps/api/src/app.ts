@@ -1,3 +1,4 @@
+import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import { ContextTooLargeError } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { ServerConfig } from "@cosmora/config";
@@ -784,6 +785,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     }
   );
 
+  if (dependencies.projectStore)
+    registerGithubIssueRoutes({
+      app,
+      integration: dependencies.githubIntegration ?? new GithubIntegration(),
+      projects: dependencies.projectStore,
+      identityFor
+    });
   registerGithubRoutes({
     app,
     integration: dependencies.githubIntegration ?? new GithubIntegration(),

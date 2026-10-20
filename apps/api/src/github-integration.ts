@@ -1,3 +1,4 @@
+import { GithubIssuesClient } from "./github-issues-client.js";
 import { randomUUID, createHash, createHmac } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
@@ -161,6 +162,7 @@ export class GithubIntegration {
   readonly ownerId: string;
   readonly #token: string;
   readonly #fetch: typeof fetch;
+  readonly issues: GithubIssuesClient;
   constructor(
     options: {
       token?: string;
@@ -175,6 +177,19 @@ export class GithubIntegration {
       throw new Error("Invalid configured GitHub repository");
     this.#token = options.token?.trim() ?? "";
     this.#fetch = options.fetchImplementation ?? fetch;
+    this.issues = new GithubIssuesClient({
+      repository: this.repository,
+      configured: this.configured,
+      fetchImplementation: (url, init) =>
+        this.#fetch(url, {
+          ...init,
+          headers: {
+            authorization: `Bearer ${this.#token}`,
+            accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28"
+          }
+        })
+    });
   }
   get configured(): boolean {
     return this.#token.length > 0 && this.ownerId.length > 0;

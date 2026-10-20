@@ -791,3 +791,66 @@ export const githubChangeDrafts = sqliteTable(
     index("github_drafts_owner_project").on(table.ownerId, table.projectId, table.createdAt)
   ]
 );
+
+export const intelligenceGraphWorkspaces = sqliteTable(
+  "intelligence_graph_workspaces",
+  {
+    graphId: text("graph_id").primaryKey().notNull(),
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    revision: integer("revision").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    check("graph_revision_positive", sql`${table.revision} >= 1`),
+    index("intelligence_graph_workspaces_owner_project_idx").on(
+      table.ownerId,
+      table.projectId,
+      table.updatedAt,
+      table.graphId
+    )
+  ]
+);
+export const intelligenceGraphWorkspaceRevisions = sqliteTable(
+  "intelligence_graph_workspace_revisions",
+  {
+    graphId: text("graph_id")
+      .notNull()
+      .references(() => intelligenceGraphWorkspaces.graphId, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    snapshotJson: text("snapshot_json").notNull(),
+    summary: text("summary").notNull(),
+    restoredFromRevision: integer("restored_from_revision"),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.graphId, table.revision] }),
+    check("graph_history_revision_positive", sql`${table.revision} >= 1`),
+    check("graph_history_json_valid", sql`json_valid(${table.snapshotJson})`),
+    index("intelligence_graph_workspace_revisions_history_idx").on(table.graphId, table.revision)
+  ]
+);
+export const intelligenceGraphImportReceipts = sqliteTable(
+  "intelligence_graph_import_receipts",
+  {
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    creationKey: text("creation_key").notNull(),
+    packageSha256: text("package_sha256").notNull(),
+    graphId: text("graph_id").references(() => intelligenceGraphWorkspaces.graphId, {
+      onDelete: "set null"
+    }),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerId, table.projectId, table.creationKey] }),
+    check("graph_import_key_length", sql`length(${table.creationKey}) BETWEEN 16 AND 128`),
+    check("graph_import_sha256_length", sql`length(${table.packageSha256})=64`)
+  ]
+);

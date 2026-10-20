@@ -344,6 +344,13 @@
       "when": 1791580800025,
       "tag": "0050_owner_skill_creations",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1791580800026,
+      "tag": "0051_intelligence_graph_workspaces",
+      "breakpoints": true
     }
   ]
 }

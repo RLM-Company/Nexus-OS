@@ -1150,7 +1150,8 @@ describe("conflict-aware revision readings", () => {
     expect(service.explain("owner-a", "project-a", graph.graph_id, "Архитектура").readiness).toBe(
       "grounded_context"
     );
-    stored.conflicts = conflicts;
+    if (conflicts) stored.conflicts = conflicts;
+    else delete stored.conflicts;
     const reading = service.explain("owner-a", "project-a", graph.graph_id, "Архитектура");
     expect(reading.readiness).toBe("review_required");
     expect(reading.concerns).toContain("OPEN_CONFLICTS");

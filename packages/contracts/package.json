@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./intelligence-graph-package": {
+      "development": "./src/intelligence-graph-package.ts",
+      "types": "./src/intelligence-graph-package.ts",
+      "default": "./dist/intelligence-graph-package.js"
+    },
     "./work-dag": {
       "development": "./src/work-dag.ts",
       "types": "./src/work-dag.ts",

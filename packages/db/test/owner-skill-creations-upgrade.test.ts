@@ -14,8 +14,13 @@ it("upgrades 0048 without rewriting Skills and resolves receipts after a databas
       recursive: true
     });
     const journal = join(migrations, "meta/_journal.json");
-    const value = JSON.parse(readFileSync(journal, "utf8")) as { entries: { idx: number }[] };
-    value.entries = value.entries.filter((v) => v.idx < 49);
+    const value = JSON.parse(readFileSync(journal, "utf8")) as {
+      entries: { idx: number; tag: string }[];
+    };
+    const completeCount = value.entries.length;
+    const skillMigration = value.entries.find((v) => v.tag.endsWith("_owner_skill_creations"))!.idx;
+    value.entries = value.entries.filter((v) => v.idx < skillMigration);
+    const pendingCount = completeCount - value.entries.length;
     writeFileSync(journal, JSON.stringify(value));
     await runMigrations(db, migrations);
     const draft = { name: "Legacy", summary: "Summary", instructions: "Exact\r\n😀" };
@@ -27,7 +32,7 @@ it("upgrades 0048 without rewriting Skills and resolves receipts after a databas
     };
     await runMigrations(db);
     expect(db.sqlite.prepare("SELECT COUNT(*) n FROM __drizzle_migrations").get()).toMatchObject({
-      n: before.n + 1
+      n: before.n + pendingCount
     });
     expect(db.sqlite.prepare("SELECT * FROM owner_skill_versions").all()).toEqual(rows);
     const key = randomUUID(),
@@ -44,7 +49,7 @@ it("upgrades 0048 without rewriting Skills and resolves receipts after a databas
     expect(store.create("a", draft, key)).toEqual(first);
     expect(() => store.create("a", draft, deletedKey)).toThrow("CREATION_DELETED");
     expect(db.sqlite.prepare("SELECT COUNT(*) n FROM __drizzle_migrations").get()).toMatchObject({
-      n: before.n + 1
+      n: before.n + pendingCount
     });
     expect(db.sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
   } finally {

@@ -5,10 +5,12 @@ import Link from "next/link";
 import {
   parseIntelligenceGraphPackage,
   INTELLIGENCE_GRAPH_PACKAGE_MAX_BYTES,
-  type IntelligenceGraphPortablePackage,
-  type IntelligenceGraphSummary,
-  type IntelligenceGraphWorkspaceExplanation,
-  type IntelligenceGraphWorkspaceReport
+  type IntelligenceGraphPortablePackage
+} from "@cosmora/contracts/intelligence-graph-package";
+import type {
+  IntelligenceGraphSummary,
+  IntelligenceGraphWorkspaceExplanation,
+  IntelligenceGraphWorkspaceReport
 } from "@cosmora/contracts";
 import { compareGraphRevisions, type GraphConflict } from "./revision-diff";
 import { GraphConflictEditor } from "./graph-conflict-editor";
@@ -125,6 +127,7 @@ const request = async <T,>(url: string, init?: RequestInit): Promise<T> => {
 
 export default function GraphWorkspacePage() {
   const [projectId, setProjectId] = useState("");
+  const [availableProjects, setAvailableProjects] = useState<{ id: string; title: string }[]>([]);
   const [graphs, setGraphs] = useState<IntelligenceGraphSummary[]>([]);
   const [libraryQuery, setLibraryQuery] = useState("");
   const [appliedLibraryQuery, setAppliedLibraryQuery] = useState("");
@@ -169,6 +172,15 @@ export default function GraphWorkspacePage() {
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("projectId") ?? "";
     setProjectId(id);
+    let alive = true;
+    void request<{ items: { id: string; title: string; status: string }[] }>("/api/v1/projects")
+      .then(({ items }) => {
+        if (alive) setAvailableProjects(items.filter((project) => project.status === "ACTIVE"));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
   }, []);
   useEffect(() => {
     if (!projectId) {
@@ -296,6 +308,37 @@ export default function GraphWorkspacePage() {
         автономных выводов и не исполняет задачи.
       </p>
       <section style={panel}>
+        {availableProjects.length > 0 && (
+          <label style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+            Проект графа
+            <select
+              aria-label="Проект графа"
+              style={field}
+              disabled={busy}
+              value={availableProjects.some((project) => project.id === projectId) ? projectId : ""}
+              onChange={(event) => {
+                const id = event.target.value;
+                setProjectId(id);
+                setSelected(null);
+                setGraphs([]);
+                setNextCursor(null);
+                setLibraryLoaded(false);
+                setAppliedLibraryQuery("");
+                setLibraryQuery("");
+                setHistory([]);
+                setNodeToEdit(null);
+                setExplanation(null);
+              }}
+            >
+              <option value="">Выберите проект</option>
+              {availableProjects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label htmlFor="project-id">ID проекта</label>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           <input
@@ -428,7 +471,7 @@ export default function GraphWorkspacePage() {
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
             event.currentTarget.value = "";
-            if (!file) return;
+            if (!file || !projectId.trim() || busy) return;
             const targetProject = projectId;
             void run(async () => {
               setImportPreview(null);

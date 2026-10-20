@@ -825,7 +825,7 @@ function Skills({ agentStudioHref, controlCenterHref }: Props) {
   );
 }
 
-function Apps({ onNavigate }: Props) {
+function Apps({ onNavigate, activeProjectId }: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const applications = [
@@ -834,6 +834,13 @@ function Apps({ onNavigate }: Props) {
       icon: "code",
       category: "Разработка",
       text: "Чтение и редактирование файлов, проверка изменений и создание черновика PR.",
+      available: true
+    },
+    {
+      name: "Граф знаний",
+      icon: "multi-agent",
+      category: "Знания",
+      text: "Узлы, связи, источники и история графа вашего проекта.",
       available: true
     },
     {
@@ -898,7 +905,15 @@ function Apps({ onNavigate }: Props) {
                 {app.available ? "Серверное подключение" : "Запланировано"}
               </span>
               {app.available ? (
-                <ActionLink href="/github">Открыть GitHub</ActionLink>
+                <ActionLink
+                  href={
+                    app.name === "GitHub"
+                      ? "/github"
+                      : `/graph-workspace${activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : ""}`
+                  }
+                >
+                  {app.name === "GitHub" ? "Открыть GitHub" : "Открыть граф"}
+                </ActionLink>
               ) : (
                 <span className={styles.unavailable}>Интеграция ещё недоступна</span>
               )}

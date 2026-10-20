@@ -1,3 +1,4 @@
+import type { GithubIssueContext } from "../github-issue-context.js";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { GithubDraft, GithubFileChange } from "../github-integration.js";
@@ -24,6 +25,7 @@ export interface CodeAgentRun {
   version: number;
   status: CodeAgentStatus;
   task: string;
+  issue_context?: GithubIssueContext;
   base_branch: string;
   base_sha: string;
   workspace_scope: string;

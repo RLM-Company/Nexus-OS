@@ -48,7 +48,7 @@ test("file selection previews and verifies locally, then imports once after expl
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify({ ...pack, instructions: "changed" }))
   });
-  await expect(page.getByRole("alert")).toContainText("SHA-256");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("SHA-256");
   expect(writes).toBe(0);
   await file.setInputFiles({
     name: "skill.json",
@@ -298,7 +298,7 @@ test("undo after save preserves the latest server version; redo and copy remain 
   await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
   await expect(editor(page).getByText("v2 · Без изменений", { exact: true })).toBeVisible();
   await editor(page).getByRole("button", { name: "Отменить правку", exact: true }).click();
-  await expect(text).toHaveValue(source.draft.instructions);
+  await expect(text).toHaveValue(source.draft.instructions.replace(/\r\n?/g, "\n"));
   await expect(editor(page).getByText("v2 · Не сохранено", { exact: true })).toBeVisible();
   await editor(page).getByRole("button", { name: "Повторить правку", exact: true }).click();
   await expect(text).toHaveValue("Версия два");
