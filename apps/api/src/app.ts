@@ -705,6 +705,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       enabled: true,
       service: dependencies.intelligenceGraphWorkspace.service,
       projects: dependencies.projectStore,
+      materials: dependencies.projectStore,
       identity: identityResolver
     });
   }

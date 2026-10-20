@@ -6,6 +6,7 @@ export * from "./intelligence-graph-fixture.js";
 export * from "./intelligence-graph-evaluation.js";
 export * from "./intelligence-graph-cognition.js";
 export * from "./intelligence-graph-workspace.js";
+export * from "./intelligence-graph-context.js";
 export * from "./manager.js";
 export * from "./chat.js";
 export { ContextTooLargeError } from "./conversation-window.js";
