@@ -15,6 +15,7 @@ import type {
 import { compareGraphRevisions, type GraphConflict } from "./revision-diff";
 import { GraphConflictEditor } from "./graph-conflict-editor";
 import { GraphExplanationView } from "./graph-explanation";
+import { GraphContextPanel } from "./graph-context-panel";
 import { IntelligenceGraphView } from "./graph-view";
 import { GraphEvidenceEditor } from "./graph-evidence-editor";
 import { mergeGraphSummaryPages } from "./library-pages";
@@ -1192,6 +1193,12 @@ export default function GraphWorkspacePage() {
               />
             )}
           </section>
+          <GraphContextPanel
+            key={`context:${projectId}:${selected.graph_id}:${selected.revision}`}
+            projectId={projectId}
+            graphId={selected.graph_id}
+            revision={selected.revision}
+          />
         </div>
       )}
     </main>

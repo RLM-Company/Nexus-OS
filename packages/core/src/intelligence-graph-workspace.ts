@@ -17,6 +17,7 @@ import {
   type IntelligenceGraphWorkspaceRepository
 } from "@cosmora/contracts";
 import { IntelligenceGraphIndex } from "./intelligence-graph-retrieval.js";
+import { buildIntelligenceGraphModelContext } from "./intelligence-graph-context.js";
 import { runIntelligenceGraphCognitiveCycle } from "./intelligence-graph-cognition.js";
 import {
   graphSearchTokens,
@@ -1068,6 +1069,12 @@ export class IntelligenceGraphWorkspaceService {
     };
     const sha256 = createHash("sha256").update(JSON.stringify(report)).digest("hex");
     return { report, sha256 };
+  }
+
+  context(ownerId: string, projectId: string, graphId: string, query: string, revision: number) {
+    const graph = this.revision(ownerId, projectId, graphId, revision);
+    const reading = this.explain(ownerId, projectId, graphId, query, revision);
+    return buildIntelligenceGraphModelContext(graph, reading);
   }
 
   private link(

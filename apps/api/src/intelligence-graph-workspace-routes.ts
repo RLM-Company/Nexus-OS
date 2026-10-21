@@ -7,6 +7,7 @@ import { IntelligenceGraphPrivacyError, type ProjectStore } from "@cosmora/db";
 import { Type } from "typebox";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { canAccessOwnerApi, type RequestIdentityResolver } from "./identity.js";
+import { registerIntelligenceGraphContextRoutes } from "./intelligence-graph-context-routes.js";
 
 const Id = Type.String({ minLength: 1, maxLength: 128 });
 const Ref = Type.Object(
@@ -113,6 +114,7 @@ export interface GraphWorkspaceRouteDependencies {
   enabled: boolean;
   service: IntelligenceGraphWorkspaceService;
   projects: Pick<ProjectStore, "getProject">;
+  materials?: Pick<ProjectStore, "getMaterials" | "setMaterials">;
   identity: RequestIdentityResolver;
 }
 
@@ -166,6 +168,14 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
       }
       return actor.owner_id;
     };
+
+    if (dependencies.materials)
+      registerIntelligenceGraphContextRoutes(scoped, {
+        service: dependencies.service,
+        materials: dependencies.materials,
+        authenticate,
+        failure: handleFailure
+      });
 
     route.get(
       "/api/v1/projects/:projectId/intelligence-graphs",
