@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { evaluatePolicy } from "@cosmora/policy-engine";
@@ -312,7 +312,22 @@ export function registerResearchRoutes(options: {
       if (!run) return reply.code(404).send(notFound);
       const isHtml = request.params.format === "html";
       const body = isHtml ? researchHtml(run) : researchMarkdown(run);
+      const revision = `"${createHash("sha256").update(body).digest("hex")}"`;
+      if (
+        (request.headers["x-research-updated-at"] !== undefined &&
+          request.headers["x-research-updated-at"] !== run.updated_at) ||
+        (request.headers["if-match"] !== undefined && request.headers["if-match"] !== revision)
+      )
+        return reply
+          .code(412)
+          .send({
+            error: {
+              code: "RESEARCH_CHANGED",
+              message: "Исследование изменилось. Обновите отчёт перед созданием копии."
+            }
+          });
       return reply
+        .header("ETag", revision)
         .header(
           "Content-Type",
           isHtml ? "text/html; charset=utf-8" : "text/markdown; charset=utf-8"

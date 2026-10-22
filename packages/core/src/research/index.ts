@@ -278,6 +278,8 @@ export function researchMarkdown(run: ResearchRun): string {
   const lines = [
     `# Исследование: ${safeMarkdown(run.question)}`,
     "",
+    `Идентификатор исследования: ${run.id}.`,
+    "",
     `Статус: ${run.status}. Создано: ${run.created_at}. Обновлено: ${run.updated_at}.`,
     "",
     "## Ответ по проверенным выдержкам",

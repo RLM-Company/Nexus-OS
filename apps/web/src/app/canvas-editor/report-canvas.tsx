@@ -8,21 +8,25 @@ import {
 } from "@cosmora/contracts/canvas-artifacts";
 import { CanvasEditor, type CanvasSeed } from "./canvas-editor";
 import styles from "./report-canvas.module.css";
+type ReportCanvasProps = {
+  projectId: string;
+  title: string;
+  format?: CanvasFormat;
+  label?: string;
+  disabled?: boolean;
+} & (
+  | { content: string; loadContent?: never }
+  | { content?: never; loadContent: (signal: AbortSignal) => Promise<string> }
+);
 export function ReportCanvas({
   projectId,
   title,
   content,
+  loadContent,
   format = "markdown",
   label = "Редактировать в Canvas",
   disabled = false
-}: {
-  projectId: string;
-  title: string;
-  content: string;
-  format?: CanvasFormat;
-  label?: string;
-  disabled?: boolean;
-}) {
+}: ReportCanvasProps) {
   const [seed, setSeed] = useState<CanvasSeed | null>(null);
   const [error, setError] = useState("");
   const [opening, setOpening] = useState(false);
@@ -30,24 +34,33 @@ export function ReportCanvas({
   const modal = useRef<HTMLDialogElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const alive = useRef(true);
+  const request = useRef<AbortController | null>(null);
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
+      request.current?.abort();
+      request.current = null;
     };
   }, []);
   useEffect(() => {
     if (visible && seed && !modal.current?.open) modal.current?.showModal();
   }, [visible, seed]);
   const open = async () => {
-    if (opening || disabled) return;
+    if (opening || disabled || request.current) return;
     setError("");
-    if (canvasBytes(content) > CANVAS_MAX_CONTENT_BYTES || content.includes("\0")) {
-      setError("Документ не помещается в Canvas (512 КиБ). Сократите выборку или скачайте отчёт.");
-      return;
-    }
+    const controller = new AbortController();
+    request.current = controller;
     setOpening(true);
     try {
+      const text = loadContent ? await loadContent(controller.signal) : content;
+      if (controller.signal.aborted || !alive.current) return;
+      if (typeof text !== "string") throw new Error("Отчёт недоступен.");
+      if (canvasBytes(text) > CANVAS_MAX_CONTENT_BYTES || text.includes("\0")) {
+        throw new Error(
+          "Документ не помещается в Canvas (512 КиБ). Сократите выборку или скачайте отчёт."
+        );
+      }
       const safeTitle = Array.from(
         // eslint-disable-next-line no-control-regex
         title.replace(/[\u0000-\u001f\u007f]/g, " ").trim() || "Анализ документов"
@@ -57,21 +70,27 @@ export function ReportCanvas({
       );
       const hash = await crypto.subtle.digest(
         "SHA-256",
-        new TextEncoder().encode(projectId + "\n" + format + "\n" + safeTitle + "\n" + content)
+        new TextEncoder().encode(projectId + "\n" + format + "\n" + safeTitle + "\n" + text)
       );
       const storageId =
         "report-" +
         Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
-      if (!alive.current) return;
+      if (!alive.current || controller.signal.aborted) return;
       setSeed((current) =>
         current?.storageId === storageId
           ? current
-          : { storageId, title: safeTitle, content, format }
+          : { storageId, title: safeTitle, content: text, format }
       );
       setVisible(true);
-    } catch {
-      if (alive.current) setError("Не удалось открыть Canvas. Исходный отчёт сохранён.");
+    } catch (error) {
+      if (alive.current && !controller.signal.aborted)
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Не удалось открыть Canvas. Исходный отчёт сохранён."
+        );
     } finally {
+      if (request.current === controller) request.current = null;
       if (alive.current) setOpening(false);
     }
   };

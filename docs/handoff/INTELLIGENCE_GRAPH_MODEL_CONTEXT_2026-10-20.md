@@ -8,6 +8,10 @@ Independent checks on the combined code: 46 core graph cases, 39 Work DAG API ca
 
 The graph continues to require an ACTIVE project. Preparing or applying context itself creates no run. Deployment acceptance will be recorded separately after the release is active.
 
+## Production acceptance — 22 October 2026
+
+Source `e8eb073f68c63873c7b33e8e4334251a16d97182` activated from `/opt/cosmora/releases/graph-context-e8eb073` after the interrupted build was recovered. `build.exit` and `activation.exit` are both 0. API/web images `graph-context-api-e8eb073` and `graph-context-web-e8eb073` are healthy. The verified backup and copied-database rehearsal passed with the existing 50 migrations, graph context construction and material persistence, Skills receipts and Work scheduling. Production verification compared project materials, graph workspaces/revisions/import receipts, user tables and sessions with the backup. Auth/executor/edge identities were retained. Protected chat/navigation/brand/global-CSS source hashes match `features-web-5a2d21d`. No paid request or main merge was performed. This is server acceptance; no new live-browser graph-context scenario was performed during this deployment.
+
 20 October 2026. Exact parent: integration PR360 `c8e742a5a66e66b05f8192bc3c29a0e2dcbe7df2`, branch `codex/integrate-work-presentations-20261017`. All 1244 parent blobs were reconstructed and Git-SHA verified before implementation. This extends the already integrated graph workspace; it does not revive the old graph-OFF branch or change deployment/flags.
 
 ## User workflow
