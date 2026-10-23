@@ -5,6 +5,7 @@ import type {
   IntelligenceGraphContextState,
   IntelligenceGraphModelContext
 } from "@cosmora/contracts";
+import { SavedContextStatus } from "./saved-context-status";
 
 type Preview = IntelligenceGraphContextPreview & { state: IntelligenceGraphContextState };
 const control = {
@@ -151,17 +152,20 @@ export function GraphContextPanel({
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [notice, setNotice] = useState("");
+  const [statusVersion, setStatusVersion] = useState(0);
   const url = `/api/v1/projects/${encodeURIComponent(projectId)}/intelligence-graphs/${encodeURIComponent(graphId)}/context`;
   const body = preview
     ? (JSON.parse(preview.attachment.content) as IntelligenceGraphModelContext)
     : null;
-  const load = async (q: string) => {
-    const result = await request<Preview>(`${url}?q=${encodeURIComponent(q)}&revision=${revision}`);
+  const load = async (q: string, targetRevision = revision) => {
+    const result = await request<Preview>(
+      `${url}?q=${encodeURIComponent(q)}&revision=${targetRevision}`
+    );
     const content = JSON.parse(result.attachment.content) as IntelligenceGraphModelContext;
     if (
       content.format !== "kosmora.graph-context.v1" ||
       content.graph.id !== graphId ||
-      content.graph.revision !== revision ||
+      content.graph.revision !== targetRevision ||
       content.query !== q.trim() ||
       (await hash([
         result.attachment.name,
@@ -197,6 +201,19 @@ export function GraphContextPanel({
         Соберите снимок ревизии {revision}, просмотрите источники и позиции, затем добавьте его в
         материалы проекта. Подготовка и сохранение не запускают модель.
       </p>
+      <SavedContextStatus
+        key={`${url}:${statusVersion}`}
+        url={url}
+        busy={busy || uncertain}
+        onPrepare={(savedQuery, savedRevision) => {
+          void run(async () => {
+            setPreview(null);
+            setReviewed(false);
+            setQuery(savedQuery);
+            await load(savedQuery, savedRevision);
+          });
+        }}
+      />
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -307,6 +324,7 @@ export function GraphContextPanel({
                     if (saved.sha256 !== preview.sha256)
                       throw new Error("Ответ сохранения относится к другому снимку.");
                     setPreview({ ...preview, state: saved.state });
+                    setStatusVersion((value) => value + 1);
                     setReviewed(false);
                     setNotice(
                       "Снимок добавлен. Он будет доступен в будущих запросах этого проекта."
@@ -326,7 +344,8 @@ export function GraphContextPanel({
               type="button"
               onClick={() =>
                 void run(async () => {
-                  const current = await load(body.query);
+                  const current = await load(body.query, body.graph.revision);
+                  setStatusVersion((value) => value + 1);
                   setNotice(
                     current.state.already_applied
                       ? "Снимок сохранён; повторная запись не нужна."
@@ -360,7 +379,8 @@ export function GraphContextPanel({
                           expected_materials_version: preview.state.materials_version
                         })
                       });
-                      await load(body.query);
+                      await load(body.query, body.graph.revision);
+                      setStatusVersion((value) => value + 1);
                       setNotice("Снимок убран из будущих запросов проекта.");
                     } catch (e) {
                       setUncertain(true);

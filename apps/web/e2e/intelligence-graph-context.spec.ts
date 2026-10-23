@@ -69,7 +69,7 @@ const context = () => {
     }
   };
 };
-const open = async (page: Page) => {
+const openGraph = async (page: Page) => {
   await page.route("**/api/v1/projects", (route) =>
     route.fulfill({ json: { items: [{ id: "project-a", title: "Проект A", status: "ACTIVE" }] } })
   );
@@ -77,6 +77,10 @@ const open = async (page: Page) => {
   await page.getByRole("button", { name: "Открыть графы", exact: true }).click();
   await page.getByRole("button", { name: "Контекст проекта · v2", exact: true }).click();
   const panel = page.getByRole("region", { name: "Контекст графа для модели", exact: true });
+  return panel;
+};
+const open = async (page: Page) => {
+  const panel = await openGraph(page);
   await panel.getByRole("textbox", { name: "Запрос для контекста графа" }).fill("Исходный");
   await panel.getByRole("button", { name: "Подготовить контекст", exact: true }).click();
   return panel;
@@ -89,7 +93,17 @@ test("preview does not write and apply sends the reviewed exact hash plus materi
   let payload: unknown;
   await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path.endsWith("/context")) {
+    if (path.endsWith("/context/status")) {
+      await route.fulfill({
+        json: {
+          status: "missing",
+          graph_revision: 2,
+          materials_version: 0,
+          current_sha256: null,
+          saved: null
+        }
+      });
+    } else if (path.endsWith("/context")) {
       if (route.request().method() === "PUT") {
         writes++;
         payload = route.request().postDataJSON();
@@ -146,7 +160,17 @@ test("a lost apply response requires read recovery and never automatically repea
     writes = 0;
   await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path.endsWith("/context")) {
+    if (path.endsWith("/context/status")) {
+      await route.fulfill({
+        json: {
+          status: "missing",
+          graph_revision: 2,
+          materials_version: 0,
+          current_sha256: null,
+          saved: null
+        }
+      });
+    } else if (path.endsWith("/context")) {
       if (route.request().method() === "PUT") {
         saved = true;
         writes++;
@@ -197,7 +221,17 @@ test("mismatched context hashes prevent application", async ({ page }) => {
   let writes = 0;
   await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path.endsWith("/context")) {
+    if (path.endsWith("/context/status")) {
+      await route.fulfill({
+        json: {
+          status: "missing",
+          graph_revision: 2,
+          materials_version: 0,
+          current_sha256: null,
+          saved: null
+        }
+      });
+    } else if (path.endsWith("/context")) {
       if (route.request().method() === "PUT") writes++;
       await route.fulfill({ json: { ...p, sha256: "0".repeat(64) } });
     } else
@@ -210,11 +244,110 @@ test("mismatched context hashes prevent application", async ({ page }) => {
       });
   });
   const panel = await open(page);
-  await expect(panel.getByRole("status")).toContainText("Полученный снимок не совпал");
+  await expect(panel.getByText("Полученный снимок не совпал", { exact: false })).toBeVisible();
   await expect(
     panel.getByRole("button", { name: "Добавить в материалы проекта", exact: true })
   ).toHaveCount(0);
   expect(writes).toBe(0);
+});
+
+test("stale context is discovered before typing and preparing its replacement only reads", async ({
+  page
+}) => {
+  const p = context();
+  let writes = 0;
+  const revisions: string[] = [];
+  await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() !== "GET") writes++;
+    if (url.pathname.endsWith("/context/status")) {
+      await route.fulfill({
+        json: {
+          status: "stale",
+          graph_revision: 2,
+          materials_version: 1,
+          current_sha256: p.sha256,
+          saved: { revision: 1, query: "Исходный" }
+        }
+      });
+    } else if (url.pathname.endsWith("/context")) {
+      revisions.push(url.searchParams.get("revision")!);
+      const content = JSON.parse(p.attachment.content) as { graph: { revision: number } };
+      content.graph.revision = Number(url.searchParams.get("revision"));
+      const attachment = { ...p.attachment, content: JSON.stringify(content) };
+      await route.fulfill({
+        json: {
+          ...p,
+          attachment,
+          sha256: createHash("sha256")
+            .update(JSON.stringify([attachment.name, attachment.content, null]))
+            .digest("hex")
+        }
+      });
+    } else
+      await route.fulfill({
+        json: url.pathname.endsWith("/revisions")
+          ? { items: [] }
+          : url.pathname.endsWith("/graph-a")
+            ? graph
+            : { items: [graph] }
+      });
+  });
+  const panel = await openGraph(page);
+  const status = panel.getByRole("region", { name: "Актуальность сохранённого контекста" });
+  await expect(status).toContainText("Снимок устарел: сохранена ревизия 1, текущая — 2.");
+  await expect(panel.getByRole("textbox", { name: "Запрос для контекста графа" })).toHaveValue("");
+  await status.getByRole("button", { name: "Просмотреть сохранённый снимок", exact: true }).click();
+  await expect(panel.getByRole("checkbox")).toBeVisible();
+  await panel.getByRole("button", { name: "Проверить сохранение", exact: true }).click();
+  await expect.poll(() => revisions.length).toBe(2);
+  expect(revisions).toEqual(["1", "1"]);
+  await status.getByRole("button", { name: "Подготовить актуальную версию", exact: true }).click();
+  await expect(panel.getByRole("checkbox")).toBeVisible();
+  expect(revisions).toEqual(["1", "1", "2"]);
+  await expect(
+    panel.getByRole("button", { name: "Добавить в материалы проекта", exact: true })
+  ).toBeDisabled();
+  expect(writes).toBe(0);
+});
+
+test("status errors are recoverable and never reported as a missing snapshot", async ({ page }) => {
+  let reads = 0;
+  await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/context/status")) {
+      reads++;
+      await route.fulfill(
+        reads === 1
+          ? { status: 503, json: { error: "unavailable" } }
+          : {
+              json: {
+                status: "unrecognized",
+                graph_revision: 2,
+                materials_version: 1,
+                current_sha256: "a".repeat(64),
+                saved: null
+              }
+            }
+      );
+    } else
+      await route.fulfill({
+        json: path.endsWith("/revisions")
+          ? { items: [] }
+          : path.endsWith("/graph-a")
+            ? graph
+            : { items: [graph] }
+      });
+  });
+  const panel = await openGraph(page);
+  const status = panel.getByRole("region", { name: "Актуальность сохранённого контекста" });
+  await expect(status).toContainText("Не удалось проверить сохранённый снимок.");
+  await expect(status).not.toContainText("ещё не добавлен");
+  await status.getByRole("button", { name: "Проверить актуальность", exact: true }).click();
+  await expect(status).toContainText("Его актуальность неизвестна.");
+  await expect(status.getByRole("button", { name: "Подготовить актуальную версию" })).toHaveCount(
+    0
+  );
 });
 
 test("real project graph context survives reload and removal preserves existing materials", async ({
@@ -300,6 +433,9 @@ test("real project graph context survives reload and removal preserves existing 
   await page.reload();
   await page.getByRole("button", { name: "Открыть графы", exact: true }).click();
   await page.getByRole("button", { name: "Точные источники · v1", exact: true }).click();
+  await expect(
+    panel.getByRole("region", { name: "Актуальность сохранённого контекста" })
+  ).toContainText("Сохранена текущая ревизия 1.");
   await prepare();
   await expect(
     panel.getByText("Этот снимок уже добавлен в материалы проекта.", { exact: true })
