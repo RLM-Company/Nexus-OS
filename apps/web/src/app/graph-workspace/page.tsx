@@ -18,6 +18,7 @@ import { GraphExplanationView } from "./graph-explanation";
 import { GraphContextPanel } from "./graph-context-panel";
 import { IntelligenceGraphView } from "./graph-view";
 import { GraphEvidenceEditor } from "./graph-evidence-editor";
+import { GraphEvidenceAuditPanel } from "./graph-evidence-audit";
 import { mergeGraphSummaryPages } from "./library-pages";
 import {
   parseGraphImportAttempt,
@@ -1193,6 +1194,12 @@ export default function GraphWorkspacePage() {
               />
             )}
           </section>
+          <GraphEvidenceAuditPanel
+            key={`evidence:${projectId}:${selected.graph_id}:${selected.revision}`}
+            projectId={projectId}
+            graphId={selected.graph_id}
+            revision={selected.revision}
+          />
           <GraphContextPanel
             key={`context:${projectId}:${selected.graph_id}:${selected.revision}`}
             projectId={projectId}

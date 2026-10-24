@@ -151,6 +151,200 @@ const expectCode = (fn: () => unknown, code: IntelligenceGraphWorkspaceError["co
   }
 };
 
+describe("whole-revision evidence coverage", () => {
+  const fixture = () => {
+    const { service, repository } = suite();
+    const packet = {
+      format: "kosmora.intelligence-graph.v1",
+      title: "Проверка источников",
+      nodes: [
+        {
+          key: "s",
+          kind: "Source",
+          label: "Источник",
+          detail: "Начало\r\nЦитата <script> $&\r\nКонец"
+        },
+        { key: "d", kind: "Document", label: "Документ", detail: "Старая выдержка" },
+        ...["Без связей", "Без цитаты", "С цитатой", "С документом"].map((label, i) => ({
+          key: `c${i}`,
+          kind: "Claim",
+          label,
+          detail: label
+        }))
+      ],
+      edges: [
+        { relation: "SUPPORTS", from: "s", to: "c1" },
+        {
+          relation: "SUPPORTS",
+          from: "c1",
+          to: "c2",
+          evidence: { source: "s", location: "строки 1–2", excerpt: "\r\nЦитата <script> $&\r\n" }
+        },
+        {
+          relation: "SUPPORTS",
+          from: "c1",
+          to: "c3",
+          evidence: { source: "d", location: "строка 1", excerpt: "Старая выдержка" }
+        },
+        { relation: "SUPPORTS", from: "c0", to: "s" },
+        {
+          relation: "REFERENCES",
+          from: "s",
+          to: "c0",
+          evidence: { source: "s", location: "строка 1", excerpt: "Начало" }
+        }
+      ]
+    };
+    const graph = service.importPackage(
+      "owner-a",
+      "project-a",
+      packet,
+      service.previewImport(packet).sha256
+    );
+    const audit = (revision = graph.revision) =>
+      service.auditEvidence("owner-a", "project-a", graph.graph_id, revision);
+    return { service, repository, graph, audit };
+  };
+  it("counts exact incoming SUPPORTS citations across the whole revision without writes or verification", () => {
+    const { service, graph, audit } = fixture();
+    const before = service.get("owner-a", "project-a", graph.graph_id);
+    const result = audit();
+    expect(result.report.statistics).toEqual({
+      claims: 4,
+      with_current_citations: 2,
+      with_historical_citations_only: 0,
+      without_citations: 2,
+      support_links: 3,
+      uncited_support_links: 1,
+      historical_citations: 0
+    });
+    expect(result.report.claims.find((c) => c.label === "Без связей")!.supports).toEqual([]);
+    const quoted = result.report.claims.find((c) => c.label === "С цитатой")!.supports[0]!;
+    expect(quoted.citation).toMatchObject({
+      quote: "\r\nЦитата <script> $&\r\n",
+      status: "discovered",
+      historical: false
+    });
+    expect(result.report.claims.every((c) => c.status === "discovered")).toBe(true);
+    expect(createHash("sha256").update(JSON.stringify(result.report)).digest("hex")).toBe(
+      result.sha256
+    );
+    expect(audit()).toEqual(result);
+    expect(service.get("owner-a", "project-a", graph.graph_id)).toEqual(before);
+    expect(service.revisions("owner-a", "project-a", graph.graph_id)).toHaveLength(1);
+    expect(JSON.stringify(result.report)).not.toContain("owner-a");
+    expect(JSON.stringify(result.report)).not.toContain("project-a");
+  });
+  it("keeps historical citations pinned to the original source version", () => {
+    const { service, graph, audit } = fixture();
+    const before = audit();
+    const doc = graph.nodes.find((n) => n.kind === "Document")!;
+    const changed = service.edit("owner-a", "project-a", graph.graph_id, 1, {
+      kind: "revise_node",
+      node: { id: doc.node_id, version: 1 },
+      label: "Новый документ",
+      detail: "Полностью новый текст"
+    });
+    const current = audit(changed.revision);
+    expect(current.report.statistics).toMatchObject({
+      with_current_citations: 1,
+      with_historical_citations_only: 1,
+      without_citations: 2,
+      historical_citations: 1
+    });
+    expect(
+      current.report.claims.find((c) => c.label === "С документом")!.supports[0]!.citation
+    ).toMatchObject({
+      source: { id: doc.node_id, version: 1 },
+      label: "Документ",
+      quote: "Старая выдержка",
+      status: "superseded",
+      historical: true
+    });
+    expect(audit(1)).toEqual(before);
+  });
+  it("removes citation coverage on source deletion without rewriting the historical report", () => {
+    const { service, graph, audit } = fixture();
+    const before = audit();
+    const doc = graph.nodes.find((n) => n.kind === "Document")!;
+    const changed = service.edit("owner-a", "project-a", graph.graph_id, 1, {
+      kind: "remove_node",
+      node: { id: doc.node_id, version: 1 }
+    });
+    expect(
+      audit(changed.revision).report.claims.find((c) => c.label === "С документом")!.coverage
+    ).toBe("no_citation");
+    expect(audit(1)).toEqual(before);
+  });
+  it("excludes removed claims and superseded links; a retraction cannot retain coverage", () => {
+    const { service, graph, audit } = fixture();
+    const cited = graph.edges.find((e) => e.evidence_excerpt?.includes("Цитата"))!;
+    let changed = service.edit("owner-a", "project-a", graph.graph_id, 1, {
+      kind: "clear_edge_evidence",
+      edge_id: cited.edge_id
+    });
+    expect(audit(changed.revision).report.statistics).toMatchObject({
+      with_current_citations: 1,
+      without_citations: 3,
+      uncited_support_links: 2
+    });
+    const claim = graph.nodes.find((n) => n.node_id === cited.to.id)!;
+    changed = service.edit("owner-a", "project-a", graph.graph_id, changed.revision, {
+      kind: "remove_node",
+      node: { id: claim.node_id, version: 1 }
+    });
+    expect(audit(changed.revision).report.statistics).toMatchObject({
+      claims: 3,
+      support_links: 2
+    });
+  });
+  it("retains coverage when one of multiple sources is still current", () => {
+    const { service, graph, audit } = fixture();
+    const first = graph.edges.find((e) => e.evidence_excerpt?.includes("Цитата"))!;
+    const doc = graph.nodes.find((n) => n.kind === "Document")!;
+    let changed = service.edit("owner-a", "project-a", graph.graph_id, 1, {
+      kind: "add_edge",
+      relation: "SUPPORTS",
+      from: { id: doc.node_id, version: 1 },
+      to: first.to
+    });
+    const extra = changed.edges.find(
+      (e) => e.edge_id !== first.edge_id && e.to.id === first.to.id
+    )!;
+    changed = service.edit("owner-a", "project-a", graph.graph_id, changed.revision, {
+      kind: "cite_edge",
+      edge_id: extra.edge_id,
+      source: { id: doc.node_id, version: 1 },
+      location: "строка 1",
+      excerpt: "Старая выдержка"
+    });
+    const source = graph.nodes.find((n) => n.kind === "Source")!;
+    changed = service.edit("owner-a", "project-a", graph.graph_id, changed.revision, {
+      kind: "revise_node",
+      node: { id: source.node_id, version: 1 },
+      label: "Новый источник",
+      detail: "Новый текст"
+    });
+    const claim = audit(changed.revision).report.claims.find((c) => c.ref.id === first.to.id)!;
+    expect(claim.coverage).toBe("current_citation");
+    expect(claim.supports.filter((s) => s.citation?.historical)).toHaveLength(1);
+    expect(claim.supports.filter((s) => s.citation && !s.citation.historical)).toHaveLength(1);
+  });
+  it("does not expose foreign owner/project graphs or absent revisions", () => {
+    const { service, graph } = fixture();
+    expectCode(() => service.auditEvidence("owner-b", "project-a", graph.graph_id, 1), "NOT_FOUND");
+    expectCode(() => service.auditEvidence("owner-a", "project-b", graph.graph_id, 1), "NOT_FOUND");
+    expectCode(() => service.auditEvidence("owner-a", "project-a", graph.graph_id, 2), "BAD_INPUT");
+  });
+  it("returns zero coverage for a genuinely empty graph", () => {
+    const { service } = suite();
+    const graph = service.create("owner-a", "project-a", "Пустой");
+    const report = service.auditEvidence("owner-a", "project-a", graph.graph_id, 1).report;
+    expect(report.claims).toEqual([]);
+    expect(Object.values(report.statistics).every((n) => n === 0)).toBe(true);
+  });
+});
+
 describe("editable graph workspace", () => {
   it("creates/opens a genuinely empty graph; does not fabricate nodes", () => {
     const { service } = suite();

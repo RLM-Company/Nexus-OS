@@ -581,6 +581,37 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
         }
       }
     );
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/evidence-audit",
+      {
+        schema: {
+          params: GraphScope,
+          // TypeBox's numeric query conversion truncates decimals; pin the literal integer.
+          querystring: Type.Object(
+            { revision: Type.String({ pattern: "^[1-9][0-9]{0,15}$" }) },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          return reply
+            .header("Cache-Control", "no-store")
+            .send(
+              dependencies.service.auditEvidence(
+                owner,
+                request.params.projectId,
+                request.params.graphId,
+                Number(request.query.revision)
+              )
+            );
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
     done();
   });
 };
