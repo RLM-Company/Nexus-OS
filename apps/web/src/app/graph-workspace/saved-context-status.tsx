@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import {
   isIntelligenceGraphSavedContextStatus,
   type IntelligenceGraphSavedContextStatus
-} from "@cosmora/contracts";
+} from "@cosmora/contracts/intelligence-graph-context";
 
 export function SavedContextStatus({
   url,
