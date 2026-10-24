@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./intelligence-graph-context": {
+      "development": "./src/intelligence-graph-context.ts",
+      "types": "./src/intelligence-graph-context.ts",
+      "default": "./dist/intelligence-graph-context.js"
+    },
     "./work-schedule": {
       "development": "./src/work-schedule.ts",
       "types": "./src/work-schedule.ts",
