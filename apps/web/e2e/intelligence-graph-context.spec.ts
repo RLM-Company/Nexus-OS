@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { test, expect, type Page } from "@playwright/test";
 
 const graph = {
@@ -348,6 +349,113 @@ test("status errors are recoverable and never reported as a missing snapshot", a
   await expect(status.getByRole("button", { name: "Подготовить актуальную версию" })).toHaveCount(
     0
   );
+});
+
+for (const concurrent of [false, true])
+  test(`comparison is read-only and checks materials CAS (concurrent=${concurrent})`, async ({
+    page
+  }) => {
+    const p = context();
+    const oldBody = JSON.parse(p.attachment.content) as {
+      graph: { revision: number };
+      nodes: { detail: string }[];
+    };
+    oldBody.graph.revision = 1;
+    oldBody.nodes[0]!.detail = "Старый текст источника";
+    const oldAttachment = { ...p.attachment, content: JSON.stringify(oldBody) };
+    const oldHash = createHash("sha256")
+      .update(JSON.stringify([oldAttachment.name, oldAttachment.content, null]))
+      .digest("hex");
+    const state = { ...p.state, materials_version: 4, current_sha256: oldHash };
+    let writes = 0;
+    await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() !== "GET") writes++;
+      if (url.pathname.endsWith("/context/status"))
+        await route.fulfill({
+          json: {
+            status: "stale",
+            graph_revision: 2,
+            materials_version: concurrent ? 5 : 4,
+            current_sha256: oldHash,
+            saved: { revision: 1, query: "Исходный" }
+          }
+        });
+      else if (url.pathname.endsWith("/context"))
+        await route.fulfill({
+          json:
+            url.searchParams.get("revision") === "1"
+              ? { ...p, attachment: oldAttachment, sha256: oldHash, state }
+              : { ...p, state }
+        });
+      else
+        await route.fulfill({
+          json: url.pathname.endsWith("/revisions")
+            ? { items: [] }
+            : url.pathname.endsWith("/graph-a")
+              ? graph
+              : { items: [graph] }
+        });
+    });
+    const panel = await open(page);
+    await panel
+      .getByRole("button", { name: "Сравнить с сохранённым снимком", exact: true })
+      .click();
+    if (concurrent) {
+      await expect(
+        panel.getByText(
+          "Материалы проекта изменились. Нажмите «Проверить сохранение» перед сравнением.",
+          { exact: true }
+        )
+      ).toBeVisible();
+      await expect(
+        panel.getByRole("region", { name: "Сравнение контекста", exact: true })
+      ).toHaveCount(0);
+    } else {
+      const comparison = panel.getByRole("region", { name: "Сравнение контекста", exact: true });
+      await expect(comparison).toContainText("Сохранено: v1 → просмотрено: v2");
+      await comparison.locator("summary").filter({ hasText: "claim-a@1" }).click();
+      await expect(comparison).toContainText("Старый текст источника");
+      await expect(panel.getByRole("checkbox")).not.toBeChecked();
+    }
+    expect(writes).toBe(0);
+  });
+
+test("download preserves the exact reviewed JSON bytes without saving materials", async ({
+  page
+}) => {
+  const p = context();
+  let writes = 0;
+  await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET") writes++;
+    await route.fulfill({
+      json: path.endsWith("/context/status")
+        ? {
+            status: "missing",
+            graph_revision: 2,
+            materials_version: 0,
+            current_sha256: null,
+            saved: null
+          }
+        : path.endsWith("/context")
+          ? p
+          : path.endsWith("/revisions")
+            ? { items: [] }
+            : path.endsWith("/graph-a")
+              ? graph
+              : { items: [graph] }
+    });
+  });
+  const panel = await open(page);
+  const downloadPromise = page.waitForEvent("download");
+  await panel.getByRole("button", { name: "Скачать просмотренный JSON", exact: true }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(p.attachment.name);
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  expect(await readFile(path!)).toEqual(Buffer.from(p.attachment.content, "utf8"));
+  expect(writes).toBe(0);
 });
 
 test("real project graph context survives reload and removal preserves existing materials", async ({
