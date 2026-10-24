@@ -313,13 +313,14 @@ test("stale context is discovered before typing and preparing its replacement on
 });
 
 test("status errors are recoverable and never reported as a missing snapshot", async ({ page }) => {
-  let reads = 0;
+  // Strict Mode may cancel and repeat an initial read. Keep the outage active
+  // until the user explicitly retries, rather than counting transport attempts.
+  let recovered = false;
   await page.route("**/api/v1/projects/project-a/intelligence-graphs**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/context/status")) {
-      reads++;
       await route.fulfill(
-        reads === 1
+        !recovered
           ? { status: 503, json: { error: "unavailable" } }
           : {
               json: {
@@ -344,6 +345,7 @@ test("status errors are recoverable and never reported as a missing snapshot", a
   const status = panel.getByRole("region", { name: "Актуальность сохранённого контекста" });
   await expect(status).toContainText("Не удалось проверить сохранённый снимок.");
   await expect(status).not.toContainText("ещё не добавлен");
+  recovered = true;
   await status.getByRole("button", { name: "Проверить актуальность", exact: true }).click();
   await expect(status).toContainText("Его актуальность неизвестна.");
   await expect(status.getByRole("button", { name: "Подготовить актуальную версию" })).toHaveCount(
