@@ -19,6 +19,7 @@ import {
   type ProjectStore
 } from "@cosmora/db";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { savedGraphContextStatus } from "./intelligence-graph-context-status.js";
 
 export function registerIntelligenceGraphContextRoutes(
   app: FastifyInstance,
@@ -85,6 +86,25 @@ export function registerIntelligenceGraphContextRoutes(
       return reply.code(423).send({ error: "GRAPH_OWNER_FENCED" });
     return dependencies.failure(reply, error);
   };
+  route.get(`${path}/status`, { schema: { params } }, async (request, reply) => {
+    const owner = await dependencies.authenticate(request, reply, request.params.projectId);
+    if (!owner) return;
+    try {
+      return reply
+        .header("Cache-Control", "no-store")
+        .send(
+          savedGraphContextStatus(
+            dependencies.service,
+            owner,
+            request.params.projectId,
+            request.params.graphId,
+            readMaterials(request.params.projectId, owner)
+          )
+        );
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
   route.get(path, { schema: { params, querystring: query } }, async (request, reply) => {
     const owner = await dependencies.authenticate(request, reply, request.params.projectId);
     if (!owner) return;

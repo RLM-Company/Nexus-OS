@@ -40,9 +40,12 @@ test("Canvas literal search, replace/undo and limits preserve the current draft"
   await expect(modal.getByRole("button", { name: "Отменить замену", exact: true })).toBeDisabled();
   await search.fill("$&");
   await modal.getByRole("button", { name: "Следующее совпадение", exact: true }).click();
-  expect(await area.evaluate((el) => el.value.slice(el.selectionStart, el.selectionEnd))).toBe(
-    "$&"
-  );
+  expect(
+    await area.evaluate((el) => {
+      if (!(el instanceof HTMLTextAreaElement)) throw new Error("Expected the source textarea");
+      return el.value.slice(el.selectionStart, el.selectionEnd);
+    })
+  ).toBe("$&");
   await search.fill("x");
   await area.fill("x".repeat(10_001));
   await expect(modal.getByRole("status").filter({ hasText: "Более" })).toBeVisible();
