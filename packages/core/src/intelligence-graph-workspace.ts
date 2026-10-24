@@ -18,6 +18,7 @@ import {
 } from "@cosmora/contracts";
 import { IntelligenceGraphIndex } from "./intelligence-graph-retrieval.js";
 import { buildIntelligenceGraphModelContext } from "./intelligence-graph-context.js";
+import { buildIntelligenceGraphEvidenceAudit } from "./intelligence-graph-audit.js";
 import { runIntelligenceGraphCognitiveCycle } from "./intelligence-graph-cognition.js";
 import {
   graphSearchTokens,
@@ -1060,6 +1061,14 @@ export class IntelligenceGraphWorkspaceService {
             ? "Найдены предварительные связи. Требуется проверка источников."
             : "Контекст прошёл формальную проверку; выводы ещё требуют содержательной проверки."
     };
+  }
+
+  auditEvidence(ownerId: string, projectId: string, graphId: string, revision: number) {
+    const graph = this.revision(ownerId, projectId, graphId, revision);
+    ensureLimits(graph);
+    const report = buildIntelligenceGraphEvidenceAudit(graph);
+    const sha256 = createHash("sha256").update(JSON.stringify(report)).digest("hex");
+    return { report, sha256 };
   }
 
   report(ownerId: string, projectId: string, graphId: string, query: string, revision: number) {
