@@ -6,6 +6,9 @@ import type {
   IntelligenceGraphModelContext
 } from "@cosmora/contracts";
 import { SavedContextStatus } from "./saved-context-status";
+import type { ContextChange } from "./context-comparison";
+import { readContextComparison } from "./read-context-comparison";
+import { ContextComparisonView } from "./context-comparison-view";
 
 type Preview = IntelligenceGraphContextPreview & { state: IntelligenceGraphContextState };
 const control = {
@@ -153,11 +156,15 @@ export function GraphContextPanel({
   const [uncertain, setUncertain] = useState(false);
   const [notice, setNotice] = useState("");
   const [statusVersion, setStatusVersion] = useState(0);
+  const [comparison, setComparison] = useState<{
+    changes: ContextChange[];
+    savedRevision: number;
+  } | null>(null);
   const url = `/api/v1/projects/${encodeURIComponent(projectId)}/intelligence-graphs/${encodeURIComponent(graphId)}/context`;
   const body = preview
     ? (JSON.parse(preview.attachment.content) as IntelligenceGraphModelContext)
     : null;
-  const load = async (q: string, targetRevision = revision) => {
+  const readPreview = async (q: string, targetRevision: number) => {
     const result = await request<Preview>(
       `${url}?q=${encodeURIComponent(q)}&revision=${targetRevision}`
     );
@@ -174,7 +181,12 @@ export function GraphContextPanel({
       ])) !== result.sha256
     )
       throw new Error("Полученный снимок не совпал с выбранным графом, запросом или хешем.");
+    return result;
+  };
+  const load = async (q: string, targetRevision = revision) => {
+    const result = await readPreview(q, targetRevision);
     setPreview(result);
+    setComparison(null);
     setReviewed(false);
     setUncertain(false);
     return result;
@@ -208,6 +220,7 @@ export function GraphContextPanel({
         onPrepare={(savedQuery, savedRevision) => {
           void run(async () => {
             setPreview(null);
+            setComparison(null);
             setReviewed(false);
             setQuery(savedQuery);
             await load(savedQuery, savedRevision);
@@ -233,6 +246,7 @@ export function GraphContextPanel({
           onChange={(e) => {
             setQuery(e.target.value);
             setPreview(null);
+            setComparison(null);
             setReviewed(false);
           }}
         />
@@ -265,6 +279,54 @@ export function GraphContextPanel({
             </ul>
           )}
           <ContextReading body={body} />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBlock: 12 }}>
+            {preview.state.current_sha256 && (
+              <button
+                style={control}
+                type="button"
+                disabled={busy || uncertain}
+                onClick={() =>
+                  void run(async () => {
+                    setComparison(null);
+                    setReviewed(false);
+                    setComparison(
+                      await readContextComparison(
+                        preview,
+                        () => request(`${url}/status`),
+                        readPreview
+                      )
+                    );
+                  })
+                }
+              >
+                Сравнить с сохранённым снимком
+              </button>
+            )}
+            <button
+              style={control}
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                const downloadUrl = URL.createObjectURL(
+                  new Blob([preview.attachment.content], { type: "application/json;charset=utf-8" })
+                );
+                const anchor = document.createElement("a");
+                anchor.href = downloadUrl;
+                anchor.download = preview.attachment.name;
+                anchor.click();
+                setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+              }}
+            >
+              Скачать просмотренный JSON
+            </button>
+          </div>
+          {comparison && (
+            <ContextComparisonView
+              changes={comparison.changes}
+              savedRevision={comparison.savedRevision}
+              proposedRevision={body.graph.revision}
+            />
+          )}
           <details style={{ marginBlock: 12 }}>
             <summary>Точный снимок и контрольная сумма</summary>
             <pre
@@ -279,7 +341,9 @@ export function GraphContextPanel({
             >
               {JSON.stringify(body, null, 2)}
             </pre>
-            <p style={{ overflowWrap: "anywhere" }}>SHA-256: {preview.sha256}</p>
+            <p style={{ overflowWrap: "anywhere" }}>
+              SHA-256 вложения (имя, содержимое и тип): {preview.sha256}
+            </p>
           </details>
           {preview.state.already_applied ? (
             <p>Этот снимок уже добавлен в материалы проекта.</p>
@@ -324,6 +388,7 @@ export function GraphContextPanel({
                     if (saved.sha256 !== preview.sha256)
                       throw new Error("Ответ сохранения относится к другому снимку.");
                     setPreview({ ...preview, state: saved.state });
+                    setComparison(null);
                     setStatusVersion((value) => value + 1);
                     setReviewed(false);
                     setNotice(
