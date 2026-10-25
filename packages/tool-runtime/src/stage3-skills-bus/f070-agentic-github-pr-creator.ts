@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F070
- * ============================================================================
- * Feature ID: F070
- * Stage: stage3-skills-bus
- * Title: Агентное создание веток и Pull Request в GitHub
- * Description: Формирование PR с описанием изменений, привязанными артефактами и тегами ревьюеров
+ * F070 (stage3-skills-bus): Агентное создание веток и Pull Request в GitHub
+ * Формирование PR с описанием изменений, привязанными артефактами и тегами ревьюеров
  * Operation Code: github_pr_automator
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F070_FEATURE_ID = "F070" as const;
 export const F070_STAGE = "stage3-skills-bus" as const;
 export const F070_OPERATION_CODE = "github_pr_automator" as const;
-export const F070_CONTRACT_VERSION = "1.0.0" as const;
+export const F070_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F070AgenticGithubPrCreatorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F070AgenticGithubPrCreatorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F070AgenticGithubPrCreatorConfig {
@@ -50,6 +47,17 @@ export interface F070AgenticGithubPrCreatorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F070AgenticGithubPrCreatorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F070_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F070AgenticGithubPrCreatorOutput {
   readonly featureId: typeof F070_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F070AgenticGithubPrCreatorOutput {
   readonly resolved_head_branch: string | number;
   readonly resolved_base_branch: string | number | boolean | readonly string[];
   readonly resolved_pr_body_markdown: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F070AgenticGithubPrCreatorAuditEntry;
-}
-
-export interface F070AgenticGithubPrCreatorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F070_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F070AgenticGithubPrCreatorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F070_CONFIG: F070AgenticGithubPrCreatorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F070AgenticGithubPrCreatorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F070AgenticGithubPrCreatorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F070 provenance & audit integrity.
- */
 export function computeF070Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f070_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f070_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F070: Агентное создание веток и Pull Request в GitHub
- * Формирование PR с описанием изменений, привязанными артефактами и тегами ревьюеров
- */
 export class F070AgenticGithubPrCreatorEngine {
   private readonly config: F070AgenticGithubPrCreatorConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F070AgenticGithubPrCreatorOutput[] = [];
   private readonly auditLog: F070AgenticGithubPrCreatorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F070AgenticGithubPrCreatorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F070AgenticGithubPrCreatorConfig>) {
+  constructor(customConfig?: Partial<F070AgenticGithubPrCreatorConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F070_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F070AgenticGithubPrCreatorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F070AgenticGithubPrCreatorInput): void {
@@ -158,8 +153,24 @@ export class F070AgenticGithubPrCreatorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F070AgenticGithubPrCreatorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F070AgenticGithubPrCreatorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F070AgenticGithubPrCreatorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.repo_name).trim().length === 0) {
       throw new F070AgenticGithubPrCreatorValidationError("repo_name", "Primary domain attribute 'repo_name' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      repo_name: input.repo_name,
+      head_branch: input.head_branch,
+      base_branch: input.base_branch,
+      pr_body_markdown: input.pr_body_markdown
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F070AgenticGithubPrCreatorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F070AgenticGithubPrCreatorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f070_${this.totalRuns}_${computeF070Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F070_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        repo_name: input.repo_name,
+        head_branch: input.head_branch,
+        base_branch: input.base_branch,
+        pr_body_markdown: input.pr_body_markdown
+      });
+      const payloadHash = computeF070Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F070AgenticGithubPrCreatorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F070_FEATURE_ID,
+        operationCode: F070_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        repo_name: input.repo_name,
-        head_branch: input.head_branch,
-        base_branch: input.base_branch,
-        pr_body_markdown: input.pr_body_markdown,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          repo_name: input.repo_name,
+          head_branch: input.head_branch,
+          base_branch: input.base_branch,
+          pr_body_markdown: input.pr_body_markdown
+        }
       });
 
-      const provenanceDigest = computeF070Digest(canonicalPayload);
+      const executionId = `exec_f070_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f070_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F070AgenticGithubPrCreatorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F070_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F070AgenticGithubPrCreatorEngine {
         actorId: input.actorId,
         action: `github_pr_automator:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F070AgenticGithubPrCreatorEngine {
         executionId,
         status: "completed",
         operationCode: F070_OPERATION_CODE,
-        resolved_repo_name: input.repo_name,
-        resolved_head_branch: input.head_branch,
-        resolved_base_branch: input.base_branch,
-        resolved_pr_body_markdown: input.pr_body_markdown,
+        resolved_repo_name: kernelResult.resolvedFields.repo_name as string,
+        resolved_head_branch: kernelResult.resolvedFields.head_branch as string | number,
+        resolved_base_branch: kernelResult.resolvedFields.base_branch as string | number | boolean | readonly string[],
+        resolved_pr_body_markdown: kernelResult.resolvedFields.pr_body_markdown as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F070AgenticGithubPrCreatorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F070AgenticGithubPrCreatorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F070 (Агентное создание веток и Pull Request в GitHub)
- */
 export function verifyF070Module(): {
   featureId: typeof F070_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF070Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    repo_name: "f070_repo_name_verified",
-    head_branch: 100,
+    repo_name: "f070_repo_name_seed",
+    head_branch: 42,
     base_branch: true,
-    pr_body_markdown: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 70 },
+    pr_body_markdown: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 70 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F070" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_repo_name !== sampleInput.repo_name &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F070_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

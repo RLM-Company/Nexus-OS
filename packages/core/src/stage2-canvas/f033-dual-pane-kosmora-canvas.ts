@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F033
- * ============================================================================
- * Feature ID: F033
- * Stage: stage2-canvas
- * Title: Двухпанельный интерфейс Kosmora Canvas
- * Description: Синхронная работа чата управления слева и интерактивного рабочего полотна справа
+ * F033 (stage2-canvas): Двухпанельный интерфейс Kosmora Canvas
+ * Синхронная работа чата управления слева и интерактивного рабочего полотна справа
  * Operation Code: dual_pane_sync
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F033_FEATURE_ID = "F033" as const;
 export const F033_STAGE = "stage2-canvas" as const;
 export const F033_OPERATION_CODE = "dual_pane_sync" as const;
-export const F033_CONTRACT_VERSION = "1.0.0" as const;
+export const F033_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F033DualPaneKosmoraCanvasExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F033DualPaneKosmoraCanvasExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F033DualPaneKosmoraCanvasConfig {
@@ -50,6 +47,17 @@ export interface F033DualPaneKosmoraCanvasInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F033DualPaneKosmoraCanvasAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F033_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F033DualPaneKosmoraCanvasOutput {
   readonly featureId: typeof F033_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F033DualPaneKosmoraCanvasOutput {
   readonly resolved_chat_pane_width_pct: string | number;
   readonly resolved_canvas_pane_width_pct: string | number | boolean | readonly string[];
   readonly resolved_sync_cursor_active: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F033DualPaneKosmoraCanvasAuditEntry;
-}
-
-export interface F033DualPaneKosmoraCanvasAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F033_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F033DualPaneKosmoraCanvasTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F033_CONFIG: F033DualPaneKosmoraCanvasConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F033DualPaneKosmoraCanvasValidationError extends Error {
@@ -109,40 +108,36 @@ export class F033DualPaneKosmoraCanvasValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F033 provenance & audit integrity.
- */
 export function computeF033Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f033_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f033_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F033: Двухпанельный интерфейс Kosmora Canvas
- * Синхронная работа чата управления слева и интерактивного рабочего полотна справа
- */
 export class F033DualPaneKosmoraCanvasEngine {
   private readonly config: F033DualPaneKosmoraCanvasConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F033DualPaneKosmoraCanvasOutput[] = [];
   private readonly auditLog: F033DualPaneKosmoraCanvasAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F033DualPaneKosmoraCanvasOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F033DualPaneKosmoraCanvasConfig>) {
+  constructor(customConfig?: Partial<F033DualPaneKosmoraCanvasConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F033_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F033DualPaneKosmoraCanvasConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F033DualPaneKosmoraCanvasInput): void {
@@ -158,8 +153,24 @@ export class F033DualPaneKosmoraCanvasEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F033DualPaneKosmoraCanvasValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F033DualPaneKosmoraCanvasValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F033DualPaneKosmoraCanvasValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.workspace_id).trim().length === 0) {
       throw new F033DualPaneKosmoraCanvasValidationError("workspace_id", "Primary domain attribute 'workspace_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      workspace_id: input.workspace_id,
+      chat_pane_width_pct: input.chat_pane_width_pct,
+      canvas_pane_width_pct: input.canvas_pane_width_pct,
+      sync_cursor_active: input.sync_cursor_active
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F033DualPaneKosmoraCanvasValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F033DualPaneKosmoraCanvasEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f033_${this.totalRuns}_${computeF033Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F033_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        workspace_id: input.workspace_id,
+        chat_pane_width_pct: input.chat_pane_width_pct,
+        canvas_pane_width_pct: input.canvas_pane_width_pct,
+        sync_cursor_active: input.sync_cursor_active
+      });
+      const payloadHash = computeF033Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F033DualPaneKosmoraCanvasValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F033_FEATURE_ID,
+        operationCode: F033_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        workspace_id: input.workspace_id,
-        chat_pane_width_pct: input.chat_pane_width_pct,
-        canvas_pane_width_pct: input.canvas_pane_width_pct,
-        sync_cursor_active: input.sync_cursor_active,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          workspace_id: input.workspace_id,
+          chat_pane_width_pct: input.chat_pane_width_pct,
+          canvas_pane_width_pct: input.canvas_pane_width_pct,
+          sync_cursor_active: input.sync_cursor_active
+        }
       });
 
-      const provenanceDigest = computeF033Digest(canonicalPayload);
+      const executionId = `exec_f033_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f033_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F033DualPaneKosmoraCanvasAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F033_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F033DualPaneKosmoraCanvasEngine {
         actorId: input.actorId,
         action: `dual_pane_sync:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F033DualPaneKosmoraCanvasEngine {
         executionId,
         status: "completed",
         operationCode: F033_OPERATION_CODE,
-        resolved_workspace_id: input.workspace_id,
-        resolved_chat_pane_width_pct: input.chat_pane_width_pct,
-        resolved_canvas_pane_width_pct: input.canvas_pane_width_pct,
-        resolved_sync_cursor_active: input.sync_cursor_active,
+        resolved_workspace_id: kernelResult.resolvedFields.workspace_id as string,
+        resolved_chat_pane_width_pct: kernelResult.resolvedFields.chat_pane_width_pct as string | number,
+        resolved_canvas_pane_width_pct: kernelResult.resolvedFields.canvas_pane_width_pct as string | number | boolean | readonly string[],
+        resolved_sync_cursor_active: kernelResult.resolvedFields.sync_cursor_active as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F033DualPaneKosmoraCanvasEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F033DualPaneKosmoraCanvasEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F033 (Двухпанельный интерфейс Kosmora Canvas)
- */
 export function verifyF033Module(): {
   featureId: typeof F033_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF033Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    workspace_id: "f033_workspace_id_verified",
-    chat_pane_width_pct: 100,
+    workspace_id: "f033_workspace_id_seed",
+    chat_pane_width_pct: 42,
     canvas_pane_width_pct: true,
-    sync_cursor_active: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 33 },
+    sync_cursor_active: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 33 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F033" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_workspace_id !== sampleInput.workspace_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F033_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

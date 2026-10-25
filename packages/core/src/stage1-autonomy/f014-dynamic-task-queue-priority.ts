@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F014
- * ============================================================================
- * Feature ID: F014
- * Stage: stage1-autonomy
- * Title: Приоритизация очереди задач
- * Description: Динамическое перестроение весов в очереди при поступлении срочного сообщения от пользователя
+ * F014 (stage1-autonomy): Приоритизация очереди задач
+ * Динамическое перестроение весов в очереди при поступлении срочного сообщения от пользователя
  * Operation Code: priority_scheduler
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F014_FEATURE_ID = "F014" as const;
 export const F014_STAGE = "stage1-autonomy" as const;
 export const F014_OPERATION_CODE = "priority_scheduler" as const;
-export const F014_CONTRACT_VERSION = "1.0.0" as const;
+export const F014_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F014DynamicTaskQueuePriorityExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F014DynamicTaskQueuePriorityExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F014DynamicTaskQueuePriorityConfig {
@@ -50,6 +47,17 @@ export interface F014DynamicTaskQueuePriorityInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F014DynamicTaskQueuePriorityAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F014_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F014DynamicTaskQueuePriorityOutput {
   readonly featureId: typeof F014_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F014DynamicTaskQueuePriorityOutput {
   readonly resolved_urgent_task_id: string | number;
   readonly resolved_previous_weight: string | number | boolean | readonly string[];
   readonly resolved_new_priority_weight: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F014DynamicTaskQueuePriorityAuditEntry;
-}
-
-export interface F014DynamicTaskQueuePriorityAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F014_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F014DynamicTaskQueuePriorityTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F014_CONFIG: F014DynamicTaskQueuePriorityConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F014DynamicTaskQueuePriorityValidationError extends Error {
@@ -109,40 +108,36 @@ export class F014DynamicTaskQueuePriorityValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F014 provenance & audit integrity.
- */
 export function computeF014Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f014_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f014_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F014: Приоритизация очереди задач
- * Динамическое перестроение весов в очереди при поступлении срочного сообщения от пользователя
- */
 export class F014DynamicTaskQueuePriorityEngine {
   private readonly config: F014DynamicTaskQueuePriorityConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F014DynamicTaskQueuePriorityOutput[] = [];
   private readonly auditLog: F014DynamicTaskQueuePriorityAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F014DynamicTaskQueuePriorityOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F014DynamicTaskQueuePriorityConfig>) {
+  constructor(customConfig?: Partial<F014DynamicTaskQueuePriorityConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F014_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F014DynamicTaskQueuePriorityConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F014DynamicTaskQueuePriorityInput): void {
@@ -158,8 +153,24 @@ export class F014DynamicTaskQueuePriorityEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F014DynamicTaskQueuePriorityValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F014DynamicTaskQueuePriorityValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F014DynamicTaskQueuePriorityValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.queue_id).trim().length === 0) {
       throw new F014DynamicTaskQueuePriorityValidationError("queue_id", "Primary domain attribute 'queue_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      queue_id: input.queue_id,
+      urgent_task_id: input.urgent_task_id,
+      previous_weight: input.previous_weight,
+      new_priority_weight: input.new_priority_weight
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F014DynamicTaskQueuePriorityValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F014DynamicTaskQueuePriorityEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f014_${this.totalRuns}_${computeF014Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F014_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        queue_id: input.queue_id,
+        urgent_task_id: input.urgent_task_id,
+        previous_weight: input.previous_weight,
+        new_priority_weight: input.new_priority_weight
+      });
+      const payloadHash = computeF014Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F014DynamicTaskQueuePriorityValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F014_FEATURE_ID,
+        operationCode: F014_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        queue_id: input.queue_id,
-        urgent_task_id: input.urgent_task_id,
-        previous_weight: input.previous_weight,
-        new_priority_weight: input.new_priority_weight,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          queue_id: input.queue_id,
+          urgent_task_id: input.urgent_task_id,
+          previous_weight: input.previous_weight,
+          new_priority_weight: input.new_priority_weight
+        }
       });
 
-      const provenanceDigest = computeF014Digest(canonicalPayload);
+      const executionId = `exec_f014_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f014_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F014DynamicTaskQueuePriorityAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F014_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F014DynamicTaskQueuePriorityEngine {
         actorId: input.actorId,
         action: `priority_scheduler:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F014DynamicTaskQueuePriorityEngine {
         executionId,
         status: "completed",
         operationCode: F014_OPERATION_CODE,
-        resolved_queue_id: input.queue_id,
-        resolved_urgent_task_id: input.urgent_task_id,
-        resolved_previous_weight: input.previous_weight,
-        resolved_new_priority_weight: input.new_priority_weight,
+        resolved_queue_id: kernelResult.resolvedFields.queue_id as string,
+        resolved_urgent_task_id: kernelResult.resolvedFields.urgent_task_id as string | number,
+        resolved_previous_weight: kernelResult.resolvedFields.previous_weight as string | number | boolean | readonly string[],
+        resolved_new_priority_weight: kernelResult.resolvedFields.new_priority_weight as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F014DynamicTaskQueuePriorityEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F014DynamicTaskQueuePriorityEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F014 (Приоритизация очереди задач)
- */
 export function verifyF014Module(): {
   featureId: typeof F014_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF014Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    queue_id: "f014_queue_id_verified",
-    urgent_task_id: 100,
+    queue_id: "f014_queue_id_seed",
+    urgent_task_id: 42,
     previous_weight: true,
-    new_priority_weight: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 14 },
+    new_priority_weight: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 14 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F014" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_queue_id !== sampleInput.queue_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F014_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,445 +1,635 @@
 /**
- * @cosmora/core — Stage 4: Intelligence Graph, Memory & Workspaces (F097–F128)
- * Implements Kosmora Graph Workspaces, 4-Layer Intelligence Graph (document, task,
- * code_module, business_entity), Entity & Relation Extraction, Hybrid RAG (Vector +
- * Graph + Keyword), Graph Context Injector, 2D/3D Graph Serializer, Working Memory
- * Buffer, Long-Term Episodic Memory, Entity Resolution, Temporal Graph Tracking,
- * Pinned Context Nodes, Background Conversation Summarizer, Semantic Hierarchical
- * Chunking, Cross-Document Citation & Contradiction Linker, Cross-Encoder Reranking,
- * Knowledge Decay Alerting, Cross-Workspace Isolation, Shared Corporate Library Bridge,
- * Context Window X-Ray, Smart Context Pruning, JSON-LD / GraphML Export/Import,
- * Node Tagging, Gap Analysis, Domain Ontology Presets, Natural Language Graph Query,
- * Incremental Embedding Cache, Workspace Preference Profile, Conversation Forking &
- * Merging, GitHub Commit/PR Graph Indexing, Global Search (Cmd+K), and Impact Analysis.
+ * Kosmora Stage 4 (F097-F128): Knowledge Graph, Memory, RAG & Organizational Intelligence
+ * Enforces strict project/workspace/owner isolation, pluggable vector embedding adapter
+ * with explicit keyword BM25 fallback reporting, hierarchical document chunking with
+ * line-level citations, query cache invalidation, and transitive staleness propagation.
  */
 
-export type IntelligenceGraphLayer =
-  | "document"
-  | "task"
-  | "code_module"
-  | "business_entity";
+import { createHash } from "node:crypto";
+import type { KosmoraCitation } from "./kosmora-protocol.js";
 
-export interface KnowledgeGraphNode {
-  node_id: string;
-  workspace_id: string;
-  layer: IntelligenceGraphLayer; // F098
-  label: string;
-  canonical_key: string;
-  aliases: string[]; // F105: Entity Resolution
-  pinned: boolean; // F107: Pinned Context Nodes
-  stale_decay_alert: boolean; // F112: Knowledge Decay Alert
-  tags: string[]; // F118: Tagging & custom metadata
-  metadata: Record<string, string | number | boolean>;
-  valid_from: string; // F106: Temporal Graph Tracking
-  valid_to: string | null;
-  embedding_vector: number[]; // F100 & F122
-  content_hash: string;
+export type KnowledgeNodeType =
+  | "entity"
+  | "claim"
+  | "decision"
+  | "artifact"
+  | "person"
+  | "policy"
+  | "metric";
+
+export type KnowledgeEdgeRelation =
+  | "supports"
+  | "contradicts"
+  | "derived_from"
+  | "supersedes"
+  | "owned_by"
+  | "governed_by"
+  | "cites";
+
+export interface EmbeddingAdapter {
+  readonly provider_id: string;
+  readonly dimensions: number;
+  embedText(text: string): number[];
 }
 
-export interface KnowledgeGraphEdge {
-  edge_id: string;
+export interface KnowledgeNode {
+  node_id: string;
+  project_id: string;
   workspace_id: string;
-  source_node_id: string;
-  target_node_id: string;
-  relation_type:
-    | "derived_from"
-    | "depends_on"
-    | "mentions"
-    | "contradicts"
-    | "supports"
-    | "implemented_by"
-    | "committed_in";
+  owner_id: string;
+  type: KnowledgeNodeType;
+  title: string;
+  content: string;
+  content_sha256: string;
+  version: number;
+  embedding_vector?: number[];
+  embedding_provider?: string;
+  confidence: number;
+  valid_from: string;
+  valid_until?: string;
+  stale: boolean;
+  stale_reason?: string;
+  citations: KosmoraCitation[];
+  tags: string[];
+}
+
+export interface KnowledgeEdge {
+  edge_id: string;
+  project_id: string;
+  from_node_id: string;
+  to_node_id: string;
+  relation: KnowledgeEdgeRelation;
   weight: number;
   created_at: string;
 }
 
-export interface ContextWindowXRayReport {
-  max_window_tokens: number;
-  system_prompt_tokens: number;
-  pinned_nodes_tokens: number;
-  graph_rag_tokens: number;
-  files_tokens: number;
-  chat_history_tokens: number;
-  total_used_tokens: number;
-  utilization_pct: number;
-}
-
-export interface ConversationBranch {
-  branch_id: string;
+export interface HierarchicalDocumentChunk {
+  chunk_id: string;
+  document_id: string;
+  project_id: string;
   workspace_id: string;
-  parent_branch_id: string | null;
-  forked_from_message_id: string | null;
-  messages: Array<{ message_id: string; role: "user" | "assistant"; text: string }>;
-  final_artifact_id?: string;
+  parent_chunk_id?: string;
+  level: "document" | "section" | "paragraph";
+  heading_path: string[];
+  text: string;
+  token_count: number;
+  start_line: number;
+  end_line: number;
+  content_sha256: string;
+  embedding_vector?: number[];
 }
 
-export class KosmoraIntelligenceGraphEngine {
-  private readonly nodes = new Map<string, KnowledgeGraphNode>();
-  private readonly edges = new Map<string, KnowledgeGraphEdge>();
-  private readonly sharedLibraryNodes = new Map<string, KnowledgeGraphNode>(); // F114
-  private readonly episodicMemories = new Map<string, string[]>(); // F104
-  private readonly workspacePreferences = new Map<
-    string,
-    { table_format: string; code_style: string; verbosity: "concise" | "detailed" }
-  >(); // F123
-  private readonly conversationBranches = new Map<string, ConversationBranch>(); // F124
+export type RetrievalMode = "vector_embedding_adapter" | "keyword_bm25_fallback";
 
-  // F097, F098, F105, F106, F122: Upsert Node with Entity Resolution & Incremental Embedding Cache
-  public upsertGraphNode(params: {
-    workspace_id: string;
-    layer: IntelligenceGraphLayer;
-    label: string;
-    aliases?: string[];
-    pinned?: boolean;
-    tags?: string[];
-    metadata?: Record<string, string | number | boolean>;
-    content_for_embedding: string;
-    valid_from?: string;
-  }): { node: KnowledgeGraphNode; deduplicated_existing: boolean; embedding_recomputed: boolean } {
-    const canonicalKey = `${params.workspace_id}::${params.layer}::${params.label.trim().toLowerCase()}`;
-    const contentHash = this.computeSimpleHash(params.content_for_embedding);
+export interface HybridRetrievalResult {
+  node_id: string;
+  project_id: string;
+  workspace_id: string;
+  title: string;
+  excerpt: string;
+  retrieval_mode: RetrievalMode;
+  lexical_bm25_score: number;
+  vector_cosine_score: number | null;
+  graph_centrality_boost: number;
+  reranked_final_score: number;
+  stale_decay_alert: boolean;
+  stale_reason?: string;
+  version: number;
+  citations: KosmoraCitation[];
+}
 
-    // F105: Check for existing node by canonical key or alias within the same isolated workspace
-    for (const existing of this.nodes.values()) {
-      if (
-        existing.workspace_id === params.workspace_id &&
-        (existing.canonical_key === canonicalKey ||
-          existing.aliases.some((a) => a.toLowerCase() === params.label.trim().toLowerCase()))
-      ) {
-        const hashChanged = existing.content_hash !== contentHash;
-        if (hashChanged) {
-          existing.embedding_vector = this.computeDeterministicEmbedding(params.content_for_embedding);
-          existing.content_hash = contentHash;
-          this.markDownstreamDependentsAsStale(existing.node_id); // F112
-        }
-        existing.aliases = Array.from(new Set([...existing.aliases, ...(params.aliases ?? [])]));
-        existing.tags = Array.from(new Set([...existing.tags, ...(params.tags ?? [])]));
-        if (params.pinned !== undefined) existing.pinned = params.pinned;
-        return {
-          node: existing,
-          deduplicated_existing: true,
-          embedding_recomputed: hashChanged,
-        };
-      }
-    }
+export interface ContradictionAuditReport {
+  project_id: string;
+  contradiction_pairs: Array<{
+    node_a_id: string;
+    node_b_id: string;
+    description: string;
+    resolution_recommendation: string;
+  }>;
+  stale_nodes_flagged: string[];
+  freshness_score: number;
+}
 
-    const node: KnowledgeGraphNode = {
-      node_id: `node_${params.workspace_id}_${this.nodes.size + 1}`,
-      workspace_id: params.workspace_id,
-      layer: params.layer,
-      label: params.label,
-      canonical_key: canonicalKey,
-      aliases: params.aliases ?? [],
-      pinned: params.pinned ?? false,
-      stale_decay_alert: false,
-      tags: params.tags ?? [],
-      metadata: params.metadata ?? {},
-      valid_from: params.valid_from ?? new Date().toISOString(),
-      valid_to: null,
-      embedding_vector: this.computeDeterministicEmbedding(params.content_for_embedding),
-      content_hash: contentHash,
-    };
-    this.nodes.set(node.node_id, node);
-    return { node, deduplicated_existing: false, embedding_recomputed: true };
+export class KosmoraIntelligenceGraph {
+  private readonly nodes = new Map<string, KnowledgeNode>();
+  private readonly edges = new Map<string, KnowledgeEdge>();
+  private readonly chunks = new Map<string, HierarchicalDocumentChunk>();
+  private readonly searchCache = new Map<string, HybridRetrievalResult[]>();
+  private embeddingAdapter?: EmbeddingAdapter;
+
+  constructor(embeddingAdapter?: EmbeddingAdapter) {
+    this.embeddingAdapter = embeddingAdapter;
   }
 
-  public addGraphEdge(params: {
-    workspace_id: string;
-    source_node_id: string;
-    target_node_id: string;
-    relation_type: KnowledgeGraphEdge["relation_type"];
-    weight?: number;
-  }): KnowledgeGraphEdge {
-    const src = this.nodes.get(params.source_node_id);
-    const dst = this.nodes.get(params.target_node_id);
-    if (!src || !dst) {
-      throw new Error("Both source and target nodes must exist.");
+  public setEmbeddingAdapter(adapter: EmbeddingAdapter | undefined): void {
+    this.embeddingAdapter = adapter;
+    this.searchCache.clear();
+  }
+
+  public getRetrievalMode(): RetrievalMode {
+    return this.embeddingAdapter ? "vector_embedding_adapter" : "keyword_bm25_fallback";
+  }
+
+  /**
+   * F097-F101: Add or update an enterprise knowledge graph node with project/owner isolation.
+   */
+  public upsertNode(
+    node: Omit<
+      KnowledgeNode,
+      "embedding_vector" | "embedding_provider" | "stale" | "version" | "content_sha256" | "workspace_id" | "owner_id"
+    > & {
+      workspace_id?: string;
+      owner_id?: string;
+      version?: number;
+      stale?: boolean;
+      stale_reason?: string;
     }
-    // F113: Strict Workspace Memory Isolation check
-    if (src.workspace_id !== params.workspace_id || dst.workspace_id !== params.workspace_id) {
-      throw new Error("Cross-workspace memory isolation violation: cannot link nodes from different workspaces.");
+  ): KnowledgeNode {
+    if (!node.project_id || node.project_id.trim().length === 0) {
+      throw new Error("KnowledgeNode requires a non-empty project_id for tenant/project isolation");
+    }
+    if (!node.node_id || node.node_id.trim().length === 0) {
+      throw new Error("KnowledgeNode requires a non-empty node_id");
     }
 
-    const edge: KnowledgeGraphEdge = {
-      edge_id: `edge_${this.edges.size + 1}`,
-      workspace_id: params.workspace_id,
-      source_node_id: params.source_node_id,
-      target_node_id: params.target_node_id,
-      relation_type: params.relation_type,
-      weight: params.weight ?? 1.0,
-      created_at: new Date().toISOString(),
+    const existing = this.nodes.get(node.node_id);
+    if (existing && existing.project_id !== node.project_id) {
+      throw new Error(
+        `Project isolation violation: node '${node.node_id}' belongs to project '${existing.project_id}', cannot overwrite from project '${node.project_id}'`
+      );
+    }
+
+    const fullText = `${node.title}\n${node.content}`;
+    const contentSha256 = createHash("sha256").update(fullText).digest("hex");
+    const isContentChanged = existing !== undefined && existing.content_sha256 !== contentSha256;
+    const nextVersion = existing
+      ? isContentChanged
+        ? existing.version + 1
+        : (node.version ?? existing.version)
+      : (node.version ?? 1);
+
+    let embeddingVector: number[] | undefined;
+    let embeddingProvider: string | undefined;
+    if (this.embeddingAdapter) {
+      embeddingVector = this.embeddingAdapter.embedText(fullText);
+      embeddingProvider = this.embeddingAdapter.provider_id;
+    }
+
+    const enriched: KnowledgeNode = {
+      ...node,
+      workspace_id: node.workspace_id ?? existing?.workspace_id ?? "ws_default",
+      owner_id: node.owner_id ?? existing?.owner_id ?? "system",
+      content_sha256: contentSha256,
+      version: nextVersion,
+      embedding_vector: embeddingVector,
+      embedding_provider: embeddingProvider,
+      stale: node.stale ?? false,
+      stale_reason: node.stale_reason
     };
+
+    this.nodes.set(enriched.node_id, enriched);
+    this.invalidateProjectCache(enriched.project_id);
+
+    // If an existing source node changed its content, automatically mark downstream claims/artifacts as stale
+    if (isContentChanged) {
+      this.invalidateSourceAndPropagateStaleness(
+        enriched.node_id,
+        enriched.project_id,
+        `Upstream source '${enriched.node_id}' updated to v${nextVersion}`
+      );
+      // Re-mark the updated source node itself as fresh after propagating staleness to dependents
+      enriched.stale = false;
+      enriched.stale_reason = undefined;
+      this.nodes.set(enriched.node_id, enriched);
+    }
+
+    return enriched;
+  }
+
+  /**
+   * Update a source node's content and propagate staleness to all dependent claims/nodes.
+   */
+  public updateSourceDocument(
+    projectId: string,
+    nodeId: string,
+    newContent: string,
+    actorId = "system"
+  ): {
+    updated_node: KnowledgeNode;
+    invalidated_dependents: string[];
+  } {
+    const existing = this.nodes.get(nodeId);
+    if (!existing) {
+      throw new Error(`KnowledgeNode '${nodeId}' not found`);
+    }
+    if (existing.project_id !== projectId) {
+      throw new Error(
+        `Project isolation violation: node '${nodeId}' does not belong to project '${projectId}'`
+      );
+    }
+
+    const updated = this.upsertNode({
+      ...existing,
+      owner_id: actorId,
+      content: newContent,
+      valid_from: new Date().toISOString()
+    });
+
+    const dependents = this.invalidateSourceAndPropagateStaleness(
+      nodeId,
+      projectId,
+      `Source document '${nodeId}' modified at v${updated.version}`
+    ).filter((id) => id !== nodeId);
+
+    // Keep source node fresh
+    updated.stale = false;
+    updated.stale_reason = undefined;
+    this.nodes.set(nodeId, updated);
+    this.invalidateProjectCache(projectId);
+
+    return {
+      updated_node: updated,
+      invalidated_dependents: dependents
+    };
+  }
+
+  public addEdge(edge: KnowledgeEdge): KnowledgeEdge {
+    const fromNode = this.nodes.get(edge.from_node_id);
+    const toNode = this.nodes.get(edge.to_node_id);
+    if (!fromNode || !toNode) {
+      throw new Error(
+        `Cannot create edge '${edge.edge_id}': both from_node_id ('${edge.from_node_id}') and to_node_id ('${edge.to_node_id}') must exist`
+      );
+    }
+    if (fromNode.project_id !== edge.project_id || toNode.project_id !== edge.project_id) {
+      throw new Error(
+        `Project isolation violation: cannot link nodes across different projects ('${fromNode.project_id}' -> '${toNode.project_id}')`
+      );
+    }
     this.edges.set(edge.edge_id, edge);
+    this.invalidateProjectCache(edge.project_id);
     return edge;
   }
 
-  // F100 & F111: Hybrid Search (Vector + Graph Traversal + Keyword RAG) with Cross-Encoder Reranking
-  public hybridGraphRagSearch(params: {
-    workspace_id: string;
-    query: string;
-    include_shared_library?: boolean;
-    top_k?: number;
-  }): Array<{
-    node: KnowledgeGraphNode;
-    hybrid_score: number;
-    keyword_score: number;
-    vector_score: number;
-    graph_centrality_bonus: number;
-  }> {
-    const queryVec = this.computeDeterministicEmbedding(params.query);
-    const queryTerms = params.query
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((t) => t.length > 1);
-
-    // F113 & F114: Strictly filter by workspace_id (+ optional global shared bridge)
-    const candidateNodes = [
-      ...[...this.nodes.values()].filter((n) => n.workspace_id === params.workspace_id),
-      ...(params.include_shared_library ? [...this.sharedLibraryNodes.values()] : []),
-    ];
-
-    const results = candidateNodes.map((node) => {
-      const hay = `${node.label} ${node.aliases.join(" ")} ${node.tags.join(" ")}`.toLowerCase();
-      const matchedTerms = queryTerms.filter((t) => hay.includes(t)).length;
-      const keywordScore = queryTerms.length > 0 ? matchedTerms / queryTerms.length : 0;
-      const vectorScore = this.cosineSimilarity(queryVec, node.embedding_vector);
-      const degree = [...this.edges.values()].filter(
-        (e) =>
-          e.workspace_id === params.workspace_id &&
-          (e.source_node_id === node.node_id || e.target_node_id === node.node_id)
-      ).length;
-      const graphBonus = Math.min(0.25, degree * 0.05) + (node.pinned ? 0.2 : 0);
-      const hybridScore = Number(
-        (keywordScore * 0.45 + vectorScore * 0.35 + graphBonus).toFixed(4)
-      );
-      return {
-        node,
-        hybrid_score: hybridScore,
-        keyword_score: Number(keywordScore.toFixed(4)),
-        vector_score: Number(vectorScore.toFixed(4)),
-        graph_centrality_bonus: Number(graphBonus.toFixed(4)),
-      };
-    });
-
-    return results
-      .sort((a, b) => b.hybrid_score - a.hybrid_score)
-      .slice(0, params.top_k ?? 5);
-  }
-
-  // F101 & F107: Graph Context Injector into System Prompt (Always Includes Pinned Nodes)
-  public injectGraphContextIntoPrompt(params: {
-    workspace_id: string;
-    base_system_prompt: string;
-    active_query: string;
-  }): string {
-    const pinned = [...this.nodes.values()].filter(
-      (n) => n.workspace_id === params.workspace_id && n.pinned
-    );
-    const relevant = this.hybridGraphRagSearch({
-      workspace_id: params.workspace_id,
-      query: params.active_query,
-      top_k: 4,
-    });
-
-    const pinnedBlock =
-      pinned.length > 0
-        ? `\n[PINNED CORE RULES]: ${pinned.map((p) => p.label).join("; ")}`
-        : "";
-    const ragBlock =
-      relevant.length > 0
-        ? `\n[GRAPH CONTEXT NODES]: ${relevant.map((r) => `${r.node.label} (${r.node.layer})`).join(", ")}`
-        : "";
-
-    return `${params.base_system_prompt}${pinnedBlock}${ragBlock}`;
-  }
-
-  // F112 & F128: Knowledge Decay Marking & Graph Impact Analysis
-  private markDownstreamDependentsAsStale(updatedNodeId: string): void {
-    for (const edge of this.edges.values()) {
-      if (edge.target_node_id === updatedNodeId && edge.relation_type === "derived_from") {
-        const dependent = this.nodes.get(edge.source_node_id);
-        if (dependent) {
-          dependent.stale_decay_alert = true;
-        }
-      }
+  /**
+   * F105: Hierarchical Document Chunking (Document -> Section -> Paragraph) with line numbers
+   */
+  public ingestHierarchicalDocument(
+    documentId: string,
+    projectId: string,
+    markdownText: string,
+    workspaceId = "ws_default"
+  ): HierarchicalDocumentChunk[] {
+    if (!projectId || projectId.trim().length === 0) {
+      throw new Error("projectId is required for document ingestion");
     }
-  }
 
-  public analyzeChangeImpact(workspaceId: string, sourceNodeId: string): {
-    source_node_id: string;
-    impacted_node_ids: string[];
-    impacted_labels: string[];
-  } {
-    const visited = new Set<string>();
-    const queue = [sourceNodeId];
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      for (const edge of this.edges.values()) {
-        if (
-          edge.workspace_id === workspaceId &&
-          (edge.target_node_id === current || edge.source_node_id === current)
-        ) {
-          const neighbor =
-            edge.target_node_id === current ? edge.source_node_id : edge.target_node_id;
-          if (neighbor !== sourceNodeId && !visited.has(neighbor)) {
-            visited.add(neighbor);
-            queue.push(neighbor);
-          }
-        }
-      }
-    }
-    const impactedIds = [...visited];
-    return {
-      source_node_id: sourceNodeId,
-      impacted_node_ids: impactedIds,
-      impacted_labels: impactedIds.map((id) => this.nodes.get(id)?.label ?? id),
-    };
-  }
-
-  // F115 & F116: Context Window X-Ray & Smart Context Pruning
-  public inspectAndPruneContextWindow(params: {
-    max_window_tokens: number;
-    system_prompt_tokens: number;
-    pinned_nodes_tokens: number;
-    graph_rag_tokens: number;
-    files_tokens: number;
-    chat_messages: Array<{ id: string; tokens: number; relevance: number }>;
-  }): {
-    xray: ContextWindowXRayReport;
-    kept_message_ids: string[];
-    pruned_message_ids: string[];
-  } {
-    const fixedTokens =
-      params.system_prompt_tokens +
-      params.pinned_nodes_tokens +
-      params.graph_rag_tokens +
-      params.files_tokens;
-    const availableForChat = Math.max(0, params.max_window_tokens - fixedTokens);
-
-    const sortedByRelevance = [...params.chat_messages].sort((a, b) => b.relevance - a.relevance);
-    const kept: string[] = [];
-    const pruned: string[] = [];
-    let chatUsed = 0;
-
-    for (const msg of sortedByRelevance) {
-      if (chatUsed + msg.tokens <= availableForChat) {
-        kept.push(msg.id);
-        chatUsed += msg.tokens;
-      } else {
-        pruned.push(msg.id);
+    // Remove previous chunks of the same document within this project
+    for (const [cid, chunk] of this.chunks.entries()) {
+      if (chunk.project_id === projectId && chunk.document_id === documentId) {
+        this.chunks.delete(cid);
       }
     }
 
-    const totalUsed = fixedTokens + chatUsed;
-    return {
-      xray: {
-        max_window_tokens: params.max_window_tokens,
-        system_prompt_tokens: params.system_prompt_tokens,
-        pinned_nodes_tokens: params.pinned_nodes_tokens,
-        graph_rag_tokens: params.graph_rag_tokens,
-        files_tokens: params.files_tokens,
-        chat_history_tokens: chatUsed,
-        total_used_tokens: totalUsed,
-        utilization_pct: Number(((totalUsed / params.max_window_tokens) * 100).toFixed(2)),
-      },
-      kept_message_ids: kept,
-      pruned_message_ids: pruned,
-    };
-  }
+    const lines = markdownText.replace(/\r\n/g, "\n").split("\n");
+    const created: HierarchicalDocumentChunk[] = [];
 
-  // F119: Gap Analysis (Unbacked Tasks or Report Sections)
-  public findUnbackedNodesGapAnalysis(workspaceId: string): KnowledgeGraphNode[] {
-    const workspaceNodes = [...this.nodes.values()].filter((n) => n.workspace_id === workspaceId);
-    const workspaceEdges = [...this.edges.values()].filter((e) => e.workspace_id === workspaceId);
-    return workspaceNodes.filter((n) => {
-      if (n.layer !== "task") return false;
-      const hasBackingDoc = workspaceEdges.some(
-        (e) => e.source_node_id === n.node_id || e.target_node_id === n.node_id
-      );
-      return !hasBackingDoc;
-    });
-  }
-
-  // F117: Export Knowledge Subgraph as JSON-LD
-  public exportSubgraphJsonLd(workspaceId: string): Record<string, unknown> {
-    const nodes = [...this.nodes.values()].filter((n) => n.workspace_id === workspaceId);
-    const edges = [...this.edges.values()].filter((e) => e.workspace_id === workspaceId);
-    return {
-      "@context": "https://cosmora.ai/schema/intelligence-graph/v1",
+    const rootChunkId = `${projectId}:${documentId}:root`;
+    created.push({
+      chunk_id: rootChunkId,
+      document_id: documentId,
+      project_id: projectId,
       workspace_id: workspaceId,
-      nodes_count: nodes.length,
-      edges_count: edges.length,
-      "@graph": nodes.map((n) => ({
-        "@id": n.node_id,
-        "@type": n.layer,
-        label: n.label,
-        tags: n.tags,
-        valid_from: n.valid_from,
-      })),
-      relations: edges,
-    };
-  }
-
-  // F124 & F125: Conversation Forking & Branch Conclusion Merge
-  public createConversationBranch(params: {
-    branch_id: string;
-    workspace_id: string;
-    parent_branch_id: string | null;
-    forked_from_message_id: string | null;
-    initial_messages?: ConversationBranch["messages"];
-  }): ConversationBranch {
-    const branch: ConversationBranch = {
-      branch_id: params.branch_id,
-      workspace_id: params.workspace_id,
-      parent_branch_id: params.parent_branch_id,
-      forked_from_message_id: params.forked_from_message_id,
-      messages: params.initial_messages ? structuredClone(params.initial_messages) : [],
-    };
-    this.conversationBranches.set(branch.branch_id, branch);
-    return branch;
-  }
-
-  public mergeExperimentalBranchConclusion(params: {
-    source_branch_id: string;
-    target_branch_id: string;
-    final_artifact_id: string;
-    conclusion_summary: string;
-  }): ConversationBranch {
-    const src = this.conversationBranches.get(params.source_branch_id);
-    const dst = this.conversationBranches.get(params.target_branch_id);
-    if (!src || !dst) throw new Error("Source or target conversation branch not found.");
-    src.final_artifact_id = params.final_artifact_id;
-    dst.messages.push({
-      message_id: `merged_${Date.now()}`,
-      role: "assistant",
-      text: `[Merged from ${src.branch_id} | Artifact ${params.final_artifact_id}]: ${params.conclusion_summary}`,
+      level: "document",
+      heading_path: [documentId],
+      text: markdownText.slice(0, 500),
+      token_count: Math.ceil(markdownText.length / 4),
+      start_line: 1,
+      end_line: lines.length,
+      content_sha256: createHash("sha256").update(markdownText).digest("hex"),
+      embedding_vector: this.embeddingAdapter?.embedText(markdownText.slice(0, 500))
     });
-    return dst;
+
+    let currentHeading = "Introduction";
+    let currentSectionChunkId = `${projectId}:${documentId}:sec_0`;
+    let paragraphIndex = 0;
+
+    lines.forEach((line, idx) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      if (trimmed.startsWith("#")) {
+        currentHeading = trimmed.replace(/^#+\s*/, "");
+        currentSectionChunkId = `${projectId}:${documentId}:sec_${idx + 1}`;
+        created.push({
+          chunk_id: currentSectionChunkId,
+          document_id: documentId,
+          project_id: projectId,
+          workspace_id: workspaceId,
+          parent_chunk_id: rootChunkId,
+          level: "section",
+          heading_path: [documentId, currentHeading],
+          text: trimmed,
+          token_count: Math.ceil(trimmed.length / 4),
+          start_line: idx + 1,
+          end_line: idx + 1,
+          content_sha256: createHash("sha256").update(trimmed).digest("hex"),
+          embedding_vector: this.embeddingAdapter?.embedText(trimmed)
+        });
+      } else {
+        paragraphIndex += 1;
+        const paraId = `${projectId}:${documentId}:para_${paragraphIndex}`;
+        created.push({
+          chunk_id: paraId,
+          document_id: documentId,
+          project_id: projectId,
+          workspace_id: workspaceId,
+          parent_chunk_id: currentSectionChunkId,
+          level: "paragraph",
+          heading_path: [documentId, currentHeading],
+          text: trimmed,
+          token_count: Math.ceil(trimmed.length / 4),
+          start_line: idx + 1,
+          end_line: idx + 1,
+          content_sha256: createHash("sha256").update(trimmed).digest("hex"),
+          embedding_vector: this.embeddingAdapter?.embedText(trimmed)
+        });
+      }
+    });
+
+    for (const chunk of created) {
+      this.chunks.set(chunk.chunk_id, chunk);
+    }
+
+    this.invalidateProjectCache(projectId);
+    return created;
   }
 
-  private computeSimpleHash(text: string): string {
-    let h = 2166136261;
-    for (let i = 0; i < text.length; i++) {
-      h ^= text.charCodeAt(i);
-      h = Math.imul(h, 16777619);
+  /**
+   * F102, F106-F108: Project-Isolated Retrieval with Real Embedding Adapter or Explicit Keyword Fallback
+   */
+  public searchProjectMemory(
+    projectId: string,
+    query: string,
+    topK = 5,
+    options?: {
+      workspace_id?: string;
+      include_stale?: boolean;
     }
-    return `fnv1a_${(h >>> 0).toString(16)}`;
+  ): HybridRetrievalResult[] {
+    if (!projectId || projectId.trim().length === 0) {
+      throw new Error("searchProjectMemory requires a non-empty projectId");
+    }
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    const mode = this.getRetrievalMode();
+    const includeStale = options?.include_stale ?? true;
+    const workspaceFilter = options?.workspace_id;
+    const cacheKey = `${projectId}::${workspaceFilter ?? "*"}::${mode}::${includeStale}::${topK}::${normalizedQuery}`;
+    const cached = this.searchCache.get(cacheKey);
+    if (cached) {
+      return cached.map((item) => ({ ...item }));
+    }
+
+    const queryTokens = normalizedQuery
+      .toLowerCase()
+      .split(/[^a-z0-9а-яё]+/i)
+      .filter((t) => t.length >= 2);
+    const queryVector = this.embeddingAdapter
+      ? this.embeddingAdapter.embedText(normalizedQuery)
+      : undefined;
+
+    // Strictly filter nodes to the requested projectId (and workspace_id if provided)
+    const projectNodes = [...this.nodes.values()].filter((node) => {
+      if (node.project_id !== projectId) return false;
+      if (workspaceFilter && node.workspace_id !== workspaceFilter) return false;
+      if (!includeStale && node.stale) return false;
+      return true;
+    });
+
+    const results: HybridRetrievalResult[] = [];
+
+    for (const node of projectNodes) {
+      const textLower = `${node.title} ${node.content} ${node.tags.join(" ")}`.toLowerCase();
+      let matchedTokens = 0;
+      let termFrequencyBoost = 0;
+      for (const token of queryTokens) {
+        if (textLower.includes(token)) {
+          matchedTokens += 1;
+          const occurrences = textLower.split(token).length - 1;
+          termFrequencyBoost += Math.min(0.25, occurrences * 0.08);
+        }
+      }
+
+      const tokenCoverage =
+        queryTokens.length > 0 ? matchedTokens / queryTokens.length : 0;
+      const bm25Score = Number(
+        Math.min(1, tokenCoverage * 0.8 + termFrequencyBoost).toFixed(4)
+      );
+
+      let cosineScore: number | null = null;
+      if (queryVector && node.embedding_vector) {
+        cosineScore = Number(
+          this.cosineSimilarity(queryVector, node.embedding_vector).toFixed(4)
+        );
+      }
+
+      // Filter out completely unrelated nodes in keyword fallback mode if query has tokens
+      if (mode === "keyword_bm25_fallback" && queryTokens.length > 0 && matchedTokens === 0) {
+        continue;
+      }
+
+      const connectedEdges = [...this.edges.values()].filter(
+        (e) =>
+          e.project_id === projectId &&
+          (e.from_node_id === node.node_id || e.to_node_id === node.node_id)
+      );
+      const centralityBoost = Number(
+        Math.min(0.25, connectedEdges.length * 0.05).toFixed(4)
+      );
+      const stalePenalty = node.stale ? 0.35 : 0;
+
+      const baseSemanticScore =
+        mode === "vector_embedding_adapter" && cosineScore !== null
+          ? bm25Score * 0.4 + cosineScore * 0.45
+          : bm25Score * 0.85;
+
+      const finalScore = Number(
+        Math.max(0, baseSemanticScore + centralityBoost * 0.15 - stalePenalty).toFixed(4)
+      );
+
+      const ensuredCitations: KosmoraCitation[] =
+        node.citations.length > 0
+          ? node.citations
+          : [
+              {
+                citation_id: `cit_node_${node.node_id}_v${node.version}`,
+                source_type: "knowledge_graph_node",
+                uri: `kosmora://graph/${node.project_id}/nodes/${node.node_id}?v=${node.version}`,
+                title: node.title,
+                excerpt: node.content.slice(0, 200),
+                confidence: node.confidence,
+                verified_at: node.valid_from
+              }
+            ];
+
+      results.push({
+        node_id: node.node_id,
+        project_id: node.project_id,
+        workspace_id: node.workspace_id,
+        title: node.title,
+        excerpt: node.content.slice(0, 240),
+        retrieval_mode: mode,
+        lexical_bm25_score: bm25Score,
+        vector_cosine_score: cosineScore,
+        graph_centrality_boost: centralityBoost,
+        reranked_final_score: finalScore,
+        stale_decay_alert: node.stale,
+        stale_reason: node.stale_reason,
+        version: node.version,
+        citations: ensuredCitations
+      });
+    }
+
+    const sorted = results
+      .sort((a, b) => b.reranked_final_score - a.reranked_final_score)
+      .slice(0, Math.max(1, topK));
+
+    this.searchCache.set(cacheKey, sorted);
+    return sorted.map((item) => ({ ...item }));
   }
 
-  private computeDeterministicEmbedding(text: string): number[] {
-    const vec = [0, 0, 0, 0, 0, 0, 0, 0];
-    for (let i = 0; i < text.length; i++) {
-      vec[i % vec.length]! += (text.charCodeAt(i) % 31) / 31;
+  /**
+   * F100, F111, F123: Propagate staleness across dependent claims when an upstream artifact changes.
+   * Respects project boundaries and traverses `derived_from`, `cites`, and `supports` relations.
+   */
+  public invalidateSourceAndPropagateStaleness(
+    sourceNodeId: string,
+    projectId?: string,
+    reason = "Upstream source modified"
+  ): string[] {
+    const rootNode = this.nodes.get(sourceNodeId);
+    if (!rootNode) {
+      return [];
     }
-    const norm = Math.sqrt(vec.reduce((acc, v) => acc + v * v, 0)) || 1;
-    return vec.map((v) => Number((v / norm).toFixed(4)));
+    const effectiveProjectId = projectId ?? rootNode.project_id;
+    if (rootNode.project_id !== effectiveProjectId) {
+      throw new Error(
+        `Project isolation violation: node '${sourceNodeId}' belongs to '${rootNode.project_id}', not '${effectiveProjectId}'`
+      );
+    }
+
+    const invalidated: string[] = [];
+    const queue: string[] = [sourceNodeId];
+    const visited = new Set<string>();
+
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+
+      const node = this.nodes.get(currentId);
+      if (node && node.project_id === effectiveProjectId) {
+        node.stale = true;
+        node.stale_reason = reason;
+        invalidated.push(currentId);
+      }
+
+      for (const edge of this.edges.values()) {
+        if (edge.project_id !== effectiveProjectId) continue;
+        // Dependent node -> (derived_from | cites) -> currentId
+        if (
+          (edge.relation === "derived_from" || edge.relation === "cites") &&
+          edge.to_node_id === currentId
+        ) {
+          queue.push(edge.from_node_id);
+        }
+        // currentId -> (supports) -> Dependent claim
+        if (edge.relation === "supports" && edge.from_node_id === currentId) {
+          queue.push(edge.to_node_id);
+        }
+      }
+    }
+
+    this.invalidateProjectCache(effectiveProjectId);
+    return invalidated;
+  }
+
+  /**
+   * F103, F123: Contradiction & Knowledge Decay Audit within a project
+   */
+  public auditKnowledgeIntegrity(projectId: string): ContradictionAuditReport {
+    if (!projectId || projectId.trim().length === 0) {
+      throw new Error("projectId is required for auditKnowledgeIntegrity");
+    }
+
+    const contradictions: ContradictionAuditReport["contradiction_pairs"] = [];
+    for (const edge of this.edges.values()) {
+      if (edge.project_id === projectId && edge.relation === "contradicts") {
+        const a = this.nodes.get(edge.from_node_id);
+        const b = this.nodes.get(edge.to_node_id);
+        if (a && b && a.project_id === projectId && b.project_id === projectId) {
+          contradictions.push({
+            node_a_id: a.node_id,
+            node_b_id: b.node_id,
+            description: `Claim '${a.title}' directly contradicts '${b.title}'`,
+            resolution_recommendation:
+              a.valid_from >= b.valid_from
+                ? `Supersede '${b.node_id}' with newer evidence from '${a.node_id}'`
+                : `Supersede '${a.node_id}' with newer evidence from '${b.node_id}'`
+          });
+        }
+      }
+    }
+
+    const projectNodes = [...this.nodes.values()].filter((n) => n.project_id === projectId);
+    const staleNodes = projectNodes.filter((n) => n.stale).map((n) => n.node_id);
+    const total = Math.max(1, projectNodes.length);
+    const freshnessScore = Number(((total - staleNodes.length) / total).toFixed(2));
+
+    return {
+      project_id: projectId,
+      contradiction_pairs: contradictions,
+      stale_nodes_flagged: staleNodes,
+      freshness_score: freshnessScore
+    };
+  }
+
+  public getProjectNodes(projectId: string): KnowledgeNode[] {
+    return [...this.nodes.values()].filter((n) => n.project_id === projectId);
+  }
+
+  public getProjectChunks(projectId: string, documentId?: string): HierarchicalDocumentChunk[] {
+    return [...this.chunks.values()].filter(
+      (c) => c.project_id === projectId && (!documentId || c.document_id === documentId)
+    );
+  }
+
+  private invalidateProjectCache(projectId: string): void {
+    for (const key of this.searchCache.keys()) {
+      if (key.startsWith(`${projectId}::`)) {
+        this.searchCache.delete(key);
+      }
+    }
   }
 
   private cosineSimilarity(a: number[], b: number[]): number {
+    const len = Math.min(a.length, b.length);
+    if (len === 0) return 0;
     let dot = 0;
-    for (let i = 0; i < Math.min(a.length, b.length); i++) {
-      dot += (a[i] ?? 0) * (b[i] ?? 0);
+    let magA = 0;
+    let magB = 0;
+    for (let i = 0; i < len; i++) {
+      const va = a[i] ?? 0;
+      const vb = b[i] ?? 0;
+      dot += va * vb;
+      magA += va * va;
+      magB += vb * vb;
     }
-    return Math.max(0, Math.min(1, dot));
+    const denom = Math.sqrt(magA) * Math.sqrt(magB);
+    return denom === 0 ? 0 : dot / denom;
   }
 }

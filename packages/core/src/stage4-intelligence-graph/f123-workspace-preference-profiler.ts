@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F123
- * ============================================================================
- * Feature ID: F123
- * Stage: stage4-intelligence-graph
- * Title: Персональный профиль предпочтений внутри воркспейса
- * Description: Запоминание любимого формата таблиц, стиля кода и лаконичности ответов
+ * F123 (stage4-intelligence-graph): Персональный профиль предпочтений внутри воркспейса
+ * Запоминание любимого формата таблиц, стиля кода и лаконичности ответов
  * Operation Code: preference_memory_profile
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F123_FEATURE_ID = "F123" as const;
 export const F123_STAGE = "stage4-intelligence-graph" as const;
 export const F123_OPERATION_CODE = "preference_memory_profile" as const;
-export const F123_CONTRACT_VERSION = "1.0.0" as const;
+export const F123_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F123WorkspacePreferenceProfilerExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F123WorkspacePreferenceProfilerExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F123WorkspacePreferenceProfilerConfig {
@@ -50,6 +47,17 @@ export interface F123WorkspacePreferenceProfilerInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F123WorkspacePreferenceProfilerAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F123_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F123WorkspacePreferenceProfilerOutput {
   readonly featureId: typeof F123_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F123WorkspacePreferenceProfilerOutput {
   readonly resolved_preferred_table_style: string | number;
   readonly resolved_preferred_code_idiom: string | number | boolean | readonly string[];
   readonly resolved_verbosity_level: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F123WorkspacePreferenceProfilerAuditEntry;
-}
-
-export interface F123WorkspacePreferenceProfilerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F123_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F123WorkspacePreferenceProfilerTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F123_CONFIG: F123WorkspacePreferenceProfilerConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F123WorkspacePreferenceProfilerValidationError extends Error {
@@ -109,40 +108,36 @@ export class F123WorkspacePreferenceProfilerValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F123 provenance & audit integrity.
- */
 export function computeF123Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f123_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f123_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F123: Персональный профиль предпочтений внутри воркспейса
- * Запоминание любимого формата таблиц, стиля кода и лаконичности ответов
- */
 export class F123WorkspacePreferenceProfilerEngine {
   private readonly config: F123WorkspacePreferenceProfilerConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F123WorkspacePreferenceProfilerOutput[] = [];
   private readonly auditLog: F123WorkspacePreferenceProfilerAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F123WorkspacePreferenceProfilerOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F123WorkspacePreferenceProfilerConfig>) {
+  constructor(customConfig?: Partial<F123WorkspacePreferenceProfilerConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F123_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F123WorkspacePreferenceProfilerConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F123WorkspacePreferenceProfilerInput): void {
@@ -158,8 +153,24 @@ export class F123WorkspacePreferenceProfilerEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F123WorkspacePreferenceProfilerValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F123WorkspacePreferenceProfilerValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F123WorkspacePreferenceProfilerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.workspace_id).trim().length === 0) {
       throw new F123WorkspacePreferenceProfilerValidationError("workspace_id", "Primary domain attribute 'workspace_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      workspace_id: input.workspace_id,
+      preferred_table_style: input.preferred_table_style,
+      preferred_code_idiom: input.preferred_code_idiom,
+      verbosity_level: input.verbosity_level
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F123WorkspacePreferenceProfilerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F123WorkspacePreferenceProfilerEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f123_${this.totalRuns}_${computeF123Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F123_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        workspace_id: input.workspace_id,
+        preferred_table_style: input.preferred_table_style,
+        preferred_code_idiom: input.preferred_code_idiom,
+        verbosity_level: input.verbosity_level
+      });
+      const payloadHash = computeF123Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F123WorkspacePreferenceProfilerValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F123_FEATURE_ID,
+        operationCode: F123_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        workspace_id: input.workspace_id,
-        preferred_table_style: input.preferred_table_style,
-        preferred_code_idiom: input.preferred_code_idiom,
-        verbosity_level: input.verbosity_level,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          workspace_id: input.workspace_id,
+          preferred_table_style: input.preferred_table_style,
+          preferred_code_idiom: input.preferred_code_idiom,
+          verbosity_level: input.verbosity_level
+        }
       });
 
-      const provenanceDigest = computeF123Digest(canonicalPayload);
+      const executionId = `exec_f123_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f123_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F123WorkspacePreferenceProfilerAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F123_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F123WorkspacePreferenceProfilerEngine {
         actorId: input.actorId,
         action: `preference_memory_profile:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F123WorkspacePreferenceProfilerEngine {
         executionId,
         status: "completed",
         operationCode: F123_OPERATION_CODE,
-        resolved_workspace_id: input.workspace_id,
-        resolved_preferred_table_style: input.preferred_table_style,
-        resolved_preferred_code_idiom: input.preferred_code_idiom,
-        resolved_verbosity_level: input.verbosity_level,
+        resolved_workspace_id: kernelResult.resolvedFields.workspace_id as string,
+        resolved_preferred_table_style: kernelResult.resolvedFields.preferred_table_style as string | number,
+        resolved_preferred_code_idiom: kernelResult.resolvedFields.preferred_code_idiom as string | number | boolean | readonly string[],
+        resolved_verbosity_level: kernelResult.resolvedFields.verbosity_level as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F123WorkspacePreferenceProfilerEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F123WorkspacePreferenceProfilerEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F123 (Персональный профиль предпочтений внутри воркспейса)
- */
 export function verifyF123Module(): {
   featureId: typeof F123_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF123Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    workspace_id: "f123_workspace_id_verified",
-    preferred_table_style: 100,
+    workspace_id: "f123_workspace_id_seed",
+    preferred_table_style: 42,
     preferred_code_idiom: true,
-    verbosity_level: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 123 },
+    verbosity_level: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 123 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F123" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_workspace_id !== sampleInput.workspace_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F123_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

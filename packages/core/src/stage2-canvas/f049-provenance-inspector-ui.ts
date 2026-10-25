@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F049
- * ============================================================================
- * Feature ID: F049
- * Stage: stage2-canvas
- * Title: Инспектор цепочки происхождения (Provenance Inspector UI)
- * Description: Боковая панель, показывающая, из каких чанков документов и задач родился текущий артефакт
+ * F049 (stage2-canvas): Инспектор цепочки происхождения (Provenance Inspector UI)
+ * Боковая панель, показывающая, из каких чанков документов и задач родился текущий артефакт
  * Operation Code: provenance_drawer
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F049_FEATURE_ID = "F049" as const;
 export const F049_STAGE = "stage2-canvas" as const;
 export const F049_OPERATION_CODE = "provenance_drawer" as const;
-export const F049_CONTRACT_VERSION = "1.0.0" as const;
+export const F049_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F049ProvenanceInspectorUiExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F049ProvenanceInspectorUiExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F049ProvenanceInspectorUiConfig {
@@ -50,6 +47,17 @@ export interface F049ProvenanceInspectorUiInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F049ProvenanceInspectorUiAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F049_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F049ProvenanceInspectorUiOutput {
   readonly featureId: typeof F049_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F049ProvenanceInspectorUiOutput {
   readonly resolved_upstream_tasks: string | number;
   readonly resolved_source_chunks: string | number | boolean | readonly string[];
   readonly resolved_lineage_depth: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F049ProvenanceInspectorUiAuditEntry;
-}
-
-export interface F049ProvenanceInspectorUiAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F049_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F049ProvenanceInspectorUiTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F049_CONFIG: F049ProvenanceInspectorUiConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F049ProvenanceInspectorUiValidationError extends Error {
@@ -109,40 +108,36 @@ export class F049ProvenanceInspectorUiValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F049 provenance & audit integrity.
- */
 export function computeF049Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f049_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f049_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F049: Инспектор цепочки происхождения (Provenance Inspector UI)
- * Боковая панель, показывающая, из каких чанков документов и задач родился текущий артефакт
- */
 export class F049ProvenanceInspectorUiEngine {
   private readonly config: F049ProvenanceInspectorUiConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F049ProvenanceInspectorUiOutput[] = [];
   private readonly auditLog: F049ProvenanceInspectorUiAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F049ProvenanceInspectorUiOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F049ProvenanceInspectorUiConfig>) {
+  constructor(customConfig?: Partial<F049ProvenanceInspectorUiConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F049_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F049ProvenanceInspectorUiConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F049ProvenanceInspectorUiInput): void {
@@ -158,8 +153,24 @@ export class F049ProvenanceInspectorUiEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F049ProvenanceInspectorUiValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F049ProvenanceInspectorUiValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F049ProvenanceInspectorUiValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.artifact_id).trim().length === 0) {
       throw new F049ProvenanceInspectorUiValidationError("artifact_id", "Primary domain attribute 'artifact_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      artifact_id: input.artifact_id,
+      upstream_tasks: input.upstream_tasks,
+      source_chunks: input.source_chunks,
+      lineage_depth: input.lineage_depth
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F049ProvenanceInspectorUiValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F049ProvenanceInspectorUiEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f049_${this.totalRuns}_${computeF049Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F049_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        artifact_id: input.artifact_id,
+        upstream_tasks: input.upstream_tasks,
+        source_chunks: input.source_chunks,
+        lineage_depth: input.lineage_depth
+      });
+      const payloadHash = computeF049Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F049ProvenanceInspectorUiValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F049_FEATURE_ID,
+        operationCode: F049_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        artifact_id: input.artifact_id,
-        upstream_tasks: input.upstream_tasks,
-        source_chunks: input.source_chunks,
-        lineage_depth: input.lineage_depth,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          artifact_id: input.artifact_id,
+          upstream_tasks: input.upstream_tasks,
+          source_chunks: input.source_chunks,
+          lineage_depth: input.lineage_depth
+        }
       });
 
-      const provenanceDigest = computeF049Digest(canonicalPayload);
+      const executionId = `exec_f049_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f049_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F049ProvenanceInspectorUiAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F049_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F049ProvenanceInspectorUiEngine {
         actorId: input.actorId,
         action: `provenance_drawer:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F049ProvenanceInspectorUiEngine {
         executionId,
         status: "completed",
         operationCode: F049_OPERATION_CODE,
-        resolved_artifact_id: input.artifact_id,
-        resolved_upstream_tasks: input.upstream_tasks,
-        resolved_source_chunks: input.source_chunks,
-        resolved_lineage_depth: input.lineage_depth,
+        resolved_artifact_id: kernelResult.resolvedFields.artifact_id as string,
+        resolved_upstream_tasks: kernelResult.resolvedFields.upstream_tasks as string | number,
+        resolved_source_chunks: kernelResult.resolvedFields.source_chunks as string | number | boolean | readonly string[],
+        resolved_lineage_depth: kernelResult.resolvedFields.lineage_depth as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F049ProvenanceInspectorUiEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F049ProvenanceInspectorUiEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F049 (Инспектор цепочки происхождения (Provenance Inspector UI))
- */
 export function verifyF049Module(): {
   featureId: typeof F049_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF049Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    artifact_id: "f049_artifact_id_verified",
-    upstream_tasks: 100,
+    artifact_id: "f049_artifact_id_seed",
+    upstream_tasks: 42,
     source_chunks: true,
-    lineage_depth: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 49 },
+    lineage_depth: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 49 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F049" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_artifact_id !== sampleInput.artifact_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F049_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

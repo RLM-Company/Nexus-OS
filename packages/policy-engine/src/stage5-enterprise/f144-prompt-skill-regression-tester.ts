@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F144
- * ============================================================================
- * Feature ID: F144
- * Stage: stage5-enterprise
- * Title: Регрессионное тестирование промптов и скиллов
- * Description: Проверка того, что обновление системного промпта не ухудшило качество старых сценариев
+ * F144 (stage5-enterprise): Регрессионное тестирование промптов и скиллов
+ * Проверка того, что обновление системного промпта не ухудшило качество старых сценариев
  * Operation Code: prompt_regression_gate
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F144_FEATURE_ID = "F144" as const;
 export const F144_STAGE = "stage5-enterprise" as const;
 export const F144_OPERATION_CODE = "prompt_regression_gate" as const;
-export const F144_CONTRACT_VERSION = "1.0.0" as const;
+export const F144_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F144PromptSkillRegressionTesterExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F144PromptSkillRegressionTesterExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F144PromptSkillRegressionTesterConfig {
@@ -50,6 +47,17 @@ export interface F144PromptSkillRegressionTesterInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F144PromptSkillRegressionTesterAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F144_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F144PromptSkillRegressionTesterOutput {
   readonly featureId: typeof F144_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F144PromptSkillRegressionTesterOutput {
   readonly resolved_candidate_version: string | number;
   readonly resolved_drift_detected: string | number | boolean | readonly string[];
   readonly resolved_regression_passed: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F144PromptSkillRegressionTesterAuditEntry;
-}
-
-export interface F144PromptSkillRegressionTesterAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F144_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F144PromptSkillRegressionTesterTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F144_CONFIG: F144PromptSkillRegressionTesterConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F144PromptSkillRegressionTesterValidationError extends Error {
@@ -109,40 +108,36 @@ export class F144PromptSkillRegressionTesterValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F144 provenance & audit integrity.
- */
 export function computeF144Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f144_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f144_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F144: Регрессионное тестирование промптов и скиллов
- * Проверка того, что обновление системного промпта не ухудшило качество старых сценариев
- */
 export class F144PromptSkillRegressionTesterEngine {
   private readonly config: F144PromptSkillRegressionTesterConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F144PromptSkillRegressionTesterOutput[] = [];
   private readonly auditLog: F144PromptSkillRegressionTesterAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F144PromptSkillRegressionTesterOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F144PromptSkillRegressionTesterConfig>) {
+  constructor(customConfig?: Partial<F144PromptSkillRegressionTesterConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F144_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F144PromptSkillRegressionTesterConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F144PromptSkillRegressionTesterInput): void {
@@ -158,8 +153,24 @@ export class F144PromptSkillRegressionTesterEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F144PromptSkillRegressionTesterValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F144PromptSkillRegressionTesterValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F144PromptSkillRegressionTesterValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.baseline_version).trim().length === 0) {
       throw new F144PromptSkillRegressionTesterValidationError("baseline_version", "Primary domain attribute 'baseline_version' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      baseline_version: input.baseline_version,
+      candidate_version: input.candidate_version,
+      drift_detected: input.drift_detected,
+      regression_passed: input.regression_passed
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F144PromptSkillRegressionTesterValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F144PromptSkillRegressionTesterEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f144_${this.totalRuns}_${computeF144Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F144_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        baseline_version: input.baseline_version,
+        candidate_version: input.candidate_version,
+        drift_detected: input.drift_detected,
+        regression_passed: input.regression_passed
+      });
+      const payloadHash = computeF144Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F144PromptSkillRegressionTesterValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F144_FEATURE_ID,
+        operationCode: F144_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        baseline_version: input.baseline_version,
-        candidate_version: input.candidate_version,
-        drift_detected: input.drift_detected,
-        regression_passed: input.regression_passed,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          baseline_version: input.baseline_version,
+          candidate_version: input.candidate_version,
+          drift_detected: input.drift_detected,
+          regression_passed: input.regression_passed
+        }
       });
 
-      const provenanceDigest = computeF144Digest(canonicalPayload);
+      const executionId = `exec_f144_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f144_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F144PromptSkillRegressionTesterAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F144_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F144PromptSkillRegressionTesterEngine {
         actorId: input.actorId,
         action: `prompt_regression_gate:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F144PromptSkillRegressionTesterEngine {
         executionId,
         status: "completed",
         operationCode: F144_OPERATION_CODE,
-        resolved_baseline_version: input.baseline_version,
-        resolved_candidate_version: input.candidate_version,
-        resolved_drift_detected: input.drift_detected,
-        resolved_regression_passed: input.regression_passed,
+        resolved_baseline_version: kernelResult.resolvedFields.baseline_version as string,
+        resolved_candidate_version: kernelResult.resolvedFields.candidate_version as string | number,
+        resolved_drift_detected: kernelResult.resolvedFields.drift_detected as string | number | boolean | readonly string[],
+        resolved_regression_passed: kernelResult.resolvedFields.regression_passed as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F144PromptSkillRegressionTesterEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F144PromptSkillRegressionTesterEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F144 (Регрессионное тестирование промптов и скиллов)
- */
 export function verifyF144Module(): {
   featureId: typeof F144_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF144Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    baseline_version: "f144_baseline_version_verified",
-    candidate_version: 100,
+    baseline_version: "f144_baseline_version_seed",
+    candidate_version: 42,
     drift_detected: true,
-    regression_passed: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 144 },
+    regression_passed: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 144 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F144" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_baseline_version !== sampleInput.baseline_version &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F144_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

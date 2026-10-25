@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F092
- * ============================================================================
- * Feature ID: F092
- * Stage: stage3-skills-bus
- * Title: Привязка учётных записей с разделением скоупов (Account Connectors)
- * Description: Безопасное хранение токенов GitHub, облачных дисков и мессенджеров
+ * F092 (stage3-skills-bus): Привязка учётных записей с разделением скоупов (Account Connectors)
+ * Безопасное хранение токенов GitHub, облачных дисков и мессенджеров
  * Operation Code: scoped_connector_vault
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F092_FEATURE_ID = "F092" as const;
 export const F092_STAGE = "stage3-skills-bus" as const;
 export const F092_OPERATION_CODE = "scoped_connector_vault" as const;
-export const F092_CONTRACT_VERSION = "1.0.0" as const;
+export const F092_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F092ScopedAccountConnectorsExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F092ScopedAccountConnectorsExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F092ScopedAccountConnectorsConfig {
@@ -50,6 +47,17 @@ export interface F092ScopedAccountConnectorsInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F092ScopedAccountConnectorsAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F092_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F092ScopedAccountConnectorsOutput {
   readonly featureId: typeof F092_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F092ScopedAccountConnectorsOutput {
   readonly resolved_provider_name: string | number;
   readonly resolved_granted_scopes: string | number | boolean | readonly string[];
   readonly resolved_least_privilege_ok: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F092ScopedAccountConnectorsAuditEntry;
-}
-
-export interface F092ScopedAccountConnectorsAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F092_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F092ScopedAccountConnectorsTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F092_CONFIG: F092ScopedAccountConnectorsConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F092ScopedAccountConnectorsValidationError extends Error {
@@ -109,40 +108,36 @@ export class F092ScopedAccountConnectorsValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F092 provenance & audit integrity.
- */
 export function computeF092Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f092_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f092_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F092: Привязка учётных записей с разделением скоупов (Account Connectors)
- * Безопасное хранение токенов GitHub, облачных дисков и мессенджеров
- */
 export class F092ScopedAccountConnectorsEngine {
   private readonly config: F092ScopedAccountConnectorsConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F092ScopedAccountConnectorsOutput[] = [];
   private readonly auditLog: F092ScopedAccountConnectorsAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F092ScopedAccountConnectorsOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F092ScopedAccountConnectorsConfig>) {
+  constructor(customConfig?: Partial<F092ScopedAccountConnectorsConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F092_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F092ScopedAccountConnectorsConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F092ScopedAccountConnectorsInput): void {
@@ -158,8 +153,24 @@ export class F092ScopedAccountConnectorsEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F092ScopedAccountConnectorsValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F092ScopedAccountConnectorsValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F092ScopedAccountConnectorsValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.connector_id).trim().length === 0) {
       throw new F092ScopedAccountConnectorsValidationError("connector_id", "Primary domain attribute 'connector_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      connector_id: input.connector_id,
+      provider_name: input.provider_name,
+      granted_scopes: input.granted_scopes,
+      least_privilege_ok: input.least_privilege_ok
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F092ScopedAccountConnectorsValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F092ScopedAccountConnectorsEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f092_${this.totalRuns}_${computeF092Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F092_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        connector_id: input.connector_id,
+        provider_name: input.provider_name,
+        granted_scopes: input.granted_scopes,
+        least_privilege_ok: input.least_privilege_ok
+      });
+      const payloadHash = computeF092Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F092ScopedAccountConnectorsValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F092_FEATURE_ID,
+        operationCode: F092_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        connector_id: input.connector_id,
-        provider_name: input.provider_name,
-        granted_scopes: input.granted_scopes,
-        least_privilege_ok: input.least_privilege_ok,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          connector_id: input.connector_id,
+          provider_name: input.provider_name,
+          granted_scopes: input.granted_scopes,
+          least_privilege_ok: input.least_privilege_ok
+        }
       });
 
-      const provenanceDigest = computeF092Digest(canonicalPayload);
+      const executionId = `exec_f092_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f092_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F092ScopedAccountConnectorsAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F092_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F092ScopedAccountConnectorsEngine {
         actorId: input.actorId,
         action: `scoped_connector_vault:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F092ScopedAccountConnectorsEngine {
         executionId,
         status: "completed",
         operationCode: F092_OPERATION_CODE,
-        resolved_connector_id: input.connector_id,
-        resolved_provider_name: input.provider_name,
-        resolved_granted_scopes: input.granted_scopes,
-        resolved_least_privilege_ok: input.least_privilege_ok,
+        resolved_connector_id: kernelResult.resolvedFields.connector_id as string,
+        resolved_provider_name: kernelResult.resolvedFields.provider_name as string | number,
+        resolved_granted_scopes: kernelResult.resolvedFields.granted_scopes as string | number | boolean | readonly string[],
+        resolved_least_privilege_ok: kernelResult.resolvedFields.least_privilege_ok as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F092ScopedAccountConnectorsEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F092ScopedAccountConnectorsEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F092 (Привязка учётных записей с разделением скоупов (Account Connectors))
- */
 export function verifyF092Module(): {
   featureId: typeof F092_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF092Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    connector_id: "f092_connector_id_verified",
-    provider_name: 100,
+    connector_id: "f092_connector_id_seed",
+    provider_name: 42,
     granted_scopes: true,
-    least_privilege_ok: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 92 },
+    least_privilege_ok: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 92 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F092" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_connector_id !== sampleInput.connector_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F092_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

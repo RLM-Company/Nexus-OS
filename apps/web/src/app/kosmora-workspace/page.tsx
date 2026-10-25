@@ -1,63 +1,166 @@
+import React from "react";
+import {
+  buildKosmoraWorkspaceViewModel,
+  KOSMORA_MONOCHROME_THEME,
+  type KosmoraWorkspaceViewModel
+} from "./view-model.js";
+
+export { buildKosmoraWorkspaceViewModel, KOSMORA_MONOCHROME_THEME };
+export type { KosmoraWorkspaceViewModel };
+
 /**
- * @cosmora/web — Kosmora Dual-Pane Canvas, Provenance Inspector & Graph Navigator View Model
- * Covers F033, F040, F045, F046, F048, F049, F053, F057, F059, F102, F115, F127
+ * Kosmora Sovereign Workspace Page (Next.js App Router Default Component)
+ * Strictly monochrome (#0a0a0a, #141414, #262626, #e5e5e5, #a3a3a3, #ffffff),
+ * Russian interface, safe declarative JSX rendering.
  */
+export default function KosmoraWorkspacePage(): React.ReactElement {
+  const vm = buildKosmoraWorkspaceViewModel();
 
-import type { CanvasWorkspaceState } from "../../../../packages/contracts/src/kosmora-canvas.ts";
-import type { RuntimeArtifact } from "../../../../packages/contracts/src/kosmora-protocol.ts";
-import type { ContextWindowXRayReport } from "../../../../packages/core/src/kosmora-intelligence-graph.ts";
+  return (
+    <main
+      style={{
+        backgroundColor: vm.theme.background_primary,
+        color: vm.theme.text_primary,
+        minHeight: "100vh",
+        padding: "32px",
+        fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif"
+      }}
+    >
+      <header
+        style={{
+          borderBottom: `1px solid ${vm.theme.border_subtle}`,
+          paddingBottom: "20px",
+          marginBottom: "28px"
+        }}
+      >
+        <h1 style={{ fontSize: "24px", fontWeight: 600, margin: 0 }}>
+          {vm.title}
+        </h1>
+        <p
+          style={{
+            color: vm.theme.text_muted,
+            fontSize: "14px",
+            marginTop: "8px",
+            marginBottom: 0
+          }}
+        >
+          {vm.subtitle}
+        </p>
+      </header>
 
-export interface KosmoraWorkspaceViewModel {
-  workspace: CanvasWorkspaceState;
-  active_artifact: RuntimeArtifact | null;
-  context_xray: ContextWindowXRayReport;
-  command_palette_open: boolean;
-  provenance_inspector_open: boolean;
-  graph_navigator_mode: "2d" | "3d";
-}
+      <section
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gap: "20px"
+        }}
+      >
+        <article
+          style={{
+            backgroundColor: vm.theme.background_elevated,
+            border: `1px solid ${vm.theme.border_subtle}`,
+            borderRadius: "8px",
+            padding: "20px"
+          }}
+        >
+          <h2 style={{ fontSize: "16px", fontWeight: 600, marginTop: 0 }}>
+            Граф выполнения задач (DAG)
+          </h2>
+          <p style={{ color: vm.theme.text_secondary, fontSize: "13px" }}>
+            План: {vm.dag_summary.plan_id} — Выполнено{" "}
+            {vm.dag_summary.completed_nodes} из {vm.dag_summary.total_nodes}{" "}
+            узлов (Ожидает HITL: {vm.dag_summary.awaiting_hitl_nodes})
+          </p>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {vm.dag_summary.nodes.map((node) => (
+              <li
+                key={node.node_id}
+                style={{
+                  borderTop: `1px solid ${vm.theme.border_subtle}`,
+                  padding: "10px 0",
+                  fontSize: "13px",
+                  color: vm.theme.text_secondary
+                }}
+              >
+                <strong>{node.node_id}</strong> ({node.role}): {node.title} — [
+                {node.status}]
+              </li>
+            ))}
+          </ul>
+        </article>
 
-export function buildKosmoraWorkspaceViewModel(params: {
-  workspace: CanvasWorkspaceState;
-  active_artifact: RuntimeArtifact | null;
-  context_xray: ContextWindowXRayReport;
-  command_palette_open?: boolean;
-  provenance_inspector_open?: boolean;
-  graph_navigator_mode?: "2d" | "3d";
-}): KosmoraWorkspaceViewModel {
-  return {
-    workspace: params.workspace,
-    active_artifact: params.active_artifact,
-    context_xray: params.context_xray,
-    command_palette_open: params.command_palette_open ?? false,
-    provenance_inspector_open: params.provenance_inspector_open ?? true,
-    graph_navigator_mode: params.graph_navigator_mode ?? "2d",
-  };
-}
+        <article
+          style={{
+            backgroundColor: vm.theme.background_elevated,
+            border: `1px solid ${vm.theme.border_subtle}`,
+            borderRadius: "8px",
+            padding: "20px"
+          }}
+        >
+          <h2 style={{ fontSize: "16px", fontWeight: 600, marginTop: 0 }}>
+            Холст артефактов и ревизий (Canvas)
+          </h2>
+          <p style={{ color: vm.theme.text_secondary, fontSize: "13px" }}>
+            Артефакт: {vm.canvas_summary.title} (v{vm.canvas_summary.version})
+          </p>
+          <p style={{ color: vm.theme.text_muted, fontSize: "12px" }}>
+            SHA-256: {vm.canvas_summary.content_sha256.slice(0, 24)}...
+          </p>
+          <p style={{ color: vm.theme.text_secondary, fontSize: "13px" }}>
+            Доступные форматы экспорта:{" "}
+            {vm.canvas_summary.exports_available.join(", ")}
+          </p>
+        </article>
 
-export function renderKosmoraWorkspaceHtmlPreview(vm: KosmoraWorkspaceViewModel): string {
-  const activeTab = vm.workspace.tabs.find((t) => t.tab_id === vm.workspace.active_tab_id);
-  const badgeLabel =
-    activeTab?.verification_badge === "critic_approved"
-      ? "Проверено Критиком (Approved)"
-      : activeTab?.verification_badge === "manual_edit"
-        ? "Ручная правка пользователя"
-        : "Требует ревью";
+        <article
+          style={{
+            backgroundColor: vm.theme.background_elevated,
+            border: `1px solid ${vm.theme.border_subtle}`,
+            borderRadius: "8px",
+            padding: "20px"
+          }}
+        >
+          <h2 style={{ fontSize: "16px", fontWeight: 600, marginTop: 0 }}>
+            Граф знаний и память проекта
+          </h2>
+          <p style={{ color: vm.theme.text_secondary, fontSize: "13px" }}>
+            Проект: {vm.knowledge_summary.project_id} | Режим поиска:{" "}
+            {vm.knowledge_summary.retrieval_mode}
+          </p>
+          <p style={{ color: vm.theme.text_secondary, fontSize: "13px" }}>
+            Активных узлов: {vm.knowledge_summary.active_nodes} | Предупреждений
+            об устаревании: {vm.knowledge_summary.stale_alerts}
+          </p>
+          <p style={{ color: vm.theme.text_muted, fontSize: "12px" }}>
+            Релевантный источник: {vm.knowledge_summary.top_hit_title}
+          </p>
+        </article>
 
-  return [
-    `<section class="kosmora-dual-pane" data-theme="${vm.workspace.theme_preset}">`,
-    `  <aside class="kosmora-left-chat" id="${vm.workspace.left_chat_thread_id}">`,
-    `    <header>Kosmora Chat & Skills (/skill, @skill) | X-Ray: ${vm.context_xray.utilization_pct}%</header>`,
-    `  </aside>`,
-    `  <main class="kosmora-right-canvas" data-fullscreen="${vm.workspace.present_mode_fullscreen}">`,
-    `    <nav class="canvas-tabs">Tabs: ${vm.workspace.tabs.map((t) => `${t.title} (${t.current_version})`).join(" | ")}</nav>`,
-    `    <div class="critic-badge">${badgeLabel}</div>`,
-    `    <article class="canvas-editor">${activeTab?.versions[activeTab.versions.length - 1]?.content ?? ""}</article>`,
-    `  </main>`,
-    `  ${
-      vm.provenance_inspector_open && vm.active_artifact
-        ? `<aside class="provenance-inspector">Provenance Task: ${vm.active_artifact.task_id} | Route: ${vm.active_artifact.provenance.model_route_id}</aside>`
-        : ""
-    }`,
-    `</section>`,
-  ].join("\n");
+        <article
+          style={{
+            backgroundColor: vm.theme.background_elevated,
+            border: `1px solid ${vm.theme.border_subtle}`,
+            borderRadius: "8px",
+            padding: "20px"
+          }}
+        >
+          <h2 style={{ fontSize: "16px", fontWeight: 600, marginTop: 0 }}>
+            Безопасность, Vault и аудит
+          </h2>
+          <p style={{ color: vm.theme.text_secondary, fontSize: "13px" }}>
+            Тенант: {vm.governance_summary.tenant_id} | RLS:{" "}
+            {vm.governance_summary.rls_enforced ? "Включён" : "Отключён"}
+          </p>
+          <p style={{ color: vm.theme.text_secondary, fontSize: "13px" }}>
+            Шифрование Vault: {vm.governance_summary.vault_cipher}
+          </p>
+          <p style={{ color: vm.theme.text_secondary, fontSize: "13px" }}>
+            Цепочка аудита проверена:{" "}
+            {vm.governance_summary.audit_chain_verified ? "Да" : "Нет"} (
+            {vm.governance_summary.audit_entries_count} записей)
+          </p>
+        </article>
+      </section>
+    </main>
+  );
 }

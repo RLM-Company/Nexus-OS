@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F102
- * ============================================================================
- * Feature ID: F102
- * Stage: stage4-intelligence-graph
- * Title: Интерактивный 2D/3D-навигатор по графу знаний
- * Description: Визуальный осмотр связей проекта с фильтрацией по типам узлов, датам и тегам
+ * F102 (stage4-intelligence-graph): Интерактивный 2D/3D-навигатор по графу знаний
+ * Визуальный осмотр связей проекта с фильтрацией по типам узлов, датам и тегам
  * Operation Code: graph_viewport_serializer
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F102_FEATURE_ID = "F102" as const;
 export const F102_STAGE = "stage4-intelligence-graph" as const;
 export const F102_OPERATION_CODE = "graph_viewport_serializer" as const;
-export const F102_CONTRACT_VERSION = "1.0.0" as const;
+export const F102_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F102Interactive2d3dGraphNavigatorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F102Interactive2d3dGraphNavigatorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F102Interactive2d3dGraphNavigatorConfig {
@@ -50,6 +47,17 @@ export interface F102Interactive2d3dGraphNavigatorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F102Interactive2d3dGraphNavigatorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F102_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F102Interactive2d3dGraphNavigatorOutput {
   readonly featureId: typeof F102_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F102Interactive2d3dGraphNavigatorOutput {
   readonly resolved_visible_nodes: string | number;
   readonly resolved_visible_edges: string | number | boolean | readonly string[];
   readonly resolved_camera_coordinates: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F102Interactive2d3dGraphNavigatorAuditEntry;
-}
-
-export interface F102Interactive2d3dGraphNavigatorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F102_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F102Interactive2d3dGraphNavigatorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F102_CONFIG: F102Interactive2d3dGraphNavigatorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F102Interactive2d3dGraphNavigatorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F102Interactive2d3dGraphNavigatorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F102 provenance & audit integrity.
- */
 export function computeF102Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f102_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f102_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F102: Интерактивный 2D/3D-навигатор по графу знаний
- * Визуальный осмотр связей проекта с фильтрацией по типам узлов, датам и тегам
- */
 export class F102Interactive2d3dGraphNavigatorEngine {
   private readonly config: F102Interactive2d3dGraphNavigatorConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F102Interactive2d3dGraphNavigatorOutput[] = [];
   private readonly auditLog: F102Interactive2d3dGraphNavigatorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F102Interactive2d3dGraphNavigatorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F102Interactive2d3dGraphNavigatorConfig>) {
+  constructor(customConfig?: Partial<F102Interactive2d3dGraphNavigatorConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F102_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F102Interactive2d3dGraphNavigatorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F102Interactive2d3dGraphNavigatorInput): void {
@@ -158,8 +153,24 @@ export class F102Interactive2d3dGraphNavigatorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F102Interactive2d3dGraphNavigatorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F102Interactive2d3dGraphNavigatorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F102Interactive2d3dGraphNavigatorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.view_mode).trim().length === 0) {
       throw new F102Interactive2d3dGraphNavigatorValidationError("view_mode", "Primary domain attribute 'view_mode' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      view_mode: input.view_mode,
+      visible_nodes: input.visible_nodes,
+      visible_edges: input.visible_edges,
+      camera_coordinates: input.camera_coordinates
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F102Interactive2d3dGraphNavigatorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F102Interactive2d3dGraphNavigatorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f102_${this.totalRuns}_${computeF102Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F102_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        view_mode: input.view_mode,
+        visible_nodes: input.visible_nodes,
+        visible_edges: input.visible_edges,
+        camera_coordinates: input.camera_coordinates
+      });
+      const payloadHash = computeF102Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F102Interactive2d3dGraphNavigatorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F102_FEATURE_ID,
+        operationCode: F102_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        view_mode: input.view_mode,
-        visible_nodes: input.visible_nodes,
-        visible_edges: input.visible_edges,
-        camera_coordinates: input.camera_coordinates,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          view_mode: input.view_mode,
+          visible_nodes: input.visible_nodes,
+          visible_edges: input.visible_edges,
+          camera_coordinates: input.camera_coordinates
+        }
       });
 
-      const provenanceDigest = computeF102Digest(canonicalPayload);
+      const executionId = `exec_f102_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f102_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F102Interactive2d3dGraphNavigatorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F102_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F102Interactive2d3dGraphNavigatorEngine {
         actorId: input.actorId,
         action: `graph_viewport_serializer:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F102Interactive2d3dGraphNavigatorEngine {
         executionId,
         status: "completed",
         operationCode: F102_OPERATION_CODE,
-        resolved_view_mode: input.view_mode,
-        resolved_visible_nodes: input.visible_nodes,
-        resolved_visible_edges: input.visible_edges,
-        resolved_camera_coordinates: input.camera_coordinates,
+        resolved_view_mode: kernelResult.resolvedFields.view_mode as string,
+        resolved_visible_nodes: kernelResult.resolvedFields.visible_nodes as string | number,
+        resolved_visible_edges: kernelResult.resolvedFields.visible_edges as string | number | boolean | readonly string[],
+        resolved_camera_coordinates: kernelResult.resolvedFields.camera_coordinates as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F102Interactive2d3dGraphNavigatorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F102Interactive2d3dGraphNavigatorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F102 (Интерактивный 2D/3D-навигатор по графу знаний)
- */
 export function verifyF102Module(): {
   featureId: typeof F102_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF102Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    view_mode: "f102_view_mode_verified",
-    visible_nodes: 100,
+    view_mode: "f102_view_mode_seed",
+    visible_nodes: 42,
     visible_edges: true,
-    camera_coordinates: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 102 },
+    camera_coordinates: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 102 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F102" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_view_mode !== sampleInput.view_mode &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F102_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

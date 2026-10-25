@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F152
- * ============================================================================
- * Feature ID: F152
- * Stage: stage5-enterprise
- * Title: Автоматическое резервное копирование и снапшоты
- * Description: Ежедневный бэкап графов знаний, чатов и версий Canvas с восстановлением в один клик
+ * F152 (stage5-enterprise): Автоматическое резервное копирование и снапшоты
+ * Ежедневный бэкап графов знаний, чатов и версий Canvas с восстановлением в один клик
  * Operation Code: snapshot_backup_engine
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F152_FEATURE_ID = "F152" as const;
 export const F152_STAGE = "stage5-enterprise" as const;
 export const F152_OPERATION_CODE = "snapshot_backup_engine" as const;
-export const F152_CONTRACT_VERSION = "1.0.0" as const;
+export const F152_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F152AutomatedBackupSnapshotsExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F152AutomatedBackupSnapshotsExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F152AutomatedBackupSnapshotsConfig {
@@ -50,6 +47,17 @@ export interface F152AutomatedBackupSnapshotsInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F152AutomatedBackupSnapshotsAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F152_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F152AutomatedBackupSnapshotsOutput {
   readonly featureId: typeof F152_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F152AutomatedBackupSnapshotsOutput {
   readonly resolved_included_graphs: string | number;
   readonly resolved_included_canvas_tabs: string | number | boolean | readonly string[];
   readonly resolved_one_click_restorable: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F152AutomatedBackupSnapshotsAuditEntry;
-}
-
-export interface F152AutomatedBackupSnapshotsAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F152_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F152AutomatedBackupSnapshotsTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F152_CONFIG: F152AutomatedBackupSnapshotsConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F152AutomatedBackupSnapshotsValidationError extends Error {
@@ -109,40 +108,36 @@ export class F152AutomatedBackupSnapshotsValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F152 provenance & audit integrity.
- */
 export function computeF152Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f152_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f152_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F152: Автоматическое резервное копирование и снапшоты
- * Ежедневный бэкап графов знаний, чатов и версий Canvas с восстановлением в один клик
- */
 export class F152AutomatedBackupSnapshotsEngine {
   private readonly config: F152AutomatedBackupSnapshotsConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F152AutomatedBackupSnapshotsOutput[] = [];
   private readonly auditLog: F152AutomatedBackupSnapshotsAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F152AutomatedBackupSnapshotsOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F152AutomatedBackupSnapshotsConfig>) {
+  constructor(customConfig?: Partial<F152AutomatedBackupSnapshotsConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F152_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F152AutomatedBackupSnapshotsConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F152AutomatedBackupSnapshotsInput): void {
@@ -158,8 +153,24 @@ export class F152AutomatedBackupSnapshotsEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F152AutomatedBackupSnapshotsValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F152AutomatedBackupSnapshotsValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F152AutomatedBackupSnapshotsValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.snapshot_id).trim().length === 0) {
       throw new F152AutomatedBackupSnapshotsValidationError("snapshot_id", "Primary domain attribute 'snapshot_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      snapshot_id: input.snapshot_id,
+      included_graphs: input.included_graphs,
+      included_canvas_tabs: input.included_canvas_tabs,
+      one_click_restorable: input.one_click_restorable
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F152AutomatedBackupSnapshotsValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F152AutomatedBackupSnapshotsEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f152_${this.totalRuns}_${computeF152Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F152_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        snapshot_id: input.snapshot_id,
+        included_graphs: input.included_graphs,
+        included_canvas_tabs: input.included_canvas_tabs,
+        one_click_restorable: input.one_click_restorable
+      });
+      const payloadHash = computeF152Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F152AutomatedBackupSnapshotsValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F152_FEATURE_ID,
+        operationCode: F152_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        snapshot_id: input.snapshot_id,
-        included_graphs: input.included_graphs,
-        included_canvas_tabs: input.included_canvas_tabs,
-        one_click_restorable: input.one_click_restorable,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          snapshot_id: input.snapshot_id,
+          included_graphs: input.included_graphs,
+          included_canvas_tabs: input.included_canvas_tabs,
+          one_click_restorable: input.one_click_restorable
+        }
       });
 
-      const provenanceDigest = computeF152Digest(canonicalPayload);
+      const executionId = `exec_f152_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f152_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F152AutomatedBackupSnapshotsAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F152_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F152AutomatedBackupSnapshotsEngine {
         actorId: input.actorId,
         action: `snapshot_backup_engine:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F152AutomatedBackupSnapshotsEngine {
         executionId,
         status: "completed",
         operationCode: F152_OPERATION_CODE,
-        resolved_snapshot_id: input.snapshot_id,
-        resolved_included_graphs: input.included_graphs,
-        resolved_included_canvas_tabs: input.included_canvas_tabs,
-        resolved_one_click_restorable: input.one_click_restorable,
+        resolved_snapshot_id: kernelResult.resolvedFields.snapshot_id as string,
+        resolved_included_graphs: kernelResult.resolvedFields.included_graphs as string | number,
+        resolved_included_canvas_tabs: kernelResult.resolvedFields.included_canvas_tabs as string | number | boolean | readonly string[],
+        resolved_one_click_restorable: kernelResult.resolvedFields.one_click_restorable as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F152AutomatedBackupSnapshotsEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F152AutomatedBackupSnapshotsEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F152 (Автоматическое резервное копирование и снапшоты)
- */
 export function verifyF152Module(): {
   featureId: typeof F152_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF152Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    snapshot_id: "f152_snapshot_id_verified",
-    included_graphs: 100,
+    snapshot_id: "f152_snapshot_id_seed",
+    included_graphs: 42,
     included_canvas_tabs: true,
-    one_click_restorable: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 152 },
+    one_click_restorable: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 152 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F152" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_snapshot_id !== sampleInput.snapshot_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F152_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

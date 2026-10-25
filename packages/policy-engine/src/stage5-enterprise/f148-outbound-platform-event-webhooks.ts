@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F148
- * ============================================================================
- * Feature ID: F148
- * Stage: stage5-enterprise
- * Title: Вебхуки событий платформы для внешних систем
- * Description: Отправка уведомлений в корпоративные шины при готовности отчёта или падении графа
+ * F148 (stage5-enterprise): Вебхуки событий платформы для внешних систем
+ * Отправка уведомлений в корпоративные шины при готовности отчёта или падении графа
  * Operation Code: webhook_dispatcher
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F148_FEATURE_ID = "F148" as const;
 export const F148_STAGE = "stage5-enterprise" as const;
 export const F148_OPERATION_CODE = "webhook_dispatcher" as const;
-export const F148_CONTRACT_VERSION = "1.0.0" as const;
+export const F148_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F148OutboundPlatformEventWebhooksExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F148OutboundPlatformEventWebhooksExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F148OutboundPlatformEventWebhooksConfig {
@@ -50,6 +47,17 @@ export interface F148OutboundPlatformEventWebhooksInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F148OutboundPlatformEventWebhooksAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F148_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F148OutboundPlatformEventWebhooksOutput {
   readonly featureId: typeof F148_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F148OutboundPlatformEventWebhooksOutput {
   readonly resolved_event_topic: string | number;
   readonly resolved_hmac_signature: string | number | boolean | readonly string[];
   readonly resolved_delivery_http_status: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F148OutboundPlatformEventWebhooksAuditEntry;
-}
-
-export interface F148OutboundPlatformEventWebhooksAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F148_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F148OutboundPlatformEventWebhooksTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F148_CONFIG: F148OutboundPlatformEventWebhooksConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F148OutboundPlatformEventWebhooksValidationError extends Error {
@@ -109,40 +108,36 @@ export class F148OutboundPlatformEventWebhooksValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F148 provenance & audit integrity.
- */
 export function computeF148Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f148_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f148_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F148: Вебхуки событий платформы для внешних систем
- * Отправка уведомлений в корпоративные шины при готовности отчёта или падении графа
- */
 export class F148OutboundPlatformEventWebhooksEngine {
   private readonly config: F148OutboundPlatformEventWebhooksConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F148OutboundPlatformEventWebhooksOutput[] = [];
   private readonly auditLog: F148OutboundPlatformEventWebhooksAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F148OutboundPlatformEventWebhooksOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F148OutboundPlatformEventWebhooksConfig>) {
+  constructor(customConfig?: Partial<F148OutboundPlatformEventWebhooksConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F148_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F148OutboundPlatformEventWebhooksConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F148OutboundPlatformEventWebhooksInput): void {
@@ -158,8 +153,24 @@ export class F148OutboundPlatformEventWebhooksEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F148OutboundPlatformEventWebhooksValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F148OutboundPlatformEventWebhooksValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F148OutboundPlatformEventWebhooksValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.webhook_id).trim().length === 0) {
       throw new F148OutboundPlatformEventWebhooksValidationError("webhook_id", "Primary domain attribute 'webhook_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      webhook_id: input.webhook_id,
+      event_topic: input.event_topic,
+      hmac_signature: input.hmac_signature,
+      delivery_http_status: input.delivery_http_status
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F148OutboundPlatformEventWebhooksValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F148OutboundPlatformEventWebhooksEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f148_${this.totalRuns}_${computeF148Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F148_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        webhook_id: input.webhook_id,
+        event_topic: input.event_topic,
+        hmac_signature: input.hmac_signature,
+        delivery_http_status: input.delivery_http_status
+      });
+      const payloadHash = computeF148Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F148OutboundPlatformEventWebhooksValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F148_FEATURE_ID,
+        operationCode: F148_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        webhook_id: input.webhook_id,
-        event_topic: input.event_topic,
-        hmac_signature: input.hmac_signature,
-        delivery_http_status: input.delivery_http_status,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          webhook_id: input.webhook_id,
+          event_topic: input.event_topic,
+          hmac_signature: input.hmac_signature,
+          delivery_http_status: input.delivery_http_status
+        }
       });
 
-      const provenanceDigest = computeF148Digest(canonicalPayload);
+      const executionId = `exec_f148_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f148_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F148OutboundPlatformEventWebhooksAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F148_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F148OutboundPlatformEventWebhooksEngine {
         actorId: input.actorId,
         action: `webhook_dispatcher:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F148OutboundPlatformEventWebhooksEngine {
         executionId,
         status: "completed",
         operationCode: F148_OPERATION_CODE,
-        resolved_webhook_id: input.webhook_id,
-        resolved_event_topic: input.event_topic,
-        resolved_hmac_signature: input.hmac_signature,
-        resolved_delivery_http_status: input.delivery_http_status,
+        resolved_webhook_id: kernelResult.resolvedFields.webhook_id as string,
+        resolved_event_topic: kernelResult.resolvedFields.event_topic as string | number,
+        resolved_hmac_signature: kernelResult.resolvedFields.hmac_signature as string | number | boolean | readonly string[],
+        resolved_delivery_http_status: kernelResult.resolvedFields.delivery_http_status as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F148OutboundPlatformEventWebhooksEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F148OutboundPlatformEventWebhooksEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F148 (Вебхуки событий платформы для внешних систем)
- */
 export function verifyF148Module(): {
   featureId: typeof F148_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF148Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    webhook_id: "f148_webhook_id_verified",
-    event_topic: 100,
+    webhook_id: "f148_webhook_id_seed",
+    event_topic: 42,
     hmac_signature: true,
-    delivery_http_status: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 148 },
+    delivery_http_status: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 148 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F148" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_webhook_id !== sampleInput.webhook_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F148_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F156
- * ============================================================================
- * Feature ID: F156
- * Stage: stage5-enterprise
- * Title: Кэширование идентичных LLM-запросов (Semantic Cache)
- * Description: Мгновенный возврат ответа на типовые аналитические подзапросы без повторной оплаты токенов
+ * F156 (stage5-enterprise): Кэширование идентичных LLM-запросов (Semantic Cache)
+ * Мгновенный возврат ответа на типовые аналитические подзапросы без повторной оплаты токенов
  * Operation Code: semantic_vector_cache
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F156_FEATURE_ID = "F156" as const;
 export const F156_STAGE = "stage5-enterprise" as const;
 export const F156_OPERATION_CODE = "semantic_vector_cache" as const;
-export const F156_CONTRACT_VERSION = "1.0.0" as const;
+export const F156_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F156SemanticLlmResponseCacheExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F156SemanticLlmResponseCacheExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F156SemanticLlmResponseCacheConfig {
@@ -50,6 +47,17 @@ export interface F156SemanticLlmResponseCacheInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F156SemanticLlmResponseCacheAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F156_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F156SemanticLlmResponseCacheOutput {
   readonly featureId: typeof F156_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F156SemanticLlmResponseCacheOutput {
   readonly resolved_similarity_hit: string | number;
   readonly resolved_tokens_saved: string | number | boolean | readonly string[];
   readonly resolved_cached_completion: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F156SemanticLlmResponseCacheAuditEntry;
-}
-
-export interface F156SemanticLlmResponseCacheAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F156_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F156SemanticLlmResponseCacheTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F156_CONFIG: F156SemanticLlmResponseCacheConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F156SemanticLlmResponseCacheValidationError extends Error {
@@ -109,40 +108,36 @@ export class F156SemanticLlmResponseCacheValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F156 provenance & audit integrity.
- */
 export function computeF156Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f156_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f156_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F156: Кэширование идентичных LLM-запросов (Semantic Cache)
- * Мгновенный возврат ответа на типовые аналитические подзапросы без повторной оплаты токенов
- */
 export class F156SemanticLlmResponseCacheEngine {
   private readonly config: F156SemanticLlmResponseCacheConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F156SemanticLlmResponseCacheOutput[] = [];
   private readonly auditLog: F156SemanticLlmResponseCacheAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F156SemanticLlmResponseCacheOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F156SemanticLlmResponseCacheConfig>) {
+  constructor(customConfig?: Partial<F156SemanticLlmResponseCacheConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F156_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F156SemanticLlmResponseCacheConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F156SemanticLlmResponseCacheInput): void {
@@ -158,8 +153,24 @@ export class F156SemanticLlmResponseCacheEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F156SemanticLlmResponseCacheValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F156SemanticLlmResponseCacheValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F156SemanticLlmResponseCacheValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.query_fingerprint).trim().length === 0) {
       throw new F156SemanticLlmResponseCacheValidationError("query_fingerprint", "Primary domain attribute 'query_fingerprint' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      query_fingerprint: input.query_fingerprint,
+      similarity_hit: input.similarity_hit,
+      tokens_saved: input.tokens_saved,
+      cached_completion: input.cached_completion
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F156SemanticLlmResponseCacheValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F156SemanticLlmResponseCacheEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f156_${this.totalRuns}_${computeF156Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F156_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        query_fingerprint: input.query_fingerprint,
+        similarity_hit: input.similarity_hit,
+        tokens_saved: input.tokens_saved,
+        cached_completion: input.cached_completion
+      });
+      const payloadHash = computeF156Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F156SemanticLlmResponseCacheValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F156_FEATURE_ID,
+        operationCode: F156_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        query_fingerprint: input.query_fingerprint,
-        similarity_hit: input.similarity_hit,
-        tokens_saved: input.tokens_saved,
-        cached_completion: input.cached_completion,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          query_fingerprint: input.query_fingerprint,
+          similarity_hit: input.similarity_hit,
+          tokens_saved: input.tokens_saved,
+          cached_completion: input.cached_completion
+        }
       });
 
-      const provenanceDigest = computeF156Digest(canonicalPayload);
+      const executionId = `exec_f156_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f156_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F156SemanticLlmResponseCacheAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F156_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F156SemanticLlmResponseCacheEngine {
         actorId: input.actorId,
         action: `semantic_vector_cache:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F156SemanticLlmResponseCacheEngine {
         executionId,
         status: "completed",
         operationCode: F156_OPERATION_CODE,
-        resolved_query_fingerprint: input.query_fingerprint,
-        resolved_similarity_hit: input.similarity_hit,
-        resolved_tokens_saved: input.tokens_saved,
-        resolved_cached_completion: input.cached_completion,
+        resolved_query_fingerprint: kernelResult.resolvedFields.query_fingerprint as string,
+        resolved_similarity_hit: kernelResult.resolvedFields.similarity_hit as string | number,
+        resolved_tokens_saved: kernelResult.resolvedFields.tokens_saved as string | number | boolean | readonly string[],
+        resolved_cached_completion: kernelResult.resolvedFields.cached_completion as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F156SemanticLlmResponseCacheEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F156SemanticLlmResponseCacheEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F156 (Кэширование идентичных LLM-запросов (Semantic Cache))
- */
 export function verifyF156Module(): {
   featureId: typeof F156_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF156Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    query_fingerprint: "f156_query_fingerprint_verified",
-    similarity_hit: 100,
+    query_fingerprint: "f156_query_fingerprint_seed",
+    similarity_hit: 42,
     tokens_saved: true,
-    cached_completion: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 156 },
+    cached_completion: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 156 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F156" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_query_fingerprint !== sampleInput.query_fingerprint &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F156_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

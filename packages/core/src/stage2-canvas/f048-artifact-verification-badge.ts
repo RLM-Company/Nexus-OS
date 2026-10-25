@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F048
- * ============================================================================
- * Feature ID: F048
- * Stage: stage2-canvas
- * Title: Бейдж статуса проверки на артефакте
- * Description: Визуальный индикатор в шапке Canvas: проверено Критиком, есть замечания или редактируется вручную
+ * F048 (stage2-canvas): Бейдж статуса проверки на артефакте
+ * Визуальный индикатор в шапке Canvas: проверено Критиком, есть замечания или редактируется вручную
  * Operation Code: verification_badge_ui
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F048_FEATURE_ID = "F048" as const;
 export const F048_STAGE = "stage2-canvas" as const;
 export const F048_OPERATION_CODE = "verification_badge_ui" as const;
-export const F048_CONTRACT_VERSION = "1.0.0" as const;
+export const F048_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F048ArtifactVerificationBadgeExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F048ArtifactVerificationBadgeExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F048ArtifactVerificationBadgeConfig {
@@ -50,6 +47,17 @@ export interface F048ArtifactVerificationBadgeInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F048ArtifactVerificationBadgeAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F048_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F048ArtifactVerificationBadgeOutput {
   readonly featureId: typeof F048_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F048ArtifactVerificationBadgeOutput {
   readonly resolved_badge_state: string | number;
   readonly resolved_critic_score: string | number | boolean | readonly string[];
   readonly resolved_badge_color_token: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F048ArtifactVerificationBadgeAuditEntry;
-}
-
-export interface F048ArtifactVerificationBadgeAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F048_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F048ArtifactVerificationBadgeTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F048_CONFIG: F048ArtifactVerificationBadgeConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F048ArtifactVerificationBadgeValidationError extends Error {
@@ -109,40 +108,36 @@ export class F048ArtifactVerificationBadgeValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F048 provenance & audit integrity.
- */
 export function computeF048Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f048_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f048_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F048: Бейдж статуса проверки на артефакте
- * Визуальный индикатор в шапке Canvas: проверено Критиком, есть замечания или редактируется вручную
- */
 export class F048ArtifactVerificationBadgeEngine {
   private readonly config: F048ArtifactVerificationBadgeConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F048ArtifactVerificationBadgeOutput[] = [];
   private readonly auditLog: F048ArtifactVerificationBadgeAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F048ArtifactVerificationBadgeOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F048ArtifactVerificationBadgeConfig>) {
+  constructor(customConfig?: Partial<F048ArtifactVerificationBadgeConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F048_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F048ArtifactVerificationBadgeConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F048ArtifactVerificationBadgeInput): void {
@@ -158,8 +153,24 @@ export class F048ArtifactVerificationBadgeEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F048ArtifactVerificationBadgeValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F048ArtifactVerificationBadgeValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F048ArtifactVerificationBadgeValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.artifact_id).trim().length === 0) {
       throw new F048ArtifactVerificationBadgeValidationError("artifact_id", "Primary domain attribute 'artifact_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      artifact_id: input.artifact_id,
+      badge_state: input.badge_state,
+      critic_score: input.critic_score,
+      badge_color_token: input.badge_color_token
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F048ArtifactVerificationBadgeValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F048ArtifactVerificationBadgeEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f048_${this.totalRuns}_${computeF048Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F048_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        artifact_id: input.artifact_id,
+        badge_state: input.badge_state,
+        critic_score: input.critic_score,
+        badge_color_token: input.badge_color_token
+      });
+      const payloadHash = computeF048Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F048ArtifactVerificationBadgeValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F048_FEATURE_ID,
+        operationCode: F048_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        artifact_id: input.artifact_id,
-        badge_state: input.badge_state,
-        critic_score: input.critic_score,
-        badge_color_token: input.badge_color_token,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          artifact_id: input.artifact_id,
+          badge_state: input.badge_state,
+          critic_score: input.critic_score,
+          badge_color_token: input.badge_color_token
+        }
       });
 
-      const provenanceDigest = computeF048Digest(canonicalPayload);
+      const executionId = `exec_f048_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f048_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F048ArtifactVerificationBadgeAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F048_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F048ArtifactVerificationBadgeEngine {
         actorId: input.actorId,
         action: `verification_badge_ui:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F048ArtifactVerificationBadgeEngine {
         executionId,
         status: "completed",
         operationCode: F048_OPERATION_CODE,
-        resolved_artifact_id: input.artifact_id,
-        resolved_badge_state: input.badge_state,
-        resolved_critic_score: input.critic_score,
-        resolved_badge_color_token: input.badge_color_token,
+        resolved_artifact_id: kernelResult.resolvedFields.artifact_id as string,
+        resolved_badge_state: kernelResult.resolvedFields.badge_state as string | number,
+        resolved_critic_score: kernelResult.resolvedFields.critic_score as string | number | boolean | readonly string[],
+        resolved_badge_color_token: kernelResult.resolvedFields.badge_color_token as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F048ArtifactVerificationBadgeEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F048ArtifactVerificationBadgeEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F048 (Бейдж статуса проверки на артефакте)
- */
 export function verifyF048Module(): {
   featureId: typeof F048_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF048Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    artifact_id: "f048_artifact_id_verified",
-    badge_state: 100,
+    artifact_id: "f048_artifact_id_seed",
+    badge_state: 42,
     critic_score: true,
-    badge_color_token: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 48 },
+    badge_color_token: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 48 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F048" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_artifact_id !== sampleInput.artifact_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F048_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

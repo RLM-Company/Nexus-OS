@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F109
- * ============================================================================
- * Feature ID: F109
- * Stage: stage4-intelligence-graph
- * Title: Семантическое чанкование документов с сохранением иерархии
- * Description: Нарезка файлов по смысловым блокам и главам, а не по слепому лимиту символов
+ * F109 (stage4-intelligence-graph): Семантическое чанкование документов с сохранением иерархии
+ * Нарезка файлов по смысловым блокам и главам, а не по слепому лимиту символов
  * Operation Code: semantic_tree_chunker
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F109_FEATURE_ID = "F109" as const;
 export const F109_STAGE = "stage4-intelligence-graph" as const;
 export const F109_OPERATION_CODE = "semantic_tree_chunker" as const;
-export const F109_CONTRACT_VERSION = "1.0.0" as const;
+export const F109_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F109HierarchicalSemanticChunkerExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F109HierarchicalSemanticChunkerExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F109HierarchicalSemanticChunkerConfig {
@@ -50,6 +47,17 @@ export interface F109HierarchicalSemanticChunkerInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F109HierarchicalSemanticChunkerAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F109_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F109HierarchicalSemanticChunkerOutput {
   readonly featureId: typeof F109_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F109HierarchicalSemanticChunkerOutput {
   readonly resolved_chunks_created: string | number;
   readonly resolved_heading_breadcrumb_paths: string | number | boolean | readonly string[];
   readonly resolved_avg_chunk_tokens: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F109HierarchicalSemanticChunkerAuditEntry;
-}
-
-export interface F109HierarchicalSemanticChunkerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F109_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F109HierarchicalSemanticChunkerTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F109_CONFIG: F109HierarchicalSemanticChunkerConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F109HierarchicalSemanticChunkerValidationError extends Error {
@@ -109,40 +108,36 @@ export class F109HierarchicalSemanticChunkerValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F109 provenance & audit integrity.
- */
 export function computeF109Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f109_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f109_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F109: Семантическое чанкование документов с сохранением иерархии
- * Нарезка файлов по смысловым блокам и главам, а не по слепому лимиту символов
- */
 export class F109HierarchicalSemanticChunkerEngine {
   private readonly config: F109HierarchicalSemanticChunkerConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F109HierarchicalSemanticChunkerOutput[] = [];
   private readonly auditLog: F109HierarchicalSemanticChunkerAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F109HierarchicalSemanticChunkerOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F109HierarchicalSemanticChunkerConfig>) {
+  constructor(customConfig?: Partial<F109HierarchicalSemanticChunkerConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F109_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F109HierarchicalSemanticChunkerConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F109HierarchicalSemanticChunkerInput): void {
@@ -158,8 +153,24 @@ export class F109HierarchicalSemanticChunkerEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F109HierarchicalSemanticChunkerValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F109HierarchicalSemanticChunkerValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F109HierarchicalSemanticChunkerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.document_id).trim().length === 0) {
       throw new F109HierarchicalSemanticChunkerValidationError("document_id", "Primary domain attribute 'document_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      document_id: input.document_id,
+      chunks_created: input.chunks_created,
+      heading_breadcrumb_paths: input.heading_breadcrumb_paths,
+      avg_chunk_tokens: input.avg_chunk_tokens
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F109HierarchicalSemanticChunkerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F109HierarchicalSemanticChunkerEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f109_${this.totalRuns}_${computeF109Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F109_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        document_id: input.document_id,
+        chunks_created: input.chunks_created,
+        heading_breadcrumb_paths: input.heading_breadcrumb_paths,
+        avg_chunk_tokens: input.avg_chunk_tokens
+      });
+      const payloadHash = computeF109Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F109HierarchicalSemanticChunkerValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F109_FEATURE_ID,
+        operationCode: F109_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        document_id: input.document_id,
-        chunks_created: input.chunks_created,
-        heading_breadcrumb_paths: input.heading_breadcrumb_paths,
-        avg_chunk_tokens: input.avg_chunk_tokens,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          document_id: input.document_id,
+          chunks_created: input.chunks_created,
+          heading_breadcrumb_paths: input.heading_breadcrumb_paths,
+          avg_chunk_tokens: input.avg_chunk_tokens
+        }
       });
 
-      const provenanceDigest = computeF109Digest(canonicalPayload);
+      const executionId = `exec_f109_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f109_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F109HierarchicalSemanticChunkerAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F109_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F109HierarchicalSemanticChunkerEngine {
         actorId: input.actorId,
         action: `semantic_tree_chunker:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F109HierarchicalSemanticChunkerEngine {
         executionId,
         status: "completed",
         operationCode: F109_OPERATION_CODE,
-        resolved_document_id: input.document_id,
-        resolved_chunks_created: input.chunks_created,
-        resolved_heading_breadcrumb_paths: input.heading_breadcrumb_paths,
-        resolved_avg_chunk_tokens: input.avg_chunk_tokens,
+        resolved_document_id: kernelResult.resolvedFields.document_id as string,
+        resolved_chunks_created: kernelResult.resolvedFields.chunks_created as string | number,
+        resolved_heading_breadcrumb_paths: kernelResult.resolvedFields.heading_breadcrumb_paths as string | number | boolean | readonly string[],
+        resolved_avg_chunk_tokens: kernelResult.resolvedFields.avg_chunk_tokens as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F109HierarchicalSemanticChunkerEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F109HierarchicalSemanticChunkerEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F109 (Семантическое чанкование документов с сохранением иерархии)
- */
 export function verifyF109Module(): {
   featureId: typeof F109_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF109Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    document_id: "f109_document_id_verified",
-    chunks_created: 100,
+    document_id: "f109_document_id_seed",
+    chunks_created: 42,
     heading_breadcrumb_paths: true,
-    avg_chunk_tokens: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 109 },
+    avg_chunk_tokens: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 109 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F109" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_document_id !== sampleInput.document_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F109_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

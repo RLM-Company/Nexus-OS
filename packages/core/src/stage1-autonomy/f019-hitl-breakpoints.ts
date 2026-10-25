@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F019
- * ============================================================================
- * Feature ID: F019
- * Stage: stage1-autonomy
- * Title: Точки перехвата человеком (Human-in-the-Loop Breakpoints)
- * Description: Пауза выполнения графа перед критическими действиями (удаление, пуш в прод, внешняя отправка)
+ * F019 (stage1-autonomy): Точки перехвата человеком (Human-in-the-Loop Breakpoints)
+ * Пауза выполнения графа перед критическими действиями (удаление, пуш в прод, внешняя отправка)
  * Operation Code: hitl_gate
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F019_FEATURE_ID = "F019" as const;
 export const F019_STAGE = "stage1-autonomy" as const;
 export const F019_OPERATION_CODE = "hitl_gate" as const;
-export const F019_CONTRACT_VERSION = "1.0.0" as const;
+export const F019_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F019HitlBreakpointsExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F019HitlBreakpointsExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F019HitlBreakpointsConfig {
@@ -50,6 +47,17 @@ export interface F019HitlBreakpointsInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F019HitlBreakpointsAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F019_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F019HitlBreakpointsOutput {
   readonly featureId: typeof F019_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F019HitlBreakpointsOutput {
   readonly resolved_critical_action: string | number;
   readonly resolved_paused_state: string | number | boolean | readonly string[];
   readonly resolved_owner_signature: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F019HitlBreakpointsAuditEntry;
-}
-
-export interface F019HitlBreakpointsAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F019_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F019HitlBreakpointsTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F019_CONFIG: F019HitlBreakpointsConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F019HitlBreakpointsValidationError extends Error {
@@ -109,40 +108,36 @@ export class F019HitlBreakpointsValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F019 provenance & audit integrity.
- */
 export function computeF019Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f019_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f019_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F019: Точки перехвата человеком (Human-in-the-Loop Breakpoints)
- * Пауза выполнения графа перед критическими действиями (удаление, пуш в прод, внешняя отправка)
- */
 export class F019HitlBreakpointsEngine {
   private readonly config: F019HitlBreakpointsConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F019HitlBreakpointsOutput[] = [];
   private readonly auditLog: F019HitlBreakpointsAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F019HitlBreakpointsOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F019HitlBreakpointsConfig>) {
+  constructor(customConfig?: Partial<F019HitlBreakpointsConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F019_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F019HitlBreakpointsConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F019HitlBreakpointsInput): void {
@@ -158,8 +153,24 @@ export class F019HitlBreakpointsEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F019HitlBreakpointsValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F019HitlBreakpointsValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F019HitlBreakpointsValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.breakpoint_id).trim().length === 0) {
       throw new F019HitlBreakpointsValidationError("breakpoint_id", "Primary domain attribute 'breakpoint_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      breakpoint_id: input.breakpoint_id,
+      critical_action: input.critical_action,
+      paused_state: input.paused_state,
+      owner_signature: input.owner_signature
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F019HitlBreakpointsValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F019HitlBreakpointsEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f019_${this.totalRuns}_${computeF019Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F019_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        breakpoint_id: input.breakpoint_id,
+        critical_action: input.critical_action,
+        paused_state: input.paused_state,
+        owner_signature: input.owner_signature
+      });
+      const payloadHash = computeF019Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F019HitlBreakpointsValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F019_FEATURE_ID,
+        operationCode: F019_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        breakpoint_id: input.breakpoint_id,
-        critical_action: input.critical_action,
-        paused_state: input.paused_state,
-        owner_signature: input.owner_signature,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          breakpoint_id: input.breakpoint_id,
+          critical_action: input.critical_action,
+          paused_state: input.paused_state,
+          owner_signature: input.owner_signature
+        }
       });
 
-      const provenanceDigest = computeF019Digest(canonicalPayload);
+      const executionId = `exec_f019_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f019_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F019HitlBreakpointsAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F019_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F019HitlBreakpointsEngine {
         actorId: input.actorId,
         action: `hitl_gate:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F019HitlBreakpointsEngine {
         executionId,
         status: "completed",
         operationCode: F019_OPERATION_CODE,
-        resolved_breakpoint_id: input.breakpoint_id,
-        resolved_critical_action: input.critical_action,
-        resolved_paused_state: input.paused_state,
-        resolved_owner_signature: input.owner_signature,
+        resolved_breakpoint_id: kernelResult.resolvedFields.breakpoint_id as string,
+        resolved_critical_action: kernelResult.resolvedFields.critical_action as string | number,
+        resolved_paused_state: kernelResult.resolvedFields.paused_state as string | number | boolean | readonly string[],
+        resolved_owner_signature: kernelResult.resolvedFields.owner_signature as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F019HitlBreakpointsEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F019HitlBreakpointsEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F019 (Точки перехвата человеком (Human-in-the-Loop Breakpoints))
- */
 export function verifyF019Module(): {
   featureId: typeof F019_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF019Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    breakpoint_id: "f019_breakpoint_id_verified",
-    critical_action: 100,
+    breakpoint_id: "f019_breakpoint_id_seed",
+    critical_action: 42,
     paused_state: true,
-    owner_signature: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 19 },
+    owner_signature: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 19 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F019" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_breakpoint_id !== sampleInput.breakpoint_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F019_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

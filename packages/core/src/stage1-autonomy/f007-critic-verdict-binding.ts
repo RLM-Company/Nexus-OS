@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F007
- * ============================================================================
- * Feature ID: F007
- * Stage: stage1-autonomy
- * Title: Привязка вердиктов Критика к артефактам (Critic Verdict Binding)
- * Description: Сохранение статуса (Approved / Needs Revision + комментарии) прямо в метаданных артефакта
+ * F007 (stage1-autonomy): Привязка вердиктов Критика к артефактам (Critic Verdict Binding)
+ * Сохранение статуса (Approved / Needs Revision + комментарии) прямо в метаданных артефакта
  * Operation Code: verdict_binding
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F007_FEATURE_ID = "F007" as const;
 export const F007_STAGE = "stage1-autonomy" as const;
 export const F007_OPERATION_CODE = "verdict_binding" as const;
-export const F007_CONTRACT_VERSION = "1.0.0" as const;
+export const F007_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F007CriticVerdictBindingExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F007CriticVerdictBindingExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F007CriticVerdictBindingConfig {
@@ -50,6 +47,17 @@ export interface F007CriticVerdictBindingInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F007CriticVerdictBindingAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F007_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F007CriticVerdictBindingOutput {
   readonly featureId: typeof F007_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F007CriticVerdictBindingOutput {
   readonly resolved_artifact_id: string | number;
   readonly resolved_verdict_status: string | number | boolean | readonly string[];
   readonly resolved_reviewer_comments: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F007CriticVerdictBindingAuditEntry;
-}
-
-export interface F007CriticVerdictBindingAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F007_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F007CriticVerdictBindingTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F007_CONFIG: F007CriticVerdictBindingConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F007CriticVerdictBindingValidationError extends Error {
@@ -109,40 +108,36 @@ export class F007CriticVerdictBindingValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F007 provenance & audit integrity.
- */
 export function computeF007Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f007_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f007_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F007: Привязка вердиктов Критика к артефактам (Critic Verdict Binding)
- * Сохранение статуса (Approved / Needs Revision + комментарии) прямо в метаданных артефакта
- */
 export class F007CriticVerdictBindingEngine {
   private readonly config: F007CriticVerdictBindingConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F007CriticVerdictBindingOutput[] = [];
   private readonly auditLog: F007CriticVerdictBindingAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F007CriticVerdictBindingOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F007CriticVerdictBindingConfig>) {
+  constructor(customConfig?: Partial<F007CriticVerdictBindingConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F007_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F007CriticVerdictBindingConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F007CriticVerdictBindingInput): void {
@@ -158,8 +153,24 @@ export class F007CriticVerdictBindingEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F007CriticVerdictBindingValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F007CriticVerdictBindingValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F007CriticVerdictBindingValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.verdict_id).trim().length === 0) {
       throw new F007CriticVerdictBindingValidationError("verdict_id", "Primary domain attribute 'verdict_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      verdict_id: input.verdict_id,
+      artifact_id: input.artifact_id,
+      verdict_status: input.verdict_status,
+      reviewer_comments: input.reviewer_comments
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F007CriticVerdictBindingValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F007CriticVerdictBindingEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f007_${this.totalRuns}_${computeF007Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F007_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        verdict_id: input.verdict_id,
+        artifact_id: input.artifact_id,
+        verdict_status: input.verdict_status,
+        reviewer_comments: input.reviewer_comments
+      });
+      const payloadHash = computeF007Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F007CriticVerdictBindingValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F007_FEATURE_ID,
+        operationCode: F007_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        verdict_id: input.verdict_id,
-        artifact_id: input.artifact_id,
-        verdict_status: input.verdict_status,
-        reviewer_comments: input.reviewer_comments,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          verdict_id: input.verdict_id,
+          artifact_id: input.artifact_id,
+          verdict_status: input.verdict_status,
+          reviewer_comments: input.reviewer_comments
+        }
       });
 
-      const provenanceDigest = computeF007Digest(canonicalPayload);
+      const executionId = `exec_f007_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f007_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F007CriticVerdictBindingAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F007_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F007CriticVerdictBindingEngine {
         actorId: input.actorId,
         action: `verdict_binding:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F007CriticVerdictBindingEngine {
         executionId,
         status: "completed",
         operationCode: F007_OPERATION_CODE,
-        resolved_verdict_id: input.verdict_id,
-        resolved_artifact_id: input.artifact_id,
-        resolved_verdict_status: input.verdict_status,
-        resolved_reviewer_comments: input.reviewer_comments,
+        resolved_verdict_id: kernelResult.resolvedFields.verdict_id as string,
+        resolved_artifact_id: kernelResult.resolvedFields.artifact_id as string | number,
+        resolved_verdict_status: kernelResult.resolvedFields.verdict_status as string | number | boolean | readonly string[],
+        resolved_reviewer_comments: kernelResult.resolvedFields.reviewer_comments as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F007CriticVerdictBindingEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F007CriticVerdictBindingEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F007 (Привязка вердиктов Критика к артефактам (Critic Verdict Binding))
- */
 export function verifyF007Module(): {
   featureId: typeof F007_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF007Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    verdict_id: "f007_verdict_id_verified",
-    artifact_id: 100,
+    verdict_id: "f007_verdict_id_seed",
+    artifact_id: 42,
     verdict_status: true,
-    reviewer_comments: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 7 },
+    reviewer_comments: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 7 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F007" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_verdict_id !== sampleInput.verdict_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F007_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

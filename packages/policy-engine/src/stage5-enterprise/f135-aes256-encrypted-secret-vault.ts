@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F135
- * ============================================================================
- * Feature ID: F135
- * Stage: stage5-enterprise
- * Title: Хранилище секретов и ключей (Encrypted Vault)
- * Description: Шифрование пользовательских API-ключей и токенов интеграций (AES-256)
+ * F135 (stage5-enterprise): Хранилище секретов и ключей (Encrypted Vault)
+ * Шифрование пользовательских API-ключей и токенов интеграций (AES-256)
  * Operation Code: aes256_gcm_vault
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F135_FEATURE_ID = "F135" as const;
 export const F135_STAGE = "stage5-enterprise" as const;
 export const F135_OPERATION_CODE = "aes256_gcm_vault" as const;
-export const F135_CONTRACT_VERSION = "1.0.0" as const;
+export const F135_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F135Aes256EncryptedSecretVaultExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F135Aes256EncryptedSecretVaultExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F135Aes256EncryptedSecretVaultConfig {
@@ -50,6 +47,17 @@ export interface F135Aes256EncryptedSecretVaultInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F135Aes256EncryptedSecretVaultAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F135_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F135Aes256EncryptedSecretVaultOutput {
   readonly featureId: typeof F135_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F135Aes256EncryptedSecretVaultOutput {
   readonly resolved_cipher_algorithm: string | number;
   readonly resolved_key_rotation_version: string | number | boolean | readonly string[];
   readonly resolved_authenticated_tag_valid: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F135Aes256EncryptedSecretVaultAuditEntry;
-}
-
-export interface F135Aes256EncryptedSecretVaultAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F135_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F135Aes256EncryptedSecretVaultTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F135_CONFIG: F135Aes256EncryptedSecretVaultConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F135Aes256EncryptedSecretVaultValidationError extends Error {
@@ -109,40 +108,36 @@ export class F135Aes256EncryptedSecretVaultValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F135 provenance & audit integrity.
- */
 export function computeF135Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f135_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f135_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F135: Хранилище секретов и ключей (Encrypted Vault)
- * Шифрование пользовательских API-ключей и токенов интеграций (AES-256)
- */
 export class F135Aes256EncryptedSecretVaultEngine {
   private readonly config: F135Aes256EncryptedSecretVaultConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F135Aes256EncryptedSecretVaultOutput[] = [];
   private readonly auditLog: F135Aes256EncryptedSecretVaultAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F135Aes256EncryptedSecretVaultOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F135Aes256EncryptedSecretVaultConfig>) {
+  constructor(customConfig?: Partial<F135Aes256EncryptedSecretVaultConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F135_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F135Aes256EncryptedSecretVaultConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F135Aes256EncryptedSecretVaultInput): void {
@@ -158,8 +153,24 @@ export class F135Aes256EncryptedSecretVaultEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F135Aes256EncryptedSecretVaultValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F135Aes256EncryptedSecretVaultValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F135Aes256EncryptedSecretVaultValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.secret_id).trim().length === 0) {
       throw new F135Aes256EncryptedSecretVaultValidationError("secret_id", "Primary domain attribute 'secret_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      secret_id: input.secret_id,
+      cipher_algorithm: input.cipher_algorithm,
+      key_rotation_version: input.key_rotation_version,
+      authenticated_tag_valid: input.authenticated_tag_valid
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F135Aes256EncryptedSecretVaultValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F135Aes256EncryptedSecretVaultEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f135_${this.totalRuns}_${computeF135Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F135_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        secret_id: input.secret_id,
+        cipher_algorithm: input.cipher_algorithm,
+        key_rotation_version: input.key_rotation_version,
+        authenticated_tag_valid: input.authenticated_tag_valid
+      });
+      const payloadHash = computeF135Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F135Aes256EncryptedSecretVaultValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F135_FEATURE_ID,
+        operationCode: F135_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        secret_id: input.secret_id,
-        cipher_algorithm: input.cipher_algorithm,
-        key_rotation_version: input.key_rotation_version,
-        authenticated_tag_valid: input.authenticated_tag_valid,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          secret_id: input.secret_id,
+          cipher_algorithm: input.cipher_algorithm,
+          key_rotation_version: input.key_rotation_version,
+          authenticated_tag_valid: input.authenticated_tag_valid
+        }
       });
 
-      const provenanceDigest = computeF135Digest(canonicalPayload);
+      const executionId = `exec_f135_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f135_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F135Aes256EncryptedSecretVaultAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F135_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F135Aes256EncryptedSecretVaultEngine {
         actorId: input.actorId,
         action: `aes256_gcm_vault:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F135Aes256EncryptedSecretVaultEngine {
         executionId,
         status: "completed",
         operationCode: F135_OPERATION_CODE,
-        resolved_secret_id: input.secret_id,
-        resolved_cipher_algorithm: input.cipher_algorithm,
-        resolved_key_rotation_version: input.key_rotation_version,
-        resolved_authenticated_tag_valid: input.authenticated_tag_valid,
+        resolved_secret_id: kernelResult.resolvedFields.secret_id as string,
+        resolved_cipher_algorithm: kernelResult.resolvedFields.cipher_algorithm as string | number,
+        resolved_key_rotation_version: kernelResult.resolvedFields.key_rotation_version as string | number | boolean | readonly string[],
+        resolved_authenticated_tag_valid: kernelResult.resolvedFields.authenticated_tag_valid as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F135Aes256EncryptedSecretVaultEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F135Aes256EncryptedSecretVaultEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F135 (Хранилище секретов и ключей (Encrypted Vault))
- */
 export function verifyF135Module(): {
   featureId: typeof F135_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF135Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    secret_id: "f135_secret_id_verified",
-    cipher_algorithm: 100,
+    secret_id: "f135_secret_id_seed",
+    cipher_algorithm: 42,
     key_rotation_version: true,
-    authenticated_tag_valid: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 135 },
+    authenticated_tag_valid: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 135 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F135" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_secret_id !== sampleInput.secret_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F135_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

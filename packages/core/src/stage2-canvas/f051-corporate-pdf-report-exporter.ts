@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F051
- * ============================================================================
- * Feature ID: F051
- * Stage: stage2-canvas
- * Title: Экспорт отчётов в PDF с корпоративной вёрсткой
- * Description: Компиляция документов с титульным листом, оглавлением и кастомным брендингом
+ * F051 (stage2-canvas): Экспорт отчётов в PDF с корпоративной вёрсткой
+ * Компиляция документов с титульным листом, оглавлением и кастомным брендингом
  * Operation Code: corporate_pdf_compiler
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F051_FEATURE_ID = "F051" as const;
 export const F051_STAGE = "stage2-canvas" as const;
 export const F051_OPERATION_CODE = "corporate_pdf_compiler" as const;
-export const F051_CONTRACT_VERSION = "1.0.0" as const;
+export const F051_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F051CorporatePdfReportExporterExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F051CorporatePdfReportExporterExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F051CorporatePdfReportExporterConfig {
@@ -50,6 +47,17 @@ export interface F051CorporatePdfReportExporterInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F051CorporatePdfReportExporterAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F051_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F051CorporatePdfReportExporterOutput {
   readonly featureId: typeof F051_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F051CorporatePdfReportExporterOutput {
   readonly resolved_cover_page_included: string | number;
   readonly resolved_toc_generated: string | number | boolean | readonly string[];
   readonly resolved_page_count: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F051CorporatePdfReportExporterAuditEntry;
-}
-
-export interface F051CorporatePdfReportExporterAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F051_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F051CorporatePdfReportExporterTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F051_CONFIG: F051CorporatePdfReportExporterConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F051CorporatePdfReportExporterValidationError extends Error {
@@ -109,40 +108,36 @@ export class F051CorporatePdfReportExporterValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F051 provenance & audit integrity.
- */
 export function computeF051Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f051_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f051_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F051: Экспорт отчётов в PDF с корпоративной вёрсткой
- * Компиляция документов с титульным листом, оглавлением и кастомным брендингом
- */
 export class F051CorporatePdfReportExporterEngine {
   private readonly config: F051CorporatePdfReportExporterConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F051CorporatePdfReportExporterOutput[] = [];
   private readonly auditLog: F051CorporatePdfReportExporterAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F051CorporatePdfReportExporterOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F051CorporatePdfReportExporterConfig>) {
+  constructor(customConfig?: Partial<F051CorporatePdfReportExporterConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F051_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F051CorporatePdfReportExporterConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F051CorporatePdfReportExporterInput): void {
@@ -158,8 +153,24 @@ export class F051CorporatePdfReportExporterEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F051CorporatePdfReportExporterValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F051CorporatePdfReportExporterValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F051CorporatePdfReportExporterValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.document_id).trim().length === 0) {
       throw new F051CorporatePdfReportExporterValidationError("document_id", "Primary domain attribute 'document_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      document_id: input.document_id,
+      cover_page_included: input.cover_page_included,
+      toc_generated: input.toc_generated,
+      page_count: input.page_count
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F051CorporatePdfReportExporterValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F051CorporatePdfReportExporterEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f051_${this.totalRuns}_${computeF051Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F051_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        document_id: input.document_id,
+        cover_page_included: input.cover_page_included,
+        toc_generated: input.toc_generated,
+        page_count: input.page_count
+      });
+      const payloadHash = computeF051Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F051CorporatePdfReportExporterValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F051_FEATURE_ID,
+        operationCode: F051_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        document_id: input.document_id,
-        cover_page_included: input.cover_page_included,
-        toc_generated: input.toc_generated,
-        page_count: input.page_count,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          document_id: input.document_id,
+          cover_page_included: input.cover_page_included,
+          toc_generated: input.toc_generated,
+          page_count: input.page_count
+        }
       });
 
-      const provenanceDigest = computeF051Digest(canonicalPayload);
+      const executionId = `exec_f051_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f051_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F051CorporatePdfReportExporterAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F051_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F051CorporatePdfReportExporterEngine {
         actorId: input.actorId,
         action: `corporate_pdf_compiler:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F051CorporatePdfReportExporterEngine {
         executionId,
         status: "completed",
         operationCode: F051_OPERATION_CODE,
-        resolved_document_id: input.document_id,
-        resolved_cover_page_included: input.cover_page_included,
-        resolved_toc_generated: input.toc_generated,
-        resolved_page_count: input.page_count,
+        resolved_document_id: kernelResult.resolvedFields.document_id as string,
+        resolved_cover_page_included: kernelResult.resolvedFields.cover_page_included as string | number,
+        resolved_toc_generated: kernelResult.resolvedFields.toc_generated as string | number | boolean | readonly string[],
+        resolved_page_count: kernelResult.resolvedFields.page_count as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F051CorporatePdfReportExporterEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F051CorporatePdfReportExporterEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F051 (Экспорт отчётов в PDF с корпоративной вёрсткой)
- */
 export function verifyF051Module(): {
   featureId: typeof F051_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF051Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    document_id: "f051_document_id_verified",
-    cover_page_included: 100,
+    document_id: "f051_document_id_seed",
+    cover_page_included: 42,
     toc_generated: true,
-    page_count: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 51 },
+    page_count: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 51 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F051" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_document_id !== sampleInput.document_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F051_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F056
- * ============================================================================
- * Feature ID: F056
- * Stage: stage2-canvas
- * Title: Библиотека шаблонов артефактов
- * Description: Готовые каркасы для питч-деков, ТЗ, финансовых моделей и дизайн-доков
+ * F056 (stage2-canvas): Библиотека шаблонов артефактов
+ * Готовые каркасы для питч-деков, ТЗ, финансовых моделей и дизайн-доков
  * Operation Code: template_catalog
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F056_FEATURE_ID = "F056" as const;
 export const F056_STAGE = "stage2-canvas" as const;
 export const F056_OPERATION_CODE = "template_catalog" as const;
-export const F056_CONTRACT_VERSION = "1.0.0" as const;
+export const F056_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F056ArtifactTemplatesLibraryExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F056ArtifactTemplatesLibraryExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F056ArtifactTemplatesLibraryConfig {
@@ -50,6 +47,17 @@ export interface F056ArtifactTemplatesLibraryInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F056ArtifactTemplatesLibraryAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F056_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F056ArtifactTemplatesLibraryOutput {
   readonly featureId: typeof F056_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F056ArtifactTemplatesLibraryOutput {
   readonly resolved_category: string | number;
   readonly resolved_sections_scaffold: string | number | boolean | readonly string[];
   readonly resolved_default_variables: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F056ArtifactTemplatesLibraryAuditEntry;
-}
-
-export interface F056ArtifactTemplatesLibraryAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F056_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F056ArtifactTemplatesLibraryTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F056_CONFIG: F056ArtifactTemplatesLibraryConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F056ArtifactTemplatesLibraryValidationError extends Error {
@@ -109,40 +108,36 @@ export class F056ArtifactTemplatesLibraryValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F056 provenance & audit integrity.
- */
 export function computeF056Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f056_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f056_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F056: Библиотека шаблонов артефактов
- * Готовые каркасы для питч-деков, ТЗ, финансовых моделей и дизайн-доков
- */
 export class F056ArtifactTemplatesLibraryEngine {
   private readonly config: F056ArtifactTemplatesLibraryConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F056ArtifactTemplatesLibraryOutput[] = [];
   private readonly auditLog: F056ArtifactTemplatesLibraryAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F056ArtifactTemplatesLibraryOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F056ArtifactTemplatesLibraryConfig>) {
+  constructor(customConfig?: Partial<F056ArtifactTemplatesLibraryConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F056_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F056ArtifactTemplatesLibraryConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F056ArtifactTemplatesLibraryInput): void {
@@ -158,8 +153,24 @@ export class F056ArtifactTemplatesLibraryEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F056ArtifactTemplatesLibraryValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F056ArtifactTemplatesLibraryValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F056ArtifactTemplatesLibraryValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.template_id).trim().length === 0) {
       throw new F056ArtifactTemplatesLibraryValidationError("template_id", "Primary domain attribute 'template_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      template_id: input.template_id,
+      category: input.category,
+      sections_scaffold: input.sections_scaffold,
+      default_variables: input.default_variables
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F056ArtifactTemplatesLibraryValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F056ArtifactTemplatesLibraryEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f056_${this.totalRuns}_${computeF056Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F056_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        template_id: input.template_id,
+        category: input.category,
+        sections_scaffold: input.sections_scaffold,
+        default_variables: input.default_variables
+      });
+      const payloadHash = computeF056Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F056ArtifactTemplatesLibraryValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F056_FEATURE_ID,
+        operationCode: F056_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        template_id: input.template_id,
-        category: input.category,
-        sections_scaffold: input.sections_scaffold,
-        default_variables: input.default_variables,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          template_id: input.template_id,
+          category: input.category,
+          sections_scaffold: input.sections_scaffold,
+          default_variables: input.default_variables
+        }
       });
 
-      const provenanceDigest = computeF056Digest(canonicalPayload);
+      const executionId = `exec_f056_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f056_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F056ArtifactTemplatesLibraryAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F056_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F056ArtifactTemplatesLibraryEngine {
         actorId: input.actorId,
         action: `template_catalog:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F056ArtifactTemplatesLibraryEngine {
         executionId,
         status: "completed",
         operationCode: F056_OPERATION_CODE,
-        resolved_template_id: input.template_id,
-        resolved_category: input.category,
-        resolved_sections_scaffold: input.sections_scaffold,
-        resolved_default_variables: input.default_variables,
+        resolved_template_id: kernelResult.resolvedFields.template_id as string,
+        resolved_category: kernelResult.resolvedFields.category as string | number,
+        resolved_sections_scaffold: kernelResult.resolvedFields.sections_scaffold as string | number | boolean | readonly string[],
+        resolved_default_variables: kernelResult.resolvedFields.default_variables as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F056ArtifactTemplatesLibraryEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F056ArtifactTemplatesLibraryEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F056 (Библиотека шаблонов артефактов)
- */
 export function verifyF056Module(): {
   featureId: typeof F056_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF056Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    template_id: "f056_template_id_verified",
-    category: 100,
+    template_id: "f056_template_id_seed",
+    category: 42,
     sections_scaffold: true,
-    default_variables: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 56 },
+    default_variables: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 56 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F056" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_template_id !== sampleInput.template_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F056_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

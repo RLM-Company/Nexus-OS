@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F062
- * ============================================================================
- * Feature ID: F062
- * Stage: stage2-canvas
- * Title: Журнал аудита изменений холста
- * Description: Таймлайн того, какой агент или пользователь внёс правку и в какую секунду
+ * F062 (stage2-canvas): Журнал аудита изменений холста
+ * Таймлайн того, какой агент или пользователь внёс правку и в какую секунду
  * Operation Code: canvas_audit_timeline
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F062_FEATURE_ID = "F062" as const;
 export const F062_STAGE = "stage2-canvas" as const;
 export const F062_OPERATION_CODE = "canvas_audit_timeline" as const;
-export const F062_CONTRACT_VERSION = "1.0.0" as const;
+export const F062_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F062CanvasChangeAuditLogExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F062CanvasChangeAuditLogExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F062CanvasChangeAuditLogConfig {
@@ -50,6 +47,17 @@ export interface F062CanvasChangeAuditLogInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F062CanvasChangeAuditLogAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F062_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F062CanvasChangeAuditLogOutput {
   readonly featureId: typeof F062_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F062CanvasChangeAuditLogOutput {
   readonly resolved_audit_entries_count: string | number;
   readonly resolved_last_actor_id: string | number | boolean | readonly string[];
   readonly resolved_chronological_events: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F062CanvasChangeAuditLogAuditEntry;
-}
-
-export interface F062CanvasChangeAuditLogAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F062_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F062CanvasChangeAuditLogTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F062_CONFIG: F062CanvasChangeAuditLogConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F062CanvasChangeAuditLogValidationError extends Error {
@@ -109,40 +108,36 @@ export class F062CanvasChangeAuditLogValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F062 provenance & audit integrity.
- */
 export function computeF062Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f062_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f062_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F062: Журнал аудита изменений холста
- * Таймлайн того, какой агент или пользователь внёс правку и в какую секунду
- */
 export class F062CanvasChangeAuditLogEngine {
   private readonly config: F062CanvasChangeAuditLogConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F062CanvasChangeAuditLogOutput[] = [];
   private readonly auditLog: F062CanvasChangeAuditLogAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F062CanvasChangeAuditLogOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F062CanvasChangeAuditLogConfig>) {
+  constructor(customConfig?: Partial<F062CanvasChangeAuditLogConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F062_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F062CanvasChangeAuditLogConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F062CanvasChangeAuditLogInput): void {
@@ -158,8 +153,24 @@ export class F062CanvasChangeAuditLogEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F062CanvasChangeAuditLogValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F062CanvasChangeAuditLogValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F062CanvasChangeAuditLogValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.artifact_id).trim().length === 0) {
       throw new F062CanvasChangeAuditLogValidationError("artifact_id", "Primary domain attribute 'artifact_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      artifact_id: input.artifact_id,
+      audit_entries_count: input.audit_entries_count,
+      last_actor_id: input.last_actor_id,
+      chronological_events: input.chronological_events
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F062CanvasChangeAuditLogValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F062CanvasChangeAuditLogEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f062_${this.totalRuns}_${computeF062Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F062_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        artifact_id: input.artifact_id,
+        audit_entries_count: input.audit_entries_count,
+        last_actor_id: input.last_actor_id,
+        chronological_events: input.chronological_events
+      });
+      const payloadHash = computeF062Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F062CanvasChangeAuditLogValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F062_FEATURE_ID,
+        operationCode: F062_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        artifact_id: input.artifact_id,
-        audit_entries_count: input.audit_entries_count,
-        last_actor_id: input.last_actor_id,
-        chronological_events: input.chronological_events,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          artifact_id: input.artifact_id,
+          audit_entries_count: input.audit_entries_count,
+          last_actor_id: input.last_actor_id,
+          chronological_events: input.chronological_events
+        }
       });
 
-      const provenanceDigest = computeF062Digest(canonicalPayload);
+      const executionId = `exec_f062_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f062_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F062CanvasChangeAuditLogAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F062_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F062CanvasChangeAuditLogEngine {
         actorId: input.actorId,
         action: `canvas_audit_timeline:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F062CanvasChangeAuditLogEngine {
         executionId,
         status: "completed",
         operationCode: F062_OPERATION_CODE,
-        resolved_artifact_id: input.artifact_id,
-        resolved_audit_entries_count: input.audit_entries_count,
-        resolved_last_actor_id: input.last_actor_id,
-        resolved_chronological_events: input.chronological_events,
+        resolved_artifact_id: kernelResult.resolvedFields.artifact_id as string,
+        resolved_audit_entries_count: kernelResult.resolvedFields.audit_entries_count as string | number,
+        resolved_last_actor_id: kernelResult.resolvedFields.last_actor_id as string | number | boolean | readonly string[],
+        resolved_chronological_events: kernelResult.resolvedFields.chronological_events as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F062CanvasChangeAuditLogEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F062CanvasChangeAuditLogEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F062 (Журнал аудита изменений холста)
- */
 export function verifyF062Module(): {
   featureId: typeof F062_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF062Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    artifact_id: "f062_artifact_id_verified",
-    audit_entries_count: 100,
+    artifact_id: "f062_artifact_id_seed",
+    audit_entries_count: 42,
     last_actor_id: true,
-    chronological_events: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 62 },
+    chronological_events: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 62 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F062" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_artifact_id !== sampleInput.artifact_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F062_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

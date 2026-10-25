@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F063
- * ============================================================================
- * Feature ID: F063
- * Stage: stage2-canvas
- * Title: Восстановление удалённых вкладок (Canvas Trash Bin)
- * Description: Корзина артефактов сессии с возможностью мгновенного возврата
+ * F063 (stage2-canvas): Восстановление удалённых вкладок (Canvas Trash Bin)
+ * Корзина артефактов сессии с возможностью мгновенного возврата
  * Operation Code: trash_bin_recovery
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F063_FEATURE_ID = "F063" as const;
 export const F063_STAGE = "stage2-canvas" as const;
 export const F063_OPERATION_CODE = "trash_bin_recovery" as const;
-export const F063_CONTRACT_VERSION = "1.0.0" as const;
+export const F063_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F063CanvasTrashBinRestoreExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F063CanvasTrashBinRestoreExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F063CanvasTrashBinRestoreConfig {
@@ -50,6 +47,17 @@ export interface F063CanvasTrashBinRestoreInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F063CanvasTrashBinRestoreAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F063_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F063CanvasTrashBinRestoreOutput {
   readonly featureId: typeof F063_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F063CanvasTrashBinRestoreOutput {
   readonly resolved_restored_tab_id: string | number;
   readonly resolved_preserved_versions_count: string | number | boolean | readonly string[];
   readonly resolved_restore_status: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F063CanvasTrashBinRestoreAuditEntry;
-}
-
-export interface F063CanvasTrashBinRestoreAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F063_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F063CanvasTrashBinRestoreTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F063_CONFIG: F063CanvasTrashBinRestoreConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F063CanvasTrashBinRestoreValidationError extends Error {
@@ -109,40 +108,36 @@ export class F063CanvasTrashBinRestoreValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F063 provenance & audit integrity.
- */
 export function computeF063Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f063_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f063_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F063: Восстановление удалённых вкладок (Canvas Trash Bin)
- * Корзина артефактов сессии с возможностью мгновенного возврата
- */
 export class F063CanvasTrashBinRestoreEngine {
   private readonly config: F063CanvasTrashBinRestoreConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F063CanvasTrashBinRestoreOutput[] = [];
   private readonly auditLog: F063CanvasTrashBinRestoreAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F063CanvasTrashBinRestoreOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F063CanvasTrashBinRestoreConfig>) {
+  constructor(customConfig?: Partial<F063CanvasTrashBinRestoreConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F063_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F063CanvasTrashBinRestoreConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F063CanvasTrashBinRestoreInput): void {
@@ -158,8 +153,24 @@ export class F063CanvasTrashBinRestoreEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F063CanvasTrashBinRestoreValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F063CanvasTrashBinRestoreValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F063CanvasTrashBinRestoreValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.workspace_id).trim().length === 0) {
       throw new F063CanvasTrashBinRestoreValidationError("workspace_id", "Primary domain attribute 'workspace_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      workspace_id: input.workspace_id,
+      restored_tab_id: input.restored_tab_id,
+      preserved_versions_count: input.preserved_versions_count,
+      restore_status: input.restore_status
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F063CanvasTrashBinRestoreValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F063CanvasTrashBinRestoreEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f063_${this.totalRuns}_${computeF063Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F063_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        workspace_id: input.workspace_id,
+        restored_tab_id: input.restored_tab_id,
+        preserved_versions_count: input.preserved_versions_count,
+        restore_status: input.restore_status
+      });
+      const payloadHash = computeF063Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F063CanvasTrashBinRestoreValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F063_FEATURE_ID,
+        operationCode: F063_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        workspace_id: input.workspace_id,
-        restored_tab_id: input.restored_tab_id,
-        preserved_versions_count: input.preserved_versions_count,
-        restore_status: input.restore_status,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          workspace_id: input.workspace_id,
+          restored_tab_id: input.restored_tab_id,
+          preserved_versions_count: input.preserved_versions_count,
+          restore_status: input.restore_status
+        }
       });
 
-      const provenanceDigest = computeF063Digest(canonicalPayload);
+      const executionId = `exec_f063_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f063_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F063CanvasTrashBinRestoreAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F063_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F063CanvasTrashBinRestoreEngine {
         actorId: input.actorId,
         action: `trash_bin_recovery:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F063CanvasTrashBinRestoreEngine {
         executionId,
         status: "completed",
         operationCode: F063_OPERATION_CODE,
-        resolved_workspace_id: input.workspace_id,
-        resolved_restored_tab_id: input.restored_tab_id,
-        resolved_preserved_versions_count: input.preserved_versions_count,
-        resolved_restore_status: input.restore_status,
+        resolved_workspace_id: kernelResult.resolvedFields.workspace_id as string,
+        resolved_restored_tab_id: kernelResult.resolvedFields.restored_tab_id as string | number,
+        resolved_preserved_versions_count: kernelResult.resolvedFields.preserved_versions_count as string | number | boolean | readonly string[],
+        resolved_restore_status: kernelResult.resolvedFields.restore_status as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F063CanvasTrashBinRestoreEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F063CanvasTrashBinRestoreEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F063 (Восстановление удалённых вкладок (Canvas Trash Bin))
- */
 export function verifyF063Module(): {
   featureId: typeof F063_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF063Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    workspace_id: "f063_workspace_id_verified",
-    restored_tab_id: 100,
+    workspace_id: "f063_workspace_id_seed",
+    restored_tab_id: 42,
     preserved_versions_count: true,
-    restore_status: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 63 },
+    restore_status: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 63 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F063" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_workspace_id !== sampleInput.workspace_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F063_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

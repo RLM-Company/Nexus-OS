@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F015
- * ============================================================================
- * Feature ID: F015
- * Stage: stage1-autonomy
- * Title: Контракты ввода-вывода (Strict JSON Schema IO)
- * Description: Валидация типизированных ответов между агентами через схемы данных
+ * F015 (stage1-autonomy): Контракты ввода-вывода (Strict JSON Schema IO)
+ * Валидация типизированных ответов между агентами через схемы данных
  * Operation Code: schema_validator
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F015_FEATURE_ID = "F015" as const;
 export const F015_STAGE = "stage1-autonomy" as const;
 export const F015_OPERATION_CODE = "schema_validator" as const;
-export const F015_CONTRACT_VERSION = "1.0.0" as const;
+export const F015_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F015StrictJsonSchemaIoExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F015StrictJsonSchemaIoExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F015StrictJsonSchemaIoConfig {
@@ -50,6 +47,17 @@ export interface F015StrictJsonSchemaIoInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F015StrictJsonSchemaIoAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F015_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F015StrictJsonSchemaIoOutput {
   readonly featureId: typeof F015_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F015StrictJsonSchemaIoOutput {
   readonly resolved_payload_valid: string | number;
   readonly resolved_validated_fields_count: string | number | boolean | readonly string[];
   readonly resolved_violation_errors: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F015StrictJsonSchemaIoAuditEntry;
-}
-
-export interface F015StrictJsonSchemaIoAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F015_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F015StrictJsonSchemaIoTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F015_CONFIG: F015StrictJsonSchemaIoConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F015StrictJsonSchemaIoValidationError extends Error {
@@ -109,40 +108,36 @@ export class F015StrictJsonSchemaIoValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F015 provenance & audit integrity.
- */
 export function computeF015Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f015_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f015_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F015: Контракты ввода-вывода (Strict JSON Schema IO)
- * Валидация типизированных ответов между агентами через схемы данных
- */
 export class F015StrictJsonSchemaIoEngine {
   private readonly config: F015StrictJsonSchemaIoConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F015StrictJsonSchemaIoOutput[] = [];
   private readonly auditLog: F015StrictJsonSchemaIoAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F015StrictJsonSchemaIoOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F015StrictJsonSchemaIoConfig>) {
+  constructor(customConfig?: Partial<F015StrictJsonSchemaIoConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F015_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F015StrictJsonSchemaIoConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F015StrictJsonSchemaIoInput): void {
@@ -158,8 +153,24 @@ export class F015StrictJsonSchemaIoEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F015StrictJsonSchemaIoValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F015StrictJsonSchemaIoValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F015StrictJsonSchemaIoValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.schema_id).trim().length === 0) {
       throw new F015StrictJsonSchemaIoValidationError("schema_id", "Primary domain attribute 'schema_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      schema_id: input.schema_id,
+      payload_valid: input.payload_valid,
+      validated_fields_count: input.validated_fields_count,
+      violation_errors: input.violation_errors
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F015StrictJsonSchemaIoValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F015StrictJsonSchemaIoEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f015_${this.totalRuns}_${computeF015Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F015_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        schema_id: input.schema_id,
+        payload_valid: input.payload_valid,
+        validated_fields_count: input.validated_fields_count,
+        violation_errors: input.violation_errors
+      });
+      const payloadHash = computeF015Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F015StrictJsonSchemaIoValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F015_FEATURE_ID,
+        operationCode: F015_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        schema_id: input.schema_id,
-        payload_valid: input.payload_valid,
-        validated_fields_count: input.validated_fields_count,
-        violation_errors: input.violation_errors,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          schema_id: input.schema_id,
+          payload_valid: input.payload_valid,
+          validated_fields_count: input.validated_fields_count,
+          violation_errors: input.violation_errors
+        }
       });
 
-      const provenanceDigest = computeF015Digest(canonicalPayload);
+      const executionId = `exec_f015_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f015_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F015StrictJsonSchemaIoAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F015_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F015StrictJsonSchemaIoEngine {
         actorId: input.actorId,
         action: `schema_validator:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F015StrictJsonSchemaIoEngine {
         executionId,
         status: "completed",
         operationCode: F015_OPERATION_CODE,
-        resolved_schema_id: input.schema_id,
-        resolved_payload_valid: input.payload_valid,
-        resolved_validated_fields_count: input.validated_fields_count,
-        resolved_violation_errors: input.violation_errors,
+        resolved_schema_id: kernelResult.resolvedFields.schema_id as string,
+        resolved_payload_valid: kernelResult.resolvedFields.payload_valid as string | number,
+        resolved_validated_fields_count: kernelResult.resolvedFields.validated_fields_count as string | number | boolean | readonly string[],
+        resolved_violation_errors: kernelResult.resolvedFields.violation_errors as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F015StrictJsonSchemaIoEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F015StrictJsonSchemaIoEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F015 (Контракты ввода-вывода (Strict JSON Schema IO))
- */
 export function verifyF015Module(): {
   featureId: typeof F015_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF015Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    schema_id: "f015_schema_id_verified",
-    payload_valid: 100,
+    schema_id: "f015_schema_id_seed",
+    payload_valid: 42,
     validated_fields_count: true,
-    violation_errors: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 15 },
+    violation_errors: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 15 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F015" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_schema_id !== sampleInput.schema_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F015_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

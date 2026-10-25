@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F021
- * ============================================================================
- * Feature ID: F021
- * Stage: stage1-autonomy
- * Title: Локальная шина событий агентов (Event Bus)
- * Description: Реактивный обмен сигналами между модулями через Pub/Sub
+ * F021 (stage1-autonomy): Локальная шина событий агентов (Event Bus)
+ * Реактивный обмен сигналами между модулями через Pub/Sub
  * Operation Code: pubsub_bus
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F021_FEATURE_ID = "F021" as const;
 export const F021_STAGE = "stage1-autonomy" as const;
 export const F021_OPERATION_CODE = "pubsub_bus" as const;
-export const F021_CONTRACT_VERSION = "1.0.0" as const;
+export const F021_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F021LocalAgentEventBusExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F021LocalAgentEventBusExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F021LocalAgentEventBusConfig {
@@ -50,6 +47,17 @@ export interface F021LocalAgentEventBusInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F021LocalAgentEventBusAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F021_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F021LocalAgentEventBusOutput {
   readonly featureId: typeof F021_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F021LocalAgentEventBusOutput {
   readonly resolved_subscriber_count: string | number;
   readonly resolved_published_event_id: string | number | boolean | readonly string[];
   readonly resolved_delivery_latency_ms: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F021LocalAgentEventBusAuditEntry;
-}
-
-export interface F021LocalAgentEventBusAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F021_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F021LocalAgentEventBusTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F021_CONFIG: F021LocalAgentEventBusConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F021LocalAgentEventBusValidationError extends Error {
@@ -109,40 +108,36 @@ export class F021LocalAgentEventBusValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F021 provenance & audit integrity.
- */
 export function computeF021Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f021_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f021_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F021: Локальная шина событий агентов (Event Bus)
- * Реактивный обмен сигналами между модулями через Pub/Sub
- */
 export class F021LocalAgentEventBusEngine {
   private readonly config: F021LocalAgentEventBusConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F021LocalAgentEventBusOutput[] = [];
   private readonly auditLog: F021LocalAgentEventBusAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F021LocalAgentEventBusOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F021LocalAgentEventBusConfig>) {
+  constructor(customConfig?: Partial<F021LocalAgentEventBusConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F021_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F021LocalAgentEventBusConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F021LocalAgentEventBusInput): void {
@@ -158,8 +153,24 @@ export class F021LocalAgentEventBusEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F021LocalAgentEventBusValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F021LocalAgentEventBusValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F021LocalAgentEventBusValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.topic_name).trim().length === 0) {
       throw new F021LocalAgentEventBusValidationError("topic_name", "Primary domain attribute 'topic_name' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      topic_name: input.topic_name,
+      subscriber_count: input.subscriber_count,
+      published_event_id: input.published_event_id,
+      delivery_latency_ms: input.delivery_latency_ms
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F021LocalAgentEventBusValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F021LocalAgentEventBusEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f021_${this.totalRuns}_${computeF021Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F021_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        topic_name: input.topic_name,
+        subscriber_count: input.subscriber_count,
+        published_event_id: input.published_event_id,
+        delivery_latency_ms: input.delivery_latency_ms
+      });
+      const payloadHash = computeF021Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F021LocalAgentEventBusValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F021_FEATURE_ID,
+        operationCode: F021_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        topic_name: input.topic_name,
-        subscriber_count: input.subscriber_count,
-        published_event_id: input.published_event_id,
-        delivery_latency_ms: input.delivery_latency_ms,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          topic_name: input.topic_name,
+          subscriber_count: input.subscriber_count,
+          published_event_id: input.published_event_id,
+          delivery_latency_ms: input.delivery_latency_ms
+        }
       });
 
-      const provenanceDigest = computeF021Digest(canonicalPayload);
+      const executionId = `exec_f021_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f021_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F021LocalAgentEventBusAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F021_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F021LocalAgentEventBusEngine {
         actorId: input.actorId,
         action: `pubsub_bus:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F021LocalAgentEventBusEngine {
         executionId,
         status: "completed",
         operationCode: F021_OPERATION_CODE,
-        resolved_topic_name: input.topic_name,
-        resolved_subscriber_count: input.subscriber_count,
-        resolved_published_event_id: input.published_event_id,
-        resolved_delivery_latency_ms: input.delivery_latency_ms,
+        resolved_topic_name: kernelResult.resolvedFields.topic_name as string,
+        resolved_subscriber_count: kernelResult.resolvedFields.subscriber_count as string | number,
+        resolved_published_event_id: kernelResult.resolvedFields.published_event_id as string | number | boolean | readonly string[],
+        resolved_delivery_latency_ms: kernelResult.resolvedFields.delivery_latency_ms as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F021LocalAgentEventBusEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F021LocalAgentEventBusEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F021 (Локальная шина событий агентов (Event Bus))
- */
 export function verifyF021Module(): {
   featureId: typeof F021_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF021Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    topic_name: "f021_topic_name_verified",
-    subscriber_count: 100,
+    topic_name: "f021_topic_name_seed",
+    subscriber_count: 42,
     published_event_id: true,
-    delivery_latency_ms: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 21 },
+    delivery_latency_ms: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 21 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F021" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_topic_name !== sampleInput.topic_name &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F021_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F005
- * ============================================================================
- * Feature ID: F005
- * Stage: stage1-autonomy
- * Title: Валидатор графа происхождения в рантайме
- * Description: Автоматическая проверка целостности ссылок provenance перед закрытием задачи менеджером
+ * F005 (stage1-autonomy): Валидатор графа происхождения в рантайме
+ * Автоматическая проверка целостности ссылок provenance перед закрытием задачи менеджером
  * Operation Code: provenance_validator
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F005_FEATURE_ID = "F005" as const;
 export const F005_STAGE = "stage1-autonomy" as const;
 export const F005_OPERATION_CODE = "provenance_validator" as const;
-export const F005_CONTRACT_VERSION = "1.0.0" as const;
+export const F005_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F005RuntimeProvenanceValidatorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F005RuntimeProvenanceValidatorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F005RuntimeProvenanceValidatorConfig {
@@ -50,6 +47,17 @@ export interface F005RuntimeProvenanceValidatorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F005RuntimeProvenanceValidatorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F005_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F005RuntimeProvenanceValidatorOutput {
   readonly featureId: typeof F005_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F005RuntimeProvenanceValidatorOutput {
   readonly resolved_checked_nodes: string | number;
   readonly resolved_integrity_passed: string | number | boolean | readonly string[];
   readonly resolved_missing_links: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F005RuntimeProvenanceValidatorAuditEntry;
-}
-
-export interface F005RuntimeProvenanceValidatorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F005_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F005RuntimeProvenanceValidatorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F005_CONFIG: F005RuntimeProvenanceValidatorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F005RuntimeProvenanceValidatorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F005RuntimeProvenanceValidatorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F005 provenance & audit integrity.
- */
 export function computeF005Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f005_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f005_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F005: Валидатор графа происхождения в рантайме
- * Автоматическая проверка целостности ссылок provenance перед закрытием задачи менеджером
- */
 export class F005RuntimeProvenanceValidatorEngine {
   private readonly config: F005RuntimeProvenanceValidatorConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F005RuntimeProvenanceValidatorOutput[] = [];
   private readonly auditLog: F005RuntimeProvenanceValidatorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F005RuntimeProvenanceValidatorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F005RuntimeProvenanceValidatorConfig>) {
+  constructor(customConfig?: Partial<F005RuntimeProvenanceValidatorConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F005_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F005RuntimeProvenanceValidatorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F005RuntimeProvenanceValidatorInput): void {
@@ -158,8 +153,24 @@ export class F005RuntimeProvenanceValidatorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F005RuntimeProvenanceValidatorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F005RuntimeProvenanceValidatorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F005RuntimeProvenanceValidatorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.graph_id).trim().length === 0) {
       throw new F005RuntimeProvenanceValidatorValidationError("graph_id", "Primary domain attribute 'graph_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      graph_id: input.graph_id,
+      checked_nodes: input.checked_nodes,
+      integrity_passed: input.integrity_passed,
+      missing_links: input.missing_links
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F005RuntimeProvenanceValidatorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F005RuntimeProvenanceValidatorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f005_${this.totalRuns}_${computeF005Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F005_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        graph_id: input.graph_id,
+        checked_nodes: input.checked_nodes,
+        integrity_passed: input.integrity_passed,
+        missing_links: input.missing_links
+      });
+      const payloadHash = computeF005Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F005RuntimeProvenanceValidatorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F005_FEATURE_ID,
+        operationCode: F005_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        graph_id: input.graph_id,
-        checked_nodes: input.checked_nodes,
-        integrity_passed: input.integrity_passed,
-        missing_links: input.missing_links,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          graph_id: input.graph_id,
+          checked_nodes: input.checked_nodes,
+          integrity_passed: input.integrity_passed,
+          missing_links: input.missing_links
+        }
       });
 
-      const provenanceDigest = computeF005Digest(canonicalPayload);
+      const executionId = `exec_f005_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f005_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F005RuntimeProvenanceValidatorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F005_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F005RuntimeProvenanceValidatorEngine {
         actorId: input.actorId,
         action: `provenance_validator:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F005RuntimeProvenanceValidatorEngine {
         executionId,
         status: "completed",
         operationCode: F005_OPERATION_CODE,
-        resolved_graph_id: input.graph_id,
-        resolved_checked_nodes: input.checked_nodes,
-        resolved_integrity_passed: input.integrity_passed,
-        resolved_missing_links: input.missing_links,
+        resolved_graph_id: kernelResult.resolvedFields.graph_id as string,
+        resolved_checked_nodes: kernelResult.resolvedFields.checked_nodes as string | number,
+        resolved_integrity_passed: kernelResult.resolvedFields.integrity_passed as string | number | boolean | readonly string[],
+        resolved_missing_links: kernelResult.resolvedFields.missing_links as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F005RuntimeProvenanceValidatorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F005RuntimeProvenanceValidatorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F005 (Валидатор графа происхождения в рантайме)
- */
 export function verifyF005Module(): {
   featureId: typeof F005_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF005Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    graph_id: "f005_graph_id_verified",
-    checked_nodes: 100,
+    graph_id: "f005_graph_id_seed",
+    checked_nodes: 42,
     integrity_passed: true,
-    missing_links: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 5 },
+    missing_links: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 5 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F005" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_graph_id !== sampleInput.graph_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F005_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

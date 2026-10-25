@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F086
- * ============================================================================
- * Feature ID: F086
- * Stage: stage3-skills-bus
- * Title: Синхронизация с календарём и дедлайнами
- * Description: Привязка этапов выполнения агентных задач к реальному расписанию проекта
+ * F086 (stage3-skills-bus): Синхронизация с календарём и дедлайнами
+ * Привязка этапов выполнения агентных задач к реальному расписанию проекта
  * Operation Code: calendar_milestone_sync
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F086_FEATURE_ID = "F086" as const;
 export const F086_STAGE = "stage3-skills-bus" as const;
 export const F086_OPERATION_CODE = "calendar_milestone_sync" as const;
-export const F086_CONTRACT_VERSION = "1.0.0" as const;
+export const F086_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F086CalendarDeadlineSynchronizerExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F086CalendarDeadlineSynchronizerExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F086CalendarDeadlineSynchronizerConfig {
@@ -50,6 +47,17 @@ export interface F086CalendarDeadlineSynchronizerInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F086CalendarDeadlineSynchronizerAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F086_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F086CalendarDeadlineSynchronizerOutput {
   readonly featureId: typeof F086_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F086CalendarDeadlineSynchronizerOutput {
   readonly resolved_milestone_id: string | number;
   readonly resolved_deadline_iso: string | number | boolean | readonly string[];
   readonly resolved_schedule_aligned: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F086CalendarDeadlineSynchronizerAuditEntry;
-}
-
-export interface F086CalendarDeadlineSynchronizerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F086_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F086CalendarDeadlineSynchronizerTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F086_CONFIG: F086CalendarDeadlineSynchronizerConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F086CalendarDeadlineSynchronizerValidationError extends Error {
@@ -109,40 +108,36 @@ export class F086CalendarDeadlineSynchronizerValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F086 provenance & audit integrity.
- */
 export function computeF086Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f086_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f086_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F086: Синхронизация с календарём и дедлайнами
- * Привязка этапов выполнения агентных задач к реальному расписанию проекта
- */
 export class F086CalendarDeadlineSynchronizerEngine {
   private readonly config: F086CalendarDeadlineSynchronizerConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F086CalendarDeadlineSynchronizerOutput[] = [];
   private readonly auditLog: F086CalendarDeadlineSynchronizerAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F086CalendarDeadlineSynchronizerOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F086CalendarDeadlineSynchronizerConfig>) {
+  constructor(customConfig?: Partial<F086CalendarDeadlineSynchronizerConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F086_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F086CalendarDeadlineSynchronizerConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F086CalendarDeadlineSynchronizerInput): void {
@@ -158,8 +153,24 @@ export class F086CalendarDeadlineSynchronizerEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F086CalendarDeadlineSynchronizerValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F086CalendarDeadlineSynchronizerValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F086CalendarDeadlineSynchronizerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.project_id).trim().length === 0) {
       throw new F086CalendarDeadlineSynchronizerValidationError("project_id", "Primary domain attribute 'project_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      project_id: input.project_id,
+      milestone_id: input.milestone_id,
+      deadline_iso: input.deadline_iso,
+      schedule_aligned: input.schedule_aligned
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F086CalendarDeadlineSynchronizerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F086CalendarDeadlineSynchronizerEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f086_${this.totalRuns}_${computeF086Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F086_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        project_id: input.project_id,
+        milestone_id: input.milestone_id,
+        deadline_iso: input.deadline_iso,
+        schedule_aligned: input.schedule_aligned
+      });
+      const payloadHash = computeF086Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F086CalendarDeadlineSynchronizerValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F086_FEATURE_ID,
+        operationCode: F086_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        project_id: input.project_id,
-        milestone_id: input.milestone_id,
-        deadline_iso: input.deadline_iso,
-        schedule_aligned: input.schedule_aligned,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          project_id: input.project_id,
+          milestone_id: input.milestone_id,
+          deadline_iso: input.deadline_iso,
+          schedule_aligned: input.schedule_aligned
+        }
       });
 
-      const provenanceDigest = computeF086Digest(canonicalPayload);
+      const executionId = `exec_f086_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f086_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F086CalendarDeadlineSynchronizerAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F086_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F086CalendarDeadlineSynchronizerEngine {
         actorId: input.actorId,
         action: `calendar_milestone_sync:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F086CalendarDeadlineSynchronizerEngine {
         executionId,
         status: "completed",
         operationCode: F086_OPERATION_CODE,
-        resolved_project_id: input.project_id,
-        resolved_milestone_id: input.milestone_id,
-        resolved_deadline_iso: input.deadline_iso,
-        resolved_schedule_aligned: input.schedule_aligned,
+        resolved_project_id: kernelResult.resolvedFields.project_id as string,
+        resolved_milestone_id: kernelResult.resolvedFields.milestone_id as string | number,
+        resolved_deadline_iso: kernelResult.resolvedFields.deadline_iso as string | number | boolean | readonly string[],
+        resolved_schedule_aligned: kernelResult.resolvedFields.schedule_aligned as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F086CalendarDeadlineSynchronizerEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F086CalendarDeadlineSynchronizerEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F086 (Синхронизация с календарём и дедлайнами)
- */
 export function verifyF086Module(): {
   featureId: typeof F086_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF086Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    project_id: "f086_project_id_verified",
-    milestone_id: 100,
+    project_id: "f086_project_id_seed",
+    milestone_id: 42,
     deadline_iso: true,
-    schedule_aligned: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 86 },
+    schedule_aligned: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 86 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F086" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_project_id !== sampleInput.project_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F086_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

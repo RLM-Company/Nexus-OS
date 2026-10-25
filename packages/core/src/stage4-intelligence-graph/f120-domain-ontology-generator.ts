@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F120
- * ============================================================================
- * Feature ID: F120
- * Stage: stage4-intelligence-graph
- * Title: Генерация онтологии под домен
- * Description: Настройка типов узлов и связей под конкретную нишу (разработка ПО, автосервис, маркетинг, аналитика)
+ * F120 (stage4-intelligence-graph): Генерация онтологии под домен
+ * Настройка типов узлов и связей под конкретную нишу (разработка ПО, автосервис, маркетинг, аналитика)
  * Operation Code: ontology_schema_builder
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F120_FEATURE_ID = "F120" as const;
 export const F120_STAGE = "stage4-intelligence-graph" as const;
 export const F120_OPERATION_CODE = "ontology_schema_builder" as const;
-export const F120_CONTRACT_VERSION = "1.0.0" as const;
+export const F120_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F120DomainOntologyGeneratorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F120DomainOntologyGeneratorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F120DomainOntologyGeneratorConfig {
@@ -50,6 +47,17 @@ export interface F120DomainOntologyGeneratorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F120DomainOntologyGeneratorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F120_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F120DomainOntologyGeneratorOutput {
   readonly featureId: typeof F120_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F120DomainOntologyGeneratorOutput {
   readonly resolved_entity_types: string | number;
   readonly resolved_relation_types: string | number | boolean | readonly string[];
   readonly resolved_validation_rules: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F120DomainOntologyGeneratorAuditEntry;
-}
-
-export interface F120DomainOntologyGeneratorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F120_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F120DomainOntologyGeneratorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F120_CONFIG: F120DomainOntologyGeneratorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F120DomainOntologyGeneratorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F120DomainOntologyGeneratorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F120 provenance & audit integrity.
- */
 export function computeF120Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f120_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f120_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F120: Генерация онтологии под домен
- * Настройка типов узлов и связей под конкретную нишу (разработка ПО, автосервис, маркетинг, аналитика)
- */
 export class F120DomainOntologyGeneratorEngine {
   private readonly config: F120DomainOntologyGeneratorConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F120DomainOntologyGeneratorOutput[] = [];
   private readonly auditLog: F120DomainOntologyGeneratorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F120DomainOntologyGeneratorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F120DomainOntologyGeneratorConfig>) {
+  constructor(customConfig?: Partial<F120DomainOntologyGeneratorConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F120_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F120DomainOntologyGeneratorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F120DomainOntologyGeneratorInput): void {
@@ -158,8 +153,24 @@ export class F120DomainOntologyGeneratorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F120DomainOntologyGeneratorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F120DomainOntologyGeneratorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F120DomainOntologyGeneratorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.domain_niche).trim().length === 0) {
       throw new F120DomainOntologyGeneratorValidationError("domain_niche", "Primary domain attribute 'domain_niche' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      domain_niche: input.domain_niche,
+      entity_types: input.entity_types,
+      relation_types: input.relation_types,
+      validation_rules: input.validation_rules
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F120DomainOntologyGeneratorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F120DomainOntologyGeneratorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f120_${this.totalRuns}_${computeF120Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F120_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domain_niche: input.domain_niche,
+        entity_types: input.entity_types,
+        relation_types: input.relation_types,
+        validation_rules: input.validation_rules
+      });
+      const payloadHash = computeF120Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F120DomainOntologyGeneratorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F120_FEATURE_ID,
+        operationCode: F120_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        domain_niche: input.domain_niche,
-        entity_types: input.entity_types,
-        relation_types: input.relation_types,
-        validation_rules: input.validation_rules,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          domain_niche: input.domain_niche,
+          entity_types: input.entity_types,
+          relation_types: input.relation_types,
+          validation_rules: input.validation_rules
+        }
       });
 
-      const provenanceDigest = computeF120Digest(canonicalPayload);
+      const executionId = `exec_f120_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f120_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F120DomainOntologyGeneratorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F120_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F120DomainOntologyGeneratorEngine {
         actorId: input.actorId,
         action: `ontology_schema_builder:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F120DomainOntologyGeneratorEngine {
         executionId,
         status: "completed",
         operationCode: F120_OPERATION_CODE,
-        resolved_domain_niche: input.domain_niche,
-        resolved_entity_types: input.entity_types,
-        resolved_relation_types: input.relation_types,
-        resolved_validation_rules: input.validation_rules,
+        resolved_domain_niche: kernelResult.resolvedFields.domain_niche as string,
+        resolved_entity_types: kernelResult.resolvedFields.entity_types as string | number,
+        resolved_relation_types: kernelResult.resolvedFields.relation_types as string | number | boolean | readonly string[],
+        resolved_validation_rules: kernelResult.resolvedFields.validation_rules as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F120DomainOntologyGeneratorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F120DomainOntologyGeneratorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F120 (Генерация онтологии под домен)
- */
 export function verifyF120Module(): {
   featureId: typeof F120_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF120Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    domain_niche: "f120_domain_niche_verified",
-    entity_types: 100,
+    domain_niche: "f120_domain_niche_seed",
+    entity_types: 42,
     relation_types: true,
-    validation_rules: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 120 },
+    validation_rules: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 120 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F120" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_domain_niche !== sampleInput.domain_niche &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F120_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

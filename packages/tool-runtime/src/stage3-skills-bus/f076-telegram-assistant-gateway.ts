@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F076
- * ============================================================================
- * Feature ID: F076
- * Stage: stage3-skills-bus
- * Title: Шлюз Telegram-ассистента
- * Description: Управление задачами Nexus-OS, получение уведомлений и аппрув чекпоинтов через Telegram
+ * F076 (stage3-skills-bus): Шлюз Telegram-ассистента
+ * Управление задачами Nexus-OS, получение уведомлений и аппрув чекпоинтов через Telegram
  * Operation Code: telegram_bot_bridge
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F076_FEATURE_ID = "F076" as const;
 export const F076_STAGE = "stage3-skills-bus" as const;
 export const F076_OPERATION_CODE = "telegram_bot_bridge" as const;
-export const F076_CONTRACT_VERSION = "1.0.0" as const;
+export const F076_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F076TelegramAssistantGatewayExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F076TelegramAssistantGatewayExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F076TelegramAssistantGatewayConfig {
@@ -50,6 +47,17 @@ export interface F076TelegramAssistantGatewayInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F076TelegramAssistantGatewayAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F076_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F076TelegramAssistantGatewayOutput {
   readonly featureId: typeof F076_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F076TelegramAssistantGatewayOutput {
   readonly resolved_notification_kind: string | number;
   readonly resolved_inline_approval_callback: string | number | boolean | readonly string[];
   readonly resolved_delivered_ok: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F076TelegramAssistantGatewayAuditEntry;
-}
-
-export interface F076TelegramAssistantGatewayAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F076_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F076TelegramAssistantGatewayTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F076_CONFIG: F076TelegramAssistantGatewayConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F076TelegramAssistantGatewayValidationError extends Error {
@@ -109,40 +108,36 @@ export class F076TelegramAssistantGatewayValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F076 provenance & audit integrity.
- */
 export function computeF076Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f076_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f076_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F076: Шлюз Telegram-ассистента
- * Управление задачами Nexus-OS, получение уведомлений и аппрув чекпоинтов через Telegram
- */
 export class F076TelegramAssistantGatewayEngine {
   private readonly config: F076TelegramAssistantGatewayConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F076TelegramAssistantGatewayOutput[] = [];
   private readonly auditLog: F076TelegramAssistantGatewayAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F076TelegramAssistantGatewayOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F076TelegramAssistantGatewayConfig>) {
+  constructor(customConfig?: Partial<F076TelegramAssistantGatewayConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F076_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F076TelegramAssistantGatewayConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F076TelegramAssistantGatewayInput): void {
@@ -158,8 +153,24 @@ export class F076TelegramAssistantGatewayEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F076TelegramAssistantGatewayValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F076TelegramAssistantGatewayValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F076TelegramAssistantGatewayValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.chat_id).trim().length === 0) {
       throw new F076TelegramAssistantGatewayValidationError("chat_id", "Primary domain attribute 'chat_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      chat_id: input.chat_id,
+      notification_kind: input.notification_kind,
+      inline_approval_callback: input.inline_approval_callback,
+      delivered_ok: input.delivered_ok
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F076TelegramAssistantGatewayValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F076TelegramAssistantGatewayEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f076_${this.totalRuns}_${computeF076Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F076_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        chat_id: input.chat_id,
+        notification_kind: input.notification_kind,
+        inline_approval_callback: input.inline_approval_callback,
+        delivered_ok: input.delivered_ok
+      });
+      const payloadHash = computeF076Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F076TelegramAssistantGatewayValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F076_FEATURE_ID,
+        operationCode: F076_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        chat_id: input.chat_id,
-        notification_kind: input.notification_kind,
-        inline_approval_callback: input.inline_approval_callback,
-        delivered_ok: input.delivered_ok,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          chat_id: input.chat_id,
+          notification_kind: input.notification_kind,
+          inline_approval_callback: input.inline_approval_callback,
+          delivered_ok: input.delivered_ok
+        }
       });
 
-      const provenanceDigest = computeF076Digest(canonicalPayload);
+      const executionId = `exec_f076_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f076_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F076TelegramAssistantGatewayAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F076_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F076TelegramAssistantGatewayEngine {
         actorId: input.actorId,
         action: `telegram_bot_bridge:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F076TelegramAssistantGatewayEngine {
         executionId,
         status: "completed",
         operationCode: F076_OPERATION_CODE,
-        resolved_chat_id: input.chat_id,
-        resolved_notification_kind: input.notification_kind,
-        resolved_inline_approval_callback: input.inline_approval_callback,
-        resolved_delivered_ok: input.delivered_ok,
+        resolved_chat_id: kernelResult.resolvedFields.chat_id as string,
+        resolved_notification_kind: kernelResult.resolvedFields.notification_kind as string | number,
+        resolved_inline_approval_callback: kernelResult.resolvedFields.inline_approval_callback as string | number | boolean | readonly string[],
+        resolved_delivered_ok: kernelResult.resolvedFields.delivered_ok as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F076TelegramAssistantGatewayEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F076TelegramAssistantGatewayEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F076 (Шлюз Telegram-ассистента)
- */
 export function verifyF076Module(): {
   featureId: typeof F076_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF076Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    chat_id: "f076_chat_id_verified",
-    notification_kind: 100,
+    chat_id: "f076_chat_id_seed",
+    notification_kind: 42,
     inline_approval_callback: true,
-    delivered_ok: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 76 },
+    delivered_ok: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 76 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F076" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_chat_id !== sampleInput.chat_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F076_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

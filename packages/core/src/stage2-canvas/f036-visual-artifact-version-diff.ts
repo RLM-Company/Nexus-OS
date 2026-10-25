@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F036
- * ============================================================================
- * Feature ID: F036
- * Stage: stage2-canvas
- * Title: Визуальный Diff версий артефакта
- * Description: Построчное сравнение изменений между редакциями отчёта или кода (зелёный/красный подсвет)
+ * F036 (stage2-canvas): Визуальный Diff версий артефакта
+ * Построчное сравнение изменений между редакциями отчёта или кода (зелёный/красный подсвет)
  * Operation Code: visual_diff_engine
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F036_FEATURE_ID = "F036" as const;
 export const F036_STAGE = "stage2-canvas" as const;
 export const F036_OPERATION_CODE = "visual_diff_engine" as const;
-export const F036_CONTRACT_VERSION = "1.0.0" as const;
+export const F036_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F036VisualArtifactVersionDiffExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F036VisualArtifactVersionDiffExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F036VisualArtifactVersionDiffConfig {
@@ -50,6 +47,17 @@ export interface F036VisualArtifactVersionDiffInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F036VisualArtifactVersionDiffAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F036_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F036VisualArtifactVersionDiffOutput {
   readonly featureId: typeof F036_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F036VisualArtifactVersionDiffOutput {
   readonly resolved_to_version: string | number;
   readonly resolved_added_lines_count: string | number | boolean | readonly string[];
   readonly resolved_removed_lines_count: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F036VisualArtifactVersionDiffAuditEntry;
-}
-
-export interface F036VisualArtifactVersionDiffAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F036_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F036VisualArtifactVersionDiffTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F036_CONFIG: F036VisualArtifactVersionDiffConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F036VisualArtifactVersionDiffValidationError extends Error {
@@ -109,40 +108,36 @@ export class F036VisualArtifactVersionDiffValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F036 provenance & audit integrity.
- */
 export function computeF036Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f036_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f036_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F036: Визуальный Diff версий артефакта
- * Построчное сравнение изменений между редакциями отчёта или кода (зелёный/красный подсвет)
- */
 export class F036VisualArtifactVersionDiffEngine {
   private readonly config: F036VisualArtifactVersionDiffConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F036VisualArtifactVersionDiffOutput[] = [];
   private readonly auditLog: F036VisualArtifactVersionDiffAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F036VisualArtifactVersionDiffOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F036VisualArtifactVersionDiffConfig>) {
+  constructor(customConfig?: Partial<F036VisualArtifactVersionDiffConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F036_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F036VisualArtifactVersionDiffConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F036VisualArtifactVersionDiffInput): void {
@@ -158,8 +153,24 @@ export class F036VisualArtifactVersionDiffEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F036VisualArtifactVersionDiffValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F036VisualArtifactVersionDiffValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F036VisualArtifactVersionDiffValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.from_version).trim().length === 0) {
       throw new F036VisualArtifactVersionDiffValidationError("from_version", "Primary domain attribute 'from_version' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      from_version: input.from_version,
+      to_version: input.to_version,
+      added_lines_count: input.added_lines_count,
+      removed_lines_count: input.removed_lines_count
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F036VisualArtifactVersionDiffValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F036VisualArtifactVersionDiffEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f036_${this.totalRuns}_${computeF036Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F036_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        from_version: input.from_version,
+        to_version: input.to_version,
+        added_lines_count: input.added_lines_count,
+        removed_lines_count: input.removed_lines_count
+      });
+      const payloadHash = computeF036Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F036VisualArtifactVersionDiffValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F036_FEATURE_ID,
+        operationCode: F036_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        from_version: input.from_version,
-        to_version: input.to_version,
-        added_lines_count: input.added_lines_count,
-        removed_lines_count: input.removed_lines_count,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          from_version: input.from_version,
+          to_version: input.to_version,
+          added_lines_count: input.added_lines_count,
+          removed_lines_count: input.removed_lines_count
+        }
       });
 
-      const provenanceDigest = computeF036Digest(canonicalPayload);
+      const executionId = `exec_f036_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f036_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F036VisualArtifactVersionDiffAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F036_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F036VisualArtifactVersionDiffEngine {
         actorId: input.actorId,
         action: `visual_diff_engine:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F036VisualArtifactVersionDiffEngine {
         executionId,
         status: "completed",
         operationCode: F036_OPERATION_CODE,
-        resolved_from_version: input.from_version,
-        resolved_to_version: input.to_version,
-        resolved_added_lines_count: input.added_lines_count,
-        resolved_removed_lines_count: input.removed_lines_count,
+        resolved_from_version: kernelResult.resolvedFields.from_version as string,
+        resolved_to_version: kernelResult.resolvedFields.to_version as string | number,
+        resolved_added_lines_count: kernelResult.resolvedFields.added_lines_count as string | number | boolean | readonly string[],
+        resolved_removed_lines_count: kernelResult.resolvedFields.removed_lines_count as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F036VisualArtifactVersionDiffEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F036VisualArtifactVersionDiffEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F036 (Визуальный Diff версий артефакта)
- */
 export function verifyF036Module(): {
   featureId: typeof F036_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF036Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    from_version: "f036_from_version_verified",
-    to_version: 100,
+    from_version: "f036_from_version_seed",
+    to_version: 42,
     added_lines_count: true,
-    removed_lines_count: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 36 },
+    removed_lines_count: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 36 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F036" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_from_version !== sampleInput.from_version &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F036_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

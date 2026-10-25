@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F053
- * ============================================================================
- * Feature ID: F053
- * Stage: stage2-canvas
- * Title: Оглавление и быстрая навигация по длинным отчётам
- * Description: Плавающее дерево заголовков (H1–H4) для документов свыше 10 страниц
+ * F053 (stage2-canvas): Оглавление и быстрая навигация по длинным отчётам
+ * Плавающее дерево заголовков (H1–H4) для документов свыше 10 страниц
  * Operation Code: floating_toc_tree
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F053_FEATURE_ID = "F053" as const;
 export const F053_STAGE = "stage2-canvas" as const;
 export const F053_OPERATION_CODE = "floating_toc_tree" as const;
-export const F053_CONTRACT_VERSION = "1.0.0" as const;
+export const F053_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F053FloatingTocNavigatorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F053FloatingTocNavigatorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F053FloatingTocNavigatorConfig {
@@ -50,6 +47,17 @@ export interface F053FloatingTocNavigatorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F053FloatingTocNavigatorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F053_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F053FloatingTocNavigatorOutput {
   readonly featureId: typeof F053_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F053FloatingTocNavigatorOutput {
   readonly resolved_headings_extracted: string | number;
   readonly resolved_max_depth: string | number | boolean | readonly string[];
   readonly resolved_active_anchor_slug: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F053FloatingTocNavigatorAuditEntry;
-}
-
-export interface F053FloatingTocNavigatorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F053_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F053FloatingTocNavigatorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F053_CONFIG: F053FloatingTocNavigatorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F053FloatingTocNavigatorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F053FloatingTocNavigatorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F053 provenance & audit integrity.
- */
 export function computeF053Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f053_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f053_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F053: Оглавление и быстрая навигация по длинным отчётам
- * Плавающее дерево заголовков (H1–H4) для документов свыше 10 страниц
- */
 export class F053FloatingTocNavigatorEngine {
   private readonly config: F053FloatingTocNavigatorConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F053FloatingTocNavigatorOutput[] = [];
   private readonly auditLog: F053FloatingTocNavigatorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F053FloatingTocNavigatorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F053FloatingTocNavigatorConfig>) {
+  constructor(customConfig?: Partial<F053FloatingTocNavigatorConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F053_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F053FloatingTocNavigatorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F053FloatingTocNavigatorInput): void {
@@ -158,8 +153,24 @@ export class F053FloatingTocNavigatorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F053FloatingTocNavigatorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F053FloatingTocNavigatorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F053FloatingTocNavigatorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.document_id).trim().length === 0) {
       throw new F053FloatingTocNavigatorValidationError("document_id", "Primary domain attribute 'document_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      document_id: input.document_id,
+      headings_extracted: input.headings_extracted,
+      max_depth: input.max_depth,
+      active_anchor_slug: input.active_anchor_slug
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F053FloatingTocNavigatorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F053FloatingTocNavigatorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f053_${this.totalRuns}_${computeF053Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F053_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        document_id: input.document_id,
+        headings_extracted: input.headings_extracted,
+        max_depth: input.max_depth,
+        active_anchor_slug: input.active_anchor_slug
+      });
+      const payloadHash = computeF053Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F053FloatingTocNavigatorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F053_FEATURE_ID,
+        operationCode: F053_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        document_id: input.document_id,
-        headings_extracted: input.headings_extracted,
-        max_depth: input.max_depth,
-        active_anchor_slug: input.active_anchor_slug,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          document_id: input.document_id,
+          headings_extracted: input.headings_extracted,
+          max_depth: input.max_depth,
+          active_anchor_slug: input.active_anchor_slug
+        }
       });
 
-      const provenanceDigest = computeF053Digest(canonicalPayload);
+      const executionId = `exec_f053_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f053_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F053FloatingTocNavigatorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F053_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F053FloatingTocNavigatorEngine {
         actorId: input.actorId,
         action: `floating_toc_tree:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F053FloatingTocNavigatorEngine {
         executionId,
         status: "completed",
         operationCode: F053_OPERATION_CODE,
-        resolved_document_id: input.document_id,
-        resolved_headings_extracted: input.headings_extracted,
-        resolved_max_depth: input.max_depth,
-        resolved_active_anchor_slug: input.active_anchor_slug,
+        resolved_document_id: kernelResult.resolvedFields.document_id as string,
+        resolved_headings_extracted: kernelResult.resolvedFields.headings_extracted as string | number,
+        resolved_max_depth: kernelResult.resolvedFields.max_depth as string | number | boolean | readonly string[],
+        resolved_active_anchor_slug: kernelResult.resolvedFields.active_anchor_slug as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F053FloatingTocNavigatorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F053FloatingTocNavigatorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F053 (Оглавление и быстрая навигация по длинным отчётам)
- */
 export function verifyF053Module(): {
   featureId: typeof F053_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF053Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    document_id: "f053_document_id_verified",
-    headings_extracted: 100,
+    document_id: "f053_document_id_seed",
+    headings_extracted: 42,
     max_depth: true,
-    active_anchor_slug: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 53 },
+    active_anchor_slug: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 53 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F053" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_document_id !== sampleInput.document_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F053_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

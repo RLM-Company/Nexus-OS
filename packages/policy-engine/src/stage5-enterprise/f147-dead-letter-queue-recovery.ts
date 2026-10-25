@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F147
- * ============================================================================
- * Feature ID: F147
- * Stage: stage5-enterprise
- * Title: Очередь недоставленных задач (Dead-Letter Queue)
- * Description: Сохранение упавших фоновых джобов для повторного запуска после устранения сбоя
+ * F147 (stage5-enterprise): Очередь недоставленных задач (Dead-Letter Queue)
+ * Сохранение упавших фоновых джобов для повторного запуска после устранения сбоя
  * Operation Code: dlq_replay_manager
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F147_FEATURE_ID = "F147" as const;
 export const F147_STAGE = "stage5-enterprise" as const;
 export const F147_OPERATION_CODE = "dlq_replay_manager" as const;
-export const F147_CONTRACT_VERSION = "1.0.0" as const;
+export const F147_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F147DeadLetterQueueRecoveryExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F147DeadLetterQueueRecoveryExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F147DeadLetterQueueRecoveryConfig {
@@ -50,6 +47,17 @@ export interface F147DeadLetterQueueRecoveryInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F147DeadLetterQueueRecoveryAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F147_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F147DeadLetterQueueRecoveryOutput {
   readonly featureId: typeof F147_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F147DeadLetterQueueRecoveryOutput {
   readonly resolved_failure_reason: string | number;
   readonly resolved_retry_count: string | number | boolean | readonly string[];
   readonly resolved_requeued_successfully: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F147DeadLetterQueueRecoveryAuditEntry;
-}
-
-export interface F147DeadLetterQueueRecoveryAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F147_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F147DeadLetterQueueRecoveryTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F147_CONFIG: F147DeadLetterQueueRecoveryConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F147DeadLetterQueueRecoveryValidationError extends Error {
@@ -109,40 +108,36 @@ export class F147DeadLetterQueueRecoveryValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F147 provenance & audit integrity.
- */
 export function computeF147Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f147_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f147_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F147: Очередь недоставленных задач (Dead-Letter Queue)
- * Сохранение упавших фоновых джобов для повторного запуска после устранения сбоя
- */
 export class F147DeadLetterQueueRecoveryEngine {
   private readonly config: F147DeadLetterQueueRecoveryConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F147DeadLetterQueueRecoveryOutput[] = [];
   private readonly auditLog: F147DeadLetterQueueRecoveryAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F147DeadLetterQueueRecoveryOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F147DeadLetterQueueRecoveryConfig>) {
+  constructor(customConfig?: Partial<F147DeadLetterQueueRecoveryConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F147_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F147DeadLetterQueueRecoveryConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F147DeadLetterQueueRecoveryInput): void {
@@ -158,8 +153,24 @@ export class F147DeadLetterQueueRecoveryEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F147DeadLetterQueueRecoveryValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F147DeadLetterQueueRecoveryValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F147DeadLetterQueueRecoveryValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.dlq_job_id).trim().length === 0) {
       throw new F147DeadLetterQueueRecoveryValidationError("dlq_job_id", "Primary domain attribute 'dlq_job_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      dlq_job_id: input.dlq_job_id,
+      failure_reason: input.failure_reason,
+      retry_count: input.retry_count,
+      requeued_successfully: input.requeued_successfully
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F147DeadLetterQueueRecoveryValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F147DeadLetterQueueRecoveryEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f147_${this.totalRuns}_${computeF147Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F147_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        dlq_job_id: input.dlq_job_id,
+        failure_reason: input.failure_reason,
+        retry_count: input.retry_count,
+        requeued_successfully: input.requeued_successfully
+      });
+      const payloadHash = computeF147Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F147DeadLetterQueueRecoveryValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F147_FEATURE_ID,
+        operationCode: F147_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        dlq_job_id: input.dlq_job_id,
-        failure_reason: input.failure_reason,
-        retry_count: input.retry_count,
-        requeued_successfully: input.requeued_successfully,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          dlq_job_id: input.dlq_job_id,
+          failure_reason: input.failure_reason,
+          retry_count: input.retry_count,
+          requeued_successfully: input.requeued_successfully
+        }
       });
 
-      const provenanceDigest = computeF147Digest(canonicalPayload);
+      const executionId = `exec_f147_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f147_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F147DeadLetterQueueRecoveryAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F147_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F147DeadLetterQueueRecoveryEngine {
         actorId: input.actorId,
         action: `dlq_replay_manager:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F147DeadLetterQueueRecoveryEngine {
         executionId,
         status: "completed",
         operationCode: F147_OPERATION_CODE,
-        resolved_dlq_job_id: input.dlq_job_id,
-        resolved_failure_reason: input.failure_reason,
-        resolved_retry_count: input.retry_count,
-        resolved_requeued_successfully: input.requeued_successfully,
+        resolved_dlq_job_id: kernelResult.resolvedFields.dlq_job_id as string,
+        resolved_failure_reason: kernelResult.resolvedFields.failure_reason as string | number,
+        resolved_retry_count: kernelResult.resolvedFields.retry_count as string | number | boolean | readonly string[],
+        resolved_requeued_successfully: kernelResult.resolvedFields.requeued_successfully as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F147DeadLetterQueueRecoveryEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F147DeadLetterQueueRecoveryEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F147 (Очередь недоставленных задач (Dead-Letter Queue))
- */
 export function verifyF147Module(): {
   featureId: typeof F147_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF147Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    dlq_job_id: "f147_dlq_job_id_verified",
-    failure_reason: 100,
+    dlq_job_id: "f147_dlq_job_id_seed",
+    failure_reason: 42,
     retry_count: true,
-    requeued_successfully: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 147 },
+    requeued_successfully: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 147 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F147" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_dlq_job_id !== sampleInput.dlq_job_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F147_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

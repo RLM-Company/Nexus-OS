@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F107
- * ============================================================================
- * Feature ID: F107
- * Stage: stage4-intelligence-graph
- * Title: Закрепление ядерных фактов (Pinned Context Nodes)
- * Description: Фиксация неизменяемых правил проекта (стек, брендбук, ограничения), всегда присутствующих в контексте
+ * F107 (stage4-intelligence-graph): Закрепление ядерных фактов (Pinned Context Nodes)
+ * Фиксация неизменяемых правил проекта (стек, брендбук, ограничения), всегда присутствующих в контексте
  * Operation Code: pinned_fact_registry
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F107_FEATURE_ID = "F107" as const;
 export const F107_STAGE = "stage4-intelligence-graph" as const;
 export const F107_OPERATION_CODE = "pinned_fact_registry" as const;
-export const F107_CONTRACT_VERSION = "1.0.0" as const;
+export const F107_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F107PinnedCoreContextNodesExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F107PinnedCoreContextNodesExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F107PinnedCoreContextNodesConfig {
@@ -50,6 +47,17 @@ export interface F107PinnedCoreContextNodesInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F107PinnedCoreContextNodesAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F107_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F107PinnedCoreContextNodesOutput {
   readonly featureId: typeof F107_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F107PinnedCoreContextNodesOutput {
   readonly resolved_pinned_node_ids: string | number;
   readonly resolved_immutable_rules: string | number | boolean | readonly string[];
   readonly resolved_always_injected: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F107PinnedCoreContextNodesAuditEntry;
-}
-
-export interface F107PinnedCoreContextNodesAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F107_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F107PinnedCoreContextNodesTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F107_CONFIG: F107PinnedCoreContextNodesConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F107PinnedCoreContextNodesValidationError extends Error {
@@ -109,40 +108,36 @@ export class F107PinnedCoreContextNodesValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F107 provenance & audit integrity.
- */
 export function computeF107Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f107_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f107_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F107: Закрепление ядерных фактов (Pinned Context Nodes)
- * Фиксация неизменяемых правил проекта (стек, брендбук, ограничения), всегда присутствующих в контексте
- */
 export class F107PinnedCoreContextNodesEngine {
   private readonly config: F107PinnedCoreContextNodesConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F107PinnedCoreContextNodesOutput[] = [];
   private readonly auditLog: F107PinnedCoreContextNodesAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F107PinnedCoreContextNodesOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F107PinnedCoreContextNodesConfig>) {
+  constructor(customConfig?: Partial<F107PinnedCoreContextNodesConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F107_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F107PinnedCoreContextNodesConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F107PinnedCoreContextNodesInput): void {
@@ -158,8 +153,24 @@ export class F107PinnedCoreContextNodesEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F107PinnedCoreContextNodesValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F107PinnedCoreContextNodesValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F107PinnedCoreContextNodesValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.workspace_id).trim().length === 0) {
       throw new F107PinnedCoreContextNodesValidationError("workspace_id", "Primary domain attribute 'workspace_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      workspace_id: input.workspace_id,
+      pinned_node_ids: input.pinned_node_ids,
+      immutable_rules: input.immutable_rules,
+      always_injected: input.always_injected
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F107PinnedCoreContextNodesValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F107PinnedCoreContextNodesEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f107_${this.totalRuns}_${computeF107Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F107_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        workspace_id: input.workspace_id,
+        pinned_node_ids: input.pinned_node_ids,
+        immutable_rules: input.immutable_rules,
+        always_injected: input.always_injected
+      });
+      const payloadHash = computeF107Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F107PinnedCoreContextNodesValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F107_FEATURE_ID,
+        operationCode: F107_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        workspace_id: input.workspace_id,
-        pinned_node_ids: input.pinned_node_ids,
-        immutable_rules: input.immutable_rules,
-        always_injected: input.always_injected,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          workspace_id: input.workspace_id,
+          pinned_node_ids: input.pinned_node_ids,
+          immutable_rules: input.immutable_rules,
+          always_injected: input.always_injected
+        }
       });
 
-      const provenanceDigest = computeF107Digest(canonicalPayload);
+      const executionId = `exec_f107_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f107_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F107PinnedCoreContextNodesAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F107_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F107PinnedCoreContextNodesEngine {
         actorId: input.actorId,
         action: `pinned_fact_registry:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F107PinnedCoreContextNodesEngine {
         executionId,
         status: "completed",
         operationCode: F107_OPERATION_CODE,
-        resolved_workspace_id: input.workspace_id,
-        resolved_pinned_node_ids: input.pinned_node_ids,
-        resolved_immutable_rules: input.immutable_rules,
-        resolved_always_injected: input.always_injected,
+        resolved_workspace_id: kernelResult.resolvedFields.workspace_id as string,
+        resolved_pinned_node_ids: kernelResult.resolvedFields.pinned_node_ids as string | number,
+        resolved_immutable_rules: kernelResult.resolvedFields.immutable_rules as string | number | boolean | readonly string[],
+        resolved_always_injected: kernelResult.resolvedFields.always_injected as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F107PinnedCoreContextNodesEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F107PinnedCoreContextNodesEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F107 (Закрепление ядерных фактов (Pinned Context Nodes))
- */
 export function verifyF107Module(): {
   featureId: typeof F107_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF107Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    workspace_id: "f107_workspace_id_verified",
-    pinned_node_ids: 100,
+    workspace_id: "f107_workspace_id_seed",
+    pinned_node_ids: 42,
     immutable_rules: true,
-    always_injected: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 107 },
+    always_injected: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 107 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F107" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_workspace_id !== sampleInput.workspace_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F107_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

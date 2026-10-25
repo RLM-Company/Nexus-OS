@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F101
- * ============================================================================
- * Feature ID: F101
- * Stage: stage4-intelligence-graph
- * Title: Инжектор графового контекста в промпт (Graph Context Injector)
- * Description: Автоматическое подтягивание релевантных узлов графа в системный промпт при старте новой ветки чата
+ * F101 (stage4-intelligence-graph): Инжектор графового контекста в промпт (Graph Context Injector)
+ * Автоматическое подтягивание релевантных узлов графа в системный промпт при старте новой ветки чата
  * Operation Code: prompt_graph_injector
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F101_FEATURE_ID = "F101" as const;
 export const F101_STAGE = "stage4-intelligence-graph" as const;
 export const F101_OPERATION_CODE = "prompt_graph_injector" as const;
-export const F101_CONTRACT_VERSION = "1.0.0" as const;
+export const F101_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F101GraphContextPromptInjectorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F101GraphContextPromptInjectorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F101GraphContextPromptInjectorConfig {
@@ -50,6 +47,17 @@ export interface F101GraphContextPromptInjectorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F101GraphContextPromptInjectorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F101_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F101GraphContextPromptInjectorOutput {
   readonly featureId: typeof F101_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F101GraphContextPromptInjectorOutput {
   readonly resolved_injected_nodes_count: string | number;
   readonly resolved_augmented_system_prompt: string | number | boolean | readonly string[];
   readonly resolved_token_overhead: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F101GraphContextPromptInjectorAuditEntry;
-}
-
-export interface F101GraphContextPromptInjectorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F101_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F101GraphContextPromptInjectorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F101_CONFIG: F101GraphContextPromptInjectorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F101GraphContextPromptInjectorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F101GraphContextPromptInjectorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F101 provenance & audit integrity.
- */
 export function computeF101Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f101_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f101_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F101: Инжектор графового контекста в промпт (Graph Context Injector)
- * Автоматическое подтягивание релевантных узлов графа в системный промпт при старте новой ветки чата
- */
 export class F101GraphContextPromptInjectorEngine {
   private readonly config: F101GraphContextPromptInjectorConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F101GraphContextPromptInjectorOutput[] = [];
   private readonly auditLog: F101GraphContextPromptInjectorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F101GraphContextPromptInjectorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F101GraphContextPromptInjectorConfig>) {
+  constructor(customConfig?: Partial<F101GraphContextPromptInjectorConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F101_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F101GraphContextPromptInjectorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F101GraphContextPromptInjectorInput): void {
@@ -158,8 +153,24 @@ export class F101GraphContextPromptInjectorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F101GraphContextPromptInjectorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F101GraphContextPromptInjectorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F101GraphContextPromptInjectorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.workspace_id).trim().length === 0) {
       throw new F101GraphContextPromptInjectorValidationError("workspace_id", "Primary domain attribute 'workspace_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      workspace_id: input.workspace_id,
+      injected_nodes_count: input.injected_nodes_count,
+      augmented_system_prompt: input.augmented_system_prompt,
+      token_overhead: input.token_overhead
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F101GraphContextPromptInjectorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F101GraphContextPromptInjectorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f101_${this.totalRuns}_${computeF101Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F101_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        workspace_id: input.workspace_id,
+        injected_nodes_count: input.injected_nodes_count,
+        augmented_system_prompt: input.augmented_system_prompt,
+        token_overhead: input.token_overhead
+      });
+      const payloadHash = computeF101Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F101GraphContextPromptInjectorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F101_FEATURE_ID,
+        operationCode: F101_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        workspace_id: input.workspace_id,
-        injected_nodes_count: input.injected_nodes_count,
-        augmented_system_prompt: input.augmented_system_prompt,
-        token_overhead: input.token_overhead,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          workspace_id: input.workspace_id,
+          injected_nodes_count: input.injected_nodes_count,
+          augmented_system_prompt: input.augmented_system_prompt,
+          token_overhead: input.token_overhead
+        }
       });
 
-      const provenanceDigest = computeF101Digest(canonicalPayload);
+      const executionId = `exec_f101_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f101_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F101GraphContextPromptInjectorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F101_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F101GraphContextPromptInjectorEngine {
         actorId: input.actorId,
         action: `prompt_graph_injector:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F101GraphContextPromptInjectorEngine {
         executionId,
         status: "completed",
         operationCode: F101_OPERATION_CODE,
-        resolved_workspace_id: input.workspace_id,
-        resolved_injected_nodes_count: input.injected_nodes_count,
-        resolved_augmented_system_prompt: input.augmented_system_prompt,
-        resolved_token_overhead: input.token_overhead,
+        resolved_workspace_id: kernelResult.resolvedFields.workspace_id as string,
+        resolved_injected_nodes_count: kernelResult.resolvedFields.injected_nodes_count as string | number,
+        resolved_augmented_system_prompt: kernelResult.resolvedFields.augmented_system_prompt as string | number | boolean | readonly string[],
+        resolved_token_overhead: kernelResult.resolvedFields.token_overhead as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F101GraphContextPromptInjectorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F101GraphContextPromptInjectorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F101 (Инжектор графового контекста в промпт (Graph Context Injector))
- */
 export function verifyF101Module(): {
   featureId: typeof F101_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF101Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    workspace_id: "f101_workspace_id_verified",
-    injected_nodes_count: 100,
+    workspace_id: "f101_workspace_id_seed",
+    injected_nodes_count: 42,
     augmented_system_prompt: true,
-    token_overhead: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 101 },
+    token_overhead: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 101 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F101" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_workspace_id !== sampleInput.workspace_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F101_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F153
- * ============================================================================
- * Feature ID: F153
- * Stage: stage5-enterprise
- * Title: Политики хранения и автоочистки данных (Data Retention)
- * Description: Автоматическое архивирование или удаление временных логов по расписанию
+ * F153 (stage5-enterprise): Политики хранения и автоочистки данных (Data Retention)
+ * Автоматическое архивирование или удаление временных логов по расписанию
  * Operation Code: retention_policy_sweeper
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F153_FEATURE_ID = "F153" as const;
 export const F153_STAGE = "stage5-enterprise" as const;
 export const F153_OPERATION_CODE = "retention_policy_sweeper" as const;
-export const F153_CONTRACT_VERSION = "1.0.0" as const;
+export const F153_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F153DataRetentionAutoCleanupExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F153DataRetentionAutoCleanupExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F153DataRetentionAutoCleanupConfig {
@@ -50,6 +47,17 @@ export interface F153DataRetentionAutoCleanupInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F153DataRetentionAutoCleanupAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F153_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F153DataRetentionAutoCleanupOutput {
   readonly featureId: typeof F153_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F153DataRetentionAutoCleanupOutput {
   readonly resolved_max_age_days: string | number;
   readonly resolved_purged_records_count: string | number | boolean | readonly string[];
   readonly resolved_archived_records_count: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F153DataRetentionAutoCleanupAuditEntry;
-}
-
-export interface F153DataRetentionAutoCleanupAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F153_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F153DataRetentionAutoCleanupTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F153_CONFIG: F153DataRetentionAutoCleanupConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F153DataRetentionAutoCleanupValidationError extends Error {
@@ -109,40 +108,36 @@ export class F153DataRetentionAutoCleanupValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F153 provenance & audit integrity.
- */
 export function computeF153Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f153_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f153_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F153: Политики хранения и автоочистки данных (Data Retention)
- * Автоматическое архивирование или удаление временных логов по расписанию
- */
 export class F153DataRetentionAutoCleanupEngine {
   private readonly config: F153DataRetentionAutoCleanupConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F153DataRetentionAutoCleanupOutput[] = [];
   private readonly auditLog: F153DataRetentionAutoCleanupAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F153DataRetentionAutoCleanupOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F153DataRetentionAutoCleanupConfig>) {
+  constructor(customConfig?: Partial<F153DataRetentionAutoCleanupConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F153_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F153DataRetentionAutoCleanupConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F153DataRetentionAutoCleanupInput): void {
@@ -158,8 +153,24 @@ export class F153DataRetentionAutoCleanupEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F153DataRetentionAutoCleanupValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F153DataRetentionAutoCleanupValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F153DataRetentionAutoCleanupValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.policy_id).trim().length === 0) {
       throw new F153DataRetentionAutoCleanupValidationError("policy_id", "Primary domain attribute 'policy_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      policy_id: input.policy_id,
+      max_age_days: input.max_age_days,
+      purged_records_count: input.purged_records_count,
+      archived_records_count: input.archived_records_count
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F153DataRetentionAutoCleanupValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F153DataRetentionAutoCleanupEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f153_${this.totalRuns}_${computeF153Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F153_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        policy_id: input.policy_id,
+        max_age_days: input.max_age_days,
+        purged_records_count: input.purged_records_count,
+        archived_records_count: input.archived_records_count
+      });
+      const payloadHash = computeF153Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F153DataRetentionAutoCleanupValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F153_FEATURE_ID,
+        operationCode: F153_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        policy_id: input.policy_id,
-        max_age_days: input.max_age_days,
-        purged_records_count: input.purged_records_count,
-        archived_records_count: input.archived_records_count,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          policy_id: input.policy_id,
+          max_age_days: input.max_age_days,
+          purged_records_count: input.purged_records_count,
+          archived_records_count: input.archived_records_count
+        }
       });
 
-      const provenanceDigest = computeF153Digest(canonicalPayload);
+      const executionId = `exec_f153_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f153_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F153DataRetentionAutoCleanupAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F153_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F153DataRetentionAutoCleanupEngine {
         actorId: input.actorId,
         action: `retention_policy_sweeper:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F153DataRetentionAutoCleanupEngine {
         executionId,
         status: "completed",
         operationCode: F153_OPERATION_CODE,
-        resolved_policy_id: input.policy_id,
-        resolved_max_age_days: input.max_age_days,
-        resolved_purged_records_count: input.purged_records_count,
-        resolved_archived_records_count: input.archived_records_count,
+        resolved_policy_id: kernelResult.resolvedFields.policy_id as string,
+        resolved_max_age_days: kernelResult.resolvedFields.max_age_days as string | number,
+        resolved_purged_records_count: kernelResult.resolvedFields.purged_records_count as string | number | boolean | readonly string[],
+        resolved_archived_records_count: kernelResult.resolvedFields.archived_records_count as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F153DataRetentionAutoCleanupEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F153DataRetentionAutoCleanupEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F153 (Политики хранения и автоочистки данных (Data Retention))
- */
 export function verifyF153Module(): {
   featureId: typeof F153_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF153Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    policy_id: "f153_policy_id_verified",
-    max_age_days: 100,
+    policy_id: "f153_policy_id_seed",
+    max_age_days: 42,
     purged_records_count: true,
-    archived_records_count: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 153 },
+    archived_records_count: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 153 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F153" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_policy_id !== sampleInput.policy_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F153_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

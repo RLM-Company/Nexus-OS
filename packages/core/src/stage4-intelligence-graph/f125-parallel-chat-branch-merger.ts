@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F125
- * ============================================================================
- * Feature ID: F125
- * Stage: stage4-intelligence-graph
- * Title: Слияние выводов из параллельных веток чата
- * Description: Перенос финального артефакта из экспериментальной ветки обратно в основную
+ * F125 (stage4-intelligence-graph): Слияние выводов из параллельных веток чата
+ * Перенос финального артефакта из экспериментальной ветки обратно в основную
  * Operation Code: chat_branch_merger
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F125_FEATURE_ID = "F125" as const;
 export const F125_STAGE = "stage4-intelligence-graph" as const;
 export const F125_OPERATION_CODE = "chat_branch_merger" as const;
-export const F125_CONTRACT_VERSION = "1.0.0" as const;
+export const F125_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F125ParallelChatBranchMergerExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F125ParallelChatBranchMergerExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F125ParallelChatBranchMergerConfig {
@@ -50,6 +47,17 @@ export interface F125ParallelChatBranchMergerInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F125ParallelChatBranchMergerAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F125_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F125ParallelChatBranchMergerOutput {
   readonly featureId: typeof F125_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F125ParallelChatBranchMergerOutput {
   readonly resolved_target_branch_id: string | number;
   readonly resolved_promoted_artifact_id: string | number | boolean | readonly string[];
   readonly resolved_merge_commit_id: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F125ParallelChatBranchMergerAuditEntry;
-}
-
-export interface F125ParallelChatBranchMergerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F125_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F125ParallelChatBranchMergerTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F125_CONFIG: F125ParallelChatBranchMergerConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F125ParallelChatBranchMergerValidationError extends Error {
@@ -109,40 +108,36 @@ export class F125ParallelChatBranchMergerValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F125 provenance & audit integrity.
- */
 export function computeF125Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f125_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f125_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F125: Слияние выводов из параллельных веток чата
- * Перенос финального артефакта из экспериментальной ветки обратно в основную
- */
 export class F125ParallelChatBranchMergerEngine {
   private readonly config: F125ParallelChatBranchMergerConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F125ParallelChatBranchMergerOutput[] = [];
   private readonly auditLog: F125ParallelChatBranchMergerAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F125ParallelChatBranchMergerOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F125ParallelChatBranchMergerConfig>) {
+  constructor(customConfig?: Partial<F125ParallelChatBranchMergerConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F125_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F125ParallelChatBranchMergerConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F125ParallelChatBranchMergerInput): void {
@@ -158,8 +153,24 @@ export class F125ParallelChatBranchMergerEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F125ParallelChatBranchMergerValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F125ParallelChatBranchMergerValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F125ParallelChatBranchMergerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.source_branch_id).trim().length === 0) {
       throw new F125ParallelChatBranchMergerValidationError("source_branch_id", "Primary domain attribute 'source_branch_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      source_branch_id: input.source_branch_id,
+      target_branch_id: input.target_branch_id,
+      promoted_artifact_id: input.promoted_artifact_id,
+      merge_commit_id: input.merge_commit_id
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F125ParallelChatBranchMergerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F125ParallelChatBranchMergerEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f125_${this.totalRuns}_${computeF125Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F125_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        source_branch_id: input.source_branch_id,
+        target_branch_id: input.target_branch_id,
+        promoted_artifact_id: input.promoted_artifact_id,
+        merge_commit_id: input.merge_commit_id
+      });
+      const payloadHash = computeF125Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F125ParallelChatBranchMergerValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F125_FEATURE_ID,
+        operationCode: F125_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        source_branch_id: input.source_branch_id,
-        target_branch_id: input.target_branch_id,
-        promoted_artifact_id: input.promoted_artifact_id,
-        merge_commit_id: input.merge_commit_id,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          source_branch_id: input.source_branch_id,
+          target_branch_id: input.target_branch_id,
+          promoted_artifact_id: input.promoted_artifact_id,
+          merge_commit_id: input.merge_commit_id
+        }
       });
 
-      const provenanceDigest = computeF125Digest(canonicalPayload);
+      const executionId = `exec_f125_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f125_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F125ParallelChatBranchMergerAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F125_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F125ParallelChatBranchMergerEngine {
         actorId: input.actorId,
         action: `chat_branch_merger:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F125ParallelChatBranchMergerEngine {
         executionId,
         status: "completed",
         operationCode: F125_OPERATION_CODE,
-        resolved_source_branch_id: input.source_branch_id,
-        resolved_target_branch_id: input.target_branch_id,
-        resolved_promoted_artifact_id: input.promoted_artifact_id,
-        resolved_merge_commit_id: input.merge_commit_id,
+        resolved_source_branch_id: kernelResult.resolvedFields.source_branch_id as string,
+        resolved_target_branch_id: kernelResult.resolvedFields.target_branch_id as string | number,
+        resolved_promoted_artifact_id: kernelResult.resolvedFields.promoted_artifact_id as string | number | boolean | readonly string[],
+        resolved_merge_commit_id: kernelResult.resolvedFields.merge_commit_id as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F125ParallelChatBranchMergerEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F125ParallelChatBranchMergerEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F125 (Слияние выводов из параллельных веток чата)
- */
 export function verifyF125Module(): {
   featureId: typeof F125_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF125Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    source_branch_id: "f125_source_branch_id_verified",
-    target_branch_id: 100,
+    source_branch_id: "f125_source_branch_id_seed",
+    target_branch_id: 42,
     promoted_artifact_id: true,
-    merge_commit_id: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 125 },
+    merge_commit_id: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 125 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F125" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_source_branch_id !== sampleInput.source_branch_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F125_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

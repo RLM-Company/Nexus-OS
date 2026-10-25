@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F110
- * ============================================================================
- * Feature ID: F110
- * Stage: stage4-intelligence-graph
- * Title: Кросс-документное связывание цитат
- * Description: Обнаружение общих тем и противоречий между десятками разных PDF и таблиц в воркспейсе
+ * F110 (stage4-intelligence-graph): Кросс-документное связывание цитат
+ * Обнаружение общих тем и противоречий между десятками разных PDF и таблиц в воркспейсе
  * Operation Code: cross_doc_correlator
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F110_FEATURE_ID = "F110" as const;
 export const F110_STAGE = "stage4-intelligence-graph" as const;
 export const F110_OPERATION_CODE = "cross_doc_correlator" as const;
-export const F110_CONTRACT_VERSION = "1.0.0" as const;
+export const F110_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F110CrossDocumentCitationLinkerExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F110CrossDocumentCitationLinkerExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F110CrossDocumentCitationLinkerConfig {
@@ -50,6 +47,17 @@ export interface F110CrossDocumentCitationLinkerInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F110CrossDocumentCitationLinkerAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F110_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F110CrossDocumentCitationLinkerOutput {
   readonly featureId: typeof F110_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F110CrossDocumentCitationLinkerOutput {
   readonly resolved_corroborating_docs: string | number;
   readonly resolved_contradicting_pairs: string | number | boolean | readonly string[];
   readonly resolved_consensus_summary: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F110CrossDocumentCitationLinkerAuditEntry;
-}
-
-export interface F110CrossDocumentCitationLinkerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F110_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F110CrossDocumentCitationLinkerTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F110_CONFIG: F110CrossDocumentCitationLinkerConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F110CrossDocumentCitationLinkerValidationError extends Error {
@@ -109,40 +108,36 @@ export class F110CrossDocumentCitationLinkerValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F110 provenance & audit integrity.
- */
 export function computeF110Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f110_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f110_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F110: Кросс-документное связывание цитат
- * Обнаружение общих тем и противоречий между десятками разных PDF и таблиц в воркспейсе
- */
 export class F110CrossDocumentCitationLinkerEngine {
   private readonly config: F110CrossDocumentCitationLinkerConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F110CrossDocumentCitationLinkerOutput[] = [];
   private readonly auditLog: F110CrossDocumentCitationLinkerAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F110CrossDocumentCitationLinkerOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F110CrossDocumentCitationLinkerConfig>) {
+  constructor(customConfig?: Partial<F110CrossDocumentCitationLinkerConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F110_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F110CrossDocumentCitationLinkerConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F110CrossDocumentCitationLinkerInput): void {
@@ -158,8 +153,24 @@ export class F110CrossDocumentCitationLinkerEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F110CrossDocumentCitationLinkerValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F110CrossDocumentCitationLinkerValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F110CrossDocumentCitationLinkerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.cluster_id).trim().length === 0) {
       throw new F110CrossDocumentCitationLinkerValidationError("cluster_id", "Primary domain attribute 'cluster_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      cluster_id: input.cluster_id,
+      corroborating_docs: input.corroborating_docs,
+      contradicting_pairs: input.contradicting_pairs,
+      consensus_summary: input.consensus_summary
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F110CrossDocumentCitationLinkerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F110CrossDocumentCitationLinkerEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f110_${this.totalRuns}_${computeF110Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F110_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        cluster_id: input.cluster_id,
+        corroborating_docs: input.corroborating_docs,
+        contradicting_pairs: input.contradicting_pairs,
+        consensus_summary: input.consensus_summary
+      });
+      const payloadHash = computeF110Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F110CrossDocumentCitationLinkerValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F110_FEATURE_ID,
+        operationCode: F110_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        cluster_id: input.cluster_id,
-        corroborating_docs: input.corroborating_docs,
-        contradicting_pairs: input.contradicting_pairs,
-        consensus_summary: input.consensus_summary,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          cluster_id: input.cluster_id,
+          corroborating_docs: input.corroborating_docs,
+          contradicting_pairs: input.contradicting_pairs,
+          consensus_summary: input.consensus_summary
+        }
       });
 
-      const provenanceDigest = computeF110Digest(canonicalPayload);
+      const executionId = `exec_f110_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f110_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F110CrossDocumentCitationLinkerAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F110_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F110CrossDocumentCitationLinkerEngine {
         actorId: input.actorId,
         action: `cross_doc_correlator:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F110CrossDocumentCitationLinkerEngine {
         executionId,
         status: "completed",
         operationCode: F110_OPERATION_CODE,
-        resolved_cluster_id: input.cluster_id,
-        resolved_corroborating_docs: input.corroborating_docs,
-        resolved_contradicting_pairs: input.contradicting_pairs,
-        resolved_consensus_summary: input.consensus_summary,
+        resolved_cluster_id: kernelResult.resolvedFields.cluster_id as string,
+        resolved_corroborating_docs: kernelResult.resolvedFields.corroborating_docs as string | number,
+        resolved_contradicting_pairs: kernelResult.resolvedFields.contradicting_pairs as string | number | boolean | readonly string[],
+        resolved_consensus_summary: kernelResult.resolvedFields.consensus_summary as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F110CrossDocumentCitationLinkerEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F110CrossDocumentCitationLinkerEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F110 (Кросс-документное связывание цитат)
- */
 export function verifyF110Module(): {
   featureId: typeof F110_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF110Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    cluster_id: "f110_cluster_id_verified",
-    corroborating_docs: 100,
+    cluster_id: "f110_cluster_id_seed",
+    corroborating_docs: 42,
     contradicting_pairs: true,
-    consensus_summary: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 110 },
+    consensus_summary: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 110 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F110" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_cluster_id !== sampleInput.cluster_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F110_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

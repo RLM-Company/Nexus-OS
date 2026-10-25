@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F045
- * ============================================================================
- * Feature ID: F045
- * Stage: stage2-canvas
- * Title: Множественные вкладки артефактов (Multi-Tab Canvas)
- * Description: Одновременное удержание открытыми кода, презентации и аналитической записки в одной сессии
+ * F045 (stage2-canvas): Множественные вкладки артефактов (Multi-Tab Canvas)
+ * Одновременное удержание открытыми кода, презентации и аналитической записки в одной сессии
  * Operation Code: multitab_controller
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F045_FEATURE_ID = "F045" as const;
 export const F045_STAGE = "stage2-canvas" as const;
 export const F045_OPERATION_CODE = "multitab_controller" as const;
-export const F045_CONTRACT_VERSION = "1.0.0" as const;
+export const F045_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F045MultitabCanvasManagerExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F045MultitabCanvasManagerExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F045MultitabCanvasManagerConfig {
@@ -50,6 +47,17 @@ export interface F045MultitabCanvasManagerInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F045MultitabCanvasManagerAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F045_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F045MultitabCanvasManagerOutput {
   readonly featureId: typeof F045_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F045MultitabCanvasManagerOutput {
   readonly resolved_open_tab_ids: string | number;
   readonly resolved_active_tab_id: string | number | boolean | readonly string[];
   readonly resolved_pinned_tab_ids: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F045MultitabCanvasManagerAuditEntry;
-}
-
-export interface F045MultitabCanvasManagerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F045_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F045MultitabCanvasManagerTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F045_CONFIG: F045MultitabCanvasManagerConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F045MultitabCanvasManagerValidationError extends Error {
@@ -109,40 +108,36 @@ export class F045MultitabCanvasManagerValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F045 provenance & audit integrity.
- */
 export function computeF045Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f045_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f045_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F045: Множественные вкладки артефактов (Multi-Tab Canvas)
- * Одновременное удержание открытыми кода, презентации и аналитической записки в одной сессии
- */
 export class F045MultitabCanvasManagerEngine {
   private readonly config: F045MultitabCanvasManagerConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F045MultitabCanvasManagerOutput[] = [];
   private readonly auditLog: F045MultitabCanvasManagerAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F045MultitabCanvasManagerOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F045MultitabCanvasManagerConfig>) {
+  constructor(customConfig?: Partial<F045MultitabCanvasManagerConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F045_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F045MultitabCanvasManagerConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F045MultitabCanvasManagerInput): void {
@@ -158,8 +153,24 @@ export class F045MultitabCanvasManagerEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F045MultitabCanvasManagerValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F045MultitabCanvasManagerValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F045MultitabCanvasManagerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.workspace_id).trim().length === 0) {
       throw new F045MultitabCanvasManagerValidationError("workspace_id", "Primary domain attribute 'workspace_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      workspace_id: input.workspace_id,
+      open_tab_ids: input.open_tab_ids,
+      active_tab_id: input.active_tab_id,
+      pinned_tab_ids: input.pinned_tab_ids
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F045MultitabCanvasManagerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F045MultitabCanvasManagerEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f045_${this.totalRuns}_${computeF045Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F045_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        workspace_id: input.workspace_id,
+        open_tab_ids: input.open_tab_ids,
+        active_tab_id: input.active_tab_id,
+        pinned_tab_ids: input.pinned_tab_ids
+      });
+      const payloadHash = computeF045Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F045MultitabCanvasManagerValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F045_FEATURE_ID,
+        operationCode: F045_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        workspace_id: input.workspace_id,
-        open_tab_ids: input.open_tab_ids,
-        active_tab_id: input.active_tab_id,
-        pinned_tab_ids: input.pinned_tab_ids,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          workspace_id: input.workspace_id,
+          open_tab_ids: input.open_tab_ids,
+          active_tab_id: input.active_tab_id,
+          pinned_tab_ids: input.pinned_tab_ids
+        }
       });
 
-      const provenanceDigest = computeF045Digest(canonicalPayload);
+      const executionId = `exec_f045_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f045_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F045MultitabCanvasManagerAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F045_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F045MultitabCanvasManagerEngine {
         actorId: input.actorId,
         action: `multitab_controller:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F045MultitabCanvasManagerEngine {
         executionId,
         status: "completed",
         operationCode: F045_OPERATION_CODE,
-        resolved_workspace_id: input.workspace_id,
-        resolved_open_tab_ids: input.open_tab_ids,
-        resolved_active_tab_id: input.active_tab_id,
-        resolved_pinned_tab_ids: input.pinned_tab_ids,
+        resolved_workspace_id: kernelResult.resolvedFields.workspace_id as string,
+        resolved_open_tab_ids: kernelResult.resolvedFields.open_tab_ids as string | number,
+        resolved_active_tab_id: kernelResult.resolvedFields.active_tab_id as string | number | boolean | readonly string[],
+        resolved_pinned_tab_ids: kernelResult.resolvedFields.pinned_tab_ids as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F045MultitabCanvasManagerEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F045MultitabCanvasManagerEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F045 (Множественные вкладки артефактов (Multi-Tab Canvas))
- */
 export function verifyF045Module(): {
   featureId: typeof F045_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF045Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    workspace_id: "f045_workspace_id_verified",
-    open_tab_ids: 100,
+    workspace_id: "f045_workspace_id_seed",
+    open_tab_ids: 42,
     active_tab_id: true,
-    pinned_tab_ids: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 45 },
+    pinned_tab_ids: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 45 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F045" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_workspace_id !== sampleInput.workspace_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F045_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

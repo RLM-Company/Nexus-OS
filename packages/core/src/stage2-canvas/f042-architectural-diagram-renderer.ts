@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F042
- * ============================================================================
- * Feature ID: F042
- * Stage: stage2-canvas
- * Title: Рендеринг архитектурных диаграмм (Mermaid / D2 / Flow)
- * Description: Интерактивная отрисовка блок-схем и графов с зумом и экспортом в SVG/PNG
+ * F042 (stage2-canvas): Рендеринг архитектурных диаграмм (Mermaid / D2 / Flow)
+ * Интерактивная отрисовка блок-схем и графов с зумом и экспортом в SVG/PNG
  * Operation Code: diagram_renderer
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F042_FEATURE_ID = "F042" as const;
 export const F042_STAGE = "stage2-canvas" as const;
 export const F042_OPERATION_CODE = "diagram_renderer" as const;
-export const F042_CONTRACT_VERSION = "1.0.0" as const;
+export const F042_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F042ArchitecturalDiagramRendererExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F042ArchitecturalDiagramRendererExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F042ArchitecturalDiagramRendererConfig {
@@ -50,6 +47,17 @@ export interface F042ArchitecturalDiagramRendererInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F042ArchitecturalDiagramRendererAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F042_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F042ArchitecturalDiagramRendererOutput {
   readonly featureId: typeof F042_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F042ArchitecturalDiagramRendererOutput {
   readonly resolved_dsl_engine: string | number;
   readonly resolved_nodes_rendered: string | number | boolean | readonly string[];
   readonly resolved_svg_payload: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F042ArchitecturalDiagramRendererAuditEntry;
-}
-
-export interface F042ArchitecturalDiagramRendererAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F042_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F042ArchitecturalDiagramRendererTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F042_CONFIG: F042ArchitecturalDiagramRendererConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F042ArchitecturalDiagramRendererValidationError extends Error {
@@ -109,40 +108,36 @@ export class F042ArchitecturalDiagramRendererValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F042 provenance & audit integrity.
- */
 export function computeF042Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f042_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f042_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F042: Рендеринг архитектурных диаграмм (Mermaid / D2 / Flow)
- * Интерактивная отрисовка блок-схем и графов с зумом и экспортом в SVG/PNG
- */
 export class F042ArchitecturalDiagramRendererEngine {
   private readonly config: F042ArchitecturalDiagramRendererConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F042ArchitecturalDiagramRendererOutput[] = [];
   private readonly auditLog: F042ArchitecturalDiagramRendererAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F042ArchitecturalDiagramRendererOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F042ArchitecturalDiagramRendererConfig>) {
+  constructor(customConfig?: Partial<F042ArchitecturalDiagramRendererConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F042_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F042ArchitecturalDiagramRendererConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F042ArchitecturalDiagramRendererInput): void {
@@ -158,8 +153,24 @@ export class F042ArchitecturalDiagramRendererEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F042ArchitecturalDiagramRendererValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F042ArchitecturalDiagramRendererValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F042ArchitecturalDiagramRendererValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.diagram_id).trim().length === 0) {
       throw new F042ArchitecturalDiagramRendererValidationError("diagram_id", "Primary domain attribute 'diagram_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      diagram_id: input.diagram_id,
+      dsl_engine: input.dsl_engine,
+      nodes_rendered: input.nodes_rendered,
+      svg_payload: input.svg_payload
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F042ArchitecturalDiagramRendererValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F042ArchitecturalDiagramRendererEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f042_${this.totalRuns}_${computeF042Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F042_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        diagram_id: input.diagram_id,
+        dsl_engine: input.dsl_engine,
+        nodes_rendered: input.nodes_rendered,
+        svg_payload: input.svg_payload
+      });
+      const payloadHash = computeF042Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F042ArchitecturalDiagramRendererValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F042_FEATURE_ID,
+        operationCode: F042_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        diagram_id: input.diagram_id,
-        dsl_engine: input.dsl_engine,
-        nodes_rendered: input.nodes_rendered,
-        svg_payload: input.svg_payload,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          diagram_id: input.diagram_id,
+          dsl_engine: input.dsl_engine,
+          nodes_rendered: input.nodes_rendered,
+          svg_payload: input.svg_payload
+        }
       });
 
-      const provenanceDigest = computeF042Digest(canonicalPayload);
+      const executionId = `exec_f042_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f042_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F042ArchitecturalDiagramRendererAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F042_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F042ArchitecturalDiagramRendererEngine {
         actorId: input.actorId,
         action: `diagram_renderer:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F042ArchitecturalDiagramRendererEngine {
         executionId,
         status: "completed",
         operationCode: F042_OPERATION_CODE,
-        resolved_diagram_id: input.diagram_id,
-        resolved_dsl_engine: input.dsl_engine,
-        resolved_nodes_rendered: input.nodes_rendered,
-        resolved_svg_payload: input.svg_payload,
+        resolved_diagram_id: kernelResult.resolvedFields.diagram_id as string,
+        resolved_dsl_engine: kernelResult.resolvedFields.dsl_engine as string | number,
+        resolved_nodes_rendered: kernelResult.resolvedFields.nodes_rendered as string | number | boolean | readonly string[],
+        resolved_svg_payload: kernelResult.resolvedFields.svg_payload as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F042ArchitecturalDiagramRendererEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F042ArchitecturalDiagramRendererEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F042 (Рендеринг архитектурных диаграмм (Mermaid / D2 / Flow))
- */
 export function verifyF042Module(): {
   featureId: typeof F042_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF042Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    diagram_id: "f042_diagram_id_verified",
-    dsl_engine: 100,
+    diagram_id: "f042_diagram_id_seed",
+    dsl_engine: 42,
     nodes_rendered: true,
-    svg_payload: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 42 },
+    svg_payload: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 42 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F042" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_diagram_id !== sampleInput.diagram_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F042_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F003
- * ============================================================================
- * Feature ID: F003
- * Stage: stage1-autonomy
- * Title: Связывание рантайм-артефактов с графом задач
- * Description: Жёсткая привязка каждого сгенерированного файла или блока кода к конкретному узлу задачи
+ * F003 (stage1-autonomy): Связывание рантайм-артефактов с графом задач
+ * Жёсткая привязка каждого сгенерированного файла или блока кода к конкретному узлу задачи
  * Operation Code: artifact_binding
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F003_FEATURE_ID = "F003" as const;
 export const F003_STAGE = "stage1-autonomy" as const;
 export const F003_OPERATION_CODE = "artifact_binding" as const;
-export const F003_CONTRACT_VERSION = "1.0.0" as const;
+export const F003_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F003RuntimeArtifactTaskBindingExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F003RuntimeArtifactTaskBindingExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F003RuntimeArtifactTaskBindingConfig {
@@ -50,6 +47,17 @@ export interface F003RuntimeArtifactTaskBindingInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F003RuntimeArtifactTaskBindingAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F003_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F003RuntimeArtifactTaskBindingOutput {
   readonly featureId: typeof F003_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F003RuntimeArtifactTaskBindingOutput {
   readonly resolved_task_id: string | number;
   readonly resolved_graph_id: string | number | boolean | readonly string[];
   readonly resolved_producer_role: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F003RuntimeArtifactTaskBindingAuditEntry;
-}
-
-export interface F003RuntimeArtifactTaskBindingAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F003_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F003RuntimeArtifactTaskBindingTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F003_CONFIG: F003RuntimeArtifactTaskBindingConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F003RuntimeArtifactTaskBindingValidationError extends Error {
@@ -109,40 +108,36 @@ export class F003RuntimeArtifactTaskBindingValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F003 provenance & audit integrity.
- */
 export function computeF003Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f003_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f003_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F003: Связывание рантайм-артефактов с графом задач
- * Жёсткая привязка каждого сгенерированного файла или блока кода к конкретному узлу задачи
- */
 export class F003RuntimeArtifactTaskBindingEngine {
   private readonly config: F003RuntimeArtifactTaskBindingConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F003RuntimeArtifactTaskBindingOutput[] = [];
   private readonly auditLog: F003RuntimeArtifactTaskBindingAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F003RuntimeArtifactTaskBindingOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F003RuntimeArtifactTaskBindingConfig>) {
+  constructor(customConfig?: Partial<F003RuntimeArtifactTaskBindingConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F003_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F003RuntimeArtifactTaskBindingConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F003RuntimeArtifactTaskBindingInput): void {
@@ -158,8 +153,24 @@ export class F003RuntimeArtifactTaskBindingEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F003RuntimeArtifactTaskBindingValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F003RuntimeArtifactTaskBindingValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F003RuntimeArtifactTaskBindingValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.artifact_id).trim().length === 0) {
       throw new F003RuntimeArtifactTaskBindingValidationError("artifact_id", "Primary domain attribute 'artifact_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      artifact_id: input.artifact_id,
+      task_id: input.task_id,
+      graph_id: input.graph_id,
+      producer_role: input.producer_role
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F003RuntimeArtifactTaskBindingValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F003RuntimeArtifactTaskBindingEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f003_${this.totalRuns}_${computeF003Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F003_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        artifact_id: input.artifact_id,
+        task_id: input.task_id,
+        graph_id: input.graph_id,
+        producer_role: input.producer_role
+      });
+      const payloadHash = computeF003Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F003RuntimeArtifactTaskBindingValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F003_FEATURE_ID,
+        operationCode: F003_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        artifact_id: input.artifact_id,
-        task_id: input.task_id,
-        graph_id: input.graph_id,
-        producer_role: input.producer_role,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          artifact_id: input.artifact_id,
+          task_id: input.task_id,
+          graph_id: input.graph_id,
+          producer_role: input.producer_role
+        }
       });
 
-      const provenanceDigest = computeF003Digest(canonicalPayload);
+      const executionId = `exec_f003_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f003_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F003RuntimeArtifactTaskBindingAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F003_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F003RuntimeArtifactTaskBindingEngine {
         actorId: input.actorId,
         action: `artifact_binding:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F003RuntimeArtifactTaskBindingEngine {
         executionId,
         status: "completed",
         operationCode: F003_OPERATION_CODE,
-        resolved_artifact_id: input.artifact_id,
-        resolved_task_id: input.task_id,
-        resolved_graph_id: input.graph_id,
-        resolved_producer_role: input.producer_role,
+        resolved_artifact_id: kernelResult.resolvedFields.artifact_id as string,
+        resolved_task_id: kernelResult.resolvedFields.task_id as string | number,
+        resolved_graph_id: kernelResult.resolvedFields.graph_id as string | number | boolean | readonly string[],
+        resolved_producer_role: kernelResult.resolvedFields.producer_role as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F003RuntimeArtifactTaskBindingEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F003RuntimeArtifactTaskBindingEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F003 (Связывание рантайм-артефактов с графом задач)
- */
 export function verifyF003Module(): {
   featureId: typeof F003_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF003Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    artifact_id: "f003_artifact_id_verified",
-    task_id: 100,
+    artifact_id: "f003_artifact_id_seed",
+    task_id: 42,
     graph_id: true,
-    producer_role: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 3 },
+    producer_role: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 3 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F003" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_artifact_id !== sampleInput.artifact_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F003_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

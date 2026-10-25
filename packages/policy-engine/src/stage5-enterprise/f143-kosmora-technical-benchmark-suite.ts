@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F143
- * ============================================================================
- * Feature ID: F143
- * Stage: stage5-enterprise
- * Title: Сьют технических бенчмарков для Kosmora (Benchmark Suite)
- * Description: Автоматизированный прогон эталонных задач для замера точности, скорости и стоимости после коммита
+ * F143 (stage5-enterprise): Сьют технических бенчмарков для Kosmora (Benchmark Suite)
+ * Автоматизированный прогон эталонных задач для замера точности, скорости и стоимости после коммита
  * Operation Code: benchmark_harness
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F143_FEATURE_ID = "F143" as const;
 export const F143_STAGE = "stage5-enterprise" as const;
 export const F143_OPERATION_CODE = "benchmark_harness" as const;
-export const F143_CONTRACT_VERSION = "1.0.0" as const;
+export const F143_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F143KosmoraTechnicalBenchmarkSuiteExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F143KosmoraTechnicalBenchmarkSuiteExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F143KosmoraTechnicalBenchmarkSuiteConfig {
@@ -50,6 +47,17 @@ export interface F143KosmoraTechnicalBenchmarkSuiteInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F143KosmoraTechnicalBenchmarkSuiteAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F143_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F143KosmoraTechnicalBenchmarkSuiteOutput {
   readonly featureId: typeof F143_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F143KosmoraTechnicalBenchmarkSuiteOutput {
   readonly resolved_scenarios_executed: string | number;
   readonly resolved_accuracy_score_pct: string | number | boolean | readonly string[];
   readonly resolved_cost_per_run_usd: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F143KosmoraTechnicalBenchmarkSuiteAuditEntry;
-}
-
-export interface F143KosmoraTechnicalBenchmarkSuiteAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F143_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F143KosmoraTechnicalBenchmarkSuiteTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F143_CONFIG: F143KosmoraTechnicalBenchmarkSuiteConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F143KosmoraTechnicalBenchmarkSuiteValidationError extends Error {
@@ -109,40 +108,36 @@ export class F143KosmoraTechnicalBenchmarkSuiteValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F143 provenance & audit integrity.
- */
 export function computeF143Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f143_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f143_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F143: Сьют технических бенчмарков для Kosmora (Benchmark Suite)
- * Автоматизированный прогон эталонных задач для замера точности, скорости и стоимости после коммита
- */
 export class F143KosmoraTechnicalBenchmarkSuiteEngine {
   private readonly config: F143KosmoraTechnicalBenchmarkSuiteConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F143KosmoraTechnicalBenchmarkSuiteOutput[] = [];
   private readonly auditLog: F143KosmoraTechnicalBenchmarkSuiteAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F143KosmoraTechnicalBenchmarkSuiteOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F143KosmoraTechnicalBenchmarkSuiteConfig>) {
+  constructor(customConfig?: Partial<F143KosmoraTechnicalBenchmarkSuiteConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F143_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F143KosmoraTechnicalBenchmarkSuiteConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F143KosmoraTechnicalBenchmarkSuiteInput): void {
@@ -158,8 +153,24 @@ export class F143KosmoraTechnicalBenchmarkSuiteEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F143KosmoraTechnicalBenchmarkSuiteValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F143KosmoraTechnicalBenchmarkSuiteValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F143KosmoraTechnicalBenchmarkSuiteValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.suite_version).trim().length === 0) {
       throw new F143KosmoraTechnicalBenchmarkSuiteValidationError("suite_version", "Primary domain attribute 'suite_version' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      suite_version: input.suite_version,
+      scenarios_executed: input.scenarios_executed,
+      accuracy_score_pct: input.accuracy_score_pct,
+      cost_per_run_usd: input.cost_per_run_usd
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F143KosmoraTechnicalBenchmarkSuiteValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F143KosmoraTechnicalBenchmarkSuiteEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f143_${this.totalRuns}_${computeF143Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F143_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        suite_version: input.suite_version,
+        scenarios_executed: input.scenarios_executed,
+        accuracy_score_pct: input.accuracy_score_pct,
+        cost_per_run_usd: input.cost_per_run_usd
+      });
+      const payloadHash = computeF143Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F143KosmoraTechnicalBenchmarkSuiteValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F143_FEATURE_ID,
+        operationCode: F143_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        suite_version: input.suite_version,
-        scenarios_executed: input.scenarios_executed,
-        accuracy_score_pct: input.accuracy_score_pct,
-        cost_per_run_usd: input.cost_per_run_usd,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          suite_version: input.suite_version,
+          scenarios_executed: input.scenarios_executed,
+          accuracy_score_pct: input.accuracy_score_pct,
+          cost_per_run_usd: input.cost_per_run_usd
+        }
       });
 
-      const provenanceDigest = computeF143Digest(canonicalPayload);
+      const executionId = `exec_f143_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f143_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F143KosmoraTechnicalBenchmarkSuiteAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F143_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F143KosmoraTechnicalBenchmarkSuiteEngine {
         actorId: input.actorId,
         action: `benchmark_harness:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F143KosmoraTechnicalBenchmarkSuiteEngine {
         executionId,
         status: "completed",
         operationCode: F143_OPERATION_CODE,
-        resolved_suite_version: input.suite_version,
-        resolved_scenarios_executed: input.scenarios_executed,
-        resolved_accuracy_score_pct: input.accuracy_score_pct,
-        resolved_cost_per_run_usd: input.cost_per_run_usd,
+        resolved_suite_version: kernelResult.resolvedFields.suite_version as string,
+        resolved_scenarios_executed: kernelResult.resolvedFields.scenarios_executed as string | number,
+        resolved_accuracy_score_pct: kernelResult.resolvedFields.accuracy_score_pct as string | number | boolean | readonly string[],
+        resolved_cost_per_run_usd: kernelResult.resolvedFields.cost_per_run_usd as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F143KosmoraTechnicalBenchmarkSuiteEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F143KosmoraTechnicalBenchmarkSuiteEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F143 (Сьют технических бенчмарков для Kosmora (Benchmark Suite))
- */
 export function verifyF143Module(): {
   featureId: typeof F143_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF143Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    suite_version: "f143_suite_version_verified",
-    scenarios_executed: 100,
+    suite_version: "f143_suite_version_seed",
+    scenarios_executed: 42,
     accuracy_score_pct: true,
-    cost_per_run_usd: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 143 },
+    cost_per_run_usd: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 143 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F143" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_suite_version !== sampleInput.suite_version &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F143_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

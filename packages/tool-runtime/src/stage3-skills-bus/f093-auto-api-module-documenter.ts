@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F093
- * ============================================================================
- * Feature ID: F093
- * Stage: stage3-skills-bus
- * Title: Авто-документирование API и модулей
- * Description: Генерация актуальных README и JSDoc/Docstring по изменённым файлам
+ * F093 (stage3-skills-bus): Авто-документирование API и модулей
+ * Генерация актуальных README и JSDoc/Docstring по изменённым файлам
  * Operation Code: autodoc_generator
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F093_FEATURE_ID = "F093" as const;
 export const F093_STAGE = "stage3-skills-bus" as const;
 export const F093_OPERATION_CODE = "autodoc_generator" as const;
-export const F093_CONTRACT_VERSION = "1.0.0" as const;
+export const F093_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F093AutoApiModuleDocumenterExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F093AutoApiModuleDocumenterExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F093AutoApiModuleDocumenterConfig {
@@ -50,6 +47,17 @@ export interface F093AutoApiModuleDocumenterInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F093AutoApiModuleDocumenterAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F093_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F093AutoApiModuleDocumenterOutput {
   readonly featureId: typeof F093_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F093AutoApiModuleDocumenterOutput {
   readonly resolved_documented_exports: string | number;
   readonly resolved_generated_jsdoc: string | number | boolean | readonly string[];
   readonly resolved_readme_section: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F093AutoApiModuleDocumenterAuditEntry;
-}
-
-export interface F093AutoApiModuleDocumenterAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F093_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F093AutoApiModuleDocumenterTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F093_CONFIG: F093AutoApiModuleDocumenterConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F093AutoApiModuleDocumenterValidationError extends Error {
@@ -109,40 +108,36 @@ export class F093AutoApiModuleDocumenterValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F093 provenance & audit integrity.
- */
 export function computeF093Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f093_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f093_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F093: Авто-документирование API и модулей
- * Генерация актуальных README и JSDoc/Docstring по изменённым файлам
- */
 export class F093AutoApiModuleDocumenterEngine {
   private readonly config: F093AutoApiModuleDocumenterConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F093AutoApiModuleDocumenterOutput[] = [];
   private readonly auditLog: F093AutoApiModuleDocumenterAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F093AutoApiModuleDocumenterOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F093AutoApiModuleDocumenterConfig>) {
+  constructor(customConfig?: Partial<F093AutoApiModuleDocumenterConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F093_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F093AutoApiModuleDocumenterConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F093AutoApiModuleDocumenterInput): void {
@@ -158,8 +153,24 @@ export class F093AutoApiModuleDocumenterEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F093AutoApiModuleDocumenterValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F093AutoApiModuleDocumenterValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F093AutoApiModuleDocumenterValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.module_path).trim().length === 0) {
       throw new F093AutoApiModuleDocumenterValidationError("module_path", "Primary domain attribute 'module_path' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      module_path: input.module_path,
+      documented_exports: input.documented_exports,
+      generated_jsdoc: input.generated_jsdoc,
+      readme_section: input.readme_section
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F093AutoApiModuleDocumenterValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F093AutoApiModuleDocumenterEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f093_${this.totalRuns}_${computeF093Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F093_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        module_path: input.module_path,
+        documented_exports: input.documented_exports,
+        generated_jsdoc: input.generated_jsdoc,
+        readme_section: input.readme_section
+      });
+      const payloadHash = computeF093Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F093AutoApiModuleDocumenterValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F093_FEATURE_ID,
+        operationCode: F093_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        module_path: input.module_path,
-        documented_exports: input.documented_exports,
-        generated_jsdoc: input.generated_jsdoc,
-        readme_section: input.readme_section,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          module_path: input.module_path,
+          documented_exports: input.documented_exports,
+          generated_jsdoc: input.generated_jsdoc,
+          readme_section: input.readme_section
+        }
       });
 
-      const provenanceDigest = computeF093Digest(canonicalPayload);
+      const executionId = `exec_f093_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f093_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F093AutoApiModuleDocumenterAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F093_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F093AutoApiModuleDocumenterEngine {
         actorId: input.actorId,
         action: `autodoc_generator:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F093AutoApiModuleDocumenterEngine {
         executionId,
         status: "completed",
         operationCode: F093_OPERATION_CODE,
-        resolved_module_path: input.module_path,
-        resolved_documented_exports: input.documented_exports,
-        resolved_generated_jsdoc: input.generated_jsdoc,
-        resolved_readme_section: input.readme_section,
+        resolved_module_path: kernelResult.resolvedFields.module_path as string,
+        resolved_documented_exports: kernelResult.resolvedFields.documented_exports as string | number,
+        resolved_generated_jsdoc: kernelResult.resolvedFields.generated_jsdoc as string | number | boolean | readonly string[],
+        resolved_readme_section: kernelResult.resolvedFields.readme_section as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F093AutoApiModuleDocumenterEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F093AutoApiModuleDocumenterEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F093 (Авто-документирование API и модулей)
- */
 export function verifyF093Module(): {
   featureId: typeof F093_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF093Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    module_path: "f093_module_path_verified",
-    documented_exports: 100,
+    module_path: "f093_module_path_seed",
+    documented_exports: 42,
     generated_jsdoc: true,
-    readme_section: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 93 },
+    readme_section: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 93 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F093" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_module_path !== sampleInput.module_path &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F093_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F115
- * ============================================================================
- * Feature ID: F115
- * Stage: stage4-intelligence-graph
- * Title: Инспектор контекстного окна (Context Window X-Ray)
- * Description: Наглядная шкала того, сколько токенов занимают системный промпт, граф, файлы и история чата
+ * F115 (stage4-intelligence-graph): Инспектор контекстного окна (Context Window X-Ray)
+ * Наглядная шкала того, сколько токенов занимают системный промпт, граф, файлы и история чата
  * Operation Code: context_xray_telemetry
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F115_FEATURE_ID = "F115" as const;
 export const F115_STAGE = "stage4-intelligence-graph" as const;
 export const F115_OPERATION_CODE = "context_xray_telemetry" as const;
-export const F115_CONTRACT_VERSION = "1.0.0" as const;
+export const F115_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F115ContextWindowXrayInspectorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F115ContextWindowXrayInspectorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F115ContextWindowXrayInspectorConfig {
@@ -50,6 +47,17 @@ export interface F115ContextWindowXrayInspectorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F115ContextWindowXrayInspectorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F115_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F115ContextWindowXrayInspectorOutput {
   readonly featureId: typeof F115_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F115ContextWindowXrayInspectorOutput {
   readonly resolved_used_tokens: string | number;
   readonly resolved_utilization_pct: string | number | boolean | readonly string[];
   readonly resolved_segment_breakdown: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F115ContextWindowXrayInspectorAuditEntry;
-}
-
-export interface F115ContextWindowXrayInspectorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F115_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F115ContextWindowXrayInspectorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F115_CONFIG: F115ContextWindowXrayInspectorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F115ContextWindowXrayInspectorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F115ContextWindowXrayInspectorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F115 provenance & audit integrity.
- */
 export function computeF115Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f115_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f115_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F115: Инспектор контекстного окна (Context Window X-Ray)
- * Наглядная шкала того, сколько токенов занимают системный промпт, граф, файлы и история чата
- */
 export class F115ContextWindowXrayInspectorEngine {
   private readonly config: F115ContextWindowXrayInspectorConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F115ContextWindowXrayInspectorOutput[] = [];
   private readonly auditLog: F115ContextWindowXrayInspectorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F115ContextWindowXrayInspectorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F115ContextWindowXrayInspectorConfig>) {
+  constructor(customConfig?: Partial<F115ContextWindowXrayInspectorConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F115_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F115ContextWindowXrayInspectorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F115ContextWindowXrayInspectorInput): void {
@@ -158,8 +153,24 @@ export class F115ContextWindowXrayInspectorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F115ContextWindowXrayInspectorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F115ContextWindowXrayInspectorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F115ContextWindowXrayInspectorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.max_tokens).trim().length === 0) {
       throw new F115ContextWindowXrayInspectorValidationError("max_tokens", "Primary domain attribute 'max_tokens' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      max_tokens: input.max_tokens,
+      used_tokens: input.used_tokens,
+      utilization_pct: input.utilization_pct,
+      segment_breakdown: input.segment_breakdown
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F115ContextWindowXrayInspectorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F115ContextWindowXrayInspectorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f115_${this.totalRuns}_${computeF115Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F115_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        max_tokens: input.max_tokens,
+        used_tokens: input.used_tokens,
+        utilization_pct: input.utilization_pct,
+        segment_breakdown: input.segment_breakdown
+      });
+      const payloadHash = computeF115Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F115ContextWindowXrayInspectorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F115_FEATURE_ID,
+        operationCode: F115_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        max_tokens: input.max_tokens,
-        used_tokens: input.used_tokens,
-        utilization_pct: input.utilization_pct,
-        segment_breakdown: input.segment_breakdown,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          max_tokens: input.max_tokens,
+          used_tokens: input.used_tokens,
+          utilization_pct: input.utilization_pct,
+          segment_breakdown: input.segment_breakdown
+        }
       });
 
-      const provenanceDigest = computeF115Digest(canonicalPayload);
+      const executionId = `exec_f115_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f115_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F115ContextWindowXrayInspectorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F115_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F115ContextWindowXrayInspectorEngine {
         actorId: input.actorId,
         action: `context_xray_telemetry:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F115ContextWindowXrayInspectorEngine {
         executionId,
         status: "completed",
         operationCode: F115_OPERATION_CODE,
-        resolved_max_tokens: input.max_tokens,
-        resolved_used_tokens: input.used_tokens,
-        resolved_utilization_pct: input.utilization_pct,
-        resolved_segment_breakdown: input.segment_breakdown,
+        resolved_max_tokens: kernelResult.resolvedFields.max_tokens as string,
+        resolved_used_tokens: kernelResult.resolvedFields.used_tokens as string | number,
+        resolved_utilization_pct: kernelResult.resolvedFields.utilization_pct as string | number | boolean | readonly string[],
+        resolved_segment_breakdown: kernelResult.resolvedFields.segment_breakdown as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F115ContextWindowXrayInspectorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F115ContextWindowXrayInspectorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F115 (Инспектор контекстного окна (Context Window X-Ray))
- */
 export function verifyF115Module(): {
   featureId: typeof F115_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF115Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    max_tokens: "f115_max_tokens_verified",
-    used_tokens: 100,
+    max_tokens: "f115_max_tokens_seed",
+    used_tokens: 42,
     utilization_pct: true,
-    segment_breakdown: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 115 },
+    segment_breakdown: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 115 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F115" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_max_tokens !== sampleInput.max_tokens &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F115_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

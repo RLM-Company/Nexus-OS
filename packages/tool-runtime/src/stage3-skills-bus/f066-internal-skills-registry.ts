@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F066
- * ============================================================================
- * Feature ID: F066
- * Stage: stage3-skills-bus
- * Title: Магазин и реестр внутренних скиллов (Skills Registry)
- * Description: Каталог доступных навыков с описанием входных параметров, версий и требуемых прав
+ * F066 (stage3-skills-bus): Магазин и реестр внутренних скиллов (Skills Registry)
+ * Каталог доступных навыков с описанием входных параметров, версий и требуемых прав
  * Operation Code: skills_catalog_registry
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F066_FEATURE_ID = "F066" as const;
 export const F066_STAGE = "stage3-skills-bus" as const;
 export const F066_OPERATION_CODE = "skills_catalog_registry" as const;
-export const F066_CONTRACT_VERSION = "1.0.0" as const;
+export const F066_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F066InternalSkillsRegistryExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F066InternalSkillsRegistryExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F066InternalSkillsRegistryConfig {
@@ -50,6 +47,17 @@ export interface F066InternalSkillsRegistryInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F066InternalSkillsRegistryAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F066_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F066InternalSkillsRegistryOutput {
   readonly featureId: typeof F066_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F066InternalSkillsRegistryOutput {
   readonly resolved_version: string | number;
   readonly resolved_required_scopes: string | number | boolean | readonly string[];
   readonly resolved_registered_count: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F066InternalSkillsRegistryAuditEntry;
-}
-
-export interface F066InternalSkillsRegistryAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F066_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F066InternalSkillsRegistryTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F066_CONFIG: F066InternalSkillsRegistryConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F066InternalSkillsRegistryValidationError extends Error {
@@ -109,40 +108,36 @@ export class F066InternalSkillsRegistryValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F066 provenance & audit integrity.
- */
 export function computeF066Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f066_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f066_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F066: Магазин и реестр внутренних скиллов (Skills Registry)
- * Каталог доступных навыков с описанием входных параметров, версий и требуемых прав
- */
 export class F066InternalSkillsRegistryEngine {
   private readonly config: F066InternalSkillsRegistryConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F066InternalSkillsRegistryOutput[] = [];
   private readonly auditLog: F066InternalSkillsRegistryAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F066InternalSkillsRegistryOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F066InternalSkillsRegistryConfig>) {
+  constructor(customConfig?: Partial<F066InternalSkillsRegistryConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F066_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F066InternalSkillsRegistryConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F066InternalSkillsRegistryInput): void {
@@ -158,8 +153,24 @@ export class F066InternalSkillsRegistryEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F066InternalSkillsRegistryValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F066InternalSkillsRegistryValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F066InternalSkillsRegistryValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.skill_id).trim().length === 0) {
       throw new F066InternalSkillsRegistryValidationError("skill_id", "Primary domain attribute 'skill_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      skill_id: input.skill_id,
+      version: input.version,
+      required_scopes: input.required_scopes,
+      registered_count: input.registered_count
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F066InternalSkillsRegistryValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F066InternalSkillsRegistryEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f066_${this.totalRuns}_${computeF066Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F066_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        skill_id: input.skill_id,
+        version: input.version,
+        required_scopes: input.required_scopes,
+        registered_count: input.registered_count
+      });
+      const payloadHash = computeF066Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F066InternalSkillsRegistryValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F066_FEATURE_ID,
+        operationCode: F066_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        skill_id: input.skill_id,
-        version: input.version,
-        required_scopes: input.required_scopes,
-        registered_count: input.registered_count,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          skill_id: input.skill_id,
+          version: input.version,
+          required_scopes: input.required_scopes,
+          registered_count: input.registered_count
+        }
       });
 
-      const provenanceDigest = computeF066Digest(canonicalPayload);
+      const executionId = `exec_f066_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f066_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F066InternalSkillsRegistryAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F066_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F066InternalSkillsRegistryEngine {
         actorId: input.actorId,
         action: `skills_catalog_registry:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F066InternalSkillsRegistryEngine {
         executionId,
         status: "completed",
         operationCode: F066_OPERATION_CODE,
-        resolved_skill_id: input.skill_id,
-        resolved_version: input.version,
-        resolved_required_scopes: input.required_scopes,
-        resolved_registered_count: input.registered_count,
+        resolved_skill_id: kernelResult.resolvedFields.skill_id as string,
+        resolved_version: kernelResult.resolvedFields.version as string | number,
+        resolved_required_scopes: kernelResult.resolvedFields.required_scopes as string | number | boolean | readonly string[],
+        resolved_registered_count: kernelResult.resolvedFields.registered_count as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F066InternalSkillsRegistryEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F066InternalSkillsRegistryEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F066 (Магазин и реестр внутренних скиллов (Skills Registry))
- */
 export function verifyF066Module(): {
   featureId: typeof F066_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF066Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    skill_id: "f066_skill_id_verified",
-    version: 100,
+    skill_id: "f066_skill_id_seed",
+    version: 42,
     required_scopes: true,
-    registered_count: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 66 },
+    registered_count: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 66 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F066" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_skill_id !== sampleInput.skill_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F066_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

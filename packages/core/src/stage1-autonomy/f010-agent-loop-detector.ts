@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F010
- * ============================================================================
- * Feature ID: F010
- * Stage: stage1-autonomy
- * Title: Детектор зацикливания агентов
- * Description: Принудительное прерывание бесконечных споров между Исполнителем и Критиком после N итераций
+ * F010 (stage1-autonomy): Детектор зацикливания агентов
+ * Принудительное прерывание бесконечных споров между Исполнителем и Критиком после N итераций
  * Operation Code: loop_breaker
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F010_FEATURE_ID = "F010" as const;
 export const F010_STAGE = "stage1-autonomy" as const;
 export const F010_OPERATION_CODE = "loop_breaker" as const;
-export const F010_CONTRACT_VERSION = "1.0.0" as const;
+export const F010_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F010AgentLoopDetectorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F010AgentLoopDetectorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F010AgentLoopDetectorConfig {
@@ -50,6 +47,17 @@ export interface F010AgentLoopDetectorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F010AgentLoopDetectorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F010_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F010AgentLoopDetectorOutput {
   readonly featureId: typeof F010_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F010AgentLoopDetectorOutput {
   readonly resolved_iteration_count: string | number;
   readonly resolved_max_iterations: string | number | boolean | readonly string[];
   readonly resolved_loop_terminated: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F010AgentLoopDetectorAuditEntry;
-}
-
-export interface F010AgentLoopDetectorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F010_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F010AgentLoopDetectorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F010_CONFIG: F010AgentLoopDetectorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F010AgentLoopDetectorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F010AgentLoopDetectorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F010 provenance & audit integrity.
- */
 export function computeF010Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f010_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f010_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F010: Детектор зацикливания агентов
- * Принудительное прерывание бесконечных споров между Исполнителем и Критиком после N итераций
- */
 export class F010AgentLoopDetectorEngine {
   private readonly config: F010AgentLoopDetectorConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F010AgentLoopDetectorOutput[] = [];
   private readonly auditLog: F010AgentLoopDetectorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F010AgentLoopDetectorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F010AgentLoopDetectorConfig>) {
+  constructor(customConfig?: Partial<F010AgentLoopDetectorConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F010_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F010AgentLoopDetectorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F010AgentLoopDetectorInput): void {
@@ -158,8 +153,24 @@ export class F010AgentLoopDetectorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F010AgentLoopDetectorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F010AgentLoopDetectorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F010AgentLoopDetectorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.task_id).trim().length === 0) {
       throw new F010AgentLoopDetectorValidationError("task_id", "Primary domain attribute 'task_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      task_id: input.task_id,
+      iteration_count: input.iteration_count,
+      max_iterations: input.max_iterations,
+      loop_terminated: input.loop_terminated
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F010AgentLoopDetectorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F010AgentLoopDetectorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f010_${this.totalRuns}_${computeF010Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F010_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        task_id: input.task_id,
+        iteration_count: input.iteration_count,
+        max_iterations: input.max_iterations,
+        loop_terminated: input.loop_terminated
+      });
+      const payloadHash = computeF010Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F010AgentLoopDetectorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F010_FEATURE_ID,
+        operationCode: F010_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        task_id: input.task_id,
-        iteration_count: input.iteration_count,
-        max_iterations: input.max_iterations,
-        loop_terminated: input.loop_terminated,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          task_id: input.task_id,
+          iteration_count: input.iteration_count,
+          max_iterations: input.max_iterations,
+          loop_terminated: input.loop_terminated
+        }
       });
 
-      const provenanceDigest = computeF010Digest(canonicalPayload);
+      const executionId = `exec_f010_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f010_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F010AgentLoopDetectorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F010_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F010AgentLoopDetectorEngine {
         actorId: input.actorId,
         action: `loop_breaker:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F010AgentLoopDetectorEngine {
         executionId,
         status: "completed",
         operationCode: F010_OPERATION_CODE,
-        resolved_task_id: input.task_id,
-        resolved_iteration_count: input.iteration_count,
-        resolved_max_iterations: input.max_iterations,
-        resolved_loop_terminated: input.loop_terminated,
+        resolved_task_id: kernelResult.resolvedFields.task_id as string,
+        resolved_iteration_count: kernelResult.resolvedFields.iteration_count as string | number,
+        resolved_max_iterations: kernelResult.resolvedFields.max_iterations as string | number | boolean | readonly string[],
+        resolved_loop_terminated: kernelResult.resolvedFields.loop_terminated as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F010AgentLoopDetectorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F010AgentLoopDetectorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F010 (Детектор зацикливания агентов)
- */
 export function verifyF010Module(): {
   featureId: typeof F010_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF010Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    task_id: "f010_task_id_verified",
-    iteration_count: 100,
+    task_id: "f010_task_id_seed",
+    iteration_count: 42,
     max_iterations: true,
-    loop_terminated: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 10 },
+    loop_terminated: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 10 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F010" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_task_id !== sampleInput.task_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F010_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

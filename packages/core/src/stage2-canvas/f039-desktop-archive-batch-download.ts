@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F039
- * ============================================================================
- * Feature ID: F039
- * Stage: stage2-canvas
- * Title: Пакетная выгрузка для десктопа (Desktop / Archive Download)
- * Description: Скачивание всего проекта, кода или пачки отчётов единым структурированным архивом
+ * F039 (stage2-canvas): Пакетная выгрузка для десктопа (Desktop / Archive Download)
+ * Скачивание всего проекта, кода или пачки отчётов единым структурированным архивом
  * Operation Code: archive_bundler
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F039_FEATURE_ID = "F039" as const;
 export const F039_STAGE = "stage2-canvas" as const;
 export const F039_OPERATION_CODE = "archive_bundler" as const;
-export const F039_CONTRACT_VERSION = "1.0.0" as const;
+export const F039_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F039DesktopArchiveBatchDownloadExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F039DesktopArchiveBatchDownloadExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F039DesktopArchiveBatchDownloadConfig {
@@ -50,6 +47,17 @@ export interface F039DesktopArchiveBatchDownloadInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F039DesktopArchiveBatchDownloadAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F039_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F039DesktopArchiveBatchDownloadOutput {
   readonly featureId: typeof F039_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F039DesktopArchiveBatchDownloadOutput {
   readonly resolved_bundled_files_count: string | number;
   readonly resolved_compression_ratio: string | number | boolean | readonly string[];
   readonly resolved_checksum_sha256: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F039DesktopArchiveBatchDownloadAuditEntry;
-}
-
-export interface F039DesktopArchiveBatchDownloadAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F039_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F039DesktopArchiveBatchDownloadTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F039_CONFIG: F039DesktopArchiveBatchDownloadConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F039DesktopArchiveBatchDownloadValidationError extends Error {
@@ -109,40 +108,36 @@ export class F039DesktopArchiveBatchDownloadValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F039 provenance & audit integrity.
- */
 export function computeF039Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f039_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f039_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F039: Пакетная выгрузка для десктопа (Desktop / Archive Download)
- * Скачивание всего проекта, кода или пачки отчётов единым структурированным архивом
- */
 export class F039DesktopArchiveBatchDownloadEngine {
   private readonly config: F039DesktopArchiveBatchDownloadConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F039DesktopArchiveBatchDownloadOutput[] = [];
   private readonly auditLog: F039DesktopArchiveBatchDownloadAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F039DesktopArchiveBatchDownloadOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F039DesktopArchiveBatchDownloadConfig>) {
+  constructor(customConfig?: Partial<F039DesktopArchiveBatchDownloadConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F039_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F039DesktopArchiveBatchDownloadConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F039DesktopArchiveBatchDownloadInput): void {
@@ -158,8 +153,24 @@ export class F039DesktopArchiveBatchDownloadEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F039DesktopArchiveBatchDownloadValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F039DesktopArchiveBatchDownloadValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F039DesktopArchiveBatchDownloadValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.archive_id).trim().length === 0) {
       throw new F039DesktopArchiveBatchDownloadValidationError("archive_id", "Primary domain attribute 'archive_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      archive_id: input.archive_id,
+      bundled_files_count: input.bundled_files_count,
+      compression_ratio: input.compression_ratio,
+      checksum_sha256: input.checksum_sha256
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F039DesktopArchiveBatchDownloadValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F039DesktopArchiveBatchDownloadEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f039_${this.totalRuns}_${computeF039Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F039_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        archive_id: input.archive_id,
+        bundled_files_count: input.bundled_files_count,
+        compression_ratio: input.compression_ratio,
+        checksum_sha256: input.checksum_sha256
+      });
+      const payloadHash = computeF039Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F039DesktopArchiveBatchDownloadValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F039_FEATURE_ID,
+        operationCode: F039_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        archive_id: input.archive_id,
-        bundled_files_count: input.bundled_files_count,
-        compression_ratio: input.compression_ratio,
-        checksum_sha256: input.checksum_sha256,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          archive_id: input.archive_id,
+          bundled_files_count: input.bundled_files_count,
+          compression_ratio: input.compression_ratio,
+          checksum_sha256: input.checksum_sha256
+        }
       });
 
-      const provenanceDigest = computeF039Digest(canonicalPayload);
+      const executionId = `exec_f039_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f039_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F039DesktopArchiveBatchDownloadAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F039_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F039DesktopArchiveBatchDownloadEngine {
         actorId: input.actorId,
         action: `archive_bundler:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F039DesktopArchiveBatchDownloadEngine {
         executionId,
         status: "completed",
         operationCode: F039_OPERATION_CODE,
-        resolved_archive_id: input.archive_id,
-        resolved_bundled_files_count: input.bundled_files_count,
-        resolved_compression_ratio: input.compression_ratio,
-        resolved_checksum_sha256: input.checksum_sha256,
+        resolved_archive_id: kernelResult.resolvedFields.archive_id as string,
+        resolved_bundled_files_count: kernelResult.resolvedFields.bundled_files_count as string | number,
+        resolved_compression_ratio: kernelResult.resolvedFields.compression_ratio as string | number | boolean | readonly string[],
+        resolved_checksum_sha256: kernelResult.resolvedFields.checksum_sha256 as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F039DesktopArchiveBatchDownloadEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F039DesktopArchiveBatchDownloadEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F039 (Пакетная выгрузка для десктопа (Desktop / Archive Download))
- */
 export function verifyF039Module(): {
   featureId: typeof F039_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF039Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    archive_id: "f039_archive_id_verified",
-    bundled_files_count: 100,
+    archive_id: "f039_archive_id_seed",
+    bundled_files_count: 42,
     compression_ratio: true,
-    checksum_sha256: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 39 },
+    checksum_sha256: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 39 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F039" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_archive_id !== sampleInput.archive_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F039_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

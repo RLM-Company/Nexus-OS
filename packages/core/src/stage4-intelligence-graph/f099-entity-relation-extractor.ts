@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F099
- * ============================================================================
- * Feature ID: F099
- * Stage: stage4-intelligence-graph
- * Title: Автоматическое извлечение сущностей и связей (Entity & Relation Extraction)
- * Description: Пополнение графа при загрузке любого нового файла или завершении диалога
+ * F099 (stage4-intelligence-graph): Автоматическое извлечение сущностей и связей (Entity & Relation Extraction)
+ * Пополнение графа при загрузке любого нового файла или завершении диалога
  * Operation Code: ner_relation_miner
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F099_FEATURE_ID = "F099" as const;
 export const F099_STAGE = "stage4-intelligence-graph" as const;
 export const F099_OPERATION_CODE = "ner_relation_miner" as const;
-export const F099_CONTRACT_VERSION = "1.0.0" as const;
+export const F099_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F099EntityRelationExtractorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F099EntityRelationExtractorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F099EntityRelationExtractorConfig {
@@ -50,6 +47,17 @@ export interface F099EntityRelationExtractorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F099EntityRelationExtractorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F099_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F099EntityRelationExtractorOutput {
   readonly featureId: typeof F099_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F099EntityRelationExtractorOutput {
   readonly resolved_extracted_entities: string | number;
   readonly resolved_extracted_relations: string | number | boolean | readonly string[];
   readonly resolved_graph_updated: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F099EntityRelationExtractorAuditEntry;
-}
-
-export interface F099EntityRelationExtractorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F099_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F099EntityRelationExtractorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F099_CONFIG: F099EntityRelationExtractorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F099EntityRelationExtractorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F099EntityRelationExtractorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F099 provenance & audit integrity.
- */
 export function computeF099Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f099_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f099_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F099: Автоматическое извлечение сущностей и связей (Entity & Relation Extraction)
- * Пополнение графа при загрузке любого нового файла или завершении диалога
- */
 export class F099EntityRelationExtractorEngine {
   private readonly config: F099EntityRelationExtractorConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F099EntityRelationExtractorOutput[] = [];
   private readonly auditLog: F099EntityRelationExtractorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F099EntityRelationExtractorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F099EntityRelationExtractorConfig>) {
+  constructor(customConfig?: Partial<F099EntityRelationExtractorConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F099_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F099EntityRelationExtractorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F099EntityRelationExtractorInput): void {
@@ -158,8 +153,24 @@ export class F099EntityRelationExtractorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F099EntityRelationExtractorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F099EntityRelationExtractorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F099EntityRelationExtractorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.source_id).trim().length === 0) {
       throw new F099EntityRelationExtractorValidationError("source_id", "Primary domain attribute 'source_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      source_id: input.source_id,
+      extracted_entities: input.extracted_entities,
+      extracted_relations: input.extracted_relations,
+      graph_updated: input.graph_updated
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F099EntityRelationExtractorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F099EntityRelationExtractorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f099_${this.totalRuns}_${computeF099Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F099_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        source_id: input.source_id,
+        extracted_entities: input.extracted_entities,
+        extracted_relations: input.extracted_relations,
+        graph_updated: input.graph_updated
+      });
+      const payloadHash = computeF099Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F099EntityRelationExtractorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F099_FEATURE_ID,
+        operationCode: F099_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        source_id: input.source_id,
-        extracted_entities: input.extracted_entities,
-        extracted_relations: input.extracted_relations,
-        graph_updated: input.graph_updated,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          source_id: input.source_id,
+          extracted_entities: input.extracted_entities,
+          extracted_relations: input.extracted_relations,
+          graph_updated: input.graph_updated
+        }
       });
 
-      const provenanceDigest = computeF099Digest(canonicalPayload);
+      const executionId = `exec_f099_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f099_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F099EntityRelationExtractorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F099_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F099EntityRelationExtractorEngine {
         actorId: input.actorId,
         action: `ner_relation_miner:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F099EntityRelationExtractorEngine {
         executionId,
         status: "completed",
         operationCode: F099_OPERATION_CODE,
-        resolved_source_id: input.source_id,
-        resolved_extracted_entities: input.extracted_entities,
-        resolved_extracted_relations: input.extracted_relations,
-        resolved_graph_updated: input.graph_updated,
+        resolved_source_id: kernelResult.resolvedFields.source_id as string,
+        resolved_extracted_entities: kernelResult.resolvedFields.extracted_entities as string | number,
+        resolved_extracted_relations: kernelResult.resolvedFields.extracted_relations as string | number | boolean | readonly string[],
+        resolved_graph_updated: kernelResult.resolvedFields.graph_updated as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F099EntityRelationExtractorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F099EntityRelationExtractorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F099 (Автоматическое извлечение сущностей и связей (Entity & Relation Extraction))
- */
 export function verifyF099Module(): {
   featureId: typeof F099_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF099Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    source_id: "f099_source_id_verified",
-    extracted_entities: 100,
+    source_id: "f099_source_id_seed",
+    extracted_entities: 42,
     extracted_relations: true,
-    graph_updated: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 99 },
+    graph_updated: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 99 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F099" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_source_id !== sampleInput.source_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F099_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F100
- * ============================================================================
- * Feature ID: F100
- * Stage: stage4-intelligence-graph
- * Title: Гибридный поиск (Vector + Graph + Keyword RAG)
- * Description: Комбинирование семантического поиска по эмбеддингам с обходом графа связей и точным совпадением слов
+ * F100 (stage4-intelligence-graph): Гибридный поиск (Vector + Graph + Keyword RAG)
+ * Комбинирование семантического поиска по эмбеддингам с обходом графа связей и точным совпадением слов
  * Operation Code: hybrid_rag_retriever
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F100_FEATURE_ID = "F100" as const;
 export const F100_STAGE = "stage4-intelligence-graph" as const;
 export const F100_OPERATION_CODE = "hybrid_rag_retriever" as const;
-export const F100_CONTRACT_VERSION = "1.0.0" as const;
+export const F100_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F100HybridVectorGraphKeywordRagExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F100HybridVectorGraphKeywordRagExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F100HybridVectorGraphKeywordRagConfig {
@@ -50,6 +47,17 @@ export interface F100HybridVectorGraphKeywordRagInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F100HybridVectorGraphKeywordRagAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F100_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F100HybridVectorGraphKeywordRagOutput {
   readonly featureId: typeof F100_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F100HybridVectorGraphKeywordRagOutput {
   readonly resolved_vector_matches: string | number;
   readonly resolved_graph_hop_matches: string | number | boolean | readonly string[];
   readonly resolved_fused_ranking: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F100HybridVectorGraphKeywordRagAuditEntry;
-}
-
-export interface F100HybridVectorGraphKeywordRagAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F100_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F100HybridVectorGraphKeywordRagTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F100_CONFIG: F100HybridVectorGraphKeywordRagConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F100HybridVectorGraphKeywordRagValidationError extends Error {
@@ -109,40 +108,36 @@ export class F100HybridVectorGraphKeywordRagValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F100 provenance & audit integrity.
- */
 export function computeF100Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f100_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f100_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F100: Гибридный поиск (Vector + Graph + Keyword RAG)
- * Комбинирование семантического поиска по эмбеддингам с обходом графа связей и точным совпадением слов
- */
 export class F100HybridVectorGraphKeywordRagEngine {
   private readonly config: F100HybridVectorGraphKeywordRagConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F100HybridVectorGraphKeywordRagOutput[] = [];
   private readonly auditLog: F100HybridVectorGraphKeywordRagAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F100HybridVectorGraphKeywordRagOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F100HybridVectorGraphKeywordRagConfig>) {
+  constructor(customConfig?: Partial<F100HybridVectorGraphKeywordRagConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F100_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F100HybridVectorGraphKeywordRagConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F100HybridVectorGraphKeywordRagInput): void {
@@ -158,8 +153,24 @@ export class F100HybridVectorGraphKeywordRagEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F100HybridVectorGraphKeywordRagValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F100HybridVectorGraphKeywordRagValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F100HybridVectorGraphKeywordRagValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.query_text).trim().length === 0) {
       throw new F100HybridVectorGraphKeywordRagValidationError("query_text", "Primary domain attribute 'query_text' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      query_text: input.query_text,
+      vector_matches: input.vector_matches,
+      graph_hop_matches: input.graph_hop_matches,
+      fused_ranking: input.fused_ranking
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F100HybridVectorGraphKeywordRagValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F100HybridVectorGraphKeywordRagEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f100_${this.totalRuns}_${computeF100Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F100_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        query_text: input.query_text,
+        vector_matches: input.vector_matches,
+        graph_hop_matches: input.graph_hop_matches,
+        fused_ranking: input.fused_ranking
+      });
+      const payloadHash = computeF100Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F100HybridVectorGraphKeywordRagValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F100_FEATURE_ID,
+        operationCode: F100_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        query_text: input.query_text,
-        vector_matches: input.vector_matches,
-        graph_hop_matches: input.graph_hop_matches,
-        fused_ranking: input.fused_ranking,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          query_text: input.query_text,
+          vector_matches: input.vector_matches,
+          graph_hop_matches: input.graph_hop_matches,
+          fused_ranking: input.fused_ranking
+        }
       });
 
-      const provenanceDigest = computeF100Digest(canonicalPayload);
+      const executionId = `exec_f100_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f100_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F100HybridVectorGraphKeywordRagAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F100_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F100HybridVectorGraphKeywordRagEngine {
         actorId: input.actorId,
         action: `hybrid_rag_retriever:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F100HybridVectorGraphKeywordRagEngine {
         executionId,
         status: "completed",
         operationCode: F100_OPERATION_CODE,
-        resolved_query_text: input.query_text,
-        resolved_vector_matches: input.vector_matches,
-        resolved_graph_hop_matches: input.graph_hop_matches,
-        resolved_fused_ranking: input.fused_ranking,
+        resolved_query_text: kernelResult.resolvedFields.query_text as string,
+        resolved_vector_matches: kernelResult.resolvedFields.vector_matches as string | number,
+        resolved_graph_hop_matches: kernelResult.resolvedFields.graph_hop_matches as string | number | boolean | readonly string[],
+        resolved_fused_ranking: kernelResult.resolvedFields.fused_ranking as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F100HybridVectorGraphKeywordRagEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F100HybridVectorGraphKeywordRagEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F100 (Гибридный поиск (Vector + Graph + Keyword RAG))
- */
 export function verifyF100Module(): {
   featureId: typeof F100_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF100Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    query_text: "f100_query_text_verified",
-    vector_matches: 100,
+    query_text: "f100_query_text_seed",
+    vector_matches: 42,
     graph_hop_matches: true,
-    fused_ranking: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 100 },
+    fused_ranking: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 100 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F100" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_query_text !== sampleInput.query_text &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F100_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

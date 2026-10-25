@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F085
- * ============================================================================
- * Feature ID: F085
- * Stage: stage3-skills-bus
- * Title: Транскрибация аудио и записей созвонов
- * Description: Перевод голосовых заметок и митингов в текст с выделением списка задач (Action Items)
+ * F085 (stage3-skills-bus): Транскрибация аудио и записей созвонов
+ * Перевод голосовых заметок и митингов в текст с выделением списка задач (Action Items)
  * Operation Code: meeting_action_extractor
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F085_FEATURE_ID = "F085" as const;
 export const F085_STAGE = "stage3-skills-bus" as const;
 export const F085_OPERATION_CODE = "meeting_action_extractor" as const;
-export const F085_CONTRACT_VERSION = "1.0.0" as const;
+export const F085_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F085AudioMeetingTranscriberExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F085AudioMeetingTranscriberExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F085AudioMeetingTranscriberConfig {
@@ -50,6 +47,17 @@ export interface F085AudioMeetingTranscriberInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F085AudioMeetingTranscriberAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F085_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F085AudioMeetingTranscriberOutput {
   readonly featureId: typeof F085_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F085AudioMeetingTranscriberOutput {
   readonly resolved_transcript_length: string | number;
   readonly resolved_action_items: string | number | boolean | readonly string[];
   readonly resolved_assigned_owners: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F085AudioMeetingTranscriberAuditEntry;
-}
-
-export interface F085AudioMeetingTranscriberAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F085_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F085AudioMeetingTranscriberTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F085_CONFIG: F085AudioMeetingTranscriberConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F085AudioMeetingTranscriberValidationError extends Error {
@@ -109,40 +108,36 @@ export class F085AudioMeetingTranscriberValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F085 provenance & audit integrity.
- */
 export function computeF085Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f085_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f085_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F085: Транскрибация аудио и записей созвонов
- * Перевод голосовых заметок и митингов в текст с выделением списка задач (Action Items)
- */
 export class F085AudioMeetingTranscriberEngine {
   private readonly config: F085AudioMeetingTranscriberConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F085AudioMeetingTranscriberOutput[] = [];
   private readonly auditLog: F085AudioMeetingTranscriberAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F085AudioMeetingTranscriberOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F085AudioMeetingTranscriberConfig>) {
+  constructor(customConfig?: Partial<F085AudioMeetingTranscriberConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F085_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F085AudioMeetingTranscriberConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F085AudioMeetingTranscriberInput): void {
@@ -158,8 +153,24 @@ export class F085AudioMeetingTranscriberEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F085AudioMeetingTranscriberValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F085AudioMeetingTranscriberValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F085AudioMeetingTranscriberValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.recording_id).trim().length === 0) {
       throw new F085AudioMeetingTranscriberValidationError("recording_id", "Primary domain attribute 'recording_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      recording_id: input.recording_id,
+      transcript_length: input.transcript_length,
+      action_items: input.action_items,
+      assigned_owners: input.assigned_owners
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F085AudioMeetingTranscriberValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F085AudioMeetingTranscriberEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f085_${this.totalRuns}_${computeF085Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F085_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        recording_id: input.recording_id,
+        transcript_length: input.transcript_length,
+        action_items: input.action_items,
+        assigned_owners: input.assigned_owners
+      });
+      const payloadHash = computeF085Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F085AudioMeetingTranscriberValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F085_FEATURE_ID,
+        operationCode: F085_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        recording_id: input.recording_id,
-        transcript_length: input.transcript_length,
-        action_items: input.action_items,
-        assigned_owners: input.assigned_owners,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          recording_id: input.recording_id,
+          transcript_length: input.transcript_length,
+          action_items: input.action_items,
+          assigned_owners: input.assigned_owners
+        }
       });
 
-      const provenanceDigest = computeF085Digest(canonicalPayload);
+      const executionId = `exec_f085_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f085_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F085AudioMeetingTranscriberAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F085_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F085AudioMeetingTranscriberEngine {
         actorId: input.actorId,
         action: `meeting_action_extractor:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F085AudioMeetingTranscriberEngine {
         executionId,
         status: "completed",
         operationCode: F085_OPERATION_CODE,
-        resolved_recording_id: input.recording_id,
-        resolved_transcript_length: input.transcript_length,
-        resolved_action_items: input.action_items,
-        resolved_assigned_owners: input.assigned_owners,
+        resolved_recording_id: kernelResult.resolvedFields.recording_id as string,
+        resolved_transcript_length: kernelResult.resolvedFields.transcript_length as string | number,
+        resolved_action_items: kernelResult.resolvedFields.action_items as string | number | boolean | readonly string[],
+        resolved_assigned_owners: kernelResult.resolvedFields.assigned_owners as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F085AudioMeetingTranscriberEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F085AudioMeetingTranscriberEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F085 (Транскрибация аудио и записей созвонов)
- */
 export function verifyF085Module(): {
   featureId: typeof F085_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF085Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    recording_id: "f085_recording_id_verified",
-    transcript_length: 100,
+    recording_id: "f085_recording_id_seed",
+    transcript_length: 42,
     action_items: true,
-    assigned_owners: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 85 },
+    assigned_owners: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 85 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F085" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_recording_id !== sampleInput.recording_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F085_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

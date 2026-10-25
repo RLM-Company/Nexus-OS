@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F055
- * ============================================================================
- * Feature ID: F055
- * Stage: stage2-canvas
- * Title: Сквозные переменные в документах
- * Description: Динамические плейсхолдеры, которые обновляются во всём тексте при смене цифры в таблице
+ * F055 (stage2-canvas): Сквозные переменные в документах
+ * Динамические плейсхолдеры, которые обновляются во всём тексте при смене цифры в таблице
  * Operation Code: reactive_variable_binder
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F055_FEATURE_ID = "F055" as const;
 export const F055_STAGE = "stage2-canvas" as const;
 export const F055_OPERATION_CODE = "reactive_variable_binder" as const;
-export const F055_CONTRACT_VERSION = "1.0.0" as const;
+export const F055_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F055CrossDocumentDynamicVariablesExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F055CrossDocumentDynamicVariablesExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F055CrossDocumentDynamicVariablesConfig {
@@ -50,6 +47,17 @@ export interface F055CrossDocumentDynamicVariablesInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F055CrossDocumentDynamicVariablesAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F055_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F055CrossDocumentDynamicVariablesOutput {
   readonly featureId: typeof F055_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F055CrossDocumentDynamicVariablesOutput {
   readonly resolved_updated_value: string | number;
   readonly resolved_bound_locations_updated: string | number | boolean | readonly string[];
   readonly resolved_interpolated_text: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F055CrossDocumentDynamicVariablesAuditEntry;
-}
-
-export interface F055CrossDocumentDynamicVariablesAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F055_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F055CrossDocumentDynamicVariablesTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F055_CONFIG: F055CrossDocumentDynamicVariablesConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F055CrossDocumentDynamicVariablesValidationError extends Error {
@@ -109,40 +108,36 @@ export class F055CrossDocumentDynamicVariablesValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F055 provenance & audit integrity.
- */
 export function computeF055Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f055_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f055_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F055: Сквозные переменные в документах
- * Динамические плейсхолдеры, которые обновляются во всём тексте при смене цифры в таблице
- */
 export class F055CrossDocumentDynamicVariablesEngine {
   private readonly config: F055CrossDocumentDynamicVariablesConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F055CrossDocumentDynamicVariablesOutput[] = [];
   private readonly auditLog: F055CrossDocumentDynamicVariablesAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F055CrossDocumentDynamicVariablesOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F055CrossDocumentDynamicVariablesConfig>) {
+  constructor(customConfig?: Partial<F055CrossDocumentDynamicVariablesConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F055_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F055CrossDocumentDynamicVariablesConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F055CrossDocumentDynamicVariablesInput): void {
@@ -158,8 +153,24 @@ export class F055CrossDocumentDynamicVariablesEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F055CrossDocumentDynamicVariablesValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F055CrossDocumentDynamicVariablesValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F055CrossDocumentDynamicVariablesValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.variable_key).trim().length === 0) {
       throw new F055CrossDocumentDynamicVariablesValidationError("variable_key", "Primary domain attribute 'variable_key' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      variable_key: input.variable_key,
+      updated_value: input.updated_value,
+      bound_locations_updated: input.bound_locations_updated,
+      interpolated_text: input.interpolated_text
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F055CrossDocumentDynamicVariablesValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F055CrossDocumentDynamicVariablesEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f055_${this.totalRuns}_${computeF055Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F055_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        variable_key: input.variable_key,
+        updated_value: input.updated_value,
+        bound_locations_updated: input.bound_locations_updated,
+        interpolated_text: input.interpolated_text
+      });
+      const payloadHash = computeF055Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F055CrossDocumentDynamicVariablesValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F055_FEATURE_ID,
+        operationCode: F055_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        variable_key: input.variable_key,
-        updated_value: input.updated_value,
-        bound_locations_updated: input.bound_locations_updated,
-        interpolated_text: input.interpolated_text,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          variable_key: input.variable_key,
+          updated_value: input.updated_value,
+          bound_locations_updated: input.bound_locations_updated,
+          interpolated_text: input.interpolated_text
+        }
       });
 
-      const provenanceDigest = computeF055Digest(canonicalPayload);
+      const executionId = `exec_f055_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f055_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F055CrossDocumentDynamicVariablesAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F055_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F055CrossDocumentDynamicVariablesEngine {
         actorId: input.actorId,
         action: `reactive_variable_binder:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F055CrossDocumentDynamicVariablesEngine {
         executionId,
         status: "completed",
         operationCode: F055_OPERATION_CODE,
-        resolved_variable_key: input.variable_key,
-        resolved_updated_value: input.updated_value,
-        resolved_bound_locations_updated: input.bound_locations_updated,
-        resolved_interpolated_text: input.interpolated_text,
+        resolved_variable_key: kernelResult.resolvedFields.variable_key as string,
+        resolved_updated_value: kernelResult.resolvedFields.updated_value as string | number,
+        resolved_bound_locations_updated: kernelResult.resolvedFields.bound_locations_updated as string | number | boolean | readonly string[],
+        resolved_interpolated_text: kernelResult.resolvedFields.interpolated_text as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F055CrossDocumentDynamicVariablesEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F055CrossDocumentDynamicVariablesEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F055 (Сквозные переменные в документах)
- */
 export function verifyF055Module(): {
   featureId: typeof F055_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF055Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    variable_key: "f055_variable_key_verified",
-    updated_value: 100,
+    variable_key: "f055_variable_key_seed",
+    updated_value: 42,
     bound_locations_updated: true,
-    interpolated_text: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 55 },
+    interpolated_text: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 55 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F055" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_variable_key !== sampleInput.variable_key &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F055_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

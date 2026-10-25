@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F112
- * ============================================================================
- * Feature ID: F112
- * Stage: stage4-intelligence-graph
- * Title: Оценка устаревания данных (Knowledge Decay Alert)
- * Description: Маркировка узлов и отчётов, чьи исходные файлы были обновлены, как требующих пересборки
+ * F112 (stage4-intelligence-graph): Оценка устаревания данных (Knowledge Decay Alert)
+ * Маркировка узлов и отчётов, чьи исходные файлы были обновлены, как требующих пересборки
  * Operation Code: staleness_detector
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F112_FEATURE_ID = "F112" as const;
 export const F112_STAGE = "stage4-intelligence-graph" as const;
 export const F112_OPERATION_CODE = "staleness_detector" as const;
-export const F112_CONTRACT_VERSION = "1.0.0" as const;
+export const F112_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F112KnowledgeDecayAlerterExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F112KnowledgeDecayAlerterExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F112KnowledgeDecayAlerterConfig {
@@ -50,6 +47,17 @@ export interface F112KnowledgeDecayAlerterInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F112KnowledgeDecayAlerterAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F112_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F112KnowledgeDecayAlerterOutput {
   readonly featureId: typeof F112_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F112KnowledgeDecayAlerterOutput {
   readonly resolved_stale_artifact_ids: string | number;
   readonly resolved_decay_severity: string | number | boolean | readonly string[];
   readonly resolved_rebuild_queued: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F112KnowledgeDecayAlerterAuditEntry;
-}
-
-export interface F112KnowledgeDecayAlerterAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F112_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F112KnowledgeDecayAlerterTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F112_CONFIG: F112KnowledgeDecayAlerterConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F112KnowledgeDecayAlerterValidationError extends Error {
@@ -109,40 +108,36 @@ export class F112KnowledgeDecayAlerterValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F112 provenance & audit integrity.
- */
 export function computeF112Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f112_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f112_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F112: Оценка устаревания данных (Knowledge Decay Alert)
- * Маркировка узлов и отчётов, чьи исходные файлы были обновлены, как требующих пересборки
- */
 export class F112KnowledgeDecayAlerterEngine {
   private readonly config: F112KnowledgeDecayAlerterConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F112KnowledgeDecayAlerterOutput[] = [];
   private readonly auditLog: F112KnowledgeDecayAlerterAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F112KnowledgeDecayAlerterOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F112KnowledgeDecayAlerterConfig>) {
+  constructor(customConfig?: Partial<F112KnowledgeDecayAlerterConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F112_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F112KnowledgeDecayAlerterConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F112KnowledgeDecayAlerterInput): void {
@@ -158,8 +153,24 @@ export class F112KnowledgeDecayAlerterEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F112KnowledgeDecayAlerterValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F112KnowledgeDecayAlerterValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F112KnowledgeDecayAlerterValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.updated_source_id).trim().length === 0) {
       throw new F112KnowledgeDecayAlerterValidationError("updated_source_id", "Primary domain attribute 'updated_source_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      updated_source_id: input.updated_source_id,
+      stale_artifact_ids: input.stale_artifact_ids,
+      decay_severity: input.decay_severity,
+      rebuild_queued: input.rebuild_queued
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F112KnowledgeDecayAlerterValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F112KnowledgeDecayAlerterEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f112_${this.totalRuns}_${computeF112Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F112_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        updated_source_id: input.updated_source_id,
+        stale_artifact_ids: input.stale_artifact_ids,
+        decay_severity: input.decay_severity,
+        rebuild_queued: input.rebuild_queued
+      });
+      const payloadHash = computeF112Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F112KnowledgeDecayAlerterValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F112_FEATURE_ID,
+        operationCode: F112_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        updated_source_id: input.updated_source_id,
-        stale_artifact_ids: input.stale_artifact_ids,
-        decay_severity: input.decay_severity,
-        rebuild_queued: input.rebuild_queued,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          updated_source_id: input.updated_source_id,
+          stale_artifact_ids: input.stale_artifact_ids,
+          decay_severity: input.decay_severity,
+          rebuild_queued: input.rebuild_queued
+        }
       });
 
-      const provenanceDigest = computeF112Digest(canonicalPayload);
+      const executionId = `exec_f112_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f112_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F112KnowledgeDecayAlerterAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F112_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F112KnowledgeDecayAlerterEngine {
         actorId: input.actorId,
         action: `staleness_detector:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F112KnowledgeDecayAlerterEngine {
         executionId,
         status: "completed",
         operationCode: F112_OPERATION_CODE,
-        resolved_updated_source_id: input.updated_source_id,
-        resolved_stale_artifact_ids: input.stale_artifact_ids,
-        resolved_decay_severity: input.decay_severity,
-        resolved_rebuild_queued: input.rebuild_queued,
+        resolved_updated_source_id: kernelResult.resolvedFields.updated_source_id as string,
+        resolved_stale_artifact_ids: kernelResult.resolvedFields.stale_artifact_ids as string | number,
+        resolved_decay_severity: kernelResult.resolvedFields.decay_severity as string | number | boolean | readonly string[],
+        resolved_rebuild_queued: kernelResult.resolvedFields.rebuild_queued as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F112KnowledgeDecayAlerterEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F112KnowledgeDecayAlerterEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F112 (Оценка устаревания данных (Knowledge Decay Alert))
- */
 export function verifyF112Module(): {
   featureId: typeof F112_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF112Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    updated_source_id: "f112_updated_source_id_verified",
-    stale_artifact_ids: 100,
+    updated_source_id: "f112_updated_source_id_seed",
+    stale_artifact_ids: 42,
     decay_severity: true,
-    rebuild_queued: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 112 },
+    rebuild_queued: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 112 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F112" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_updated_source_id !== sampleInput.updated_source_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F112_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

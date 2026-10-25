@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F136
- * ============================================================================
- * Feature ID: F136
- * Stage: stage5-enterprise
- * Title: Политики разрешённых инструментов (Tool Allowlisting)
- * Description: Ограничение списка скиллов и внешних доменов для конкретных агентов и ролей
+ * F136 (stage5-enterprise): Политики разрешённых инструментов (Tool Allowlisting)
+ * Ограничение списка скиллов и внешних доменов для конкретных агентов и ролей
  * Operation Code: tool_allowlist_enforcer
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F136_FEATURE_ID = "F136" as const;
 export const F136_STAGE = "stage5-enterprise" as const;
 export const F136_OPERATION_CODE = "tool_allowlist_enforcer" as const;
-export const F136_CONTRACT_VERSION = "1.0.0" as const;
+export const F136_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F136RoleToolAllowlistingExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F136RoleToolAllowlistingExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F136RoleToolAllowlistingConfig {
@@ -50,6 +47,17 @@ export interface F136RoleToolAllowlistingInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F136RoleToolAllowlistingAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F136_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F136RoleToolAllowlistingOutput {
   readonly featureId: typeof F136_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F136RoleToolAllowlistingOutput {
   readonly resolved_requested_tool_id: string | number;
   readonly resolved_allowlist_matched: string | number | boolean | readonly string[];
   readonly resolved_enforcement_action: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F136RoleToolAllowlistingAuditEntry;
-}
-
-export interface F136RoleToolAllowlistingAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F136_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F136RoleToolAllowlistingTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F136_CONFIG: F136RoleToolAllowlistingConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F136RoleToolAllowlistingValidationError extends Error {
@@ -109,40 +108,36 @@ export class F136RoleToolAllowlistingValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F136 provenance & audit integrity.
- */
 export function computeF136Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f136_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f136_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F136: Политики разрешённых инструментов (Tool Allowlisting)
- * Ограничение списка скиллов и внешних доменов для конкретных агентов и ролей
- */
 export class F136RoleToolAllowlistingEngine {
   private readonly config: F136RoleToolAllowlistingConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F136RoleToolAllowlistingOutput[] = [];
   private readonly auditLog: F136RoleToolAllowlistingAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F136RoleToolAllowlistingOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F136RoleToolAllowlistingConfig>) {
+  constructor(customConfig?: Partial<F136RoleToolAllowlistingConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F136_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F136RoleToolAllowlistingConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F136RoleToolAllowlistingInput): void {
@@ -158,8 +153,24 @@ export class F136RoleToolAllowlistingEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F136RoleToolAllowlistingValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F136RoleToolAllowlistingValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F136RoleToolAllowlistingValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.agent_role).trim().length === 0) {
       throw new F136RoleToolAllowlistingValidationError("agent_role", "Primary domain attribute 'agent_role' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      agent_role: input.agent_role,
+      requested_tool_id: input.requested_tool_id,
+      allowlist_matched: input.allowlist_matched,
+      enforcement_action: input.enforcement_action
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F136RoleToolAllowlistingValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F136RoleToolAllowlistingEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f136_${this.totalRuns}_${computeF136Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F136_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        agent_role: input.agent_role,
+        requested_tool_id: input.requested_tool_id,
+        allowlist_matched: input.allowlist_matched,
+        enforcement_action: input.enforcement_action
+      });
+      const payloadHash = computeF136Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F136RoleToolAllowlistingValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F136_FEATURE_ID,
+        operationCode: F136_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        agent_role: input.agent_role,
-        requested_tool_id: input.requested_tool_id,
-        allowlist_matched: input.allowlist_matched,
-        enforcement_action: input.enforcement_action,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          agent_role: input.agent_role,
+          requested_tool_id: input.requested_tool_id,
+          allowlist_matched: input.allowlist_matched,
+          enforcement_action: input.enforcement_action
+        }
       });
 
-      const provenanceDigest = computeF136Digest(canonicalPayload);
+      const executionId = `exec_f136_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f136_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F136RoleToolAllowlistingAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F136_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F136RoleToolAllowlistingEngine {
         actorId: input.actorId,
         action: `tool_allowlist_enforcer:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F136RoleToolAllowlistingEngine {
         executionId,
         status: "completed",
         operationCode: F136_OPERATION_CODE,
-        resolved_agent_role: input.agent_role,
-        resolved_requested_tool_id: input.requested_tool_id,
-        resolved_allowlist_matched: input.allowlist_matched,
-        resolved_enforcement_action: input.enforcement_action,
+        resolved_agent_role: kernelResult.resolvedFields.agent_role as string,
+        resolved_requested_tool_id: kernelResult.resolvedFields.requested_tool_id as string | number,
+        resolved_allowlist_matched: kernelResult.resolvedFields.allowlist_matched as string | number | boolean | readonly string[],
+        resolved_enforcement_action: kernelResult.resolvedFields.enforcement_action as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F136RoleToolAllowlistingEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F136RoleToolAllowlistingEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F136 (Политики разрешённых инструментов (Tool Allowlisting))
- */
 export function verifyF136Module(): {
   featureId: typeof F136_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF136Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    agent_role: "f136_agent_role_verified",
-    requested_tool_id: 100,
+    agent_role: "f136_agent_role_seed",
+    requested_tool_id: 42,
     allowlist_matched: true,
-    enforcement_action: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 136 },
+    enforcement_action: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 136 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F136" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_agent_role !== sampleInput.agent_role &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F136_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

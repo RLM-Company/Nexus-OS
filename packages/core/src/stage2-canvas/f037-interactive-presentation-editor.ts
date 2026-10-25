@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F037
- * ============================================================================
- * Feature ID: F037
- * Stage: stage2-canvas
- * Title: Интерактивный редактор презентаций (Presentation Editor)
- * Description: По-слайдовое создание, редактирование сетки, тезисов и заметок спикера прямо на Canvas
+ * F037 (stage2-canvas): Интерактивный редактор презентаций (Presentation Editor)
+ * По-слайдовое создание, редактирование сетки, тезисов и заметок спикера прямо на Canvas
  * Operation Code: slide_deck_editor
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F037_FEATURE_ID = "F037" as const;
 export const F037_STAGE = "stage2-canvas" as const;
 export const F037_OPERATION_CODE = "slide_deck_editor" as const;
-export const F037_CONTRACT_VERSION = "1.0.0" as const;
+export const F037_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F037InteractivePresentationEditorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F037InteractivePresentationEditorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F037InteractivePresentationEditorConfig {
@@ -50,6 +47,17 @@ export interface F037InteractivePresentationEditorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F037InteractivePresentationEditorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F037_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F037InteractivePresentationEditorOutput {
   readonly featureId: typeof F037_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F037InteractivePresentationEditorOutput {
   readonly resolved_slide_count: string | number;
   readonly resolved_grid_layout: string | number | boolean | readonly string[];
   readonly resolved_speaker_notes_attached: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F037InteractivePresentationEditorAuditEntry;
-}
-
-export interface F037InteractivePresentationEditorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F037_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F037InteractivePresentationEditorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F037_CONFIG: F037InteractivePresentationEditorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F037InteractivePresentationEditorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F037InteractivePresentationEditorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F037 provenance & audit integrity.
- */
 export function computeF037Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f037_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f037_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F037: Интерактивный редактор презентаций (Presentation Editor)
- * По-слайдовое создание, редактирование сетки, тезисов и заметок спикера прямо на Canvas
- */
 export class F037InteractivePresentationEditorEngine {
   private readonly config: F037InteractivePresentationEditorConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F037InteractivePresentationEditorOutput[] = [];
   private readonly auditLog: F037InteractivePresentationEditorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F037InteractivePresentationEditorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F037InteractivePresentationEditorConfig>) {
+  constructor(customConfig?: Partial<F037InteractivePresentationEditorConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F037_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F037InteractivePresentationEditorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F037InteractivePresentationEditorInput): void {
@@ -158,8 +153,24 @@ export class F037InteractivePresentationEditorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F037InteractivePresentationEditorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F037InteractivePresentationEditorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F037InteractivePresentationEditorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.deck_id).trim().length === 0) {
       throw new F037InteractivePresentationEditorValidationError("deck_id", "Primary domain attribute 'deck_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      deck_id: input.deck_id,
+      slide_count: input.slide_count,
+      grid_layout: input.grid_layout,
+      speaker_notes_attached: input.speaker_notes_attached
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F037InteractivePresentationEditorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F037InteractivePresentationEditorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f037_${this.totalRuns}_${computeF037Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F037_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        deck_id: input.deck_id,
+        slide_count: input.slide_count,
+        grid_layout: input.grid_layout,
+        speaker_notes_attached: input.speaker_notes_attached
+      });
+      const payloadHash = computeF037Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F037InteractivePresentationEditorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F037_FEATURE_ID,
+        operationCode: F037_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        deck_id: input.deck_id,
-        slide_count: input.slide_count,
-        grid_layout: input.grid_layout,
-        speaker_notes_attached: input.speaker_notes_attached,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          deck_id: input.deck_id,
+          slide_count: input.slide_count,
+          grid_layout: input.grid_layout,
+          speaker_notes_attached: input.speaker_notes_attached
+        }
       });
 
-      const provenanceDigest = computeF037Digest(canonicalPayload);
+      const executionId = `exec_f037_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f037_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F037InteractivePresentationEditorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F037_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F037InteractivePresentationEditorEngine {
         actorId: input.actorId,
         action: `slide_deck_editor:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F037InteractivePresentationEditorEngine {
         executionId,
         status: "completed",
         operationCode: F037_OPERATION_CODE,
-        resolved_deck_id: input.deck_id,
-        resolved_slide_count: input.slide_count,
-        resolved_grid_layout: input.grid_layout,
-        resolved_speaker_notes_attached: input.speaker_notes_attached,
+        resolved_deck_id: kernelResult.resolvedFields.deck_id as string,
+        resolved_slide_count: kernelResult.resolvedFields.slide_count as string | number,
+        resolved_grid_layout: kernelResult.resolvedFields.grid_layout as string | number | boolean | readonly string[],
+        resolved_speaker_notes_attached: kernelResult.resolvedFields.speaker_notes_attached as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F037InteractivePresentationEditorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F037InteractivePresentationEditorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F037 (Интерактивный редактор презентаций (Presentation Editor))
- */
 export function verifyF037Module(): {
   featureId: typeof F037_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF037Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    deck_id: "f037_deck_id_verified",
-    slide_count: 100,
+    deck_id: "f037_deck_id_seed",
+    slide_count: 42,
     grid_layout: true,
-    speaker_notes_attached: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 37 },
+    speaker_notes_attached: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 37 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F037" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_deck_id !== sampleInput.deck_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F037_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

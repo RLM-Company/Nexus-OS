@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F026
- * ============================================================================
- * Feature ID: F026
- * Stage: stage1-autonomy
- * Title: Шаблоны мультиагентных команд (Squad Presets)
- * Description: Преднастроенные связки агентов (Аналитик + Кодер + QA, Ресерчер + Копирайтер + Дизайнер)
+ * F026 (stage1-autonomy): Шаблоны мультиагентных команд (Squad Presets)
+ * Преднастроенные связки агентов (Аналитик + Кодер + QA, Ресерчер + Копирайтер + Дизайнер)
  * Operation Code: squad_template
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F026_FEATURE_ID = "F026" as const;
 export const F026_STAGE = "stage1-autonomy" as const;
 export const F026_OPERATION_CODE = "squad_template" as const;
-export const F026_CONTRACT_VERSION = "1.0.0" as const;
+export const F026_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F026MultiagentSquadPresetsExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F026MultiagentSquadPresetsExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F026MultiagentSquadPresetsConfig {
@@ -50,6 +47,17 @@ export interface F026MultiagentSquadPresetsInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F026MultiagentSquadPresetsAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F026_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F026MultiagentSquadPresetsOutput {
   readonly featureId: typeof F026_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F026MultiagentSquadPresetsOutput {
   readonly resolved_squad_name: string | number;
   readonly resolved_roster_roles: string | number | boolean | readonly string[];
   readonly resolved_default_strictness: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F026MultiagentSquadPresetsAuditEntry;
-}
-
-export interface F026MultiagentSquadPresetsAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F026_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F026MultiagentSquadPresetsTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F026_CONFIG: F026MultiagentSquadPresetsConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F026MultiagentSquadPresetsValidationError extends Error {
@@ -109,40 +108,36 @@ export class F026MultiagentSquadPresetsValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F026 provenance & audit integrity.
- */
 export function computeF026Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f026_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f026_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F026: Шаблоны мультиагентных команд (Squad Presets)
- * Преднастроенные связки агентов (Аналитик + Кодер + QA, Ресерчер + Копирайтер + Дизайнер)
- */
 export class F026MultiagentSquadPresetsEngine {
   private readonly config: F026MultiagentSquadPresetsConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F026MultiagentSquadPresetsOutput[] = [];
   private readonly auditLog: F026MultiagentSquadPresetsAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F026MultiagentSquadPresetsOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F026MultiagentSquadPresetsConfig>) {
+  constructor(customConfig?: Partial<F026MultiagentSquadPresetsConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F026_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F026MultiagentSquadPresetsConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F026MultiagentSquadPresetsInput): void {
@@ -158,8 +153,24 @@ export class F026MultiagentSquadPresetsEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F026MultiagentSquadPresetsValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F026MultiagentSquadPresetsValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F026MultiagentSquadPresetsValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.preset_id).trim().length === 0) {
       throw new F026MultiagentSquadPresetsValidationError("preset_id", "Primary domain attribute 'preset_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      preset_id: input.preset_id,
+      squad_name: input.squad_name,
+      roster_roles: input.roster_roles,
+      default_strictness: input.default_strictness
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F026MultiagentSquadPresetsValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F026MultiagentSquadPresetsEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f026_${this.totalRuns}_${computeF026Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F026_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        preset_id: input.preset_id,
+        squad_name: input.squad_name,
+        roster_roles: input.roster_roles,
+        default_strictness: input.default_strictness
+      });
+      const payloadHash = computeF026Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F026MultiagentSquadPresetsValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F026_FEATURE_ID,
+        operationCode: F026_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        preset_id: input.preset_id,
-        squad_name: input.squad_name,
-        roster_roles: input.roster_roles,
-        default_strictness: input.default_strictness,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          preset_id: input.preset_id,
+          squad_name: input.squad_name,
+          roster_roles: input.roster_roles,
+          default_strictness: input.default_strictness
+        }
       });
 
-      const provenanceDigest = computeF026Digest(canonicalPayload);
+      const executionId = `exec_f026_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f026_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F026MultiagentSquadPresetsAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F026_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F026MultiagentSquadPresetsEngine {
         actorId: input.actorId,
         action: `squad_template:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F026MultiagentSquadPresetsEngine {
         executionId,
         status: "completed",
         operationCode: F026_OPERATION_CODE,
-        resolved_preset_id: input.preset_id,
-        resolved_squad_name: input.squad_name,
-        resolved_roster_roles: input.roster_roles,
-        resolved_default_strictness: input.default_strictness,
+        resolved_preset_id: kernelResult.resolvedFields.preset_id as string,
+        resolved_squad_name: kernelResult.resolvedFields.squad_name as string | number,
+        resolved_roster_roles: kernelResult.resolvedFields.roster_roles as string | number | boolean | readonly string[],
+        resolved_default_strictness: kernelResult.resolvedFields.default_strictness as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F026MultiagentSquadPresetsEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F026MultiagentSquadPresetsEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F026 (Шаблоны мультиагентных команд (Squad Presets))
- */
 export function verifyF026Module(): {
   featureId: typeof F026_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF026Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    preset_id: "f026_preset_id_verified",
-    squad_name: 100,
+    preset_id: "f026_preset_id_seed",
+    squad_name: 42,
     roster_roles: true,
-    default_strictness: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 26 },
+    default_strictness: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 26 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F026" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_preset_id !== sampleInput.preset_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F026_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F024
- * ============================================================================
- * Feature ID: F024
- * Stage: stage1-autonomy
- * Title: Дедупликация вызовов инструментов
- * Description: Кэширование идентичных запросов агентов в рамках одной сессии
+ * F024 (stage1-autonomy): Дедупликация вызовов инструментов
+ * Кэширование идентичных запросов агентов в рамках одной сессии
  * Operation Code: tool_dedup_cache
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F024_FEATURE_ID = "F024" as const;
 export const F024_STAGE = "stage1-autonomy" as const;
 export const F024_OPERATION_CODE = "tool_dedup_cache" as const;
-export const F024_CONTRACT_VERSION = "1.0.0" as const;
+export const F024_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F024ToolCallDeduplicationExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F024ToolCallDeduplicationExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F024ToolCallDeduplicationConfig {
@@ -50,6 +47,17 @@ export interface F024ToolCallDeduplicationInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F024ToolCallDeduplicationAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F024_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F024ToolCallDeduplicationOutput {
   readonly featureId: typeof F024_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F024ToolCallDeduplicationOutput {
   readonly resolved_call_fingerprint: string | number;
   readonly resolved_cache_hit: string | number | boolean | readonly string[];
   readonly resolved_saved_execution_ms: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F024ToolCallDeduplicationAuditEntry;
-}
-
-export interface F024ToolCallDeduplicationAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F024_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F024ToolCallDeduplicationTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F024_CONFIG: F024ToolCallDeduplicationConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F024ToolCallDeduplicationValidationError extends Error {
@@ -109,40 +108,36 @@ export class F024ToolCallDeduplicationValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F024 provenance & audit integrity.
- */
 export function computeF024Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f024_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f024_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F024: Дедупликация вызовов инструментов
- * Кэширование идентичных запросов агентов в рамках одной сессии
- */
 export class F024ToolCallDeduplicationEngine {
   private readonly config: F024ToolCallDeduplicationConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F024ToolCallDeduplicationOutput[] = [];
   private readonly auditLog: F024ToolCallDeduplicationAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F024ToolCallDeduplicationOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F024ToolCallDeduplicationConfig>) {
+  constructor(customConfig?: Partial<F024ToolCallDeduplicationConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F024_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F024ToolCallDeduplicationConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F024ToolCallDeduplicationInput): void {
@@ -158,8 +153,24 @@ export class F024ToolCallDeduplicationEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F024ToolCallDeduplicationValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F024ToolCallDeduplicationValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F024ToolCallDeduplicationValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.session_id).trim().length === 0) {
       throw new F024ToolCallDeduplicationValidationError("session_id", "Primary domain attribute 'session_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      session_id: input.session_id,
+      call_fingerprint: input.call_fingerprint,
+      cache_hit: input.cache_hit,
+      saved_execution_ms: input.saved_execution_ms
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F024ToolCallDeduplicationValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F024ToolCallDeduplicationEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f024_${this.totalRuns}_${computeF024Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F024_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        session_id: input.session_id,
+        call_fingerprint: input.call_fingerprint,
+        cache_hit: input.cache_hit,
+        saved_execution_ms: input.saved_execution_ms
+      });
+      const payloadHash = computeF024Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F024ToolCallDeduplicationValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F024_FEATURE_ID,
+        operationCode: F024_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        session_id: input.session_id,
-        call_fingerprint: input.call_fingerprint,
-        cache_hit: input.cache_hit,
-        saved_execution_ms: input.saved_execution_ms,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          session_id: input.session_id,
+          call_fingerprint: input.call_fingerprint,
+          cache_hit: input.cache_hit,
+          saved_execution_ms: input.saved_execution_ms
+        }
       });
 
-      const provenanceDigest = computeF024Digest(canonicalPayload);
+      const executionId = `exec_f024_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f024_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F024ToolCallDeduplicationAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F024_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F024ToolCallDeduplicationEngine {
         actorId: input.actorId,
         action: `tool_dedup_cache:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F024ToolCallDeduplicationEngine {
         executionId,
         status: "completed",
         operationCode: F024_OPERATION_CODE,
-        resolved_session_id: input.session_id,
-        resolved_call_fingerprint: input.call_fingerprint,
-        resolved_cache_hit: input.cache_hit,
-        resolved_saved_execution_ms: input.saved_execution_ms,
+        resolved_session_id: kernelResult.resolvedFields.session_id as string,
+        resolved_call_fingerprint: kernelResult.resolvedFields.call_fingerprint as string | number,
+        resolved_cache_hit: kernelResult.resolvedFields.cache_hit as string | number | boolean | readonly string[],
+        resolved_saved_execution_ms: kernelResult.resolvedFields.saved_execution_ms as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F024ToolCallDeduplicationEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F024ToolCallDeduplicationEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F024 (Дедупликация вызовов инструментов)
- */
 export function verifyF024Module(): {
   featureId: typeof F024_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF024Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    session_id: "f024_session_id_verified",
-    call_fingerprint: 100,
+    session_id: "f024_session_id_seed",
+    call_fingerprint: 42,
     cache_hit: true,
-    saved_execution_ms: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 24 },
+    saved_execution_ms: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 24 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F024" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_session_id !== sampleInput.session_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F024_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

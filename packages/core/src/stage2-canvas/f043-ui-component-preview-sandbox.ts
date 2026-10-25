@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F043
- * ============================================================================
- * Feature ID: F043
- * Stage: stage2-canvas
- * Title: Песочница предпросмотра UI-компонентов
- * Description: Живой рендер HTML/Tailwind/React-артефактов прямо внутри вкладки Canvas
+ * F043 (stage2-canvas): Песочница предпросмотра UI-компонентов
+ * Живой рендер HTML/Tailwind/React-артефактов прямо внутри вкладки Canvas
  * Operation Code: ui_sandbox_preview
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F043_FEATURE_ID = "F043" as const;
 export const F043_STAGE = "stage2-canvas" as const;
 export const F043_OPERATION_CODE = "ui_sandbox_preview" as const;
-export const F043_CONTRACT_VERSION = "1.0.0" as const;
+export const F043_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F043UiComponentPreviewSandboxExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F043UiComponentPreviewSandboxExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F043UiComponentPreviewSandboxConfig {
@@ -50,6 +47,17 @@ export interface F043UiComponentPreviewSandboxInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F043UiComponentPreviewSandboxAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F043_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F043UiComponentPreviewSandboxOutput {
   readonly featureId: typeof F043_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F043UiComponentPreviewSandboxOutput {
   readonly resolved_framework_mode: string | number;
   readonly resolved_isolated_iframe_csp: string | number | boolean | readonly string[];
   readonly resolved_hydrated_ok: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F043UiComponentPreviewSandboxAuditEntry;
-}
-
-export interface F043UiComponentPreviewSandboxAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F043_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F043UiComponentPreviewSandboxTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F043_CONFIG: F043UiComponentPreviewSandboxConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F043UiComponentPreviewSandboxValidationError extends Error {
@@ -109,40 +108,36 @@ export class F043UiComponentPreviewSandboxValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F043 provenance & audit integrity.
- */
 export function computeF043Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f043_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f043_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F043: Песочница предпросмотра UI-компонентов
- * Живой рендер HTML/Tailwind/React-артефактов прямо внутри вкладки Canvas
- */
 export class F043UiComponentPreviewSandboxEngine {
   private readonly config: F043UiComponentPreviewSandboxConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F043UiComponentPreviewSandboxOutput[] = [];
   private readonly auditLog: F043UiComponentPreviewSandboxAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F043UiComponentPreviewSandboxOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F043UiComponentPreviewSandboxConfig>) {
+  constructor(customConfig?: Partial<F043UiComponentPreviewSandboxConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F043_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F043UiComponentPreviewSandboxConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F043UiComponentPreviewSandboxInput): void {
@@ -158,8 +153,24 @@ export class F043UiComponentPreviewSandboxEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F043UiComponentPreviewSandboxValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F043UiComponentPreviewSandboxValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F043UiComponentPreviewSandboxValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.component_id).trim().length === 0) {
       throw new F043UiComponentPreviewSandboxValidationError("component_id", "Primary domain attribute 'component_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      component_id: input.component_id,
+      framework_mode: input.framework_mode,
+      isolated_iframe_csp: input.isolated_iframe_csp,
+      hydrated_ok: input.hydrated_ok
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F043UiComponentPreviewSandboxValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F043UiComponentPreviewSandboxEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f043_${this.totalRuns}_${computeF043Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F043_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        component_id: input.component_id,
+        framework_mode: input.framework_mode,
+        isolated_iframe_csp: input.isolated_iframe_csp,
+        hydrated_ok: input.hydrated_ok
+      });
+      const payloadHash = computeF043Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F043UiComponentPreviewSandboxValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F043_FEATURE_ID,
+        operationCode: F043_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        component_id: input.component_id,
-        framework_mode: input.framework_mode,
-        isolated_iframe_csp: input.isolated_iframe_csp,
-        hydrated_ok: input.hydrated_ok,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          component_id: input.component_id,
+          framework_mode: input.framework_mode,
+          isolated_iframe_csp: input.isolated_iframe_csp,
+          hydrated_ok: input.hydrated_ok
+        }
       });
 
-      const provenanceDigest = computeF043Digest(canonicalPayload);
+      const executionId = `exec_f043_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f043_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F043UiComponentPreviewSandboxAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F043_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F043UiComponentPreviewSandboxEngine {
         actorId: input.actorId,
         action: `ui_sandbox_preview:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F043UiComponentPreviewSandboxEngine {
         executionId,
         status: "completed",
         operationCode: F043_OPERATION_CODE,
-        resolved_component_id: input.component_id,
-        resolved_framework_mode: input.framework_mode,
-        resolved_isolated_iframe_csp: input.isolated_iframe_csp,
-        resolved_hydrated_ok: input.hydrated_ok,
+        resolved_component_id: kernelResult.resolvedFields.component_id as string,
+        resolved_framework_mode: kernelResult.resolvedFields.framework_mode as string | number,
+        resolved_isolated_iframe_csp: kernelResult.resolvedFields.isolated_iframe_csp as string | number | boolean | readonly string[],
+        resolved_hydrated_ok: kernelResult.resolvedFields.hydrated_ok as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F043UiComponentPreviewSandboxEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F043UiComponentPreviewSandboxEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F043 (Песочница предпросмотра UI-компонентов)
- */
 export function verifyF043Module(): {
   featureId: typeof F043_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF043Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    component_id: "f043_component_id_verified",
-    framework_mode: 100,
+    component_id: "f043_component_id_seed",
+    framework_mode: 42,
     isolated_iframe_csp: true,
-    hydrated_ok: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 43 },
+    hydrated_ok: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 43 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F043" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_component_id !== sampleInput.component_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F043_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

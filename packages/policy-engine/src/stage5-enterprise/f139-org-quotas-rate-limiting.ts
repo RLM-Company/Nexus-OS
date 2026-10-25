@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F139
- * ============================================================================
- * Feature ID: F139
- * Stage: stage5-enterprise
- * Title: Квоты и Rate Limiting
- * Description: Ограничение числа одновременных агентных графов и запросов в минуту на организацию
+ * F139 (stage5-enterprise): Квоты и Rate Limiting
+ * Ограничение числа одновременных агентных графов и запросов в минуту на организацию
  * Operation Code: token_bucket_ratelimiter
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F139_FEATURE_ID = "F139" as const;
 export const F139_STAGE = "stage5-enterprise" as const;
 export const F139_OPERATION_CODE = "token_bucket_ratelimiter" as const;
-export const F139_CONTRACT_VERSION = "1.0.0" as const;
+export const F139_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F139OrgQuotasRateLimitingExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F139OrgQuotasRateLimitingExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F139OrgQuotasRateLimitingConfig {
@@ -50,6 +47,17 @@ export interface F139OrgQuotasRateLimitingInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F139OrgQuotasRateLimitingAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F139_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F139OrgQuotasRateLimitingOutput {
   readonly featureId: typeof F139_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F139OrgQuotasRateLimitingOutput {
   readonly resolved_requests_per_minute: string | number;
   readonly resolved_concurrent_graphs: string | number | boolean | readonly string[];
   readonly resolved_throttled: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F139OrgQuotasRateLimitingAuditEntry;
-}
-
-export interface F139OrgQuotasRateLimitingAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F139_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F139OrgQuotasRateLimitingTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F139_CONFIG: F139OrgQuotasRateLimitingConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F139OrgQuotasRateLimitingValidationError extends Error {
@@ -109,40 +108,36 @@ export class F139OrgQuotasRateLimitingValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F139 provenance & audit integrity.
- */
 export function computeF139Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f139_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f139_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F139: Квоты и Rate Limiting
- * Ограничение числа одновременных агентных графов и запросов в минуту на организацию
- */
 export class F139OrgQuotasRateLimitingEngine {
   private readonly config: F139OrgQuotasRateLimitingConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F139OrgQuotasRateLimitingOutput[] = [];
   private readonly auditLog: F139OrgQuotasRateLimitingAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F139OrgQuotasRateLimitingOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F139OrgQuotasRateLimitingConfig>) {
+  constructor(customConfig?: Partial<F139OrgQuotasRateLimitingConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F139_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F139OrgQuotasRateLimitingConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F139OrgQuotasRateLimitingInput): void {
@@ -158,8 +153,24 @@ export class F139OrgQuotasRateLimitingEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F139OrgQuotasRateLimitingValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F139OrgQuotasRateLimitingValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F139OrgQuotasRateLimitingValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.tenant_id).trim().length === 0) {
       throw new F139OrgQuotasRateLimitingValidationError("tenant_id", "Primary domain attribute 'tenant_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      tenant_id: input.tenant_id,
+      requests_per_minute: input.requests_per_minute,
+      concurrent_graphs: input.concurrent_graphs,
+      throttled: input.throttled
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F139OrgQuotasRateLimitingValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F139OrgQuotasRateLimitingEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f139_${this.totalRuns}_${computeF139Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F139_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        tenant_id: input.tenant_id,
+        requests_per_minute: input.requests_per_minute,
+        concurrent_graphs: input.concurrent_graphs,
+        throttled: input.throttled
+      });
+      const payloadHash = computeF139Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F139OrgQuotasRateLimitingValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F139_FEATURE_ID,
+        operationCode: F139_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        tenant_id: input.tenant_id,
-        requests_per_minute: input.requests_per_minute,
-        concurrent_graphs: input.concurrent_graphs,
-        throttled: input.throttled,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          tenant_id: input.tenant_id,
+          requests_per_minute: input.requests_per_minute,
+          concurrent_graphs: input.concurrent_graphs,
+          throttled: input.throttled
+        }
       });
 
-      const provenanceDigest = computeF139Digest(canonicalPayload);
+      const executionId = `exec_f139_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f139_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F139OrgQuotasRateLimitingAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F139_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F139OrgQuotasRateLimitingEngine {
         actorId: input.actorId,
         action: `token_bucket_ratelimiter:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F139OrgQuotasRateLimitingEngine {
         executionId,
         status: "completed",
         operationCode: F139_OPERATION_CODE,
-        resolved_tenant_id: input.tenant_id,
-        resolved_requests_per_minute: input.requests_per_minute,
-        resolved_concurrent_graphs: input.concurrent_graphs,
-        resolved_throttled: input.throttled,
+        resolved_tenant_id: kernelResult.resolvedFields.tenant_id as string,
+        resolved_requests_per_minute: kernelResult.resolvedFields.requests_per_minute as string | number,
+        resolved_concurrent_graphs: kernelResult.resolvedFields.concurrent_graphs as string | number | boolean | readonly string[],
+        resolved_throttled: kernelResult.resolvedFields.throttled as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F139OrgQuotasRateLimitingEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F139OrgQuotasRateLimitingEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F139 (Квоты и Rate Limiting)
- */
 export function verifyF139Module(): {
   featureId: typeof F139_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF139Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    tenant_id: "f139_tenant_id_verified",
-    requests_per_minute: 100,
+    tenant_id: "f139_tenant_id_seed",
+    requests_per_minute: 42,
     concurrent_graphs: true,
-    throttled: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 139 },
+    throttled: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 139 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F139" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_tenant_id !== sampleInput.tenant_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F139_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

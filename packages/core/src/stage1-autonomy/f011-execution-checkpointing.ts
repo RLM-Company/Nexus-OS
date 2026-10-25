@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F011
- * ============================================================================
- * Feature ID: F011
- * Stage: stage1-autonomy
- * Title: Снимки состояния выполнения (Checkpointing)
- * Description: Сохранение стейта графа на каждом узле для возобновления с места сбоя
+ * F011 (stage1-autonomy): Снимки состояния выполнения (Checkpointing)
+ * Сохранение стейта графа на каждом узле для возобновления с места сбоя
  * Operation Code: state_checkpoint
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F011_FEATURE_ID = "F011" as const;
 export const F011_STAGE = "stage1-autonomy" as const;
 export const F011_OPERATION_CODE = "state_checkpoint" as const;
-export const F011_CONTRACT_VERSION = "1.0.0" as const;
+export const F011_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F011ExecutionCheckpointingExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F011ExecutionCheckpointingExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F011ExecutionCheckpointingConfig {
@@ -50,6 +47,17 @@ export interface F011ExecutionCheckpointingInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F011ExecutionCheckpointingAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F011_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F011ExecutionCheckpointingOutput {
   readonly featureId: typeof F011_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F011ExecutionCheckpointingOutput {
   readonly resolved_graph_id: string | number;
   readonly resolved_step_index: string | number | boolean | readonly string[];
   readonly resolved_serialized_state_hash: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F011ExecutionCheckpointingAuditEntry;
-}
-
-export interface F011ExecutionCheckpointingAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F011_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F011ExecutionCheckpointingTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F011_CONFIG: F011ExecutionCheckpointingConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F011ExecutionCheckpointingValidationError extends Error {
@@ -109,40 +108,36 @@ export class F011ExecutionCheckpointingValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F011 provenance & audit integrity.
- */
 export function computeF011Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f011_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f011_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F011: Снимки состояния выполнения (Checkpointing)
- * Сохранение стейта графа на каждом узле для возобновления с места сбоя
- */
 export class F011ExecutionCheckpointingEngine {
   private readonly config: F011ExecutionCheckpointingConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F011ExecutionCheckpointingOutput[] = [];
   private readonly auditLog: F011ExecutionCheckpointingAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F011ExecutionCheckpointingOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F011ExecutionCheckpointingConfig>) {
+  constructor(customConfig?: Partial<F011ExecutionCheckpointingConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F011_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F011ExecutionCheckpointingConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F011ExecutionCheckpointingInput): void {
@@ -158,8 +153,24 @@ export class F011ExecutionCheckpointingEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F011ExecutionCheckpointingValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F011ExecutionCheckpointingValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F011ExecutionCheckpointingValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.checkpoint_id).trim().length === 0) {
       throw new F011ExecutionCheckpointingValidationError("checkpoint_id", "Primary domain attribute 'checkpoint_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      checkpoint_id: input.checkpoint_id,
+      graph_id: input.graph_id,
+      step_index: input.step_index,
+      serialized_state_hash: input.serialized_state_hash
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F011ExecutionCheckpointingValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F011ExecutionCheckpointingEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f011_${this.totalRuns}_${computeF011Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F011_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        checkpoint_id: input.checkpoint_id,
+        graph_id: input.graph_id,
+        step_index: input.step_index,
+        serialized_state_hash: input.serialized_state_hash
+      });
+      const payloadHash = computeF011Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F011ExecutionCheckpointingValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F011_FEATURE_ID,
+        operationCode: F011_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        checkpoint_id: input.checkpoint_id,
-        graph_id: input.graph_id,
-        step_index: input.step_index,
-        serialized_state_hash: input.serialized_state_hash,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          checkpoint_id: input.checkpoint_id,
+          graph_id: input.graph_id,
+          step_index: input.step_index,
+          serialized_state_hash: input.serialized_state_hash
+        }
       });
 
-      const provenanceDigest = computeF011Digest(canonicalPayload);
+      const executionId = `exec_f011_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f011_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F011ExecutionCheckpointingAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F011_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F011ExecutionCheckpointingEngine {
         actorId: input.actorId,
         action: `state_checkpoint:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F011ExecutionCheckpointingEngine {
         executionId,
         status: "completed",
         operationCode: F011_OPERATION_CODE,
-        resolved_checkpoint_id: input.checkpoint_id,
-        resolved_graph_id: input.graph_id,
-        resolved_step_index: input.step_index,
-        resolved_serialized_state_hash: input.serialized_state_hash,
+        resolved_checkpoint_id: kernelResult.resolvedFields.checkpoint_id as string,
+        resolved_graph_id: kernelResult.resolvedFields.graph_id as string | number,
+        resolved_step_index: kernelResult.resolvedFields.step_index as string | number | boolean | readonly string[],
+        resolved_serialized_state_hash: kernelResult.resolvedFields.serialized_state_hash as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F011ExecutionCheckpointingEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F011ExecutionCheckpointingEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F011 (Снимки состояния выполнения (Checkpointing))
- */
 export function verifyF011Module(): {
   featureId: typeof F011_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF011Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    checkpoint_id: "f011_checkpoint_id_verified",
-    graph_id: 100,
+    checkpoint_id: "f011_checkpoint_id_seed",
+    graph_id: 42,
     step_index: true,
-    serialized_state_hash: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 11 },
+    serialized_state_hash: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 11 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F011" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_checkpoint_id !== sampleInput.checkpoint_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F011_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

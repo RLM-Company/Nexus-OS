@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F151
- * ============================================================================
- * Feature ID: F151
- * Stage: stage5-enterprise
- * Title: White-Label кастомизация воркспейсов
- * Description: Настройка логотипа, цветовой палитры и домена для клиентских витрин
+ * F151 (stage5-enterprise): White-Label кастомизация воркспейсов
+ * Настройка логотипа, цветовой палитры и домена для клиентских витрин
  * Operation Code: whitelabel_theme_registry
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F151_FEATURE_ID = "F151" as const;
 export const F151_STAGE = "stage5-enterprise" as const;
 export const F151_OPERATION_CODE = "whitelabel_theme_registry" as const;
-export const F151_CONTRACT_VERSION = "1.0.0" as const;
+export const F151_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F151WhitelabelWorkspaceCustomizerExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F151WhitelabelWorkspaceCustomizerExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F151WhitelabelWorkspaceCustomizerConfig {
@@ -50,6 +47,17 @@ export interface F151WhitelabelWorkspaceCustomizerInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F151WhitelabelWorkspaceCustomizerAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F151_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F151WhitelabelWorkspaceCustomizerOutput {
   readonly featureId: typeof F151_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F151WhitelabelWorkspaceCustomizerOutput {
   readonly resolved_custom_domain: string | number;
   readonly resolved_brand_palette: string | number | boolean | readonly string[];
   readonly resolved_custom_logo_svg: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F151WhitelabelWorkspaceCustomizerAuditEntry;
-}
-
-export interface F151WhitelabelWorkspaceCustomizerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F151_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F151WhitelabelWorkspaceCustomizerTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F151_CONFIG: F151WhitelabelWorkspaceCustomizerConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F151WhitelabelWorkspaceCustomizerValidationError extends Error {
@@ -109,40 +108,36 @@ export class F151WhitelabelWorkspaceCustomizerValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F151 provenance & audit integrity.
- */
 export function computeF151Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f151_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f151_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F151: White-Label кастомизация воркспейсов
- * Настройка логотипа, цветовой палитры и домена для клиентских витрин
- */
 export class F151WhitelabelWorkspaceCustomizerEngine {
   private readonly config: F151WhitelabelWorkspaceCustomizerConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F151WhitelabelWorkspaceCustomizerOutput[] = [];
   private readonly auditLog: F151WhitelabelWorkspaceCustomizerAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F151WhitelabelWorkspaceCustomizerOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F151WhitelabelWorkspaceCustomizerConfig>) {
+  constructor(customConfig?: Partial<F151WhitelabelWorkspaceCustomizerConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F151_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F151WhitelabelWorkspaceCustomizerConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F151WhitelabelWorkspaceCustomizerInput): void {
@@ -158,8 +153,24 @@ export class F151WhitelabelWorkspaceCustomizerEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F151WhitelabelWorkspaceCustomizerValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F151WhitelabelWorkspaceCustomizerValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F151WhitelabelWorkspaceCustomizerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.tenant_id).trim().length === 0) {
       throw new F151WhitelabelWorkspaceCustomizerValidationError("tenant_id", "Primary domain attribute 'tenant_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      tenant_id: input.tenant_id,
+      custom_domain: input.custom_domain,
+      brand_palette: input.brand_palette,
+      custom_logo_svg: input.custom_logo_svg
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F151WhitelabelWorkspaceCustomizerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F151WhitelabelWorkspaceCustomizerEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f151_${this.totalRuns}_${computeF151Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F151_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        tenant_id: input.tenant_id,
+        custom_domain: input.custom_domain,
+        brand_palette: input.brand_palette,
+        custom_logo_svg: input.custom_logo_svg
+      });
+      const payloadHash = computeF151Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F151WhitelabelWorkspaceCustomizerValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F151_FEATURE_ID,
+        operationCode: F151_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        tenant_id: input.tenant_id,
-        custom_domain: input.custom_domain,
-        brand_palette: input.brand_palette,
-        custom_logo_svg: input.custom_logo_svg,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          tenant_id: input.tenant_id,
+          custom_domain: input.custom_domain,
+          brand_palette: input.brand_palette,
+          custom_logo_svg: input.custom_logo_svg
+        }
       });
 
-      const provenanceDigest = computeF151Digest(canonicalPayload);
+      const executionId = `exec_f151_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f151_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F151WhitelabelWorkspaceCustomizerAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F151_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F151WhitelabelWorkspaceCustomizerEngine {
         actorId: input.actorId,
         action: `whitelabel_theme_registry:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F151WhitelabelWorkspaceCustomizerEngine {
         executionId,
         status: "completed",
         operationCode: F151_OPERATION_CODE,
-        resolved_tenant_id: input.tenant_id,
-        resolved_custom_domain: input.custom_domain,
-        resolved_brand_palette: input.brand_palette,
-        resolved_custom_logo_svg: input.custom_logo_svg,
+        resolved_tenant_id: kernelResult.resolvedFields.tenant_id as string,
+        resolved_custom_domain: kernelResult.resolvedFields.custom_domain as string | number,
+        resolved_brand_palette: kernelResult.resolvedFields.brand_palette as string | number | boolean | readonly string[],
+        resolved_custom_logo_svg: kernelResult.resolvedFields.custom_logo_svg as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F151WhitelabelWorkspaceCustomizerEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F151WhitelabelWorkspaceCustomizerEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F151 (White-Label кастомизация воркспейсов)
- */
 export function verifyF151Module(): {
   featureId: typeof F151_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF151Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    tenant_id: "f151_tenant_id_verified",
-    custom_domain: 100,
+    tenant_id: "f151_tenant_id_seed",
+    custom_domain: 42,
     brand_palette: true,
-    custom_logo_svg: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 151 },
+    custom_logo_svg: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 151 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F151" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_tenant_id !== sampleInput.tenant_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F151_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F030
- * ============================================================================
- * Feature ID: F030
- * Stage: stage1-autonomy
- * Title: Калибровка строгости Критика
- * Description: Настройка порога пропуска артефактов (черновик / продакшен-грейд)
+ * F030 (stage1-autonomy): Калибровка строгости Критика
+ * Настройка порога пропуска артефактов (черновик / продакшен-грейд)
  * Operation Code: strictness_calibrator
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F030_FEATURE_ID = "F030" as const;
 export const F030_STAGE = "stage1-autonomy" as const;
 export const F030_OPERATION_CODE = "strictness_calibrator" as const;
-export const F030_CONTRACT_VERSION = "1.0.0" as const;
+export const F030_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F030CriticStrictnessCalibrationExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F030CriticStrictnessCalibrationExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F030CriticStrictnessCalibrationConfig {
@@ -50,6 +47,17 @@ export interface F030CriticStrictnessCalibrationInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F030CriticStrictnessCalibrationAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F030_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F030CriticStrictnessCalibrationOutput {
   readonly featureId: typeof F030_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F030CriticStrictnessCalibrationOutput {
   readonly resolved_min_pass_score: string | number;
   readonly resolved_allow_warnings: string | number | boolean | readonly string[];
   readonly resolved_gate_decision: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F030CriticStrictnessCalibrationAuditEntry;
-}
-
-export interface F030CriticStrictnessCalibrationAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F030_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F030CriticStrictnessCalibrationTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F030_CONFIG: F030CriticStrictnessCalibrationConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F030CriticStrictnessCalibrationValidationError extends Error {
@@ -109,40 +108,36 @@ export class F030CriticStrictnessCalibrationValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F030 provenance & audit integrity.
- */
 export function computeF030Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f030_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f030_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F030: Калибровка строгости Критика
- * Настройка порога пропуска артефактов (черновик / продакшен-грейд)
- */
 export class F030CriticStrictnessCalibrationEngine {
   private readonly config: F030CriticStrictnessCalibrationConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F030CriticStrictnessCalibrationOutput[] = [];
   private readonly auditLog: F030CriticStrictnessCalibrationAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F030CriticStrictnessCalibrationOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F030CriticStrictnessCalibrationConfig>) {
+  constructor(customConfig?: Partial<F030CriticStrictnessCalibrationConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F030_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F030CriticStrictnessCalibrationConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F030CriticStrictnessCalibrationInput): void {
@@ -158,8 +153,24 @@ export class F030CriticStrictnessCalibrationEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F030CriticStrictnessCalibrationValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F030CriticStrictnessCalibrationValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F030CriticStrictnessCalibrationValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.calibration_mode).trim().length === 0) {
       throw new F030CriticStrictnessCalibrationValidationError("calibration_mode", "Primary domain attribute 'calibration_mode' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      calibration_mode: input.calibration_mode,
+      min_pass_score: input.min_pass_score,
+      allow_warnings: input.allow_warnings,
+      gate_decision: input.gate_decision
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F030CriticStrictnessCalibrationValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F030CriticStrictnessCalibrationEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f030_${this.totalRuns}_${computeF030Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F030_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        calibration_mode: input.calibration_mode,
+        min_pass_score: input.min_pass_score,
+        allow_warnings: input.allow_warnings,
+        gate_decision: input.gate_decision
+      });
+      const payloadHash = computeF030Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F030CriticStrictnessCalibrationValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F030_FEATURE_ID,
+        operationCode: F030_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        calibration_mode: input.calibration_mode,
-        min_pass_score: input.min_pass_score,
-        allow_warnings: input.allow_warnings,
-        gate_decision: input.gate_decision,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          calibration_mode: input.calibration_mode,
+          min_pass_score: input.min_pass_score,
+          allow_warnings: input.allow_warnings,
+          gate_decision: input.gate_decision
+        }
       });
 
-      const provenanceDigest = computeF030Digest(canonicalPayload);
+      const executionId = `exec_f030_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f030_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F030CriticStrictnessCalibrationAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F030_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F030CriticStrictnessCalibrationEngine {
         actorId: input.actorId,
         action: `strictness_calibrator:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F030CriticStrictnessCalibrationEngine {
         executionId,
         status: "completed",
         operationCode: F030_OPERATION_CODE,
-        resolved_calibration_mode: input.calibration_mode,
-        resolved_min_pass_score: input.min_pass_score,
-        resolved_allow_warnings: input.allow_warnings,
-        resolved_gate_decision: input.gate_decision,
+        resolved_calibration_mode: kernelResult.resolvedFields.calibration_mode as string,
+        resolved_min_pass_score: kernelResult.resolvedFields.min_pass_score as string | number,
+        resolved_allow_warnings: kernelResult.resolvedFields.allow_warnings as string | number | boolean | readonly string[],
+        resolved_gate_decision: kernelResult.resolvedFields.gate_decision as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F030CriticStrictnessCalibrationEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F030CriticStrictnessCalibrationEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F030 (Калибровка строгости Критика)
- */
 export function verifyF030Module(): {
   featureId: typeof F030_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF030Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    calibration_mode: "f030_calibration_mode_verified",
-    min_pass_score: 100,
+    calibration_mode: "f030_calibration_mode_seed",
+    min_pass_score: 42,
     allow_warnings: true,
-    gate_decision: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 30 },
+    gate_decision: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 30 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F030" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_calibration_mode !== sampleInput.calibration_mode &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F030_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

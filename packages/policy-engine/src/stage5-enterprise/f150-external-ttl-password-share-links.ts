@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F150
- * ============================================================================
- * Feature ID: F150
- * Stage: stage5-enterprise
- * Title: Безопасный шаринг артефактов по внешним ссылкам
- * Description: Генерация read-only ссылок на отчёты и презентации с паролем и сроком жизни (TTL)
+ * F150 (stage5-enterprise): Безопасный шаринг артефактов по внешним ссылкам
+ * Генерация read-only ссылок на отчёты и презентации с паролем и сроком жизни (TTL)
  * Operation Code: secure_share_link_issuer
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F150_FEATURE_ID = "F150" as const;
 export const F150_STAGE = "stage5-enterprise" as const;
 export const F150_OPERATION_CODE = "secure_share_link_issuer" as const;
-export const F150_CONTRACT_VERSION = "1.0.0" as const;
+export const F150_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F150ExternalTtlPasswordShareLinksExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F150ExternalTtlPasswordShareLinksExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F150ExternalTtlPasswordShareLinksConfig {
@@ -50,6 +47,17 @@ export interface F150ExternalTtlPasswordShareLinksInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F150ExternalTtlPasswordShareLinksAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F150_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F150ExternalTtlPasswordShareLinksOutput {
   readonly featureId: typeof F150_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F150ExternalTtlPasswordShareLinksOutput {
   readonly resolved_artifact_id: string | number;
   readonly resolved_expires_at_iso: string | number | boolean | readonly string[];
   readonly resolved_password_protected: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F150ExternalTtlPasswordShareLinksAuditEntry;
-}
-
-export interface F150ExternalTtlPasswordShareLinksAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F150_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F150ExternalTtlPasswordShareLinksTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F150_CONFIG: F150ExternalTtlPasswordShareLinksConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F150ExternalTtlPasswordShareLinksValidationError extends Error {
@@ -109,40 +108,36 @@ export class F150ExternalTtlPasswordShareLinksValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F150 provenance & audit integrity.
- */
 export function computeF150Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f150_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f150_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F150: Безопасный шаринг артефактов по внешним ссылкам
- * Генерация read-only ссылок на отчёты и презентации с паролем и сроком жизни (TTL)
- */
 export class F150ExternalTtlPasswordShareLinksEngine {
   private readonly config: F150ExternalTtlPasswordShareLinksConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F150ExternalTtlPasswordShareLinksOutput[] = [];
   private readonly auditLog: F150ExternalTtlPasswordShareLinksAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F150ExternalTtlPasswordShareLinksOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F150ExternalTtlPasswordShareLinksConfig>) {
+  constructor(customConfig?: Partial<F150ExternalTtlPasswordShareLinksConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F150_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F150ExternalTtlPasswordShareLinksConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F150ExternalTtlPasswordShareLinksInput): void {
@@ -158,8 +153,24 @@ export class F150ExternalTtlPasswordShareLinksEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F150ExternalTtlPasswordShareLinksValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F150ExternalTtlPasswordShareLinksValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F150ExternalTtlPasswordShareLinksValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.share_token).trim().length === 0) {
       throw new F150ExternalTtlPasswordShareLinksValidationError("share_token", "Primary domain attribute 'share_token' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      share_token: input.share_token,
+      artifact_id: input.artifact_id,
+      expires_at_iso: input.expires_at_iso,
+      password_protected: input.password_protected
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F150ExternalTtlPasswordShareLinksValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F150ExternalTtlPasswordShareLinksEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f150_${this.totalRuns}_${computeF150Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F150_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        share_token: input.share_token,
+        artifact_id: input.artifact_id,
+        expires_at_iso: input.expires_at_iso,
+        password_protected: input.password_protected
+      });
+      const payloadHash = computeF150Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F150ExternalTtlPasswordShareLinksValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F150_FEATURE_ID,
+        operationCode: F150_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        share_token: input.share_token,
-        artifact_id: input.artifact_id,
-        expires_at_iso: input.expires_at_iso,
-        password_protected: input.password_protected,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          share_token: input.share_token,
+          artifact_id: input.artifact_id,
+          expires_at_iso: input.expires_at_iso,
+          password_protected: input.password_protected
+        }
       });
 
-      const provenanceDigest = computeF150Digest(canonicalPayload);
+      const executionId = `exec_f150_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f150_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F150ExternalTtlPasswordShareLinksAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F150_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F150ExternalTtlPasswordShareLinksEngine {
         actorId: input.actorId,
         action: `secure_share_link_issuer:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F150ExternalTtlPasswordShareLinksEngine {
         executionId,
         status: "completed",
         operationCode: F150_OPERATION_CODE,
-        resolved_share_token: input.share_token,
-        resolved_artifact_id: input.artifact_id,
-        resolved_expires_at_iso: input.expires_at_iso,
-        resolved_password_protected: input.password_protected,
+        resolved_share_token: kernelResult.resolvedFields.share_token as string,
+        resolved_artifact_id: kernelResult.resolvedFields.artifact_id as string | number,
+        resolved_expires_at_iso: kernelResult.resolvedFields.expires_at_iso as string | number | boolean | readonly string[],
+        resolved_password_protected: kernelResult.resolvedFields.password_protected as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F150ExternalTtlPasswordShareLinksEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F150ExternalTtlPasswordShareLinksEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F150 (Безопасный шаринг артефактов по внешним ссылкам)
- */
 export function verifyF150Module(): {
   featureId: typeof F150_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF150Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    share_token: "f150_share_token_verified",
-    artifact_id: 100,
+    share_token: "f150_share_token_seed",
+    artifact_id: 42,
     expires_at_iso: true,
-    password_protected: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 150 },
+    password_protected: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 150 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F150" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_share_token !== sampleInput.share_token &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F150_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F032
- * ============================================================================
- * Feature ID: F032
- * Stage: stage1-autonomy
- * Title: Трассировка латентности узлов (Node Latency Profiler)
- * Description: Замер времени выполнения каждого шага графа для поиска узких мест
+ * F032 (stage1-autonomy): Трассировка латентности узлов (Node Latency Profiler)
+ * Замер времени выполнения каждого шага графа для поиска узких мест
  * Operation Code: latency_profiler
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F032_FEATURE_ID = "F032" as const;
 export const F032_STAGE = "stage1-autonomy" as const;
 export const F032_OPERATION_CODE = "latency_profiler" as const;
-export const F032_CONTRACT_VERSION = "1.0.0" as const;
+export const F032_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F032NodeLatencyProfilerExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F032NodeLatencyProfilerExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F032NodeLatencyProfilerConfig {
@@ -50,6 +47,17 @@ export interface F032NodeLatencyProfilerInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F032NodeLatencyProfilerAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F032_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F032NodeLatencyProfilerOutput {
   readonly featureId: typeof F032_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F032NodeLatencyProfilerOutput {
   readonly resolved_bottleneck_node_id: string | number;
   readonly resolved_p95_latency_ms: string | number | boolean | readonly string[];
   readonly resolved_total_graph_ms: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F032NodeLatencyProfilerAuditEntry;
-}
-
-export interface F032NodeLatencyProfilerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F032_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F032NodeLatencyProfilerTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F032_CONFIG: F032NodeLatencyProfilerConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F032NodeLatencyProfilerValidationError extends Error {
@@ -109,40 +108,36 @@ export class F032NodeLatencyProfilerValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F032 provenance & audit integrity.
- */
 export function computeF032Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f032_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f032_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F032: Трассировка латентности узлов (Node Latency Profiler)
- * Замер времени выполнения каждого шага графа для поиска узких мест
- */
 export class F032NodeLatencyProfilerEngine {
   private readonly config: F032NodeLatencyProfilerConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F032NodeLatencyProfilerOutput[] = [];
   private readonly auditLog: F032NodeLatencyProfilerAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F032NodeLatencyProfilerOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F032NodeLatencyProfilerConfig>) {
+  constructor(customConfig?: Partial<F032NodeLatencyProfilerConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F032_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F032NodeLatencyProfilerConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F032NodeLatencyProfilerInput): void {
@@ -158,8 +153,24 @@ export class F032NodeLatencyProfilerEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F032NodeLatencyProfilerValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F032NodeLatencyProfilerValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F032NodeLatencyProfilerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.graph_id).trim().length === 0) {
       throw new F032NodeLatencyProfilerValidationError("graph_id", "Primary domain attribute 'graph_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      graph_id: input.graph_id,
+      bottleneck_node_id: input.bottleneck_node_id,
+      p95_latency_ms: input.p95_latency_ms,
+      total_graph_ms: input.total_graph_ms
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F032NodeLatencyProfilerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F032NodeLatencyProfilerEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f032_${this.totalRuns}_${computeF032Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F032_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        graph_id: input.graph_id,
+        bottleneck_node_id: input.bottleneck_node_id,
+        p95_latency_ms: input.p95_latency_ms,
+        total_graph_ms: input.total_graph_ms
+      });
+      const payloadHash = computeF032Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F032NodeLatencyProfilerValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F032_FEATURE_ID,
+        operationCode: F032_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        graph_id: input.graph_id,
-        bottleneck_node_id: input.bottleneck_node_id,
-        p95_latency_ms: input.p95_latency_ms,
-        total_graph_ms: input.total_graph_ms,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          graph_id: input.graph_id,
+          bottleneck_node_id: input.bottleneck_node_id,
+          p95_latency_ms: input.p95_latency_ms,
+          total_graph_ms: input.total_graph_ms
+        }
       });
 
-      const provenanceDigest = computeF032Digest(canonicalPayload);
+      const executionId = `exec_f032_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f032_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F032NodeLatencyProfilerAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F032_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F032NodeLatencyProfilerEngine {
         actorId: input.actorId,
         action: `latency_profiler:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F032NodeLatencyProfilerEngine {
         executionId,
         status: "completed",
         operationCode: F032_OPERATION_CODE,
-        resolved_graph_id: input.graph_id,
-        resolved_bottleneck_node_id: input.bottleneck_node_id,
-        resolved_p95_latency_ms: input.p95_latency_ms,
-        resolved_total_graph_ms: input.total_graph_ms,
+        resolved_graph_id: kernelResult.resolvedFields.graph_id as string,
+        resolved_bottleneck_node_id: kernelResult.resolvedFields.bottleneck_node_id as string | number,
+        resolved_p95_latency_ms: kernelResult.resolvedFields.p95_latency_ms as string | number | boolean | readonly string[],
+        resolved_total_graph_ms: kernelResult.resolvedFields.total_graph_ms as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F032NodeLatencyProfilerEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F032NodeLatencyProfilerEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F032 (Трассировка латентности узлов (Node Latency Profiler))
- */
 export function verifyF032Module(): {
   featureId: typeof F032_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF032Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    graph_id: "f032_graph_id_verified",
-    bottleneck_node_id: 100,
+    graph_id: "f032_graph_id_seed",
+    bottleneck_node_id: 42,
     p95_latency_ms: true,
-    total_graph_ms: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 32 },
+    total_graph_ms: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 32 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F032" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_graph_id !== sampleInput.graph_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F032_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

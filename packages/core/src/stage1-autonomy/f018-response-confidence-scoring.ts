@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F018
- * ============================================================================
- * Feature ID: F018
- * Stage: stage1-autonomy
- * Title: Оценка уверенности ответа (Confidence Scoring)
- * Description: Расчёт метрики достоверности результата перед передачей Менеджеру
+ * F018 (stage1-autonomy): Оценка уверенности ответа (Confidence Scoring)
+ * Расчёт метрики достоверности результата перед передачей Менеджеру
  * Operation Code: confidence_estimator
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F018_FEATURE_ID = "F018" as const;
 export const F018_STAGE = "stage1-autonomy" as const;
 export const F018_OPERATION_CODE = "confidence_estimator" as const;
-export const F018_CONTRACT_VERSION = "1.0.0" as const;
+export const F018_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F018ResponseConfidenceScoringExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F018ResponseConfidenceScoringExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F018ResponseConfidenceScoringConfig {
@@ -50,6 +47,17 @@ export interface F018ResponseConfidenceScoringInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F018ResponseConfidenceScoringAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F018_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F018ResponseConfidenceScoringOutput {
   readonly featureId: typeof F018_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F018ResponseConfidenceScoringOutput {
   readonly resolved_confidence_score: string | number;
   readonly resolved_evidence_density: string | number | boolean | readonly string[];
   readonly resolved_meets_threshold: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F018ResponseConfidenceScoringAuditEntry;
-}
-
-export interface F018ResponseConfidenceScoringAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F018_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F018ResponseConfidenceScoringTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F018_CONFIG: F018ResponseConfidenceScoringConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F018ResponseConfidenceScoringValidationError extends Error {
@@ -109,40 +108,36 @@ export class F018ResponseConfidenceScoringValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F018 provenance & audit integrity.
- */
 export function computeF018Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f018_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f018_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F018: Оценка уверенности ответа (Confidence Scoring)
- * Расчёт метрики достоверности результата перед передачей Менеджеру
- */
 export class F018ResponseConfidenceScoringEngine {
   private readonly config: F018ResponseConfidenceScoringConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F018ResponseConfidenceScoringOutput[] = [];
   private readonly auditLog: F018ResponseConfidenceScoringAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F018ResponseConfidenceScoringOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F018ResponseConfidenceScoringConfig>) {
+  constructor(customConfig?: Partial<F018ResponseConfidenceScoringConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F018_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F018ResponseConfidenceScoringConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F018ResponseConfidenceScoringInput): void {
@@ -158,8 +153,24 @@ export class F018ResponseConfidenceScoringEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F018ResponseConfidenceScoringValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F018ResponseConfidenceScoringValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F018ResponseConfidenceScoringValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.task_id).trim().length === 0) {
       throw new F018ResponseConfidenceScoringValidationError("task_id", "Primary domain attribute 'task_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      task_id: input.task_id,
+      confidence_score: input.confidence_score,
+      evidence_density: input.evidence_density,
+      meets_threshold: input.meets_threshold
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F018ResponseConfidenceScoringValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F018ResponseConfidenceScoringEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f018_${this.totalRuns}_${computeF018Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F018_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        task_id: input.task_id,
+        confidence_score: input.confidence_score,
+        evidence_density: input.evidence_density,
+        meets_threshold: input.meets_threshold
+      });
+      const payloadHash = computeF018Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F018ResponseConfidenceScoringValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F018_FEATURE_ID,
+        operationCode: F018_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        task_id: input.task_id,
-        confidence_score: input.confidence_score,
-        evidence_density: input.evidence_density,
-        meets_threshold: input.meets_threshold,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          task_id: input.task_id,
+          confidence_score: input.confidence_score,
+          evidence_density: input.evidence_density,
+          meets_threshold: input.meets_threshold
+        }
       });
 
-      const provenanceDigest = computeF018Digest(canonicalPayload);
+      const executionId = `exec_f018_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f018_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F018ResponseConfidenceScoringAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F018_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F018ResponseConfidenceScoringEngine {
         actorId: input.actorId,
         action: `confidence_estimator:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F018ResponseConfidenceScoringEngine {
         executionId,
         status: "completed",
         operationCode: F018_OPERATION_CODE,
-        resolved_task_id: input.task_id,
-        resolved_confidence_score: input.confidence_score,
-        resolved_evidence_density: input.evidence_density,
-        resolved_meets_threshold: input.meets_threshold,
+        resolved_task_id: kernelResult.resolvedFields.task_id as string,
+        resolved_confidence_score: kernelResult.resolvedFields.confidence_score as string | number,
+        resolved_evidence_density: kernelResult.resolvedFields.evidence_density as string | number | boolean | readonly string[],
+        resolved_meets_threshold: kernelResult.resolvedFields.meets_threshold as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F018ResponseConfidenceScoringEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F018ResponseConfidenceScoringEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F018 (Оценка уверенности ответа (Confidence Scoring))
- */
 export function verifyF018Module(): {
   featureId: typeof F018_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF018Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    task_id: "f018_task_id_verified",
-    confidence_score: 100,
+    task_id: "f018_task_id_seed",
+    confidence_score: 42,
     evidence_density: true,
-    meets_threshold: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 18 },
+    meets_threshold: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 18 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F018" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_task_id !== sampleInput.task_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F018_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

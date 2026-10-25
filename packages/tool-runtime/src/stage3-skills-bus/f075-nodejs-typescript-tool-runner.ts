@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F075
- * ============================================================================
- * Feature ID: F075
- * Stage: stage3-skills-bus
- * Title: Исполнение Node.js / TypeScript-инструментов
- * Description: Выполнение серверных скриптов, парсеров и проверка сборки прямо из рабочей сессии
+ * F075 (stage3-skills-bus): Исполнение Node.js / TypeScript-инструментов
+ * Выполнение серверных скриптов, парсеров и проверка сборки прямо из рабочей сессии
  * Operation Code: node_ts_executor
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F075_FEATURE_ID = "F075" as const;
 export const F075_STAGE = "stage3-skills-bus" as const;
 export const F075_OPERATION_CODE = "node_ts_executor" as const;
-export const F075_CONTRACT_VERSION = "1.0.0" as const;
+export const F075_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F075NodejsTypescriptToolRunnerExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F075NodejsTypescriptToolRunnerExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F075NodejsTypescriptToolRunnerConfig {
@@ -50,6 +47,17 @@ export interface F075NodejsTypescriptToolRunnerInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F075NodejsTypescriptToolRunnerAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F075_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F075NodejsTypescriptToolRunnerOutput {
   readonly featureId: typeof F075_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F075NodejsTypescriptToolRunnerOutput {
   readonly resolved_ts_module_name: string | number;
   readonly resolved_typecheck_passed: string | number | boolean | readonly string[];
   readonly resolved_execution_output: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F075NodejsTypescriptToolRunnerAuditEntry;
-}
-
-export interface F075NodejsTypescriptToolRunnerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F075_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F075NodejsTypescriptToolRunnerTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F075_CONFIG: F075NodejsTypescriptToolRunnerConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F075NodejsTypescriptToolRunnerValidationError extends Error {
@@ -109,40 +108,36 @@ export class F075NodejsTypescriptToolRunnerValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F075 provenance & audit integrity.
- */
 export function computeF075Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f075_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f075_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F075: Исполнение Node.js / TypeScript-инструментов
- * Выполнение серверных скриптов, парсеров и проверка сборки прямо из рабочей сессии
- */
 export class F075NodejsTypescriptToolRunnerEngine {
   private readonly config: F075NodejsTypescriptToolRunnerConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F075NodejsTypescriptToolRunnerOutput[] = [];
   private readonly auditLog: F075NodejsTypescriptToolRunnerAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F075NodejsTypescriptToolRunnerOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F075NodejsTypescriptToolRunnerConfig>) {
+  constructor(customConfig?: Partial<F075NodejsTypescriptToolRunnerConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F075_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F075NodejsTypescriptToolRunnerConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F075NodejsTypescriptToolRunnerInput): void {
@@ -158,8 +153,24 @@ export class F075NodejsTypescriptToolRunnerEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F075NodejsTypescriptToolRunnerValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F075NodejsTypescriptToolRunnerValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F075NodejsTypescriptToolRunnerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.execution_id).trim().length === 0) {
       throw new F075NodejsTypescriptToolRunnerValidationError("execution_id", "Primary domain attribute 'execution_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      execution_id: input.execution_id,
+      ts_module_name: input.ts_module_name,
+      typecheck_passed: input.typecheck_passed,
+      execution_output: input.execution_output
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F075NodejsTypescriptToolRunnerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F075NodejsTypescriptToolRunnerEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f075_${this.totalRuns}_${computeF075Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F075_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        execution_id: input.execution_id,
+        ts_module_name: input.ts_module_name,
+        typecheck_passed: input.typecheck_passed,
+        execution_output: input.execution_output
+      });
+      const payloadHash = computeF075Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F075NodejsTypescriptToolRunnerValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F075_FEATURE_ID,
+        operationCode: F075_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        execution_id: input.execution_id,
-        ts_module_name: input.ts_module_name,
-        typecheck_passed: input.typecheck_passed,
-        execution_output: input.execution_output,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          execution_id: input.execution_id,
+          ts_module_name: input.ts_module_name,
+          typecheck_passed: input.typecheck_passed,
+          execution_output: input.execution_output
+        }
       });
 
-      const provenanceDigest = computeF075Digest(canonicalPayload);
+      const executionId = `exec_f075_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f075_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F075NodejsTypescriptToolRunnerAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F075_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F075NodejsTypescriptToolRunnerEngine {
         actorId: input.actorId,
         action: `node_ts_executor:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F075NodejsTypescriptToolRunnerEngine {
         executionId,
         status: "completed",
         operationCode: F075_OPERATION_CODE,
-        resolved_execution_id: input.execution_id,
-        resolved_ts_module_name: input.ts_module_name,
-        resolved_typecheck_passed: input.typecheck_passed,
-        resolved_execution_output: input.execution_output,
+        resolved_execution_id: kernelResult.resolvedFields.execution_id as string,
+        resolved_ts_module_name: kernelResult.resolvedFields.ts_module_name as string | number,
+        resolved_typecheck_passed: kernelResult.resolvedFields.typecheck_passed as string | number | boolean | readonly string[],
+        resolved_execution_output: kernelResult.resolvedFields.execution_output as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F075NodejsTypescriptToolRunnerEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F075NodejsTypescriptToolRunnerEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F075 (Исполнение Node.js / TypeScript-инструментов)
- */
 export function verifyF075Module(): {
   featureId: typeof F075_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF075Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    execution_id: "f075_execution_id_verified",
-    ts_module_name: 100,
+    execution_id: "f075_execution_id_seed",
+    ts_module_name: 42,
     typecheck_passed: true,
-    execution_output: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 75 },
+    execution_output: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 75 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F075" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_execution_id !== sampleInput.execution_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F075_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

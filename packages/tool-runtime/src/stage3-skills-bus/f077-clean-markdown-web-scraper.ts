@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F077
- * ============================================================================
- * Feature ID: F077
- * Stage: stage3-skills-bus
- * Title: Веб-поиск и скрапинг с очисткой до Markdown
- * Description: Сбор актуальной информации из сети с удалением рекламного шума и навигации
+ * F077 (stage3-skills-bus): Веб-поиск и скрапинг с очисткой до Markdown
+ * Сбор актуальной информации из сети с удалением рекламного шума и навигации
  * Operation Code: clean_web_extractor
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F077_FEATURE_ID = "F077" as const;
 export const F077_STAGE = "stage3-skills-bus" as const;
 export const F077_OPERATION_CODE = "clean_web_extractor" as const;
-export const F077_CONTRACT_VERSION = "1.0.0" as const;
+export const F077_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F077CleanMarkdownWebScraperExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F077CleanMarkdownWebScraperExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F077CleanMarkdownWebScraperConfig {
@@ -50,6 +47,17 @@ export interface F077CleanMarkdownWebScraperInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F077CleanMarkdownWebScraperAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F077_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F077CleanMarkdownWebScraperOutput {
   readonly featureId: typeof F077_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F077CleanMarkdownWebScraperOutput {
   readonly resolved_noise_stripped_pct: string | number;
   readonly resolved_clean_markdown: string | number | boolean | readonly string[];
   readonly resolved_extracted_links: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F077CleanMarkdownWebScraperAuditEntry;
-}
-
-export interface F077CleanMarkdownWebScraperAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F077_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F077CleanMarkdownWebScraperTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F077_CONFIG: F077CleanMarkdownWebScraperConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F077CleanMarkdownWebScraperValidationError extends Error {
@@ -109,40 +108,36 @@ export class F077CleanMarkdownWebScraperValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F077 provenance & audit integrity.
- */
 export function computeF077Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f077_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f077_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F077: Веб-поиск и скрапинг с очисткой до Markdown
- * Сбор актуальной информации из сети с удалением рекламного шума и навигации
- */
 export class F077CleanMarkdownWebScraperEngine {
   private readonly config: F077CleanMarkdownWebScraperConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F077CleanMarkdownWebScraperOutput[] = [];
   private readonly auditLog: F077CleanMarkdownWebScraperAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F077CleanMarkdownWebScraperOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F077CleanMarkdownWebScraperConfig>) {
+  constructor(customConfig?: Partial<F077CleanMarkdownWebScraperConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F077_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F077CleanMarkdownWebScraperConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F077CleanMarkdownWebScraperInput): void {
@@ -158,8 +153,24 @@ export class F077CleanMarkdownWebScraperEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F077CleanMarkdownWebScraperValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F077CleanMarkdownWebScraperValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F077CleanMarkdownWebScraperValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.source_url).trim().length === 0) {
       throw new F077CleanMarkdownWebScraperValidationError("source_url", "Primary domain attribute 'source_url' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      source_url: input.source_url,
+      noise_stripped_pct: input.noise_stripped_pct,
+      clean_markdown: input.clean_markdown,
+      extracted_links: input.extracted_links
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F077CleanMarkdownWebScraperValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F077CleanMarkdownWebScraperEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f077_${this.totalRuns}_${computeF077Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F077_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        source_url: input.source_url,
+        noise_stripped_pct: input.noise_stripped_pct,
+        clean_markdown: input.clean_markdown,
+        extracted_links: input.extracted_links
+      });
+      const payloadHash = computeF077Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F077CleanMarkdownWebScraperValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F077_FEATURE_ID,
+        operationCode: F077_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        source_url: input.source_url,
-        noise_stripped_pct: input.noise_stripped_pct,
-        clean_markdown: input.clean_markdown,
-        extracted_links: input.extracted_links,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          source_url: input.source_url,
+          noise_stripped_pct: input.noise_stripped_pct,
+          clean_markdown: input.clean_markdown,
+          extracted_links: input.extracted_links
+        }
       });
 
-      const provenanceDigest = computeF077Digest(canonicalPayload);
+      const executionId = `exec_f077_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f077_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F077CleanMarkdownWebScraperAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F077_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F077CleanMarkdownWebScraperEngine {
         actorId: input.actorId,
         action: `clean_web_extractor:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F077CleanMarkdownWebScraperEngine {
         executionId,
         status: "completed",
         operationCode: F077_OPERATION_CODE,
-        resolved_source_url: input.source_url,
-        resolved_noise_stripped_pct: input.noise_stripped_pct,
-        resolved_clean_markdown: input.clean_markdown,
-        resolved_extracted_links: input.extracted_links,
+        resolved_source_url: kernelResult.resolvedFields.source_url as string,
+        resolved_noise_stripped_pct: kernelResult.resolvedFields.noise_stripped_pct as string | number,
+        resolved_clean_markdown: kernelResult.resolvedFields.clean_markdown as string | number | boolean | readonly string[],
+        resolved_extracted_links: kernelResult.resolvedFields.extracted_links as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F077CleanMarkdownWebScraperEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F077CleanMarkdownWebScraperEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F077 (Веб-поиск и скрапинг с очисткой до Markdown)
- */
 export function verifyF077Module(): {
   featureId: typeof F077_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF077Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    source_url: "f077_source_url_verified",
-    noise_stripped_pct: 100,
+    source_url: "f077_source_url_seed",
+    noise_stripped_pct: 42,
     clean_markdown: true,
-    extracted_links: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 77 },
+    extracted_links: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 77 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F077" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_source_url !== sampleInput.source_url &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F077_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

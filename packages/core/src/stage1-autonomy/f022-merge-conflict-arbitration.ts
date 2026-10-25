@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F022
- * ============================================================================
- * Feature ID: F022
- * Stage: stage1-autonomy
- * Title: Разрешение конфликтов слияния результатов
- * Description: Арбитраж Менеджером противоречивых выводов от двух параллельных исследовательских агентов
+ * F022 (stage1-autonomy): Разрешение конфликтов слияния результатов
+ * Арбитраж Менеджером противоречивых выводов от двух параллельных исследовательских агентов
  * Operation Code: conflict_arbiter
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F022_FEATURE_ID = "F022" as const;
 export const F022_STAGE = "stage1-autonomy" as const;
 export const F022_OPERATION_CODE = "conflict_arbiter" as const;
-export const F022_CONTRACT_VERSION = "1.0.0" as const;
+export const F022_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F022MergeConflictArbitrationExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F022MergeConflictArbitrationExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F022MergeConflictArbitrationConfig {
@@ -50,6 +47,17 @@ export interface F022MergeConflictArbitrationInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F022MergeConflictArbitrationAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F022_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F022MergeConflictArbitrationOutput {
   readonly featureId: typeof F022_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F022MergeConflictArbitrationOutput {
   readonly resolved_winning_agent_id: string | number;
   readonly resolved_arbitration_score: string | number | boolean | readonly string[];
   readonly resolved_resolution_rationale: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F022MergeConflictArbitrationAuditEntry;
-}
-
-export interface F022MergeConflictArbitrationAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F022_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F022MergeConflictArbitrationTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F022_CONFIG: F022MergeConflictArbitrationConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F022MergeConflictArbitrationValidationError extends Error {
@@ -109,40 +108,36 @@ export class F022MergeConflictArbitrationValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F022 provenance & audit integrity.
- */
 export function computeF022Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f022_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f022_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F022: Разрешение конфликтов слияния результатов
- * Арбитраж Менеджером противоречивых выводов от двух параллельных исследовательских агентов
- */
 export class F022MergeConflictArbitrationEngine {
   private readonly config: F022MergeConflictArbitrationConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F022MergeConflictArbitrationOutput[] = [];
   private readonly auditLog: F022MergeConflictArbitrationAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F022MergeConflictArbitrationOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F022MergeConflictArbitrationConfig>) {
+  constructor(customConfig?: Partial<F022MergeConflictArbitrationConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F022_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F022MergeConflictArbitrationConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F022MergeConflictArbitrationInput): void {
@@ -158,8 +153,24 @@ export class F022MergeConflictArbitrationEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F022MergeConflictArbitrationValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F022MergeConflictArbitrationValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F022MergeConflictArbitrationValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.conflict_id).trim().length === 0) {
       throw new F022MergeConflictArbitrationValidationError("conflict_id", "Primary domain attribute 'conflict_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      conflict_id: input.conflict_id,
+      winning_agent_id: input.winning_agent_id,
+      arbitration_score: input.arbitration_score,
+      resolution_rationale: input.resolution_rationale
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F022MergeConflictArbitrationValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F022MergeConflictArbitrationEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f022_${this.totalRuns}_${computeF022Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F022_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        conflict_id: input.conflict_id,
+        winning_agent_id: input.winning_agent_id,
+        arbitration_score: input.arbitration_score,
+        resolution_rationale: input.resolution_rationale
+      });
+      const payloadHash = computeF022Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F022MergeConflictArbitrationValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F022_FEATURE_ID,
+        operationCode: F022_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        conflict_id: input.conflict_id,
-        winning_agent_id: input.winning_agent_id,
-        arbitration_score: input.arbitration_score,
-        resolution_rationale: input.resolution_rationale,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          conflict_id: input.conflict_id,
+          winning_agent_id: input.winning_agent_id,
+          arbitration_score: input.arbitration_score,
+          resolution_rationale: input.resolution_rationale
+        }
       });
 
-      const provenanceDigest = computeF022Digest(canonicalPayload);
+      const executionId = `exec_f022_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f022_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F022MergeConflictArbitrationAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F022_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F022MergeConflictArbitrationEngine {
         actorId: input.actorId,
         action: `conflict_arbiter:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F022MergeConflictArbitrationEngine {
         executionId,
         status: "completed",
         operationCode: F022_OPERATION_CODE,
-        resolved_conflict_id: input.conflict_id,
-        resolved_winning_agent_id: input.winning_agent_id,
-        resolved_arbitration_score: input.arbitration_score,
-        resolved_resolution_rationale: input.resolution_rationale,
+        resolved_conflict_id: kernelResult.resolvedFields.conflict_id as string,
+        resolved_winning_agent_id: kernelResult.resolvedFields.winning_agent_id as string | number,
+        resolved_arbitration_score: kernelResult.resolvedFields.arbitration_score as string | number | boolean | readonly string[],
+        resolved_resolution_rationale: kernelResult.resolvedFields.resolution_rationale as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F022MergeConflictArbitrationEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F022MergeConflictArbitrationEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F022 (Разрешение конфликтов слияния результатов)
- */
 export function verifyF022Module(): {
   featureId: typeof F022_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF022Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    conflict_id: "f022_conflict_id_verified",
-    winning_agent_id: 100,
+    conflict_id: "f022_conflict_id_seed",
+    winning_agent_id: 42,
     arbitration_score: true,
-    resolution_rationale: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 22 },
+    resolution_rationale: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 22 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F022" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_conflict_id !== sampleInput.conflict_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F022_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

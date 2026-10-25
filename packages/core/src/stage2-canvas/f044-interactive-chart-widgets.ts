@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F044
- * ============================================================================
- * Feature ID: F044
- * Stage: stage2-canvas
- * Title: Встраивание интерактивных графиков (Chart Widgets)
- * Description: Генерация динамических дашбордов (линейные, бар-чарты, воронки) по данным из отчёта
+ * F044 (stage2-canvas): Встраивание интерактивных графиков (Chart Widgets)
+ * Генерация динамических дашбордов (линейные, бар-чарты, воронки) по данным из отчёта
  * Operation Code: chart_widget_engine
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F044_FEATURE_ID = "F044" as const;
 export const F044_STAGE = "stage2-canvas" as const;
 export const F044_OPERATION_CODE = "chart_widget_engine" as const;
-export const F044_CONTRACT_VERSION = "1.0.0" as const;
+export const F044_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F044InteractiveChartWidgetsExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F044InteractiveChartWidgetsExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F044InteractiveChartWidgetsConfig {
@@ -50,6 +47,17 @@ export interface F044InteractiveChartWidgetsInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F044InteractiveChartWidgetsAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F044_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F044InteractiveChartWidgetsOutput {
   readonly featureId: typeof F044_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F044InteractiveChartWidgetsOutput {
   readonly resolved_chart_type: string | number;
   readonly resolved_series_count: string | number | boolean | readonly string[];
   readonly resolved_interactive_tooltips: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F044InteractiveChartWidgetsAuditEntry;
-}
-
-export interface F044InteractiveChartWidgetsAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F044_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F044InteractiveChartWidgetsTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F044_CONFIG: F044InteractiveChartWidgetsConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F044InteractiveChartWidgetsValidationError extends Error {
@@ -109,40 +108,36 @@ export class F044InteractiveChartWidgetsValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F044 provenance & audit integrity.
- */
 export function computeF044Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f044_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f044_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F044: Встраивание интерактивных графиков (Chart Widgets)
- * Генерация динамических дашбордов (линейные, бар-чарты, воронки) по данным из отчёта
- */
 export class F044InteractiveChartWidgetsEngine {
   private readonly config: F044InteractiveChartWidgetsConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F044InteractiveChartWidgetsOutput[] = [];
   private readonly auditLog: F044InteractiveChartWidgetsAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F044InteractiveChartWidgetsOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F044InteractiveChartWidgetsConfig>) {
+  constructor(customConfig?: Partial<F044InteractiveChartWidgetsConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F044_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F044InteractiveChartWidgetsConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F044InteractiveChartWidgetsInput): void {
@@ -158,8 +153,24 @@ export class F044InteractiveChartWidgetsEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F044InteractiveChartWidgetsValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F044InteractiveChartWidgetsValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F044InteractiveChartWidgetsValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.widget_id).trim().length === 0) {
       throw new F044InteractiveChartWidgetsValidationError("widget_id", "Primary domain attribute 'widget_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      widget_id: input.widget_id,
+      chart_type: input.chart_type,
+      series_count: input.series_count,
+      interactive_tooltips: input.interactive_tooltips
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F044InteractiveChartWidgetsValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F044InteractiveChartWidgetsEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f044_${this.totalRuns}_${computeF044Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F044_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        widget_id: input.widget_id,
+        chart_type: input.chart_type,
+        series_count: input.series_count,
+        interactive_tooltips: input.interactive_tooltips
+      });
+      const payloadHash = computeF044Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F044InteractiveChartWidgetsValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F044_FEATURE_ID,
+        operationCode: F044_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        widget_id: input.widget_id,
-        chart_type: input.chart_type,
-        series_count: input.series_count,
-        interactive_tooltips: input.interactive_tooltips,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          widget_id: input.widget_id,
+          chart_type: input.chart_type,
+          series_count: input.series_count,
+          interactive_tooltips: input.interactive_tooltips
+        }
       });
 
-      const provenanceDigest = computeF044Digest(canonicalPayload);
+      const executionId = `exec_f044_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f044_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F044InteractiveChartWidgetsAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F044_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F044InteractiveChartWidgetsEngine {
         actorId: input.actorId,
         action: `chart_widget_engine:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F044InteractiveChartWidgetsEngine {
         executionId,
         status: "completed",
         operationCode: F044_OPERATION_CODE,
-        resolved_widget_id: input.widget_id,
-        resolved_chart_type: input.chart_type,
-        resolved_series_count: input.series_count,
-        resolved_interactive_tooltips: input.interactive_tooltips,
+        resolved_widget_id: kernelResult.resolvedFields.widget_id as string,
+        resolved_chart_type: kernelResult.resolvedFields.chart_type as string | number,
+        resolved_series_count: kernelResult.resolvedFields.series_count as string | number | boolean | readonly string[],
+        resolved_interactive_tooltips: kernelResult.resolvedFields.interactive_tooltips as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F044InteractiveChartWidgetsEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F044InteractiveChartWidgetsEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F044 (Встраивание интерактивных графиков (Chart Widgets))
- */
 export function verifyF044Module(): {
   featureId: typeof F044_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF044Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    widget_id: "f044_widget_id_verified",
-    chart_type: 100,
+    widget_id: "f044_widget_id_seed",
+    chart_type: 42,
     series_count: true,
-    interactive_tooltips: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 44 },
+    interactive_tooltips: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 44 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F044" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_widget_id !== sampleInput.widget_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F044_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

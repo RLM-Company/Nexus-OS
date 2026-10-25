@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F158
- * ============================================================================
- * Feature ID: F158
- * Stage: stage5-enterprise
- * Title: Шаблоны быстрого онбординга воркспейсов
- * Description: Развёртывание преднастроенного пространства с демо-графом, скиллами и примерами на Canvas за 30 секунд
+ * F158 (stage5-enterprise): Шаблоны быстрого онбординга воркспейсов
+ * Развёртывание преднастроенного пространства с демо-графом, скиллами и примерами на Canvas за 30 секунд
  * Operation Code: instant_onboarding_seeder
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F158_FEATURE_ID = "F158" as const;
 export const F158_STAGE = "stage5-enterprise" as const;
 export const F158_OPERATION_CODE = "instant_onboarding_seeder" as const;
-export const F158_CONTRACT_VERSION = "1.0.0" as const;
+export const F158_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F158FastWorkspaceOnboardingTemplatesExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F158FastWorkspaceOnboardingTemplatesExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F158FastWorkspaceOnboardingTemplatesConfig {
@@ -50,6 +47,17 @@ export interface F158FastWorkspaceOnboardingTemplatesInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F158FastWorkspaceOnboardingTemplatesAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F158_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F158FastWorkspaceOnboardingTemplatesOutput {
   readonly featureId: typeof F158_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F158FastWorkspaceOnboardingTemplatesOutput {
   readonly resolved_seeded_nodes_count: string | number;
   readonly resolved_seeded_skills_count: string | number | boolean | readonly string[];
   readonly resolved_elapsed_ms: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F158FastWorkspaceOnboardingTemplatesAuditEntry;
-}
-
-export interface F158FastWorkspaceOnboardingTemplatesAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F158_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F158FastWorkspaceOnboardingTemplatesTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F158_CONFIG: F158FastWorkspaceOnboardingTemplatesConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F158FastWorkspaceOnboardingTemplatesValidationError extends Error {
@@ -109,40 +108,36 @@ export class F158FastWorkspaceOnboardingTemplatesValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F158 provenance & audit integrity.
- */
 export function computeF158Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f158_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f158_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F158: Шаблоны быстрого онбординга воркспейсов
- * Развёртывание преднастроенного пространства с демо-графом, скиллами и примерами на Canvas за 30 секунд
- */
 export class F158FastWorkspaceOnboardingTemplatesEngine {
   private readonly config: F158FastWorkspaceOnboardingTemplatesConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F158FastWorkspaceOnboardingTemplatesOutput[] = [];
   private readonly auditLog: F158FastWorkspaceOnboardingTemplatesAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F158FastWorkspaceOnboardingTemplatesOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F158FastWorkspaceOnboardingTemplatesConfig>) {
+  constructor(customConfig?: Partial<F158FastWorkspaceOnboardingTemplatesConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F158_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F158FastWorkspaceOnboardingTemplatesConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F158FastWorkspaceOnboardingTemplatesInput): void {
@@ -158,8 +153,24 @@ export class F158FastWorkspaceOnboardingTemplatesEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F158FastWorkspaceOnboardingTemplatesValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F158FastWorkspaceOnboardingTemplatesValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F158FastWorkspaceOnboardingTemplatesValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.template_name).trim().length === 0) {
       throw new F158FastWorkspaceOnboardingTemplatesValidationError("template_name", "Primary domain attribute 'template_name' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      template_name: input.template_name,
+      seeded_nodes_count: input.seeded_nodes_count,
+      seeded_skills_count: input.seeded_skills_count,
+      elapsed_ms: input.elapsed_ms
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F158FastWorkspaceOnboardingTemplatesValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F158FastWorkspaceOnboardingTemplatesEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f158_${this.totalRuns}_${computeF158Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F158_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        template_name: input.template_name,
+        seeded_nodes_count: input.seeded_nodes_count,
+        seeded_skills_count: input.seeded_skills_count,
+        elapsed_ms: input.elapsed_ms
+      });
+      const payloadHash = computeF158Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F158FastWorkspaceOnboardingTemplatesValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F158_FEATURE_ID,
+        operationCode: F158_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        template_name: input.template_name,
-        seeded_nodes_count: input.seeded_nodes_count,
-        seeded_skills_count: input.seeded_skills_count,
-        elapsed_ms: input.elapsed_ms,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          template_name: input.template_name,
+          seeded_nodes_count: input.seeded_nodes_count,
+          seeded_skills_count: input.seeded_skills_count,
+          elapsed_ms: input.elapsed_ms
+        }
       });
 
-      const provenanceDigest = computeF158Digest(canonicalPayload);
+      const executionId = `exec_f158_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f158_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F158FastWorkspaceOnboardingTemplatesAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F158_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F158FastWorkspaceOnboardingTemplatesEngine {
         actorId: input.actorId,
         action: `instant_onboarding_seeder:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F158FastWorkspaceOnboardingTemplatesEngine {
         executionId,
         status: "completed",
         operationCode: F158_OPERATION_CODE,
-        resolved_template_name: input.template_name,
-        resolved_seeded_nodes_count: input.seeded_nodes_count,
-        resolved_seeded_skills_count: input.seeded_skills_count,
-        resolved_elapsed_ms: input.elapsed_ms,
+        resolved_template_name: kernelResult.resolvedFields.template_name as string,
+        resolved_seeded_nodes_count: kernelResult.resolvedFields.seeded_nodes_count as string | number,
+        resolved_seeded_skills_count: kernelResult.resolvedFields.seeded_skills_count as string | number | boolean | readonly string[],
+        resolved_elapsed_ms: kernelResult.resolvedFields.elapsed_ms as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F158FastWorkspaceOnboardingTemplatesEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F158FastWorkspaceOnboardingTemplatesEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F158 (Шаблоны быстрого онбординга воркспейсов)
- */
 export function verifyF158Module(): {
   featureId: typeof F158_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF158Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    template_name: "f158_template_name_verified",
-    seeded_nodes_count: 100,
+    template_name: "f158_template_name_seed",
+    seeded_nodes_count: 42,
     seeded_skills_count: true,
-    elapsed_ms: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 158 },
+    elapsed_ms: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 158 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F158" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_template_name !== sampleInput.template_name &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F158_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

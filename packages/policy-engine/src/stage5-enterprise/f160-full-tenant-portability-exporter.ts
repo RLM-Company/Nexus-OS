@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F160
- * ============================================================================
- * Feature ID: F160
- * Stage: stage5-enterprise
- * Title: Экспорт полного дампа проекта (Full Tenant Portability)
- * Description: Выгрузка всех артефактов, истории чатов, графа знаний и скиллов в самодостаточный архив
+ * F160 (stage5-enterprise): Экспорт полного дампа проекта (Full Tenant Portability)
+ * Выгрузка всех артефактов, истории чатов, графа знаний и скиллов в самодостаточный архив
  * Operation Code: tenant_portability_dumper
- * Target Package Directory: packages/policy-engine/src/stage5-enterprise
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F160_FEATURE_ID = "F160" as const;
 export const F160_STAGE = "stage5-enterprise" as const;
 export const F160_OPERATION_CODE = "tenant_portability_dumper" as const;
-export const F160_CONTRACT_VERSION = "1.0.0" as const;
+export const F160_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F160FullTenantPortabilityExporterExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F160FullTenantPortabilityExporterExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F160FullTenantPortabilityExporterConfig {
@@ -50,6 +47,17 @@ export interface F160FullTenantPortabilityExporterInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F160FullTenantPortabilityExporterAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F160_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F160FullTenantPortabilityExporterOutput {
   readonly featureId: typeof F160_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F160FullTenantPortabilityExporterOutput {
   readonly resolved_tenant_id: string | number;
   readonly resolved_manifest_integrity_hash: string | number | boolean | readonly string[];
   readonly resolved_self_contained_ready: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F160FullTenantPortabilityExporterAuditEntry;
-}
-
-export interface F160FullTenantPortabilityExporterAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F160_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F160FullTenantPortabilityExporterTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F160_CONFIG: F160FullTenantPortabilityExporterConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F160FullTenantPortabilityExporterValidationError extends Error {
@@ -109,40 +108,36 @@ export class F160FullTenantPortabilityExporterValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F160 provenance & audit integrity.
- */
 export function computeF160Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f160_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f160_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F160: Экспорт полного дампа проекта (Full Tenant Portability)
- * Выгрузка всех артефактов, истории чатов, графа знаний и скиллов в самодостаточный архив
- */
 export class F160FullTenantPortabilityExporterEngine {
   private readonly config: F160FullTenantPortabilityExporterConfig;
+  private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F160FullTenantPortabilityExporterOutput[] = [];
   private readonly auditLog: F160FullTenantPortabilityExporterAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F160FullTenantPortabilityExporterOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F160FullTenantPortabilityExporterConfig>) {
+  constructor(customConfig?: Partial<F160FullTenantPortabilityExporterConfig>, kernel?: Stage5EnterpriseKernel) {
     this.config = {
       ...DEFAULT_F160_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage5EnterpriseKernel();
   }
 
   public getConfig(): F160FullTenantPortabilityExporterConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F160FullTenantPortabilityExporterInput): void {
@@ -158,8 +153,24 @@ export class F160FullTenantPortabilityExporterEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F160FullTenantPortabilityExporterValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F160FullTenantPortabilityExporterValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F160FullTenantPortabilityExporterValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.export_bundle_id).trim().length === 0) {
       throw new F160FullTenantPortabilityExporterValidationError("export_bundle_id", "Primary domain attribute 'export_bundle_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      export_bundle_id: input.export_bundle_id,
+      tenant_id: input.tenant_id,
+      manifest_integrity_hash: input.manifest_integrity_hash,
+      self_contained_ready: input.self_contained_ready
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F160FullTenantPortabilityExporterValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F160FullTenantPortabilityExporterEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f160_${this.totalRuns}_${computeF160Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F160_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        export_bundle_id: input.export_bundle_id,
+        tenant_id: input.tenant_id,
+        manifest_integrity_hash: input.manifest_integrity_hash,
+        self_contained_ready: input.self_contained_ready
+      });
+      const payloadHash = computeF160Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F160FullTenantPortabilityExporterValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F160_FEATURE_ID,
+        operationCode: F160_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        export_bundle_id: input.export_bundle_id,
-        tenant_id: input.tenant_id,
-        manifest_integrity_hash: input.manifest_integrity_hash,
-        self_contained_ready: input.self_contained_ready,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          export_bundle_id: input.export_bundle_id,
+          tenant_id: input.tenant_id,
+          manifest_integrity_hash: input.manifest_integrity_hash,
+          self_contained_ready: input.self_contained_ready
+        }
       });
 
-      const provenanceDigest = computeF160Digest(canonicalPayload);
+      const executionId = `exec_f160_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f160_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F160FullTenantPortabilityExporterAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F160_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F160FullTenantPortabilityExporterEngine {
         actorId: input.actorId,
         action: `tenant_portability_dumper:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F160FullTenantPortabilityExporterEngine {
         executionId,
         status: "completed",
         operationCode: F160_OPERATION_CODE,
-        resolved_export_bundle_id: input.export_bundle_id,
-        resolved_tenant_id: input.tenant_id,
-        resolved_manifest_integrity_hash: input.manifest_integrity_hash,
-        resolved_self_contained_ready: input.self_contained_ready,
+        resolved_export_bundle_id: kernelResult.resolvedFields.export_bundle_id as string,
+        resolved_tenant_id: kernelResult.resolvedFields.tenant_id as string | number,
+        resolved_manifest_integrity_hash: kernelResult.resolvedFields.manifest_integrity_hash as string | number | boolean | readonly string[],
+        resolved_self_contained_ready: kernelResult.resolvedFields.self_contained_ready as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F160FullTenantPortabilityExporterEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F160FullTenantPortabilityExporterEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F160 (Экспорт полного дампа проекта (Full Tenant Portability))
- */
 export function verifyF160Module(): {
   featureId: typeof F160_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF160Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    export_bundle_id: "f160_export_bundle_id_verified",
-    tenant_id: 100,
+    export_bundle_id: "f160_export_bundle_id_seed",
+    tenant_id: 42,
     manifest_integrity_hash: true,
-    self_contained_ready: "verified_ok",
-    metadata: { stage: "stage5-enterprise", featureNumber: 160 },
+    self_contained_ready: "verified_seed",
+    metadata: { stage: "stage5-enterprise", featureNumber: 160 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F160" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_export_bundle_id !== sampleInput.export_bundle_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F160_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

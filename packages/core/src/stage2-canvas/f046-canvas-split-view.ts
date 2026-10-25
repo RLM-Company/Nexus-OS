@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F046
- * ============================================================================
- * Feature ID: F046
- * Stage: stage2-canvas
- * Title: Разделение экрана внутри Canvas (Split-View)
- * Description: Сопоставление исходного документа и сгенерированного отчёта бок о бок
+ * F046 (stage2-canvas): Разделение экрана внутри Canvas (Split-View)
+ * Сопоставление исходного документа и сгенерированного отчёта бок о бок
  * Operation Code: split_view_comparer
- * Target Package Directory: packages/core/src/stage2-canvas
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F046_FEATURE_ID = "F046" as const;
 export const F046_STAGE = "stage2-canvas" as const;
 export const F046_OPERATION_CODE = "split_view_comparer" as const;
-export const F046_CONTRACT_VERSION = "1.0.0" as const;
+export const F046_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F046CanvasSplitViewExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F046CanvasSplitViewExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F046CanvasSplitViewConfig {
@@ -50,6 +47,17 @@ export interface F046CanvasSplitViewInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F046CanvasSplitViewAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F046_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F046CanvasSplitViewOutput {
   readonly featureId: typeof F046_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F046CanvasSplitViewOutput {
   readonly resolved_right_tab_id: string | number;
   readonly resolved_synchronized_scroll: string | number | boolean | readonly string[];
   readonly resolved_viewport_ratio: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F046CanvasSplitViewAuditEntry;
-}
-
-export interface F046CanvasSplitViewAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F046_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F046CanvasSplitViewTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F046_CONFIG: F046CanvasSplitViewConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F046CanvasSplitViewValidationError extends Error {
@@ -109,40 +108,36 @@ export class F046CanvasSplitViewValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F046 provenance & audit integrity.
- */
 export function computeF046Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f046_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f046_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F046: Разделение экрана внутри Canvas (Split-View)
- * Сопоставление исходного документа и сгенерированного отчёта бок о бок
- */
 export class F046CanvasSplitViewEngine {
   private readonly config: F046CanvasSplitViewConfig;
+  private readonly kernel: Stage2CanvasKernel;
   private readonly executionHistory: F046CanvasSplitViewOutput[] = [];
   private readonly auditLog: F046CanvasSplitViewAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F046CanvasSplitViewOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F046CanvasSplitViewConfig>) {
+  constructor(customConfig?: Partial<F046CanvasSplitViewConfig>, kernel?: Stage2CanvasKernel) {
     this.config = {
       ...DEFAULT_F046_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage2CanvasKernel();
   }
 
   public getConfig(): F046CanvasSplitViewConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F046CanvasSplitViewInput): void {
@@ -158,8 +153,24 @@ export class F046CanvasSplitViewEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F046CanvasSplitViewValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F046CanvasSplitViewValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F046CanvasSplitViewValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.left_tab_id).trim().length === 0) {
       throw new F046CanvasSplitViewValidationError("left_tab_id", "Primary domain attribute 'left_tab_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      left_tab_id: input.left_tab_id,
+      right_tab_id: input.right_tab_id,
+      synchronized_scroll: input.synchronized_scroll,
+      viewport_ratio: input.viewport_ratio
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F046CanvasSplitViewValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F046CanvasSplitViewEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f046_${this.totalRuns}_${computeF046Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F046_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        left_tab_id: input.left_tab_id,
+        right_tab_id: input.right_tab_id,
+        synchronized_scroll: input.synchronized_scroll,
+        viewport_ratio: input.viewport_ratio
+      });
+      const payloadHash = computeF046Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F046CanvasSplitViewValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F046_FEATURE_ID,
+        operationCode: F046_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        left_tab_id: input.left_tab_id,
-        right_tab_id: input.right_tab_id,
-        synchronized_scroll: input.synchronized_scroll,
-        viewport_ratio: input.viewport_ratio,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          left_tab_id: input.left_tab_id,
+          right_tab_id: input.right_tab_id,
+          synchronized_scroll: input.synchronized_scroll,
+          viewport_ratio: input.viewport_ratio
+        }
       });
 
-      const provenanceDigest = computeF046Digest(canonicalPayload);
+      const executionId = `exec_f046_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f046_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F046CanvasSplitViewAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F046_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F046CanvasSplitViewEngine {
         actorId: input.actorId,
         action: `split_view_comparer:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F046CanvasSplitViewEngine {
         executionId,
         status: "completed",
         operationCode: F046_OPERATION_CODE,
-        resolved_left_tab_id: input.left_tab_id,
-        resolved_right_tab_id: input.right_tab_id,
-        resolved_synchronized_scroll: input.synchronized_scroll,
-        resolved_viewport_ratio: input.viewport_ratio,
+        resolved_left_tab_id: kernelResult.resolvedFields.left_tab_id as string,
+        resolved_right_tab_id: kernelResult.resolvedFields.right_tab_id as string | number,
+        resolved_synchronized_scroll: kernelResult.resolvedFields.synchronized_scroll as string | number | boolean | readonly string[],
+        resolved_viewport_ratio: kernelResult.resolvedFields.viewport_ratio as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F046CanvasSplitViewEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F046CanvasSplitViewEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F046 (Разделение экрана внутри Canvas (Split-View))
- */
 export function verifyF046Module(): {
   featureId: typeof F046_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF046Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    left_tab_id: "f046_left_tab_id_verified",
-    right_tab_id: 100,
+    left_tab_id: "f046_left_tab_id_seed",
+    right_tab_id: 42,
     synchronized_scroll: true,
-    viewport_ratio: "verified_ok",
-    metadata: { stage: "stage2-canvas", featureNumber: 46 },
+    viewport_ratio: "verified_seed",
+    metadata: { stage: "stage2-canvas", featureNumber: 46 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F046" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_left_tab_id !== sampleInput.left_tab_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F046_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

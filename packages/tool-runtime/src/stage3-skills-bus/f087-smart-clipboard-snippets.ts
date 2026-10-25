@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F087
- * ============================================================================
- * Feature ID: F087
- * Stage: stage3-skills-bus
- * Title: Умный буфер обмена и сниппеты
- * Description: Быстрое сохранение удачных фрагментов кода и таблиц в боковую панель
+ * F087 (stage3-skills-bus): Умный буфер обмена и сниппеты
+ * Быстрое сохранение удачных фрагментов кода и таблиц в боковую панель
  * Operation Code: snippet_vault_clipboard
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F087_FEATURE_ID = "F087" as const;
 export const F087_STAGE = "stage3-skills-bus" as const;
 export const F087_OPERATION_CODE = "snippet_vault_clipboard" as const;
-export const F087_CONTRACT_VERSION = "1.0.0" as const;
+export const F087_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F087SmartClipboardSnippetsExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F087SmartClipboardSnippetsExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F087SmartClipboardSnippetsConfig {
@@ -50,6 +47,17 @@ export interface F087SmartClipboardSnippetsInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F087SmartClipboardSnippetsAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F087_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F087SmartClipboardSnippetsOutput {
   readonly featureId: typeof F087_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F087SmartClipboardSnippetsOutput {
   readonly resolved_title: string | number;
   readonly resolved_language_tag: string | number | boolean | readonly string[];
   readonly resolved_reusable_content: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F087SmartClipboardSnippetsAuditEntry;
-}
-
-export interface F087SmartClipboardSnippetsAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F087_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F087SmartClipboardSnippetsTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F087_CONFIG: F087SmartClipboardSnippetsConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F087SmartClipboardSnippetsValidationError extends Error {
@@ -109,40 +108,36 @@ export class F087SmartClipboardSnippetsValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F087 provenance & audit integrity.
- */
 export function computeF087Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f087_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f087_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F087: Умный буфер обмена и сниппеты
- * Быстрое сохранение удачных фрагментов кода и таблиц в боковую панель
- */
 export class F087SmartClipboardSnippetsEngine {
   private readonly config: F087SmartClipboardSnippetsConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F087SmartClipboardSnippetsOutput[] = [];
   private readonly auditLog: F087SmartClipboardSnippetsAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F087SmartClipboardSnippetsOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F087SmartClipboardSnippetsConfig>) {
+  constructor(customConfig?: Partial<F087SmartClipboardSnippetsConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F087_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F087SmartClipboardSnippetsConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F087SmartClipboardSnippetsInput): void {
@@ -158,8 +153,24 @@ export class F087SmartClipboardSnippetsEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F087SmartClipboardSnippetsValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F087SmartClipboardSnippetsValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F087SmartClipboardSnippetsValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.snippet_id).trim().length === 0) {
       throw new F087SmartClipboardSnippetsValidationError("snippet_id", "Primary domain attribute 'snippet_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      snippet_id: input.snippet_id,
+      title: input.title,
+      language_tag: input.language_tag,
+      reusable_content: input.reusable_content
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F087SmartClipboardSnippetsValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F087SmartClipboardSnippetsEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f087_${this.totalRuns}_${computeF087Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F087_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        snippet_id: input.snippet_id,
+        title: input.title,
+        language_tag: input.language_tag,
+        reusable_content: input.reusable_content
+      });
+      const payloadHash = computeF087Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F087SmartClipboardSnippetsValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F087_FEATURE_ID,
+        operationCode: F087_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        snippet_id: input.snippet_id,
-        title: input.title,
-        language_tag: input.language_tag,
-        reusable_content: input.reusable_content,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          snippet_id: input.snippet_id,
+          title: input.title,
+          language_tag: input.language_tag,
+          reusable_content: input.reusable_content
+        }
       });
 
-      const provenanceDigest = computeF087Digest(canonicalPayload);
+      const executionId = `exec_f087_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f087_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F087SmartClipboardSnippetsAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F087_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F087SmartClipboardSnippetsEngine {
         actorId: input.actorId,
         action: `snippet_vault_clipboard:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F087SmartClipboardSnippetsEngine {
         executionId,
         status: "completed",
         operationCode: F087_OPERATION_CODE,
-        resolved_snippet_id: input.snippet_id,
-        resolved_title: input.title,
-        resolved_language_tag: input.language_tag,
-        resolved_reusable_content: input.reusable_content,
+        resolved_snippet_id: kernelResult.resolvedFields.snippet_id as string,
+        resolved_title: kernelResult.resolvedFields.title as string | number,
+        resolved_language_tag: kernelResult.resolvedFields.language_tag as string | number | boolean | readonly string[],
+        resolved_reusable_content: kernelResult.resolvedFields.reusable_content as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F087SmartClipboardSnippetsEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F087SmartClipboardSnippetsEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F087 (Умный буфер обмена и сниппеты)
- */
 export function verifyF087Module(): {
   featureId: typeof F087_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF087Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    snippet_id: "f087_snippet_id_verified",
-    title: 100,
+    snippet_id: "f087_snippet_id_seed",
+    title: 42,
     language_tag: true,
-    reusable_content: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 87 },
+    reusable_content: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 87 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F087" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_snippet_id !== sampleInput.snippet_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F087_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

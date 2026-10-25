@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F027
- * ============================================================================
- * Feature ID: F027
- * Stage: stage1-autonomy
- * Title: Генерация пост-мортем отчётов при сбое
- * Description: Автоматический разбор причины падения цепочки задач
+ * F027 (stage1-autonomy): Генерация пост-мортем отчётов при сбое
+ * Автоматический разбор причины падения цепочки задач
  * Operation Code: postmortem_analyzer
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F027_FEATURE_ID = "F027" as const;
 export const F027_STAGE = "stage1-autonomy" as const;
 export const F027_OPERATION_CODE = "postmortem_analyzer" as const;
-export const F027_CONTRACT_VERSION = "1.0.0" as const;
+export const F027_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F027FailurePostmortemGeneratorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F027FailurePostmortemGeneratorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F027FailurePostmortemGeneratorConfig {
@@ -50,6 +47,17 @@ export interface F027FailurePostmortemGeneratorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F027FailurePostmortemGeneratorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F027_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F027FailurePostmortemGeneratorOutput {
   readonly featureId: typeof F027_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F027FailurePostmortemGeneratorOutput {
   readonly resolved_failed_node_id: string | number;
   readonly resolved_root_cause: string | number | boolean | readonly string[];
   readonly resolved_recovery_recommendation: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F027FailurePostmortemGeneratorAuditEntry;
-}
-
-export interface F027FailurePostmortemGeneratorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F027_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F027FailurePostmortemGeneratorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F027_CONFIG: F027FailurePostmortemGeneratorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F027FailurePostmortemGeneratorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F027FailurePostmortemGeneratorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F027 provenance & audit integrity.
- */
 export function computeF027Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f027_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f027_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F027: Генерация пост-мортем отчётов при сбое
- * Автоматический разбор причины падения цепочки задач
- */
 export class F027FailurePostmortemGeneratorEngine {
   private readonly config: F027FailurePostmortemGeneratorConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F027FailurePostmortemGeneratorOutput[] = [];
   private readonly auditLog: F027FailurePostmortemGeneratorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F027FailurePostmortemGeneratorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F027FailurePostmortemGeneratorConfig>) {
+  constructor(customConfig?: Partial<F027FailurePostmortemGeneratorConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F027_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F027FailurePostmortemGeneratorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F027FailurePostmortemGeneratorInput): void {
@@ -158,8 +153,24 @@ export class F027FailurePostmortemGeneratorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F027FailurePostmortemGeneratorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F027FailurePostmortemGeneratorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F027FailurePostmortemGeneratorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.report_id).trim().length === 0) {
       throw new F027FailurePostmortemGeneratorValidationError("report_id", "Primary domain attribute 'report_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      report_id: input.report_id,
+      failed_node_id: input.failed_node_id,
+      root_cause: input.root_cause,
+      recovery_recommendation: input.recovery_recommendation
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F027FailurePostmortemGeneratorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F027FailurePostmortemGeneratorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f027_${this.totalRuns}_${computeF027Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F027_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        report_id: input.report_id,
+        failed_node_id: input.failed_node_id,
+        root_cause: input.root_cause,
+        recovery_recommendation: input.recovery_recommendation
+      });
+      const payloadHash = computeF027Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F027FailurePostmortemGeneratorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F027_FEATURE_ID,
+        operationCode: F027_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        report_id: input.report_id,
-        failed_node_id: input.failed_node_id,
-        root_cause: input.root_cause,
-        recovery_recommendation: input.recovery_recommendation,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          report_id: input.report_id,
+          failed_node_id: input.failed_node_id,
+          root_cause: input.root_cause,
+          recovery_recommendation: input.recovery_recommendation
+        }
       });
 
-      const provenanceDigest = computeF027Digest(canonicalPayload);
+      const executionId = `exec_f027_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f027_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F027FailurePostmortemGeneratorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F027_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F027FailurePostmortemGeneratorEngine {
         actorId: input.actorId,
         action: `postmortem_analyzer:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F027FailurePostmortemGeneratorEngine {
         executionId,
         status: "completed",
         operationCode: F027_OPERATION_CODE,
-        resolved_report_id: input.report_id,
-        resolved_failed_node_id: input.failed_node_id,
-        resolved_root_cause: input.root_cause,
-        resolved_recovery_recommendation: input.recovery_recommendation,
+        resolved_report_id: kernelResult.resolvedFields.report_id as string,
+        resolved_failed_node_id: kernelResult.resolvedFields.failed_node_id as string | number,
+        resolved_root_cause: kernelResult.resolvedFields.root_cause as string | number | boolean | readonly string[],
+        resolved_recovery_recommendation: kernelResult.resolvedFields.recovery_recommendation as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F027FailurePostmortemGeneratorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F027FailurePostmortemGeneratorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F027 (Генерация пост-мортем отчётов при сбое)
- */
 export function verifyF027Module(): {
   featureId: typeof F027_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF027Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    report_id: "f027_report_id_verified",
-    failed_node_id: 100,
+    report_id: "f027_report_id_seed",
+    failed_node_id: 42,
     root_cause: true,
-    recovery_recommendation: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 27 },
+    recovery_recommendation: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 27 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F027" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_report_id !== sampleInput.report_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F027_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F080
- * ============================================================================
- * Feature ID: F080
- * Stage: stage3-skills-bus
- * Title: OCR-модуль для сканов и скриншотов
- * Description: Распознавание текста и таблиц с изображений и фотографий документов
+ * F080 (stage3-skills-bus): OCR-модуль для сканов и скриншотов
+ * Распознавание текста и таблиц с изображений и фотографий документов
  * Operation Code: ocr_vision_extractor
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F080_FEATURE_ID = "F080" as const;
 export const F080_STAGE = "stage3-skills-bus" as const;
 export const F080_OPERATION_CODE = "ocr_vision_extractor" as const;
-export const F080_CONTRACT_VERSION = "1.0.0" as const;
+export const F080_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F080OcrScansScreenshotsModuleExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F080OcrScansScreenshotsModuleExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F080OcrScansScreenshotsModuleConfig {
@@ -50,6 +47,17 @@ export interface F080OcrScansScreenshotsModuleInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F080OcrScansScreenshotsModuleAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F080_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F080OcrScansScreenshotsModuleOutput {
   readonly featureId: typeof F080_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F080OcrScansScreenshotsModuleOutput {
   readonly resolved_recognized_text: string | number;
   readonly resolved_confidence_pct: string | number | boolean | readonly string[];
   readonly resolved_detected_table_cells: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F080OcrScansScreenshotsModuleAuditEntry;
-}
-
-export interface F080OcrScansScreenshotsModuleAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F080_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F080OcrScansScreenshotsModuleTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F080_CONFIG: F080OcrScansScreenshotsModuleConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F080OcrScansScreenshotsModuleValidationError extends Error {
@@ -109,40 +108,36 @@ export class F080OcrScansScreenshotsModuleValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F080 provenance & audit integrity.
- */
 export function computeF080Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f080_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f080_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F080: OCR-модуль для сканов и скриншотов
- * Распознавание текста и таблиц с изображений и фотографий документов
- */
 export class F080OcrScansScreenshotsModuleEngine {
   private readonly config: F080OcrScansScreenshotsModuleConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F080OcrScansScreenshotsModuleOutput[] = [];
   private readonly auditLog: F080OcrScansScreenshotsModuleAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F080OcrScansScreenshotsModuleOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F080OcrScansScreenshotsModuleConfig>) {
+  constructor(customConfig?: Partial<F080OcrScansScreenshotsModuleConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F080_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F080OcrScansScreenshotsModuleConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F080OcrScansScreenshotsModuleInput): void {
@@ -158,8 +153,24 @@ export class F080OcrScansScreenshotsModuleEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F080OcrScansScreenshotsModuleValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F080OcrScansScreenshotsModuleValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F080OcrScansScreenshotsModuleValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.image_id).trim().length === 0) {
       throw new F080OcrScansScreenshotsModuleValidationError("image_id", "Primary domain attribute 'image_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      image_id: input.image_id,
+      recognized_text: input.recognized_text,
+      confidence_pct: input.confidence_pct,
+      detected_table_cells: input.detected_table_cells
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F080OcrScansScreenshotsModuleValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F080OcrScansScreenshotsModuleEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f080_${this.totalRuns}_${computeF080Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F080_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        image_id: input.image_id,
+        recognized_text: input.recognized_text,
+        confidence_pct: input.confidence_pct,
+        detected_table_cells: input.detected_table_cells
+      });
+      const payloadHash = computeF080Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F080OcrScansScreenshotsModuleValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F080_FEATURE_ID,
+        operationCode: F080_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        image_id: input.image_id,
-        recognized_text: input.recognized_text,
-        confidence_pct: input.confidence_pct,
-        detected_table_cells: input.detected_table_cells,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          image_id: input.image_id,
+          recognized_text: input.recognized_text,
+          confidence_pct: input.confidence_pct,
+          detected_table_cells: input.detected_table_cells
+        }
       });
 
-      const provenanceDigest = computeF080Digest(canonicalPayload);
+      const executionId = `exec_f080_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f080_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F080OcrScansScreenshotsModuleAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F080_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F080OcrScansScreenshotsModuleEngine {
         actorId: input.actorId,
         action: `ocr_vision_extractor:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F080OcrScansScreenshotsModuleEngine {
         executionId,
         status: "completed",
         operationCode: F080_OPERATION_CODE,
-        resolved_image_id: input.image_id,
-        resolved_recognized_text: input.recognized_text,
-        resolved_confidence_pct: input.confidence_pct,
-        resolved_detected_table_cells: input.detected_table_cells,
+        resolved_image_id: kernelResult.resolvedFields.image_id as string,
+        resolved_recognized_text: kernelResult.resolvedFields.recognized_text as string | number,
+        resolved_confidence_pct: kernelResult.resolvedFields.confidence_pct as string | number | boolean | readonly string[],
+        resolved_detected_table_cells: kernelResult.resolvedFields.detected_table_cells as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F080OcrScansScreenshotsModuleEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F080OcrScansScreenshotsModuleEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F080 (OCR-модуль для сканов и скриншотов)
- */
 export function verifyF080Module(): {
   featureId: typeof F080_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF080Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    image_id: "f080_image_id_verified",
-    recognized_text: 100,
+    image_id: "f080_image_id_seed",
+    recognized_text: 42,
     confidence_pct: true,
-    detected_table_cells: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 80 },
+    detected_table_cells: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 80 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F080" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_image_id !== sampleInput.image_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F080_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

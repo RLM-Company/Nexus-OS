@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F029
- * ============================================================================
- * Feature ID: F029
- * Stage: stage1-autonomy
- * Title: Режим «Адвокат дьявола»
- * Description: Принудительный запуск агента-оппонента для поиска слабых мест в бизнес-плане или архитектуре
+ * F029 (stage1-autonomy): Режим «Адвокат дьявола»
+ * Принудительный запуск агента-оппонента для поиска слабых мест в бизнес-плане или архитектуре
  * Operation Code: redteam_challenger
- * Target Package Directory: packages/core/src/stage1-autonomy
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F029_FEATURE_ID = "F029" as const;
 export const F029_STAGE = "stage1-autonomy" as const;
 export const F029_OPERATION_CODE = "redteam_challenger" as const;
-export const F029_CONTRACT_VERSION = "1.0.0" as const;
+export const F029_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F029DevilsAdvocateModeExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F029DevilsAdvocateModeExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F029DevilsAdvocateModeConfig {
@@ -50,6 +47,17 @@ export interface F029DevilsAdvocateModeInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F029DevilsAdvocateModeAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F029_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F029DevilsAdvocateModeOutput {
   readonly featureId: typeof F029_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F029DevilsAdvocateModeOutput {
   readonly resolved_target_artifact_id: string | number;
   readonly resolved_vulnerabilities_found: string | number | boolean | readonly string[];
   readonly resolved_counter_arguments: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F029DevilsAdvocateModeAuditEntry;
-}
-
-export interface F029DevilsAdvocateModeAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F029_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F029DevilsAdvocateModeTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F029_CONFIG: F029DevilsAdvocateModeConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F029DevilsAdvocateModeValidationError extends Error {
@@ -109,40 +108,36 @@ export class F029DevilsAdvocateModeValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F029 provenance & audit integrity.
- */
 export function computeF029Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f029_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f029_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F029: Режим «Адвокат дьявола»
- * Принудительный запуск агента-оппонента для поиска слабых мест в бизнес-плане или архитектуре
- */
 export class F029DevilsAdvocateModeEngine {
   private readonly config: F029DevilsAdvocateModeConfig;
+  private readonly kernel: Stage1AutonomyKernel;
   private readonly executionHistory: F029DevilsAdvocateModeOutput[] = [];
   private readonly auditLog: F029DevilsAdvocateModeAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F029DevilsAdvocateModeOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F029DevilsAdvocateModeConfig>) {
+  constructor(customConfig?: Partial<F029DevilsAdvocateModeConfig>, kernel?: Stage1AutonomyKernel) {
     this.config = {
       ...DEFAULT_F029_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage1AutonomyKernel();
   }
 
   public getConfig(): F029DevilsAdvocateModeConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F029DevilsAdvocateModeInput): void {
@@ -158,8 +153,24 @@ export class F029DevilsAdvocateModeEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F029DevilsAdvocateModeValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F029DevilsAdvocateModeValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F029DevilsAdvocateModeValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.challenge_id).trim().length === 0) {
       throw new F029DevilsAdvocateModeValidationError("challenge_id", "Primary domain attribute 'challenge_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      challenge_id: input.challenge_id,
+      target_artifact_id: input.target_artifact_id,
+      vulnerabilities_found: input.vulnerabilities_found,
+      counter_arguments: input.counter_arguments
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F029DevilsAdvocateModeValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F029DevilsAdvocateModeEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f029_${this.totalRuns}_${computeF029Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F029_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        challenge_id: input.challenge_id,
+        target_artifact_id: input.target_artifact_id,
+        vulnerabilities_found: input.vulnerabilities_found,
+        counter_arguments: input.counter_arguments
+      });
+      const payloadHash = computeF029Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F029DevilsAdvocateModeValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F029_FEATURE_ID,
+        operationCode: F029_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        challenge_id: input.challenge_id,
-        target_artifact_id: input.target_artifact_id,
-        vulnerabilities_found: input.vulnerabilities_found,
-        counter_arguments: input.counter_arguments,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          challenge_id: input.challenge_id,
+          target_artifact_id: input.target_artifact_id,
+          vulnerabilities_found: input.vulnerabilities_found,
+          counter_arguments: input.counter_arguments
+        }
       });
 
-      const provenanceDigest = computeF029Digest(canonicalPayload);
+      const executionId = `exec_f029_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f029_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F029DevilsAdvocateModeAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F029_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F029DevilsAdvocateModeEngine {
         actorId: input.actorId,
         action: `redteam_challenger:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F029DevilsAdvocateModeEngine {
         executionId,
         status: "completed",
         operationCode: F029_OPERATION_CODE,
-        resolved_challenge_id: input.challenge_id,
-        resolved_target_artifact_id: input.target_artifact_id,
-        resolved_vulnerabilities_found: input.vulnerabilities_found,
-        resolved_counter_arguments: input.counter_arguments,
+        resolved_challenge_id: kernelResult.resolvedFields.challenge_id as string,
+        resolved_target_artifact_id: kernelResult.resolvedFields.target_artifact_id as string | number,
+        resolved_vulnerabilities_found: kernelResult.resolvedFields.vulnerabilities_found as string | number | boolean | readonly string[],
+        resolved_counter_arguments: kernelResult.resolvedFields.counter_arguments as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F029DevilsAdvocateModeEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F029DevilsAdvocateModeEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F029 (Режим «Адвокат дьявола»)
- */
 export function verifyF029Module(): {
   featureId: typeof F029_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF029Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    challenge_id: "f029_challenge_id_verified",
-    target_artifact_id: 100,
+    challenge_id: "f029_challenge_id_seed",
+    target_artifact_id: 42,
     vulnerabilities_found: true,
-    counter_arguments: "verified_ok",
-    metadata: { stage: "stage1-autonomy", featureNumber: 29 },
+    counter_arguments: "verified_seed",
+    metadata: { stage: "stage1-autonomy", featureNumber: 29 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F029" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_challenge_id !== sampleInput.challenge_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F029_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

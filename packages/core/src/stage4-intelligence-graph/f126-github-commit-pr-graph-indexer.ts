@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F126
- * ============================================================================
- * Feature ID: F126
- * Stage: stage4-intelligence-graph
- * Title: Индексация коммитов и PR в граф знаний
- * Description: Автоматическое добавление истории разработки из GitHub в общий граф проекта
+ * F126 (stage4-intelligence-graph): Индексация коммитов и PR в граф знаний
+ * Автоматическое добавление истории разработки из GitHub в общий граф проекта
  * Operation Code: git_history_graph_indexer
- * Target Package Directory: packages/core/src/stage4-intelligence-graph
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F126_FEATURE_ID = "F126" as const;
 export const F126_STAGE = "stage4-intelligence-graph" as const;
 export const F126_OPERATION_CODE = "git_history_graph_indexer" as const;
-export const F126_CONTRACT_VERSION = "1.0.0" as const;
+export const F126_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F126GithubCommitPrGraphIndexerExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F126GithubCommitPrGraphIndexerExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F126GithubCommitPrGraphIndexerConfig {
@@ -50,6 +47,17 @@ export interface F126GithubCommitPrGraphIndexerInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F126GithubCommitPrGraphIndexerAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F126_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F126GithubCommitPrGraphIndexerOutput {
   readonly featureId: typeof F126_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F126GithubCommitPrGraphIndexerOutput {
   readonly resolved_indexed_commits: string | number;
   readonly resolved_linked_task_nodes: string | number | boolean | readonly string[];
   readonly resolved_graph_edges_added: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F126GithubCommitPrGraphIndexerAuditEntry;
-}
-
-export interface F126GithubCommitPrGraphIndexerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F126_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F126GithubCommitPrGraphIndexerTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F126_CONFIG: F126GithubCommitPrGraphIndexerConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F126GithubCommitPrGraphIndexerValidationError extends Error {
@@ -109,40 +108,36 @@ export class F126GithubCommitPrGraphIndexerValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F126 provenance & audit integrity.
- */
 export function computeF126Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f126_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f126_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F126: Индексация коммитов и PR в граф знаний
- * Автоматическое добавление истории разработки из GitHub в общий граф проекта
- */
 export class F126GithubCommitPrGraphIndexerEngine {
   private readonly config: F126GithubCommitPrGraphIndexerConfig;
+  private readonly kernel: Stage4GraphKernel;
   private readonly executionHistory: F126GithubCommitPrGraphIndexerOutput[] = [];
   private readonly auditLog: F126GithubCommitPrGraphIndexerAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F126GithubCommitPrGraphIndexerOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F126GithubCommitPrGraphIndexerConfig>) {
+  constructor(customConfig?: Partial<F126GithubCommitPrGraphIndexerConfig>, kernel?: Stage4GraphKernel) {
     this.config = {
       ...DEFAULT_F126_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage4GraphKernel();
   }
 
   public getConfig(): F126GithubCommitPrGraphIndexerConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F126GithubCommitPrGraphIndexerInput): void {
@@ -158,8 +153,24 @@ export class F126GithubCommitPrGraphIndexerEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F126GithubCommitPrGraphIndexerValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F126GithubCommitPrGraphIndexerValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F126GithubCommitPrGraphIndexerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.repo_name).trim().length === 0) {
       throw new F126GithubCommitPrGraphIndexerValidationError("repo_name", "Primary domain attribute 'repo_name' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      repo_name: input.repo_name,
+      indexed_commits: input.indexed_commits,
+      linked_task_nodes: input.linked_task_nodes,
+      graph_edges_added: input.graph_edges_added
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F126GithubCommitPrGraphIndexerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F126GithubCommitPrGraphIndexerEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f126_${this.totalRuns}_${computeF126Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F126_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        repo_name: input.repo_name,
+        indexed_commits: input.indexed_commits,
+        linked_task_nodes: input.linked_task_nodes,
+        graph_edges_added: input.graph_edges_added
+      });
+      const payloadHash = computeF126Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F126GithubCommitPrGraphIndexerValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F126_FEATURE_ID,
+        operationCode: F126_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        repo_name: input.repo_name,
-        indexed_commits: input.indexed_commits,
-        linked_task_nodes: input.linked_task_nodes,
-        graph_edges_added: input.graph_edges_added,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          repo_name: input.repo_name,
+          indexed_commits: input.indexed_commits,
+          linked_task_nodes: input.linked_task_nodes,
+          graph_edges_added: input.graph_edges_added
+        }
       });
 
-      const provenanceDigest = computeF126Digest(canonicalPayload);
+      const executionId = `exec_f126_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f126_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F126GithubCommitPrGraphIndexerAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F126_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F126GithubCommitPrGraphIndexerEngine {
         actorId: input.actorId,
         action: `git_history_graph_indexer:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F126GithubCommitPrGraphIndexerEngine {
         executionId,
         status: "completed",
         operationCode: F126_OPERATION_CODE,
-        resolved_repo_name: input.repo_name,
-        resolved_indexed_commits: input.indexed_commits,
-        resolved_linked_task_nodes: input.linked_task_nodes,
-        resolved_graph_edges_added: input.graph_edges_added,
+        resolved_repo_name: kernelResult.resolvedFields.repo_name as string,
+        resolved_indexed_commits: kernelResult.resolvedFields.indexed_commits as string | number,
+        resolved_linked_task_nodes: kernelResult.resolvedFields.linked_task_nodes as string | number | boolean | readonly string[],
+        resolved_graph_edges_added: kernelResult.resolvedFields.graph_edges_added as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F126GithubCommitPrGraphIndexerEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F126GithubCommitPrGraphIndexerEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F126 (Индексация коммитов и PR в граф знаний)
- */
 export function verifyF126Module(): {
   featureId: typeof F126_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF126Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    repo_name: "f126_repo_name_verified",
-    indexed_commits: 100,
+    repo_name: "f126_repo_name_seed",
+    indexed_commits: 42,
     linked_task_nodes: true,
-    graph_edges_added: "verified_ok",
-    metadata: { stage: "stage4-intelligence-graph", featureNumber: 126 },
+    graph_edges_added: "verified_seed",
+    metadata: { stage: "stage4-intelligence-graph", featureNumber: 126 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F126" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_repo_name !== sampleInput.repo_name &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F126_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

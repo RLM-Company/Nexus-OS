@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F074
- * ============================================================================
- * Feature ID: F074
- * Stage: stage3-skills-bus
- * Title: Исполнение Python-скриптов в контролируемой среде
- * Description: Запуск расчётов, pandas-аналитики и построения графиков в изолированном рантайме
+ * F074 (stage3-skills-bus): Исполнение Python-скриптов в контролируемой среде
+ * Запуск расчётов, pandas-аналитики и построения графиков в изолированном рантайме
  * Operation Code: python_sandbox_executor
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F074_FEATURE_ID = "F074" as const;
 export const F074_STAGE = "stage3-skills-bus" as const;
 export const F074_OPERATION_CODE = "python_sandbox_executor" as const;
-export const F074_CONTRACT_VERSION = "1.0.0" as const;
+export const F074_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F074ControlledPythonRuntimeExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F074ControlledPythonRuntimeExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F074ControlledPythonRuntimeConfig {
@@ -50,6 +47,17 @@ export interface F074ControlledPythonRuntimeInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F074ControlledPythonRuntimeAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F074_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F074ControlledPythonRuntimeOutput {
   readonly featureId: typeof F074_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F074ControlledPythonRuntimeOutput {
   readonly resolved_script_hash: string | number;
   readonly resolved_exit_code: string | number | boolean | readonly string[];
   readonly resolved_captured_stdout: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F074ControlledPythonRuntimeAuditEntry;
-}
-
-export interface F074ControlledPythonRuntimeAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F074_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F074ControlledPythonRuntimeTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F074_CONFIG: F074ControlledPythonRuntimeConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F074ControlledPythonRuntimeValidationError extends Error {
@@ -109,40 +108,36 @@ export class F074ControlledPythonRuntimeValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F074 provenance & audit integrity.
- */
 export function computeF074Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f074_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f074_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F074: Исполнение Python-скриптов в контролируемой среде
- * Запуск расчётов, pandas-аналитики и построения графиков в изолированном рантайме
- */
 export class F074ControlledPythonRuntimeEngine {
   private readonly config: F074ControlledPythonRuntimeConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F074ControlledPythonRuntimeOutput[] = [];
   private readonly auditLog: F074ControlledPythonRuntimeAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F074ControlledPythonRuntimeOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F074ControlledPythonRuntimeConfig>) {
+  constructor(customConfig?: Partial<F074ControlledPythonRuntimeConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F074_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F074ControlledPythonRuntimeConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F074ControlledPythonRuntimeInput): void {
@@ -158,8 +153,24 @@ export class F074ControlledPythonRuntimeEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F074ControlledPythonRuntimeValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F074ControlledPythonRuntimeValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F074ControlledPythonRuntimeValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.execution_id).trim().length === 0) {
       throw new F074ControlledPythonRuntimeValidationError("execution_id", "Primary domain attribute 'execution_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      execution_id: input.execution_id,
+      script_hash: input.script_hash,
+      exit_code: input.exit_code,
+      captured_stdout: input.captured_stdout
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F074ControlledPythonRuntimeValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F074ControlledPythonRuntimeEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f074_${this.totalRuns}_${computeF074Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F074_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        execution_id: input.execution_id,
+        script_hash: input.script_hash,
+        exit_code: input.exit_code,
+        captured_stdout: input.captured_stdout
+      });
+      const payloadHash = computeF074Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F074ControlledPythonRuntimeValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F074_FEATURE_ID,
+        operationCode: F074_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        execution_id: input.execution_id,
-        script_hash: input.script_hash,
-        exit_code: input.exit_code,
-        captured_stdout: input.captured_stdout,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          execution_id: input.execution_id,
+          script_hash: input.script_hash,
+          exit_code: input.exit_code,
+          captured_stdout: input.captured_stdout
+        }
       });
 
-      const provenanceDigest = computeF074Digest(canonicalPayload);
+      const executionId = `exec_f074_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f074_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F074ControlledPythonRuntimeAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F074_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F074ControlledPythonRuntimeEngine {
         actorId: input.actorId,
         action: `python_sandbox_executor:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F074ControlledPythonRuntimeEngine {
         executionId,
         status: "completed",
         operationCode: F074_OPERATION_CODE,
-        resolved_execution_id: input.execution_id,
-        resolved_script_hash: input.script_hash,
-        resolved_exit_code: input.exit_code,
-        resolved_captured_stdout: input.captured_stdout,
+        resolved_execution_id: kernelResult.resolvedFields.execution_id as string,
+        resolved_script_hash: kernelResult.resolvedFields.script_hash as string | number,
+        resolved_exit_code: kernelResult.resolvedFields.exit_code as string | number | boolean | readonly string[],
+        resolved_captured_stdout: kernelResult.resolvedFields.captured_stdout as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F074ControlledPythonRuntimeEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F074ControlledPythonRuntimeEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F074 (Исполнение Python-скриптов в контролируемой среде)
- */
 export function verifyF074Module(): {
   featureId: typeof F074_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF074Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    execution_id: "f074_execution_id_verified",
-    script_hash: 100,
+    execution_id: "f074_execution_id_seed",
+    script_hash: 42,
     exit_code: true,
-    captured_stdout: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 74 },
+    captured_stdout: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 74 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F074" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_execution_id !== sampleInput.execution_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F074_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }

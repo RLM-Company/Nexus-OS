@@ -1,71 +1,72 @@
-import { verifyF033Module } from "./f033-dual-pane-kosmora-canvas.ts";
-import { verifyF034Module } from "./f034-versioned-canvas-reports.ts";
-import { verifyF035Module } from "./f035-file-analysis-report-binding.ts";
-import { verifyF036Module } from "./f036-visual-artifact-version-diff.ts";
-import { verifyF037Module } from "./f037-interactive-presentation-editor.ts";
-import { verifyF038Module } from "./f038-xlsx-formula-table-generator.ts";
-import { verifyF039Module } from "./f039-desktop-archive-batch-download.ts";
-import { verifyF040Module } from "./f040-refined-canvas-controls.ts";
-import { verifyF041Module } from "./f041-inplace-selection-regeneration.ts";
-import { verifyF042Module } from "./f042-architectural-diagram-renderer.ts";
-import { verifyF043Module } from "./f043-ui-component-preview-sandbox.ts";
-import { verifyF044Module } from "./f044-interactive-chart-widgets.ts";
-import { verifyF045Module } from "./f045-multitab-canvas-manager.ts";
-import { verifyF046Module } from "./f046-canvas-split-view.ts";
-import { verifyF047Module } from "./f047-inline-review-threads.ts";
-import { verifyF048Module } from "./f048-artifact-verification-badge.ts";
-import { verifyF049Module } from "./f049-provenance-inspector-ui.ts";
-import { verifyF050Module } from "./f050-two-way-manual-edit-sync.ts";
-import { verifyF051Module } from "./f051-corporate-pdf-report-exporter.ts";
-import { verifyF052Module } from "./f052-markdown-notion-synchronizer.ts";
-import { verifyF053Module } from "./f053-floating-toc-navigator.ts";
-import { verifyF054Module } from "./f054-section-overwrite-locking.ts";
-import { verifyF055Module } from "./f055-cross-document-dynamic-variables.ts";
-import { verifyF056Module } from "./f056-artifact-templates-library.ts";
-import { verifyF057Module } from "./f057-dark-high-contrast-slide-themes.ts";
-import { verifyF058Module } from "./f058-broken-link-citation-validator.ts";
-import { verifyF059Module } from "./f059-fullscreen-present-mode.ts";
-import { verifyF060Module } from "./f060-oneclick-table-to-slides.ts";
-import { verifyF061Module } from "./f061-report-tts-audio-summary.ts";
-import { verifyF062Module } from "./f062-canvas-change-audit-log.ts";
-import { verifyF063Module } from "./f063-canvas-trash-bin-restore.ts";
-import { verifyF064Module } from "./f064-master-document-stitcher.ts";
+import { verifyF033Module } from "./f033-dual-pane-kosmora-canvas.js";
+import { verifyF034Module } from "./f034-versioned-canvas-reports.js";
+import { verifyF035Module } from "./f035-file-analysis-report-binding.js";
+import { verifyF036Module } from "./f036-visual-artifact-version-diff.js";
+import { verifyF037Module } from "./f037-interactive-presentation-editor.js";
+import { verifyF038Module } from "./f038-xlsx-formula-table-generator.js";
+import { verifyF039Module } from "./f039-desktop-archive-batch-download.js";
+import { verifyF040Module } from "./f040-refined-canvas-controls.js";
+import { verifyF041Module } from "./f041-inplace-selection-regeneration.js";
+import { verifyF042Module } from "./f042-architectural-diagram-renderer.js";
+import { verifyF043Module } from "./f043-ui-component-preview-sandbox.js";
+import { verifyF044Module } from "./f044-interactive-chart-widgets.js";
+import { verifyF045Module } from "./f045-multitab-canvas-manager.js";
+import { verifyF046Module } from "./f046-canvas-split-view.js";
+import { verifyF047Module } from "./f047-inline-review-threads.js";
+import { verifyF048Module } from "./f048-artifact-verification-badge.js";
+import { verifyF049Module } from "./f049-provenance-inspector-ui.js";
+import { verifyF050Module } from "./f050-two-way-manual-edit-sync.js";
+import { verifyF051Module } from "./f051-corporate-pdf-report-exporter.js";
+import { verifyF052Module } from "./f052-markdown-notion-synchronizer.js";
+import { verifyF053Module } from "./f053-floating-toc-navigator.js";
+import { verifyF054Module } from "./f054-section-overwrite-locking.js";
+import { verifyF055Module } from "./f055-cross-document-dynamic-variables.js";
+import { verifyF056Module } from "./f056-artifact-templates-library.js";
+import { verifyF057Module } from "./f057-dark-high-contrast-slide-themes.js";
+import { verifyF058Module } from "./f058-broken-link-citation-validator.js";
+import { verifyF059Module } from "./f059-fullscreen-present-mode.js";
+import { verifyF060Module } from "./f060-oneclick-table-to-slides.js";
+import { verifyF061Module } from "./f061-report-tts-audio-summary.js";
+import { verifyF062Module } from "./f062-canvas-change-audit-log.js";
+import { verifyF063Module } from "./f063-canvas-trash-bin-restore.js";
+import { verifyF064Module } from "./f064-master-document-stitcher.js";
 
 // Stage Barrel Export for packages/core/src/stage2-canvas (32 feature modules)
-export * from "./f033-dual-pane-kosmora-canvas.ts";
-export * from "./f034-versioned-canvas-reports.ts";
-export * from "./f035-file-analysis-report-binding.ts";
-export * from "./f036-visual-artifact-version-diff.ts";
-export * from "./f037-interactive-presentation-editor.ts";
-export * from "./f038-xlsx-formula-table-generator.ts";
-export * from "./f039-desktop-archive-batch-download.ts";
-export * from "./f040-refined-canvas-controls.ts";
-export * from "./f041-inplace-selection-regeneration.ts";
-export * from "./f042-architectural-diagram-renderer.ts";
-export * from "./f043-ui-component-preview-sandbox.ts";
-export * from "./f044-interactive-chart-widgets.ts";
-export * from "./f045-multitab-canvas-manager.ts";
-export * from "./f046-canvas-split-view.ts";
-export * from "./f047-inline-review-threads.ts";
-export * from "./f048-artifact-verification-badge.ts";
-export * from "./f049-provenance-inspector-ui.ts";
-export * from "./f050-two-way-manual-edit-sync.ts";
-export * from "./f051-corporate-pdf-report-exporter.ts";
-export * from "./f052-markdown-notion-synchronizer.ts";
-export * from "./f053-floating-toc-navigator.ts";
-export * from "./f054-section-overwrite-locking.ts";
-export * from "./f055-cross-document-dynamic-variables.ts";
-export * from "./f056-artifact-templates-library.ts";
-export * from "./f057-dark-high-contrast-slide-themes.ts";
-export * from "./f058-broken-link-citation-validator.ts";
-export * from "./f059-fullscreen-present-mode.ts";
-export * from "./f060-oneclick-table-to-slides.ts";
-export * from "./f061-report-tts-audio-summary.ts";
-export * from "./f062-canvas-change-audit-log.ts";
-export * from "./f063-canvas-trash-bin-restore.ts";
-export * from "./f064-master-document-stitcher.ts";
+export * from "./stage-kernel.js";
+export * from "./f033-dual-pane-kosmora-canvas.js";
+export * from "./f034-versioned-canvas-reports.js";
+export * from "./f035-file-analysis-report-binding.js";
+export * from "./f036-visual-artifact-version-diff.js";
+export * from "./f037-interactive-presentation-editor.js";
+export * from "./f038-xlsx-formula-table-generator.js";
+export * from "./f039-desktop-archive-batch-download.js";
+export * from "./f040-refined-canvas-controls.js";
+export * from "./f041-inplace-selection-regeneration.js";
+export * from "./f042-architectural-diagram-renderer.js";
+export * from "./f043-ui-component-preview-sandbox.js";
+export * from "./f044-interactive-chart-widgets.js";
+export * from "./f045-multitab-canvas-manager.js";
+export * from "./f046-canvas-split-view.js";
+export * from "./f047-inline-review-threads.js";
+export * from "./f048-artifact-verification-badge.js";
+export * from "./f049-provenance-inspector-ui.js";
+export * from "./f050-two-way-manual-edit-sync.js";
+export * from "./f051-corporate-pdf-report-exporter.js";
+export * from "./f052-markdown-notion-synchronizer.js";
+export * from "./f053-floating-toc-navigator.js";
+export * from "./f054-section-overwrite-locking.js";
+export * from "./f055-cross-document-dynamic-variables.js";
+export * from "./f056-artifact-templates-library.js";
+export * from "./f057-dark-high-contrast-slide-themes.js";
+export * from "./f058-broken-link-citation-validator.js";
+export * from "./f059-fullscreen-present-mode.js";
+export * from "./f060-oneclick-table-to-slides.js";
+export * from "./f061-report-tts-audio-summary.js";
+export * from "./f062-canvas-change-audit-log.js";
+export * from "./f063-canvas-trash-bin-restore.js";
+export * from "./f064-master-document-stitcher.js";
 
-export function verifyStage_stage2_canvas(): Array<{ featureId: string; passed: boolean }> {
+export function verifyStage_stage2_canvas(): Array<{ featureId: string; passed: boolean; executionId: string; provenanceDigest: string }> {
   return [
     verifyF033Module(),
     verifyF034Module(),
@@ -98,6 +99,6 @@ export function verifyStage_stage2_canvas(): Array<{ featureId: string; passed: 
     verifyF061Module(),
     verifyF062Module(),
     verifyF063Module(),
-    verifyF064Module(),
+    verifyF064Module()
   ];
 }

@@ -1,16 +1,17 @@
-// Master Barrel Export — Nexus-OS / Kosmora 160-Feature Architecture
-export * from "../../contracts/src/kosmora-protocol.ts";
-export * from "../../contracts/src/kosmora-canvas.ts";
-export * from "./kosmora-autonomy-engine.ts";
-export * from "./kosmora-canvas-engine.ts";
-export * from "./kosmora-intelligence-graph.ts";
-export * from "../../tool-runtime/src/kosmora-skills-bus.ts";
-export * from "../../policy-engine/src/kosmora-enterprise-security.ts";
-export * from "../../db/src/kosmora-runtime-store.ts";
+export * from "./manager-runtime-scenario-runner.js";
+export * from "./manager-runtime-suite-runner.js";
+export * from "./manager-runtime-task-readiness.js";
+export * from "./manager.js";
+export * from "./chat.js";
+export * from "./demo-manager-plan.js";
 
-// 160 Dedicated Feature Modules (F001–F160 across 5 Stages)
-export * from "./stage1-autonomy/index.ts";
-export * from "./stage2-canvas/index.ts";
-export * from "../../tool-runtime/src/stage3-skills-bus/index.ts";
-export * from "./stage4-intelligence-graph/index.ts";
-export * from "../../policy-engine/src/stage5-enterprise/index.ts";
+// Kosmora 160-Feature Sovereign AI OS Architecture Exports (Self-contained in src/)
+export * from "./kosmora-protocol.js";
+export * from "./kosmora-canvas.js";
+export * from "./kosmora-autonomy-engine.js";
+export * from "./kosmora-canvas-engine.js";
+export * from "./kosmora-skills-bus.js";
+export * from "./kosmora-intelligence-graph.js";
+export * from "./kosmora-enterprise-security.js";
+export * from "./kosmora-runtime-store.js";
+export * from "./kosmora-160-architecture.js";

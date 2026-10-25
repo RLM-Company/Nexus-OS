@@ -1,20 +1,16 @@
 /**
- * ============================================================================
- * NEXUS-OS / KOSMORA MONOREPO — FEATURE MODULE F084
- * ============================================================================
- * Feature ID: F084
- * Stage: stage3-skills-bus
- * Title: Пакетная обработка файлов (Batch File Processor)
- * Description: Применение одного скилла сразу к 10–50 загруженным документам с агрегацией в таблицу
+ * F084 (stage3-skills-bus): Пакетная обработка файлов (Batch File Processor)
+ * Применение одного скилла сразу к 10–50 загруженным документам с агрегацией в таблицу
  * Operation Code: batch_doc_processor
- * Target Package Directory: packages/tool-runtime/src/stage3-skills-bus
- * ============================================================================
  */
+
+import { createHash } from "node:crypto";
+import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
 
 export const F084_FEATURE_ID = "F084" as const;
 export const F084_STAGE = "stage3-skills-bus" as const;
 export const F084_OPERATION_CODE = "batch_doc_processor" as const;
-export const F084_CONTRACT_VERSION = "1.0.0" as const;
+export const F084_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F084BatchFileSkillProcessorExecutionStatus =
   | "idle"
@@ -22,6 +18,7 @@ export type F084BatchFileSkillProcessorExecutionStatus =
   | "executing"
   | "completed"
   | "degraded"
+  | "cancelled"
   | "failed";
 
 export interface F084BatchFileSkillProcessorConfig {
@@ -50,6 +47,17 @@ export interface F084BatchFileSkillProcessorInput {
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+export interface F084BatchFileSkillProcessorAuditEntry {
+  readonly eventId: string;
+  readonly featureId: typeof F084_FEATURE_ID;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly actorId: string;
+  readonly action: string;
+  readonly payloadHash: string;
+  readonly recordedAt: string;
+}
+
 export interface F084BatchFileSkillProcessorOutput {
   readonly featureId: typeof F084_FEATURE_ID;
   readonly requestId: string;
@@ -60,21 +68,12 @@ export interface F084BatchFileSkillProcessorOutput {
   readonly resolved_processed_files_count: string | number;
   readonly resolved_skill_handle: string | number | boolean | readonly string[];
   readonly resolved_aggregated_rows: string | number | boolean | Record<string, unknown>;
+  readonly domainOutcome: StageKernelExecutionResult["domainOutcome"];
+  readonly idempotentReplay: boolean;
   readonly provenanceDigest: string;
   readonly latencyMs: number;
   readonly timestampIso: string;
   readonly auditRecord: F084BatchFileSkillProcessorAuditEntry;
-}
-
-export interface F084BatchFileSkillProcessorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F084_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
 }
 
 export interface F084BatchFileSkillProcessorTelemetrySnapshot {
@@ -95,7 +94,7 @@ export const DEFAULT_F084_CONFIG: F084BatchFileSkillProcessorConfig = {
   maxRetries: 3,
   enableAuditTrail: true,
   enableTelemetry: true,
-  strictValidation: true,
+  strictValidation: true
 };
 
 export class F084BatchFileSkillProcessorValidationError extends Error {
@@ -109,40 +108,36 @@ export class F084BatchFileSkillProcessorValidationError extends Error {
   }
 }
 
-/**
- * Deterministic FNV-1a digest calculator for F084 provenance & audit integrity.
- */
 export function computeF084Digest(rawPayload: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < rawPayload.length; i++) {
-    hash ^= rawPayload.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `f084_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `f084_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-/**
- * Primary Runtime Engine for F084: Пакетная обработка файлов (Batch File Processor)
- * Применение одного скилла сразу к 10–50 загруженным документам с агрегацией в таблицу
- */
 export class F084BatchFileSkillProcessorEngine {
   private readonly config: F084BatchFileSkillProcessorConfig;
+  private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F084BatchFileSkillProcessorOutput[] = [];
   private readonly auditLog: F084BatchFileSkillProcessorAuditEntry[] = [];
+  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F084BatchFileSkillProcessorOutput }>();
+  private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F084BatchFileSkillProcessorConfig>) {
+  constructor(customConfig?: Partial<F084BatchFileSkillProcessorConfig>, kernel?: Stage3SkillsKernel) {
     this.config = {
       ...DEFAULT_F084_CONFIG,
-      ...(customConfig ?? {}),
+      ...(customConfig ?? {})
     };
+    this.kernel = kernel ?? new Stage3SkillsKernel();
   }
 
   public getConfig(): F084BatchFileSkillProcessorConfig {
     return { ...this.config };
+  }
+
+  public cancelRequest(requestId: string): void {
+    this.cancelledRequests.add(requestId);
   }
 
   public validateInput(input: F084BatchFileSkillProcessorInput): void {
@@ -158,8 +153,24 @@ export class F084BatchFileSkillProcessorEngine {
     if (!input.tenantId || input.tenantId.trim().length === 0) {
       throw new F084BatchFileSkillProcessorValidationError("tenantId", "Tenant ID must be a non-empty string.");
     }
+    if (!input.actorId || input.actorId.trim().length === 0) {
+      throw new F084BatchFileSkillProcessorValidationError("actorId", "Actor ID must be a non-empty string.");
+    }
+    if (this.cancelledRequests.has(input.requestId)) {
+      throw new F084BatchFileSkillProcessorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+    }
     if (this.config.strictValidation && String(input.batch_id).trim().length === 0) {
       throw new F084BatchFileSkillProcessorValidationError("batch_id", "Primary domain attribute 'batch_id' cannot be empty.");
+    }
+    for (const [fieldKey, fieldVal] of Object.entries({
+      batch_id: input.batch_id,
+      processed_files_count: input.processed_files_count,
+      skill_handle: input.skill_handle,
+      aggregated_rows: input.aggregated_rows
+    })) {
+      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
+        throw new F084BatchFileSkillProcessorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      }
     }
   }
 
@@ -170,21 +181,56 @@ export class F084BatchFileSkillProcessorEngine {
     try {
       this.validateInput(input);
 
-      const executionId = `exec_$f084_${this.totalRuns}_${computeF084Digest(input.requestId)}`;
-      const timestampIso = new Date().toISOString();
       const canonicalPayload = JSON.stringify({
         featureId: F084_FEATURE_ID,
+        projectId: input.projectId,
+        workspaceId: input.workspaceId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        batch_id: input.batch_id,
+        processed_files_count: input.processed_files_count,
+        skill_handle: input.skill_handle,
+        aggregated_rows: input.aggregated_rows
+      });
+      const payloadHash = computeF084Digest(canonicalPayload);
+
+      const existingIdempotent = this.idempotencyStore.get(input.requestId);
+      if (existingIdempotent) {
+        if (existingIdempotent.payloadHash !== payloadHash) {
+          throw new F084BatchFileSkillProcessorValidationError(
+            "requestId",
+            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
+          );
+        }
+        this.successfulRuns += 1;
+        return {
+          ...existingIdempotent.output,
+          idempotentReplay: true
+        };
+      }
+
+      const kernelResult = this.kernel.executeDomainOperation({
+        featureId: F084_FEATURE_ID,
+        operationCode: F084_OPERATION_CODE,
         requestId: input.requestId,
         projectId: input.projectId,
         workspaceId: input.workspaceId,
         tenantId: input.tenantId,
-        batch_id: input.batch_id,
-        processed_files_count: input.processed_files_count,
-        skill_handle: input.skill_handle,
-        aggregated_rows: input.aggregated_rows,
+        actorId: input.actorId,
+        autonomyLevel: input.autonomyLevel,
+        domainFields: {
+          batch_id: input.batch_id,
+          processed_files_count: input.processed_files_count,
+          skill_handle: input.skill_handle,
+          aggregated_rows: input.aggregated_rows
+        }
       });
 
-      const provenanceDigest = computeF084Digest(canonicalPayload);
+      const executionId = `exec_f084_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
+      const timestampIso = new Date().toISOString();
+      const provenanceDigest = `f084_${kernelResult.provenanceSha256.slice(0, 16)}`;
+
       const auditRecord: F084BatchFileSkillProcessorAuditEntry = {
         eventId: `aud_${executionId}`,
         featureId: F084_FEATURE_ID,
@@ -193,7 +239,7 @@ export class F084BatchFileSkillProcessorEngine {
         actorId: input.actorId,
         action: `batch_doc_processor:executed`,
         payloadHash: provenanceDigest,
-        recordedAt: timestampIso,
+        recordedAt: timestampIso
       };
 
       if (this.config.enableAuditTrail) {
@@ -210,16 +256,19 @@ export class F084BatchFileSkillProcessorEngine {
         executionId,
         status: "completed",
         operationCode: F084_OPERATION_CODE,
-        resolved_batch_id: input.batch_id,
-        resolved_processed_files_count: input.processed_files_count,
-        resolved_skill_handle: input.skill_handle,
-        resolved_aggregated_rows: input.aggregated_rows,
+        resolved_batch_id: kernelResult.resolvedFields.batch_id as string,
+        resolved_processed_files_count: kernelResult.resolvedFields.processed_files_count as string | number,
+        resolved_skill_handle: kernelResult.resolvedFields.skill_handle as string | number | boolean | readonly string[],
+        resolved_aggregated_rows: kernelResult.resolvedFields.aggregated_rows as string | number | boolean | Record<string, unknown>,
+        domainOutcome: kernelResult.domainOutcome,
+        idempotentReplay: false,
         provenanceDigest,
         latencyMs,
         timestampIso,
-        auditRecord,
+        auditRecord
       };
 
+      this.idempotencyStore.set(input.requestId, { payloadHash, output });
       this.executionHistory.push(output);
       return output;
     } catch (err) {
@@ -242,7 +291,7 @@ export class F084BatchFileSkillProcessorEngine {
       averageLatencyMs:
         this.successfulRuns > 0
           ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0,
+          : 0
     };
   }
 
@@ -255,9 +304,6 @@ export class F084BatchFileSkillProcessorEngine {
   }
 }
 
-/**
- * Built-in deterministic self-test for F084 (Пакетная обработка файлов (Batch File Processor))
- */
 export function verifyF084Module(): {
   featureId: typeof F084_FEATURE_ID;
   passed: boolean;
@@ -272,25 +318,29 @@ export function verifyF084Module(): {
     tenantId: "tenant_rlm_company",
     actorId: "actor_system_verifier",
     autonomyLevel: "A3",
-    batch_id: "f084_batch_id_verified",
-    processed_files_count: 100,
+    batch_id: "f084_batch_id_seed",
+    processed_files_count: 42,
     skill_handle: true,
-    aggregated_rows: "verified_ok",
-    metadata: { stage: "stage3-skills-bus", featureNumber: 84 },
+    aggregated_rows: "verified_seed",
+    metadata: { stage: "stage3-skills-bus", featureNumber: 84 }
   };
 
   const result = engine.execute(sampleInput);
+  const replay = engine.execute(sampleInput);
   const telemetry = engine.getTelemetrySnapshot();
   const passed =
     result.status === "completed" &&
     result.featureId === "F084" &&
-    telemetry.successfulRuns === 1 &&
+    result.domainOutcome.stateChanged === true &&
+    result.resolved_batch_id !== sampleInput.batch_id &&
+    replay.idempotentReplay === true &&
+    telemetry.successfulRuns === 2 &&
     engine.getAuditTrail().length === 1;
 
   return {
     featureId: F084_FEATURE_ID,
     passed,
     executionId: result.executionId,
-    provenanceDigest: result.provenanceDigest,
+    provenanceDigest: result.provenanceDigest
   };
 }
