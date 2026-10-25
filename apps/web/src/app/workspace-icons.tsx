@@ -39,9 +39,42 @@ export type IconName =
   | "edit"
   | "link"
   | "archive"
+  | "repeat"
+  | "bolt"
+  | "panel-close"
+  | "panel-open"
+  | "canvas"
+  | "stop"
   | "trash";
+// Shared action icons keep identical geometry across chat and composer.
 
 const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
+  repeat: (
+    <>
+      <path d="M20 7v5h-5M4 17v-5h5" />
+      <path d="M6.1 7a7 7 0 0 1 11.5-2L20 8M4 16l2.4 3A7 7 0 0 0 18 17" />
+    </>
+  ),
+  bolt: <path d="m13 2-9 12h7l-1 8 10-12h-7l1-8Z" />,
+  "panel-close": (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="3" />
+      <path d="M9 4v16m7-12-4 4 4 4" />
+    </>
+  ),
+  "panel-open": (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="3" />
+      <path d="M9 4v16m3-12 4 4-4 4" />
+    </>
+  ),
+  canvas: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="3" />
+      <path d="M8 8h8m-8 4h8m-8 4h4" />
+    </>
+  ),
+  stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
   pin: <path d="m9 3 10 10-3 1-3 4-3-3-6 6m6-6-3-3 4-3 1-3Z" />,
   edit: (
     <>

@@ -702,6 +702,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           : null;
         if (
           options.accountStore?.getRelay(identity.owner_id, run.chat_id) &&
+          !options.accountStore.getExecution(identity.owner_id).turbo &&
           conversation.some((message) => message.attachments?.length)
         )
           throw new RelayProtectionError(

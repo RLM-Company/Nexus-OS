@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import styles from "./chat-workspace.module.css";
+import { WorkspaceIcon } from "./workspace-icons";
 import { pinnedNavigationKey, readPinnedNavigation } from "./pinned-navigation";
 
 type Navigation = {
@@ -505,11 +506,19 @@ export function ChatToCanvas({
     }
   }
   return (
-    <span className={styles.transfer}>
-      {!open ? (
-        <button onClick={() => setOpen(true)}>В Canvas</button>
-      ) : (
-        <>
+    <span className="chat-canvas-action">
+      <button
+        type="button"
+        className="message-action"
+        aria-label="В Canvas"
+        title="В Canvas"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <WorkspaceIcon name="canvas" />
+      </button>
+      {open && (
+        <span className="chat-canvas-menu" role="group" aria-label="Перенести в Canvas">
           <label>
             Проект для Canvas
             <select
@@ -535,7 +544,7 @@ export function ChatToCanvas({
           {projects.length === 0 && <small>Сначала создайте проект для артефакта.</small>}
           {notice && <span role="status">{notice}</span>}
           {link && <Link href={link}>Открыть проект</Link>}
-        </>
+        </span>
       )}
     </span>
   );

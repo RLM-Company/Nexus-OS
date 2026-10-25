@@ -1,6 +1,12 @@
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { ACCOUNT_MIGRATION_SQL } from "./migration.js";
 import type { DatabaseSync } from "node:sqlite";
+import {
+  EXECUTION_SCHEMA,
+  MEDIA_USAGE_SCHEMA,
+  MODEL_PROFILES,
+  type ExecutionPreferences
+} from "./execution-profile.js";
 
 export type OptimizeFor = "balanced" | "quality" | "latency" | "cost";
 export type AccountPreferences = {
@@ -44,6 +50,8 @@ export class AccountStore {
   constructor(readonly sqlite: DatabaseSync) {}
   /** Deliberately separate from the main Drizzle migration journal: integrator may apply SQL in its own migration. */
   migrate(): void {
+    this.sqlite.exec(EXECUTION_SCHEMA);
+    this.sqlite.exec(MEDIA_USAGE_SCHEMA);
     this.sqlite.exec(ACCOUNT_MIGRATION_SQL);
     this.sqlite.exec(
       "CREATE TABLE IF NOT EXISTS kosmora_reasoning_preferences (owner_id TEXT PRIMARY KEY, effort TEXT CHECK (effort IN ('low','medium','high')));"
@@ -54,6 +62,53 @@ export class AccountStore {
       .prepare("SELECT effort FROM kosmora_reasoning_preferences WHERE owner_id=?")
       .get(owner) as { effort: "low" | "medium" | "high" | null } | undefined;
     return row?.effort ?? null;
+  }
+  getExecution(owner: string): ExecutionPreferences {
+    const row = this.sqlite
+      .prepare(
+        "SELECT version,model_profile,autonomy,turbo FROM kosmora_execution_preferences WHERE owner_id=?"
+      )
+      .get(owner) as (Omit<ExecutionPreferences, "turbo"> & { turbo: number }) | undefined;
+    return row
+      ? { ...row, turbo: row.turbo === 1 }
+      : { version: 0, model_profile: "mars", autonomy: 2, turbo: false };
+  }
+  setExecution(
+    owner: string,
+    next: Omit<ExecutionPreferences, "version"> & { expected_version: number }
+  ): ExecutionPreferences {
+    if (
+      !MODEL_PROFILES.some((p) => p.id === next.model_profile) ||
+      !Number.isInteger(next.autonomy) ||
+      next.autonomy < 0 ||
+      next.autonomy > 6 ||
+      typeof next.turbo !== "boolean" ||
+      !Number.isSafeInteger(next.expected_version) ||
+      next.expected_version < 0
+    )
+      throw new Error("Invalid execution preferences");
+    this.sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.getExecution(owner);
+      if (current.version !== next.expected_version) throw new PreferenceConflictError();
+      this.sqlite
+        .prepare(
+          `INSERT INTO kosmora_execution_preferences(owner_id,version,model_profile,autonomy,turbo,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(owner_id) DO UPDATE SET version=excluded.version,model_profile=excluded.model_profile,autonomy=excluded.autonomy,turbo=excluded.turbo,updated_at=excluded.updated_at`
+        )
+        .run(
+          owner,
+          current.version + 1,
+          next.model_profile,
+          next.autonomy,
+          next.turbo ? 1 : 0,
+          now()
+        );
+      this.sqlite.exec("COMMIT");
+      return this.getExecution(owner);
+    } catch (error) {
+      this.sqlite.exec("ROLLBACK");
+      throw error;
+    }
   }
   setReasoning(owner: string, effort: "low" | "medium" | "high" | null): void {
     this.sqlite
@@ -181,7 +236,14 @@ export class AccountStore {
         )
         .get(owner)
     );
-    return general + projects + retained + aux;
+    const media = total(
+      this.sqlite
+        .prepare(
+          "SELECT COALESCE(SUM(CASE WHEN status='committed' THEN input_tokens+output_tokens WHEN status='cancelled' THEN 0 ELSE reserved_tokens END),0) total FROM kosmora_media_usage WHERE owner_id=?"
+        )
+        .get(owner)
+    );
+    return general + projects + retained + aux + media;
   }
   summary(owner: string) {
     const historic = this.legacyTokens(owner);
@@ -199,6 +261,7 @@ export class AccountStore {
       AND NOT EXISTS (SELECT 1 FROM general_chat_model_usage u JOIN general_chats c ON c.id=u.chat_id WHERE c.owner_id=h.owner_id AND u.run_id=h.run_id AND u.attempt=h.attempt)
       AND NOT EXISTS (SELECT 1 FROM model_usage_ledger u JOIN projects p ON p.id=u.project_id WHERE p.owner_id=h.owner_id AND u.run_id=h.run_id AND u.attempt=h.attempt)
       AND NOT EXISTS (SELECT 1 FROM kosmora_auxiliary_model_usage a WHERE a.owner_id=h.owner_id AND a.run_id=h.run_id AND a.attempt=h.attempt)
+      AND NOT EXISTS (SELECT 1 FROM kosmora_media_usage m WHERE m.owner_id=h.owner_id AND m.hold_id=h.id)
       AND NOT EXISTS (SELECT 1 FROM kosmora_retained_accounting r WHERE r.owner_id=h.owner_id AND r.run_id=h.run_id AND r.attempt=h.attempt)
     `
         )
@@ -416,9 +479,10 @@ export class AccountStore {
       UNION ALL SELECT 'translation',chat_id,run_id,provider_id,model_id,status,input_tokens,output_tokens,reserved_tokens,NULL,NULL,created_at,stage FROM kosmora_relay_usage WHERE owner_id=?
       UNION ALL SELECT 'retained-' || source,NULL,run_id,provider_id,model_requested,status,actual_input_tokens,actual_output_tokens,estimated_input_tokens+max_output_tokens,calculated_cost_amount,currency,created_at,NULL FROM kosmora_retained_accounting WHERE owner_id=?
       UNION ALL SELECT kind,NULL,run_id,provider_id,model_id,'committed',input_tokens,output_tokens,input_tokens+output_tokens,cost_amount,currency,created_at,NULL FROM kosmora_auxiliary_model_usage WHERE owner_id=?
+      UNION ALL SELECT 'media-'||kind,NULL,operation_id,provider_id,model_id,status,input_tokens,output_tokens,reserved_tokens,NULL,NULL,created_at,NULL FROM kosmora_media_usage WHERE owner_id=?
       ORDER BY created_at DESC LIMIT ?`
       )
-      .all(owner, owner, owner, owner, owner, cap);
+      .all(owner, owner, owner, owner, owner, owner, cap);
     return { summary: this.summary(owner), rows };
   }
   exportData(owner: string) {

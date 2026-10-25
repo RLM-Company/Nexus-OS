@@ -147,6 +147,8 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
       ),
       translation_usage: select("SELECT * FROM kosmora_relay_usage WHERE owner_id=?"),
       reasoning_preferences: select("SELECT * FROM kosmora_reasoning_preferences WHERE owner_id=?"),
+      execution_preferences: select("SELECT * FROM kosmora_execution_preferences WHERE owner_id=?"),
+      media_usage: select("SELECT * FROM kosmora_media_usage WHERE owner_id=?"),
       token_holds: select("SELECT * FROM kosmora_usage_holds WHERE owner_id=?"),
       retained_accounting: select("SELECT * FROM kosmora_retained_accounting WHERE owner_id=?"),
       chat_usage: select(
@@ -256,6 +258,8 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
       deleted += n("DELETE FROM navigation_legacy_imports WHERE owner_id=?");
       deleted += n("DELETE FROM kosmora_account_preferences WHERE owner_id=?");
       deleted += n("DELETE FROM kosmora_reasoning_preferences WHERE owner_id=?");
+      deleted += n("DELETE FROM kosmora_execution_preferences WHERE owner_id=?");
+      // Media rows contain billing counters only; retain them alongside canonical usage.
       deleted += n("DELETE FROM kosmora_data_delete_challenges WHERE owner_id=?");
       // Keep all canonical usage that migrated to retained accounting BEFORE FK cascades.
       this.sqlite.exec("COMMIT");

@@ -1,5 +1,4 @@
 "use client";
-import { ChatRunSkills } from "./chat-run-skills";
 
 import Link from "next/link";
 import {
@@ -11,11 +10,11 @@ import {
   type FormEvent
 } from "react";
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
-import { SidebarResize, useSidebarWidth } from "./sidebar-resize";
+import { SidebarResize, useSidebarWidth, useSidebarCollapse } from "./sidebar-resize";
 import { InstallApp } from "./install-app";
 import { ChatResponse } from "./chat-response";
 import { VoiceComposer } from "./voice/voice-composer";
-import { VoicePlayback } from "./voice/voice-playback";
+import { CompactVoicePlayback } from "./voice/voice-playback";
 import { VoiceAssistant } from "./voice/voice-assistant";
 import { LoadingDots } from "./ui/feedback";
 import { ModelPicker, SystemMessage } from "./ui/kosmora-controls";
@@ -23,12 +22,7 @@ import { CanvasEditor } from "./canvas-editor/canvas-editor";
 import canvasChat from "./canvas-editor/canvas-chat.module.css";
 import { ChatHistoryActions } from "./chat-history-actions";
 import { ChatBranches, ChatBranchButton } from "./chat-branches";
-import {
-  useChatNavigation,
-  ChatContextPanel,
-  ChatContextToggle,
-  ChatToCanvas
-} from "./chat-workspace";
+import { useChatNavigation, ChatContextPanel, ChatToCanvas } from "./chat-workspace";
 import { ChatItemMenu } from "./chat-item-menu";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ChatSearchTrigger } from "./chat-search-trigger";
@@ -411,6 +405,14 @@ const displayedContent = (message: Message): string | null => {
 };
 
 const displayedGeneralContent = (message: LocalChatMessage): string | null => {
+  if (message.status === "failed" && message.error_code?.startsWith("IMAGE_"))
+    return message.error_code === "IMAGE_REFERENCES_UNSUPPORTED"
+      ? "Этот режим пока создаёт изображения по текстовому описанию. Уберите вложения и повторите запрос."
+      : message.error_code === "IMAGE_PROMPT_TOO_LONG"
+        ? "Сократите описание изображения до 2000 символов."
+        : "Не удалось создать изображение. Автоматического повторного списания не было; можно повторить запрос вручную.";
+  if (message.status === "failed" && message.error_code === "MEDIA_UNAVAILABLE")
+    return "Генерация изображений сейчас недоступна. Текстовый чат продолжает работать.";
   if (message.status === "cancelled") return "Ответ остановлен владельцем.";
   if (message.status === "failed")
     return message.error_code === "CONTEXT_TOO_LARGE"
@@ -535,7 +537,7 @@ export default function Home() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<ModelRuntimeStatus | null>(null);
-  const [lastCompletedRoute, setLastCompletedRoute] = useState<CompletedRoute | null>(null);
+  const [, setLastCompletedRoute] = useState<CompletedRoute | null>(null);
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const [projectView, setProjectView] = useState<ProjectView>("chat");
   const [contextPreview, setContextPreview] = useState(false);
@@ -543,6 +545,7 @@ export default function Home() {
     setContextPreview(new URLSearchParams(window.location.search).get("context_preview") === "1");
   }, []);
   const sidebarWidth = useSidebarWidth();
+  const sidebarCollapse = useSidebarCollapse();
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
   const [chatMode, setChatMode] = useState<ChatMode>("kosmora");
   const [codeSpace, setCodeSpace] = useState(false);
@@ -2132,8 +2135,25 @@ export default function Home() {
     <div
       className={`app-shell product-shell${preferences.compact ? " compact-navigation" : ""}${preferences.largeText ? " large-text" : ""}`}
       style={{ "--sidebar-width": `${sidebarWidth.width}px` } as CSSProperties}
+      data-sidebar-collapsed={sidebarCollapse.collapsed || undefined}
     >
-      <aside className="sidebar" data-space={codeSpace ? "coscode" : "kosmora"}>
+      <button
+        type="button"
+        className="sidebar-collapse-toggle"
+        aria-label={
+          sidebarCollapse.collapsed ? "Развернуть боковую панель" : "Свернуть боковую панель"
+        }
+        title={sidebarCollapse.collapsed ? "Развернуть боковую панель" : "Свернуть боковую панель"}
+        aria-expanded={!sidebarCollapse.collapsed}
+        onClick={sidebarCollapse.toggle}
+      >
+        <WorkspaceIcon name={sidebarCollapse.collapsed ? "panel-open" : "panel-close"} />
+      </button>
+      <aside
+        className="sidebar"
+        data-space={codeSpace ? "coscode" : "kosmora"}
+        inert={sidebarCollapse.collapsed}
+      >
         <SidebarResize width={sidebarWidth.width} onChange={sidebarWidth.setWidth} />
         <WorkspaceModeMenu
           surface={
@@ -2359,7 +2379,8 @@ export default function Home() {
                   "research",
                   "presentations",
                   "sites",
-                  "games"
+                  "games",
+                  "skills"
                 ].includes(item.id)
             ).map((item) => (
               <button
@@ -2906,13 +2927,7 @@ export default function Home() {
               <div>
                 <strong>Kosmora Manager</strong>
                 <span className="project-mode-label">Менеджер · мультиагентный проект</span>
-                <small>
-                  {lastCompletedRoute
-                    ? `Последний ответ: ${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
-                    : runtime && runtime.mode !== "mock"
-                      ? `${runtime.model} · fallback ${runtime.fallback_to_mock ? "включён" : "выключен"}`
-                      : "MockProvider · история сохраняется"}
-                </small>
+                <small>Переписка</small>
               </div>
               <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">
                 <i /> {RUN_PHASE_LABEL[runPhase]}
@@ -2943,24 +2958,33 @@ export default function Home() {
                     tabIndex={-1}
                     className={`message ${message.role}`}
                   >
-                    <span className="message-avatar">
-                      {message.role === "user" ? <WorkspaceIcon name="owner" /> : <SparkIcon />}
-                    </span>
+                    {message.role === "user" && (
+                      <span className="message-avatar">
+                        <WorkspaceIcon name="owner" />
+                      </span>
+                    )}
                     <div>
-                      <header>
-                        <strong>{message.role === "user" ? "Вы" : "Kosmora Manager"}</strong>
-                        <time>
-                          {new Date(message.created_at).toLocaleTimeString("ru", {
-                            hour: "2-digit",
-                            minute: "2-digit"
-                          })}
-                        </time>
-                      </header>
+                      {message.role !== "assistant" && (
+                        <header>
+                          <strong>Вы</strong>
+                          <time>
+                            {new Date(message.created_at).toLocaleTimeString("ru", {
+                              hour: "2-digit",
+                              minute: "2-digit"
+                            })}
+                          </time>
+                        </header>
+                      )}
                       <ChatResponse
                         content={displayedContent(message)}
                         assistant={message.role === "assistant"}
                         complete={message.status === "completed" && message.role !== "system_event"}
                         streaming={message.status === "streaming"}
+                        actions={
+                          message.role === "assistant" && message.status === "completed" ? (
+                            <CompactVoicePlayback text={message.content} />
+                          ) : null
+                        }
                         onFollowUp={(prompt) => {
                           setDraft((current) =>
                             current.trim() ? `${current}\n\n${prompt}` : prompt
@@ -2968,9 +2992,6 @@ export default function Home() {
                           composerRef.current?.focus();
                         }}
                       />
-                      {message.role === "assistant" && message.status === "completed" && (
-                        <VoicePlayback text={message.content} />
-                      )}
                       <ChatMessageAttachments files={message.attachments ?? []} />
                     </div>
                   </article>
@@ -2999,14 +3020,6 @@ export default function Home() {
                 onCreated={(accepted) => void openChatBranch(accepted.chat.id, accepted)}
               />
             )}
-            {activeLocalChatId && (
-              <ChatContextToggle
-                expanded={contextChatId === activeLocalChatId}
-                onClick={() =>
-                  setContextChatId(contextChatId === activeLocalChatId ? null : activeLocalChatId)
-                }
-              />
-            )}
             {activeLocalChatId && contextChatId === activeLocalChatId && (
               <ChatContextPanel
                 key={`context:${activeLocalChatId}`}
@@ -3019,13 +3032,7 @@ export default function Home() {
             <div className="chat-heading general-chat-heading">
               <div>
                 <strong>Kosmora</strong>
-                <small>
-                  {lastCompletedRoute
-                    ? `${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
-                    : runtime && runtime.mode !== "mock"
-                      ? `${runtime.model} · обычный чат`
-                      : "Обычный чат · история на сервере · проект не создан"}
-                </small>
+                <small>Переписка</small>
               </div>
               <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">
                 <i /> {CHAT_RUN_PHASE_LABEL[runPhase]}
@@ -3047,24 +3054,56 @@ export default function Home() {
                   tabIndex={-1}
                   className={`message ${message.role}`}
                 >
-                  <span className="message-avatar">
-                    {message.role === "user" ? <WorkspaceIcon name="owner" /> : <SparkIcon />}
-                  </span>
+                  {message.role === "user" && (
+                    <span className="message-avatar">
+                      <WorkspaceIcon name="owner" />
+                    </span>
+                  )}
                   <div>
-                    <header>
-                      <strong>{message.role === "user" ? "Вы" : "Kosmora"}</strong>
-                      <time>
-                        {new Date(message.created_at).toLocaleTimeString("ru", {
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        })}
-                      </time>
-                    </header>
+                    {message.role === "user" && (
+                      <header>
+                        <strong>Вы</strong>
+                        <time>
+                          {new Date(message.created_at).toLocaleTimeString("ru", {
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })}
+                        </time>
+                      </header>
+                    )}
                     <ChatResponse
                       content={displayedGeneralContent(message)}
                       assistant={message.role === "assistant"}
                       complete={message.status === "completed"}
                       streaming={message.status === "streaming"}
+                      actions={
+                        <>
+                          {message.role === "assistant" && message.status === "completed" && (
+                            <CompactVoicePlayback text={message.content} />
+                          )}
+                          {activeLocalChatId &&
+                            message.role === "assistant" &&
+                            message.status === "completed" && (
+                              <ChatToCanvas
+                                key={message.id}
+                                chatId={activeLocalChatId}
+                                message={message}
+                                projects={projects}
+                              />
+                            )}
+                          {activeLocalChatId &&
+                            message.status !== "streaming" &&
+                            message.status !== "pending" && (
+                              <ChatBranchButton
+                                assistant={message.role === "assistant"}
+                                disabled={sending || loading || executionGate !== "clear"}
+                                onClick={() =>
+                                  setBranchSelection({ chatId: activeLocalChatId, message })
+                                }
+                              />
+                            )}
+                        </>
+                      }
                       onFollowUp={(prompt) => {
                         setDraft((current) =>
                           current.trim() ? `${current}\n\n${prompt}` : prompt
@@ -3072,34 +3111,7 @@ export default function Home() {
                         composerRef.current?.focus();
                       }}
                     />
-                    {message.role === "assistant" && message.status === "completed" && (
-                      <VoicePlayback text={message.content} />
-                    )}
                     <ChatMessageAttachments files={message.attachments ?? []} />
-                    {message.role === "assistant" &&
-                      message.run_id &&
-                      message.status === "completed" && (
-                        <ChatRunSkills key={message.run_id} runId={message.run_id} />
-                      )}
-                    {activeLocalChatId &&
-                      message.role === "assistant" &&
-                      message.status === "completed" && (
-                        <ChatToCanvas
-                          key={message.id}
-                          chatId={activeLocalChatId}
-                          message={message}
-                          projects={projects}
-                        />
-                      )}
-                    {activeLocalChatId &&
-                      message.status !== "streaming" &&
-                      message.status !== "pending" && (
-                        <ChatBranchButton
-                          assistant={message.role === "assistant"}
-                          disabled={sending || loading || executionGate !== "clear"}
-                          onClick={() => setBranchSelection({ chatId: activeLocalChatId, message })}
-                        />
-                      )}
                   </div>
                 </article>
               ))}

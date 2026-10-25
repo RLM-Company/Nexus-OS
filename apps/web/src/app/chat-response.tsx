@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { memo, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import Markdown, { type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { WorkspaceIcon } from "./workspace-icons";
@@ -24,7 +24,15 @@ export function downloadBlob(blob: Blob, name: string) {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 }
-function CopyButton({ content, label }: { content: string; label: string }) {
+function CopyButton({
+  content,
+  label,
+  iconOnly = false
+}: {
+  content: string;
+  label: string;
+  iconOnly?: boolean;
+}) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const reset = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -36,7 +44,11 @@ function CopyButton({ content, label }: { content: string; label: string }) {
   return (
     <button
       type="button"
+      className={iconOnly ? "message-action" : undefined}
       aria-label={label}
+      title={
+        state === "copied" ? "Скопировано" : state === "failed" ? "Копирование недоступно" : label
+      }
       onClick={() => {
         if (reset.current) clearTimeout(reset.current);
         if (!navigator.clipboard) {
@@ -53,7 +65,7 @@ function CopyButton({ content, label }: { content: string; label: string }) {
       }}
     >
       <WorkspaceIcon name={state === "copied" ? "check" : "copy"} />
-      <span aria-live="polite">
+      <span aria-live="polite" className={iconOnly ? styles.srOnly : undefined}>
         {state === "copied" ? "Скопировано" : state === "failed" ? "Копирование недоступно" : label}
       </span>
     </button>
@@ -122,18 +134,70 @@ function CodeBlock({ children, node }: ComponentProps<"pre"> & ExtraProps) {
     </div>
   );
 }
+const ResponseMarkdown = memo(function ResponseMarkdown({ content }: { content: string }) {
+  return (
+    <Markdown
+      remarkPlugins={[remarkGfm]}
+      skipHtml
+      urlTransform={(url) =>
+        /^https?:\/\//i.test(url) ||
+        /^\/api\/v1\/media\/assets\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(url)
+          ? url
+          : ""
+      }
+      components={{
+        pre: CodeBlock,
+        a: ({ children, href }) =>
+          href ? (
+            <a href={href} target="_blank" rel="noopener noreferrer">
+              {children}
+            </a>
+          ) : (
+            <span>{children}</span>
+          ),
+        img: ({ alt, src }) =>
+          typeof src === "string" &&
+          /^\/api\/v1\/media\/assets\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(src) ? (
+            <span className="chat-generated-image">
+              <img src={src} alt={alt || "Сгенерированное изображение"} loading="lazy" />
+              <a
+                href={`${src}?download=1`}
+                download
+                aria-label="Скачать изображение"
+                title="Скачать изображение"
+              >
+                <WorkspaceIcon name="download" />
+              </a>
+            </span>
+          ) : (
+            <span>{alt ? `[Изображение: ${alt}]` : "[Изображение]"}</span>
+          ),
+        table: ({ children }) => (
+          <div className="response-table">
+            <table>{children}</table>
+          </div>
+        )
+      }}
+    >
+      {content}
+    </Markdown>
+  );
+});
+
 export function ChatResponse({
   content,
   assistant,
   complete = false,
   streaming = false,
-  onFollowUp
+  onFollowUp,
+  actions
 }: {
   content: string | null;
   assistant: boolean;
   complete?: boolean;
   streaming?: boolean;
   onFollowUp?: (prompt: string) => void;
+  actions?: ReactNode;
 }) {
   if (!content) return <LoadingDots label="Формирую ответ" />;
   if (!assistant)
@@ -142,53 +206,43 @@ export function ChatResponse({
         <p>{content}</p>
         {complete && (
           <div className={styles.userActions}>
-            <CopyButton content={content} label="Копировать запрос" />
-            {onFollowUp && (
-              <button type="button" onClick={() => onFollowUp(content)}>
-                <WorkspaceIcon name="new-chat" />
-                Вставить в сообщение
-              </button>
-            )}
+            <CopyButton content={content} label="Копировать запрос" iconOnly />
+            {actions}
           </div>
         )}
       </div>
     );
   return (
     <div className="chat-response" data-streaming={streaming || undefined}>
-      <Markdown
-        remarkPlugins={[remarkGfm]}
-        skipHtml
-        urlTransform={(url) => (/^https?:\/\//i.test(url) ? url : "")}
-        components={{
-          pre: CodeBlock,
-          a: ({ children, href }) =>
-            href ? (
-              <a href={href} target="_blank" rel="noopener noreferrer">
-                {children}
-              </a>
-            ) : (
-              <span>{children}</span>
-            ),
-          img: ({ alt }) => <span>{alt ? `[Изображение: ${alt}]` : "[Изображение]"}</span>,
-          table: ({ children }) => (
-            <div className="response-table">
-              <table>{children}</table>
-            </div>
-          )
-        }}
-      >
-        {content}
-      </Markdown>
+      <ResponseMarkdown content={content} />
       {complete && (
         <div className="response-actions">
-          <CopyButton content={content} label="Копировать ответ" />
-          <button type="button" onClick={() => downloadText(content, "kosmora-answer.md")}>
-            Скачать ответ
-          </button>
+          <CopyButton content={content} label="Копировать ответ" iconOnly />
+          {actions}
         </div>
       )}
       {complete && onFollowUp && (
         <div className="response-followups" aria-label="Продолжить разговор">
+          <button
+            type="button"
+            onClick={() =>
+              onFollowUp(
+                "Оформи содержание предыдущего ответа в понятную сравнительную таблицу. Сохрани важные факты и отметь отсутствующие данные."
+              )
+            }
+          >
+            В таблицу <span aria-hidden="true">↗</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onFollowUp(
+                "Преврати предыдущий ответ в рабочий план: шаги, результат каждого шага, зависимости и критерии готовности. Не выдумывай выполненных действий."
+              )
+            }
+          >
+            Собрать план <span aria-hidden="true">↗</span>
+          </button>
           <button
             type="button"
             onClick={() => onFollowUp("Объясни предыдущий ответ проще и приведи пример.")}

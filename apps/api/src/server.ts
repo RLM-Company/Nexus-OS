@@ -44,6 +44,8 @@ import { AccountStore } from "./account-settings/account-store.js";
 import { loadModelRegistryDocument } from "./model-runtime.js";
 import { ResearchStore } from "./research/research-store.js";
 import { MediaService } from "./media/media-service.js";
+import { generateChatImage } from "./media/chat-images.js";
+import { AccountMediaBudget } from "./media/account-media-budget.js";
 import { resolve } from "node:path";
 import { SharedOwnerBudget } from "./account-settings/shared-owner-budget.js";
 import {
@@ -192,6 +194,11 @@ try {
     ownerBudget: sharedBudget
   });
   const mediaService = new MediaService({
+    ownerBudget: new AccountMediaBudget(
+      accountStore,
+      process.env.KOSMORA_MEDIA_BASE_URL?.includes("cheapvibecode.ru") ? "cheapvibecode" : "openai"
+    ),
+    ...(process.env.KOSMORA_MEDIA_BASE_URL ? { baseUrl: process.env.KOSMORA_MEDIA_BASE_URL } : {}),
     ...(process.env.KOSMORA_MEDIA_DIR
       ? { directory: process.env.KOSMORA_MEDIA_DIR }
       : config.nodeEnv === "production"
@@ -199,7 +206,11 @@ try {
         : { directory: resolve(process.cwd(), ".data/media") }),
     ...(process.env.KOSMORA_MEDIA_OPENAI_API_KEY
       ? { apiKey: process.env.KOSMORA_MEDIA_OPENAI_API_KEY }
-      : {}),
+      : process.env.KOSMORA_MEDIA_USE_CHAT_CREDENTIAL === "true" &&
+          process.env.KOSMORA_MEDIA_BASE_URL === config.modelBaseUrl &&
+          process.env.MODEL_API_KEY
+        ? { apiKey: process.env.MODEL_API_KEY }
+        : {}),
     paidEnabled: process.env.KOSMORA_MEDIA_PAID_ENABLED === "true",
     emergencyStopped: () => emergencyStopStore.getProcessStop() !== null,
     ownerActive: (ownerId) => ownerPrivacy.overview(ownerId).lifecycle === "active"
@@ -349,6 +360,8 @@ try {
     logger: app.log
   });
   generalChatBackgroundCoordinator = new GeneralChatBackgroundRunCoordinator({
+    imageGeneration: (owner, prompt, signal) =>
+      generateChatImage(mediaService, owner, prompt, signal),
     store: generalChatStore,
     modelGateway: modelRuntime.gateway,
     chat: modelRuntime.chat,

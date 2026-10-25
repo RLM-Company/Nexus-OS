@@ -8,6 +8,7 @@ import type {
   GeneralChatMessageAcceptedResponse
 } from "@cosmora/contracts";
 import styles from "./chat-branches.module.css";
+import { WorkspaceIcon } from "./workspace-icons";
 
 export function ChatBranchButton({
   assistant,
@@ -19,8 +20,15 @@ export function ChatBranchButton({
   onClick: () => void;
 }) {
   return (
-    <button type="button" className={styles.action} disabled={disabled} onClick={onClick}>
-      {assistant ? "Повторить ответ" : "Изменить запрос"}
+    <button
+      type="button"
+      className="message-action"
+      aria-label={assistant ? "Повторить ответ" : "Изменить запрос"}
+      title={assistant ? "Повторить ответ" : "Изменить запрос"}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <WorkspaceIcon name={assistant ? "repeat" : "edit"} />
     </button>
   );
 }

@@ -56,6 +56,54 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
     database.close();
   });
 
+  it("dispatches one explicit image request without also calling the text model", async () => {
+    await coordinator.stop();
+    const imageGeneration = vi.fn().mockResolvedValue("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    const textModel = vi.spyOn(runtime.gateway, "stream");
+    coordinator = new GeneralChatBackgroundRunCoordinator({
+      store,
+      modelGateway: runtime.gateway,
+      chat: runtime.chat,
+      runtimeMetrics: metrics,
+      accountStore,
+      imageGeneration,
+      pollIntervalMs: 10
+    });
+    coordinator.start();
+    const accepted = store.createChat(
+      "Нарисуй монохромный постер",
+      "image-background-request",
+      "local-owner"
+    );
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("succeeded"));
+    expect(imageGeneration).toHaveBeenCalledTimes(1);
+    expect(imageGeneration.mock.calls[0]?.slice(0, 2)).toEqual([
+      "local-owner",
+      "Нарисуй монохромный постер"
+    ]);
+    expect(textModel).not.toHaveBeenCalled();
+    expect(store.getAssistantMessage(accepted.run.id)?.content).toContain("/api/v1/media/assets/");
+  });
+
+  it("does not dispatch a second image when the first generation fails", async () => {
+    await coordinator.stop();
+    const imageGeneration = vi.fn().mockRejectedValue(new Error("provider unavailable"));
+    const textModel = vi.spyOn(runtime.gateway, "stream");
+    coordinator = new GeneralChatBackgroundRunCoordinator({
+      store,
+      modelGateway: runtime.gateway,
+      chat: runtime.chat,
+      runtimeMetrics: metrics,
+      imageGeneration,
+      pollIntervalMs: 10
+    });
+    coordinator.start();
+    const accepted = store.createChat("Создай изображение горы", "image-background-failure");
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("failed"));
+    expect(imageGeneration).toHaveBeenCalledTimes(1);
+    expect(textModel).not.toHaveBeenCalled();
+  });
+
   it("dispatches only the accepted Skill snapshot after catalog mutation, without an observer", async () => {
     const first = store.createChat("Начало", "skills-background-seed");
     store.cancelRun(first.run.id);

@@ -5,6 +5,8 @@ import styles from "./personal-settings.module.css";
 import { UsageMetrics, UsageActivity } from "./usage-analytics";
 import PrivacyPanel from "./privacy-panel";
 import { Switch, SystemMessage } from "../ui/kosmora-controls";
+import { ModelPicker } from "../ui/model-picker";
+import { InterfaceSettings } from "./interface-settings";
 
 type Preferences = {
   version: number;
@@ -52,7 +54,6 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 export default function PersonalSettings() {
   const [prefs, setPrefs] = useState<Preferences | null>(null);
-  const [routes, setRoutes] = useState<Route[]>([]);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -62,7 +63,6 @@ export default function PersonalSettings() {
       api<Usage>("/usage")
     ]);
     setPrefs(data.settings);
-    setRoutes(data.available_models);
     setUsage(meter);
   }, []);
   useEffect(() => {
@@ -95,16 +95,15 @@ export default function PersonalSettings() {
     }
   };
   return (
-    <main className={styles.page}>
+    <main className={`${styles.page} product-shell`}>
       <nav>
         <Link href="/">← Вернуться в Kosmora</Link>
       </nav>
-      <h1>Персональные настройки</h1>
-      <p className={styles.muted}>
-        Параметры сохраняются на сервере для вашей учётной записи. Платежи и тарифы не подключены.
-      </p>
+      <h1>Настройки</h1>
+      <p className={styles.muted}>Всё для удобной работы с Kosmora.</p>
       <nav className={styles.sectionsNav} aria-label="Разделы настроек">
         <a href="#model-settings">Модель и чат</a>
+        <a href="#interface-settings">Интерфейс и голос</a>
         <a href="#relay-settings">English Relay</a>
         <a href="#account-usage">Использование</a>
         <a href="#account-data">Данные</a>
@@ -115,37 +114,7 @@ export default function PersonalSettings() {
         <>
           <section id="model-settings">
             <h2>Модель и чат</h2>
-            <label>
-              Маршрут модели
-              <select
-                disabled={busy}
-                value={
-                  prefs.preferred_provider && prefs.preferred_model
-                    ? `${prefs.preferred_provider}::${prefs.preferred_model}`
-                    : "default"
-                }
-                onChange={(e) => {
-                  const selected =
-                    e.target.value === "default"
-                      ? null
-                      : routes.find((r) => `${r.provider}::${r.model}` === e.target.value);
-                  void save({
-                    ...prefs,
-                    preferred_provider: selected?.provider ?? null,
-                    preferred_model: selected?.model ?? null
-                  });
-                }}
-              >
-                <option value="default">По умолчанию (настроен сервером)</option>
-                {routes
-                  .filter((r) => r.capabilities.streaming)
-                  .map((r) => (
-                    <option key={`${r.provider}:${r.model}`} value={`${r.provider}::${r.model}`}>
-                      {r.provider} / {r.model}
-                    </option>
-                  ))}
-              </select>
-            </label>
+            <ModelPicker />
             <label>
               Язык ответа с ретранслятором
               <select
@@ -218,6 +187,15 @@ export default function PersonalSettings() {
           <section id="account-usage">
             <h2>Использование и квота</h2>
             <UsageMetrics summary={usage?.summary} />
+            <Switch
+              disabled={busy}
+              checked={prefs.max_total_tokens !== null}
+              onChange={(enabled) =>
+                void save({ ...prefs, max_total_tokens: enabled ? 200000 : null })
+              }
+            >
+              Персональное ограничение расхода токенов
+            </Switch>
             <p className={styles.muted}>
               Неизвестные расходы могут учитываться верхней границей. Денежная стоимость не
               вычисляется без подтверждённых цен. Персональный лимит принудительно действует для
@@ -247,6 +225,7 @@ export default function PersonalSettings() {
             <h3>Последние попытки</h3>
             <UsageActivity rows={usage?.rows ?? []} />
           </section>
+          <InterfaceSettings />
           <div id="account-data">
             <PrivacyPanel />
           </div>

@@ -133,7 +133,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
         <p>
           {video
             ? "Сцена, движение камеры и референсы в одном рабочем окне."
-            : "Описание, визуальные референсы и параметры будущего изображения."}
+            : "Создавайте изображения по описанию, сохраняйте результат и возвращайтесь к нему в галерее."}
         </p>
       </header>
       <div className={styles.layout}>
@@ -154,6 +154,33 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
               onChange={(event) => setPrompt(event.target.value)}
             />
           </label>
+          {!video && (
+            <div className={styles.presets} aria-label="Идеи для изображения">
+              {[
+                [
+                  "Постер",
+                  "Минималистичный чёрно-белый постер: космонавт среди архитектурных форм, выразительный свет, без текста"
+                ],
+                [
+                  "Предметная съёмка",
+                  "Студийная предметная фотография чёрных наушников на белом фоне, мягкий боковой свет, реалистичные материалы"
+                ],
+                [
+                  "Иллюстрация",
+                  "Лаконичная изометрическая иллюстрация рабочего пространства будущего, монохромная палитра, чистые линии"
+                ]
+              ].map(([name, value]) => (
+                <button
+                  type="button"
+                  key={name}
+                  disabled={!hydrated}
+                  onClick={() => setPrompt(value!)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
           <div className={styles.references}>
             <div className={styles.sectionTitle}>
               <h3>Референсы</h3>

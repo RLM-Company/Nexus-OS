@@ -5,6 +5,7 @@ import type { ModelGateway, ModelGatewayStreamEvent } from "@cosmora/model-gatew
 import { protectRelayText, RelayProtectionError } from "@cosmora/model-gateway/english-relay";
 import { QuotaExceededError } from "./account-store.js";
 import type { AccountStore } from "./account-store.js";
+import { MODEL_PROFILES } from "./execution-profile.js";
 
 export { RelayProtectionError, QuotaExceededError };
 export class RelayUnavailableError extends Error {}
@@ -121,24 +122,50 @@ export class RelayExecution {
     signal: AbortSignal
   ): Promise<{ request: ModelRequest; relay: boolean }> {
     const preference = this.store.get(owner);
-    const relay = this.store.getRelay(owner, chatId);
+    const execution = this.store.getExecution(owner);
+    const relay = !execution.turbo && this.store.getRelay(owner, chatId);
+    const profile = MODEL_PROFILES.find((entry) => entry.id === execution.model_profile)!;
+    const supportsReasoning = /^(gpt-[56]|o[1-9])/i.test(
+      preference.preferred_model ?? request.routing.preferred_model_alias ?? ""
+    );
+    const effort =
+      supportsReasoning && execution.turbo
+        ? "low"
+        : (this.store.getReasoning(owner) ??
+          (supportsReasoning && execution.model_profile === "mercurius"
+            ? "low"
+            : supportsReasoning && execution.model_profile === "jupiter"
+              ? "high"
+              : null));
     const adjusted = {
       ...request,
       constraints: {
         ...request.constraints,
-        ...(this.store.getReasoning(owner)
-          ? { reasoning_effort: this.store.getReasoning(owner)! }
-          : {})
+        ...(effort ? { reasoning_effort: effort } : {})
       },
       routing: {
         ...request.routing,
-        optimize_for: preference.optimize_for,
+        optimize_for:
+          execution.turbo || execution.model_profile === "mercurius"
+            ? ("latency" as const)
+            : execution.model_profile === "jupiter"
+              ? ("quality" as const)
+              : preference.optimize_for,
         ...(preference.preferred_provider
           ? { preferred_provider: preference.preferred_provider }
           : {}),
         ...(preference.preferred_model ? { preferred_model_alias: preference.preferred_model } : {})
       }
     };
+    if (execution.version > 0)
+      adjusted.messages = [
+        ...adjusted.messages.slice(0, 1),
+        {
+          role: "system",
+          content: `Your product profile is ${profile.name}. All product profiles currently share one underlying model. ${execution.model_profile === "saturnus" ? "For multi-step tasks, organize a clear plan and concrete deliverables; never claim external execution without tool evidence." : ""} Conversational initiative level: ${execution.autonomy}/6. ${execution.autonomy <= 1 ? "Follow the exact request; ask concise clarifying questions when key information is missing." : execution.autonomy >= 4 ? "Make reasonable stated assumptions and finish the requested work without unnecessary clarification. Ask only for information or permissions truly required." : "Balance clarification with useful progress and clearly stated assumptions."} This changes conversational initiative, not tool permissions. Never claim actions that were not actually executed. ${execution.turbo ? "Prioritize a direct useful answer and begin without introductory filler. Preserve necessary detail; there is no request to truncate the result." : ""}`
+        },
+        ...adjusted.messages.slice(1)
+      ];
     const style =
       preference.chat_style === "concise"
         ? "Answer as concisely as possible."

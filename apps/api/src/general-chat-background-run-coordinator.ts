@@ -13,6 +13,7 @@ import type {
 } from "./general-chat-runtime-store.js";
 import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.js";
 import type { AccountStore } from "./account-settings/account-store.js";
+import { imageCreationPrompt, ChatImageError } from "./media/chat-images.js";
 import {
   QuotaExceededError,
   RelayExecution,
@@ -31,6 +32,7 @@ export interface GeneralChatBackgroundRunCoordinatorOptions {
   controlPollIntervalMs?: number;
   maxConcurrentRuns?: number;
   accountStore?: AccountStore;
+  imageGeneration?: (ownerId: string, prompt: string, signal: AbortSignal) => Promise<string>;
 }
 
 type ActiveRun = {
@@ -45,6 +47,7 @@ const positiveInteger = (value: number | undefined, fallback: number): number =>
 export class GeneralChatBackgroundRunCoordinator {
   readonly #store: GeneralChatRuntimeStore;
   readonly #accountStore: AccountStore | undefined;
+  readonly #imageGeneration: GeneralChatBackgroundRunCoordinatorOptions["imageGeneration"];
   readonly #relay: RelayExecution | undefined;
   readonly #modelGateway: ModelGateway;
   readonly #chat: ChatService;
@@ -62,6 +65,7 @@ export class GeneralChatBackgroundRunCoordinator {
   constructor(options: GeneralChatBackgroundRunCoordinatorOptions) {
     this.#store = options.store;
     this.#accountStore = options.accountStore;
+    this.#imageGeneration = options.imageGeneration;
     this.#relay = options.accountStore
       ? new RelayExecution(options.accountStore, options.modelGateway)
       : undefined;
@@ -192,8 +196,25 @@ export class GeneralChatBackgroundRunCoordinator {
         memoryNotes: this.#store.getChatMemory(queued.chat_id, queued.owner_id)?.memory_notes ?? "",
         skills: this.#store.skills.forRun(queued.run_id, queued.owner_id)?.items ?? []
       });
+      const latestUser = conversation.findLast((message) => message.role === "user");
+      const imagePrompt = latestUser ? imageCreationPrompt(latestUser.content) : null;
+      if (imagePrompt) {
+        if (latestUser?.attachments?.length)
+          throw new ChatImageError("IMAGE_REFERENCES_UNSUPPORTED");
+        if (!this.#imageGeneration) throw new ChatImageError("MEDIA_UNAVAILABLE");
+        const assetId = await this.#imageGeneration(
+          queued.owner_id,
+          imagePrompt,
+          controller.signal
+        );
+        controller.signal.throwIfAborted();
+        if (this.#store.completeImageRun(queued.run_id, queued.owner_id, assetId))
+          this.#runtimeMetrics.runCompleted();
+        return;
+      }
       if (
         this.#accountStore?.getRelay(queued.owner_id, queued.chat_id) &&
+        !this.#accountStore.getExecution(queued.owner_id).turbo &&
         conversation.some((message) => message.attachments?.length)
       )
         throw new RelayProtectionError(
@@ -345,6 +366,11 @@ export class GeneralChatBackgroundRunCoordinator {
         "Background general chat run completed"
       );
     } catch (error) {
+      if (error instanceof ChatImageError) {
+        this.#store.failRun(queued.run_id, error.code);
+        this.#runtimeMetrics.runFailed("PROVIDER_ERROR");
+        return;
+      }
       if (controller.signal.reason instanceof EmergencyStopActivatedError) {
         this.#store.failRun(queued.run_id, "EMERGENCY_STOP");
         this.#runtimeMetrics.runFailed("EMERGENCY_STOP");

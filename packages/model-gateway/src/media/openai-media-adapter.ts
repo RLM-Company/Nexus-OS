@@ -92,11 +92,24 @@ const isMp3 = (bytes: Uint8Array): boolean =>
 
 /** Only the pinned official origin is contacted. No arbitrary base URL or redirects. */
 export class OpenAIMediaAdapter {
+  private readonly baseUrl: string;
   constructor(
     private readonly apiKey: string,
-    private readonly fetchImpl: typeof fetch = fetch
+    private readonly fetchImpl: typeof fetch = fetch,
+    baseUrl = `${OPENAI_ORIGIN}/v1`
   ) {
     if (!apiKey.trim()) throw new Error("Media credential missing");
+    const url = new URL(baseUrl);
+    const normalized = url.href.replace(/\/$/, "");
+    if (
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      ![`${OPENAI_ORIGIN}/v1`, "https://ru.cheapvibecode.ru/v1"].includes(normalized)
+    )
+      throw new Error("Unsupported media provider origin");
+    this.baseUrl = normalized;
   }
 
   private async request(
@@ -107,7 +120,7 @@ export class OpenAIMediaAdapter {
   ): Promise<Response> {
     let response: Response;
     try {
-      response = await this.fetchImpl(`${OPENAI_ORIGIN}/v1/${path}`, {
+      response = await this.fetchImpl(`${this.baseUrl}/${path}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
