@@ -25,9 +25,18 @@ import styles from "./studio-data-workbench.module.css";
 import { ShiningText, SystemMessage } from "./ui/kosmora-controls";
 import { WorkspaceIcon } from "./workspace-icons";
 import { ProjectTables } from "./project-tables";
+import type { XlsxSheet } from "./studio-data-xlsx-import";
 
 type Response =
-  | { id: number; kind: "loaded"; name: string; table: CsvTable; settings: DataSettings }
+  | {
+      id: number;
+      kind: "loaded";
+      name: string;
+      table: CsvTable;
+      settings: DataSettings;
+      warnings?: string[];
+    }
+  | { id: number; kind: "xlsx-index"; sheets: XlsxSheet[] }
   | { id: number; kind: "result"; result: DataResult }
   | { id: number; kind: "restored" }
   | { id: number; kind: "progress"; message: string }
@@ -127,6 +136,9 @@ export function DataWorkbench({
   const [redoEdits, setRedoEdits] = useState<DataCellEdit[]>([]);
   const [serverBusy, setServerBusy] = useState(false);
   const [sourceEpoch, setSourceEpoch] = useState(0);
+  const [xlsxSheets, setXlsxSheets] = useState<XlsxSheet[] | null>(null);
+  const [xlsxSheet, setXlsxSheet] = useState(-1);
+  const [xlsxHeader, setXlsxHeader] = useState(1);
 
   function stopAll() {
     generation.current++;
@@ -163,7 +175,17 @@ export function DataWorkbench({
         setProgress("");
         return;
       }
+      if (response.kind === "xlsx-index") {
+        if (response.id !== nextId.current) return;
+        setXlsxSheets(response.sheets);
+        setXlsxSheet(response.sheets.length === 1 ? 0 : -1);
+        setBusy(false);
+        setProgress("");
+        return;
+      }
       if (response.kind === "loaded") {
+        setXlsxSheets(null);
+        if (response.warnings?.length) setNotice(response.warnings.join(" "));
         setName(response.name);
         setTable(response.table);
         setSettings(response.settings);
@@ -200,16 +222,25 @@ export function DataWorkbench({
     setTable(null);
     setSettings(null);
     setResult(null);
+    setXlsxSheets(null);
+    setXlsxSheet(-1);
+    setXlsxHeader(1);
     setCellEdit(null);
     setUndoEdits([]);
     setRedoEdits([]);
     const workspace = file.name.toLowerCase().endsWith(".json");
-    if (!(workspace || /\.(csv|tsv)$/i.test(file.name))) {
-      setError("Поддерживаются только CSV, TSV и файл workspace JSON.");
+    const xlsx = /\.xlsx$/i.test(file.name);
+    if (!(workspace || xlsx || /\.(csv|tsv)$/i.test(file.name))) {
+      setError("Поддерживаются CSV, TSV, XLSX и workspace JSON.");
       return;
     }
-    if (file.size > (workspace ? DATA_LIMITS.workspaceBytes : DATA_LIMITS.csvBytes)) {
-      setError(`Файл превышает ${workspace ? "16" : "8"} МБ.`);
+    const maxBytes = workspace
+      ? DATA_LIMITS.workspaceBytes
+      : xlsx
+        ? 24_000_000
+        : DATA_LIMITS.csvBytes;
+    if (file.size > maxBytes) {
+      setError(`Файл превышает лимит ${Math.floor(maxBytes / 1_000_000)} МБ.`);
       return;
     }
     let loadGeneration = generation.current;
@@ -224,7 +255,9 @@ export function DataWorkbench({
       worker.postMessage(
         workspace
           ? { id, kind: "workspace", buffer }
-          : { id, kind: "csv", buffer, name: file.name },
+          : xlsx
+            ? { id, kind: "xlsx", buffer, name: file.name }
+            : { id, kind: "csv", buffer, name: file.name },
         [buffer]
       );
     } catch (reason) {
@@ -234,6 +267,30 @@ export function DataWorkbench({
         setError(reason instanceof Error ? reason.message : "Ошибка чтения файла.");
       }
     }
+  }
+
+  function openXlsxSheet() {
+    if (
+      !xlsxSheets ||
+      xlsxSheet < 0 ||
+      xlsxSheet >= xlsxSheets.length ||
+      !Number.isInteger(xlsxHeader) ||
+      xlsxHeader < 1 ||
+      xlsxHeader > 80_000
+    ) {
+      setError("Выберите лист и строку заголовков от 1 до 80000.");
+      return;
+    }
+    if (!workerRef.current || busy) return;
+    setError("");
+    setBusy(true);
+    setProgress("Импортирую выбранный лист…");
+    workerRef.current.postMessage({
+      id: ++nextId.current,
+      kind: "xlsx-sheet",
+      sheetIndex: xlsxSheet,
+      headerRow: xlsxHeader
+    });
   }
 
   useEffect(() => {
@@ -319,6 +376,8 @@ export function DataWorkbench({
   }
   function cancel() {
     stopAll();
+    setXlsxSheets(null);
+    setXlsxSheet(-1);
     setBusy(false);
     setExporting(false);
     setProgress("");
@@ -326,7 +385,7 @@ export function DataWorkbench({
     setError("Операция отменена. Измените настройки, чтобы пересчитать результат.");
   }
 
-  async function exportFile(kind: "csv" | "json") {
+  async function exportFile(kind: "csv" | "json" | "xlsx") {
     if (!table || !settings || !result || exporting || busy) return;
     const controller = new AbortController();
     exportRef.current = controller;
@@ -334,17 +393,20 @@ export function DataWorkbench({
     setError("");
     setProgress("Формирую полный файл…");
     try {
-      const blob = await exportData(
-        table,
-        result.indexes,
-        settings,
-        kind,
-        controller.signal,
-        (value) => {
-          if (!controller.signal.aborted)
-            setProgress(`Выгружено ${value} из ${result.indexes.length} строк`);
-        }
-      );
+      const exportRows =
+        kind === "xlsx"
+          ? (await import("./studio-data-xlsx")).exportDataXlsx
+          : (
+              table: CsvTable,
+              indexes: readonly number[],
+              settings: DataSettings,
+              signal: AbortSignal,
+              progress: (rows: number) => void
+            ) => exportData(table, indexes, settings, kind, signal, progress);
+      const blob = await exportRows(table, result.indexes, settings, controller.signal, (value) => {
+        if (!controller.signal.aborted)
+          setProgress(`Выгружено ${value} из ${result.indexes.length} строк`);
+      });
       controller.signal.throwIfAborted();
       download(blob, `${cleanFilename(name)}-filtered.${kind}`);
       setNotice(`Экспортировано ${result.indexes.length} полных строк (${blob.size} байт).`);
@@ -468,7 +530,7 @@ export function DataWorkbench({
           <input
             id="data-file"
             type="file"
-            accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json"
+            accept=".csv,.tsv,.xlsx,.json,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/json"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) void loadFile(file);
@@ -476,10 +538,47 @@ export function DataWorkbench({
             }}
           />
           <small>
-            CSV и TSV в UTF-8 до 8 МБ: 80 000 строк, 100 столбцов, 1 млн ячеек. Сохранённый проект —
-            до 16 МБ; выгрузка — до 32 МБ.
+            CSV/TSV до 8 МБ; XLSX до 24 МБ, без вычисления формул (только сохранённые результаты).
+            До 80 000 строк, 100 столбцов, 1 млн ячеек; workspace — до 16 МБ, выгрузка — до 32 МБ.
           </small>
-          {(busy || exporting) && (
+          {xlsxSheets && (
+            <div className={styles.box} role="group" aria-label="Параметры импорта XLSX">
+              <label>
+                Лист XLSX {xlsxSheets.length > 1 ? "(выберите явно)" : ""}
+                <select
+                  aria-label="Лист XLSX"
+                  value={xlsxSheet}
+                  onChange={(e) => setXlsxSheet(Number(e.target.value))}
+                >
+                  <option value={-1}>Выберите лист</option>
+                  {xlsxSheets.map((sheet, i) => (
+                    <option key={i} value={i}>
+                      {sheet.name}
+                      {sheet.hidden ? " (скрыт)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Строка заголовков
+                <input
+                  aria-label="Строка заголовков XLSX"
+                  type="number"
+                  min={1}
+                  max={80_000}
+                  value={xlsxHeader}
+                  onChange={(e) => setXlsxHeader(Number(e.target.value))}
+                />
+              </label>
+              <button type="button" disabled={busy || xlsxSheet < 0} onClick={openXlsxSheet}>
+                Импортировать выбранный лист
+              </button>
+              <small>
+                Форматы дат и чисел Excel не применяются. Числа остаются текстом до выбора типа.
+              </small>
+            </div>
+          )}
+          {(busy || exporting || xlsxSheets) && (
             <button type="button" onClick={cancel}>
               Отменить обработку
             </button>
@@ -999,8 +1098,9 @@ export function DataWorkbench({
             <div className={styles.box}>
               <h3>Полный экспорт и сохранение</h3>
               <p>
-                CSV/JSON (не более 32 МБ) выгружают все строки фильтра и все выбранные столбцы, без
-                ограничения страниц. Заголовки-дубликаты сохраняются в JSON через индексы.
+                CSV/JSON/XLSX (не более 32 МБ) выгружают все строки фильтра и все выбранные столбцы,
+                без ограничения страниц. Заголовки-дубликаты сохраняются в JSON через индексы. Excel
+                сохраняет текстовые идентификаторы и длинные числа без округления.
               </p>
               <div className={styles.controls}>
                 <button
@@ -1016,6 +1116,13 @@ export function DataWorkbench({
                   onClick={() => void exportFile("json")}
                 >
                   Выгрузить JSON
+                </button>
+                <button
+                  type="button"
+                  disabled={!result || busy || exporting}
+                  onClick={() => void exportFile("xlsx")}
+                >
+                  Выгрузить Excel
                 </button>
                 <button
                   type="button"

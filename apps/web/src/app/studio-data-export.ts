@@ -1,4 +1,6 @@
 import type { CsvTable } from "./studio-csv";
+import { csvField } from "./spreadsheet-csv";
+export { csvField, safeSpreadsheetCell } from "./spreadsheet-csv";
 import {
   DATA_LIMITS,
   validateDataTable,
@@ -12,21 +14,6 @@ import {
 const encoder = new TextEncoder();
 const nextFrame = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-// Guard spreadsheet formulas, including when applications strip leading whitespace,
-// BOM, C0 and zero-width formatting characters. Applied to ALL exported cells and headers.
-export function safeSpreadsheetCell(value: string): string {
-  // Control characters are deliberate: spreadsheet apps strip these prefixes before evaluating formulas.
-  // eslint-disable-next-line no-control-regex
-  return /^[\s\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\u0000-\u001f]*[=+\-@＝＋－＠]/u.test(
-    value
-  )
-    ? "'" + value
-    : value;
-}
-export function csvField(value: string): string {
-  const safe = safeSpreadsheetCell(value);
-  return /[,"\r\n]/u.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
-}
 function record(table: CsvTable, rowIndex: number, columns: number[]): string {
   const row = table.rows[rowIndex]!;
   return columns.map((column) => csvField(row[column] ?? "")).join(",");

@@ -1,11 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { TerminalOutput } from "../ui/terminal-output";
 import { CodePatchEditor } from "./patch-editor";
 import { codePatchMessages, type CodePatchPreview } from "./patch-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./code-agent.module.css";
 import { codeAgentUnifiedDiff } from "./unified-diff";
+import { GithubIssuesPicker } from "./github-issues-picker";
+import { GithubIssueContextEditor } from "./github-issue-context-editor";
+import { issueInputSize, type IssueContext } from "./github-issues-client";
 
 type FileChange = { path: string; before: string | null; content: string };
 type Run = {
@@ -76,6 +80,8 @@ const labels: Record<string, string> = {
 };
 const errors: Record<string, string> = {
   ...codePatchMessages,
+  INVALID_INPUT:
+    "Проверьте длину задачи и контекста (вместе до 8000 символов), репозиторий и подтверждение сокращённого описания.",
   OWNER_BUDGET_LIMIT:
     "Общий бюджет владельца не разрешает новый запрос. Проверьте расходы и удержанные резервы.",
   EXECUTION_CANCELLING: "Останавливаем проверку. Дождитесь подтверждения остановки контейнера.",
@@ -159,6 +165,17 @@ export default function CodeAgentPage() {
   const [project, setProject] = useState("");
   const [branch, setBranch] = useState("");
   const [task, setTask] = useState("");
+  const [issueDraft, setIssueDraft] = useState<{
+    project: string;
+    repository: string;
+    context: IssueContext;
+  } | null>(null);
+  const issueContext =
+    issueDraft?.project === project && issueDraft.repository === connection?.repository
+      ? issueDraft.context
+      : null;
+  const inputSize = issueInputSize(task, issueContext);
+  const issueReady = !issueContext?.truncated || issueContext.truncation_approved;
   const projectAttempt = useRef<string | null>(null);
   const [paths, setPaths] = useState("");
   const [runs, setRuns] = useState<Run[]>([]);
@@ -435,7 +452,10 @@ export default function CodeAgentPage() {
             <select
               value={project}
               disabled={busy}
-              onChange={(event) => setProject(event.target.value)}
+              onChange={(event) => {
+                setIssueDraft(null);
+                setProject(event.target.value);
+              }}
             >
               <option value="">Выберите проект</option>
               {projects.map((item) => (
@@ -464,15 +484,52 @@ export default function CodeAgentPage() {
         {connection && !connection.configured && (
           <p role="status">Для этой задачи нужно серверное подключение GitHub.</p>
         )}
+        {project && connection?.configured && (
+          <GithubIssuesPicker
+            key={`${project}:${connection.repository}`}
+            project={project}
+            repository={connection.repository}
+            disabled={busy}
+            onPrepare={({ task, context }) => {
+              setTask(task);
+              setIssueDraft({ project, repository: connection.repository, context });
+              setAutoCheck(false);
+              setCheckApproved(false);
+              setPublishApproved(false);
+              createAttempt.current = null;
+            }}
+          />
+        )}
         <label>
           Задача
           <textarea
+            aria-label="Задача"
+            maxLength={8000}
             rows={3}
             value={task}
             onChange={(event) => setTask(event.target.value)}
             placeholder="Исправь баг: опиши ожидаемое поведение и как воспроизвести ошибку"
           />
         </label>
+        {issueContext && (
+          <GithubIssueContextEditor
+            task={task}
+            context={issueContext}
+            disabled={busy}
+            onChange={(context) =>
+              setIssueDraft(
+                context && connection
+                  ? { project, repository: connection.repository, context }
+                  : null
+              )
+            }
+          />
+        )}
+        {inputSize > 8000 && (
+          <p role="alert">
+            Задача с контекстом превышает 8000 символов. Сократите её перед запуском.
+          </p>
+        )}
         <label>
           Файлы для чтения (необязательно, один путь на строку)
           <textarea
@@ -511,11 +568,20 @@ export default function CodeAgentPage() {
         )}
         <button
           className={styles.primary}
-          disabled={busy || !project || !connection?.configured || !task.trim() || !branch.trim()}
+          disabled={
+            busy ||
+            !project ||
+            !connection?.configured ||
+            !task.trim() ||
+            !branch.trim() ||
+            inputSize > 8000 ||
+            !issueReady
+          }
           onClick={() =>
             void action(async () => {
               const input = {
                 task: task.trim(),
+                ...(issueContext ? { issue_context: issueContext } : {}),
                 base_branch: branch.trim(),
                 ...(autoCheck ? { auto_check: { check: checkType, approve: true } } : {}),
                 ...(paths.trim()
@@ -662,11 +728,12 @@ export default function CodeAgentPage() {
                 <p>
                   Проверенный снимок: <code>{run.proposal_check.snapshotDigest}</code>
                 </p>
-                <pre>{run.proposal_check.stdout || run.proposal_check.stderr || "Нет вывода"}</pre>
-                {run.proposal_check.stdout && run.proposal_check.stderr && (
-                  <pre>{run.proposal_check.stderr}</pre>
-                )}
-                {run.proposal_check.truncated && <p>Вывод ограничен.</p>}
+                <TerminalOutput
+                  stdout={run.proposal_check.stdout}
+                  stderr={run.proposal_check.stderr}
+                  status={run.proposal_check.status}
+                  truncated={run.proposal_check.truncated}
+                />
               </div>
             )}
             {run.proposal && !run.draft && editable && (
@@ -876,9 +943,12 @@ export default function CodeAgentPage() {
                   <p>
                     Проверенный снимок: <code>{run.check.snapshotDigest}</code>
                   </p>
-                  <pre>{run.check.stdout || "Нет стандартного вывода"}</pre>
-                  {run.check.stderr && <pre>{run.check.stderr}</pre>}
-                  {run.check.truncated && <p>Вывод ограничен серверным лимитом.</p>}
+                  <TerminalOutput
+                    stdout={run.check.stdout}
+                    stderr={run.check.stderr}
+                    status={run.check.status}
+                    truncated={run.check.truncated}
+                  />
                   {run.check.journal !== undefined && (
                     <details>
                       <summary>Журнал исполнителя</summary>

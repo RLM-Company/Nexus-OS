@@ -1,6 +1,6 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import { WorkDagCreateSchema, validateWorkDag, type WorkDag } from "./work-dag.js";
+import { WorkDagCreateSchema, validateWorkDag, type WorkDag } from "@cosmora/contracts/work-dag";
 
 export const WORK_PLAN_PACKAGE_MAX_BYTES = 600_000;
 export const WorkPlanPackageSchema = Type.Object(
@@ -43,12 +43,16 @@ export function createWorkPlanPackage(graph: Pick<WorkDag, "title" | "nodes">): 
   return parseWorkPlanPackage({
     format: "kosmora.work-plan.v1",
     title: graph.title,
-    nodes: graph.nodes.map(({ id, title, goal, depends_on, requires_critic }) => ({
-      id,
-      title,
-      goal,
-      depends_on: [...depends_on],
-      ...(requires_critic === undefined ? {} : { requires_critic })
-    }))
+    nodes: graph.nodes.map(
+      ({ id, title, goal, depends_on, requires_critic, priority, deadline }) => ({
+        id,
+        title,
+        goal,
+        depends_on: [...depends_on],
+        ...(requires_critic === undefined ? {} : { requires_critic }),
+        ...(priority === undefined ? {} : { priority }),
+        ...(deadline === undefined ? {} : { deadline })
+      })
+    )
   });
 }

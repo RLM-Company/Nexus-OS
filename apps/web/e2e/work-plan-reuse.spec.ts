@@ -3,8 +3,11 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import type { WorkDag } from "@cosmora/contracts";
 
 async function project(request: APIRequestContext) {
-  const r = await request.post("/api/v1/projects/empty", {
-    data: { title: "Work reuse " + randomUUID().slice(0, 8), client_project_id: randomUUID() }
+  const r = await request.post("/api/v1/projects", {
+    data: {
+      initial_message: "Work reuse " + randomUUID().slice(0, 8),
+      client_message_id: randomUUID()
+    }
   });
   expect(r.status()).toBe(201);
   return ((await r.json()) as { project: { id: string } }).project.id;

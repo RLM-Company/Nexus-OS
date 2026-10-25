@@ -8,6 +8,7 @@ import {
   PresentationStore,
   NotificationStore,
   OwnerSkillStore,
+  SqliteIntelligenceGraphWorkspaceRepository,
   AgentInstanceStore,
   AgentStudioMutationStore,
   DemoManagerStore,
@@ -45,7 +46,12 @@ import { ResearchStore } from "./research/research-store.js";
 import { MediaService } from "./media/media-service.js";
 import { resolve } from "node:path";
 import { SharedOwnerBudget } from "./account-settings/shared-owner-budget.js";
-import { OwnerPrivacyCoordinator } from "./account-settings/privacy/coordinator.js";
+import {
+  OwnerPrivacyCoordinator,
+  REQUIRED_PRIVACY_STORES
+} from "./account-settings/privacy/coordinator.js";
+import { IntelligenceGraphWorkspaceService } from "@cosmora/core";
+import { intelligenceGraphPrivacyAdapter } from "./intelligence-graph-privacy.js";
 import { AccountCorePrivacyAdapter } from "./account-settings/privacy/account-core-adapter.js";
 import {
   DocumentsPrivacyAdapter,
@@ -130,7 +136,11 @@ try {
   const notificationStore = new NotificationStore(database.sqlite);
   const ownerSkillStore = new OwnerSkillStore(database.sqlite);
   const researchStore = new ResearchStore(database.sqlite);
-  const ownerPrivacy = new OwnerPrivacyCoordinator(database.sqlite);
+  const ownerPrivacy = new OwnerPrivacyCoordinator(database.sqlite, {
+    required: [...REQUIRED_PRIVACY_STORES, "intelligence-graphs"]
+  });
+  const graphRepository = new SqliteIntelligenceGraphWorkspaceRepository(database.sqlite);
+  const graphService = new IntelligenceGraphWorkspaceService(graphRepository);
   const demoManagerStore = new DemoManagerStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
@@ -223,7 +233,12 @@ try {
   ownerPrivacy.register(new OwnerSkillPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new EmailChangePrivacyAdapter(database.sqlite));
   ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
+  ownerPrivacy.register(intelligenceGraphPrivacyAdapter(graphRepository));
   app = buildApp({
+    intelligenceGraphWorkspace: {
+      enabled: process.env.KOSMORA_GRAPH_WORKSPACE_ENABLED === "true",
+      service: graphService
+    },
     canvasStore,
     researchStore,
     researchBudget: new ProjectResearchOwnerBudget(database.sqlite, projectStore, accountStore),

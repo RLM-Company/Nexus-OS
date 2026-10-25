@@ -154,14 +154,14 @@ test("opens the image workspace and keeps generation local until a model is conn
   const modeTrigger = page.getByLabel("Режимы Kosmora", { exact: true });
   const modeMenu = page.locator(".workspace-mode-menu");
   await modeTrigger.click();
-  for (const name of ["Work", "Code"]) {
+  for (const name of ["Koswork", "Coscode", "Multi-Agent"]) {
     await expect(modeMenu.getByRole("button", { name, exact: true })).toBeVisible();
     await expect(tools.getByRole("button", { name, exact: true })).toHaveCount(0);
   }
   await modeTrigger.click();
   await expect(modeMenu).not.toHaveAttribute("open");
 
-  for (const name of ["Мультиагент", "Skills", "Приложения"]) {
+  for (const name of ["Skills", "Приложения"]) {
     await expect(tools.getByRole("button", { name, exact: true })).toBeVisible();
   }
   const studio = tools.getByRole("button", { name: /Kosmora Studio/ });
@@ -181,13 +181,17 @@ test("opens the image workspace and keeps generation local until a model is conn
     })
   ).toBe(true);
 
-  const prompt = page.getByLabel("Промпт для изображения");
-  await prompt.fill("Минималистичный космический город на рассвете");
-  await page.getByRole("button", { name: "16:9" }).click();
-  await page.getByRole("button", { name: "Подготовить промпт" }).click();
-
-  await expect(page.getByRole("status").filter({ hasText: "подготовлен локально" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Скачать .txt", exact: true })).toBeEnabled();
+  await page
+    .getByLabel("Описание изображения", { exact: true })
+    .fill("Минималистичный космический город на рассвете");
+  await page.getByRole("button", { name: "16:9", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Параметры генерации", exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Добавить референсы PNG, JPEG, WebP · до 5 МБ" })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Подготовить промпт" })).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Сгенерировать изображение", exact: true })
   ).toBeDisabled();

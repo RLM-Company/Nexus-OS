@@ -7,3 +7,5 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+Read and follow `UI_RULES.md` before editing any interface. Sidebar and the initial chat screen require an explicit, targeted owner request; design reference lists do not grant general redesign authority. Preserve the typography and icon size tokens documented there.

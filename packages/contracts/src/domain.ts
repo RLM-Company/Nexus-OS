@@ -173,8 +173,14 @@ export const RunCancelResponseSchema = Type.Object(
 );
 export type RunCancelResponse = Static<typeof RunCancelResponseSchema>;
 
+export const ChatModeSchema = Type.Union([
+  Type.Literal("kosmora"),
+  Type.Literal("work"),
+  Type.Literal("coscode")
+]);
 export const GeneralChatSchema = Type.Object(
   {
+    mode: Type.Optional(ChatModeSchema),
     id: EntityIdSchema,
     title: Type.String({ minLength: 1, maxLength: 160 }),
     created_at: IsoDateTimeSchema,
@@ -213,6 +219,7 @@ export type GeneralChatMessage = Static<typeof GeneralChatMessageSchema>;
 
 export const CreateGeneralChatRequestSchema = Type.Object(
   {
+    mode: Type.Optional(ChatModeSchema),
     initial_message: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
     client_message_id: EntityIdSchema,
     attachments: Type.Optional(ChatAttachmentsSchema)

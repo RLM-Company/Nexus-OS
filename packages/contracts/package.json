@@ -4,6 +4,31 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./intelligence-graph-context": {
+      "development": "./src/intelligence-graph-context.ts",
+      "types": "./src/intelligence-graph-context.ts",
+      "default": "./dist/intelligence-graph-context.js"
+    },
+    "./work-schedule": {
+      "development": "./src/work-schedule.ts",
+      "types": "./src/work-schedule.ts",
+      "default": "./dist/work-schedule.js"
+    },
+    "./intelligence-graph-package": {
+      "development": "./src/intelligence-graph-package.ts",
+      "types": "./src/intelligence-graph-package.ts",
+      "default": "./dist/intelligence-graph-package.js"
+    },
+    "./work-dag": {
+      "development": "./src/work-dag.ts",
+      "types": "./src/work-dag.ts",
+      "default": "./dist/work-dag.js"
+    },
+    "./work-plan-package": {
+      "development": "./src/work-plan-package.ts",
+      "types": "./src/work-plan-package.ts",
+      "default": "./dist/work-plan-package.js"
+    },
     "./artifact-context": {
       "development": "./src/artifact-context.ts",
       "types": "./src/artifact-context.ts",

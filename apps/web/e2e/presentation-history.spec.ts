@@ -18,10 +18,12 @@ test("presentation history restores saved content and imports a portable copy wi
   await page.getByRole("button", { name: "История версий", exact: true }).click();
   await page.getByRole("button", { name: "Посмотреть версию 1", exact: true }).click();
   page.on("dialog", (dialog) => void dialog.accept());
+  await page.getByLabel("Проверил изменения перед восстановлением").check();
   await page.getByRole("button", { name: "Восстановить версию 1", exact: true }).click();
   await expect(heading).toHaveValue("История доклада");
   await expect(editor.getByText("Версия 3 · текущая", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Посмотреть версию 2", exact: true }).click();
+  await page.getByLabel("Проверил изменения перед восстановлением").check();
   await page.getByRole("button", { name: "Восстановить версию 2", exact: true }).click();
   await expect(heading).toHaveValue("Сохранённая правка");
   await expect(notes).toHaveValue("Заметки & <текст>\nВторая строка");
@@ -66,13 +68,13 @@ test("presentation history restores saved content and imports a portable copy wi
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/presentations/import")) imports++;
   });
-  await page
-    .getByLabel("Импорт JSON Kosmora")
-    .setInputFiles({
-      name: "bad.json",
-      mimeType: "application/json",
-      buffer: Buffer.from('{"format":"other"}')
-    });
-  await expect(page.getByRole("alert")).toContainText("Некорректный файл");
+  await page.getByLabel("Импорт JSON Kosmora").setInputFiles({
+    name: "bad.json",
+    mimeType: "application/json",
+    buffer: Buffer.from('{"format":"other"}')
+  });
+  await expect(page.getByRole("alert").filter({ hasText: "Некорректный файл" })).toContainText(
+    "Некорректный файл"
+  );
   expect(imports).toBe(0);
 });

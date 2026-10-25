@@ -3,6 +3,10 @@ import { KosmoraBrandMark } from "./kosmora-brand";
 
 export type IconName =
   | "cosmora"
+  | "research"
+  | "presentations"
+  | "sites"
+  | "games"
   | "files"
   | "paperclip"
   | "chats"
@@ -30,9 +34,60 @@ export type IconName =
   | "copy"
   | "close"
   | "more"
-  | "check";
+  | "check"
+  | "pin"
+  | "edit"
+  | "link"
+  | "archive"
+  | "trash";
 
 const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
+  pin: <path d="m9 3 10 10-3 1-3 4-3-3-6 6m6-6-3-3 4-3 1-3Z" />,
+  edit: (
+    <>
+      <path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 14v6Z" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="m10 13 4-4M8 15l-2 2a3 3 0 0 0 4 4l4-4a3 3 0 0 0 0-4M16 9l2-2a3 3 0 0 0-4-4l-4 4a3 3 0 0 0 0 4" />
+    </>
+  ),
+  archive: (
+    <>
+      <rect x="3" y="3" width="18" height="4" rx="1" />
+      <path d="M5 7v13h14V7M9 11h6" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7" />
+    </>
+  ),
+  research: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m16 16 5 5M7 10h7M10.5 6.5v7" />
+    </>
+  ),
+  presentations: (
+    <>
+      <rect x="3" y="3" width="18" height="13" rx="2" />
+      <path d="m8 21 4-5 4 5M8 8h8M8 11h5" />
+    </>
+  ),
+  sites: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18M7 6.5h.01M10 6.5h.01M7 13h10M7 16h6" />
+    </>
+  ),
+  games: (
+    <>
+      <path d="M7 7h10c3 0 5 10 3 12-2 2-5-3-6-3h-4c-1 0-4 5-6 3-2-2 0-12 3-12Z" />
+      <path d="M8 10v5m-2.5-2.5h5M16 11h.01M18 14h.01" />
+    </>
+  ),
   bell: (
     <>
       <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
@@ -48,15 +103,12 @@ const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
   ),
   microphone: (
     <>
-      <rect x="9" y="2" width="6" height="12" rx="3" />
-      <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" />
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6" />
     </>
   ),
   paperclip: (
-    <path
-      d="M9 8v9a3 3 0 0 0 6 0V6a5 5 0 0 0-10 0v11a7 7 0 0 0 14 0V8"
-      transform="rotate(35 12 12)"
-    />
+    <path d="m21 11.5-8.5 8.5a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8L15.5 6" />
   ),
   files: (
     <>

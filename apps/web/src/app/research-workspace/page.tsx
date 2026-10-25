@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import styles from "./research-workspace.module.css";
+import { ReportCanvas } from "../canvas-editor/report-canvas";
 
 type Project = { id: string; title: string };
 type Source = {
@@ -399,6 +400,35 @@ export default function ResearchWorkspace() {
                 <a download href={`/api/v1/research/${current.id}/export/html`}>
                   HTML ↓
                 </a>
+                {["completed", "failed", "cancelled", "paused"].includes(current.status) && (
+                  <ReportCanvas
+                    key={`${current.id}:${current.updated_at}`}
+                    projectId={current.project_id}
+                    title={current.question}
+                    label="Открыть отчёт в Canvas"
+                    loadContent={async (signal) => {
+                      const response = await fetch(
+                        `/api/v1/research/${encodeURIComponent(current.id)}/export/md`,
+                        {
+                          cache: "no-store",
+                          signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+                          headers: { "X-Research-Updated-At": current.updated_at }
+                        }
+                      );
+                      if (response.status === 412)
+                        throw new Error(
+                          "Исследование изменилось. Обновите отчёт перед созданием копии."
+                        );
+                      if (!response.ok)
+                        throw new Error(
+                          "Не удалось получить отчёт. Исходное исследование сохранено."
+                        );
+                      if (!response.headers.get("content-type")?.startsWith("text/markdown"))
+                        throw new Error("Сервер вернул другой формат. Проверьте вход и повторите.");
+                      return response.text();
+                    }}
+                  />
+                )}
               </div>
               {current.error_code && <p className={styles.notice}>Причина: {current.error_code}</p>}
               {current.model && (

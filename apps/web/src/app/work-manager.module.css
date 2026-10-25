@@ -189,3 +189,21 @@
   white-space: pre-wrap;
   padding-inline-start: 24px;
 }
+.scheduleFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 12px;
+  margin-block: 12px;
+}
+
+.scheduleFields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scheduleFields input,
+.scheduleFields select {
+  width: 100%;
+  min-width: 0;
+}

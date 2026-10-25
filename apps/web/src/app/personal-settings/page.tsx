@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import styles from "./personal-settings.module.css";
+import { UsageMetrics, UsageActivity } from "./usage-analytics";
 import PrivacyPanel from "./privacy-panel";
 import { Switch, SystemMessage } from "../ui/kosmora-controls";
 
@@ -102,11 +103,17 @@ export default function PersonalSettings() {
       <p className={styles.muted}>
         Параметры сохраняются на сервере для вашей учётной записи. Платежи и тарифы не подключены.
       </p>
+      <nav className={styles.sectionsNav} aria-label="Разделы настроек">
+        <a href="#model-settings">Модель и чат</a>
+        <a href="#relay-settings">English Relay</a>
+        <a href="#account-usage">Использование</a>
+        <a href="#account-data">Данные</a>
+      </nav>
       {!prefs ? (
         <p>Загрузка настроек…</p>
       ) : (
         <>
-          <section>
+          <section id="model-settings">
             <h2>Модель и чат</h2>
             <label>
               Маршрут модели
@@ -192,7 +199,7 @@ export default function PersonalSettings() {
               предлагаются.
             </p>
           </section>
-          <section>
+          <section id="relay-settings">
             <h2>English Relay</h2>
             <Switch
               disabled={busy}
@@ -208,19 +215,9 @@ export default function PersonalSettings() {
               перевод недоступен, обычная отправка не произойдёт автоматически.
             </p>
           </section>
-          <section>
+          <section id="account-usage">
             <h2>Использование и квота</h2>
-            <p>
-              Учтено токенов:{" "}
-              <strong>{usage?.summary.total_counted_tokens.toLocaleString("ru-RU") ?? "—"}</strong>
-            </p>
-            <p>
-              Основные запросы:{" "}
-              {usage?.summary.model_tokens_or_upper_bound.toLocaleString("ru-RU") ?? "—"}; перевод:{" "}
-              {usage?.summary.translation_tokens_or_upper_bound.toLocaleString("ru-RU") ?? "—"};
-              резервы и неопределённые попытки:{" "}
-              {usage?.summary.in_flight_or_uncertain_holds.toLocaleString("ru-RU") ?? "—"}.
-            </p>
+            <UsageMetrics summary={usage?.summary} />
             <p className={styles.muted}>
               Неизвестные расходы могут учитываться верхней границей. Денежная стоимость не
               вычисляется без подтверждённых цен. Персональный лимит принудительно действует для
@@ -248,39 +245,11 @@ export default function PersonalSettings() {
               Сохранить лимит
             </button>
             <h3>Последние попытки</h3>
-            <div className={styles.scroll}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Время</th>
-                    <th>Тип / чат</th>
-                    <th>Модель</th>
-                    <th>Состояние</th>
-                    <th>Вход / выход</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {usage?.rows.map((r, i) => (
-                    <tr key={`${r.run_id}:${r.kind}:${i}`}>
-                      <td>{new Date(r.created_at).toLocaleString("ru-RU")}</td>
-                      <td>
-                        {r.kind}
-                        {r.stage ? `/${r.stage}` : ""} {r.chat_id?.slice(0, 8)}
-                      </td>
-                      <td>
-                        {r.provider_id}/{r.model_id}
-                      </td>
-                      <td>{r.status}</td>
-                      <td>
-                        {r.input_tokens ?? "?"} / {r.output_tokens ?? "?"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <UsageActivity rows={usage?.rows ?? []} />
           </section>
-          <PrivacyPanel />
+          <div id="account-data">
+            <PrivacyPanel />
+          </div>
         </>
       )}
       {notice && (

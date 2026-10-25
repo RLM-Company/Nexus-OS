@@ -1,0 +1,58 @@
+.dialog {
+  width: min(1220px, calc(100vw - 32px));
+  max-height: 92dvh;
+  margin: auto;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--text);
+  background: var(--bg);
+  overflow: auto;
+  box-shadow: var(--shadow-popover);
+}
+.dialog::backdrop {
+  background: #0006;
+  backdrop-filter: blur(3px);
+}
+.header {
+  position: sticky;
+  top: -22px;
+  z-index: 4;
+  background: var(--bg);
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.header strong {
+  font-size: 17px;
+  font-weight: 550;
+}
+.header p {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 4px 0;
+}
+.header button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 22px;
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  .dialog {
+    width: calc(100vw - 12px);
+    padding: 12px;
+    max-height: 96dvh;
+    border-radius: 12px;
+  }
+  .header {
+    top: -12px;
+  }
+}

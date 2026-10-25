@@ -1,0 +1,84 @@
+.dialog {
+  width: min(860px, calc(100vw - 24px));
+  max-height: 90dvh;
+  margin: auto;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg);
+  color: var(--text);
+  overflow: auto;
+}
+.dialog::backdrop {
+  background: #0005;
+}
+.dialog header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+.dialog h3 {
+  margin: 0;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.dialog p,
+.dialog small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.dialog header button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 22px;
+}
+.tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+.tools input,
+.tools select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+.tools input {
+  flex: 1;
+}
+.tools span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.dialog pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 55dvh;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font: 13px/1.7 var(--font-mono, monospace);
+}
+.dialog mark {
+  background: var(--line);
+  color: inherit;
+  border-bottom: 1px solid var(--text);
+  padding: 1px 0;
+}
+.dialog footer {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}

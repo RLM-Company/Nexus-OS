@@ -109,6 +109,16 @@
   padding: 0 8px 0 0;
   font-weight: 550;
 }
+@media (max-width: 600px) {
+  .panel {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    top: calc(64px + env(safe-area-inset-top, 0px));
+    width: auto;
+    max-height: calc(100dvh - 96px - env(safe-area-inset-top, 0px));
+  }
+}
 @media (pointer: coarse) {
   .menu > summary,
   .panel button {

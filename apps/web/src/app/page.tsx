@@ -2,8 +2,16 @@
 import { ChatRunSkills } from "./chat-run-skills";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent
+} from "react";
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
+import { SidebarResize, useSidebarWidth } from "./sidebar-resize";
 import { InstallApp } from "./install-app";
 import { ChatResponse } from "./chat-response";
 import { VoiceComposer } from "./voice/voice-composer";
@@ -17,12 +25,13 @@ import { ChatHistoryActions } from "./chat-history-actions";
 import { ChatBranches, ChatBranchButton } from "./chat-branches";
 import {
   useChatNavigation,
-  ChatFolders,
   ChatContextPanel,
   ChatContextToggle,
   ChatToCanvas
 } from "./chat-workspace";
-import { ChatArchivePanel } from "./chat-archive-panel";
+import { ChatItemMenu } from "./chat-item-menu";
+import { CreateProjectDialog } from "./create-project-dialog";
+import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
 import { pinsFirst } from "./pinned-navigation";
@@ -110,7 +119,9 @@ type ProjectProposal = {
   attachments?: ChatAttachment[];
 };
 
+type ChatMode = "kosmora" | "work" | "coscode";
 type LocalChatSession = {
+  mode?: ChatMode;
   id: string;
   title: string;
   messages: LocalChatMessage[];
@@ -121,14 +132,14 @@ type LocalChatSession = {
 };
 
 type GeneralChatAcceptedResponse = {
-  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at">;
+  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at" | "mode">;
   user_message: LocalChatMessage;
   run_id: string;
   stream_url: string;
 };
 
 type GeneralChatDetail = {
-  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at">;
+  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at" | "mode">;
   messages: LocalChatMessage[];
 };
 
@@ -161,16 +172,20 @@ const PROJECT_VIEW_ORDER: ProjectView[] = ["chat", "plan", "project", "context"]
 type WorkspaceSurface = "manager" | ToolSurface;
 
 const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
-  manager: "Kosmora Manager",
+  manager: "Kosmora",
+  research: "Deep Research",
+  presentations: "Презентации",
+  sites: "Сайты",
+  games: "Games",
   studio: "Kosmora Studio",
-  files: "Крупные файлы",
+  files: "Анализ файлов",
   skills: "Skills",
-  code: "Code",
-  work: "Work",
+  code: "Coscode",
+  work: "Koswork",
   images: "Изображения",
   video: "Видео",
   sound: "Sound",
-  "multi-agent": "Мультиагент",
+  "multi-agent": "Multi-Agent",
   apps: "Приложения",
   features: "Возможности",
   settings: "Настройки"
@@ -190,6 +205,11 @@ const replaceConsoleRoute = (
       ? `/?chat=${encodeURIComponent(generalChatId)}`
       : "/";
   const currentParams = new URLSearchParams(window.location.search);
+  const mode = currentParams.get("mode");
+  if (mode && ["kosmora", "work", "coscode"].includes(mode))
+    route += `${route.includes("?") ? "&" : "?"}mode=${encodeURIComponent(mode)}`;
+  if (currentParams.get("space") === "coscode")
+    route += `${route.includes("?") ? "&" : "?"}space=coscode`;
   const planId = currentParams.get("plan");
   if (projectId && view === "plan" && currentParams.get("project") === projectId && planId)
     route += `&plan=${encodeURIComponent(planId)}`;
@@ -297,8 +317,14 @@ const ShieldIcon = () => (
 
 const SendIcon = () => (
   <svg aria-hidden="true" viewBox="0 0 24 24">
-    <path d="m4 4 17 8-17 8 3-8-3-8Z" />
-    <path d="M7 12h14" />
+    <path
+      d="M12 19V5m-6 6 6-6 6 6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   </svg>
 );
 
@@ -516,14 +542,17 @@ export default function Home() {
   useEffect(() => {
     setContextPreview(new URLSearchParams(window.location.search).get("context_preview") === "1");
   }, []);
+  const sidebarWidth = useSidebarWidth();
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
+  const [chatMode, setChatMode] = useState<ChatMode>("kosmora");
+  const [codeSpace, setCodeSpace] = useState(false);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [greeting, setGreeting] = useState("Чем могу помочь?");
   const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
   const chatNavigation = useChatNavigation();
   const pins = chatNavigation.navigation;
   const pinsHydrated = chatNavigation.ready;
   const pinNotice = chatNavigation.notice;
-  const [folderFilter, setFolderFilter] = useState("");
   const [contextChatId, setContextChatId] = useState<string | null>(null);
   const [activeLocalChatId, setActiveLocalChatId] = useState<string | null>(null);
   const [branchSelection, setBranchSelection] = useState<{
@@ -546,7 +575,7 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const followMessagesRef = useRef(true);
   const [fileDragActive, setFileDragActive] = useState(false);
-  const [voiceMode, setVoiceMode] = useState(false);
+
   const [voiceAssistantOpen, setVoiceAssistantOpen] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const navigationSearchRef = useRef<HTMLInputElement | null>(null);
@@ -560,16 +589,13 @@ export default function Home() {
   const projectPromotionPendingRef = useRef(false);
   const activeLocalChat = localChats.find((chat) => chat.id === activeLocalChatId) ?? null;
   const navigationSearch = navigationQuery.trim().toLocaleLowerCase("ru");
+  const spaceChats = localChats.filter((chat) =>
+    codeSpace ? ["coscode", "work"].includes(chat.mode ?? "kosmora") : chat.mode !== "coscode"
+  );
   const matchingChats = pinsFirst(
-    navigationSearch
-      ? localChats.filter((chat) => chat.title.toLocaleLowerCase("ru").includes(navigationSearch))
-      : localChats.filter(
-          (chat) =>
-            !folderFilter ||
-            (folderFilter === "unfiled"
-              ? !pins.assignments.some((a) => a.chat_id === chat.id)
-              : pins.assignments.some((a) => a.chat_id === chat.id && a.folder_id === folderFilter))
-        ),
+    spaceChats.filter(
+      (chat) => !navigationSearch || chat.title.toLocaleLowerCase("ru").includes(navigationSearch)
+    ),
     pins.chats
   );
   const matchingProjects = pinsFirst(
@@ -797,7 +823,7 @@ export default function Home() {
   const loadGeneralChats = useCallback(async () => {
     const data = await api<{
       items: Array<
-        Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at"> & {
+        Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at" | "mode"> & {
           last_message_preview: string | null;
         }
       >;
@@ -870,7 +896,26 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      const requestedSurface = new URLSearchParams(window.location.search).get("surface");
+      const params = new URLSearchParams(window.location.search);
+      const requestedMode = params.get("mode");
+      const requestedSurface = params.get("surface");
+      if (
+        !isToolSurface(requestedSurface) &&
+        ["kosmora", "work", "coscode"].includes(requestedMode ?? "")
+      ) {
+        setChatMode(requestedMode as ChatMode);
+        setCodeSpace(requestedMode === "coscode" || params.get("space") === "coscode");
+        setSurface("manager");
+        setWorkspaceSurfaceHydrated(true);
+        return;
+      }
+      if (requestedSurface === "work" || requestedSurface === "code") {
+        setChatMode(requestedSurface === "code" ? "coscode" : "work");
+        setCodeSpace(requestedSurface === "code");
+        setSurface("manager");
+        setWorkspaceSurfaceHydrated(true);
+        return;
+      }
       if (isToolSurface(requestedSurface)) {
         setSurface(requestedSurface);
         if (["studio", "files", "images", "video", "sound"].includes(requestedSurface))
@@ -880,7 +925,11 @@ export default function Home() {
       }
       const savedSurface = window.localStorage.getItem(WORKSPACE_SURFACE_STORAGE_KEY);
       if (isToolSurface(savedSurface)) {
-        setSurface(savedSurface);
+        if (savedSurface === "work" || savedSurface === "code") {
+          setChatMode(savedSurface === "code" ? "coscode" : "work");
+          setCodeSpace(savedSurface === "code");
+          setSurface("manager");
+        } else setSurface(savedSurface);
         if (["studio", "files", "images", "video", "sound"].includes(savedSurface))
           setStudioExpanded(true);
       }
@@ -893,11 +942,20 @@ export default function Home() {
   useEffect(() => {
     if (!workspaceSurfaceHydrated) return;
     try {
-      window.localStorage.setItem(WORKSPACE_SURFACE_STORAGE_KEY, surface);
+      window.localStorage.setItem(
+        WORKSPACE_SURFACE_STORAGE_KEY,
+        surface === "manager"
+          ? chatMode === "coscode"
+            ? "code"
+            : chatMode === "work"
+              ? "work"
+              : "manager"
+          : surface
+      );
     } catch {
       // Surface selection remains usable for the current page without persistence.
     }
-  }, [surface, workspaceSurfaceHydrated]);
+  }, [surface, chatMode, workspaceSurfaceHydrated]);
 
   useEffect(() => {
     void reloadShellData();
@@ -981,6 +1039,8 @@ export default function Home() {
       `/api/v1/chats/${encodeURIComponent(generalChatId)}`
     );
     if (epoch !== viewEpochRef.current || requestId !== viewRequestRef.current) return;
+    setChatMode(detail.chat.mode ?? "kosmora");
+    if (detail.chat.mode !== "work") setCodeSpace(detail.chat.mode === "coscode");
     const restoredRun = restoredRunState(detail.messages);
     if (restoredRun.activeRunId === null) {
       streamRef.current?.close();
@@ -1691,6 +1751,7 @@ export default function Home() {
                 method: "POST",
                 body: JSON.stringify({
                   initial_message: content,
+                  mode: chatMode,
                   client_message_id: clientId(),
                   attachments: chatAttachments.files
                 })
@@ -1961,11 +2022,15 @@ export default function Home() {
         /* Still clear the current view. */
       }
     }
+    if (codeSpace) setChatMode("coscode");
     resetToLocalChat(null, true);
   };
 
   const openLocalChat = async (chatId: string): Promise<void> => {
     if (!localChats.some((chat) => chat.id === chatId)) return;
+    const openingMode = localChats.find((chat) => chat.id === chatId)?.mode ?? "kosmora";
+    setChatMode(openingMode);
+    if (openingMode !== "work") setCodeSpace(openingMode === "coscode");
     resetToLocalChat(chatId);
     const epoch = viewEpochRef.current;
     setLoading(true);
@@ -2022,6 +2087,25 @@ export default function Home() {
     : "/agent-studio";
 
   const selectSurface = (nextSurface: WorkspaceSurface): void => {
+    if (["manager", "work", "code"].includes(nextSurface)) {
+      const nextMode: ChatMode =
+        nextSurface === "code" ? "coscode" : nextSurface === "work" ? "work" : "kosmora";
+      if ((nextMode !== chatMode || surface !== "manager") && (activeLocalChatId || activeProject))
+        resetToLocalChat(null);
+      setChatMode(nextMode);
+      setCodeSpace(nextMode === "coscode");
+      setSurface("manager");
+      const route = new URL(window.location.href);
+      route.searchParams.delete("surface");
+      route.searchParams.set("mode", nextMode);
+      route.searchParams.set("space", nextMode === "coscode" ? "coscode" : "kosmora");
+      window.history.replaceState(window.history.state, "", route.pathname + route.search);
+      return;
+    }
+    if (nextSurface === "research" || nextSurface === "presentations") {
+      window.location.assign(nextSurface === "research" ? "/research-workspace" : "/presentations");
+      return;
+    }
     setSurface(nextSurface);
     if (nextSurface === "manager") {
       replaceConsoleRoute(
@@ -2034,6 +2118,8 @@ export default function Home() {
     if (["studio", "files", "images", "video", "sound"].includes(nextSurface))
       setStudioExpanded(true);
     const route = new URL(window.location.href);
+    route.searchParams.delete("mode");
+    route.searchParams.delete("space");
     route.searchParams.set("surface", nextSurface);
     window.history.replaceState(
       window.history.state,
@@ -2045,9 +2131,41 @@ export default function Home() {
   return (
     <div
       className={`app-shell product-shell${preferences.compact ? " compact-navigation" : ""}${preferences.largeText ? " large-text" : ""}`}
+      style={{ "--sidebar-width": `${sidebarWidth.width}px` } as CSSProperties}
     >
-      <aside className="sidebar">
-        <WorkspaceModeMenu surface={surface} onNavigate={selectSurface} />
+      <aside className="sidebar" data-space={codeSpace ? "coscode" : "kosmora"}>
+        <SidebarResize width={sidebarWidth.width} onChange={sidebarWidth.setWidth} />
+        <WorkspaceModeMenu
+          surface={
+            surface === "manager"
+              ? codeSpace
+                ? "code"
+                : chatMode === "work"
+                  ? "work"
+                  : "manager"
+              : surface
+          }
+          onNavigate={selectSurface}
+        />
+        {codeSpace && (
+          <div className="coscode-space-tools">
+            <Link
+              href={
+                activeProject
+                  ? `/code-agent?project=${encodeURIComponent(activeProject.id)}`
+                  : "/code-agent"
+              }
+            >
+              <WorkspaceIcon name="code" /> Репозиторий и изменения
+            </Link>
+            <Link href="/github">
+              <WorkspaceIcon name="projects" /> GitHub
+            </Link>
+            <Link href={controlCenterHref}>
+              <WorkspaceIcon name="settings" /> Настройки Coscode
+            </Link>
+          </div>
+        )}
 
         <button className="new-project" onClick={newChat}>
           <span>
@@ -2098,7 +2216,7 @@ export default function Home() {
             >
               <ToolIcon kind="chats" />
               <span>Чаты</span>
-              <small>{localChats.length}</small>
+              <small>{spaceChats.length}</small>
               <span className="section-chevron" aria-hidden="true">
                 ›
               </span>
@@ -2124,17 +2242,23 @@ export default function Home() {
                         <small>{chat.last_message_preview ?? "Обычный чат"}</small>
                       </span>
                     </button>
-                    <button
-                      type="button"
-                      className="navigation-pin"
-                      aria-label={`${pins.chats.includes(chat.id) ? "Открепить" : "Закрепить"} чат`}
-                      aria-describedby={`pin-chat-${chat.id}`}
-                      aria-pressed={pins.chats.includes(chat.id)}
-                      disabled={!pinsHydrated}
-                      onClick={() => changePin("chats", chat.id)}
-                    >
-                      <PinIcon />
-                    </button>
+                    <ChatItemMenu
+                      id={chat.id}
+                      title={chat.title}
+                      pinned={pins.chats.includes(chat.id)}
+                      disabled={!pinsHydrated || (sending && activeLocalChatId === chat.id)}
+                      onPin={() => changePin("chats", chat.id)}
+                      onOpen={() => void openLocalChat(chat.id)}
+                      onRename={(title) =>
+                        setLocalChats((current) =>
+                          current.map((item) => (item.id === chat.id ? { ...item, title } : item))
+                        )
+                      }
+                      onDelete={() => {
+                        setLocalChats((current) => current.filter((item) => item.id !== chat.id));
+                        if (activeLocalChatId === chat.id) newChat();
+                      }}
+                    />
                   </div>
                 ))}
                 {navigationSearch && matchingChats.length === 0 && (
@@ -2146,20 +2270,11 @@ export default function Home() {
               </div>
             )}
           </section>
-          <ChatFolders
-            navigation={pins}
-            ready={pinsHydrated}
-            chatId={activeProject ? null : activeLocalChatId}
-            onChange={chatNavigation.mutate}
-            onFilter={setFolderFilter}
-            filter={folderFilter}
-          />
           {pinNotice && (
             <p className="pin-notice" role="status">
               {pinNotice}
             </p>
           )}
-          <ChatArchivePanel onRestore={() => void loadGeneralChats()} />
           <section className="sidebar-section">
             <button
               type="button"
@@ -2177,6 +2292,15 @@ export default function Home() {
             </button>
             {projectsExpanded && (
               <div className="project-list" id="sidebar-project-list">
+                <button
+                  type="button"
+                  className="sidebar-create-project"
+                  onClick={() => setCreateProjectOpen(true)}
+                >
+                  <WorkspaceIcon name="projects" />
+                  <span>Создать проект</span>
+                  <span aria-hidden="true">+</span>
+                </button>
                 {matchingProjects.map((project) => (
                   <div className="pinnable-navigation-item" key={project.id}>
                     <button
@@ -2230,7 +2354,12 @@ export default function Home() {
                   "sound",
                   "settings",
                   "apps",
-                  "features"
+                  "features",
+                  "multi-agent",
+                  "research",
+                  "presentations",
+                  "sites",
+                  "games"
                 ].includes(item.id)
             ).map((item) => (
               <button
@@ -2244,49 +2373,51 @@ export default function Home() {
                 <span>{item.label}</span>
               </button>
             ))}
-            <section className="sidebar-section studio-section">
-              <button
-                type="button"
-                className="projects-heading sidebar-section-toggle studio-toggle"
-                aria-expanded={studioExpanded}
-                aria-controls="studio-tools"
-                onClick={() => {
-                  if (!studioExpanded) selectSurface("studio");
-                  else setStudioExpanded(false);
-                }}
-              >
-                <ToolIcon kind="studio" />
-                <span>Kosmora Studio</span>
-                <span className="section-chevron" aria-hidden="true">
-                  ›
-                </span>
-              </button>
-              {studioExpanded && (
-                <div className="studio-tools" id="studio-tools">
-                  <button
-                    type="button"
-                    className={surface === "studio" ? "sidebar-tool active" : "sidebar-tool"}
-                    aria-current={surface === "studio" ? "page" : undefined}
-                    onClick={() => selectSurface("studio")}
-                  >
-                    <ToolIcon kind="studio" />
-                    <span>Обзор Studio</span>
-                  </button>
-                  {STUDIO_ITEMS.map((item) => (
+            {!codeSpace && (
+              <section className="sidebar-section studio-section">
+                <button
+                  type="button"
+                  className="projects-heading sidebar-section-toggle studio-toggle"
+                  aria-expanded={studioExpanded}
+                  aria-controls="studio-tools"
+                  onClick={() => {
+                    if (!studioExpanded) selectSurface("studio");
+                    else setStudioExpanded(false);
+                  }}
+                >
+                  <ToolIcon kind="studio" />
+                  <span>Kosmora Studio</span>
+                  <span className="section-chevron" aria-hidden="true">
+                    ›
+                  </span>
+                </button>
+                {studioExpanded && (
+                  <div className="studio-tools" id="studio-tools">
                     <button
-                      key={item.id}
                       type="button"
-                      className={surface === item.id ? "sidebar-tool active" : "sidebar-tool"}
-                      aria-current={surface === item.id ? "page" : undefined}
-                      onClick={() => selectSurface(item.id)}
+                      className={surface === "studio" ? "sidebar-tool active" : "sidebar-tool"}
+                      aria-current={surface === "studio" ? "page" : undefined}
+                      onClick={() => selectSurface("studio")}
                     >
-                      <ToolIcon kind={item.id} />
-                      <span>{item.label}</span>
+                      <ToolIcon kind="studio" />
+                      <span>Обзор Studio</span>
                     </button>
-                  ))}
-                </div>
-              )}
-            </section>
+                    {STUDIO_ITEMS.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={surface === item.id ? "sidebar-tool active" : "sidebar-tool"}
+                        aria-current={surface === item.id ? "page" : undefined}
+                        onClick={() => selectSurface(item.id)}
+                      >
+                        <ToolIcon kind={item.id} />
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
             <button
               type="button"
               className={surface === "apps" ? "sidebar-tool active" : "sidebar-tool"}
@@ -2324,7 +2455,9 @@ export default function Home() {
         }
         id="workspace"
       >
-        <header className="topbar">
+        <header
+          className={`topbar${surface === "manager" && !activeProject && !activeLocalChatId && !codeSpace ? " has-mode-switch" : ""}`}
+        >
           <div>
             <span className="eyebrow">
               {surface === "manager"
@@ -2339,11 +2472,29 @@ export default function Home() {
                 : SURFACE_TITLE[surface]}
             </h1>
           </div>
+          {surface === "manager" && !activeProject && !activeLocalChatId && !codeSpace && (
+            <div className="chat-mode-switch" role="group" aria-label="Режим нового чата">
+              <button
+                type="button"
+                aria-pressed={chatMode === "kosmora"}
+                onClick={() => selectSurface("manager")}
+              >
+                Чат
+              </button>
+              <button
+                type="button"
+                aria-pressed={chatMode === "work"}
+                onClick={() => selectSurface("work")}
+              >
+                Работа
+              </button>
+            </div>
+          )}
           <div className="topbar-actions">
             <InstallApp />
             {surface === "manager" && (
               <ChatHistoryActions
-                key={activeLocalChat?.id ?? activeProject?.id ?? "new-chat"}
+                key={`${activeLocalChat?.id ?? activeProject?.id ?? "new-chat"}:${activeLocalChat?.title ?? activeProject?.title ?? ""}`}
                 id={activeProject ? null : (activeLocalChat?.id ?? null)}
                 title={activeProject?.title ?? activeLocalChat?.title ?? "Новый чат"}
                 messages={activeProject ? messages : localChatMessages}
@@ -2354,7 +2505,6 @@ export default function Home() {
                 onRecover={restoreRunDraft}
                 runError={error}
                 onVoice={() => {
-                  setVoiceMode(true);
                   setVoiceAssistantOpen(true);
                 }}
                 onChange={(title) =>
@@ -2372,8 +2522,15 @@ export default function Home() {
                 }}
               />
             )}
+            {surface === "manager" && (
+              <ChatSearchTrigger
+                title={activeProject?.title ?? activeLocalChat?.title ?? "Новый чат"}
+                messages={activeProject ? messages : localChatMessages}
+              />
+            )}
             <QuickSwitcher
-              chats={pinsFirst(localChats, pins.chats)}
+              hiddenTrigger
+              chats={pinsFirst(spaceChats, pins.chats)}
               projects={pinsFirst(projects, pins.projects)}
               onNewChat={newChat}
               onOpenChat={(id) => void openLocalChat(id)}
@@ -2480,7 +2637,7 @@ export default function Home() {
           >
             ＋ Новый
           </button>
-          {localChats.slice(0, 5).map((chat) => (
+          {spaceChats.slice(0, 5).map((chat) => (
             <button
               key={chat.id}
               className={!activeProject && activeLocalChatId === chat.id ? "active" : ""}
@@ -3119,14 +3276,15 @@ export default function Home() {
                     className="composer-send-control"
                     onContextMenu={(event) => {
                       event.preventDefault();
-                      if (!loading && initialRouteReady) setVoiceMode((value) => !value);
+                      if (!loading && initialRouteReady && !draft.trim())
+                        setVoiceAssistantOpen(true);
                     }}
                   >
                     <button
-                      type={voiceMode ? "button" : "submit"}
-                      data-send-mode={voiceMode ? "voice" : "text"}
+                      type={draft.trim() ? "submit" : "button"}
+                      data-send-mode={draft.trim() ? "text" : "voice"}
                       onClick={() => {
-                        if (voiceMode) setVoiceAssistantOpen(true);
+                        if (!draft.trim()) setVoiceAssistantOpen(true);
                       }}
                       onKeyDown={(event) => {
                         if (
@@ -3134,24 +3292,19 @@ export default function Home() {
                           (event.shiftKey && event.key === "F10")
                         ) {
                           event.preventDefault();
-                          setVoiceMode((value) => !value);
+                          if (!draft.trim()) setVoiceAssistantOpen(true);
                         }
                       }}
                       disabled={
-                        (!voiceMode && !draft.trim()) ||
                         loading ||
                         !initialRouteReady ||
                         chatAttachments.reading ||
                         executionGate !== "clear"
                       }
-                      aria-label={voiceMode ? "Открыть голосового помощника" : "Отправить"}
-                      title={
-                        voiceMode
-                          ? "Голосовой помощник · ПКМ для возврата к тексту"
-                          : "Отправить · ПКМ для голосового помощника"
-                      }
+                      aria-label={draft.trim() ? "Отправить" : "Открыть голосового помощника"}
+                      title={draft.trim() ? "Отправить" : "Голосовой помощник"}
                     >
-                      {voiceMode ? <WorkspaceIcon name="headphones" /> : <SendIcon />}
+                      {draft.trim() ? <SendIcon /> : <WorkspaceIcon name="sound" />}
                     </button>
                   </span>
                 </div>
@@ -3191,7 +3344,7 @@ export default function Home() {
             agentStudioHref={agentStudioHref}
             controlCenterHref={controlCenterHref}
             activeProjectId={activeProject?.id ?? null}
-            loading={loading}
+            loading={loading || !initialRouteReady}
             error={error}
             onRetry={() => void reloadShellData()}
             onOpenProject={(id, view) => void openProject(id, view)}
@@ -3215,11 +3368,30 @@ export default function Home() {
         )}
       </main>
 
+      {createProjectOpen && (
+        <CreateProjectDialog
+          onClose={() => setCreateProjectOpen(false)}
+          onCreated={(id) => {
+            setCreateProjectOpen(false);
+            setProjectsExpanded(true);
+            void loadProjects().catch(() => undefined);
+            void openProject(id);
+          }}
+        />
+      )}
       <MobileNavigation
-        surface={surface}
+        surface={
+          surface === "manager"
+            ? codeSpace
+              ? "code"
+              : chatMode === "work"
+                ? "work"
+                : "manager"
+            : surface
+        }
         onNewChat={newChat}
         onNavigate={selectSurface}
-        chats={pinsFirst(localChats, pins.chats)}
+        chats={pinsFirst(spaceChats, pins.chats)}
         projects={pinsFirst(projects, pins.projects)}
         onOpenChat={(id) => void openLocalChat(id)}
         onOpenProject={(id) => void openProject(id)}

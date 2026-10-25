@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const { randomUUID } = require("node:crypto");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const {
@@ -21,6 +22,7 @@ const { createUpdateService } = require("./update-service.cjs");
 const { createDraftStore } = require("./draft-store.cjs");
 const { fetchVerifiedOwner } = require("./owner-session.cjs");
 const { createDraftSessionGate } = require("./draft-session-gate.cjs");
+const { createDownloadCenter } = require("./download-center.cjs");
 const { safeWorkspaceRoute, isLoginOrLogout, isExplicitLogout } = require("./desktop-recovery.cjs");
 const updateTrust = require("./update-trust.json");
 const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
@@ -91,6 +93,15 @@ const gotSingleInstanceLock = smokeMode ? true : app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit();
 }
+// Recovery writes must never run in a second instance or the installer smoke process.
+const downloadCenter = gotSingleInstanceLock && !smokeMode ? createDownloadCenter({
+  BrowserWindow, ipcMain, shell, dialog, profileDirectory, activeDownloads,
+  getOrigin: () => currentOrigin,
+  getIdentityEpoch: () => identityEpoch,
+  verifiedOwner,
+  getMainWindow: () => mainWindow,
+  onChange: createMenu
+}) : null;
 
 function connectionPath() {
   return path.join(app.getPath("userData"), CONNECTION_FILE);
@@ -368,6 +379,7 @@ async function openOrigin(origin, { persist = false } = {}) {
       // Switching origins is an explicit trust-boundary change, not a page navigation.
       identityEpoch++;
       draftSessionGate.reset();
+      downloadCenter.invalidate({ forget: true, origin: previousOrigin, owner: ownerCache?.owner });
       ownerCache = null;
       deferredRoute = null;
       pendingDeepLink = null;
@@ -436,6 +448,12 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
   const result = await fetchVerifiedOwner((...args) => browserSession.fetch(...args), origin);
   if (origin !== currentOrigin || epoch !== identityEpoch) return null;
   if (result.state === "verified") {
+    if (ownerCache?.origin === origin && ownerCache.owner !== result.owner) {
+      identityEpoch++;
+      draftSessionGate.reset();
+      downloadCenter.invalidate();
+      for (const item of activeDownloads.values()) item.cancel();
+    }
     ownerCache = {
       owner: result.owner,
       origin,
@@ -444,6 +462,12 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
     return result.owner;
   }
   if (result.state === "denied") {
+    if (ownerCache?.origin === origin) {
+      identityEpoch++;
+      draftSessionGate.reset();
+      downloadCenter.invalidate();
+      for (const item of activeDownloads.values()) item.cancel();
+    }
     ownerCache = null; // A real 401/403/redirect/new identity is never an offline signal.
     return null;
   }
@@ -508,6 +532,7 @@ async function nativeLogout() {
   // Fence pending asynchronous saves before removing user data.
   identityEpoch++;
   draftSessionGate.reset();
+  downloadCenter.invalidate({ forget: true, origin: currentOrigin, owner: ownerCache?.owner });
   ownerCache = null;
   // The user explicitly authorized clearing drafts and locally remembered login.
   try {
@@ -587,6 +612,7 @@ function clearDraftsForHostedLogout(url) {
   // a hosted page handles it without using the native menu.
   identityEpoch++;
   draftSessionGate.reset();
+  downloadCenter.invalidate({ forget: true, origin: currentOrigin, owner: ownerCache?.owner });
   ownerCache = null;
   deferredRoute = null;
   pendingDeepLink = null;
@@ -645,6 +671,7 @@ function installNavigationGuards(window) {
     draftSessionGate.reset(); // Full document navigation, not SPA history changes.
     persistRoute(url);
     if (isLoginOrLogout(url, currentOrigin)) {
+      downloadCenter.invalidate();
       ownerCache = null;
       identityEpoch++;
       draftSessionGate.reset();
@@ -655,6 +682,7 @@ function installNavigationGuards(window) {
     if (isExplicitLogout(url, currentOrigin)) void clearDraftsForHostedLogout(url);
     persistRoute(url);
     if (isLoginOrLogout(url, currentOrigin)) {
+      downloadCenter.invalidate();
       ownerCache = null;
       identityEpoch++;
       draftSessionGate.reset();
@@ -725,8 +753,9 @@ function installSessionPolicy(browserSession) {
       if (prefs.askWhereToSave)
         item.setSaveDialogOptions({ title: "Сохранить файл Kosmora", defaultPath: target });
       else item.setSavePath(target);
-      const downloadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const downloadId = randomUUID();
       activeDownloads.set(downloadId, item);
+      downloadCenter.capture(downloadId, item);
       createMenu();
       item.once("done", (_event, state) => {
         activeDownloads.delete(downloadId);
@@ -781,6 +810,8 @@ function createMenu() {
     {
       label: "Файлы",
       submenu: [
+        { label: "Центр загрузок…", accelerator: "Ctrl+J", click: () => void downloadCenter.show() },
+        { type: "separator" },
         {
           label: "Отменить текущие скачивания",
           enabled: activeDownloads.size > 0,

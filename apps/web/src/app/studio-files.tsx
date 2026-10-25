@@ -11,7 +11,9 @@ import {
   type SetStateAction
 } from "react";
 import { CHAT_TEXT_EXTENSIONS, type ChatAttachment } from "@cosmora/contracts/chat-attachments";
-import { decodeStudioDocument } from "./decode-chat-attachment";
+import { decodeStudioDocument, decodeChatAttachment } from "./decode-chat-attachment";
+import { ReportCanvas } from "./canvas-editor/report-canvas";
+import { canvasBytes, CANVAS_MAX_CONTENT_BYTES } from "@cosmora/contracts/canvas-artifacts";
 import {
   csvEmptyCells,
   numericStats,
@@ -163,6 +165,17 @@ export function StudioFiles({
   const operation = useRef<AbortController | null>(null);
   const operationId = useRef(0);
   const [document, setDocument] = useState<DocumentState | null>(null);
+  const [image, setImage] = useState<{
+    attachment: ChatAttachment;
+    url: string;
+    name: string;
+  } | null>(null);
+  useEffect(
+    () => () => {
+      if (image) URL.revokeObjectURL(image.url);
+    },
+    [image]
+  );
   const [reading, setReading] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -192,11 +205,19 @@ export function StudioFiles({
     setProgress("Читаю файл…");
     setError(null);
     setDocument(null);
+    setImage(null);
     setQuery("");
     setIndex(0);
     setSelectedParts([]);
     setCsvFilter("");
     try {
+      if (/\.(png|jpe?g)$/i.test(file.name)) {
+        const attachment = await decodeChatAttachment(file);
+        controller.signal.throwIfAborted();
+        if (operationId.current !== id) return;
+        setImage({ attachment, url: URL.createObjectURL(file), name: file.name });
+        return;
+      }
       const text = await decodeStudioDocument(file, controller.signal, (current, total, unit) => {
         if (controller.signal.aborted || operationId.current !== id) return;
         setProgress(
@@ -352,7 +373,7 @@ export function StudioFiles({
         </span>
         <div>
           <p>Kosmora Studio</p>
-          <h2>Анализ крупных файлов</h2>
+          <h2>Анализ файлов</h2>
           <p>Документы, данные и код — локально в одном рабочем окне.</p>
         </div>
       </header>
@@ -368,7 +389,7 @@ export function StudioFiles({
           type="file"
           hidden
           aria-label="Крупный документ"
-          accept={[...CHAT_TEXT_EXTENSIONS, "pdf", "docx"]
+          accept={[...CHAT_TEXT_EXTENSIONS, "pdf", "docx", "png", "jpg", "jpeg"]
             .map((extension) => `.${extension}`)
             .join(",")}
           onChange={(event) => {
@@ -381,7 +402,7 @@ export function StudioFiles({
           <Icon name="paperclip" />
           {document ? "Выбрать другой файл" : "Выбрать файл"}
         </button>
-        <p>PDF, DOCX, CSV, текст и код · до 20 МБ</p>
+        <p>PDF, DOCX, CSV, текст и код · до 20 МБ · фото PNG/JPEG до 1 МБ</p>
         <p>
           <small>
             До 500 страниц PDF, 8 МБ DOCX XML и 2 миллионов символов текста. Без скрытого обрезания.
@@ -409,6 +430,34 @@ export function StudioFiles({
         )}
         {error && <p role="alert">{error}</p>}
       </section>
+      {image && (
+        <section className={styles.imagePreview} aria-label="Предпросмотр изображения">
+          <h3>{image.name}</h3>
+          <img src={image.url} alt={`Предпросмотр ${image.name}`} />
+          <label>
+            Вопрос к изображению
+            <textarea
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              maxLength={2000}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() =>
+              onCompose(question.trim() || "Проанализируй изображение и опиши важные детали.", [
+                image.attachment
+              ])
+            }
+          >
+            Подготовить анализ в чате
+          </button>
+          <small>
+            Изображение попадёт в черновик чата. Анализ начнётся после отправки; нужна модель с
+            поддержкой изображений.
+          </small>
+        </section>
+      )}
       {document && facts && (
         <>
           <div className={styles.documentTitle}>
@@ -417,6 +466,27 @@ export function StudioFiles({
               <Icon name="download" />
               Скачать текст
             </button>
+            {projectId && (
+              <ReportCanvas
+                projectId={projectId}
+                title={document.name}
+                format={
+                  /\.(md|markdown)$/i.test(document.name)
+                    ? "markdown"
+                    : /\.(tsx?|jsx?|py|json|css|html?)$/i.test(document.name)
+                      ? "code"
+                      : "text"
+                }
+                content={
+                  canvasBytes(document.text) <= CANVAS_MAX_CONTENT_BYTES ? document.text : part
+                }
+                label={
+                  canvasBytes(document.text) <= CANVAS_MAX_CONTENT_BYTES
+                    ? "Редактировать в Canvas"
+                    : `Редактировать часть ${index + 1} в Canvas`
+                }
+              />
+            )}
           </div>
           {document.csv ? (
             <CsvWorkspace

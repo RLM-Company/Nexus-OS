@@ -25,7 +25,8 @@ export default defineConfig({
         NODE_ENV: "development",
         LOG_LEVEL: "error",
         MODEL_PROVIDER: "mock",
-        DATABASE_URL: `file:./data/e2e-b0.1-${process.pid}.db`,
+        KOSMORA_GRAPH_WORKSPACE_ENABLED: "true",
+        DATABASE_URL: `file:./data/e2e-b0.1-${process.pid}-${Date.now()}.db`,
         MOCK_PROVIDER_MODE: "slow_stream",
         MANAGER_TIMEOUT_MS: "60000"
       }

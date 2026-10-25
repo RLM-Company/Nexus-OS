@@ -1,10 +1,10 @@
 .panel {
   margin-top: 24px;
   padding: 22px;
-  border: 1px solid #777;
+  border: 1px solid var(--line, #ddd);
   border-radius: 16px;
-  background: #111;
-  color: #f5f5f5;
+  background: var(--bg, #fff);
+  color: var(--text, #171717);
   display: grid;
   gap: 12px;
 }
@@ -14,12 +14,12 @@
 }
 .panel p {
   margin: 0;
-  color: #d6d6d6;
+  color: var(--muted, #666);
   line-height: 1.55;
 }
 .status {
   padding: 10px 12px;
-  border: 1px solid #555;
+  border: 1px solid var(--line, #ddd);
   border-radius: 8px;
 }
 .check {
@@ -30,7 +30,7 @@
 }
 .check input {
   margin-top: 4px;
-  accent-color: #fff;
+  accent-color: var(--text, #171717);
 }
 .actions {
   display: flex;
@@ -39,9 +39,9 @@
 }
 .actions button,
 .history button {
-  background: #f6f6f6;
-  color: #101010;
-  border: 1px solid #999;
+  background: var(--text, #171717);
+  color: var(--bg, #fff);
+  border: 1px solid var(--line, #ddd);
   padding: 10px 14px;
   border-radius: 8px;
   cursor: pointer;
@@ -64,7 +64,7 @@
   border-radius: 8px;
 }
 .asset a {
-  color: #fff;
+  color: var(--text, #171717);
   text-decoration: underline;
 }
 .history {
@@ -72,8 +72,8 @@
   gap: 8px;
 }
 .history button {
-  background: #202020;
-  color: #f6f6f6;
+  background: var(--panel, #f8f8f8);
+  color: var(--text, #171717);
   text-align: left;
 }
 @media (prefers-color-scheme: light) {

@@ -11,6 +11,7 @@
     "start": "next start -H 127.0.0.1",
     "test": "vitest run && node scripts/studio-data-regression.cjs",
     "test:e2e": "playwright test",
+    "test:acceptance": "playwright test -c playwright.acceptance.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -10,7 +10,7 @@ test("generates a durable presentation through Work, reviews it and exports edit
     data: { initial_message: "Presentation fixture", client_message_id: crypto.randomUUID() }
   });
   expect(created.status()).toBe(201);
-  const { project } = (await created.json()) as { project: { id: string } };
+  const { project } = (await created.json()) as { project: { id: string; title: string } };
   expect(
     (
       await request.put(`/api/v1/projects/${project.id}/autonomy-profile`, {
@@ -20,6 +20,7 @@ test("generates a durable presentation through Work, reviews it and exports edit
   ).toBe(200);
   await page.goto("/presentations");
   await page.getByText("Создать презентацию с ИИ", { exact: true }).click();
+  await expect(page.getByLabel("Проект для презентации")).toContainText(project.title);
   await page.getByLabel("Проект для презентации").selectOption(project.id);
   await page.getByLabel("Тема и требования").fill("E2E_PRESENTATION_WORK: законы Ньютона");
   await page.getByLabel("Количество слайдов").selectOption("3");

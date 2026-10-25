@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, endpoint } from "./client";
-import type { DeckRevision, DeckRevisionSummary } from "./model";
+import { contentKey } from "./editor-history";
+import { compareRevisions } from "./revision-diff";
+import { presentationPackage } from "./package";
+import type { Deck, DeckRevision, DeckRevisionSummary } from "./model";
 import { SlidePreview } from "./slide-preview";
 import styles from "./presentations.module.css";
 
@@ -13,16 +16,20 @@ const sources = {
   migration: "До включения истории"
 };
 export function PresentationHistory({
-  id,
-  version,
+  deck,
   busy,
   onRestore
 }: {
-  id: string;
-  version: number;
+  deck: Deck;
   busy: boolean;
-  onRestore: (version: number) => Promise<boolean>;
+  onRestore: (
+    version: number,
+    expectedVersion: number,
+    reviewedContent: string
+  ) => Promise<boolean>;
 }) {
+  const { id, version } = deck;
+  const [reviewed, setReviewed] = useState("");
   const [opened, setOpened] = useState(false);
   const [items, setItems] = useState<DeckRevisionSummary[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
@@ -62,6 +69,24 @@ export function PresentationHistory({
       });
     return () => controller.abort();
   }, [id, selected, opened, refresh]);
+  const changes = preview ? compareRevisions(deck, preview) : [];
+  const reviewKey = preview
+    ? JSON.stringify([id, version, contentKey(deck), preview.version, contentKey(preview)])
+    : "";
+  const downloadRevision = () => {
+    if (!preview) return;
+    try {
+      const bytes = JSON.stringify(presentationPackage(preview), null, 2);
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `presentation-v${preview.version}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (cause) {
+      setError(String(cause));
+    }
+  };
   return (
     <div className={styles.history}>
       <button
@@ -124,11 +149,60 @@ export function PresentationHistory({
               <h3>
                 {preview.title} · версия {preview.version}
               </h3>
+              <p>
+                Изменения при восстановлении относительно открытого черновика: {changes.length}.
+                Пробелы и переводы строк учитываются; слайды сопоставлены по ID.
+              </p>
+              <button type="button" onClick={downloadRevision}>
+                Скачать JSON версии {preview.version}
+              </button>
+              {changes.length > 0 && (
+                <div style={{ overflowX: "auto" }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Поле</th>
+                        <th>Сейчас в редакторе</th>
+                        <th>После восстановления</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {changes.map((change, index) => (
+                        <tr key={index}>
+                          <th>{change.label}</th>
+                          {[change.before, change.after].map((value, side) => (
+                            <td
+                              key={side}
+                              style={{
+                                whiteSpace: "pre-wrap",
+                                overflowWrap: "anywhere",
+                                maxWidth: "25rem"
+                              }}
+                            >
+                              {value.length ? value.slice(0, 500) : "(пусто)"}
+                              {value.length > 500 && <em>… (сокращено; полный текст в JSON)</em>}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <label>
+                <input
+                  type="checkbox"
+                  checked={reviewed === reviewKey}
+                  onChange={(event) => setReviewed(event.target.checked ? reviewKey : "")}
+                  disabled={busy || preview.version === version}
+                />{" "}
+                Проверил изменения перед восстановлением
+              </label>
               <button
                 type="button"
-                disabled={busy || preview.version === version}
+                disabled={busy || preview.version === version || reviewed !== reviewKey}
                 onClick={() => {
-                  void onRestore(preview.version)
+                  void onRestore(preview.version, version, contentKey(deck))
                     .then((done) => {
                       if (done) setSelected(null);
                     })

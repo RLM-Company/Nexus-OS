@@ -64,6 +64,14 @@ fs.copyFileSync(
   path.join(output, "packages/contracts/src/data-workspace.js"),
   path.join(contractOutput, "data-workspace.js")
 );
+// Compiled workers run outside the workspace; resolve the actual installed codec,
+// rather than replacing it with a test implementation or relying on TEMP ancestry.
+const codecOutput = path.join(output, "node_modules/fflate");
+fs.mkdirSync(codecOutput, { recursive: true });
+fs.writeFileSync(
+  path.join(codecOutput, "index.js"),
+  `module.exports = require(${JSON.stringify(require.resolve("fflate", { paths: [source] }))});\n`
+);
 const appOutput = path.join(output, "apps/web/src/app");
 const C = require(path.join(appOutput, "studio-data-core.js"));
 const E = require(path.join(appOutput, "studio-data-export.js"));

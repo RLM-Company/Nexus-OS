@@ -6,11 +6,18 @@ import { AcceptedSkillView } from "./accepted-skill-view";
 import {
   WORK_PLAN_PACKAGE_MAX_BYTES,
   parseWorkPlanPackageText,
-  type WorkPlanPackage,
-  type WorkDag,
-  type WorkDagNodeInput,
-  type WorkDagControl
-} from "@cosmora/contracts";
+  type WorkPlanPackage
+} from "@cosmora/contracts/work-plan-package";
+import type { WorkDag, WorkDagNodeInput, WorkDagControl } from "@cosmora/contracts";
+import type { WorkPriority } from "@cosmora/contracts/work-schedule";
+import {
+  filterWorkSteps,
+  workDeadlineLocal,
+  workDeadlineUtc,
+  workDeadlineState,
+  workPriorityLabels,
+  type WorkDueFilter
+} from "./work-schedule-ui";
 import { useExecutionGate } from "./use-execution-gate";
 import styles from "./work-manager.module.css";
 
@@ -34,6 +41,9 @@ const reasons: Record<string, string> = {
   OWNER_QUIESCED: "Работы остановлены для операции с данными владельца",
   DAG_CYCLE: "Зависимости образуют цикл. Измените их перед сохранением",
   DAG_DEPENDENCY_MISSING: "Зависимость указывает на отсутствующий шаг",
+  INVALID_DAG_PRIORITY: "Выберите допустимый приоритет шага",
+  INVALID_DAG_DEADLINE:
+    "Укажите корректный срок в UTC; дата не должна содержать несуществующий день",
   STALE_DAG: "План изменился. Закройте редактор и откройте актуальную версию",
   STEP_ALREADY_STARTED: "Запущенный шаг редактировать нельзя",
   DEPENDENCY_CONTEXT_LIMIT:
@@ -79,12 +89,14 @@ export function workDagReason(reason: string | null, graph: WorkDag): string {
   return reasons[reason] ?? "Причина: " + reason;
 }
 const inputs = (graph: WorkDag) =>
-  graph.nodes.map(({ id, title, goal, depends_on, requires_critic }) => ({
+  graph.nodes.map(({ id, title, goal, depends_on, requires_critic, priority, deadline }) => ({
     id,
     title,
     goal,
     depends_on,
-    ...(requires_critic === undefined ? {} : { requires_critic })
+    ...(requires_critic === undefined ? {} : { requires_critic }),
+    ...(priority === undefined ? {} : { priority }),
+    ...(deadline === undefined ? {} : { deadline })
   }));
 const freshStep = (): WorkDagNodeInput => ({
   id: "step_" + crypto.randomUUID().slice(0, 8),
@@ -101,6 +113,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [collection, setCollection] = useState<"active" | "archived">("active");
   const [search, setSearch] = useState("");
+  const [stepStatus, setStepStatus] = useState("all");
+  const [stepDue, setStepDue] = useState<WorkDueFilter>("all");
+  const [scheduleNow, setScheduleNow] = useState(0);
   const [rename, setRename] = useState<{ id: string; version: number; title: string } | null>(null);
   const [editor, setEditor] = useState<{
     graphId: string | null;
@@ -152,6 +167,16 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       )
   );
   const graph = visibleGraphs.find((g) => g.id === selected) ?? visibleGraphs[0] ?? null;
+  useEffect(() => {
+    setStepStatus("all");
+    setStepDue("all");
+    setScheduleNow(Date.now());
+    const timer = window.setInterval(() => setScheduleNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [projectId, graph?.id]);
+  const visibleSteps = graph ? filterWorkSteps(graph.nodes, stepStatus, stepDue, scheduleNow) : [];
+  const overdueCount =
+    graph?.nodes.filter((node) => workDeadlineState(node, scheduleNow) === "overdue").length ?? 0;
   const browsingLocked =
     busy ||
     Boolean(editor) ||
@@ -542,6 +567,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           <label>
             Раздел планов
             <select
+              aria-label="Раздел планов"
               value={collection}
               disabled={browsingLocked}
               onChange={(e) => {
@@ -651,6 +677,12 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                       .map((id) => importDraft.package.nodes.find((x) => x.id === id)?.title ?? id)
                       .join(", ") || "нет"}{" "}
                     · {n.requires_critic ? "Критик обязателен" : "Критик по риску"}
+                  </p>
+                  <p>
+                    Приоритет: {workPriorityLabels[n.priority ?? "normal"]} ·{" "}
+                    {n.deadline
+                      ? `Срок: ${new Date(n.deadline).toLocaleString("ru-RU")}`
+                      : "Без срока"}
                   </p>
                 </li>
               ))}
@@ -824,6 +856,42 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                     onChange={(e) => update(index, { goal: e.target.value })}
                   />
                 </label>
+                <div className={styles.scheduleFields}>
+                  <label>
+                    Приоритет
+                    <select
+                      aria-label={`Приоритет шага ${index + 1}`}
+                      value={node.priority ?? "normal"}
+                      onChange={(e) => update(index, { priority: e.target.value as WorkPriority })}
+                    >
+                      {Object.entries(workPriorityLabels).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Срок в вашем часовом поясе
+                    <input
+                      type="datetime-local"
+                      aria-label={`Срок шага ${index + 1}`}
+                      value={workDeadlineLocal(node.deadline)}
+                      onChange={(e) => {
+                        try {
+                          update(index, { deadline: workDeadlineUtc(e.target.value) });
+                        } catch {
+                          setError("Проверьте дату и локальное время шага.");
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                {node.deadline && (
+                  <button type="button" onClick={() => update(index, { deadline: null })}>
+                    Убрать срок шага {index + 1}
+                  </button>
+                )}
                 <p>Запуск после завершения:</p>
                 <label>
                   <input
@@ -1005,6 +1073,40 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             value={graph.nodes.filter((n) => n.status === "completed").length}
             max={graph.nodes.length}
           />
+          <div className={styles.scheduleFields} role="group" aria-label="Фильтры шагов">
+            <label>
+              Состояние шага
+              <select
+                aria-label="Состояние шага"
+                value={stepStatus}
+                onChange={(e) => setStepStatus(e.target.value)}
+              >
+                <option value="all">Все состояния</option>
+                {Object.entries(statuses).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Сроки шагов
+              <select
+                aria-label="Сроки шагов"
+                value={stepDue}
+                onChange={(e) => setStepDue(e.target.value as WorkDueFilter)}
+              >
+                <option value="all">Все сроки</option>
+                <option value="overdue">Просроченные</option>
+                <option value="week">Ближайшие 7 дней</option>
+                <option value="none">Без срока</option>
+              </select>
+            </label>
+          </div>
+          <p>
+            Показано шагов: {visibleSteps.length} из {graph.nodes.length} · просрочено:{" "}
+            {overdueCount}. Срок не запускает задачу автоматически.
+          </p>
           <div className={styles.entry} aria-label="Автоматическое выполнение плана">
             <strong>
               {graph.execution?.status === "completed"
@@ -1014,8 +1116,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                   : "Выполнить план целиком"}
             </strong>
             <p>
-              Шаги идут по зависимостям последовательно. Подтверждения планов и разрешений остаются
-              явными; ошибки не вызывают автоматического повтора.
+              Готовые шаги выбираются по приоритету, затем по ближайшему сроку и порядку в плане.
+              Зависимости, подтверждения планов и разрешений остаются явными; ошибки не вызывают
+              автоматического повтора.
             </p>
             {graph.execution?.reason && (
               <p role="status">{workDagReason(graph.execution.reason, graph)}</p>
@@ -1120,12 +1223,25 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             </p>
           )}
           <ol className={styles.entries}>
-            {graph.nodes.map((node) => (
+            {visibleSteps.map((node) => (
               <li className={styles.entry} key={node.id}>
                 <strong>
                   {node.title} · {statuses[node.status]}
                 </strong>
                 <p>{node.goal}</p>
+                <p>
+                  Приоритет: {workPriorityLabels[node.priority ?? "normal"]} ·{" "}
+                  {node.deadline ? (
+                    <>
+                      <time dateTime={node.deadline}>
+                        {new Date(node.deadline).toLocaleString("ru-RU")}
+                      </time>
+                      {workDeadlineState(node, scheduleNow) === "overdue" ? " · Срок прошёл" : ""}
+                    </>
+                  ) : (
+                    "Без срока"
+                  )}
+                </p>
                 {node.depends_on.length > 0 && (
                   <small>
                     Зависимости:{" "}
@@ -1297,6 +1413,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
               </li>
             ))}
           </ol>
+          {visibleSteps.length === 0 && <p role="status">Шагов с выбранными фильтрами нет.</p>}
           <details>
             <summary>История событий и checkpoints</summary>
             <ol>

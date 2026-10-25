@@ -387,6 +387,20 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
     }
   );
 
+  app.delete("/api/v1/chats/:chatId", { schema: { params } }, async (request, reply) => {
+    try {
+      if (!options.store.deleteChat(request.params.chatId, options.identityFor(request).owner_id))
+        return reply.code(404).send(error(request.id, "CHAT_NOT_FOUND", "Chat not found"));
+      return reply.code(204).send();
+    } catch (cause) {
+      if (cause instanceof GeneralChatBusyError)
+        return reply
+          .code(409)
+          .send(error(request.id, "CONFLICT", "Остановите ответ перед удалением чата."));
+      throw cause;
+    }
+  });
+
   app.patch(
     "/api/v1/chats/:chatId",
     {
@@ -466,7 +480,8 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         request.body.initial_message,
         request.body.client_message_id,
         options.identityFor(request).owner_id,
-        request.body.attachments
+        request.body.attachments,
+        request.body.mode
       );
       return reply.status(accepted.duplicate ? 200 : 201).send(acceptedResponse(accepted));
     }
@@ -673,6 +688,15 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
             options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? "",
           skills: options.store.skills.forRun(run.id, identity.owner_id)?.items ?? []
         });
+        const mode = options.store.getChat(run.chat_id, identity.owner_id)?.mode;
+        if (mode === "work" || mode === "coscode")
+          modelRequest.messages.splice(1, 0, {
+            role: "system",
+            content:
+              mode === "work"
+                ? "You are Kosmora Work. Help with professional tasks, deliver concrete results, use context and state uncertainty. Never claim actions or files that were not actually produced."
+                : "You are Coscode, the coding workspace of Kosmora. Help implement, debug and review code. Prefer concrete patches and checks. Never claim repository access, execution or commits without actual tool evidence."
+          });
         const relay = options.accountStore
           ? new RelayExecution(options.accountStore, options.modelGateway)
           : null;

@@ -10,7 +10,7 @@ export default defineConfig({
   webServer: Array.isArray(base.webServer)
     ? base.webServer.map((server) => ({
         ...server,
-        command: server.command?.replace(
+        command: server.command.replace(
           "test/fixtures/e2e-server.ts",
           "test/fixtures/integration-server.ts"
         ),
@@ -22,5 +22,5 @@ export default defineConfig({
           NEXT_TELEMETRY_DISABLED: "1"
         }
       }))
-    : base.webServer
+    : (base.webServer ?? [])
 });

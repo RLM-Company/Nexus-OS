@@ -4,10 +4,10 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import type { WorkDag } from "@cosmora/contracts";
 
 async function fixture(request: APIRequestContext) {
-  const response = await request.post("/api/v1/projects/empty", {
+  const response = await request.post("/api/v1/projects", {
     data: {
-      title: "Step cancellation " + randomUUID().slice(0, 8),
-      client_project_id: randomUUID()
+      initial_message: "Step cancellation " + randomUUID().slice(0, 8),
+      client_message_id: randomUUID()
     }
   });
   expect(response.status()).toBe(201);
@@ -72,8 +72,16 @@ test("reviews one-step cancellation and recovers a lost response with no repeate
   await panel
     .getByRole("button", { name: "Редактировать не запущенные шаги", exact: true })
     .click();
-  await expect(panel.getByRole("group", { name: "Шаг 1 · отменён", exact: true })).toBeDisabled();
-  await expect(panel.getByRole("group", { name: "Шаг 2", exact: true })).toBeEnabled();
+  await expect(
+    panel
+      .getByRole("group", { name: "Шаг 1 · отменён", exact: true })
+      .getByRole("textbox", { name: "Название", exact: true })
+  ).toBeDisabled();
+  await expect(
+    panel
+      .getByRole("group", { name: "Шаг 2", exact: true })
+      .getByRole("textbox", { name: "Название", exact: true })
+  ).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(
     true
   );

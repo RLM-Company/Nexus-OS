@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { ManagerWork, WorkArtifactVersion } from "@cosmora/contracts";
+import type { ManagerWork, ProjectSummary, WorkArtifactVersion } from "@cosmora/contracts";
 import type {
   PresentationWorkPreview,
   PresentationWorkReference
@@ -32,7 +32,7 @@ export function PresentationWork({
   onImport: (source: PresentationWorkReference) => Promise<boolean>;
 }) {
   const [modelMode, setModelMode] = useState("");
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectId, setProjectId] = useState("");
   const [topic, setTopic] = useState("");
   const [slideCount, setSlideCount] = useState(5);
@@ -54,7 +54,7 @@ export function PresentationWork({
 
   useEffect(() => {
     const controller = new AbortController();
-    void api<{ items: { id: string; name: string }[] }>("/api/v1/projects", {
+    void api<{ items: ProjectSummary[] }>("/api/v1/projects", {
       signal: controller.signal
     })
       .then((result) => {
@@ -230,7 +230,7 @@ export function PresentationWork({
             <option value="">Выберите проект…</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.name}
+                {project.title}
               </option>
             ))}
           </select>

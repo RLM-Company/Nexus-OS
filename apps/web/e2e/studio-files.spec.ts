@@ -32,13 +32,17 @@ test("finds and transfers a selected part of a large Unicode document without a 
 }) => {
   let posts = 0;
   page.on("request", (request) => {
-    if (request.method() === "POST") posts++;
+    if (
+      request.method() === "POST" &&
+      new URL(request.url()).pathname !== "/api/v1/chat-navigation/import-pins"
+    )
+      posts++;
   });
   await page.route("**/api/v1/operations/status", (route) =>
     route.fulfill({ json: { process_stop: { active: true } } })
   );
   await page.goto("/?surface=files");
-  await expect(page.getByRole("heading", { name: "Анализ крупных файлов" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Анализ файлов" })).toBeVisible();
   const content =
     "# Начало\n" +
     "Большой документ с данными. 😀\n".repeat(3_000) +
@@ -146,14 +150,18 @@ test("keeps file analysis usable on mobile and restores the Studio section", asy
     true
   );
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Анализ крупных файлов" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Анализ файлов" })).toBeVisible();
   await expect(page.getByLabel("Содержимое документа")).toHaveCount(0);
 });
 
 test("parses quoted multiline CSV, filters columns and prepares bounded rows", async ({ page }) => {
   let posts = 0;
   page.on("request", (request) => {
-    if (request.method() === "POST") posts++;
+    if (
+      request.method() === "POST" &&
+      new URL(request.url()).pathname !== "/api/v1/chat-navigation/import-pins"
+    )
+      posts++;
   });
   await page.route("**/api/v1/operations/status", (route) =>
     route.fulfill({ json: { process_stop: { active: true } } })

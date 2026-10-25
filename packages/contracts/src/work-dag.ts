@@ -1,11 +1,23 @@
 import { Type, type Static } from "typebox";
 import type { WorkArtifactVersion } from "./work-runtime.js";
+import { isWorkDeadline, isWorkPriority } from "@cosmora/contracts/work-schedule";
 export const WorkDagNodeInputSchema = Type.Object(
   {
     id: Type.String({ minLength: 1, maxLength: 60, pattern: "^[a-zA-Z0-9_-]+$" }),
     title: Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }),
     goal: Type.String({ minLength: 1, maxLength: 4000, pattern: "\\S" }),
     requires_critic: Type.Optional(Type.Boolean()),
+    priority: Type.Optional(
+      Type.Union([
+        Type.Literal("low"),
+        Type.Literal("normal"),
+        Type.Literal("high"),
+        Type.Literal("urgent")
+      ])
+    ),
+    deadline: Type.Optional(
+      Type.Union([Type.Null(), Type.String({ minLength: 20, maxLength: 24 })])
+    ),
     depends_on: Type.Array(Type.String({ minLength: 1, maxLength: 60 }), {
       maxItems: 32,
       uniqueItems: true
@@ -158,6 +170,10 @@ export function validateWorkDag(nodes: WorkDagNodeInput[]): void {
     const node = map.get(id);
     if (!node || new Set(node.depends_on).size !== node.depends_on.length)
       throw new Error("DAG_DEPENDENCY_MISSING");
+    if (node.priority !== undefined && !isWorkPriority(node.priority))
+      throw new Error("INVALID_DAG_PRIORITY");
+    if (node.deadline !== undefined && node.deadline !== null && !isWorkDeadline(node.deadline))
+      throw new Error("INVALID_DAG_DEADLINE");
     visiting.add(id);
     for (const dependency of node.depends_on) visit(dependency);
     visiting.delete(id);

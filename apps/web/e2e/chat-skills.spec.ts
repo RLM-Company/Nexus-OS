@@ -113,7 +113,7 @@ test("opens only the accepted answer Skill snapshot after catalog deletion witho
   const next = await request.post(`${api}/api/v1/chats/${chatId}/messages`, {
     data: { content: "Проверка снимка", client_message_id: randomUUID() }
   });
-  expect(next.status()).toBe(201);
+  expect(next.status()).toBe(202);
   const accepted = (await next.json()) as { stream_url: string };
   await request.get(`${api}${accepted.stream_url}`);
   expect(

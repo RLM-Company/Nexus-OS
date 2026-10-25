@@ -9,6 +9,60 @@
   line-height: 1.6;
   min-width: 0;
 }
+.fileFilters {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 16px 0 8px;
+}
+.fileFilters input,
+.fileFilters select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.fileFilters input {
+  flex: 1;
+}
+.answerSources {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.answerSources > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.answerSources strong {
+  font-size: 12px;
+  font-weight: 550;
+}
+.answerSources small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.sourceHit {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
+.dropzone {
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background: var(--panel);
+}
 .header {
   display: flex;
   align-items: start;

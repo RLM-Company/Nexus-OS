@@ -6,11 +6,15 @@ import { WorkspaceIcon as Icon, type IconName } from "./workspace-icons";
 import { PLANNED_CAPABILITIES, type CapabilityArea } from "./workspace-capabilities";
 import styles from "./workspace-sections.module.css";
 import { StudioDataSurface } from "./studio-data-workbench";
-import { MediaGenerationPanel } from "./media-generation/media-panel";
-import { SpeechStudio } from "./voice/voice-playback";
+import { MediaWorkbench } from "./media-generation/media-workbench";
+
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 
 export type ToolSurface =
+  | "research"
+  | "presentations"
+  | "sites"
+  | "games"
   | "work"
   | "code"
   | "multi-agent"
@@ -24,21 +28,27 @@ export type ToolSurface =
   | "features"
   | "settings";
 export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }[] = [
-  { id: "work", label: "Work", description: "Проекты и результаты" },
-  { id: "code", label: "Code", description: "Задачи разработки" },
-  { id: "multi-agent", label: "Мультиагент", description: "Команда и роли" },
+  { id: "work", label: "Koswork", description: "Проекты и результаты" },
+  { id: "code", label: "Coscode", description: "Задачи разработки" },
+  { id: "multi-agent", label: "Multi-Agent", description: "Команда и роли" },
   { id: "skills", label: "Skills", description: "Навыки и специализации" },
   { id: "studio", label: "Kosmora Studio", description: "Изображения, видео и звук" },
-  { id: "files", label: "Крупные файлы", description: "Документы, данные и код" },
+  { id: "files", label: "Анализ файлов", description: "Документы, данные и код" },
   { id: "images", label: "Изображения", description: "Кадр, стиль и композиция" },
   { id: "video", label: "Видео", description: "Сцена и движение" },
   { id: "sound", label: "Sound", description: "Голос, музыка и атмосфера" },
+  { id: "research", label: "Deep Research", description: "Поиск, источники и отчёты" },
+  { id: "presentations", label: "Презентации", description: "Слайды и PPTX" },
+  { id: "sites", label: "Сайты", description: "Идея, структура и реализация" },
+  { id: "games", label: "Games", description: "Механика и прототипы игр" },
   { id: "apps", label: "Приложения", description: "Внешние сервисы" },
   { id: "features", label: "Возможности", description: "Что уже работает и что появится" },
   { id: "settings", label: "Настройки", description: "Ваше пространство" }
 ];
 export const STUDIO_ITEMS = TOOL_ITEMS.filter((item) =>
-  ["files", "images", "video", "sound"].includes(item.id)
+  ["files", "images", "video", "sound", "research", "presentations", "sites", "games"].includes(
+    item.id
+  )
 );
 export type UiPreferences = { compact: boolean; largeText: boolean };
 type OwnerSessionView = {
@@ -588,233 +598,8 @@ function Code({ onCompose }: Props) {
   );
 }
 
-const MEDIA = {
-  images: {
-    label: "изображения",
-    title: "Создание изображений",
-    hint: "Опишите объект, композицию, свет и настроение.",
-    sample: "Космическая обсерватория в горах на рассвете, мягкий свет, широкая композиция",
-    formats: ["1:1", "16:9", "9:16", "4:3"],
-    styles: ["Авто", "Фотореализм", "Иллюстрация", "Кино"],
-    prompt: "Кадр, который вы представляете…"
-  },
-  video: {
-    label: "видео",
-    title: "Видео",
-    hint: "Продумайте сцену, последовательность действий и движение камеры.",
-    sample:
-      "Камера медленно приближается к обсерватории. Купол открывается, в небе появляются звёзды",
-    formats: ["16:9", "9:16", "1:1"],
-    styles: ["Авто", "Кино", "Анимация", "Документальный"],
-    prompt: "Что происходит в сцене и как движется камера…"
-  },
-  sound: {
-    label: "аудио",
-    title: "Sound",
-    hint: "Задайте характер звука, темп и атмосферу.",
-    sample: "Спокойная электронная композиция для ночной работы, мягкий синтезатор, без вокала",
-    formats: ["Короткий", "Средний", "Длинный"],
-    styles: ["Авто", "Голос", "Музыка", "Атмосфера"],
-    prompt: "Как должен звучать результат…"
-  }
-};
-type MediaSurface = keyof typeof MEDIA;
-function Media({ surface }: { surface: MediaSurface }) {
-  const config = MEDIA[surface];
-  const [prompt, setPrompt] = useState("");
-  const [format, setFormat] = useState<string>(
-    config.formats[0] ?? (surface === "sound" ? "Короткий" : "1:1")
-  );
-  const [style, setStyle] = useState("Авто");
-  const [output, setOutput] = useState("");
-  const [notice, setNotice] = useState("");
-  const [hydrated, setHydrated] = useState(false);
-  const [storageAvailable, setStorageAvailable] = useState(true);
-  const key = `cosmora:studio-draft:${surface}`;
-  useEffect(() => {
-    try {
-      const raw = window.sessionStorage.getItem(key);
-      if (raw && raw.length <= 15000) {
-        const saved: unknown = JSON.parse(raw);
-        if (saved && typeof saved === "object") {
-          const value = saved as Record<string, unknown>;
-          if (typeof value.prompt === "string" && value.prompt.length <= 8000)
-            setPrompt(value.prompt);
-          if (typeof value.format === "string" && config.formats.includes(value.format))
-            setFormat(value.format);
-          if (typeof value.style === "string" && config.styles.includes(value.style))
-            setStyle(value.style);
-        }
-      }
-    } catch {
-      setStorageAvailable(false);
-    }
-    setHydrated(true);
-  }, [key, config]);
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      window.sessionStorage.setItem(key, JSON.stringify({ prompt, format, style }));
-    } catch {
-      setStorageAvailable(false);
-    }
-  }, [key, prompt, format, style, hydrated]);
-  const copyPrompt = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(output);
-      setNotice("Промпт скопирован.");
-    } catch {
-      setNotice("Копирование недоступно. Скачайте промпт или выделите текст.");
-    }
-  };
-  const invalidate = () => {
-    setOutput("");
-    setNotice("");
-  };
-  return (
-    <>
-      <Header icon={surface} eyebrow="Kosmora Studio / Редактор промпта" title={config.title}>
-        {config.hint}
-      </Header>
-      <div className={styles.split}>
-        <form
-          className={styles.panel}
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!prompt.trim()) return;
-            setOutput(
-              `Задача: создание ${config.label}\nФормат: ${format}\nСтиль: ${style}\n\n${prompt.trim()}`
-            );
-            setNotice(`Промпт для ${config.label} подготовлен локально.`);
-          }}
-        >
-          <label className={styles.field}>
-            Что вы хотите создать?
-            <textarea
-              aria-label={`Промпт для ${config.label}`}
-              placeholder={config.prompt}
-              value={prompt}
-              disabled={!hydrated}
-              maxLength={8000}
-              rows={8}
-              onChange={(e) => {
-                setPrompt(e.target.value);
-                invalidate();
-              }}
-            />
-          </label>
-          <button
-            type="button"
-            className={styles.textButton}
-            onClick={() => {
-              setPrompt(config.sample);
-              invalidate();
-            }}
-          >
-            Попробовать пример
-          </button>
-          <fieldset className={styles.fieldset}>
-            <legend>{surface === "sound" ? "Длительность" : "Соотношение сторон"}</legend>
-            <div className={styles.segments}>
-              {config.formats.map((v) => (
-                <button
-                  type="button"
-                  key={v}
-                  aria-pressed={format === v}
-                  onClick={() => {
-                    setFormat(v);
-                    invalidate();
-                  }}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <label className={styles.field}>
-            Стиль
-            <select
-              value={style}
-              onChange={(e) => {
-                setStyle(e.target.value);
-                invalidate();
-              }}
-            >
-              {config.styles.map((v) => (
-                <option key={v}>{v}</option>
-              ))}
-            </select>
-          </label>
-          <div className={styles.formFooter}>
-            <span>
-              {storageAvailable
-                ? "Черновик сохраняется в этой вкладке"
-                : "Хранение черновика недоступно"}
-            </span>
-            <button className={styles.primary} disabled={!hydrated || !prompt.trim()}>
-              Подготовить промпт
-              <Icon name="arrow" />
-            </button>
-          </div>
-        </form>
-        <aside className={styles.aside}>
-          <div className={styles.resultPanel}>
-            <div className={styles.sectionHeading}>
-              <h3>Готовый промпт</h3>
-              <span className={styles.badge}>Текст</span>
-            </div>
-            {output ? (
-              <>
-                <pre className={styles.output}>{output}</pre>
-                <div className={styles.actions}>
-                  <button className={styles.secondary} onClick={() => void copyPrompt()}>
-                    <Icon name="copy" />
-                    Копировать
-                  </button>
-                  <button
-                    className={styles.secondary}
-                    onClick={() => {
-                      const url = URL.createObjectURL(
-                        new Blob([output], { type: "text/plain;charset=utf-8" })
-                      );
-                      const link = document.createElement("a");
-                      link.href = url;
-                      link.download = `kosmora-${surface}-prompt.txt`;
-                      link.click();
-                      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-                      setNotice("Промпт подготовлен для скачивания.");
-                    }}
-                  >
-                    <Icon name="download" />
-                    Скачать .txt
-                  </button>
-                </div>
-              </>
-            ) : (
-              <Empty icon={surface} title="От идеи к точному запросу">
-                Добавьте описание и параметры. Здесь появится текст для копирования или скачивания.
-              </Empty>
-            )}
-            <p className={styles.notice} role="status">
-              {notice}
-            </p>
-          </div>
-          <div className={styles.note}>
-            <Icon name="shield" />
-            <strong>Редактор промпта</strong>
-            <p>
-              Подготовка промпта работает локально и не вызывает модель. Реальная генерация
-              изображений и голоса доступна отдельно ниже, только при разрешённой конфигурации.
-            </p>
-          </div>
-        </aside>
-      </div>
-      {surface === "images" && (
-        <MediaGenerationPanel prompt={`Формат: ${format}; стиль: ${style}. ${prompt}`} />
-      )}
-      {surface === "sound" && <SpeechStudio />}
-    </>
-  );
+function Media({ surface }: { surface: "images" | "video" | "sound" }) {
+  return <MediaWorkbench key={surface} surface={surface} />;
 }
 
 function Studio({ onNavigate }: Props) {
@@ -825,19 +610,39 @@ function Studio({ onNavigate }: Props) {
       status: "Локальный анализ"
     },
     images: {
-      description: "Соберите композицию, стиль и формат будущего изображения.",
-      action: "Открыть редактор",
-      status: "Редактор промпта"
+      description: "Создавайте изображения: описание, параметры, референсы и результат.",
+      action: "Открыть студию",
+      status: "Медиа-студия"
     },
     video: {
-      description: "Опишите сцену, движение и последовательность кадров.",
-      action: "Открыть редактор",
-      status: "Редактор промпта"
+      description: "Настройте сцену, формат, длительность и визуальные референсы.",
+      action: "Открыть студию",
+      status: "Медиа-студия"
     },
     sound: {
-      description: "Задайте звучание, темп и атмосферу.",
-      action: "Открыть редактор",
-      status: "Редактор промпта"
+      description: "Озвучивайте текст и сохраняйте записи.",
+      action: "Открыть студию",
+      status: "Медиа-студия"
+    },
+    research: {
+      description: "Исследуйте тему с источниками и отчётом.",
+      action: "Открыть Deep Research",
+      status: "Поиск и отчёты"
+    },
+    presentations: {
+      description: "Соберите слайды и экспортируйте PPTX.",
+      action: "Открыть презентации",
+      status: "Слайды"
+    },
+    sites: {
+      description: "Подготовьте структуру и задачу на создание сайта.",
+      action: "Создать сайт",
+      status: "Проектирование"
+    },
+    games: {
+      description: "Опишите механику и подготовьте задачу на прототип игры.",
+      action: "Создать игру",
+      status: "Прототипирование"
     }
   } as const;
   return (
@@ -881,7 +686,10 @@ function Studio({ onNavigate }: Props) {
         })}
       </div>
       <div className={styles.studioFooter}>
-        <p>Медиа-редакторы готовят и экспортируют текст. Генерация медиа пока не подключена.</p>
+        <p>
+          Доступность генерации зависит от подключённой модели. Параметры и результаты собраны
+          внутри каждого инструмента.
+        </p>
         <button type="button" onClick={() => onNavigate("features")}>
           Возможности Studio <Icon name="arrow" />
         </button>
@@ -896,7 +704,7 @@ function Team({ agentStudioHref, controlCenterHref, activeProjectId, onNavigate 
       <Header
         icon="multi-agent"
         eyebrow="У каждого своя задача"
-        title="Мультиагент"
+        title="Multi-Agent"
         action={
           <ActionLink primary href={agentStudioHref}>
             Настроить команду
@@ -1017,7 +825,7 @@ function Skills({ agentStudioHref, controlCenterHref }: Props) {
   );
 }
 
-function Apps({ onNavigate }: Props) {
+function Apps({ onNavigate, activeProjectId }: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const applications = [
@@ -1026,6 +834,13 @@ function Apps({ onNavigate }: Props) {
       icon: "code",
       category: "Разработка",
       text: "Чтение и редактирование файлов, проверка изменений и создание черновика PR.",
+      available: true
+    },
+    {
+      name: "Граф знаний",
+      icon: "multi-agent",
+      category: "Знания",
+      text: "Узлы, связи, источники и история графа вашего проекта.",
       available: true
     },
     {
@@ -1090,7 +905,15 @@ function Apps({ onNavigate }: Props) {
                 {app.available ? "Серверное подключение" : "Запланировано"}
               </span>
               {app.available ? (
-                <ActionLink href="/github">Открыть GitHub</ActionLink>
+                <ActionLink
+                  href={
+                    app.name === "GitHub"
+                      ? "/github"
+                      : `/graph-workspace${activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : ""}`
+                  }
+                >
+                  {app.name === "GitHub" ? "Открыть GitHub" : "Открыть граф"}
+                </ActionLink>
               ) : (
                 <span className={styles.unavailable}>Интеграция ещё недоступна</span>
               )}
@@ -1137,9 +960,9 @@ function Features({ onNavigate }: Props) {
         `${item.title} ${item.description} ${item.area}`.toLocaleLowerCase("ru").includes(search))
   );
   const current = [
-    { id: "work", label: "Work", detail: "Проекты и ход работы", icon: "work" },
-    { id: "code", label: "Code", detail: "Черновик задачи разработки", icon: "code" },
-    { id: "studio", label: "Studio", detail: "Редакторы промптов", icon: "studio" }
+    { id: "work", label: "Koswork", detail: "Проекты и ход работы", icon: "work" },
+    { id: "code", label: "Coscode", detail: "Черновик задачи разработки", icon: "code" },
+    { id: "studio", label: "Studio", detail: "Файлы и медиа-инструменты", icon: "studio" }
   ] as const;
   return (
     <>
@@ -1464,6 +1287,51 @@ function Settings({
   );
 }
 
+function StudioBuild({
+  surface,
+  onCompose
+}: {
+  surface: "sites" | "games";
+  onCompose: Props["onCompose"];
+}) {
+  const [brief, setBrief] = useState("");
+  const game = surface === "games";
+  return (
+    <>
+      <Header icon={surface} eyebrow="Kosmora Studio" title={game ? "Games" : "Сайты"}>
+        {game ? "От механики до игрового прототипа." : "От идеи до рабочего сайта."}
+      </Header>
+      <form
+        className={styles.note}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (brief.trim())
+            onCompose(
+              `${game ? "Помоги создать браузерную игру" : "Помоги создать сайт"}. Задача: ${brief.trim()}\nСначала подготовь структуру, затем код и план проверки. Не заявляй о выполнении запуска или публикации без реальной проверки.`
+            );
+        }}
+      >
+        <label htmlFor="studio-build-brief">
+          {game ? "Идея и механика игры" : "Задача и содержание сайта"}
+        </label>
+        <textarea
+          id="studio-build-brief"
+          rows={5}
+          value={brief}
+          onChange={(e) => setBrief(e.target.value)}
+          maxLength={10000}
+          placeholder={
+            game ? "Жанр, управление, цель игрока…" : "Для кого сайт, страницы, функции…"
+          }
+        />
+        <button type="submit" disabled={!brief.trim()}>
+          Продолжить с Kosmora
+        </button>
+      </form>
+    </>
+  );
+}
+
 export function WorkspaceSections(props: Props) {
   let content: ReactNode;
   switch (props.surface) {
@@ -1483,7 +1351,11 @@ export function WorkspaceSections(props: Props) {
       content = <Studio {...props} />;
       break;
     case "files":
-      content = (
+      // Resolve the URL's project before accepting local input. Otherwise a late
+      // project response remounts this scope and discards the selected file/tab.
+      content = props.loading ? (
+        <p role="status">Открываю рабочую область…</p>
+      ) : (
         <StudioDataSurface
           key={props.activeProjectId ?? "no-project"}
           projectId={props.activeProjectId}
@@ -1492,6 +1364,30 @@ export function WorkspaceSections(props: Props) {
           onProjectAvailable={props.onDataProjectAvailable}
         />
       );
+      break;
+    case "research":
+    case "presentations":
+      content = (
+        <Header
+          icon={props.surface}
+          eyebrow="Kosmora Studio"
+          title={props.surface === "research" ? "Deep Research" : "Презентации"}
+          action={
+            <ActionLink
+              primary
+              href={props.surface === "research" ? "/research-workspace" : "/presentations"}
+            >
+              Открыть
+            </ActionLink>
+          }
+        >
+          Рабочий инструмент Studio.
+        </Header>
+      );
+      break;
+    case "sites":
+    case "games":
+      content = <StudioBuild surface={props.surface} onCompose={props.onCompose} />;
       break;
     case "apps":
       content = <Apps {...props} />;

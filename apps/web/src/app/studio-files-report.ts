@@ -32,6 +32,7 @@ export type AnswerReport = {
   error_code: string | null;
   citations: string[];
   sources: Array<{
+    file_id?: string;
     ref: string;
     name: string;
     page: number | null;

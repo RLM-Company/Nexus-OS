@@ -7,7 +7,7 @@ const chatIds = [
 ];
 const chats = chatIds.map((id, index) => ({
   id,
-  title: ["Последняя беседа", "Беседа посередине", "Самая старая беседа"][index],
+  title: ["Последняя беседа", "Беседа посередине", "Самая старая беседа"][index]!,
   created_at: `2026-10-0${3 - index}T12:00:00.000Z`,
   updated_at: `2026-10-0${3 - index}T12:00:00.000Z`,
   last_message_preview: "Сохранённая история"

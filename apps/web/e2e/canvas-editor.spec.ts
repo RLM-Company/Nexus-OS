@@ -458,7 +458,9 @@ test("Canvas retries a lost copy using the same ID and never overwrites the orig
     data: { title: "Original", format: "text", content: "other writer", baseVersion: 1 }
   });
   await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
-  await expect(canvas.getByRole("alert")).toContainText("Конфликт версий");
+  await expect(canvas.getByRole("alert").filter({ hasText: "Конфликт версий:" })).toContainText(
+    "Конфликт версий"
+  );
   let copyId = "",
     allowRead = false;
   await page.route(`**${base}`, async (route) => {
