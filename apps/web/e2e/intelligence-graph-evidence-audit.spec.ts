@@ -7,6 +7,7 @@ import type {
 } from "@cosmora/contracts";
 import { parseCsv } from "../src/app/studio-csv";
 import type { SourceUsageExport } from "../src/app/graph-workspace/source-usage-export";
+import type { EvidenceComparison } from "../src/app/graph-workspace/evidence-comparison";
 
 const seed = async (request: APIRequestContext, extended = false) => {
   const created = await request.post("/api/v1/projects", {
@@ -717,4 +718,163 @@ test("source usage downloads only the selected scope with exact provenance and r
   await expect(
     panel.getByRole("button", { name: "Скачать использование источника JSON", exact: true })
   ).toHaveCount(0);
+});
+
+test("checked audit comparison reads one pinned revision, ignores local source filters and exports exact before/after provenance", async ({
+  page,
+  request
+}) => {
+  const f = await prepareSourceUsage(page, request);
+  const beforeGraph = await (await request.get(f.graphUrl)).json();
+  const previous = (await (
+    await request.get(f.graphUrl + "/evidence-audit?revision=1")
+  ).json()) as { report: IntelligenceGraphEvidenceAudit; sha256: string };
+  const current = (await (
+    await request.get(f.graphUrl + `/evidence-audit?revision=${f.changed.revision}`)
+  ).json()) as { report: IntelligenceGraphEvidenceAudit; sha256: string };
+  let writes = 0;
+  const reads: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/intelligence-graphs") && r.method() !== "GET") writes++;
+    if (r.url().includes("/evidence-audit")) reads.push(r.url());
+  });
+  const foreign = f.graph.nodes.find((n) => n.kind === "Source" && n.node_id !== f.source.node_id)!;
+  await f.usage
+    .getByRole("combobox", { name: "Источник для просмотра использования" })
+    .selectOption(foreign.node_id);
+  const panel = f.audit.getByRole("region", { name: "Сравнение проверок источников", exact: true });
+  const baseline = panel.getByRole("spinbutton", {
+    name: "Прежняя ревизия для сравнения источников"
+  });
+  await baseline.fill(String(f.changed.revision));
+  const compare = panel.getByRole("button", { name: "Сравнить проверки источников", exact: true });
+  await expect(compare).toBeDisabled();
+  await baseline.fill("1");
+  await compare.click();
+  await expect(panel.getByText("Изменилось: 2. Без изменений: 2.", { exact: false })).toBeVisible();
+  expect(reads).toHaveLength(1);
+  expect(reads[0]).toContain("revision=1");
+  const target = f.changed.records.find((r) => r.text === "С цитатой")!.node;
+  const left = panel.getByRole("region", { name: `Было: ${target.id}`, exact: true });
+  const right = panel.getByRole("region", { name: `Стало: ${target.id}`, exact: true });
+  await left.locator("summary").click();
+  await right.locator("summary").click();
+  await expect(left).toContainText("Есть цитата действующего источника");
+  await expect(right).toContainText("Только прежние версии источников");
+  await expect(left.locator("blockquote")).toContainText(
+    "<script>window.auditUnsafe=true</script> $&"
+  );
+  await expect(panel.locator("script")).toHaveCount(0);
+  const downloadEvent = page.waitForEvent("download");
+  await panel
+    .getByRole("button", { name: "Скачать сравнение источников JSON", exact: true })
+    .click();
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toBe(
+    `graph-evidence-comparison-${f.graph.graph_id}-r1-r${f.changed.revision}.json`
+  );
+  const value = JSON.parse(
+    (await readFile((await download.path())!)).toString("utf8")
+  ) as EvidenceComparison;
+  expect(value.format).toBe("kosmora.graph-evidence-comparison.v1");
+  expect(value.counts).toEqual({ added: 0, removed: 0, changed: 2, unchanged: 2 });
+  expect(value.before).toEqual({ graph: previous.report.graph, audit_sha256: previous.sha256 });
+  expect(value.after).toEqual({ graph: current.report.graph, audit_sha256: current.sha256 });
+  const change = value.changes.find((c) => c.id === target.id)!;
+  expect(change.before!.supports[0]!.citation!.quote).toBe(f.graph.edges[0]!.evidence_excerpt);
+  expect(change.after!.supports[0]!.citation!.historical).toBe(true);
+  expect(writes).toBe(0);
+  expect(await (await request.get(f.graphUrl)).json()).toEqual(beforeGraph);
+  expect(await (await request.get(f.graphUrl + "/evidence-audit?revision=1")).json()).toEqual(
+    previous
+  );
+});
+
+test("comparison refuses an unverified historical response and recovers only with a new explicit read", async ({
+  page,
+  request
+}) => {
+  const f = await prepareSourceUsage(page, request);
+  let tamper = true,
+    reads = 0;
+  await page.route("**/evidence-audit?revision=1", async (route) => {
+    reads++;
+    const response = await route.fetch();
+    const result = await response.json();
+    await route.fulfill({
+      response,
+      json: tamper ? { ...result, sha256: "0".repeat(64) } : result
+    });
+  });
+  const panel = f.audit.getByRole("region", { name: "Сравнение проверок источников", exact: true });
+  await panel.getByRole("spinbutton").fill("1");
+  const compare = panel.getByRole("button", { name: "Сравнить проверки источников", exact: true });
+  await compare.click();
+  await expect(panel.getByRole("alert")).toContainText("не совпал");
+  await expect(
+    panel.getByRole("button", { name: "Скачать сравнение источников JSON" })
+  ).toHaveCount(0);
+  expect(reads).toBe(1);
+  tamper = false;
+  await compare.click();
+  await expect(
+    panel.getByRole("button", { name: "Скачать сравнение источников JSON" })
+  ).toBeVisible();
+  expect(reads).toBe(2);
+  await panel.getByRole("spinbutton").fill("2");
+  await expect(
+    panel.getByRole("button", { name: "Скачать сравнение источников JSON" })
+  ).toHaveCount(0);
+  expect(reads).toBe(2);
+});
+
+test("an in-flight historical comparison cannot repopulate a reopened graph", async ({
+  page,
+  request
+}) => {
+  const f = await prepareSourceUsage(page, request);
+  let release!: () => void, started!: () => void, finished!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const readStarted = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const readFinished = new Promise<void>((resolve) => {
+    finished = resolve;
+  });
+  await page.route("**/evidence-audit?revision=1", async (route) => {
+    try {
+      const response = await route.fetch();
+      started();
+      await gate;
+      await route.fulfill({ response });
+    } finally {
+      finished();
+    }
+  });
+  const panel = f.audit.getByRole("region", { name: "Сравнение проверок источников", exact: true });
+  await panel.getByRole("spinbutton").fill("1");
+  await panel.getByRole("button", { name: "Сравнить проверки источников", exact: true }).click();
+  await readStarted;
+  await page.getByRole("button", { name: "Открыть графы", exact: true }).click();
+  await page
+    .getByRole("button", { name: `Аудит источников · v${f.changed.revision}`, exact: true })
+    .click();
+  release();
+  await readFinished;
+  await expect(
+    page.getByRole("region", { name: "Сравнение проверок источников", exact: true })
+  ).toHaveCount(0);
+  const audit = page.getByRole("region", { name: "Проверка источников графа", exact: true });
+  await audit.getByRole("button", { name: "Проверить источники", exact: true }).click();
+  const reopened = audit.getByRole("region", {
+    name: "Сравнение проверок источников",
+    exact: true
+  });
+  await expect(reopened).toBeVisible();
+  await expect(
+    reopened.getByRole("button", { name: "Скачать сравнение источников JSON" })
+  ).toHaveCount(0);
+  await expect(reopened.getByRole("spinbutton")).toHaveValue(String(f.changed.revision - 1));
 });
