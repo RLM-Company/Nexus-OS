@@ -9,29 +9,30 @@ async function seed(request: APIRequestContext, content = "Папки и кон�
   expect((await request.get(chat.stream_url)).ok()).toBeTruthy();
   return chat;
 }
-test("server folders and pins survive a new browser context, folder removal keeps chats", async ({
+test("legacy folders stay hidden while server pins persist and folder removal keeps chats", async ({
   page,
   request,
   browser
 }) => {
   const accepted = await seed(request);
+  const id = crypto.randomUUID();
+  expect(
+    (
+      await request.put(`/api/v1/chat-navigation/folders/${id}`, {
+        data: { title: "Рабочие задачи" }
+      })
+    ).ok()
+  ).toBeTruthy();
+  expect(
+    (
+      await request.put(`/api/v1/chats/${accepted.chat.id}/folder`, {
+        data: { folder_id: id }
+      })
+    ).ok()
+  ).toBeTruthy();
   await page.goto(`/?chat=${accepted.chat.id}`);
-  await page.getByText("Папки чатов", { exact: true }).click();
-  await page.getByLabel("Название папки", { exact: true }).fill("Рабочие задачи");
-  await page.getByRole("button", { name: "Создать папку", exact: true }).click();
-  await expect(
-    page.getByRole("option", { name: "Рабочие задачи", exact: true }).first()
-  ).toBeAttached();
-  const nav = await (await request.get("/api/v1/chat-navigation")).json(),
-    id = nav.folders.find((f: { title: string }) => f.title === "Рабочие задачи").id;
-  await page.getByLabel("Папка текущего чата", { exact: true }).selectOption(id);
-  await expect
-    .poll(async () =>
-      (await (await request.get("/api/v1/chat-navigation")).json()).assignments.some(
-        (a: { chat_id: string }) => a.chat_id === accepted.chat.id
-      )
-    )
-    .toBe(true);
+  await expect(page.getByText("Папки чатов", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Папка текущего чата", { exact: true })).toHaveCount(0);
   const pin = page.getByRole("button", { name: "Закрепить чат", exact: true }).last();
   await pin.click();
   await expect
@@ -43,20 +44,26 @@ test("server folders and pins survive a new browser context, folder removal keep
   try {
     const second = await other.newPage();
     await second.goto(`/?chat=${accepted.chat.id}`);
-    await second.getByText("Папки чатов", { exact: true }).click();
-    await expect(second.getByLabel("Папка текущего чата", { exact: true })).toHaveValue(id);
+    await expect(second.getByText("Папки чатов", { exact: true })).toHaveCount(0);
+    const nav = await (await other.request.get("/api/v1/chat-navigation")).json();
+    expect(nav.folders).toContainEqual(expect.objectContaining({ id, title: "Рабочие задачи" }));
+    expect(nav.assignments).toContainEqual(
+      expect.objectContaining({ chat_id: accepted.chat.id, folder_id: id })
+    );
     await expect(
       second.getByRole("button", { name: "Открепить чат", exact: true }).last()
     ).toBeVisible();
   } finally {
     await other.close();
   }
-  await page
-    .getByRole("button", { name: "Убрать папку", exact: true })
-    .filter({ visible: true })
-    .last()
-    .click();
-  await expect(page.getByLabel("Папка текущего чата", { exact: true })).toHaveValue("");
+  expect((await request.delete(`/api/v1/chat-navigation/folders/${id}`)).ok()).toBeTruthy();
+  const remaining = await (await request.get("/api/v1/chat-navigation")).json();
+  expect(remaining.folders.some((folder: { id: string }) => folder.id === id)).toBe(false);
+  expect(remaining.assignments.some((a: { folder_id: string }) => a.folder_id === id)).toBe(false);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Открепить чат", exact: true }).last()
+  ).toBeVisible();
   expect((await request.get(`/api/v1/chats/${accepted.chat.id}`)).ok()).toBeTruthy();
 });
 test("exclusions are explicitly saved and restored without deleting original messages", async ({

@@ -27,7 +27,10 @@ test("presentation editing persists and downloads an actual editable PPTX", asyn
 test("private Skills save versions and export an inert reusable package", async ({ page }) => {
   await page.goto("/skills");
   const editor = page.getByRole("region", { name: "Редактор Skill", exact: true });
-  await expect(editor.getByRole("button", { name: "Сохранить версию", exact: true })).toBeEnabled();
+  await expect(
+    editor.getByRole("button", { name: "Сохранить версию", exact: true })
+  ).toBeDisabled();
+  await expect(editor.getByRole("textbox", { name: "Название", exact: true })).toBeEnabled();
   await editor.getByRole("textbox", { name: "Название", exact: true }).fill("Проверка TypeScript");
   await editor
     .getByRole("textbox", { name: "Краткое описание", exact: true })
@@ -35,10 +38,13 @@ test("private Skills save versions and export an inert reusable package", async 
   await editor
     .getByRole("textbox", { name: "Инструкция", exact: true })
     .fill("Проверь типы, обработку ошибок и понятность кода.");
+  await expect(editor.getByRole("button", { name: "Сохранить версию", exact: true })).toBeEnabled();
   await editor.getByRole("button", { name: "Сохранить версию", exact: true }).click();
-  await expect(editor.getByRole("button", { name: "Скачать пакет", exact: true })).toBeVisible();
+  await expect(
+    editor.getByRole("button", { name: "Скачать сохранённый пакет", exact: true })
+  ).toBeVisible();
   const download = page.waitForEvent("download");
-  await editor.getByRole("button", { name: "Скачать пакет", exact: true }).click();
+  await editor.getByRole("button", { name: "Скачать сохранённый пакет", exact: true }).click();
   const file = await download;
   const data = JSON.parse(await readFile((await file.path())!, "utf8"));
   expect(data).toMatchObject({
