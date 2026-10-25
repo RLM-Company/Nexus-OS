@@ -5,6 +5,7 @@ type Source = { ref: Ref; label: string; text: string; status: string };
 export type CitationRefreshPreview = {
   edge: Ref;
   quote: string;
+  target: { ref: Ref; label: string; text: string };
   previous: Source;
   latest: Source | null;
   state: "ready" | "quote_missing" | "source_unavailable" | "already_current";
@@ -65,9 +66,20 @@ export function prepareCitationRefresh(
   const latest = candidates[0] ? source(candidates[0]) : null;
   if (latest && latest.ref.version < previous.ref.version)
     throw new Error("Порядок версий источника нарушен.");
+  const targets = graph.nodes.filter((n) =>
+    equal({ id: n.node_id, version: n.node_version }, edge.to)
+  );
+  const targetRecords = graph.records.filter((r) => equal(r.node, edge.to));
+  if (
+    targets.length !== 1 ||
+    !active(targets[0]!.verification_status) ||
+    targetRecords.length !== 1
+  )
+    throw new Error("Точный текст поддерживаемого узла недоступен.");
   return {
     edge: { ...ref },
     quote: edge.evidence_excerpt,
+    target: { ref: { ...edge.to }, label: targetRecords[0]!.text, text: targetRecords[0]!.excerpt },
     previous,
     latest,
     state: !latest
@@ -83,7 +95,8 @@ export function prepareCitationRefresh(
 export function citationRefreshOperation(
   preview: CitationRefreshPreview,
   location: string,
-  reviewed: boolean
+  reviewed: boolean,
+  replacement?: string
 ): CitationRefreshOperation {
   const normalized = location.trim();
   // A new location must be entered deliberately; line references can move after an edit.
@@ -94,15 +107,24 @@ export function citationRefreshOperation(
     [...normalized].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
   )
     throw new Error("Укажите место в новой версии источника и подтвердите сверку.");
-  if (preview.state !== "ready" || !preview.latest || !preview.latest.text.includes(preview.quote))
+  const quote = replacement ?? preview.quote;
+  if (
+    !["ready", "quote_missing"].includes(preview.state) ||
+    (preview.state === "quote_missing" && replacement === undefined) ||
+    !preview.latest ||
+    preview.latest.ref.version <= preview.previous.ref.version ||
+    !quote.trim() ||
+    quote.length > 1000 ||
+    !preview.latest.text.includes(quote)
+  )
     throw new Error(
-      "Для этой цитаты нельзя автоматически выбрать новую версию. Используйте редактор цитат."
+      "Для этой цитаты нельзя выбрать новую версию. Выделите точный фрагмент источника."
     );
   return {
     kind: "cite_edge",
     edge_id: preview.edge.id,
     source: { ...preview.latest.ref },
     location: normalized,
-    excerpt: preview.quote
+    excerpt: quote
   };
 }

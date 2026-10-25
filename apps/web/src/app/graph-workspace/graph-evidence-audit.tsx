@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { IntelligenceGraphEvidenceAudit } from "@cosmora/contracts";
 import { readEvidenceAudit, type EvidenceAuditResult } from "./read-evidence-audit";
 import { evidenceAuditCsv } from "./evidence-audit-csv";
+import { SourceUsagePanel } from "./source-usage-panel";
 
 const control = {
   border: "1px solid #aaa",
@@ -248,6 +249,13 @@ export function GraphEvidenceAuditPanel({
             gapsOnly={gapsOnly}
             onReviewCitation={onReviewCitation}
             reviewDisabled={busy || disabled}
+          />
+          <SourceUsagePanel
+            key={result.sha256}
+            report={result.report}
+            auditSha256={result.sha256}
+            onReviewCitation={onReviewCitation}
+            disabled={busy || disabled}
           />
           <p style={{ overflowWrap: "anywhere" }}>
             <small>SHA-256 скачиваемого JSON: {result.sha256}</small>
