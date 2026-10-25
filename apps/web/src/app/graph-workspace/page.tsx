@@ -19,6 +19,8 @@ import { GraphContextPanel } from "./graph-context-panel";
 import { IntelligenceGraphView } from "./graph-view";
 import { GraphEvidenceEditor } from "./graph-evidence-editor";
 import { GraphEvidenceAuditPanel } from "./graph-evidence-audit";
+import { CitationRefreshReview } from "./citation-refresh-review";
+import type { CitationRefreshOperation } from "./citation-refresh";
 import { mergeGraphSummaryPages } from "./library-pages";
 import {
   parseGraphImportAttempt,
@@ -136,6 +138,11 @@ export default function GraphWorkspacePage() {
   const [libraryLoaded, setLibraryLoaded] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selected, setSelected] = useState<Graph | null>(null);
+  const [citationRefresh, setCitationRefresh] = useState<{
+    graphId: string;
+    revision: number;
+    edge: Ref;
+  } | null>(null);
   const [history, setHistory] = useState<History[]>([]);
   const [title, setTitle] = useState("");
   const [label, setLabel] = useState("");
@@ -228,6 +235,7 @@ export default function GraphWorkspacePage() {
     if (choice) {
       const graph = await request<Graph>(`${base}/${encodeURIComponent(choice)}`);
       setSelected(graph);
+      setCitationRefresh(null);
       setNodeToEdit(null);
       setRestorePreview(null);
       setRestoreReviewed(false);
@@ -288,6 +296,31 @@ export default function GraphWorkspacePage() {
       after?.();
       await load(projectId, changed.graph_id);
     });
+
+  const refreshCitation = async (operation: CitationRefreshOperation) => {
+    if (!selected || busy) throw new Error("Дождитесь завершения текущей операции.");
+    setBusy(true);
+    setNotice("");
+    try {
+      const changed = await request<Graph>(`${graphUrl}/edits`, {
+        method: "POST",
+        body: JSON.stringify({ expected_revision: selected.revision, operation })
+      });
+      if (changed.graph_id !== selected.graph_id || changed.revision !== selected.revision + 1)
+        throw new Error("Ответ сохранения относится к другой ревизии.");
+      setSelected(changed);
+      setCitationRefresh(null);
+      setExplanation(null);
+      try {
+        await load(projectId, changed.graph_id);
+        setNotice("Ссылка на источник обновлена. Прежняя версия связи сохранена в истории.");
+      } catch {
+        setNotice("Ссылка сохранена, но список графов не обновился. Загрузите граф заново.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <main
@@ -1199,7 +1232,23 @@ export default function GraphWorkspacePage() {
             projectId={projectId}
             graphId={selected.graph_id}
             revision={selected.revision}
+            disabled={busy}
+            onReviewCitation={(edge) =>
+              setCitationRefresh({ graphId: selected.graph_id, revision: selected.revision, edge })
+            }
           />
+          {citationRefresh?.graphId === selected.graph_id &&
+            citationRefresh.revision === selected.revision && (
+              <CitationRefreshReview
+                key={`citation:${projectId}:${selected.graph_id}:${selected.revision}:${citationRefresh.edge.id}@${citationRefresh.edge.version}`}
+                graph={selected}
+                edge={citationRefresh.edge}
+                disabled={busy}
+                onApply={refreshCitation}
+                onClose={() => setCitationRefresh(null)}
+                onReload={() => run(() => openGraph(projectId, selected.graph_id))}
+              />
+            )}
           <GraphContextPanel
             key={`context:${projectId}:${selected.graph_id}:${selected.revision}`}
             projectId={projectId}
