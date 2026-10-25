@@ -4,6 +4,7 @@ import type { IntelligenceGraphEvidenceAudit } from "@cosmora/contracts";
 import { readEvidenceAudit, type EvidenceAuditResult } from "./read-evidence-audit";
 import { evidenceAuditCsv } from "./evidence-audit-csv";
 import { SourceUsagePanel } from "./source-usage-panel";
+import { EvidenceComparisonPanel } from "./evidence-comparison-panel";
 
 const control = {
   border: "1px solid #aaa",
@@ -255,6 +256,12 @@ export function GraphEvidenceAuditPanel({
             report={result.report}
             auditSha256={result.sha256}
             onReviewCitation={onReviewCitation}
+            disabled={busy || disabled}
+          />
+          <EvidenceComparisonPanel
+            key={`comparison:${result.sha256}`}
+            projectId={projectId}
+            current={result}
             disabled={busy || disabled}
           />
           <p style={{ overflowWrap: "anywhere" }}>
