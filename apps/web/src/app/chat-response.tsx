@@ -168,6 +168,13 @@ const ResponseMarkdown = memo(function ResponseMarkdown({ content }: { content: 
               >
                 <WorkspaceIcon name="download" />
               </a>
+              <a
+                href={`/?surface=images&reference=${src.split("/").at(-1)}`}
+                aria-label="Редактировать изображение"
+                title="Редактировать изображение"
+              >
+                <WorkspaceIcon name="edit" />
+              </a>
             </span>
           ) : (
             <span>{alt ? `[Изображение: ${alt}]` : "[Изображение]"}</span>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./media-panel.module.css";
 import { WorkspaceIcon } from "../workspace-icons";
+import type { ChatImageAttachment } from "@cosmora/contracts";
 
 export type MediaJob = {
   id: string;
@@ -16,6 +17,7 @@ export type MediaJob = {
 };
 export type MediaCapabilities = {
   capabilities: {
+    image_editing?: { ready: boolean; model: string | null; reason: string | null };
     image_generation: { ready: boolean; model: string | null; reason: string | null };
     speech: { ready: boolean; model: string | null; reason: string | null };
     transcription: { ready: boolean; model: string | null; reason: string | null };
@@ -61,6 +63,7 @@ export function useMediaCapabilities() {
           });
           setCapabilities({
             image_generation: normalize(value.capabilities?.image_generation),
+            image_editing: normalize(value.capabilities?.image_editing),
             speech: normalize(value.capabilities?.speech),
             transcription: normalize(value.capabilities?.transcription)
           });
@@ -102,30 +105,41 @@ export function useMediaJob() {
       window.clearInterval(timer);
     };
   }, [job]);
-  const start = useCallback(async (kind: "image" | "speech", value: string) => {
-    if (starting.current) return;
-    starting.current = true;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/v1/media/${kind === "image" ? "images" : "speech"}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Kosmora-Media-Consent": "explicit" },
-        body: JSON.stringify(
-          kind === "image"
-            ? { prompt: value, explicit_paid_consent: true }
-            : { text: value, explicit_paid_consent: true }
-        )
-      });
-      if (!response.ok) throw new Error(`Сервер отказал в запуске (${response.status}).`);
-      setJob((await response.json()) as MediaJob);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось запустить задачу.");
-    } finally {
-      starting.current = false;
-      setSubmitting(false);
-    }
-  }, []);
+  const start = useCallback(
+    async (
+      kind: "image" | "speech",
+      value: string,
+      references: readonly ChatImageAttachment[] = []
+    ) => {
+      if (starting.current) return;
+      starting.current = true;
+      setSubmitting(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/v1/media/${kind === "image" ? "images" : "speech"}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Kosmora-Media-Consent": "explicit" },
+          body: JSON.stringify(
+            kind === "image"
+              ? {
+                  prompt: value,
+                  explicit_paid_consent: true,
+                  ...(references.length ? { references } : {})
+                }
+              : { text: value, explicit_paid_consent: true }
+          )
+        });
+        if (!response.ok) throw new Error(`Сервер отказал в запуске (${response.status}).`);
+        setJob((await response.json()) as MediaJob);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Не удалось запустить задачу.");
+      } finally {
+        starting.current = false;
+        setSubmitting(false);
+      }
+    },
+    []
+  );
   const cancel = useCallback(async () => {
     if (!job) return;
     try {
@@ -143,16 +157,44 @@ export function useMediaJob() {
 
 export function MediaGenerationPanel({
   prompt,
-  blockedReason
+  blockedReason,
+  references = [],
+  onUseResult
 }: {
   prompt: string;
   blockedReason?: string | undefined;
+  references?: readonly ChatImageAttachment[];
+  onUseResult?: (file: File) => Promise<void>;
 }) {
   const caps = useMediaCapabilities();
   const { job, setJob, error, start, cancel, submitting } = useMediaJob();
   const [history, setHistory] = useState<MediaJob[]>([]);
   const [revision, setRevision] = useState(0);
-  const ready = caps?.image_generation?.ready === true;
+  const [referenceLoading, setReferenceLoading] = useState(false);
+  const [referenceError, setReferenceError] = useState("");
+  const referenceController = useRef<AbortController | null>(null);
+  useEffect(() => () => referenceController.current?.abort(), []);
+  const ready = (references.length ? caps?.image_editing : caps?.image_generation)?.ready === true;
+  async function reuseResult(id: string) {
+    if (!onUseResult || referenceLoading) return;
+    const controller = new AbortController();
+    referenceController.current = controller;
+    setReferenceLoading(true);
+    setReferenceError("");
+    try {
+      const response = await fetch(mediaAssetUrl(id), { signal: controller.signal });
+      if (!response.ok || !response.headers.get("content-type")?.startsWith("image/png"))
+        throw Error();
+      const blob = await response.blob();
+      if (!controller.signal.aborted)
+        await onUseResult(new File([blob], `kosmora-${id}.png`, { type: "image/png" }));
+    } catch {
+      if (!controller.signal.aborted)
+        setReferenceError("Не удалось подготовить изображение для редактирования.");
+    } finally {
+      if (!controller.signal.aborted) setReferenceLoading(false);
+    }
+  }
   useEffect(() => {
     void fetch("/api/v1/media/jobs", { cache: "no-store" })
       .then(async (response) =>
@@ -182,7 +224,9 @@ export function MediaGenerationPanel({
       <p role="status" className={styles.status}>
         {ready
           ? "Kosmora Studio · готово к генерации"
-          : unavailableName(caps?.image_generation?.reason ?? null)}
+          : references.length
+            ? "Редактирование изображений пока недоступно"
+            : unavailableName(caps?.image_generation?.reason ?? null)}
       </p>
       {blockedReason && <p role="status">{blockedReason}</p>}
       {prompt.trim().length > 2000 && (
@@ -197,15 +241,21 @@ export function MediaGenerationPanel({
             !ready ||
             Boolean(blockedReason) ||
             submitting ||
+            referenceLoading ||
             !prompt.trim() ||
             prompt.trim().length > 2000 ||
             Boolean(job && ["queued", "running"].includes(job.status))
           }
           onClick={() => {
-            void start("image", prompt.trim());
+            void start("image", prompt.trim(), references);
           }}
         >
-          <WorkspaceIcon name="images" /> {submitting ? "Запускаем…" : "Сгенерировать изображение"}
+          <WorkspaceIcon name="images" />{" "}
+          {submitting
+            ? "Запускаем…"
+            : references.length
+              ? "Изменить изображение"
+              : "Сгенерировать изображение"}
         </button>
         {job && ["queued", "running"].includes(job.status) && (
           <button type="button" onClick={() => void cancel()}>
@@ -214,6 +264,7 @@ export function MediaGenerationPanel({
         )}
       </div>
       {error && <p role="alert">{error}</p>}
+      {referenceError && <p role="alert">{referenceError}</p>}
       {!job && (
         <div className={styles.emptyPreview}>
           <WorkspaceIcon name="images" />
@@ -233,6 +284,16 @@ export function MediaGenerationPanel({
               {/* Authenticated same-origin asset; never use the prompt as an image source. */}
               <img src={mediaAssetUrl(job.id)} alt="Сгенерированное изображение" />
               <a href={`${mediaAssetUrl(job.id)}?download=1`}>Скачать PNG</a>
+              {onUseResult && (
+                <button
+                  type="button"
+                  disabled={referenceLoading}
+                  onClick={() => void reuseResult(job.id)}
+                >
+                  <WorkspaceIcon name="edit" />{" "}
+                  {referenceLoading ? "Готовим…" : "Продолжить редактирование"}
+                </button>
+              )}
               <button type="button" onClick={() => void remove(job.id)}>
                 Удалить
               </button>

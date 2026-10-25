@@ -11,12 +11,19 @@ import {
   type OwnerMediaBudget
 } from "./media-budget.js";
 import { MediaFileStore, type MediaJob } from "./media-store.js";
+import { isValidChatAttachments, type ChatImageAttachment } from "@cosmora/contracts";
 
 type AudioMime = "audio/webm" | "audio/wav" | "audio/mp4" | "audio/mpeg";
 type GeneratedBinary = Awaited<ReturnType<OpenAIMediaAdapter["generateImage"]>> & {
   usage?: CanonicalMediaUsage;
 };
 type MediaAdapter = {
+  editImage?(
+    prompt: string,
+    references: readonly ChatImageAttachment[],
+    model: "gpt-image-1",
+    signal: AbortSignal
+  ): Promise<GeneratedBinary>;
   generateImage(
     prompt: string,
     model: "gpt-image-1",
@@ -38,6 +45,7 @@ type MediaAdapter = {
   ): Promise<{ text: string; usage?: CanonicalMediaUsage }>;
 };
 export interface MediaOptions {
+  imageEditingEnabled?: boolean;
   baseUrl?: string;
   directory?: string;
   apiKey?: string;
@@ -73,12 +81,14 @@ export class MediaService {
   private readonly closedOwners = new Set<string>();
   private closed = false;
   private readonly paidEnabled: boolean;
+  private readonly imageEditingEnabled: boolean;
   private readonly emergencyStopped: () => boolean;
   private readonly ownerActive: (ownerId: string) => boolean;
 
   constructor(options: MediaOptions = {}) {
     this.store = options.directory ? new MediaFileStore(options.directory) : null;
     this.paidEnabled = options.paidEnabled === true;
+    this.imageEditingEnabled = options.imageEditingEnabled === true;
     this.registry =
       options.registry ??
       new MediaCapabilityRegistry(
@@ -111,7 +121,7 @@ export class MediaService {
   capabilities(): Record<
     MediaCapability,
     { ready: boolean; model: string | null; reason: string | null }
-  > {
+  > & { image_editing: { ready: boolean; model: string | null; reason: string | null } } {
     const result = {} as ReturnType<MediaService["capabilities"]>;
     for (const capability of ["image_generation", "transcription", "speech"] as const) {
       const route = this.registry.route(capability);
@@ -132,6 +142,14 @@ export class MediaService {
                     : null;
       result[capability] = { ready: reason === null, model: route?.model ?? null, reason };
     }
+    const editingReason =
+      result.image_generation.reason ??
+      (!this.imageEditingEnabled || !this.adapter?.editImage ? "EDITING_UNAVAILABLE" : null);
+    result.image_editing = {
+      ready: editingReason === null,
+      model: result.image_generation.model,
+      reason: editingReason
+    };
     return result;
   }
   private check(capability: MediaCapability, consent: boolean, ownerId: string): void {
@@ -162,7 +180,8 @@ export class MediaService {
     consent: boolean,
     work: (
       signal: AbortSignal
-    ) => Promise<{ binary?: GeneratedBinary; text?: string; usage?: CanonicalMediaUsage }>
+    ) => Promise<{ binary?: GeneratedBinary; text?: string; usage?: CanonicalMediaUsage }>,
+    timeoutMs = MAX_MS
   ): MediaJob {
     const capability =
       kind === "image" ? "image_generation" : kind === "speech" ? "speech" : "transcription";
@@ -177,21 +196,41 @@ export class MediaService {
     const controller = new AbortController();
     const task = new Promise<void>((resolve) => {
       queueMicrotask(() => {
-        void this.execute(job, controller, work).finally(resolve);
+        void this.execute(job, controller, work, timeoutMs).finally(resolve);
       });
     });
     this.running.set(job.id, { owner: ownerId, controller, task });
     return job;
   }
-  enqueue(ownerId: string, kind: "image" | "speech", value: string, consent: boolean): MediaJob {
+  enqueue(
+    ownerId: string,
+    kind: "image" | "speech",
+    value: string,
+    consent: boolean,
+    references: readonly ChatImageAttachment[] = []
+  ): MediaJob {
+    if (references.length && (kind !== "image" || !this.capabilities().image_editing.ready))
+      throw new Error("IMAGE_EDITING_UNAVAILABLE");
+    if (references.length && !isValidChatAttachments(references))
+      throw new Error("IMAGE_REFERENCES_INVALID");
+    // Bounded request memory only. Input references are never copied to the media job store.
+    const inputs = references.map((reference) => ({ ...reference }));
     const route = this.registry.route(kind === "image" ? "image_generation" : "speech");
     if (!route || !this.adapter) throw new Error("MEDIA_UNAVAILABLE");
-    return this.submit(ownerId, kind, consent, async (signal) => ({
-      binary:
-        kind === "image"
-          ? await this.adapter!.generateImage(value, "gpt-image-1", signal)
-          : await this.adapter!.speak(value, "gpt-4o-mini-tts", signal)
-    }));
+    return this.submit(
+      ownerId,
+      kind,
+      consent,
+      async (signal) => ({
+        binary:
+          kind === "image"
+            ? inputs.length
+              ? await this.adapter!.editImage!(value, inputs, "gpt-image-1", signal)
+              : await this.adapter!.generateImage(value, "gpt-image-1", signal)
+            : await this.adapter!.speak(value, "gpt-4o-mini-tts", signal)
+      }),
+      inputs.length ? 120_000 : MAX_MS
+    );
   }
   enqueueTranscription(
     ownerId: string,
@@ -224,10 +263,11 @@ export class MediaService {
     controller: AbortController,
     work: (
       signal: AbortSignal
-    ) => Promise<{ binary?: GeneratedBinary; text?: string; usage?: CanonicalMediaUsage }>
+    ) => Promise<{ binary?: GeneratedBinary; text?: string; usage?: CanonicalMediaUsage }>,
+    timeoutMs: number
   ): Promise<void> {
     const store = this.store!;
-    const timeout = setTimeout(() => controller.abort(), MAX_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     timeout.unref?.();
     let dispatched = false;
     let reserved = false;

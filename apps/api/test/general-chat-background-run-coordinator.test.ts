@@ -85,6 +85,38 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
     expect(store.getAssistantMessage(accepted.run.id)?.content).toContain("/api/v1/media/assets/");
   });
 
+  it("dispatches explicit attached-photo edits without invoking the text model", async () => {
+    await coordinator.stop();
+    const imageGeneration = vi.fn().mockResolvedValue("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    const textModel = vi.spyOn(runtime.gateway, "stream");
+    const reference = {
+      kind: "image" as const,
+      name: "circle.png",
+      media_type: "image/png" as const,
+      data_base64:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/5d8AAAAASUVORK5CYII="
+    };
+    coordinator = new GeneralChatBackgroundRunCoordinator({
+      store,
+      modelGateway: runtime.gateway,
+      chat: runtime.chat,
+      runtimeMetrics: metrics,
+      imageGeneration,
+      pollIntervalMs: 10
+    });
+    coordinator.start();
+    const accepted = store.createChat(
+      "Измени изображение: сделай фон серым",
+      "image-edit-background",
+      "local-owner",
+      [reference]
+    );
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("succeeded"));
+    expect(imageGeneration).toHaveBeenCalledTimes(1);
+    expect(imageGeneration.mock.calls[0]?.[3]).toEqual([reference]);
+    expect(textModel).not.toHaveBeenCalled();
+  });
+
   it("does not dispatch a second image when the first generation fails", async () => {
     await coordinator.stop();
     const imageGeneration = vi.fn().mockRejectedValue(new Error("provider unavailable"));

@@ -194,6 +194,7 @@ try {
     ownerBudget: sharedBudget
   });
   const mediaService = new MediaService({
+    imageEditingEnabled: process.env.KOSMORA_MEDIA_EDIT_ENABLED === "true",
     ownerBudget: new AccountMediaBudget(
       accountStore,
       process.env.KOSMORA_MEDIA_BASE_URL?.includes("cheapvibecode.ru") ? "cheapvibecode" : "openai"
@@ -360,8 +361,8 @@ try {
     logger: app.log
   });
   generalChatBackgroundCoordinator = new GeneralChatBackgroundRunCoordinator({
-    imageGeneration: (owner, prompt, signal) =>
-      generateChatImage(mediaService, owner, prompt, signal),
+    imageGeneration: (owner, prompt, signal, references) =>
+      generateChatImage(mediaService, owner, prompt, signal, references),
     store: generalChatStore,
     modelGateway: modelRuntime.gateway,
     chat: modelRuntime.chat,
