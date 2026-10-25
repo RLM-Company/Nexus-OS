@@ -116,6 +116,7 @@ describe("reviewed citation source refresh", () => {
     "duplicate_record",
     "duplicate_current_source",
     "wrong_kind",
+    "missing_target_record",
     "invalid_original_quote"
   ])("fails closed on %s", (change) => {
     const graph = fixture();
@@ -127,6 +128,8 @@ describe("reviewed citation source refresh", () => {
     if (change === "duplicate_current_source")
       graph.nodes.push({ ...graph.nodes[1]!, node_version: 4 });
     if (change === "wrong_kind") graph.nodes[1]!.kind = "Claim";
+    if (change === "missing_target_record")
+      graph.records = graph.records.filter((r) => r.node.id !== "b");
     if (change === "invalid_original_quote") graph.records[0]!.excerpt = "Другая цитата";
     expect(() => prepareCitationRefresh(graph, edge)).toThrow();
   });
@@ -162,5 +165,45 @@ describe("reviewed citation source refresh", () => {
     );
     expect(html).toContain("Точная цитата отсутствует");
     expect(html).not.toContain("Сохранить новую ссылку");
+    expect(html).toContain("Выбрать новый фрагмент");
+  });
+  it("accepts an explicitly selected replacement only from the exact latest source", () => {
+    const graph = fixture();
+    graph.records[1]!.excerpt = "Новый фрагмент\r\n🙂 $&\r\nв контексте";
+    const preview = prepareCitationRefresh(graph, edge);
+    const before = structuredClone(preview);
+    expect(
+      citationRefreshOperation(preview, "строки 1–2", true, "Новый фрагмент\r\n🙂 $&").excerpt
+    ).toBe("Новый фрагмент\r\n🙂 $&");
+    expect(() => citationRefreshOperation(preview, "строки 1–2", true)).toThrow();
+    expect(() =>
+      citationRefreshOperation(preview, "строки 1–2", false, "Новый фрагмент")
+    ).toThrow();
+    expect(preview).toEqual(before);
+  });
+  it.each(["", " ", "Другая цитата", "Добавленная строка\nДо\n", "a".repeat(1001)])(
+    "rejects an invalid replacement (%s)",
+    (replacement) => {
+      expect(() =>
+        citationRefreshOperation(
+          prepareCitationRefresh(fixture(), edge),
+          "строка 1",
+          true,
+          replacement
+        )
+      ).toThrow();
+    }
+  );
+  it("cannot replace a citation using a deleted or already cited version", () => {
+    const graph = fixture();
+    graph.nodes[1]!.verification_status = "deleted";
+    expect(() =>
+      citationRefreshOperation(prepareCitationRefresh(graph, edge), "строка 1", true, "До")
+    ).toThrow();
+    graph.edges[0]!.evidence_ref!.source_version = 1;
+    graph.nodes[0]!.verification_status = "discovered";
+    expect(() =>
+      citationRefreshOperation(prepareCitationRefresh(graph, edge), "строка 1", true, "До")
+    ).toThrow();
   });
 });

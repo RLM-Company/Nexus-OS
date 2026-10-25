@@ -5,8 +5,10 @@ import type {
   IntelligenceGraphEvidenceAudit,
   IntelligenceGraphWorkspace
 } from "@cosmora/contracts";
+import { parseCsv } from "../src/app/studio-csv";
+import type { SourceUsageExport } from "../src/app/graph-workspace/source-usage-export";
 
-const seed = async (request: APIRequestContext) => {
+const seed = async (request: APIRequestContext, extended = false) => {
   const created = await request.post("/api/v1/projects", {
     data: {
       initial_message: "Проверка источников " + randomUUID(),
@@ -45,6 +47,32 @@ const seed = async (request: APIRequestContext) => {
       }
     ]
   };
+  if (extended) {
+    packet.nodes.push(
+      {
+        key: "other",
+        kind: "Source",
+        label: "Протокол",
+        detail: "Другой источник с тем же названием"
+      },
+      { key: "c", kind: "Claim", label: "Второе зависимое утверждение", detail: "Другая позиция" },
+      { key: "d", kind: "Claim", label: "Из другого источника", detail: "Отдельная позиция" }
+    );
+    packet.edges.push(
+      {
+        relation: "SUPPORTS",
+        from: "a",
+        to: "c",
+        evidence: { source: "s", location: "строка 2", excerpt: packet.edges[0]!.evidence.excerpt }
+      },
+      {
+        relation: "SUPPORTS",
+        from: "a",
+        to: "d",
+        evidence: { source: "other", location: "строка 1", excerpt: "Другой источник" }
+      }
+    );
+  }
   const preview = await request.post(base + "/intelligence-graphs/import/preview", {
     data: { package: packet }
   });
@@ -181,7 +209,11 @@ test("a mismatched audit hash is refused and recovery requires an explicit read"
   expect(reads).toBe(2);
 });
 
-const prepareRefresh = async (page: Page, request: APIRequestContext, keepQuote = true) => {
+const prepareRefresh = async (
+  page: Page,
+  request: APIRequestContext,
+  keepQuote: boolean | string = true
+) => {
   const f = await seed(request);
   const source = f.graph.nodes.find((n) => n.kind === "Source")!;
   const text = f.graph.records.find((r) => r.node.id === source.node_id)!.excerpt;
@@ -192,7 +224,12 @@ const prepareRefresh = async (page: Page, request: APIRequestContext, keepQuote 
         kind: "revise_node",
         node: { id: source.node_id, version: 1 },
         label: "Новый протокол",
-        detail: keepQuote ? "Добавленная строка\n" + text : "Новая версия без прежней цитаты"
+        detail:
+          typeof keepQuote === "string"
+            ? keepQuote
+            : keepQuote
+              ? "Добавленная строка\n" + text
+              : "Новая версия без прежней цитаты"
       }
     }
   });
@@ -302,6 +339,105 @@ test("a removed literal quote can be inspected but cannot be transferred", async
   expect(await (await request.get(f.graphUrl)).json()).toEqual(before);
 });
 
+test("a missing quote can be replaced by an explicitly selected exact fragment with original CRLF bytes", async ({
+  page,
+  request
+}) => {
+  const excerpt = "🙂 Новое утверждение\r\n<script>window.replacementUnsafe=true</script> $&\r\n";
+  const f = await prepareRefresh(page, request, "Вступление\r\n" + excerpt + "Контекст");
+  let writes = 0;
+  let sent: { operation: { excerpt: string } } | undefined;
+  page.on("request", (r) => {
+    if (r.url().endsWith("/edits") && r.method() === "POST") {
+      writes++;
+      sent = r.postDataJSON();
+    }
+  });
+  const before = await (await request.get(f.graphUrl)).json();
+  await f.review.getByRole("button", { name: "Выбрать новый фрагмент", exact: true }).click();
+  const text = f.review.getByRole("textbox", {
+    name: "Выделите новый фрагмент источника",
+    exact: true
+  });
+  await expect(text).toHaveValue(
+    ("Вступление\r\n" + excerpt + "Контекст").replaceAll("\r\n", "\n")
+  );
+  await text.evaluate((element: HTMLTextAreaElement) => {
+    element.focus();
+    element.setSelectionRange(element.value.indexOf("🙂"), element.value.indexOf("Контекст"));
+    element.dispatchEvent(new Event("select", { bubbles: true }));
+  });
+  await f.review
+    .getByRole("button", { name: "Использовать выделенный фрагмент", exact: true })
+    .click();
+  await expect(f.review.getByRole("blockquote", { name: "Выбранная новая цитата" })).toContainText(
+    "Новое утверждение"
+  );
+  await expect(f.review.locator("script")).toHaveCount(0);
+  const save = f.review.getByRole("button", {
+    name: "Сохранить новую ссылку на источник",
+    exact: true
+  });
+  await expect(save).toBeDisabled();
+  await f.review
+    .getByRole("textbox", { name: "Место в новой версии источника" })
+    .fill("Новые строки 2–3");
+  await f.review.getByRole("checkbox").check();
+  expect(writes).toBe(0);
+  expect(await (await request.get(f.graphUrl)).json()).toEqual(before);
+  await save.click();
+  await expect(f.review).toHaveCount(0);
+  expect(writes).toBe(1);
+  expect(sent!.operation.excerpt).toBe(excerpt);
+  const after = (await (await request.get(f.graphUrl)).json()) as IntelligenceGraphWorkspace;
+  expect(after.edges.find((e) => e.verification_status === "discovered")!.evidence_excerpt).toBe(
+    excerpt
+  );
+  expect(after.edges.find((e) => e.verification_status === "superseded")!.evidence_excerpt).toBe(
+    f.graph.edges[0]!.evidence_excerpt
+  );
+  expect((await (await request.get(f.base + "/materials")).json()).version).toBe(0);
+  expect(await page.evaluate(() => Reflect.get(window, "replacementUnsafe"))).toBeUndefined();
+});
+
+test("changing the source selection clears location and review, and cancelling selection restores the original draft mode", async ({
+  page,
+  request
+}) => {
+  const f = await prepareRefresh(page, request);
+  await f.review.getByRole("button", { name: "Выбрать новый фрагмент", exact: true }).click();
+  const text = f.review.getByRole("textbox", { name: "Выделите новый фрагмент источника" });
+  const choose = f.review.getByRole("button", {
+    name: "Использовать выделенный фрагмент",
+    exact: true
+  });
+  await choose.click();
+  await expect(f.review.getByRole("alert")).toContainText("Выделите непустой");
+  await text.evaluate((element: HTMLTextAreaElement) => {
+    element.focus();
+    element.setSelectionRange(0, 10);
+  });
+  await choose.click();
+  await f.review.getByRole("textbox", { name: "Место в новой версии источника" }).fill("Начало");
+  await f.review.getByRole("checkbox").check();
+  await text.focus();
+  await text.press("Home");
+  await text.press("Shift+ArrowRight");
+  await expect(
+    f.review.getByRole("button", { name: "Сохранить новую ссылку на источник" })
+  ).toHaveCount(0);
+  await choose.click();
+  await expect(
+    f.review.getByRole("textbox", { name: "Место в новой версии источника" })
+  ).toHaveValue("");
+  await expect(f.review.getByRole("checkbox")).not.toBeChecked();
+  await f.review.getByRole("button", { name: "Отменить выбор фрагмента", exact: true }).click();
+  await expect(text).toHaveCount(0);
+  await expect(
+    f.review.getByRole("button", { name: "Сохранить новую ссылку на источник" })
+  ).toBeDisabled();
+});
+
 test("a concurrent edit rejects citation refresh and retains the reviewed draft without retry", async ({
   page,
   request
@@ -345,7 +481,10 @@ test("a lost refresh reply never repeats the accepted write and reload recovers 
   await page.route("**/intelligence-graphs/*/edits", async (route) => {
     writes++;
     const response = await route.fetch();
-    expect(response.ok()).toBe(true);
+    expect(
+      response.ok(),
+      `accepted before lost reply: ${response.status()} ${await response.text()}`
+    ).toBe(true);
     await route.abort("connectionfailed");
   });
   const save = f.review.getByRole("button", { name: "Сохранить новую ссылку на источник" });
@@ -363,4 +502,219 @@ test("a lost refresh reply never repeats the accepted write and reload recovers 
     panel.getByText("С цитатами действующих источников: 1.", { exact: false })
   ).toBeVisible();
   expect(writes).toBe(1);
+});
+
+const prepareSourceUsage = async (page: Page, request: APIRequestContext) => {
+  const f = await seed(request, true);
+  const source = f.graph.nodes.find((n) => n.kind === "Source")!;
+  const sourceText = f.graph.records.find((r) => r.node.id === source.node_id)!.excerpt;
+  const edited = await request.post(f.graphUrl + "/edits", {
+    data: {
+      expected_revision: 1,
+      operation: {
+        kind: "revise_node",
+        node: { id: source.node_id, version: source.node_version },
+        label: "Обновлённый протокол",
+        detail: "Контекст\r\n" + sourceText
+      }
+    }
+  });
+  expect(edited.ok()).toBe(true);
+  let graph = (await edited.json()) as IntelligenceGraphWorkspace;
+  const currentSource = graph.nodes.find(
+    (n) => n.node_id === source.node_id && n.verification_status === "discovered"
+  )!;
+  const target = graph.records.find((r) => r.text === "Второе зависимое утверждение")!.node;
+  const edge = graph.edges.find((e) => e.to.id === target.id)!;
+  const cited = await request.post(f.graphUrl + "/edits", {
+    data: {
+      expected_revision: graph.revision,
+      operation: {
+        kind: "cite_edge",
+        edge_id: edge.edge_id,
+        source: { id: source.node_id, version: currentSource.node_version },
+        location: "Новая строка 3",
+        excerpt: edge.evidence_excerpt
+      }
+    }
+  });
+  expect(cited.ok()).toBe(true);
+  graph = (await cited.json()) as IntelligenceGraphWorkspace;
+  const audit = await open(page, f.id, graph.revision);
+  await audit.getByRole("button", { name: "Проверить источники", exact: true }).click();
+  const usage = audit.getByRole("region", { name: "Где используется источник", exact: true });
+  await expect(usage).toBeVisible();
+  return { ...f, changed: graph, source, currentSource, audit, usage };
+};
+
+test("source usage groups exact identities, filters versions locally and opens review for the exact historical support", async ({
+  page,
+  request
+}) => {
+  const f = await prepareSourceUsage(page, request);
+  const before = await (await request.get(f.graphUrl)).json();
+  let network = 0;
+  page.on("request", (r) => {
+    if (r.url().includes("/intelligence-graphs")) network++;
+  });
+  const source = f.usage.getByRole("combobox", { name: "Источник для просмотра использования" });
+  await source.selectOption(f.source.node_id);
+  await expect(f.usage.getByText("Утверждений: 2. Цитат: 2.", { exact: false })).toBeVisible();
+  await expect(f.usage.getByRole("heading", { name: "С цитатой", exact: true })).toBeVisible();
+  await expect(
+    f.usage.getByRole("heading", { name: "Второе зависимое утверждение", exact: true })
+  ).toBeVisible();
+  const version = f.usage.getByRole("combobox", { name: "Цитируемая версия источника" });
+  await version.selectOption("1");
+  await expect(
+    f.usage.getByRole("heading", { name: "Второе зависимое утверждение", exact: true })
+  ).toHaveCount(0);
+  await expect(f.usage.getByText("Из прежних версий: 1.", { exact: false })).toBeVisible();
+  await f.usage.locator("summary").click();
+  await expect(f.usage.locator("blockquote")).toContainText(
+    "<script>window.auditUnsafe=true</script> $&"
+  );
+  expect(await page.evaluate(() => Reflect.get(window, "auditUnsafe"))).toBeUndefined();
+  await version.selectOption(String(f.currentSource.node_version));
+  await expect(f.usage.getByRole("heading", { name: "С цитатой", exact: true })).toHaveCount(0);
+  await expect(
+    f.usage.getByRole("heading", { name: "Второе зависимое утверждение", exact: true })
+  ).toBeVisible();
+  const foreign = f.graph.nodes.find((n) => n.kind === "Source" && n.node_id !== f.source.node_id)!;
+  await source.selectOption(foreign.node_id);
+  await expect(version).toHaveValue("all");
+  await expect(
+    f.usage.getByRole("heading", { name: "Из другого источника", exact: true })
+  ).toBeVisible();
+  await expect(f.usage.getByRole("heading", { name: "С цитатой", exact: true })).toHaveCount(0);
+  await source.selectOption(f.source.node_id);
+  await version.selectOption("1");
+  await f.usage.locator("summary").click();
+  await f.usage
+    .getByRole("button", { name: "Сверить с новой версией источника", exact: true })
+    .click();
+  const review = page.getByRole("region", { name: "Сверка новой версии источника", exact: true });
+  const oldSupport = f.changed.edges.find(
+    (e) =>
+      e.verification_status === "discovered" &&
+      e.evidence_ref.source_id === f.source.node_id &&
+      e.evidence_ref.source_version === 1
+  )!;
+  await expect(review).toContainText(`Связь ${oldSupport.edge_id}@${oldSupport.edge_version}`);
+  await expect(
+    review.getByRole("heading", { name: "Поддерживаемый узел", exact: true })
+  ).toBeVisible();
+  expect(network).toBe(0);
+  expect(await (await request.get(f.graphUrl)).json()).toEqual(before);
+});
+
+test("an audit without quoted supports offers no invented source usage", async ({
+  page,
+  request
+}) => {
+  const f = await seed(request);
+  const cleared = await request.post(f.graphUrl + "/edits", {
+    data: {
+      expected_revision: 1,
+      operation: { kind: "clear_edge_evidence", edge_id: f.graph.edges[0]!.edge_id }
+    }
+  });
+  expect(cleared.ok()).toBe(true);
+  const graph = (await cleared.json()) as IntelligenceGraphWorkspace;
+  const audit = await open(page, f.id, graph.revision);
+  await audit.getByRole("button", { name: "Проверить источники", exact: true }).click();
+  const usage = audit.getByRole("region", { name: "Где используется источник", exact: true });
+  await expect(usage).toContainText("В этой проверке нет источников с цитатами.");
+  await expect(usage.getByRole("combobox")).toHaveCount(0);
+});
+
+test("source usage downloads only the selected scope with exact provenance and resets after another revision is opened", async ({
+  page,
+  request
+}) => {
+  const f = await prepareSourceUsage(page, request);
+  const audit = (await (
+    await request.get(f.graphUrl + `/evidence-audit?revision=${f.changed.revision}`)
+  ).json()) as { report: IntelligenceGraphEvidenceAudit; sha256: string };
+  let browserRequests = 0;
+  page.on("request", (r) => {
+    if (r.url().includes("/intelligence-graphs")) browserRequests++;
+  });
+  await f.usage
+    .getByRole("combobox", { name: "Источник для просмотра использования" })
+    .selectOption(f.source.node_id);
+  const versions = f.usage.getByRole("combobox", { name: "Цитируемая версия источника" });
+  await versions.selectOption("1");
+  const jsonEvent = page.waitForEvent("download");
+  await f.usage
+    .getByRole("button", { name: "Скачать использование источника JSON", exact: true })
+    .click();
+  const json = await jsonEvent;
+  expect(json.suggestedFilename()).toBe(
+    `graph-source-${f.graph.graph_id}-${f.source.node_id}-r${f.changed.revision}-v1.json`
+  );
+  const bytes = await readFile((await json.path())!);
+  const value = JSON.parse(bytes.toString("utf8")) as SourceUsageExport;
+  expect(value.format).toBe("kosmora.graph-source-usage.v1");
+  expect(value.scope).toEqual({ source_id: f.source.node_id, source_version: 1 });
+  expect(value.graph).toEqual(audit.report.graph);
+  expect(value.audit.sha256).toBe(
+    createHash("sha256").update(JSON.stringify(audit.report)).digest("hex")
+  );
+  expect(value.source.counts).toEqual({
+    claims: 1,
+    citations: 1,
+    current_citations: 0,
+    historical_citations: 1
+  });
+  expect(value.source.claims[0]!.supports[0]!.citation.quote).toBe(
+    f.graph.edges[0]!.evidence_excerpt
+  );
+  const foreign = f.graph.nodes.find((n) => n.kind === "Source" && n.node_id !== f.source.node_id)!;
+  expect(bytes.toString("utf8")).not.toContain(foreign.node_id);
+  await versions.selectOption("all");
+  const csvEvent = page.waitForEvent("download");
+  await f.usage
+    .getByRole("button", { name: "Скачать использование источника CSV", exact: true })
+    .click();
+  const csv = await csvEvent;
+  const csvBytes = await readFile((await csv.path())!);
+  expect(csvBytes.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]));
+  const table = parseCsv(csvBytes.toString("utf8"));
+  expect(table.rows).toHaveLength(2);
+  const col = (name: string) => table.headers.indexOf(name);
+  expect(table.rows.every((row) => row[col("Источник ID")] === f.source.node_id)).toBe(true);
+  expect(table.rows.every((row) => row[col("SHA-256 полной проверки")] === audit.sha256)).toBe(
+    true
+  );
+  expect(new Set(table.rows.map((row) => row[col("Версия источника")]))).toEqual(
+    new Set(["1", String(f.currentSource.node_version)])
+  );
+  expect(browserRequests).toBe(0);
+  expect((await (await request.get(f.graphUrl)).json()).revision).toBe(f.changed.revision);
+  const renamed = await request.post(f.graphUrl + "/edits", {
+    data: {
+      expected_revision: f.changed.revision,
+      operation: { kind: "rename", title: "Новая ревизия использования" }
+    }
+  });
+  expect(renamed.ok()).toBe(true);
+  await page.getByRole("button", { name: "Открыть графы", exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: `Новая ревизия использования · v${f.changed.revision + 1}`,
+      exact: true
+    })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Где используется источник", exact: true })
+  ).toHaveCount(0);
+  const panel = page.getByRole("region", { name: "Проверка источников графа", exact: true });
+  await panel.getByRole("button", { name: "Проверить источники", exact: true }).click();
+  await expect(
+    panel.getByRole("combobox", { name: "Источник для просмотра использования" })
+  ).toHaveValue("");
+  await expect(
+    panel.getByRole("button", { name: "Скачать использование источника JSON", exact: true })
+  ).toHaveCount(0);
 });
