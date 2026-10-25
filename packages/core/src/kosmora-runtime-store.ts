@@ -334,6 +334,16 @@ export class KosmoraRuntimeStore {
     for (const mig of BASE_MIGRATIONS) {
       this.applyMigration(mig.version, mig.name, mig.upSql, mig.downSql);
     }
+    this.applyMigration(
+      3,
+      "003_immutable_artifact_history",
+      `
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_kosmora_immutable_revision_slot ON kosmora_artifact_revisions(tenant_id,project_id,artifact_id,version);
+      CREATE TRIGGER IF NOT EXISTS kosmora_revision_no_update BEFORE UPDATE ON kosmora_artifact_revisions BEGIN SELECT RAISE(ABORT,'ARTIFACT_REVISION_IMMUTABLE'); END;
+      CREATE TRIGGER IF NOT EXISTS kosmora_revision_no_delete BEFORE DELETE ON kosmora_artifact_revisions BEGIN SELECT RAISE(ABORT,'ARTIFACT_REVISION_IMMUTABLE'); END;
+    `,
+      `DROP TRIGGER IF EXISTS kosmora_revision_no_update; DROP TRIGGER IF EXISTS kosmora_revision_no_delete; DROP INDEX IF EXISTS idx_kosmora_immutable_revision_slot;`
+    );
   }
 
   /**
@@ -400,9 +410,7 @@ export class KosmoraRuntimeStore {
     }
 
     this.db.exec(existing.down_sql);
-    this.db
-      .prepare(`DELETE FROM kosmora_schema_migrations WHERE version = ?`)
-      .run(version);
+    this.db.prepare(`DELETE FROM kosmora_schema_migrations WHERE version = ?`).run(version);
     return true;
   }
 
@@ -415,13 +423,17 @@ export class KosmoraRuntimeStore {
       .all() as SchemaMigrationRecord[];
   }
 
-  public inspectTableColumns(tableName: string): Array<{ name: string; type: string; notnull: number }> {
+  public inspectTableColumns(
+    tableName: string
+  ): Array<{ name: string; type: string; notnull: number }> {
     if (!/^[A-Za-z0-9_]+$/.test(tableName)) {
       throw new Error(`Invalid SQLite table identifier: ${tableName}`);
     }
-    return this.db
-      .prepare(`PRAGMA table_info(${tableName})`)
-      .all() as Array<{ name: string; type: string; notnull: number }>;
+    return this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
   }
 
   public saveArtifactRevision(
@@ -432,8 +444,30 @@ export class KosmoraRuntimeStore {
   ): void {
     const projectId = record.project_id ?? "proj_default";
     const tenantId = record.tenant_id ?? "tenant_default";
+    const existing = this.db
+      .prepare(
+        "SELECT * FROM kosmora_artifact_revisions WHERE revision_id=? OR (artifact_id=? AND project_id=? AND tenant_id=? AND version=?)"
+      )
+      .all(
+        record.revision_id,
+        record.artifact_id,
+        projectId,
+        tenantId,
+        record.version
+      ) as unknown as StoredArtifactRevisionRecord[];
+    if (existing.length) {
+      const expected = { ...record, project_id: projectId, tenant_id: tenantId };
+      if (
+        existing.length === 1 &&
+        Object.entries(expected).every(
+          ([key, value]) => existing[0]![key as keyof StoredArtifactRevisionRecord] === value
+        )
+      )
+        return;
+      throw new Error("ARTIFACT_REVISION_IMMUTABLE");
+    }
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO kosmora_artifact_revisions (
+      INSERT INTO kosmora_artifact_revisions (
         revision_id, artifact_id, project_id, tenant_id, version, title, kind,
         content_json, content_sha256, author_id, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -656,12 +690,8 @@ export class KosmoraRuntimeStore {
     const targetProjectId = snap.project_id;
 
     // Clear current records of ONLY this project before restoring snapshot state
-    this.db
-      .prepare(`DELETE FROM kosmora_artifact_revisions WHERE project_id = ?`)
-      .run(targetProjectId);
-    this.db
-      .prepare(`DELETE FROM kosmora_dag_plans WHERE project_id = ?`)
-      .run(targetProjectId);
+    // Restoring a snapshot must never erase immutable revision history.
+    this.db.prepare(`DELETE FROM kosmora_dag_plans WHERE project_id = ?`).run(targetProjectId);
     this.db
       .prepare(`DELETE FROM kosmora_knowledge_nodes WHERE project_id = ?`)
       .run(targetProjectId);
@@ -731,7 +761,8 @@ export class KosmoraRuntimeStore {
       )
       .get(projectId) as { bytes: number };
 
-    const usedBytes = Number(artRow.bytes ?? 0) + Number(dagRow.bytes ?? 0) + Number(nodeRow.bytes ?? 0);
+    const usedBytes =
+      Number(artRow.bytes ?? 0) + Number(dagRow.bytes ?? 0) + Number(nodeRow.bytes ?? 0);
     const utilizationPct = Number(((usedBytes / Math.max(1, maxBytesQuota)) * 100).toFixed(4));
 
     return {

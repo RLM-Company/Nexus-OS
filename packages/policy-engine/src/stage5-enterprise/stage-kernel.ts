@@ -37,7 +37,14 @@ function sha256Hex(input: string): string {
 }
 
 export class Stage5EnterpriseKernel {
-  public readonly securityEngine = new KosmoraEnterpriseSecurityEngine();
+  constructor(
+    private readonly verifiedSession?: (input: StageKernelExecutionInput) => string,
+    private readonly configuredSecurity?: KosmoraEnterpriseSecurityEngine
+  ) {}
+  public get securityEngine(): KosmoraEnterpriseSecurityEngine {
+    if (!this.configuredSecurity) throw new Error("ENTERPRISE_IDENTITY_ADAPTER_REQUIRED");
+    return this.configuredSecurity;
+  }
 
   public executeDomainOperation(input: StageKernelExecutionInput): StageKernelExecutionResult {
     const df = input.domainFields;
@@ -47,16 +54,13 @@ export class Stage5EnterpriseKernel {
     const k2 = keys[2]!;
     const k3 = keys[3]!;
 
-    // 1. Issue & verify a signed session token and enforce RBAC + RLS
-    const session = this.securityEngine.issueSignedSessionToken({
-      user_id: input.actorId,
-      tenant_id: input.tenantId,
-      workspace_ids: [input.workspaceId],
-      role: "admin",
-      mfa_verified: true
-    });
+    // Session must come from the configured identity boundary, never from request actor fields.
+    if (!this.verifiedSession) throw new Error("ENTERPRISE_IDENTITY_ADAPTER_REQUIRED");
+    const token = this.verifiedSession(input);
+    const principal = this.securityEngine.verifySignedSessionToken(token);
+    if (principal.user_id !== input.actorId) throw new Error("ENTERPRISE_ACTOR_MISMATCH");
     const authz = this.securityEngine.authenticateAndAuthorize(
-      session.token,
+      token,
       input.tenantId,
       input.workspaceId,
       "workspace:write"
@@ -98,10 +102,34 @@ export class Stage5EnterpriseKernel {
     const secSig = latestAudit.entry_hash.slice(0, 12);
 
     const resolvedFields: Record<string, unknown> = {
-      [k0]: this.transformField(k0, df[k0], secSig, auditIntegrity.entries_verified, metering.ledger.accrued_spend_usd),
-      [k1]: this.transformField(k1, df[k1], secSig, auditIntegrity.entries_verified, metering.ledger.accrued_spend_usd),
-      [k2]: this.transformField(k2, df[k2], secSig, auditIntegrity.entries_verified, metering.ledger.accrued_spend_usd),
-      [k3]: this.transformField(k3, df[k3], secSig, auditIntegrity.entries_verified, metering.ledger.accrued_spend_usd)
+      [k0]: this.transformField(
+        k0,
+        df[k0],
+        secSig,
+        auditIntegrity.entries_verified,
+        metering.ledger.accrued_spend_usd
+      ),
+      [k1]: this.transformField(
+        k1,
+        df[k1],
+        secSig,
+        auditIntegrity.entries_verified,
+        metering.ledger.accrued_spend_usd
+      ),
+      [k2]: this.transformField(
+        k2,
+        df[k2],
+        secSig,
+        auditIntegrity.entries_verified,
+        metering.ledger.accrued_spend_usd
+      ),
+      [k3]: this.transformField(
+        k3,
+        df[k3],
+        secSig,
+        auditIntegrity.entries_verified,
+        metering.ledger.accrued_spend_usd
+      )
     };
 
     const provenanceSha256 = sha256Hex(

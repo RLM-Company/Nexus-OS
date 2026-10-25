@@ -26,7 +26,10 @@ import {
 } from "../../core/src/index.js";
 import { verifyStage_stage3_skills_bus } from "../../tool-runtime/src/stage3-skills-bus/index.js";
 import { verifyStage_stage5_enterprise } from "../../policy-engine/src/stage5-enterprise/index.js";
-import { createKosmoraControlPlane, KosmoraApiController } from "../../../apps/api/src/kosmora-routes.js";
+import {
+  createKosmoraControlPlane,
+  KosmoraApiController
+} from "../../../apps/api/src/kosmora-routes.js";
 import {
   KosmoraDagWorker,
   SandboxIsolationUnavailableError
@@ -204,11 +207,7 @@ test("Scenario 1: Planning & DAG Execution (topological sort, cycle/missing-dep 
   assert.equal(t3Node.human_approved, false);
 
   // Request HITL approval token and verify forged token is rejected
-  const hitlReq = autonomy.requestHitlApproval(
-    plan,
-    "t3_hitl_publish",
-    "publish:board_report_q4"
-  );
+  const hitlReq = autonomy.requestHitlApproval(plan, "t3_hitl_publish", "publish:board_report_q4");
   assert.throws(
     () =>
       autonomy.approveHitlNode({
@@ -265,10 +264,7 @@ test("Scenario 1: Planning & DAG Execution (topological sort, cycle/missing-dep 
   autonomy.cancelTaskNode(cancelPlan, "up", "User aborted upstream task");
   const afterCancel = autonomy.scheduleNextBatch(cancelPlan);
   assert.equal(afterCancel.ready_batch.length, 0);
-  assert.equal(
-    cancelPlan.nodes.find((n) => n.node_id === "down")?.status,
-    "blocked"
-  );
+  assert.equal(cancelPlan.nodes.find((n) => n.node_id === "down")?.status, "blocked");
 
   store.close(true);
 });
@@ -287,7 +283,8 @@ test("Scenario 2: Canvas Artifact Lifecycle (immutable revisions, optimistic con
         block_id: "b1",
         type: "markdown",
         heading: "Executive Summary",
-        content: "Line 1: Revenue reached $12.4M.\nLine 2: Operating margin was 22%.\nLine 3: Headcount remained flat.",
+        content:
+          "Line 1: Revenue reached $12.4M.\nLine 2: Operating margin was 22%.\nLine 3: Headcount remained flat.",
         citations: []
       }
     ]
@@ -310,7 +307,8 @@ test("Scenario 2: Canvas Artifact Lifecycle (immutable revisions, optimistic con
         block_id: "b1",
         type: "markdown",
         heading: "Executive Summary",
-        content: "Line 0: Board Prefatory Note.\nLine 1: Revenue reached $12.4M.\nLine 2: Operating margin expanded to 24.5%.\nLine 3: Headcount remained flat.",
+        content:
+          "Line 0: Board Prefatory Note.\nLine 1: Revenue reached $12.4M.\nLine 2: Operating margin expanded to 24.5%.\nLine 3: Headcount remained flat.",
         citations: []
       }
     ]
@@ -341,9 +339,7 @@ test("Scenario 2: Canvas Artifact Lifecycle (immutable revisions, optimistic con
   const diff = canvas.computeRevisionDiff("art_q4_memo", 1, 2);
   assert.equal(diff.total_additions, 2); // Line 0 added + Line 2 replaced
   assert.equal(diff.total_deletions, 1); // Old Line 2 removed
-  const unchangedLines = diff.block_diffs[0]!.line_changes.filter(
-    (c) => c.type === "unchanged"
-  );
+  const unchangedLines = diff.block_diffs[0]!.line_changes.filter((c) => c.type === "unchanged");
   assert.equal(unchangedLines.length, 2);
 
   // Verify real binary XLSX export (PK\x03\x04 ZIP header + OpenXML parts + evaluated formulas)
@@ -510,8 +506,7 @@ test("Scenario 4: Protected Tool Invocation, GitHub HTTP Adapter, Subprocess San
         title: "Test PR",
         body: "Body"
       }),
-    (err: unknown) =>
-      err instanceof ExternalConnectorError && err.code === "UNCONFIGURED_ADAPTER"
+    (err: unknown) => err instanceof ExternalConnectorError && err.code === "UNCONFIGURED_ADAPTER"
   );
 
   // 4b. Configure GitHub HTTP adapter with controlled transport testing 403, 429, malformed JSON, and 201 Created
@@ -568,8 +563,7 @@ test("Scenario 4: Protected Tool Invocation, GitHub HTTP Adapter, Subprocess San
         title: "PR",
         body: "Body"
       }),
-    (err: unknown) =>
-      err instanceof ExternalConnectorError && err.code === "AUTH_FORBIDDEN"
+    (err: unknown) => err instanceof ExternalConnectorError && err.code === "AUTH_FORBIDDEN"
   );
 
   simulatedMode = "rate_limit";
@@ -582,8 +576,7 @@ test("Scenario 4: Protected Tool Invocation, GitHub HTTP Adapter, Subprocess San
         title: "PR",
         body: "Body"
       }),
-    (err: unknown) =>
-      err instanceof ExternalConnectorError && err.code === "RATE_LIMITED"
+    (err: unknown) => err instanceof ExternalConnectorError && err.code === "RATE_LIMITED"
   );
 
   simulatedMode = "malformed";
@@ -596,8 +589,7 @@ test("Scenario 4: Protected Tool Invocation, GitHub HTTP Adapter, Subprocess San
         title: "PR",
         body: "Body"
       }),
-    (err: unknown) =>
-      err instanceof ExternalConnectorError && err.code === "AMBIGUOUS_RESPONSE"
+    (err: unknown) => err instanceof ExternalConnectorError && err.code === "AMBIGUOUS_RESPONSE"
   );
 
   simulatedMode = "ok";
@@ -636,7 +628,7 @@ test("Scenario 4: Protected Tool Invocation, GitHub HTTP Adapter, Subprocess San
 });
 
 test("Scenario 5: Enterprise Security, AES-256-GCM Vault, Hash-Chained Audit Tamper Detection, Atomic Billing, 3-State Webhooks, and SQLite Reopen/Snapshots", async () => {
-  const security = new KosmoraEnterpriseSecurityEngine();
+  const security = new KosmoraEnterpriseSecurityEngine("ab".repeat(32));
 
   // 5a. Signed session token authentication + RBAC + RLS
   const session = security.issueSignedSessionToken({
@@ -677,13 +669,13 @@ test("Scenario 5: Enterprise Security, AES-256-GCM Vault, Hash-Chained Audit Tam
   const secretRec = security.storeEncryptedSecret(
     "tenant_alpha",
     "OPENAI_ENTERPRISE_KEY",
-    "sk-live-sovereign-secret-value-999",
+    "synthetic-vault-test-value",
     "alice_sec_admin"
   );
   assert.ok(!secretRec.ciphertext_hex.includes("sk-live"));
   assert.equal(
     security.decryptSecret(secretRec.secret_id, "tenant_alpha"),
-    "sk-live-sovereign-secret-value-999"
+    "synthetic-vault-test-value"
   );
   assert.throws(
     () => security.decryptSecret(secretRec.secret_id, "tenant_beta"),
@@ -696,7 +688,7 @@ test("Scenario 5: Enterprise Security, AES-256-GCM Vault, Hash-Chained Audit Tam
   assert.equal(rotation.reencrypted_secrets_count, 1);
   assert.equal(
     security.decryptSecret(secretRec.secret_id, "tenant_alpha"),
-    "sk-live-sovereign-secret-value-999"
+    "synthetic-vault-test-value"
   );
 
   // 5c. Hash-chained audit trail integrity & field mutation detection (Fixes Blocker 4)
@@ -751,14 +743,11 @@ test("Scenario 5: Enterprise Security, AES-256-GCM Vault, Hash-Chained Audit Tam
   assert.equal(webhookCreated.status, "created");
   assert.equal(webhookCreated.delivered, false);
 
-  const webhookDelivered = await security.deliverSignedWebhook(
-    webhookCreated,
-    async () => ({
-      ok: true,
-      status: 202,
-      text: async () => "Accepted"
-    })
-  );
+  const webhookDelivered = await security.deliverSignedWebhook(webhookCreated, async () => ({
+    ok: true,
+    status: 202,
+    text: async () => "Accepted"
+  }));
   assert.equal(webhookDelivered.status, "delivered_confirmed");
   assert.equal(webhookDelivered.delivered, true);
   assert.equal(webhookDelivered.http_status, 202);
@@ -810,9 +799,7 @@ test("Scenario 5: Enterprise Security, AES-256-GCM Vault, Hash-Chained Audit Tam
     const store2 = new KosmoraRuntimeStore(dbFile);
     assert.equal(store2.listAppliedMigrations().length, 3);
     assert.ok(
-      store2
-        .inspectTableColumns("kosmora_dag_plans")
-        .some((col) => col.name === "compliance_tag")
+      store2.inspectTableColumns("kosmora_dag_plans").some((col) => col.name === "compliance_tag")
     );
 
     // Add a second revision to proj_alpha, then restore alphaSnap and confirm proj_beta is untouched
@@ -858,11 +845,7 @@ test("Verification of All 160 Feature Modules (F001-F160), API Controller, and M
   assert.equal(KOSMORA_160_CATALOG.length, 160);
   assert.equal(all160.length, 160);
   for (const item of all160) {
-    assert.equal(
-      item.passed,
-      true,
-      `Feature module ${item.featureId} failed verification`
-    );
+    assert.equal(item.passed, true, `Feature module ${item.featureId} failed verification`);
   }
 
   // Verify API Controller end-to-end flow
@@ -917,10 +900,7 @@ test("Verification of All 160 Feature Modules (F001-F160), API Controller, and M
   });
   assert.equal(canvasResp.revision.version, 1);
   assert.ok(canvasResp.binary_export);
-  assert.equal(
-    canvasResp.binary_export.buffer.subarray(0, 4).toString("binary"),
-    "PK\x03\x04"
-  );
+  assert.equal(canvasResp.binary_export.buffer.subarray(0, 4).toString("binary"), "PK\x03\x04");
   cp.store.close(true);
 
   // Verify Web Workspace ViewModel monochrome theme & Russian labels

@@ -1,24 +1,8 @@
-/**
- * Kosmora Background DAG Worker & Isolated Subprocess Sandbox Executor
- * Executes DAG batches with idempotency, real subprocess sandbox isolation (`python3` / `node`)
- * with timeout, output byte limits, stripped environment variables, and explicit failure when
- * an unconfigured OCI/MicroVM container runtime is demanded.
- */
+/** Experimental DAG worker. Code execution is unavailable until an isolated executor is connected. */
 
-import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-import {
-  KosmoraAutonomyEngine,
-  KosmoraRuntimeStore,
-  type KosmoraDagPlan
-} from "@cosmora/core";
+import { KosmoraAutonomyEngine, KosmoraRuntimeStore, type KosmoraDagPlan } from "@cosmora/core";
 
-export type SandboxIsolationMode =
-  | "subprocess_restricted"
-  | "oci_container_required";
+export type SandboxIsolationMode = "subprocess_restricted" | "oci_container_required";
 
 export interface SandboxExecutionRequest {
   execution_id?: string;
@@ -69,106 +53,12 @@ export class KosmoraDagWorker {
     private readonly store: KosmoraRuntimeStore
   ) {}
 
-  /**
-   * F057-F064: Execute untrusted code in an isolated temporary directory with a stripped environment,
-   * hard wall-clock timeout, and output size cap.
-   * Never fakes Docker/Firecracker isolation: if `oci_container_required` is requested and no OCI
-   * runtime is available, throws `SandboxIsolationUnavailableError`.
-   */
+  /** Refuse untrusted host execution, including when Docker happens to be installed. */
   public executeInSandbox(req: SandboxExecutionRequest): SandboxExecutionResult {
-    const executionId = req.execution_id ?? `sbx_${randomUUID()}`;
-    const isolationMode = req.isolation_mode ?? "subprocess_restricted";
-    const timeoutMs = Math.min(Math.max(100, req.timeout_ms ?? 5_000), 30_000);
-    const maxOutputBytes = Math.min(
-      Math.max(256, req.max_output_bytes ?? 65_536),
-      1024 * 1024
+    throw new SandboxIsolationUnavailableError(
+      req.isolation_mode ?? "oci_container_required",
+      "No isolated executor is connected. Host subprocess execution is disabled."
     );
-
-    if (isolationMode === "oci_container_required") {
-      const checkDocker = spawnSync("which", ["docker"], { encoding: "utf8" });
-      const checkPodman = spawnSync("which", ["podman"], { encoding: "utf8" });
-      if (checkDocker.status !== 0 && checkPodman.status !== 0) {
-        throw new SandboxIsolationUnavailableError(
-          isolationMode,
-          "Requested OCI container sandbox isolation ('oci_container_required'), but neither 'docker' nor 'podman' runtime is installed in this environment."
-        );
-      }
-    }
-
-    const workDir = resolve(tmpdir(), `kosmora-sbx-${executionId}`);
-    mkdirSync(workDir, { recursive: true });
-
-    const startedAt = Date.now();
-    try {
-      if (req.files) {
-        for (const [relName, content] of Object.entries(req.files)) {
-          const safeName = relName.replace(/[^A-Za-z0-9._-]/g, "_");
-          writeFileSync(resolve(workDir, safeName), content, "utf8");
-        }
-      }
-
-      let cmd: string;
-      let args: string[];
-      if (req.language === "python3") {
-        const scriptFile = resolve(workDir, "main.py");
-        writeFileSync(scriptFile, req.code, "utf8");
-        cmd = "python3";
-        args = ["-I", "-B", scriptFile];
-      } else if (req.language === "node") {
-        const scriptFile = resolve(workDir, "main.mjs");
-        writeFileSync(scriptFile, req.code, "utf8");
-        cmd = process.execPath;
-        args = [scriptFile];
-      } else {
-        const scriptFile = resolve(workDir, "main.sh");
-        writeFileSync(scriptFile, req.code, "utf8");
-        cmd = "bash";
-        args = ["--noprofile", "--norc", scriptFile];
-      }
-
-      const proc = spawnSync(cmd, args, {
-        cwd: workDir,
-        env: {
-          PATH: "/usr/local/bin:/usr/bin:/bin",
-          HOME: workDir,
-          TMPDIR: workDir,
-          LANG: "C.UTF-8",
-          PYTHONDONTWRITEBYTECODE: "1",
-          NO_COLOR: "1"
-        },
-        timeout: timeoutMs,
-        maxBuffer: maxOutputBytes * 2
-      });
-
-      const durationMs = Math.max(1, Date.now() - startedAt);
-      const rawOut = proc.stdout ? Buffer.from(proc.stdout) : Buffer.alloc(0);
-      const rawErr = proc.stderr ? Buffer.from(proc.stderr) : Buffer.alloc(0);
-
-      const outTruncated = rawOut.length > maxOutputBytes;
-      const errTruncated = rawErr.length > maxOutputBytes;
-
-      const stdout = rawOut.subarray(0, maxOutputBytes).toString("utf8");
-      const stderr = rawErr.subarray(0, maxOutputBytes).toString("utf8");
-      const timedOut =
-        proc.error !== undefined &&
-        (proc.error.message.includes("ETIMEDOUT") || proc.signal === "SIGTERM");
-
-      return {
-        execution_id: executionId,
-        isolation_mode: isolationMode,
-        language: req.language,
-        exit_code: timedOut ? null : (proc.status ?? 1),
-        stdout,
-        stderr,
-        timed_out: timedOut,
-        output_truncated: outTruncated || errTruncated,
-        duration_ms: durationMs
-      };
-    } finally {
-      if (existsSync(workDir)) {
-        rmSync(workDir, { recursive: true, force: true });
-      }
-    }
   }
 
   /**
@@ -202,9 +92,7 @@ export class KosmoraDagWorker {
           executed_nodes: executedNodes,
           skipped_idempotent_nodes: skippedIdempotentNodes,
           awaiting_hitl_nodes: [],
-          blocked_nodes: plan.nodes
-            .filter((n) => n.status === "blocked")
-            .map((n) => n.node_id),
+          blocked_nodes: plan.nodes.filter((n) => n.status === "blocked").map((n) => n.node_id),
           total_tokens_consumed: plan.consumed_tokens,
           total_cost_usd: plan.consumed_cost_usd,
           final_status: "failed_budget_or_error"
@@ -307,10 +195,7 @@ export class KosmoraDagWorker {
         ? "failed_budget_or_error"
         : "paused_awaiting_hitl";
 
-    this.persistPlan(
-      plan,
-      allSucceeded ? "completed" : anyFailed ? "failed" : "awaiting_hitl"
-    );
+    this.persistPlan(plan, allSucceeded ? "completed" : anyFailed ? "failed" : "awaiting_hitl");
 
     return {
       plan_id: plan.plan_id,
@@ -319,9 +204,7 @@ export class KosmoraDagWorker {
       awaiting_hitl_nodes: plan.nodes
         .filter((n) => n.status === "awaiting_hitl")
         .map((n) => n.node_id),
-      blocked_nodes: plan.nodes
-        .filter((n) => n.status === "blocked")
-        .map((n) => n.node_id),
+      blocked_nodes: plan.nodes.filter((n) => n.status === "blocked").map((n) => n.node_id),
       total_tokens_consumed: plan.consumed_tokens,
       total_cost_usd: plan.consumed_cost_usd,
       final_status: finalStatus

@@ -13,13 +13,7 @@ export const F130_OPERATION_CODE = "rls_tenant_guard" as const;
 export const F130_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F130RowLevelSecurityIsolationExecutionStatus =
-  | "idle"
-  | "validating"
-  | "executing"
-  | "completed"
-  | "degraded"
-  | "cancelled"
-  | "failed";
+  "idle" | "validating" | "executing" | "completed" | "degraded" | "cancelled" | "failed";
 
 export interface F130RowLevelSecurityIsolationConfig {
   readonly featureId: typeof F130_FEATURE_ID;
@@ -117,14 +111,20 @@ export class F130RowLevelSecurityIsolationEngine {
   private readonly kernel: Stage5EnterpriseKernel;
   private readonly executionHistory: F130RowLevelSecurityIsolationOutput[] = [];
   private readonly auditLog: F130RowLevelSecurityIsolationAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F130RowLevelSecurityIsolationOutput }>();
+  private readonly idempotencyStore = new Map<
+    string,
+    { payloadHash: string; output: F130RowLevelSecurityIsolationOutput }
+  >();
   private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F130RowLevelSecurityIsolationConfig>, kernel?: Stage5EnterpriseKernel) {
+  constructor(
+    customConfig?: Partial<F130RowLevelSecurityIsolationConfig>,
+    kernel?: Stage5EnterpriseKernel
+  ) {
     this.config = {
       ...DEFAULT_F130_CONFIG,
       ...(customConfig ?? {})
@@ -142,25 +142,46 @@ export class F130RowLevelSecurityIsolationEngine {
 
   public validateInput(input: F130RowLevelSecurityIsolationInput): void {
     if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError("requestId", "Request ID must be a non-empty string.");
+      throw new F130RowLevelSecurityIsolationValidationError(
+        "requestId",
+        "Request ID must be a non-empty string."
+      );
     }
     if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError("projectId", "Project ID must be a non-empty string.");
+      throw new F130RowLevelSecurityIsolationValidationError(
+        "projectId",
+        "Project ID must be a non-empty string."
+      );
     }
     if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError("workspaceId", "Workspace ID must be a non-empty string.");
+      throw new F130RowLevelSecurityIsolationValidationError(
+        "workspaceId",
+        "Workspace ID must be a non-empty string."
+      );
     }
     if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError("tenantId", "Tenant ID must be a non-empty string.");
+      throw new F130RowLevelSecurityIsolationValidationError(
+        "tenantId",
+        "Tenant ID must be a non-empty string."
+      );
     }
     if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError("actorId", "Actor ID must be a non-empty string.");
+      throw new F130RowLevelSecurityIsolationValidationError(
+        "actorId",
+        "Actor ID must be a non-empty string."
+      );
     }
     if (this.cancelledRequests.has(input.requestId)) {
-      throw new F130RowLevelSecurityIsolationValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+      throw new F130RowLevelSecurityIsolationValidationError(
+        "requestId",
+        `Request '${input.requestId}' has been cancelled.`
+      );
     }
     if (this.config.strictValidation && String(input.requesting_tenant_id).trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError("requesting_tenant_id", "Primary domain attribute 'requesting_tenant_id' cannot be empty.");
+      throw new F130RowLevelSecurityIsolationValidationError(
+        "requesting_tenant_id",
+        "Primary domain attribute 'requesting_tenant_id' cannot be empty."
+      );
     }
     for (const [fieldKey, fieldVal] of Object.entries({
       requesting_tenant_id: input.requesting_tenant_id,
@@ -168,113 +189,21 @@ export class F130RowLevelSecurityIsolationEngine {
       access_granted: input.access_granted,
       policy_enforcement: input.policy_enforcement
     })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F130RowLevelSecurityIsolationValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      if (
+        typeof fieldVal === "number" &&
+        (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)
+      ) {
+        throw new F130RowLevelSecurityIsolationValidationError(
+          fieldKey,
+          `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`
+        );
       }
     }
   }
 
   public execute(input: F130RowLevelSecurityIsolationInput): F130RowLevelSecurityIsolationOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F130_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        requesting_tenant_id: input.requesting_tenant_id,
-        row_tenant_id: input.row_tenant_id,
-        access_granted: input.access_granted,
-        policy_enforcement: input.policy_enforcement
-      });
-      const payloadHash = computeF130Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F130RowLevelSecurityIsolationValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F130_FEATURE_ID,
-        operationCode: F130_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          requesting_tenant_id: input.requesting_tenant_id,
-          row_tenant_id: input.row_tenant_id,
-          access_granted: input.access_granted,
-          policy_enforcement: input.policy_enforcement
-        }
-      });
-
-      const executionId = `exec_f130_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f130_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F130RowLevelSecurityIsolationAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F130_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `rls_tenant_guard:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F130RowLevelSecurityIsolationOutput = {
-        featureId: F130_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F130_OPERATION_CODE,
-        resolved_requesting_tenant_id: kernelResult.resolvedFields.requesting_tenant_id as string,
-        resolved_row_tenant_id: kernelResult.resolvedFields.row_tenant_id as string | number,
-        resolved_access_granted: kernelResult.resolvedFields.access_granted as string | number | boolean | readonly string[],
-        resolved_policy_enforcement: kernelResult.resolvedFields.policy_enforcement as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
+    this.validateInput(input);
+    throw new Error("ROW_ISOLATION_ADAPTER_REQUIRED: prototype has no verified domain adapter");
   }
 
   public getTelemetrySnapshot(): F130RowLevelSecurityIsolationTelemetrySnapshot {

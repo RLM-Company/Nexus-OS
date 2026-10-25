@@ -30,9 +30,7 @@ export interface KosmoraControlPlaneContext {
   store: KosmoraRuntimeStore;
 }
 
-export function createKosmoraControlPlane(
-  dbPath = ":memory:"
-): KosmoraControlPlaneContext {
+export function createKosmoraControlPlane(dbPath = ":memory:"): KosmoraControlPlaneContext {
   return {
     autonomy: new KosmoraAutonomyEngine(),
     canvas: new KosmoraCanvasEngine(),
@@ -62,13 +60,7 @@ export class KosmoraApiController {
       node_id: string;
       title: string;
       agent_role:
-        | "planner"
-        | "researcher"
-        | "coder"
-        | "analyst"
-        | "critic"
-        | "verifier"
-        | "synthesizer";
+        "planner" | "researcher" | "coder" | "analyst" | "critic" | "verifier" | "synthesizer";
       dependencies: string[];
       estimated_tokens: number;
       estimated_cost_usd: number;
@@ -111,8 +103,7 @@ export class KosmoraApiController {
       workspace_id: plan.workspace_id,
       goal: plan.goal,
       state_json: JSON.stringify(plan),
-      status:
-        schedule.awaiting_hitl_nodes.length > 0 ? "awaiting_hitl" : "running",
+      status: schedule.awaiting_hitl_nodes.length > 0 ? "awaiting_hitl" : "running",
       updated_at: new Date().toISOString()
     });
 
@@ -143,11 +134,7 @@ export class KosmoraApiController {
     if (!auth.allowed) {
       throw new Error(auth.reason);
     }
-    return this.ctx.autonomy.requestHitlApproval(
-      params.plan,
-      params.node_id,
-      params.action_scope
-    );
+    return this.ctx.autonomy.requestHitlApproval(params.plan, params.node_id, params.action_scope);
   }
 
   /**
@@ -176,7 +163,7 @@ export class KosmoraApiController {
       node_id: params.node_id,
       approval_token: params.approval_token,
       approver_id: params.principal.user_id,
-      reason: params.reason
+      ...(params.reason !== undefined ? { reason: params.reason } : {})
     });
 
     this.ctx.store.saveDagPlan({
@@ -236,7 +223,9 @@ export class KosmoraApiController {
       author_id: params.principal.user_id,
       commit_message: params.commit_message,
       blocks: params.blocks,
-      expected_version: params.expected_version
+      ...(params.expected_version !== undefined
+        ? { expected_version: params.expected_version }
+        : {})
     });
 
     this.ctx.store.saveArtifactRevision({
@@ -253,10 +242,7 @@ export class KosmoraApiController {
       created_at: revision.created_at
     });
 
-    const markdownExport = this.ctx.canvas.exportToMarkdown(
-      params.artifact_id,
-      revision.version
-    );
+    const markdownExport = this.ctx.canvas.exportToMarkdown(params.artifact_id, revision.version);
 
     let binaryExport:
       | {
@@ -286,8 +272,7 @@ export class KosmoraApiController {
       });
       binaryExport = {
         filename: `${params.artifact_id}-v${revision.version}.xlsx`,
-        mime_type:
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         buffer: sheetPayload.xlsx_buffer,
         byte_length: sheetPayload.xlsx_byte_length
       };
@@ -307,7 +292,7 @@ export class KosmoraApiController {
     return {
       revision,
       markdown_export: markdownExport,
-      binary_export: binaryExport
+      ...(binaryExport ? { binary_export: binaryExport } : {})
     };
   }
 
@@ -331,12 +316,9 @@ export class KosmoraApiController {
       throw new Error(auth.reason);
     }
 
-    return this.ctx.graph.searchProjectMemory(
-      params.project_id,
-      params.query,
-      params.top_k ?? 5,
-      { workspace_id: params.workspace_id }
-    );
+    return this.ctx.graph.searchProjectMemory(params.project_id, params.query, params.top_k ?? 5, {
+      workspace_id: params.workspace_id
+    });
   }
 }
 

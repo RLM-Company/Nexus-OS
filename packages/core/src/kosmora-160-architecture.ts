@@ -7,13 +7,22 @@ import { verifyStage_stage1_autonomy } from "./stage1-autonomy/index.js";
 import { verifyStage_stage2_canvas } from "./stage2-canvas/index.js";
 import { verifyStage_stage4_intelligence_graph } from "./stage4-intelligence-graph/index.js";
 
+export type {
+  StageKernelExecutionInput,
+  StageKernelExecutionResult
+} from "./stage1-autonomy/index.js";
 export * from "./stage1-autonomy/index.js";
 export * from "./stage2-canvas/index.js";
 export * from "./stage4-intelligence-graph/index.js";
 
 export interface KosmoraFeatureDescriptor {
   readonly featureId: string;
-  readonly stage: "stage1-autonomy" | "stage2-canvas" | "stage3-skills-bus" | "stage4-intelligence-graph" | "stage5-enterprise";
+  readonly stage:
+    | "stage1-autonomy"
+    | "stage2-canvas"
+    | "stage3-skills-bus"
+    | "stage4-intelligence-graph"
+    | "stage5-enterprise";
   readonly title: string;
   readonly description: string;
   readonly operationCode: string;
@@ -44,7 +53,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F003",
     stage: "stage1-autonomy",
     title: "Связывание рантайм-артефактов с графом задач",
-    description: "Жёсткая привязка каждого сгенерированного файла или блока кода к конкретному узлу задачи",
+    description:
+      "Жёсткая привязка каждого сгенерированного файла или блока кода к конкретному узлу задачи",
     operationCode: "artifact_binding",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["artifact_id", "task_id", "graph_id", "producer_role"]
@@ -62,7 +72,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F005",
     stage: "stage1-autonomy",
     title: "Валидатор графа происхождения в рантайме",
-    description: "Автоматическая проверка целостности ссылок provenance перед закрытием задачи менеджером",
+    description:
+      "Автоматическая проверка целостности ссылок provenance перед закрытием задачи менеджером",
     operationCode: "provenance_validator",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["graph_id", "checked_nodes", "integrity_passed", "missing_links"]
@@ -71,7 +82,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F006",
     stage: "stage1-autonomy",
     title: "Институт Агента-Критика (Critic Agent)",
-    description: "Выделенный проверяющий контур для ревью кода, текста и таблиц до показа пользователю",
+    description:
+      "Выделенный проверяющий контур для ревью кода, текста и таблиц до показа пользователю",
     operationCode: "critic_review",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["review_id", "target_artifact_id", "rubric_scores", "blocking_issues"]
@@ -80,7 +92,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F007",
     stage: "stage1-autonomy",
     title: "Привязка вердиктов Критика к артефактам (Critic Verdict Binding)",
-    description: "Сохранение статуса (Approved / Needs Revision + комментарии) прямо в метаданных артефакта",
+    description:
+      "Сохранение статуса (Approved / Needs Revision + комментарии) прямо в метаданных артефакта",
     operationCode: "verdict_binding",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["verdict_id", "artifact_id", "verdict_status", "reviewer_comments"]
@@ -89,7 +102,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F008",
     stage: "stage1-autonomy",
     title: "Настраиваемые уровни автономии (L1–L5)",
-    description: "Ползунок контроля от «спрашивать каждый шаг» до «полный автопилот с отчётом по итогу»",
+    description:
+      "Ползунок контроля от «спрашивать каждый шаг» до «полный автопилот с отчётом по итогу»",
     operationCode: "autonomy_slider",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["tier_level", "cosmora_policy_code", "require_step_confirmation", "allow_fanout"]
@@ -98,7 +112,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F009",
     stage: "stage1-autonomy",
     title: "Роутер моделей (Dynamic LLM Routing)",
-    description: "Распределение простых задач на быстрые модели и сложных архитектурных узлов на флагманские модели",
+    description:
+      "Распределение простых задач на быстрые модели и сложных архитектурных узлов на флагманские модели",
     operationCode: "llm_router",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["route_id", "selected_model", "complexity_tier", "estimated_cost_usd"]
@@ -107,7 +122,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F010",
     stage: "stage1-autonomy",
     title: "Детектор зацикливания агентов",
-    description: "Принудительное прерывание бесконечных споров между Исполнителем и Критиком после N итераций",
+    description:
+      "Принудительное прерывание бесконечных споров между Исполнителем и Критиком после N итераций",
     operationCode: "loop_breaker",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["task_id", "iteration_count", "max_iterations", "loop_terminated"]
@@ -125,7 +141,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F012",
     stage: "stage1-autonomy",
     title: "Откат ветки рассуждений (State Rollback)",
-    description: "Возможность вернуться на 2–3 шага назад в графе задач и пойти по альтернативной ветке",
+    description:
+      "Возможность вернуться на 2–3 шага назад в графе задач и пойти по альтернативной ветке",
     operationCode: "branch_rollback",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["graph_id", "target_checkpoint_id", "steps_reverted", "alternate_branch_id"]
@@ -134,7 +151,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F013",
     stage: "stage1-autonomy",
     title: "Параллельное исполнение суб-агентов (Fan-out / Fan-in)",
-    description: "Одновременный запуск независимых веток графа с последующей агрегацией результатов",
+    description:
+      "Одновременный запуск независимых веток графа с последующей агрегацией результатов",
     operationCode: "fanout_aggregator",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["parallel_group_id", "worker_count", "completed_branches", "merged_output"]
@@ -143,7 +161,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F014",
     stage: "stage1-autonomy",
     title: "Приоритизация очереди задач",
-    description: "Динамическое перестроение весов в очереди при поступлении срочного сообщения от пользователя",
+    description:
+      "Динамическое перестроение весов в очереди при поступлении срочного сообщения от пользователя",
     operationCode: "priority_scheduler",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["queue_id", "urgent_task_id", "previous_weight", "new_priority_weight"]
@@ -161,7 +180,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F016",
     stage: "stage1-autonomy",
     title: "Самоисправление синтаксиса (Self-Healing Retry)",
-    description: "Автоматический перезапрос при битом JSON или ошибке компиляции без участия человека",
+    description:
+      "Автоматический перезапрос при битом JSON или ошибке компиляции без участия человека",
     operationCode: "self_healing_retry",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["attempt_number", "syntax_repaired", "extracted_json", "diagnostic_delta"]
@@ -188,7 +208,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F019",
     stage: "stage1-autonomy",
     title: "Точки перехвата человеком (Human-in-the-Loop Breakpoints)",
-    description: "Пауза выполнения графа перед критическими действиями (удаление, пуш в прод, внешняя отправка)",
+    description:
+      "Пауза выполнения графа перед критическими действиями (удаление, пуш в прод, внешняя отправка)",
     operationCode: "hitl_gate",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["breakpoint_id", "critical_action", "paused_state", "owner_signature"]
@@ -215,7 +236,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F022",
     stage: "stage1-autonomy",
     title: "Разрешение конфликтов слияния результатов",
-    description: "Арбитраж Менеджером противоречивых выводов от двух параллельных исследовательских агентов",
+    description:
+      "Арбитраж Менеджером противоречивых выводов от двух параллельных исследовательских агентов",
     operationCode: "conflict_arbiter",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["conflict_id", "winning_agent_id", "arbitration_score", "resolution_rationale"]
@@ -251,7 +273,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F026",
     stage: "stage1-autonomy",
     title: "Шаблоны мультиагентных команд (Squad Presets)",
-    description: "Преднастроенные связки агентов (Аналитик + Кодер + QA, Ресерчер + Копирайтер + Дизайнер)",
+    description:
+      "Преднастроенные связки агентов (Аналитик + Кодер + QA, Ресерчер + Копирайтер + Дизайнер)",
     operationCode: "squad_template",
     packageDir: "packages/core/src/stage1-autonomy",
     domainFields: ["preset_id", "squad_name", "roster_roles", "default_strictness"]
@@ -278,10 +301,16 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F029",
     stage: "stage1-autonomy",
     title: "Режим «Адвокат дьявола»",
-    description: "Принудительный запуск агента-оппонента для поиска слабых мест в бизнес-плане или архитектуре",
+    description:
+      "Принудительный запуск агента-оппонента для поиска слабых мест в бизнес-плане или архитектуре",
     operationCode: "redteam_challenger",
     packageDir: "packages/core/src/stage1-autonomy",
-    domainFields: ["challenge_id", "target_artifact_id", "vulnerabilities_found", "counter_arguments"]
+    domainFields: [
+      "challenge_id",
+      "target_artifact_id",
+      "vulnerabilities_found",
+      "counter_arguments"
+    ]
   },
   {
     featureId: "F030",
@@ -317,7 +346,12 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     description: "Синхронная работа чата управления слева и интерактивного рабочего полотна справа",
     operationCode: "dual_pane_sync",
     packageDir: "packages/core/src/stage2-canvas",
-    domainFields: ["workspace_id", "chat_pane_width_pct", "canvas_pane_width_pct", "sync_cursor_active"]
+    domainFields: [
+      "workspace_id",
+      "chat_pane_width_pct",
+      "canvas_pane_width_pct",
+      "sync_cursor_active"
+    ]
   },
   {
     featureId: "F034",
@@ -332,7 +366,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F035",
     stage: "stage2-canvas",
     title: "Прямая связь анализа файлов с отчётами (File Analysis-to-Report Binding)",
-    description: "Живые ссылки из выводов в отчёте на конкретные строки/ячейки исходного загруженного файла",
+    description:
+      "Живые ссылки из выводов в отчёте на конкретные строки/ячейки исходного загруженного файла",
     operationCode: "cell_citation_binding",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["binding_id", "source_file_id", "sheet_cell_coord", "bound_report_paragraph"]
@@ -341,7 +376,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F036",
     stage: "stage2-canvas",
     title: "Визуальный Diff версий артефакта",
-    description: "Построчное сравнение изменений между редакциями отчёта или кода (зелёный/красный подсвет)",
+    description:
+      "Построчное сравнение изменений между редакциями отчёта или кода (зелёный/красный подсвет)",
     operationCode: "visual_diff_engine",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["from_version", "to_version", "added_lines_count", "removed_lines_count"]
@@ -350,7 +386,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F037",
     stage: "stage2-canvas",
     title: "Интерактивный редактор презентаций (Presentation Editor)",
-    description: "По-слайдовое создание, редактирование сетки, тезисов и заметок спикера прямо на Canvas",
+    description:
+      "По-слайдовое создание, редактирование сетки, тезисов и заметок спикера прямо на Canvas",
     operationCode: "slide_deck_editor",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["deck_id", "slide_count", "grid_layout", "speaker_notes_attached"]
@@ -359,7 +396,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F038",
     stage: "stage2-canvas",
     title: "Генератор XLSX-таблиц с формулами",
-    description: "Сборка полноценных многостраничных таблиц с рабочими формулами, стилями и выгрузкой в .xlsx",
+    description:
+      "Сборка полноценных многостраничных таблиц с рабочими формулами, стилями и выгрузкой в .xlsx",
     operationCode: "xlsx_formula_builder",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["workbook_id", "sheet_names", "active_formulas_count", "recalculated_totals"]
@@ -368,7 +406,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F039",
     stage: "stage2-canvas",
     title: "Пакетная выгрузка для десктопа (Desktop / Archive Download)",
-    description: "Скачивание всего проекта, кода или пачки отчётов единым структурированным архивом",
+    description:
+      "Скачивание всего проекта, кода или пачки отчётов единым структурированным архивом",
     operationCode: "archive_bundler",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["archive_id", "bundled_files_count", "compression_ratio", "checksum_sha256"]
@@ -377,7 +416,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F040",
     stage: "stage2-canvas",
     title: "Уточняющие контролы холста (Refined Canvas Controls)",
-    description: "Быстрые кнопки над выделенным фрагментом: Сжать, Академический стиль, Проверить факты, В таблицу",
+    description:
+      "Быстрые кнопки над выделенным фрагментом: Сжать, Академический стиль, Проверить факты, В таблицу",
     operationCode: "floating_toolbar_action",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["selection_id", "control_action", "original_length", "transformed_output"]
@@ -386,7 +426,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F041",
     stage: "stage2-canvas",
     title: "Частичная регенерация блока (In-place Selection Edit)",
-    description: "Переписывание агентом только выделенного абзаца или функции без пересборки всего файла",
+    description:
+      "Переписывание агентом только выделенного абзаца или функции без пересборки всего файла",
     operationCode: "partial_block_edit",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["artifact_id", "start_line", "end_line", "patched_document"]
@@ -413,7 +454,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F044",
     stage: "stage2-canvas",
     title: "Встраивание интерактивных графиков (Chart Widgets)",
-    description: "Генерация динамических дашбордов (линейные, бар-чарты, воронки) по данным из отчёта",
+    description:
+      "Генерация динамических дашбордов (линейные, бар-чарты, воронки) по данным из отчёта",
     operationCode: "chart_widget_engine",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["widget_id", "chart_type", "series_count", "interactive_tooltips"]
@@ -422,7 +464,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F045",
     stage: "stage2-canvas",
     title: "Множественные вкладки артефактов (Multi-Tab Canvas)",
-    description: "Одновременное удержание открытыми кода, презентации и аналитической записки в одной сессии",
+    description:
+      "Одновременное удержание открытыми кода, презентации и аналитической записки в одной сессии",
     operationCode: "multitab_controller",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["workspace_id", "open_tab_ids", "active_tab_id", "pinned_tab_ids"]
@@ -440,7 +483,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F047",
     stage: "stage2-canvas",
     title: "Инлайн-комментарии и ревью-треды",
-    description: "Закрепление замечаний пользователя или Агента-Критика за конкретной строкой артефакта",
+    description:
+      "Закрепление замечаний пользователя или Агента-Критика за конкретной строкой артефакта",
     operationCode: "inline_comment_thread",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["thread_id", "line_number", "author_role", "resolved_state"]
@@ -449,7 +493,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F048",
     stage: "stage2-canvas",
     title: "Бейдж статуса проверки на артефакте",
-    description: "Визуальный индикатор в шапке Canvas: проверено Критиком, есть замечания или редактируется вручную",
+    description:
+      "Визуальный индикатор в шапке Canvas: проверено Критиком, есть замечания или редактируется вручную",
     operationCode: "verification_badge_ui",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["artifact_id", "badge_state", "critic_score", "badge_color_token"]
@@ -458,7 +503,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F049",
     stage: "stage2-canvas",
     title: "Инспектор цепочки происхождения (Provenance Inspector UI)",
-    description: "Боковая панель, показывающая, из каких чанков документов и задач родился текущий артефакт",
+    description:
+      "Боковая панель, показывающая, из каких чанков документов и задач родился текущий артефакт",
     operationCode: "provenance_drawer",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["artifact_id", "upstream_tasks", "source_chunks", "lineage_depth"]
@@ -467,7 +513,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F050",
     stage: "stage2-canvas",
     title: "Двусторонняя синхронизация правок",
-    description: "Учёт ручных исправлений пользователя на Canvas в памяти агента при следующих сообщениях в чате",
+    description:
+      "Учёт ручных исправлений пользователя на Canvas в памяти агента при следующих сообщениях в чате",
     operationCode: "bidirectional_edit_sync",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["artifact_id", "user_diff_patch", "agent_memory_updated", "sync_version"]
@@ -485,7 +532,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F052",
     stage: "stage2-canvas",
     title: "Экспорт и синхронизация с Markdown / Notion",
-    description: "Копирование или пуш готовых структурированных материалов с сохранением форматирования",
+    description:
+      "Копирование или пуш готовых структурированных материалов с сохранением форматирования",
     operationCode: "markdown_notion_bridge",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["artifact_id", "notion_blocks_count", "gfm_markdown", "formatting_preserved"]
@@ -503,7 +551,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F054",
     stage: "stage2-canvas",
     title: "Блокировка секций от перезаписи (Section Locking)",
-    description: "Заморозка утверждённых абзацев, чтобы агент не менял их при глобальном рефакторинге",
+    description:
+      "Заморозка утверждённых абзацев, чтобы агент не менял их при глобальном рефакторинге",
     operationCode: "section_lock_guard",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["artifact_id", "locked_section_ids", "write_attempt_blocked", "owner_lock_token"]
@@ -512,7 +561,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F055",
     stage: "stage2-canvas",
     title: "Сквозные переменные в документах",
-    description: "Динамические плейсхолдеры, которые обновляются во всём тексте при смене цифры в таблице",
+    description:
+      "Динамические плейсхолдеры, которые обновляются во всём тексте при смене цифры в таблице",
     operationCode: "reactive_variable_binder",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["variable_key", "updated_value", "bound_locations_updated", "interpolated_text"]
@@ -530,7 +580,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F057",
     stage: "stage2-canvas",
     title: "Темная/высококонтрастная тема презентаций",
-    description: "Пресеты оформления слайдов в фирменной тёмной минималистичной эстетике с холодными акцентами",
+    description:
+      "Пресеты оформления слайдов в фирменной тёмной минималистичной эстетике с холодными акцентами",
     operationCode: "slide_theme_engine",
     packageDir: "packages/core/src/stage2-canvas",
     domainFields: ["theme_id", "background_hex", "accent_ice_hex", "wcag_contrast_ratio"]
@@ -557,10 +608,16 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F060",
     stage: "stage2-canvas",
     title: "Конвертер таблиц в слайды в один клик",
-    description: "Автоматическая выжимка ключевых трендов из большого XLSX-файла в 3–5 наглядных слайдов",
+    description:
+      "Автоматическая выжимка ключевых трендов из большого XLSX-файла в 3–5 наглядных слайдов",
     operationCode: "table_to_slides_converter",
     packageDir: "packages/core/src/stage2-canvas",
-    domainFields: ["source_sheet_id", "generated_slides_count", "key_trends_extracted", "slides_payload"]
+    domainFields: [
+      "source_sheet_id",
+      "generated_slides_count",
+      "key_trends_extracted",
+      "slides_payload"
+    ]
   },
   {
     featureId: "F061",
@@ -611,7 +668,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F066",
     stage: "stage3-skills-bus",
     title: "Магазин и реестр внутренних скиллов (Skills Registry)",
-    description: "Каталог доступных навыков с описанием входных параметров, версий и требуемых прав",
+    description:
+      "Каталог доступных навыков с описанием входных параметров, версий и требуемых прав",
     operationCode: "skills_catalog_registry",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["skill_id", "version", "required_scopes", "registered_count"]
@@ -632,13 +690,19 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     description: "Подтягивание тяжёлых инструкций скилла только в момент его реального вызова",
     operationCode: "lazy_skill_loader",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
-    domainFields: ["skill_handle", "loaded_on_demand", "tokens_saved_while_idle", "expanded_instructions"]
+    domainFields: [
+      "skill_handle",
+      "loaded_on_demand",
+      "tokens_saved_while_idle",
+      "expanded_instructions"
+    ]
   },
   {
     featureId: "F069",
     stage: "stage3-skills-bus",
     title: "Двусторонняя интеграция с GitHub Issues",
-    description: "Чтение бэклога, создание новых ишью из планов на Canvas и авто-закрытие по коммиту",
+    description:
+      "Чтение бэклога, создание новых ишью из планов на Canvas и авто-закрытие по коммиту",
     operationCode: "github_issues_bridge",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["repo_name", "issue_number", "sync_state", "linked_artifact_id"]
@@ -647,7 +711,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F070",
     stage: "stage3-skills-bus",
     title: "Агентное создание веток и Pull Request в GitHub",
-    description: "Формирование PR с описанием изменений, привязанными артефактами и тегами ревьюеров",
+    description:
+      "Формирование PR с описанием изменений, привязанными артефактами и тегами ревьюеров",
     operationCode: "github_pr_automator",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["repo_name", "head_branch", "base_branch", "pr_body_markdown"]
@@ -665,7 +730,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F072",
     stage: "stage3-skills-bus",
     title: "Глубокий парсер документов (PDF, DOCX, CSV, XLSX)",
-    description: "Извлечение текста, сложных многоуровневых таблиц и структуры заголовков без потери разметки",
+    description:
+      "Извлечение текста, сложных многоуровневых таблиц и структуры заголовков без потери разметки",
     operationCode: "deep_document_extractor",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["file_name", "detected_format", "tables_extracted", "structured_markdown"]
@@ -692,7 +758,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F075",
     stage: "stage3-skills-bus",
     title: "Исполнение Node.js / TypeScript-инструментов",
-    description: "Выполнение серверных скриптов, парсеров и проверка сборки прямо из рабочей сессии",
+    description:
+      "Выполнение серверных скриптов, парсеров и проверка сборки прямо из рабочей сессии",
     operationCode: "node_ts_executor",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["execution_id", "ts_module_name", "typecheck_passed", "execution_output"]
@@ -701,7 +768,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F076",
     stage: "stage3-skills-bus",
     title: "Шлюз Telegram-ассистента",
-    description: "Управление задачами Nexus-OS, получение уведомлений и аппрув чекпоинтов через Telegram",
+    description:
+      "Управление задачами Nexus-OS, получение уведомлений и аппрув чекпоинтов через Telegram",
     operationCode: "telegram_bot_bridge",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["chat_id", "notification_kind", "inline_approval_callback", "delivered_ok"]
@@ -746,7 +814,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F081",
     stage: "stage3-skills-bus",
     title: "Анализатор кодовой базы (AST Codebase Navigation)",
-    description: "Поиск определений функций, классов и зависимостей по дереву синтаксиса репозитория",
+    description:
+      "Поиск определений функций, классов и зависимостей по дереву синтаксиса репозитория",
     operationCode: "ast_symbol_indexer",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["file_path", "exported_symbols", "import_dependencies", "ast_depth"]
@@ -773,7 +842,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F084",
     stage: "stage3-skills-bus",
     title: "Пакетная обработка файлов (Batch File Processor)",
-    description: "Применение одного скилла сразу к 10–50 загруженным документам с агрегацией в таблицу",
+    description:
+      "Применение одного скилла сразу к 10–50 загруженным документам с агрегацией в таблицу",
     operationCode: "batch_doc_processor",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["batch_id", "processed_files_count", "skill_handle", "aggregated_rows"]
@@ -782,7 +852,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F085",
     stage: "stage3-skills-bus",
     title: "Транскрибация аудио и записей созвонов",
-    description: "Перевод голосовых заметок и митингов в текст с выделением списка задач (Action Items)",
+    description:
+      "Перевод голосовых заметок и митингов в текст с выделением списка задач (Action Items)",
     operationCode: "meeting_action_extractor",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["recording_id", "transcript_length", "action_items", "assigned_owners"]
@@ -818,7 +889,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F089",
     stage: "stage3-skills-bus",
     title: "Локальный файловый наблюдатель (File Watcher)",
-    description: "Автоматический подхват изменённых файлов в рабочей директории без ручной перезагрузки",
+    description:
+      "Автоматический подхват изменённых файлов в рабочей директории без ручной перезагрузки",
     operationCode: "fs_change_watcher",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["watched_dir", "changed_file_path", "change_event_kind", "reindexed_ok"]
@@ -836,7 +908,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F091",
     stage: "stage3-skills-bus",
     title: "Симулятор сухого прогона (Dry-Run Mode)",
-    description: "Показ того, какие файлы будут изменены или какие API вызваны, без фактической записи",
+    description:
+      "Показ того, какие файлы будут изменены или какие API вызваны, без фактической записи",
     operationCode: "dry_run_simulator",
     packageDir: "packages/tool-runtime/src/stage3-skills-bus",
     domainFields: ["simulation_id", "planned_file_writes", "planned_api_calls", "zero_side_effects"]
@@ -890,7 +963,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F097",
     stage: "stage4-intelligence-graph",
     title: "Графовые воркспейсы Kosmora (Kosmora Graph Workspaces)",
-    description: "Визуальное пространство проекта, где чаты, файлы, задачи и артефакты представлены как связанные узлы",
+    description:
+      "Визуальное пространство проекта, где чаты, файлы, задачи и артефакты представлены как связанные узлы",
     operationCode: "graph_workspace_topology",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["workspace_id", "nodes_count", "edges_count", "connected_components"]
@@ -917,7 +991,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F100",
     stage: "stage4-intelligence-graph",
     title: "Гибридный поиск (Vector + Graph + Keyword RAG)",
-    description: "Комбинирование семантического поиска по эмбеддингам с обходом графа связей и точным совпадением слов",
+    description:
+      "Комбинирование семантического поиска по эмбеддингам с обходом графа связей и точным совпадением слов",
     operationCode: "hybrid_rag_retriever",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["query_text", "vector_matches", "graph_hop_matches", "fused_ranking"]
@@ -926,10 +1001,16 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F101",
     stage: "stage4-intelligence-graph",
     title: "Инжектор графового контекста в промпт (Graph Context Injector)",
-    description: "Автоматическое подтягивание релевантных узлов графа в системный промпт при старте новой ветки чата",
+    description:
+      "Автоматическое подтягивание релевантных узлов графа в системный промпт при старте новой ветки чата",
     operationCode: "prompt_graph_injector",
     packageDir: "packages/core/src/stage4-intelligence-graph",
-    domainFields: ["workspace_id", "injected_nodes_count", "augmented_system_prompt", "token_overhead"]
+    domainFields: [
+      "workspace_id",
+      "injected_nodes_count",
+      "augmented_system_prompt",
+      "token_overhead"
+    ]
   },
   {
     featureId: "F102",
@@ -944,7 +1025,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F103",
     stage: "stage4-intelligence-graph",
     title: "Краткосрочная память рабочей сессии (Working Memory Buffer)",
-    description: "Удержание фокуса на текущих переменных и открытых артефактах без размытия внимания",
+    description:
+      "Удержание фокуса на текущих переменных и открытых артефактах без размытия внимания",
     operationCode: "working_memory_ring",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["session_id", "active_slots_used", "focused_artifact_ids", "attention_score"]
@@ -962,16 +1044,23 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F105",
     stage: "stage4-intelligence-graph",
     title: "Разрешение дубликатов сущностей (Entity Resolution)",
-    description: "Склейка разных упоминаний одного и того же проекта, человека или модуля в единый узел графа",
+    description:
+      "Склейка разных упоминаний одного и того же проекта, человека или модуля в единый узел графа",
     operationCode: "entity_canonical_merger",
     packageDir: "packages/core/src/stage4-intelligence-graph",
-    domainFields: ["canonical_node_id", "merged_aliases", "duplicate_nodes_collapsed", "similarity_score"]
+    domainFields: [
+      "canonical_node_id",
+      "merged_aliases",
+      "duplicate_nodes_collapsed",
+      "similarity_score"
+    ]
   },
   {
     featureId: "F106",
     stage: "stage4-intelligence-graph",
     title: "Временная шкала графа знаний (Temporal Graph Tracking)",
-    description: "Просмотр того, как менялись знания и факты по проекту во времени с поддержкой дат актуальности",
+    description:
+      "Просмотр того, как менялись знания и факты по проекту во времени с поддержкой дат актуальности",
     operationCode: "bitemporal_fact_ledger",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["node_id", "valid_from_iso", "valid_to_iso", "point_in_time_snapshot"]
@@ -980,7 +1069,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F107",
     stage: "stage4-intelligence-graph",
     title: "Закрепление ядерных фактов (Pinned Context Nodes)",
-    description: "Фиксация неизменяемых правил проекта (стек, брендбук, ограничения), всегда присутствующих в контексте",
+    description:
+      "Фиксация неизменяемых правил проекта (стек, брендбук, ограничения), всегда присутствующих в контексте",
     operationCode: "pinned_fact_registry",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["workspace_id", "pinned_node_ids", "immutable_rules", "always_injected"]
@@ -1007,7 +1097,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F110",
     stage: "stage4-intelligence-graph",
     title: "Кросс-документное связывание цитат",
-    description: "Обнаружение общих тем и противоречий между десятками разных PDF и таблиц в воркспейсе",
+    description:
+      "Обнаружение общих тем и противоречий между десятками разных PDF и таблиц в воркспейсе",
     operationCode: "cross_doc_correlator",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["cluster_id", "corroborating_docs", "contradicting_pairs", "consensus_summary"]
@@ -1025,7 +1116,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F112",
     stage: "stage4-intelligence-graph",
     title: "Оценка устаревания данных (Knowledge Decay Alert)",
-    description: "Маркировка узлов и отчётов, чьи исходные файлы были обновлены, как требующих пересборки",
+    description:
+      "Маркировка узлов и отчётов, чьи исходные файлы были обновлены, как требующих пересборки",
     operationCode: "staleness_detector",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["updated_source_id", "stale_artifact_ids", "decay_severity", "rebuild_queued"]
@@ -1037,13 +1129,19 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     description: "Строгий запрет на протекание данных одного клиентского проекта в граф другого",
     operationCode: "workspace_isolation_fence",
     packageDir: "packages/core/src/stage4-intelligence-graph",
-    domainFields: ["source_workspace_id", "target_workspace_id", "cross_leak_blocked", "isolation_verified"]
+    domainFields: [
+      "source_workspace_id",
+      "target_workspace_id",
+      "cross_leak_blocked",
+      "isolation_verified"
+    ]
   },
   {
     featureId: "F114",
     stage: "stage4-intelligence-graph",
     title: "Глобальный мост знаний (Cross-Workspace Shared Library)",
-    description: "Опциональное подключение общих корпоративных справочников и стандартов ко всем проектам",
+    description:
+      "Опциональное подключение общих корпоративных справочников и стандартов ко всем проектам",
     operationCode: "shared_library_bridge",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["library_id", "subscribed_workspaces", "shared_nodes_count", "read_only_mount"]
@@ -1052,7 +1150,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F115",
     stage: "stage4-intelligence-graph",
     title: "Инспектор контекстного окна (Context Window X-Ray)",
-    description: "Наглядная шкала того, сколько токенов занимают системный промпт, граф, файлы и история чата",
+    description:
+      "Наглядная шкала того, сколько токенов занимают системный промпт, граф, файлы и история чата",
     operationCode: "context_xray_telemetry",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["max_tokens", "used_tokens", "utilization_pct", "segment_breakdown"]
@@ -1064,7 +1163,12 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     description: "Вытеснение наименее релевантных кусков истории при приближении к лимиту токенов",
     operationCode: "relevance_context_pruner",
     packageDir: "packages/core/src/stage4-intelligence-graph",
-    domainFields: ["budget_limit_tokens", "evicted_chunks_count", "retained_high_value_ids", "freed_tokens"]
+    domainFields: [
+      "budget_limit_tokens",
+      "evicted_chunks_count",
+      "retained_high_value_ids",
+      "freed_tokens"
+    ]
   },
   {
     featureId: "F117",
@@ -1088,7 +1192,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F119",
     stage: "stage4-intelligence-graph",
     title: "Поиск «белых пятен» в графе (Gap Analysis)",
-    description: "Выявление задач или разделов отчёта, не подкреплённых ни одним исходным документом",
+    description:
+      "Выявление задач или разделов отчёта, не подкреплённых ни одним исходным документом",
     operationCode: "evidence_gap_finder",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["workspace_id", "unbacked_task_ids", "orphan_claims_count", "remediation_plan"]
@@ -1097,7 +1202,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F120",
     stage: "stage4-intelligence-graph",
     title: "Генерация онтологии под домен",
-    description: "Настройка типов узлов и связей под конкретную нишу (разработка ПО, автосервис, маркетинг, аналитика)",
+    description:
+      "Настройка типов узлов и связей под конкретную нишу (разработка ПО, автосервис, маркетинг, аналитика)",
     operationCode: "ontology_schema_builder",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["domain_niche", "entity_types", "relation_types", "validation_rules"]
@@ -1118,7 +1224,12 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     description: "Пересчёт векторов только для изменённых абзацев при редактировании файла",
     operationCode: "delta_embedding_cache",
     packageDir: "packages/core/src/stage4-intelligence-graph",
-    domainFields: ["document_id", "unchanged_paragraphs_cached", "recomputed_paragraphs", "compute_saved_pct"]
+    domainFields: [
+      "document_id",
+      "unchanged_paragraphs_cached",
+      "recomputed_paragraphs",
+      "compute_saved_pct"
+    ]
   },
   {
     featureId: "F123",
@@ -1127,7 +1238,12 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     description: "Запоминание любимого формата таблиц, стиля кода и лаконичности ответов",
     operationCode: "preference_memory_profile",
     packageDir: "packages/core/src/stage4-intelligence-graph",
-    domainFields: ["workspace_id", "preferred_table_style", "preferred_code_idiom", "verbosity_level"]
+    domainFields: [
+      "workspace_id",
+      "preferred_table_style",
+      "preferred_code_idiom",
+      "verbosity_level"
+    ]
   },
   {
     featureId: "F124",
@@ -1145,7 +1261,12 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     description: "Перенос финального артефакта из экспериментальной ветки обратно в основную",
     operationCode: "chat_branch_merger",
     packageDir: "packages/core/src/stage4-intelligence-graph",
-    domainFields: ["source_branch_id", "target_branch_id", "promoted_artifact_id", "merge_commit_id"]
+    domainFields: [
+      "source_branch_id",
+      "target_branch_id",
+      "promoted_artifact_id",
+      "merge_commit_id"
+    ]
   },
   {
     featureId: "F126",
@@ -1160,7 +1281,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F127",
     stage: "stage4-intelligence-graph",
     title: "Быстрый глобальный поиск (Cmd/Ctrl + K)",
-    description: "Мгновенный переход к любому чату, узлу графа, скиллу или версии артефакта на Canvas",
+    description:
+      "Мгновенный переход к любому чату, узлу графа, скиллу или версии артефакта на Canvas",
     operationCode: "cmdk_omnibox_router",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["query_string", "matched_categories", "top_hit_id", "search_latency_ms"]
@@ -1169,7 +1291,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F128",
     stage: "stage4-intelligence-graph",
     title: "Анализ влияния изменений (Impact Analysis on Graph)",
-    description: "Подсветка всех отчётов и задач, которые затронет изменение конкретного входного документа",
+    description:
+      "Подсветка всех отчётов и задач, которые затронет изменение конкретного входного документа",
     operationCode: "blast_radius_analyzer",
     packageDir: "packages/core/src/stage4-intelligence-graph",
     domainFields: ["modified_node_id", "affected_downstream_ids", "max_hop_distance", "risk_level"]
@@ -1178,10 +1301,16 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F129",
     stage: "stage5-enterprise",
     title: "Мультитенантная архитектура («Цифровая холдинговая компания»)",
-    description: "Управление независимыми организациями, департаментами и проектами из единого мастер-аккаунта",
+    description:
+      "Управление независимыми организациями, департаментами и проектами из единого мастер-аккаунта",
     operationCode: "holding_hierarchy_manager",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
-    domainFields: ["holding_id", "subsidiary_tenant_ids", "consolidated_governance", "isolation_mode"]
+    domainFields: [
+      "holding_id",
+      "subsidiary_tenant_ids",
+      "consolidated_governance",
+      "isolation_mode"
+    ]
   },
   {
     featureId: "F130",
@@ -1196,7 +1325,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F131",
     stage: "stage5-enterprise",
     title: "Ролевая модель доступа (RBAC)",
-    description: "Гранулярные права: Owner, Admin, Architect, Operator, Viewer на уровне воркспейсов и артефактов",
+    description:
+      "Гранулярные права: Owner, Admin, Architect, Operator, Viewer на уровне воркспейсов и артефактов",
     operationCode: "rbac_permission_evaluator",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["actor_role", "requested_capability", "resource_scope", "verdict_allowed"]
@@ -1214,19 +1344,31 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F133",
     stage: "stage5-enterprise",
     title: "Детектор и маскировщик персональных данных (PII Redaction)",
-    description: "Автоматическое скрытие телефонов, паспортов и ключей перед отправкой во внешние LLM API",
+    description:
+      "Автоматическое скрытие телефонов, паспортов и ключей перед отправкой во внешние LLM API",
     operationCode: "pii_data_masker",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
-    domainFields: ["input_length", "redacted_entities_count", "sanitized_payload", "compliance_passed"]
+    domainFields: [
+      "input_length",
+      "redacted_entities_count",
+      "sanitized_payload",
+      "compliance_passed"
+    ]
   },
   {
     featureId: "F134",
     stage: "stage5-enterprise",
     title: "Защита от Prompt Injection и Jailbreak",
-    description: "Входной фильтр, блокирующий попытки переопределить системные инструкции через файлы или веб",
+    description:
+      "Входной фильтр, блокирующий попытки переопределить системные инструкции через файлы или веб",
     operationCode: "injection_shield_filter",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
-    domainFields: ["source_channel", "threat_signature_detected", "blocked_execution", "sanitized_input"]
+    domainFields: [
+      "source_channel",
+      "threat_signature_detected",
+      "blocked_execution",
+      "sanitized_input"
+    ]
   },
   {
     featureId: "F135",
@@ -1235,7 +1377,12 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     description: "Шифрование пользовательских API-ключей и токенов интеграций (AES-256)",
     operationCode: "aes256_gcm_vault",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
-    domainFields: ["secret_id", "cipher_algorithm", "key_rotation_version", "authenticated_tag_valid"]
+    domainFields: [
+      "secret_id",
+      "cipher_algorithm",
+      "key_rotation_version",
+      "authenticated_tag_valid"
+    ]
   },
   {
     featureId: "F136",
@@ -1253,7 +1400,12 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     description: "Запись всех входов, вызовов инструментов, экспорта данных и изменений прав",
     operationCode: "hash_chained_audit_ledger",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
-    domainFields: ["sequence_number", "previous_entry_hash", "current_entry_hash", "chain_tamper_free"]
+    domainFields: [
+      "sequence_number",
+      "previous_entry_hash",
+      "current_entry_hash",
+      "chain_tamper_free"
+    ]
   },
   {
     featureId: "F138",
@@ -1268,7 +1420,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F139",
     stage: "stage5-enterprise",
     title: "Квоты и Rate Limiting",
-    description: "Ограничение числа одновременных агентных графов и запросов в минуту на организацию",
+    description:
+      "Ограничение числа одновременных агентных графов и запросов в минуту на организацию",
     operationCode: "token_bucket_ratelimiter",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["tenant_id", "requests_per_minute", "concurrent_graphs", "throttled"]
@@ -1277,7 +1430,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F140",
     stage: "stage5-enterprise",
     title: "Поддержка собственных ключей и локальных моделей (BYOK & Local LLM)",
-    description: "Возможность подключить корпоративные эндпоинты или локальные модели для закрытого контура",
+    description:
+      "Возможность подключить корпоративные эндпоинты или локальные модели для закрытого контура",
     operationCode: "byok_endpoint_router",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["tenant_id", "custom_endpoint_url", "airgapped_mode", "handshake_verified"]
@@ -1295,7 +1449,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F142",
     stage: "stage5-enterprise",
     title: "Панель здоровья CI/CD и авто-диагностика билдов",
-    description: "Мониторинг сборок монорепозитория с быстрым выявлением падающих тестов типизации и интеграций",
+    description:
+      "Мониторинг сборок монорепозитория с быстрым выявлением падающих тестов типизации и интеграций",
     operationCode: "monorepo_health_probe",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["pipeline_id", "packages_checked", "typecheck_green", "test_suite_green"]
@@ -1304,7 +1459,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F143",
     stage: "stage5-enterprise",
     title: "Сьют технических бенчмарков для Kosmora (Benchmark Suite)",
-    description: "Автоматизированный прогон эталонных задач для замера точности, скорости и стоимости после коммита",
+    description:
+      "Автоматизированный прогон эталонных задач для замера точности, скорости и стоимости после коммита",
     operationCode: "benchmark_harness",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["suite_version", "scenarios_executed", "accuracy_score_pct", "cost_per_run_usd"]
@@ -1313,7 +1469,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F144",
     stage: "stage5-enterprise",
     title: "Регрессионное тестирование промптов и скиллов",
-    description: "Проверка того, что обновление системного промпта не ухудшило качество старых сценариев",
+    description:
+      "Проверка того, что обновление системного промпта не ухудшило качество старых сценариев",
     operationCode: "prompt_regression_gate",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["baseline_version", "candidate_version", "drift_detected", "regression_passed"]
@@ -1349,7 +1506,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F148",
     stage: "stage5-enterprise",
     title: "Вебхуки событий платформы для внешних систем",
-    description: "Отправка уведомлений в корпоративные шины при готовности отчёта или падении графа",
+    description:
+      "Отправка уведомлений в корпоративные шины при готовности отчёта или падении графа",
     operationCode: "webhook_dispatcher",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["webhook_id", "event_topic", "hmac_signature", "delivery_http_status"]
@@ -1358,7 +1516,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F149",
     stage: "stage5-enterprise",
     title: "Публичное REST / GraphQL API платформы",
-    description: "Возможность запускать задачи Kosmora и забирать готовые артефакты из внешних B2B-систем",
+    description:
+      "Возможность запускать задачи Kosmora и забирать готовые артефакты из внешних B2B-систем",
     operationCode: "b2b_api_gateway",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["api_key_id", "graphql_or_rest_op", "rate_limit_remaining", "response_envelope"]
@@ -1367,7 +1526,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F150",
     stage: "stage5-enterprise",
     title: "Безопасный шаринг артефактов по внешним ссылкам",
-    description: "Генерация read-only ссылок на отчёты и презентации с паролем и сроком жизни (TTL)",
+    description:
+      "Генерация read-only ссылок на отчёты и презентации с паролем и сроком жизни (TTL)",
     operationCode: "secure_share_link_issuer",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["share_token", "artifact_id", "expires_at_iso", "password_protected"]
@@ -1385,7 +1545,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F152",
     stage: "stage5-enterprise",
     title: "Автоматическое резервное копирование и снапшоты",
-    description: "Ежедневный бэкап графов знаний, чатов и версий Canvas с восстановлением в один клик",
+    description:
+      "Ежедневный бэкап графов знаний, чатов и версий Canvas с восстановлением в один клик",
     operationCode: "snapshot_backup_engine",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["snapshot_id", "included_graphs", "included_canvas_tabs", "one_click_restorable"]
@@ -1421,7 +1582,8 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F156",
     stage: "stage5-enterprise",
     title: "Кэширование идентичных LLM-запросов (Semantic Cache)",
-    description: "Мгновенный возврат ответа на типовые аналитические подзапросы без повторной оплаты токенов",
+    description:
+      "Мгновенный возврат ответа на типовые аналитические подзапросы без повторной оплаты токенов",
     operationCode: "semantic_vector_cache",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["query_fingerprint", "similarity_hit", "tokens_saved", "cached_completion"]
@@ -1430,16 +1592,23 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F157",
     stage: "stage5-enterprise",
     title: "Graceful Degradation (Отказоустойчивый фоллбэк)",
-    description: "Автоматическое переключение на резервного провайдера модели при падении основного API",
+    description:
+      "Автоматическое переключение на резервного провайдера модели при падении основного API",
     operationCode: "provider_failover_switch",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
-    domainFields: ["primary_provider", "backup_provider", "failover_activated", "continuity_preserved"]
+    domainFields: [
+      "primary_provider",
+      "backup_provider",
+      "failover_activated",
+      "continuity_preserved"
+    ]
   },
   {
     featureId: "F158",
     stage: "stage5-enterprise",
     title: "Шаблоны быстрого онбординга воркспейсов",
-    description: "Развёртывание преднастроенного пространства с демо-графом, скиллами и примерами на Canvas за 30 секунд",
+    description:
+      "Развёртывание преднастроенного пространства с демо-графом, скиллами и примерами на Canvas за 30 секунд",
     operationCode: "instant_onboarding_seeder",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
     domainFields: ["template_name", "seeded_nodes_count", "seeded_skills_count", "elapsed_ms"]
@@ -1448,23 +1617,40 @@ export const KOSMORA_160_CATALOG: readonly KosmoraFeatureDescriptor[] = [
     featureId: "F159",
     stage: "stage5-enterprise",
     title: "Мониторинг квот хранилища и индексации",
-    description: "Контроль объёма загруженных файлов, таблиц и векторных индексов по каждому проекту",
+    description:
+      "Контроль объёма загруженных файлов, таблиц и векторных индексов по каждому проекту",
     operationCode: "storage_quota_meter",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
-    domainFields: ["project_id", "used_megabytes", "quota_limit_megabytes", "alert_threshold_reached"]
+    domainFields: [
+      "project_id",
+      "used_megabytes",
+      "quota_limit_megabytes",
+      "alert_threshold_reached"
+    ]
   },
   {
     featureId: "F160",
     stage: "stage5-enterprise",
     title: "Экспорт полного дампа проекта (Full Tenant Portability)",
-    description: "Выгрузка всех артефактов, истории чатов, графа знаний и скиллов в самодостаточный архив",
+    description:
+      "Выгрузка всех артефактов, истории чатов, графа знаний и скиллов в самодостаточный архив",
     operationCode: "tenant_portability_dumper",
     packageDir: "packages/policy-engine/src/stage5-enterprise",
-    domainFields: ["export_bundle_id", "tenant_id", "manifest_integrity_hash", "self_contained_ready"]
+    domainFields: [
+      "export_bundle_id",
+      "tenant_id",
+      "manifest_integrity_hash",
+      "self_contained_ready"
+    ]
   }
 ];
 
-export function verifyCoreStages96Modules(): Array<{ featureId: string; passed: boolean; executionId: string; provenanceDigest: string }> {
+export function verifyCoreStages96Modules(): Array<{
+  featureId: string;
+  passed: boolean;
+  executionId: string;
+  provenanceDigest: string;
+}> {
   return [
     ...verifyStage_stage1_autonomy(),
     ...verifyStage_stage2_canvas(),

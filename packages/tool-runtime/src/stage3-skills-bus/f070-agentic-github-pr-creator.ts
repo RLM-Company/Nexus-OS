@@ -13,13 +13,7 @@ export const F070_OPERATION_CODE = "github_pr_automator" as const;
 export const F070_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F070AgenticGithubPrCreatorExecutionStatus =
-  | "idle"
-  | "validating"
-  | "executing"
-  | "completed"
-  | "degraded"
-  | "cancelled"
-  | "failed";
+  "idle" | "validating" | "executing" | "completed" | "degraded" | "cancelled" | "failed";
 
 export interface F070AgenticGithubPrCreatorConfig {
   readonly featureId: typeof F070_FEATURE_ID;
@@ -117,14 +111,20 @@ export class F070AgenticGithubPrCreatorEngine {
   private readonly kernel: Stage3SkillsKernel;
   private readonly executionHistory: F070AgenticGithubPrCreatorOutput[] = [];
   private readonly auditLog: F070AgenticGithubPrCreatorAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F070AgenticGithubPrCreatorOutput }>();
+  private readonly idempotencyStore = new Map<
+    string,
+    { payloadHash: string; output: F070AgenticGithubPrCreatorOutput }
+  >();
   private readonly cancelledRequests = new Set<string>();
   private totalRuns = 0;
   private successfulRuns = 0;
   private failedRuns = 0;
   private cumulativeLatencyMs = 0;
 
-  constructor(customConfig?: Partial<F070AgenticGithubPrCreatorConfig>, kernel?: Stage3SkillsKernel) {
+  constructor(
+    customConfig?: Partial<F070AgenticGithubPrCreatorConfig>,
+    kernel?: Stage3SkillsKernel
+  ) {
     this.config = {
       ...DEFAULT_F070_CONFIG,
       ...(customConfig ?? {})
@@ -142,25 +142,46 @@ export class F070AgenticGithubPrCreatorEngine {
 
   public validateInput(input: F070AgenticGithubPrCreatorInput): void {
     if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError("requestId", "Request ID must be a non-empty string.");
+      throw new F070AgenticGithubPrCreatorValidationError(
+        "requestId",
+        "Request ID must be a non-empty string."
+      );
     }
     if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError("projectId", "Project ID must be a non-empty string.");
+      throw new F070AgenticGithubPrCreatorValidationError(
+        "projectId",
+        "Project ID must be a non-empty string."
+      );
     }
     if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError("workspaceId", "Workspace ID must be a non-empty string.");
+      throw new F070AgenticGithubPrCreatorValidationError(
+        "workspaceId",
+        "Workspace ID must be a non-empty string."
+      );
     }
     if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError("tenantId", "Tenant ID must be a non-empty string.");
+      throw new F070AgenticGithubPrCreatorValidationError(
+        "tenantId",
+        "Tenant ID must be a non-empty string."
+      );
     }
     if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError("actorId", "Actor ID must be a non-empty string.");
+      throw new F070AgenticGithubPrCreatorValidationError(
+        "actorId",
+        "Actor ID must be a non-empty string."
+      );
     }
     if (this.cancelledRequests.has(input.requestId)) {
-      throw new F070AgenticGithubPrCreatorValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
+      throw new F070AgenticGithubPrCreatorValidationError(
+        "requestId",
+        `Request '${input.requestId}' has been cancelled.`
+      );
     }
     if (this.config.strictValidation && String(input.repo_name).trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError("repo_name", "Primary domain attribute 'repo_name' cannot be empty.");
+      throw new F070AgenticGithubPrCreatorValidationError(
+        "repo_name",
+        "Primary domain attribute 'repo_name' cannot be empty."
+      );
     }
     for (const [fieldKey, fieldVal] of Object.entries({
       repo_name: input.repo_name,
@@ -168,113 +189,21 @@ export class F070AgenticGithubPrCreatorEngine {
       base_branch: input.base_branch,
       pr_body_markdown: input.pr_body_markdown
     })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F070AgenticGithubPrCreatorValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
+      if (
+        typeof fieldVal === "number" &&
+        (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)
+      ) {
+        throw new F070AgenticGithubPrCreatorValidationError(
+          fieldKey,
+          `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`
+        );
       }
     }
   }
 
   public execute(input: F070AgenticGithubPrCreatorInput): F070AgenticGithubPrCreatorOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F070_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        repo_name: input.repo_name,
-        head_branch: input.head_branch,
-        base_branch: input.base_branch,
-        pr_body_markdown: input.pr_body_markdown
-      });
-      const payloadHash = computeF070Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F070AgenticGithubPrCreatorValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F070_FEATURE_ID,
-        operationCode: F070_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          repo_name: input.repo_name,
-          head_branch: input.head_branch,
-          base_branch: input.base_branch,
-          pr_body_markdown: input.pr_body_markdown
-        }
-      });
-
-      const executionId = `exec_f070_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f070_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F070AgenticGithubPrCreatorAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F070_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `github_pr_automator:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F070AgenticGithubPrCreatorOutput = {
-        featureId: F070_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F070_OPERATION_CODE,
-        resolved_repo_name: kernelResult.resolvedFields.repo_name as string,
-        resolved_head_branch: kernelResult.resolvedFields.head_branch as string | number,
-        resolved_base_branch: kernelResult.resolvedFields.base_branch as string | number | boolean | readonly string[],
-        resolved_pr_body_markdown: kernelResult.resolvedFields.pr_body_markdown as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
+    this.validateInput(input);
+    throw new Error("GITHUB_FEATURE_NOT_CONNECTED: prototype has no verified domain adapter");
   }
 
   public getTelemetrySnapshot(): F070AgenticGithubPrCreatorTelemetrySnapshot {
