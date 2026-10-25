@@ -68,6 +68,9 @@
   text-decoration: underline;
 }
 .asset > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   justify-self: start;
   border: 1px solid var(--line, #ddd);
   background: transparent;
@@ -75,6 +78,10 @@
   border-radius: 8px;
   padding: 8px 12px;
   cursor: pointer;
+}
+.asset > button svg {
+  width: 16px;
+  height: 16px;
 }
 .history {
   display: grid;

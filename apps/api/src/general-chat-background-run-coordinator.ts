@@ -1,5 +1,6 @@
 import { ContextTooLargeError } from "@cosmora/core";
 import type { ChatService } from "@cosmora/core";
+import type { ChatImageAttachment } from "@cosmora/contracts";
 import type { EmergencyStopStore, StoredGeneralChatMessage } from "@cosmora/db";
 import {
   GatewayRunError,
@@ -32,7 +33,12 @@ export interface GeneralChatBackgroundRunCoordinatorOptions {
   controlPollIntervalMs?: number;
   maxConcurrentRuns?: number;
   accountStore?: AccountStore;
-  imageGeneration?: (ownerId: string, prompt: string, signal: AbortSignal) => Promise<string>;
+  imageGeneration?: (
+    ownerId: string,
+    prompt: string,
+    signal: AbortSignal,
+    references?: readonly ChatImageAttachment[]
+  ) => Promise<string>;
 }
 
 type ActiveRun = {
@@ -189,6 +195,28 @@ export class GeneralChatBackgroundRunCoordinator {
         );
       }
 
+      const latestUser = conversation.findLast((message) => message.role === "user");
+      const references = (latestUser?.attachments ?? []).filter(
+        (file): file is ChatImageAttachment => "data_base64" in file
+      );
+      const imagePrompt = latestUser
+        ? imageCreationPrompt(latestUser.content, references.length > 0)
+        : null;
+      if (imagePrompt) {
+        if (latestUser?.attachments?.some((file) => !("data_base64" in file)))
+          throw new ChatImageError("IMAGE_REFERENCES_UNSUPPORTED");
+        if (!this.#imageGeneration) throw new ChatImageError("MEDIA_UNAVAILABLE");
+        const assetId = await this.#imageGeneration(
+          queued.owner_id,
+          imagePrompt,
+          controller.signal,
+          references
+        );
+        controller.signal.throwIfAborted();
+        if (this.#store.completeImageRun(queued.run_id, queued.owner_id, assetId))
+          this.#runtimeMetrics.runCompleted();
+        return;
+      }
       let modelRequest = this.#chat.buildRequest({
         chatId: queued.chat_id,
         runId: queued.run_id,
@@ -196,22 +224,6 @@ export class GeneralChatBackgroundRunCoordinator {
         memoryNotes: this.#store.getChatMemory(queued.chat_id, queued.owner_id)?.memory_notes ?? "",
         skills: this.#store.skills.forRun(queued.run_id, queued.owner_id)?.items ?? []
       });
-      const latestUser = conversation.findLast((message) => message.role === "user");
-      const imagePrompt = latestUser ? imageCreationPrompt(latestUser.content) : null;
-      if (imagePrompt) {
-        if (latestUser?.attachments?.length)
-          throw new ChatImageError("IMAGE_REFERENCES_UNSUPPORTED");
-        if (!this.#imageGeneration) throw new ChatImageError("MEDIA_UNAVAILABLE");
-        const assetId = await this.#imageGeneration(
-          queued.owner_id,
-          imagePrompt,
-          controller.signal
-        );
-        controller.signal.throwIfAborted();
-        if (this.#store.completeImageRun(queued.run_id, queued.owner_id, assetId))
-          this.#runtimeMetrics.runCompleted();
-        return;
-      }
       if (
         this.#accountStore?.getRelay(queued.owner_id, queued.chat_id) &&
         !this.#accountStore.getExecution(queued.owner_id).turbo &&

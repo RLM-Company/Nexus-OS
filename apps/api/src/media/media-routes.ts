@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { Type } from "typebox";
 import type { IdentityContext } from "@cosmora/contracts";
+import { ChatImageAttachmentSchema, type ChatImageAttachment } from "@cosmora/contracts";
 import type { MediaService } from "./media-service.js";
 
 const bad = (
@@ -41,6 +42,7 @@ export function registerMediaRoutes(
         prompt?: string;
         text?: string;
         explicit_paid_consent: boolean;
+        references?: ChatImageAttachment[];
       };
       const value = kind === "image" ? body.prompt : body.text;
       if (!value || !value.trim()) return bad(reply, 400, "TEXT_REQUIRED");
@@ -48,7 +50,13 @@ export function registerMediaRoutes(
         return reply
           .code(202)
           .send(
-            service.enqueue(identityFor(request).owner_id, kind, value, body.explicit_paid_consent)
+            service.enqueue(
+              identityFor(request).owner_id,
+              kind,
+              value,
+              body.explicit_paid_consent,
+              body.references
+            )
           );
       } catch (error) {
         const code = error instanceof Error ? error.message : "MEDIA_FAILURE";
@@ -56,11 +64,13 @@ export function registerMediaRoutes(
           reply,
           code === "CONSENT_REQUIRED"
             ? 403
-            : code === "MEDIA_BUSY"
-              ? 409
-              : code === "MEDIA_LIMIT"
-                ? 429
-                : 503,
+            : code === "IMAGE_REFERENCES_INVALID"
+              ? 400
+              : code === "MEDIA_BUSY"
+                ? 409
+                : code === "MEDIA_LIMIT"
+                  ? 429
+                  : 503,
           code
         );
       }
@@ -72,6 +82,7 @@ export function registerMediaRoutes(
         body: Type.Object(
           {
             prompt: Type.String({ minLength: 1, maxLength: 2000 }),
+            references: Type.Optional(Type.Array(ChatImageAttachmentSchema, { maxItems: 2 })),
             explicit_paid_consent: Type.Boolean()
           },
           { additionalProperties: false }

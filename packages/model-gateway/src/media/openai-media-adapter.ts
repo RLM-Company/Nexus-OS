@@ -1,4 +1,5 @@
 import type { MediaCapability, MediaModel } from "./media-registry.js";
+import { isValidChatAttachments, type ChatImageAttachment } from "@cosmora/contracts";
 
 export class MediaProviderError extends Error {
   constructor(
@@ -160,6 +161,39 @@ export class OpenAIMediaAdapter {
       "application/json",
       signal
     );
+    return this.decodeImage(response, signal);
+  }
+
+  async editImage(
+    prompt: string,
+    references: readonly ChatImageAttachment[],
+    model: "gpt-image-1",
+    signal: AbortSignal
+  ): Promise<MediaBinary> {
+    if (!references.length || !isValidChatAttachments(references))
+      throw new MediaProviderError("INVALID_ASSET", "Invalid image references");
+    const form = new FormData();
+    for (const [key, value] of Object.entries({
+      model,
+      prompt,
+      n: "1",
+      size: "1024x1024",
+      quality: "low",
+      output_format: "png"
+    }))
+      form.append(key, value);
+    for (const reference of references)
+      form.append(
+        references.length === 1 ? "image" : "image[]",
+        new Blob([Uint8Array.from(Buffer.from(reference.data_base64, "base64"))], {
+          type: reference.media_type
+        }),
+        reference.name
+      );
+    return this.decodeImage(await this.request("images/edits", form, null, signal), signal);
+  }
+
+  private async decodeImage(response: Response, signal: AbortSignal): Promise<MediaBinary> {
     const raw = await readBounded(response, MAX_IMAGE_BYTES * 1.4, signal);
     let payload: unknown;
     try {

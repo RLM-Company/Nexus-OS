@@ -81,6 +81,9 @@
   width: 18px;
   height: 18px;
 }
+.chat-generated-image > a:last-child {
+  right: 54px;
+}
 .product-shell .sidebar > details:first-of-type {
   max-width: calc(100% - 34px);
 }

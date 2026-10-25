@@ -1,11 +1,13 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChatImageAttachment } from "@cosmora/contracts";
+import { prepareChatImage } from "../prepare-chat-image";
 import { WorkspaceIcon } from "../workspace-icons";
 import { MediaGenerationPanel } from "./media-panel";
 import { SpeechStudio } from "../voice/voice-playback";
 import styles from "./media-workbench.module.css";
 
-type Reference = { id: string; name: string; url: string };
+type Reference = ChatImageAttachment & { id: string; url: string };
 export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sound" }) {
   const video = surface === "video";
   const [prompt, setPrompt] = useState("");
@@ -58,36 +60,28 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
     },
     []
   );
-  async function read(files: File[]) {
+  const read = useCallback(async (files: File[], replace = false) => {
     if (!files.length) return;
     const sequence = ++epoch.current;
     setError("");
     setReading(true);
     try {
-      if (files.length + refs.current.length > 4)
-        throw new Error("Можно добавить до четырёх референсов.");
-      for (const file of files) {
-        if (file.size > 5 * 1024 * 1024) throw new Error(`«${file.name}»: размер больше 5 МБ.`);
-        const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
-        const png = bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71;
-        const jpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
-        const webp =
-          String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
-          String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
-        if (!(
-          (file.type === "image/png" && png) ||
-          (file.type === "image/jpeg" && jpeg) ||
-          (file.type === "image/webp" && webp)
-        ))
-          throw new Error(`«${file.name}»: нужен файл PNG, JPEG или WebP.`);
-      }
+      if (files.length + (replace ? 0 : refs.current.length) > 2)
+        throw new Error("Можно добавить до двух референсов.");
+      const prepared = await Promise.all(files.map((file) => prepareChatImage(file)));
       if (sequence !== epoch.current) return;
-      const added = files.map((file) => ({
+      const added = prepared.map((file) => ({
+        ...file,
         id: crypto.randomUUID(),
-        name: file.name,
-        url: URL.createObjectURL(file)
+        url: URL.createObjectURL(
+          new Blob(
+            [Uint8Array.from(atob(file.data_base64), (character) => character.charCodeAt(0))],
+            { type: file.media_type }
+          )
+        )
       }));
-      refs.current = [...refs.current, ...added];
+      if (replace) refs.current.forEach((file) => URL.revokeObjectURL(file.url));
+      refs.current = [...(replace ? [] : refs.current), ...added];
       setReferences(refs.current);
     } catch (cause) {
       if (sequence === epoch.current)
@@ -95,7 +89,25 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
     } finally {
       if (sequence === epoch.current) setReading(false);
     }
-  }
+  }, []);
+  useEffect(() => {
+    if (surface !== "images") return;
+    const id = new URLSearchParams(window.location.search).get("reference");
+    if (!id || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(id)) return;
+    const controller = new AbortController();
+    void fetch(`/api/v1/media/assets/${id}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok || !response.headers.get("content-type")?.startsWith("image/png"))
+          throw Error();
+        const blob = await response.blob();
+        if (!controller.signal.aborted)
+          await read([new File([blob], `kosmora-${id}.png`, { type: "image/png" })], true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setError("Не удалось открыть исходное изображение.");
+      });
+    return () => controller.abort();
+  }, [surface, read]);
   if (surface === "sound")
     return (
       <section className={styles.workbench}>
@@ -112,11 +124,9 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
     );
   const blocked = reading
     ? "Проверяем референсы…"
-    : references.length
-      ? "Референсы подготовлены локально. Текущий маршрут не поддерживает их передачу; генерация с ними пока недоступна."
-      : ratio !== "1:1"
-        ? "Текущий маршрут создаёт PNG 1024 × 1024. Для другого формата нужен соответствующий маршрут генерации."
-        : undefined;
+    : ratio !== "1:1"
+      ? "Текущий маршрут создаёт PNG 1024 × 1024. Для другого формата нужен соответствующий маршрут генерации."
+      : undefined;
   const description = !prompt.trim()
     ? ""
     : style === "Авто"
@@ -184,12 +194,12 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
           <div className={styles.references}>
             <div className={styles.sectionTitle}>
               <h3>Референсы</h3>
-              <span>{references.length} / 4</span>
+              <span>{references.length} / 2</span>
             </div>
             <input
               ref={input}
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/png,image/jpeg"
               multiple
               hidden
               aria-label="Файлы референсов"
@@ -201,18 +211,18 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
             <button
               className={styles.upload}
               type="button"
-              disabled={reading || references.length >= 4}
+              disabled={reading || references.length >= 2}
               onClick={() => input.current?.click()}
             >
               <WorkspaceIcon name="paperclip" />
               {reading ? "Проверяем…" : "Добавить референсы"}
-              <small>PNG, JPEG, WebP · до 5 МБ</small>
+              <small>PNG, JPEG · до 20 МБ</small>
             </button>
             {references.length > 0 && (
               <div className={styles.thumbnails}>
                 {references.map((file) => (
                   <figure key={file.id}>
-                    {/* Local blob previews are never sent to an external service. */}
+                    {/* References leave the browser only after an explicit generation click. */}
                     <img src={file.url} alt={file.name} />
                     <figcaption title={file.name}>{file.name}</figcaption>
                     <button
@@ -231,7 +241,8 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
               </div>
             )}
             <p className={styles.hint}>
-              Референсы доступны в этой вкладке и пока не отправляются провайдеру.
+              Референсы используются при нажатии «Изменить изображение». Исходные файлы сохраняются
+              у вас.
             </p>
             {error && <p role="alert">{error}</p>}
           </div>
@@ -296,7 +307,17 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
               </button>
             </div>
           ) : (
-            <MediaGenerationPanel prompt={description} blockedReason={blocked} />
+            <MediaGenerationPanel
+              prompt={description}
+              blockedReason={blocked}
+              references={references.map(({ kind, name, media_type, data_base64 }) => ({
+                kind,
+                name,
+                media_type,
+                data_base64
+              }))}
+              onUseResult={(file) => read([file], true)}
+            />
           )}
         </section>
       </div>
