@@ -180,3 +180,187 @@ test("a mismatched audit hash is refused and recovery requires an explicit read"
   await expect(panel.getByRole("heading", { name: "Без цитат", exact: true })).toBeVisible();
   expect(reads).toBe(2);
 });
+
+const prepareRefresh = async (page: Page, request: APIRequestContext, keepQuote = true) => {
+  const f = await seed(request);
+  const source = f.graph.nodes.find((n) => n.kind === "Source")!;
+  const text = f.graph.records.find((r) => r.node.id === source.node_id)!.excerpt;
+  const edited = await request.post(f.graphUrl + "/edits", {
+    data: {
+      expected_revision: 1,
+      operation: {
+        kind: "revise_node",
+        node: { id: source.node_id, version: 1 },
+        label: "Новый протокол",
+        detail: keepQuote ? "Добавленная строка\n" + text : "Новая версия без прежней цитаты"
+      }
+    }
+  });
+  expect(edited.ok()).toBe(true);
+  const graph = (await edited.json()) as IntelligenceGraphWorkspace;
+  const panel = await open(page, f.id, graph.revision);
+  await panel.getByRole("button", { name: "Проверить источники", exact: true }).click();
+  await expect(panel.getByRole("heading", { name: "С цитатой", exact: true })).toBeVisible();
+  await panel.locator("summary").click();
+  await panel
+    .getByRole("button", { name: "Сверить с новой версией источника", exact: true })
+    .click();
+  const review = page.getByRole("region", { name: "Сверка новой версии источника", exact: true });
+  await expect(review).toBeVisible();
+  return { ...f, changed: graph, panel, review, source };
+};
+
+test("citation refresh requires a new location and review, preserves literal bytes and historical snapshots", async ({
+  page,
+  request
+}) => {
+  const f = await prepareRefresh(page, request);
+  const before = (await (await request.get(f.graphUrl)).json()) as IntelligenceGraphWorkspace;
+  let writes = 0;
+  let payload: {
+    expected_revision: number;
+    operation: { source: { id: string; version: number }; excerpt: string; location: string };
+  } | null = null;
+  page.on("request", (r) => {
+    if (r.url().endsWith("/edits") && r.method() === "POST") {
+      writes++;
+      payload = r.postDataJSON();
+    }
+  });
+  await expect(f.review.getByLabel("Текст действующей версии источника")).toContainText(
+    "Добавленная строка"
+  );
+  await expect(f.review.locator("blockquote")).toContainText(
+    "<script>window.auditUnsafe=true</script> $&"
+  );
+  await expect(f.review.locator("script")).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "auditUnsafe"))).toBeUndefined();
+  const save = f.review.getByRole("button", {
+    name: "Сохранить новую ссылку на источник",
+    exact: true
+  });
+  await expect(save).toBeDisabled();
+  const location = f.review.getByRole("textbox", { name: "Место в новой версии источника" });
+  await expect(location).toHaveValue("");
+  await location.fill("Новая строка 3");
+  await expect(save).toBeDisabled();
+  await f.review
+    .getByRole("checkbox", { name: "Сверил цитату, контекст и место в новой версии" })
+    .check();
+  await location.fill("Новая строка 3, полный фрагмент");
+  await expect(save).toBeDisabled();
+  await f.review.getByRole("checkbox").check();
+  expect(writes).toBe(0);
+  expect(await (await request.get(f.graphUrl)).json()).toEqual(before);
+  await save.click();
+  await expect(f.review).toHaveCount(0);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Ссылка на источник обновлена"
+  );
+  expect(writes).toBe(1);
+  const latestSource = before.nodes.find(
+    (n) => n.node_id === f.source.node_id && n.verification_status === "discovered"
+  )!;
+  expect(payload).toEqual({
+    expected_revision: before.revision,
+    operation: {
+      kind: "cite_edge",
+      edge_id: before.edges[0]!.edge_id,
+      source: { id: f.source.node_id, version: latestSource.node_version },
+      location: "Новая строка 3, полный фрагмент",
+      excerpt: f.graph.edges[0]!.evidence_excerpt
+    }
+  });
+  const after = (await (await request.get(f.graphUrl)).json()) as IntelligenceGraphWorkspace;
+  const current = after.edges.find((e) => e.verification_status === "discovered")!;
+  expect(current.evidence_ref.source_version).toBe(latestSource.node_version);
+  expect(current.evidence_excerpt).toBe(f.graph.edges[0]!.evidence_excerpt);
+  expect(
+    after.edges.some(
+      (e) => e.verification_status === "superseded" && e.evidence_ref.source_version === 1
+    )
+  ).toBe(true);
+  const old = (await (await request.get(f.graphUrl + "/evidence-audit?revision=1")).json()) as {
+    report: IntelligenceGraphEvidenceAudit;
+  };
+  expect(
+    old.report.claims.find((c) => c.supports.length)!.supports[0]!.citation!.source.version
+  ).toBe(1);
+  expect((await (await request.get(f.base + "/materials")).json()).version).toBe(0);
+});
+
+test("a removed literal quote can be inspected but cannot be transferred", async ({
+  page,
+  request
+}) => {
+  const f = await prepareRefresh(page, request, false);
+  const before = await (await request.get(f.graphUrl)).json();
+  await expect(f.review.getByText("Точная цитата отсутствует", { exact: false })).toBeVisible();
+  await expect(
+    f.review.getByRole("button", { name: "Сохранить новую ссылку на источник" })
+  ).toHaveCount(0);
+  expect(await (await request.get(f.graphUrl)).json()).toEqual(before);
+});
+
+test("a concurrent edit rejects citation refresh and retains the reviewed draft without retry", async ({
+  page,
+  request
+}) => {
+  const f = await prepareRefresh(page, request);
+  const location = f.review.getByRole("textbox", { name: "Место в новой версии источника" });
+  await location.fill("Мой просмотренный фрагмент");
+  await f.review.getByRole("checkbox").check();
+  const concurrent = await request.post(f.graphUrl + "/edits", {
+    data: {
+      expected_revision: f.changed.revision,
+      operation: { kind: "rename", title: "Чужая правка названия" }
+    }
+  });
+  expect(concurrent.ok()).toBe(true);
+  let writes = 0;
+  page.on("request", (r) => {
+    if (r.url().endsWith("/edits") && r.method() === "POST") writes++;
+  });
+  const save = f.review.getByRole("button", { name: "Сохранить новую ссылку на источник" });
+  await save.click();
+  await expect(f.review.getByRole("alert")).toContainText("Загрузите граф заново");
+  await expect(save).toBeDisabled();
+  await expect(location).toHaveValue("Мой просмотренный фрагмент");
+  expect(writes).toBe(1);
+  const after = (await (await request.get(f.graphUrl)).json()) as IntelligenceGraphWorkspace;
+  expect(after.title).toBe("Чужая правка названия");
+  expect(
+    after.edges.find((e) => e.verification_status === "discovered")!.evidence_ref.source_version
+  ).toBe(1);
+});
+
+test("a lost refresh reply never repeats the accepted write and reload recovers actual state", async ({
+  page,
+  request
+}) => {
+  const f = await prepareRefresh(page, request);
+  await f.review.getByRole("textbox").fill("Строка 3 после сверки");
+  await f.review.getByRole("checkbox").check();
+  let writes = 0;
+  await page.route("**/intelligence-graphs/*/edits", async (route) => {
+    writes++;
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    await route.abort("connectionfailed");
+  });
+  const save = f.review.getByRole("button", { name: "Сохранить новую ссылку на источник" });
+  await save.click();
+  await expect(f.review.getByRole("alert")).toContainText("Сохранение не подтверждено");
+  await expect(save).toBeDisabled();
+  expect(writes).toBe(1);
+  const after = (await (await request.get(f.graphUrl)).json()) as IntelligenceGraphWorkspace;
+  expect(after.revision).toBe(f.changed.revision + 1);
+  await f.review.getByRole("button", { name: "Загрузить состояние графа", exact: true }).click();
+  await expect(f.review).toHaveCount(0);
+  const panel = page.getByRole("region", { name: "Проверка источников графа", exact: true });
+  await panel.getByRole("button", { name: "Проверить источники", exact: true }).click();
+  await expect(
+    panel.getByText("С цитатами действующих источников: 1.", { exact: false })
+  ).toBeVisible();
+  expect(writes).toBe(1);
+});

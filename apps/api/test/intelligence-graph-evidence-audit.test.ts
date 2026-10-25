@@ -73,6 +73,118 @@ const setup = async () => {
 };
 
 describe("owner-scoped evidence audit HTTP endpoint", () => {
+  it("refreshes an unchanged literal quote to a reviewed source version with CAS and immutable history", async () => {
+    const f = await setup();
+    try {
+      const graphUrl = f.url.replace("/evidence-audit", "");
+      const source = f.graph.nodes.find((n) => n.kind === "Source")!;
+      const firstClaim = f.graph.nodes.find((n) => n.kind === "Claim")!;
+      let graph = f.service.edit("owner-a", "project-a", f.graph.graph_id, 1, {
+        kind: "add_node",
+        node_kind: "Claim",
+        label: "Вторая позиция",
+        detail: "Позиция для связи"
+      });
+      const secondClaim = graph.nodes.find(
+        (n) => n.node_id !== firstClaim.node_id && n.kind === "Claim"
+      )!;
+      const edgeId = f.graph.edges[0]!.edge_id;
+      graph = f.service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+        kind: "revise_edge",
+        edge_id: edgeId,
+        from: { id: firstClaim.node_id, version: 1 },
+        to: { id: secondClaim.node_id, version: 1 }
+      });
+      graph = f.service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+        kind: "cite_edge",
+        edge_id: edgeId,
+        source: { id: source.node_id, version: 1 },
+        location: "Прежнее место",
+        excerpt: "Точная цитата"
+      });
+      const originalRevision = graph.revision;
+      const original = (
+        await f.app.inject({ method: "GET", url: f.url + `?revision=${originalRevision}` })
+      ).json<unknown>();
+      graph = f.service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+        kind: "revise_node",
+        node: { id: source.node_id, version: 1 },
+        label: "Изменённый источник",
+        detail: "Добавленная строка\r\nТочная цитата\r\nНовый контекст"
+      });
+      const latestSource = graph.nodes.find(
+        (n) => n.node_id === source.node_id && n.verification_status === "discovered"
+      )!;
+      const baseRevision = graph.revision;
+      const before = structuredClone(graph);
+      const stale = (
+        await f.app.inject({ method: "GET", url: f.url + `?revision=${baseRevision}` })
+      ).json<{ report: IntelligenceGraphEvidenceAudit }>();
+      expect(stale.report.statistics.with_historical_citations_only).toBe(1);
+      expect(f.service.get("owner-a", "project-a", graph.graph_id)).toEqual(before);
+      const response = await f.app.inject({
+        method: "POST",
+        url: graphUrl + "/edits",
+        payload: {
+          expected_revision: baseRevision,
+          operation: {
+            kind: "cite_edge",
+            edge_id: edgeId,
+            source: { id: latestSource.node_id, version: latestSource.node_version },
+            location: "Новая строка 2",
+            excerpt: "Точная цитата"
+          }
+        }
+      });
+      expect(response.statusCode).toBe(200);
+      const after = f.service.get("owner-a", "project-a", graph.graph_id);
+      expect(after.revision).toBe(baseRevision + 1);
+      const liveEdge = after.edges.find(
+        (e) => e.edge_id === edgeId && e.verification_status === "discovered"
+      )!;
+      expect(liveEdge.evidence_ref).toMatchObject({
+        source_id: source.node_id,
+        source_version: latestSource.node_version,
+        location: "Новая строка 2"
+      });
+      expect(liveEdge.evidence_excerpt).toBe("Точная цитата");
+      expect(
+        after.edges.some(
+          (e) =>
+            e.edge_id === edgeId &&
+            e.verification_status === "superseded" &&
+            e.evidence_ref.source_version === 1
+        )
+      ).toBe(true);
+      const fresh = f.service.auditEvidence("owner-a", "project-a", graph.graph_id, after.revision);
+      expect(fresh.report.statistics).toMatchObject({
+        with_current_citations: 1,
+        with_historical_citations_only: 0
+      });
+      expect(
+        (await f.app.inject({ method: "GET", url: f.url + `?revision=${originalRevision}` })).json()
+      ).toEqual(original);
+      const duplicate = await f.app.inject({
+        method: "POST",
+        url: graphUrl + "/edits",
+        payload: {
+          expected_revision: baseRevision,
+          operation: {
+            kind: "cite_edge",
+            edge_id: edgeId,
+            source: { id: source.node_id, version: latestSource.node_version },
+            location: "Повтор",
+            excerpt: "Точная цитата"
+          }
+        }
+      });
+      expect(duplicate.statusCode).toBe(409);
+      expect(f.service.get("owner-a", "project-a", graph.graph_id)).toEqual(after);
+      expect(f.projects.getMaterials("project-a", "owner-a")!.version).toBe(0);
+    } finally {
+      await f.close();
+    }
+  });
   it("reads the exact saved revision with a reproducible hash and no graph/material writes", async () => {
     const f = await setup();
     try {
