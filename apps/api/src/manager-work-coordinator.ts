@@ -300,11 +300,18 @@ export class ManagerWorkCoordinator {
     ];
     request.routing.fallback_allowed = false;
     request.routing.estimated_input_tokens = estimateInputTokensUpperBound(request.messages);
+    const remainingOutput = work.request.max_output_tokens - work.reserved_output_tokens;
+    const gameReviewReserve =
+      work.request.output_contract?.kind === "game_project" &&
+      stage === "draft" &&
+      work.plan?.needs_critic
+        ? Math.min(request.constraints.max_output_tokens, Math.floor(remainingOutput / 4))
+        : 0;
     request.constraints.max_output_tokens = Math.min(
       work.request.output_contract?.kind === "game_project" && stage === "draft"
         ? 6000
         : request.constraints.max_output_tokens,
-      work.request.max_output_tokens - work.reserved_output_tokens
+      remainingOutput - gameReviewReserve
     );
     if (request.constraints.max_output_tokens < 1) throw new Error("EXECUTION_BUDGET_EXCEEDED");
     return request;

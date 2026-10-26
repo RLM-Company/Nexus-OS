@@ -228,6 +228,27 @@ describe("durable Manager work", () => {
       await f.coordinator.stop();
     }
   });
+  it("retains output budget for a required game source review", async () => {
+    const limits: number[] = [];
+    const f = await fixture({
+      request: { ...request, output_contract: { kind: "game_project" } },
+      plan: { ...defaultPlan, needs_critic: true },
+      draft: { files: GAME_SOURCE_FILES },
+      onCall: (request) => {
+        limits.push(request.constraints.max_output_tokens);
+        return Promise.resolve();
+      }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({
+      status: "completed",
+      model_requests: 3,
+      review: { verdict: "PASS" }
+    });
+    expect(limits).toEqual([1200, 3600, 1200]);
+    expect(limits.reduce((sum, value) => sum + value, 0)).toBe(6000);
+    await f.coordinator.stop();
+  });
   it("rejects incomplete source projects without publishing or retrying", async () => {
     const f = await fixture({
       request: { ...request, output_contract: { kind: "game_project" } },
