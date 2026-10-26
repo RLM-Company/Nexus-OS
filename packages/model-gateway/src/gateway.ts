@@ -6,6 +6,7 @@ import {
   usesTools
 } from "./tool-transcript.js";
 import { ModelRouteError, type ModelRoute, type ModelRouter } from "./router.js";
+import type { RuntimeClock } from "./runtime-clock.js";
 import {
   GatewayRunError,
   type ModelGatewayStreamEvent,
@@ -77,7 +78,8 @@ export class ModelGateway {
     adapters: ModelProviderAdapter[],
     router: ModelRouter,
     fallbackOrder: string[] = [],
-    reliability: Partial<ModelGatewayReliabilityOptions> = {}
+    reliability: Partial<ModelGatewayReliabilityOptions> = {},
+    private readonly runtimeClock?: RuntimeClock
   ) {
     if (new Set(adapters.map((adapter) => adapter.id)).size !== adapters.length) {
       throw new Error("Model provider adapter IDs must be unique");
@@ -108,6 +110,7 @@ export class ModelGateway {
 
   /** Validate the primary registry route without dispatching or touching circuits. */
   assertRoute(request: ModelRequest): void {
+    request = this.runtimeClock?.contextualize(request) ?? request;
     assertToolTranscript(request, request.routing.preferred_provider);
     const resolved = this.#resolveAttempt(request, request.routing.preferred_provider, 0, true);
     if (resolved instanceof GatewayRunError) throw resolved;
@@ -117,6 +120,7 @@ export class ModelGateway {
     request: ModelRequest,
     externalSignal?: AbortSignal
   ): AsyncGenerator<ModelGatewayStreamEvent> {
+    request = this.runtimeClock?.contextualize(request) ?? request;
     const toolNames = assertToolTranscript(request, request.routing.preferred_provider);
     const previousToolIds = new Set(
       request.messages.flatMap((message) => message.tool_calls?.map((call) => call.id) ?? [])
@@ -143,6 +147,7 @@ export class ModelGateway {
         routeAttempt++
       ) {
         const route: ModelRouteAttempt = { ...resolved.route, attempt: attempt++ };
+        request = this.runtimeClock?.contextualize(request) ?? request;
         yield { type: "route.selected", route };
 
         const circuitAccess = this.#acquireCircuit(circuitKey);

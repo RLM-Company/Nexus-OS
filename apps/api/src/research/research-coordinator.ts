@@ -11,6 +11,7 @@ import { ResearchNetworkError, ResearchPageReader } from "./page-reader.js";
 import type { ResearchStore } from "./research-store.js";
 import type { ResearchSynthesis } from "./research-synthesis.js";
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 
 export interface ResearchStopGate {
   getProcessStop(): unknown;
@@ -25,7 +26,7 @@ export class ResearchCoordinator {
     private readonly search: Pick<WebSearch, "search" | "configured">,
     private readonly reader = new ResearchPageReader(),
     private readonly stopGate?: ResearchStopGate,
-    private readonly clock: () => number = Date.now,
+    private readonly clock: () => number = () => performance.now(),
     private readonly policyAllows: (run: ResearchRun) => boolean = () => false,
     private readonly synthesis?: ResearchSynthesis
   ) {}

@@ -1,4 +1,5 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
+import { RuntimeClock } from "@cosmora/model-gateway";
 import {
   AgentBlueprintStore,
   DocumentLibraryStore,
@@ -117,6 +118,7 @@ try {
   const accountStore = new AccountStore(database.sqlite);
   const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
   const modelRuntime = await buildModelRuntime(config, {
+    clock: new RuntimeClock({ timeZone: process.env.KOSMORA_TIME_ZONE ?? "Europe/Moscow" }),
     secretResolver: new EnvironmentSecretResolver()
   });
   const projectStore = new ManagerRuntimeProjectStore(database.sqlite);
@@ -182,6 +184,7 @@ try {
   });
   const githubDraftStore = new GithubDraftStore(database.sqlite);
   const codeAgentService = new CodeAgentService({
+    clock: modelRuntime.clock,
     store: new CodeAgentStore(database.sqlite),
     github: githubIntegration,
     drafts: githubDraftStore,
@@ -247,6 +250,7 @@ try {
   ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
   ownerPrivacy.register(intelligenceGraphPrivacyAdapter(graphRepository));
   app = buildApp({
+    runtimeClock: modelRuntime.clock,
     intelligenceGraphWorkspace: {
       enabled: process.env.KOSMORA_GRAPH_WORKSPACE_ENABLED === "true",
       service: graphService
