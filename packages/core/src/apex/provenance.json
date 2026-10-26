@@ -1,0 +1,9 @@
+{
+  "source_pr": 390,
+  "source_revision": "201b3b6192d14387785d2e27e96b64d5fa0d1f70",
+  "hardened_parent": "1bdb6dcaece247df363002a90037f2129a70f805",
+  "imported_core_files": 495,
+  "descriptors": 512,
+  "legacy_http_and_ui_imported": false,
+  "original_core_barrel_preserved": true
+}

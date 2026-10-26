@@ -1,5 +1,6 @@
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
+import { registerApexRoutes } from "./apex-routes.js";
 import { RuntimeClock } from "@cosmora/model-gateway";
 import { ContextTooLargeError } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
@@ -769,6 +770,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   }
   if (dependencies.registration) registerRegistrationRoutes(app, dependencies.registration);
   registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
+  if(dependencies.projectStore)registerApexRoutes(app,dependencies.projectStore,identityFor);
 
   app.get(
     "/api/v1/health",

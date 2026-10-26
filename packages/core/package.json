@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./apex": {
+      "development": "./src/apex/index.ts",
+      "types": "./src/apex/index.ts",
+      "default": "./dist/apex/index.js"
+    },
     ".": {
       "development": "./src/index.ts",
       "types": "./src/index.ts",

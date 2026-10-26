@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./apex": {
+      "development": "./src/apex.ts",
+      "types": "./src/apex.ts",
+      "default": "./dist/apex.js"
+    },
     "./game-project": {
       "development": "./src/game-project.ts",
       "types": "./src/game-project.ts",
