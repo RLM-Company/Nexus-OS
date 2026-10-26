@@ -5,9 +5,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type {
   ActiveAgentWorkerRecord,
-  KosmoraDagPlan,
-  KosmoraDagTaskNode,
-  KosmoraCitation,
   AutonomyLevel,
   CriticVerdictMetadata,
   GraphExecutionCheckpoint,
@@ -99,7 +96,8 @@ export const DEFAULT_SQUAD_PRESETS: SquadPreset[] = [
   {
     preset_id: "squad-research-content",
     name: "Ресерчер + Копирайтер + Дизайнер + Критик",
-    description: "Глубокое исследование, подготовка аналитического отчёта и презентации на Canvas",
+    description:
+      "Глубокое исследование, подготовка аналитического отчёта и презентации на Canvas",
     roles: ["manager", "researcher", "copywriter", "designer", "critic"],
     default_autonomy_tier: "L3",
     critic_strictness: "standard"
@@ -107,7 +105,8 @@ export const DEFAULT_SQUAD_PRESETS: SquadPreset[] = [
   {
     preset_id: "squad-architecture-redteam",
     name: "Архитектор + Адвокат дьявола + Критик",
-    description: "Стресс-тестирование архитектуры и бизнес-плана на уязвимости и узкие места",
+    description:
+      "Стресс-тестирование архитектуры и бизнес-плана на уязвимости и узкие места",
     roles: ["manager", "architect", "devils_advocate", "critic"],
     default_autonomy_tier: "L4",
     critic_strictness: "production_grade"
@@ -136,10 +135,16 @@ export interface KosmoraEvent<T = unknown> {
 }
 
 export class KosmoraEventBus {
-  private readonly listeners = new Map<KosmoraEventType | "*", Array<(ev: KosmoraEvent) => void>>();
+  private readonly listeners = new Map<
+    KosmoraEventType | "*",
+    Array<(ev: KosmoraEvent) => void>
+  >();
   private readonly history: KosmoraEvent[] = [];
 
-  public subscribe(type: KosmoraEventType | "*", handler: (ev: KosmoraEvent) => void): () => void {
+  public subscribe(
+    type: KosmoraEventType | "*",
+    handler: (ev: KosmoraEvent) => void
+  ): () => void {
     const list = this.listeners.get(type) ?? [];
     list.push(handler);
     this.listeners.set(type, list);
@@ -183,7 +188,10 @@ export class DynamicLlmRouter {
     complexity: "simple" | "moderate" | "complex";
     tokenBudgetRemaining: number;
   }): ModelRouteSelection {
-    if (!Number.isFinite(params.tokenBudgetRemaining) || params.tokenBudgetRemaining < 0) {
+    if (
+      !Number.isFinite(params.tokenBudgetRemaining) ||
+      params.tokenBudgetRemaining < 0
+    ) {
       throw new Error("tokenBudgetRemaining must be a non-negative finite number.");
     }
     if (
@@ -240,7 +248,10 @@ export class KosmoraAutonomyEngine {
       idempotent_replay: boolean;
     }
   >();
-  private readonly toolCallCache = new Map<string, { output: unknown; cached_at: string }>();
+  private readonly toolCallCache = new Map<
+    string,
+    { output: unknown; cached_at: string }
+  >();
   private readonly rolePrompts = new Map<
     ManagerRuntimeRole,
     { version: string; system_prompt: string }
@@ -267,16 +278,21 @@ export class KosmoraAutonomyEngine {
         "Ты — Агент-Исследователь. Собирай проверяемые факты с точными ссылками на источники.",
       analyst:
         "Ты — Системный Аналитик. Строй таблицы, модели и выводы с привязкой к первичным данным.",
-      coder: "Ты — Инженер-Разработчик. Пиши типизированный, чистый код без заглушек и с тестами.",
+      coder:
+        "Ты — Инженер-Разработчик. Пиши типизированный, чистый код без заглушек и с тестами.",
       qa: "Ты — QA-Инженер. Проверяй граничные случаи, контракты ввода-вывода и регрессии.",
-      copywriter: "Ты — Редактор отчётов. Формируй структурированные документы для Kosmora Canvas.",
-      designer: "Ты — Дизайнер презентаций и диаграмм. Проектируй визуально чистые слайды и схемы.",
+      copywriter:
+        "Ты — Редактор отчётов. Формируй структурированные документы для Kosmora Canvas.",
+      designer:
+        "Ты — Дизайнер презентаций и диаграмм. Проектируй визуально чистые слайды и схемы.",
       devils_advocate:
         "Ты — Адвокат дьявола (Red Team). Ищи скрытые риски, слабые места и ошибочные допущения в плане.",
       critic:
         "Ты — Агент-Критик Kosmora. Проверяй артефакты на полноту, точность, безопасность и соответствие ТЗ."
     };
-    for (const [role, prompt] of Object.entries(defaults) as Array<[ManagerRuntimeRole, string]>) {
+    for (const [role, prompt] of Object.entries(defaults) as Array<
+      [ManagerRuntimeRole, string]
+    >) {
       this.rolePrompts.set(role, { version: "v1.0", system_prompt: prompt });
     }
   }
@@ -296,7 +312,10 @@ export class KosmoraAutonomyEngine {
     if (!params.project_id.trim() || !params.graph_id.trim() || !params.task_id.trim()) {
       throw new Error("project_id, graph_id, and task_id are required.");
     }
-    if (!Number.isFinite(params.token_budget_remaining) || params.token_budget_remaining < 0) {
+    if (
+      !Number.isFinite(params.token_budget_remaining) ||
+      params.token_budget_remaining < 0
+    ) {
       throw new Error("token_budget_remaining must be a non-negative finite number.");
     }
     const policy = AUTONOMY_TIER_POLICY_MAP[params.autonomy_tier];
@@ -362,14 +381,21 @@ export class KosmoraAutonomyEngine {
     nodes: Array<
       Omit<
         RuntimeTaskNode,
-        "project_id" | "status" | "output_artifact_ids" | "iteration_count" | "tokens_consumed"
+        | "project_id"
+        | "status"
+        | "output_artifact_ids"
+        | "iteration_count"
+        | "tokens_consumed"
       >
     >;
   }): RuntimeTaskGraph {
     if (!params.graph_id.trim() || !params.project_id.trim()) {
       throw new Error("graph_id and project_id must be non-empty.");
     }
-    if (!Number.isFinite(params.total_token_budget) || params.total_token_budget <= 0) {
+    if (
+      !Number.isFinite(params.total_token_budget) ||
+      params.total_token_budget <= 0
+    ) {
       throw new Error("total_token_budget must be a positive finite integer.");
     }
     if (params.nodes.length === 0) {
@@ -450,7 +476,9 @@ export class KosmoraAutonomyEngine {
       visiting.add(taskId);
       for (const depId of node.depends_on) {
         if (!nodeMap.has(depId)) {
-          throw new Error(`Task ${taskId} depends on non-existent task node: ${depId}`);
+          throw new Error(
+            `Task ${taskId} depends on non-existent task node: ${depId}`
+          );
         }
         visit(depId);
       }
@@ -475,7 +503,9 @@ export class KosmoraAutonomyEngine {
           const failedOrCancelledDep = node.depends_on.find((depId) => {
             const dep = nodeMap.get(depId);
             return (
-              dep?.status === "failed" || dep?.status === "cancelled" || dep?.status === "blocked"
+              dep?.status === "failed" ||
+              dep?.status === "cancelled" ||
+              dep?.status === "blocked"
             );
           });
           if (failedOrCancelledDep) {
@@ -496,7 +526,10 @@ export class KosmoraAutonomyEngine {
     }
   }
 
-  public getReadyTaskBatch(graphId: string, maxParallelismOverride?: number): RuntimeTaskNode[] {
+  public getReadyTaskBatch(
+    graphId: string,
+    maxParallelismOverride?: number
+  ): RuntimeTaskNode[] {
     const graph = this.getGraphOrThrow(graphId);
     this.propagateDependencyStates(graph);
     const policy = AUTONOMY_TIER_POLICY_MAP[graph.autonomy_tier];
@@ -554,7 +587,9 @@ export class KosmoraAutonomyEngine {
   }
 
   public requestHitlApproval(
-    paramsOrPlan: { graph_id: string; task_id: string; action_kind: string } | KosmoraDagPlan,
+    paramsOrPlan:
+      | { graph_id: string; task_id: string; action_kind: string }
+      | KosmoraDagPlan,
     nodeId?: string,
     actionScope?: string
   ): HitlApprovalRequest & { approval_token: string } {
@@ -726,7 +761,9 @@ export class KosmoraAutonomyEngine {
 
     const now = new Date().toISOString();
     const rolePrompt = this.getRolePrompt(params.producer_role);
-    const contentSha256 = createHash("sha256").update(params.content, "utf8").digest("hex");
+    const contentSha256 = createHash("sha256")
+      .update(params.content, "utf8")
+      .digest("hex");
 
     const artifact: RuntimeArtifact = {
       artifact_id: params.artifact_id,
@@ -808,7 +845,9 @@ export class KosmoraAutonomyEngine {
         checked++;
         const artifact = this.artifacts.get(artId);
         if (!artifact) {
-          errors.push(`Task ${node.task_id} references missing output artifact ${artId}`);
+          errors.push(
+            `Task ${node.task_id} references missing output artifact ${artId}`
+          );
           continue;
         }
         if (artifact.task_id !== node.task_id) {
@@ -826,25 +865,37 @@ export class KosmoraAutonomyEngine {
             `Artifact ${artId} provenance points to unknown task ${artifact.provenance.task_id}`
           );
         }
-        if (!artifact.provenance.prompt_hash || !artifact.provenance.model_route_id) {
+        if (
+          !artifact.provenance.prompt_hash ||
+          !artifact.provenance.model_route_id
+        ) {
           errors.push(`Artifact ${artId} has incomplete provenance metadata`);
         }
-        const recomputedHash = createHash("sha256").update(artifact.content, "utf8").digest("hex");
+        const recomputedHash = createHash("sha256")
+          .update(artifact.content, "utf8")
+          .digest("hex");
         if (
           artifact.provenance.content_sha256 &&
           artifact.provenance.content_sha256 !== recomputedHash
         ) {
-          errors.push(`Artifact ${artId} content SHA-256 mismatch (tampered payload)`);
+          errors.push(
+            `Artifact ${artId} content SHA-256 mismatch (tampered payload)`
+          );
         }
         for (const parentArtId of artifact.provenance.source_artifact_ids) {
           if (parentArtId === artId) {
             errors.push(`Artifact ${artId} has self-referential provenance cycle`);
           }
           if (!this.artifacts.has(parentArtId)) {
-            errors.push(`Artifact ${artId} references non-existent parent artifact ${parentArtId}`);
+            errors.push(
+              `Artifact ${artId} references non-existent parent artifact ${parentArtId}`
+            );
           }
         }
-        if (requireCriticApproval && artifact.critic_verdict?.status !== "Approved") {
+        if (
+          requireCriticApproval &&
+          artifact.critic_verdict?.status !== "Approved"
+        ) {
           errors.push(
             `Artifact ${artId} lacks Approved critic verdict (current: ${artifact.critic_verdict?.status ?? "none"})`
           );
@@ -868,7 +919,9 @@ export class KosmoraAutonomyEngine {
   }): CriticVerdictMetadata {
     const artifact = this.artifacts.get(params.artifact_id);
     if (!artifact) {
-      throw new Error(`Artifact ${params.artifact_id} not found for Critic review.`);
+      throw new Error(
+        `Artifact ${params.artifact_id} not found for Critic review.`
+      );
     }
 
     const threshold =
@@ -929,7 +982,10 @@ export class KosmoraAutonomyEngine {
     if (!Number.isFinite(params.tokens_used) || params.tokens_used < 0) {
       throw new Error("tokens_used must be a non-negative finite number.");
     }
-    if (!Number.isFinite(params.simulated_duration_ms) || params.simulated_duration_ms < 0) {
+    if (
+      !Number.isFinite(params.simulated_duration_ms) ||
+      params.simulated_duration_ms < 0
+    ) {
       throw new Error("simulated_duration_ms must be a non-negative finite number.");
     }
 
@@ -1078,7 +1134,11 @@ export class KosmoraAutonomyEngine {
     graph.updated_at = new Date().toISOString();
 
     this.persistence?.saveGraph(graph);
-    this.saveCheckpoint(graph.graph_id, node.task_id, `Completed task ${node.task_id}`);
+    this.saveCheckpoint(
+      graph.graph_id,
+      node.task_id,
+      `Completed task ${node.task_id}`
+    );
 
     const outcome = {
       status: node.status,
@@ -1138,7 +1198,9 @@ export class KosmoraAutonomyEngine {
   ): GraphExecutionCheckpoint {
     const graph = this.getGraphOrThrow(graphId);
     const list = this.checkpoints.get(graphId) ?? [];
-    const graphArtifacts = [...this.artifacts.values()].filter((a) => a.graph_id === graphId);
+    const graphArtifacts = [...this.artifacts.values()].filter(
+      (a) => a.graph_id === graphId
+    );
     const checkpoint: GraphExecutionCheckpoint = {
       checkpoint_id: `ckpt_${graphId}_step_${list.length + 1}`,
       graph_id: graphId,
@@ -1156,7 +1218,10 @@ export class KosmoraAutonomyEngine {
     return checkpoint;
   }
 
-  public rollbackToCheckpoint(graphId: string, stepsBack = 1): GraphExecutionCheckpoint {
+  public rollbackToCheckpoint(
+    graphId: string,
+    stepsBack = 1
+  ): GraphExecutionCheckpoint {
     const list = this.checkpoints.get(graphId) ?? [];
     if (list.length === 0) {
       throw new Error(`No checkpoints available for graph ${graphId}`);
@@ -1243,7 +1308,9 @@ export class KosmoraAutonomyEngine {
       .map((c) => ({
         ...c,
         weighted_score: Number(
-          (c.confidence_score * 0.7 + Math.min(c.evidence_count, 10) * 0.03).toFixed(4)
+          (c.confidence_score * 0.7 + Math.min(c.evidence_count, 10) * 0.03).toFixed(
+            4
+          )
         )
       }))
       .sort((a, b) => b.weighted_score - a.weighted_score);
@@ -1310,11 +1377,13 @@ export class KosmoraAutonomyEngine {
     const downstream = graph.nodes
       .filter(
         (n) =>
-          n.depends_on.includes(failedNode.task_id) || n.blocked_by_task_id === failedNode.task_id
+          n.depends_on.includes(failedNode.task_id) ||
+          n.blocked_by_task_id === failedNode.task_id
       )
       .map((n) => n.task_id);
     const ckpts = this.checkpoints.get(graph.graph_id) ?? [];
-    const lastCheckpoint = ckpts.length > 0 ? ckpts[ckpts.length - 1]!.checkpoint_id : undefined;
+    const lastCheckpoint =
+      ckpts.length > 0 ? ckpts[ckpts.length - 1]!.checkpoint_id : undefined;
 
     const report: TaskGraphPostMortem = {
       report_id: `pm_${graph.graph_id}_${failedNode.task_id}`,
@@ -1323,7 +1392,9 @@ export class KosmoraAutonomyEngine {
       failure_category: category,
       root_cause_summary: rootCauseSummary,
       affected_downstream_tasks: downstream,
-      ...(lastCheckpoint ? { recommended_recovery_checkpoint_id: lastCheckpoint } : {}),
+      ...(lastCheckpoint
+        ? { recommended_recovery_checkpoint_id: lastCheckpoint }
+        : {}),
       mitigation_steps: [
         "Откатить состояние графа к последнему валидному чекпоинту (rollbackToCheckpoint).",
         "Проверить бюджет токенов и входные артефакты упавшего узла.",
@@ -1391,7 +1462,8 @@ export class KosmoraAutonomyEngine {
       assumption,
       counter_argument: `Стресс-тест допущения #${idx + 1} («${assumption}»): требуется резервный план на случай отказа внешнего контура или роста задержки в 3x.`,
       severity: (idx === 0 && params.assumptions.length > 3 ? "high" : "medium") as
-        "medium" | "high"
+        | "medium"
+        | "high"
     }));
     return {
       challenge_id: `da_${Date.now()}`,
@@ -1401,7 +1473,9 @@ export class KosmoraAutonomyEngine {
     };
   }
 
-  public upsertWorkerStatus(worker: ActiveAgentWorkerRecord): ActiveAgentWorkerRecord {
+  public upsertWorkerStatus(
+    worker: ActiveAgentWorkerRecord
+  ): ActiveAgentWorkerRecord {
     this.activeWorkers.set(worker.instance_id, { ...worker });
     return { ...worker };
   }
@@ -1450,7 +1524,13 @@ export class KosmoraAutonomyEngine {
       node_id: string;
       title: string;
       agent_role:
-        "planner" | "researcher" | "coder" | "analyst" | "critic" | "verifier" | "synthesizer";
+        | "planner"
+        | "researcher"
+        | "coder"
+        | "analyst"
+        | "critic"
+        | "verifier"
+        | "synthesizer";
       dependencies: string[];
       estimated_tokens: number;
       estimated_cost_usd: number;
@@ -1461,7 +1541,7 @@ export class KosmoraAutonomyEngine {
     if (!params.tasks || params.tasks.length === 0) {
       throw new Error("Cannot compile an empty DAG plan");
     }
-    const nodeMap = new Map<string, (typeof params.tasks)[number]>();
+    const nodeMap = new Map<string, typeof params.tasks[number]>();
     for (const t of params.tasks) {
       if (nodeMap.has(t.node_id)) {
         throw new Error(`Duplicate task node_id '${t.node_id}' in plan`);
@@ -1486,7 +1566,9 @@ export class KosmoraAutonomyEngine {
       visiting.add(id);
       for (const depId of node.dependencies) {
         if (!nodeMap.has(depId)) {
-          throw new Error(`Node '${id}' depends on non-existent dependency '${depId}'`);
+          throw new Error(
+            `Node '${id}' depends on non-existent dependency '${depId}'`
+          );
         }
         visit(depId);
       }
@@ -1510,10 +1592,11 @@ export class KosmoraAutonomyEngine {
       actual_tokens: 0,
       actual_cost_usd: 0,
       requires_hitl: Boolean(t.requires_hitl),
-      ...(t.hitl_action_scope ? { hitl_action_scope: t.hitl_action_scope } : {}),
+      hitl_action_scope: t.hitl_action_scope,
       human_approved: false,
-      status:
-        t.dependencies.length === 0 ? (t.requires_hitl ? "awaiting_hitl" : "ready") : "pending",
+      status: t.dependencies.length === 0
+        ? (t.requires_hitl ? "awaiting_hitl" : "ready")
+        : "pending",
       citations: []
     }));
 
@@ -1546,19 +1629,12 @@ export class KosmoraAutonomyEngine {
     while (changed) {
       changed = false;
       for (const node of plan.nodes) {
-        if (
-          node.status === "succeeded" ||
-          node.status === "failed" ||
-          node.status === "cancelled" ||
-          node.status === "blocked"
-        ) {
+        if (node.status === "succeeded" || node.status === "failed" || node.status === "cancelled" || node.status === "blocked") {
           continue;
         }
         const badDep = node.dependencies.find((depId) => {
           const dep = nodeMap.get(depId);
-          return (
-            dep?.status === "failed" || dep?.status === "cancelled" || dep?.status === "blocked"
-          );
+          return dep?.status === "failed" || dep?.status === "cancelled" || dep?.status === "blocked";
         });
         if (badDep) {
           node.status = "blocked";
@@ -1627,7 +1703,9 @@ export class KosmoraAutonomyEngine {
     node.actual_tokens = Math.max(0, result.actual_tokens);
     node.actual_cost_usd = Math.max(0, result.actual_cost_usd);
     plan.consumed_tokens += node.actual_tokens;
-    plan.consumed_cost_usd = Number((plan.consumed_cost_usd + node.actual_cost_usd).toFixed(4));
+    plan.consumed_cost_usd = Number(
+      (plan.consumed_cost_usd + node.actual_cost_usd).toFixed(4)
+    );
 
     if (result.succeeded) {
       node.status = "succeeded";

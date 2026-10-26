@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage2CanvasKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F046_FEATURE_ID = "F046" as const;
 export const F046_STAGE = "stage2-canvas" as const;
@@ -21,42 +29,20 @@ export type F046CanvasSplitViewExecutionStatus =
   | "cancelled"
   | "failed";
 
-export interface F046CanvasSplitViewConfig {
-  readonly featureId: typeof F046_FEATURE_ID;
-  readonly stage: typeof F046_STAGE;
-  readonly operationCode: typeof F046_OPERATION_CODE;
-  readonly contractVersion: typeof F046_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F046CanvasSplitViewConfig = BaseFeatureConfig<
+  typeof F046_FEATURE_ID,
+  typeof F046_STAGE,
+  typeof F046_OPERATION_CODE
+>;
 
-export interface F046CanvasSplitViewInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F046CanvasSplitViewInput extends BaseFeatureInput {
   readonly left_tab_id: string;
   readonly right_tab_id: string | number;
   readonly synchronized_scroll: string | number | boolean | readonly string[];
   readonly viewport_ratio: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F046CanvasSplitViewAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F046_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F046CanvasSplitViewAuditEntry = BaseFeatureAuditEntry<typeof F046_FEATURE_ID>;
 
 export interface F046CanvasSplitViewOutput {
   readonly featureId: typeof F046_FEATURE_ID;
@@ -76,14 +62,7 @@ export interface F046CanvasSplitViewOutput {
   readonly auditRecord: F046CanvasSplitViewAuditEntry;
 }
 
-export interface F046CanvasSplitViewTelemetrySnapshot {
-  readonly featureId: typeof F046_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F046CanvasSplitViewTelemetrySnapshot = BaseFeatureTelemetry<typeof F046_FEATURE_ID>;
 
 export const DEFAULT_F046_CONFIG: F046CanvasSplitViewConfig = {
   featureId: F046_FEATURE_ID,
@@ -112,195 +91,22 @@ export function computeF046Digest(rawPayload: string): string {
   return `f046_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F046CanvasSplitViewEngine {
-  private readonly config: F046CanvasSplitViewConfig;
-  private readonly kernel: Stage2CanvasKernel;
-  private readonly executionHistory: F046CanvasSplitViewOutput[] = [];
-  private readonly auditLog: F046CanvasSplitViewAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F046CanvasSplitViewOutput }>();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
+export class F046CanvasSplitViewEngine extends KosmoraFeatureAdapterBase<
+  typeof F046_FEATURE_ID,
+  typeof F046_STAGE,
+  typeof F046_OPERATION_CODE,
+  F046CanvasSplitViewConfig,
+  F046CanvasSplitViewInput,
+  F046CanvasSplitViewOutput
+> {
   constructor(customConfig?: Partial<F046CanvasSplitViewConfig>, kernel?: Stage2CanvasKernel) {
-    this.config = {
-      ...DEFAULT_F046_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage2CanvasKernel();
-  }
-
-  public getConfig(): F046CanvasSplitViewConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F046CanvasSplitViewInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F046CanvasSplitViewValidationError("requestId", "Request ID must be a non-empty string.");
-    }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F046CanvasSplitViewValidationError("projectId", "Project ID must be a non-empty string.");
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F046CanvasSplitViewValidationError("workspaceId", "Workspace ID must be a non-empty string.");
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F046CanvasSplitViewValidationError("tenantId", "Tenant ID must be a non-empty string.");
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F046CanvasSplitViewValidationError("actorId", "Actor ID must be a non-empty string.");
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F046CanvasSplitViewValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
-    }
-    if (this.config.strictValidation && String(input.left_tab_id).trim().length === 0) {
-      throw new F046CanvasSplitViewValidationError("left_tab_id", "Primary domain attribute 'left_tab_id' cannot be empty.");
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      left_tab_id: input.left_tab_id,
-      right_tab_id: input.right_tab_id,
-      synchronized_scroll: input.synchronized_scroll,
-      viewport_ratio: input.viewport_ratio
-    })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F046CanvasSplitViewValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
-      }
-    }
-  }
-
-  public execute(input: F046CanvasSplitViewInput): F046CanvasSplitViewOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F046_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        left_tab_id: input.left_tab_id,
-        right_tab_id: input.right_tab_id,
-        synchronized_scroll: input.synchronized_scroll,
-        viewport_ratio: input.viewport_ratio
-      });
-      const payloadHash = computeF046Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F046CanvasSplitViewValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F046_FEATURE_ID,
-        operationCode: F046_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          left_tab_id: input.left_tab_id,
-          right_tab_id: input.right_tab_id,
-          synchronized_scroll: input.synchronized_scroll,
-          viewport_ratio: input.viewport_ratio
-        }
-      });
-
-      const executionId = `exec_f046_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f046_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F046CanvasSplitViewAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F046_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `split_view_comparer:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F046CanvasSplitViewOutput = {
-        featureId: F046_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F046_OPERATION_CODE,
-        resolved_left_tab_id: kernelResult.resolvedFields.left_tab_id as string,
-        resolved_right_tab_id: kernelResult.resolvedFields.right_tab_id as string | number,
-        resolved_synchronized_scroll: kernelResult.resolvedFields.synchronized_scroll as string | number | boolean | readonly string[],
-        resolved_viewport_ratio: kernelResult.resolvedFields.viewport_ratio as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
-  }
-
-  public getTelemetrySnapshot(): F046CanvasSplitViewTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F046_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F046CanvasSplitViewAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F046CanvasSplitViewOutput[] {
-    return [...this.executionHistory];
+    super(
+      DEFAULT_F046_CONFIG,
+      customConfig,
+      kernel ?? new Stage2CanvasKernel(),
+      ["left_tab_id", "right_tab_id", "synchronized_scroll", "viewport_ratio"] as const,
+      F046CanvasSplitViewValidationError
+    );
   }
 }
 

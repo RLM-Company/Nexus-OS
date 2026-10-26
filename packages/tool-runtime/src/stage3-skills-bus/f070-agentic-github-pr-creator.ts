@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage3SkillsKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F070_FEATURE_ID = "F070" as const;
 export const F070_STAGE = "stage3-skills-bus" as const;
@@ -13,44 +21,28 @@ export const F070_OPERATION_CODE = "github_pr_automator" as const;
 export const F070_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F070AgenticGithubPrCreatorExecutionStatus =
-  "idle" | "validating" | "executing" | "completed" | "degraded" | "cancelled" | "failed";
+  | "idle"
+  | "validating"
+  | "executing"
+  | "completed"
+  | "degraded"
+  | "cancelled"
+  | "failed";
 
-export interface F070AgenticGithubPrCreatorConfig {
-  readonly featureId: typeof F070_FEATURE_ID;
-  readonly stage: typeof F070_STAGE;
-  readonly operationCode: typeof F070_OPERATION_CODE;
-  readonly contractVersion: typeof F070_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F070AgenticGithubPrCreatorConfig = BaseFeatureConfig<
+  typeof F070_FEATURE_ID,
+  typeof F070_STAGE,
+  typeof F070_OPERATION_CODE
+>;
 
-export interface F070AgenticGithubPrCreatorInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F070AgenticGithubPrCreatorInput extends BaseFeatureInput {
   readonly repo_name: string;
   readonly head_branch: string | number;
   readonly base_branch: string | number | boolean | readonly string[];
   readonly pr_body_markdown: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F070AgenticGithubPrCreatorAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F070_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F070AgenticGithubPrCreatorAuditEntry = BaseFeatureAuditEntry<typeof F070_FEATURE_ID>;
 
 export interface F070AgenticGithubPrCreatorOutput {
   readonly featureId: typeof F070_FEATURE_ID;
@@ -70,14 +62,7 @@ export interface F070AgenticGithubPrCreatorOutput {
   readonly auditRecord: F070AgenticGithubPrCreatorAuditEntry;
 }
 
-export interface F070AgenticGithubPrCreatorTelemetrySnapshot {
-  readonly featureId: typeof F070_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F070AgenticGithubPrCreatorTelemetrySnapshot = BaseFeatureTelemetry<typeof F070_FEATURE_ID>;
 
 export const DEFAULT_F070_CONFIG: F070AgenticGithubPrCreatorConfig = {
   featureId: F070_FEATURE_ID,
@@ -106,130 +91,22 @@ export function computeF070Digest(rawPayload: string): string {
   return `f070_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F070AgenticGithubPrCreatorEngine {
-  private readonly config: F070AgenticGithubPrCreatorConfig;
-  private readonly kernel: Stage3SkillsKernel;
-  private readonly executionHistory: F070AgenticGithubPrCreatorOutput[] = [];
-  private readonly auditLog: F070AgenticGithubPrCreatorAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<
-    string,
-    { payloadHash: string; output: F070AgenticGithubPrCreatorOutput }
-  >();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
-  constructor(
-    customConfig?: Partial<F070AgenticGithubPrCreatorConfig>,
-    kernel?: Stage3SkillsKernel
-  ) {
-    this.config = {
-      ...DEFAULT_F070_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage3SkillsKernel();
-  }
-
-  public getConfig(): F070AgenticGithubPrCreatorConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F070AgenticGithubPrCreatorInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError(
-        "requestId",
-        "Request ID must be a non-empty string."
-      );
-    }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError(
-        "projectId",
-        "Project ID must be a non-empty string."
-      );
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError(
-        "workspaceId",
-        "Workspace ID must be a non-empty string."
-      );
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError(
-        "tenantId",
-        "Tenant ID must be a non-empty string."
-      );
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError(
-        "actorId",
-        "Actor ID must be a non-empty string."
-      );
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F070AgenticGithubPrCreatorValidationError(
-        "requestId",
-        `Request '${input.requestId}' has been cancelled.`
-      );
-    }
-    if (this.config.strictValidation && String(input.repo_name).trim().length === 0) {
-      throw new F070AgenticGithubPrCreatorValidationError(
-        "repo_name",
-        "Primary domain attribute 'repo_name' cannot be empty."
-      );
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      repo_name: input.repo_name,
-      head_branch: input.head_branch,
-      base_branch: input.base_branch,
-      pr_body_markdown: input.pr_body_markdown
-    })) {
-      if (
-        typeof fieldVal === "number" &&
-        (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)
-      ) {
-        throw new F070AgenticGithubPrCreatorValidationError(
-          fieldKey,
-          `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`
-        );
-      }
-    }
-  }
-
-  public execute(input: F070AgenticGithubPrCreatorInput): F070AgenticGithubPrCreatorOutput {
-    this.validateInput(input);
-    throw new Error("GITHUB_FEATURE_NOT_CONNECTED: prototype has no verified domain adapter");
-  }
-
-  public getTelemetrySnapshot(): F070AgenticGithubPrCreatorTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F070_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F070AgenticGithubPrCreatorAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F070AgenticGithubPrCreatorOutput[] {
-    return [...this.executionHistory];
+export class F070AgenticGithubPrCreatorEngine extends KosmoraFeatureAdapterBase<
+  typeof F070_FEATURE_ID,
+  typeof F070_STAGE,
+  typeof F070_OPERATION_CODE,
+  F070AgenticGithubPrCreatorConfig,
+  F070AgenticGithubPrCreatorInput,
+  F070AgenticGithubPrCreatorOutput
+> {
+  constructor(customConfig?: Partial<F070AgenticGithubPrCreatorConfig>, kernel?: Stage3SkillsKernel) {
+    super(
+      DEFAULT_F070_CONFIG,
+      customConfig,
+      kernel ?? new Stage3SkillsKernel(),
+      ["repo_name", "head_branch", "base_branch", "pr_body_markdown"] as const,
+      F070AgenticGithubPrCreatorValidationError
+    );
   }
 }
 

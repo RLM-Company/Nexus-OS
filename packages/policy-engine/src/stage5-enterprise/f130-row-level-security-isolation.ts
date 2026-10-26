@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage5EnterpriseKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F130_FEATURE_ID = "F130" as const;
 export const F130_STAGE = "stage5-enterprise" as const;
@@ -13,44 +21,28 @@ export const F130_OPERATION_CODE = "rls_tenant_guard" as const;
 export const F130_CONTRACT_VERSION = "2.0.0" as const;
 
 export type F130RowLevelSecurityIsolationExecutionStatus =
-  "idle" | "validating" | "executing" | "completed" | "degraded" | "cancelled" | "failed";
+  | "idle"
+  | "validating"
+  | "executing"
+  | "completed"
+  | "degraded"
+  | "cancelled"
+  | "failed";
 
-export interface F130RowLevelSecurityIsolationConfig {
-  readonly featureId: typeof F130_FEATURE_ID;
-  readonly stage: typeof F130_STAGE;
-  readonly operationCode: typeof F130_OPERATION_CODE;
-  readonly contractVersion: typeof F130_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F130RowLevelSecurityIsolationConfig = BaseFeatureConfig<
+  typeof F130_FEATURE_ID,
+  typeof F130_STAGE,
+  typeof F130_OPERATION_CODE
+>;
 
-export interface F130RowLevelSecurityIsolationInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F130RowLevelSecurityIsolationInput extends BaseFeatureInput {
   readonly requesting_tenant_id: string;
   readonly row_tenant_id: string | number;
   readonly access_granted: string | number | boolean | readonly string[];
   readonly policy_enforcement: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F130RowLevelSecurityIsolationAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F130_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F130RowLevelSecurityIsolationAuditEntry = BaseFeatureAuditEntry<typeof F130_FEATURE_ID>;
 
 export interface F130RowLevelSecurityIsolationOutput {
   readonly featureId: typeof F130_FEATURE_ID;
@@ -70,14 +62,7 @@ export interface F130RowLevelSecurityIsolationOutput {
   readonly auditRecord: F130RowLevelSecurityIsolationAuditEntry;
 }
 
-export interface F130RowLevelSecurityIsolationTelemetrySnapshot {
-  readonly featureId: typeof F130_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F130RowLevelSecurityIsolationTelemetrySnapshot = BaseFeatureTelemetry<typeof F130_FEATURE_ID>;
 
 export const DEFAULT_F130_CONFIG: F130RowLevelSecurityIsolationConfig = {
   featureId: F130_FEATURE_ID,
@@ -106,130 +91,22 @@ export function computeF130Digest(rawPayload: string): string {
   return `f130_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F130RowLevelSecurityIsolationEngine {
-  private readonly config: F130RowLevelSecurityIsolationConfig;
-  private readonly kernel: Stage5EnterpriseKernel;
-  private readonly executionHistory: F130RowLevelSecurityIsolationOutput[] = [];
-  private readonly auditLog: F130RowLevelSecurityIsolationAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<
-    string,
-    { payloadHash: string; output: F130RowLevelSecurityIsolationOutput }
-  >();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
-  constructor(
-    customConfig?: Partial<F130RowLevelSecurityIsolationConfig>,
-    kernel?: Stage5EnterpriseKernel
-  ) {
-    this.config = {
-      ...DEFAULT_F130_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage5EnterpriseKernel();
-  }
-
-  public getConfig(): F130RowLevelSecurityIsolationConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F130RowLevelSecurityIsolationInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError(
-        "requestId",
-        "Request ID must be a non-empty string."
-      );
-    }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError(
-        "projectId",
-        "Project ID must be a non-empty string."
-      );
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError(
-        "workspaceId",
-        "Workspace ID must be a non-empty string."
-      );
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError(
-        "tenantId",
-        "Tenant ID must be a non-empty string."
-      );
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError(
-        "actorId",
-        "Actor ID must be a non-empty string."
-      );
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F130RowLevelSecurityIsolationValidationError(
-        "requestId",
-        `Request '${input.requestId}' has been cancelled.`
-      );
-    }
-    if (this.config.strictValidation && String(input.requesting_tenant_id).trim().length === 0) {
-      throw new F130RowLevelSecurityIsolationValidationError(
-        "requesting_tenant_id",
-        "Primary domain attribute 'requesting_tenant_id' cannot be empty."
-      );
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      requesting_tenant_id: input.requesting_tenant_id,
-      row_tenant_id: input.row_tenant_id,
-      access_granted: input.access_granted,
-      policy_enforcement: input.policy_enforcement
-    })) {
-      if (
-        typeof fieldVal === "number" &&
-        (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)
-      ) {
-        throw new F130RowLevelSecurityIsolationValidationError(
-          fieldKey,
-          `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`
-        );
-      }
-    }
-  }
-
-  public execute(input: F130RowLevelSecurityIsolationInput): F130RowLevelSecurityIsolationOutput {
-    this.validateInput(input);
-    throw new Error("ROW_ISOLATION_ADAPTER_REQUIRED: prototype has no verified domain adapter");
-  }
-
-  public getTelemetrySnapshot(): F130RowLevelSecurityIsolationTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F130_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F130RowLevelSecurityIsolationAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F130RowLevelSecurityIsolationOutput[] {
-    return [...this.executionHistory];
+export class F130RowLevelSecurityIsolationEngine extends KosmoraFeatureAdapterBase<
+  typeof F130_FEATURE_ID,
+  typeof F130_STAGE,
+  typeof F130_OPERATION_CODE,
+  F130RowLevelSecurityIsolationConfig,
+  F130RowLevelSecurityIsolationInput,
+  F130RowLevelSecurityIsolationOutput
+> {
+  constructor(customConfig?: Partial<F130RowLevelSecurityIsolationConfig>, kernel?: Stage5EnterpriseKernel) {
+    super(
+      DEFAULT_F130_CONFIG,
+      customConfig,
+      kernel ?? new Stage5EnterpriseKernel(),
+      ["requesting_tenant_id", "row_tenant_id", "access_granted", "policy_enforcement"] as const,
+      F130RowLevelSecurityIsolationValidationError
+    );
   }
 }
 

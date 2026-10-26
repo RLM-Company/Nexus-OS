@@ -9,10 +9,22 @@ import { createHash } from "node:crypto";
 import type { KosmoraCitation } from "./kosmora-protocol.js";
 
 export type KnowledgeNodeType =
-  "entity" | "claim" | "decision" | "artifact" | "person" | "policy" | "metric";
+  | "entity"
+  | "claim"
+  | "decision"
+  | "artifact"
+  | "person"
+  | "policy"
+  | "metric";
 
 export type KnowledgeEdgeRelation =
-  "supports" | "contradicts" | "derived_from" | "supersedes" | "owned_by" | "governed_by" | "cites";
+  | "supports"
+  | "contradicts"
+  | "derived_from"
+  | "supersedes"
+  | "owned_by"
+  | "governed_by"
+  | "cites";
 
 export interface EmbeddingAdapter {
   readonly provider_id: string;
@@ -30,13 +42,13 @@ export interface KnowledgeNode {
   content: string;
   content_sha256: string;
   version: number;
-  embedding_vector?: number[] | undefined;
-  embedding_provider?: string | undefined;
+  embedding_vector?: number[];
+  embedding_provider?: string;
   confidence: number;
   valid_from: string;
   valid_until?: string;
   stale: boolean;
-  stale_reason?: string | undefined;
+  stale_reason?: string;
   citations: KosmoraCitation[];
   tags: string[];
 }
@@ -64,7 +76,7 @@ export interface HierarchicalDocumentChunk {
   start_line: number;
   end_line: number;
   content_sha256: string;
-  embedding_vector?: number[] | undefined;
+  embedding_vector?: number[];
 }
 
 export type RetrievalMode = "vector_embedding_adapter" | "keyword_bm25_fallback";
@@ -81,7 +93,7 @@ export interface HybridRetrievalResult {
   graph_centrality_boost: number;
   reranked_final_score: number;
   stale_decay_alert: boolean;
-  stale_reason?: string | undefined;
+  stale_reason?: string;
   version: number;
   citations: KosmoraCitation[];
 }
@@ -103,7 +115,7 @@ export class KosmoraIntelligenceGraph {
   private readonly edges = new Map<string, KnowledgeEdge>();
   private readonly chunks = new Map<string, HierarchicalDocumentChunk>();
   private readonly searchCache = new Map<string, HybridRetrievalResult[]>();
-  private embeddingAdapter: EmbeddingAdapter | undefined;
+  private embeddingAdapter?: EmbeddingAdapter;
 
   constructor(embeddingAdapter?: EmbeddingAdapter) {
     this.embeddingAdapter = embeddingAdapter;
@@ -124,19 +136,13 @@ export class KosmoraIntelligenceGraph {
   public upsertNode(
     node: Omit<
       KnowledgeNode,
-      | "embedding_vector"
-      | "embedding_provider"
-      | "stale"
-      | "version"
-      | "content_sha256"
-      | "workspace_id"
-      | "owner_id"
+      "embedding_vector" | "embedding_provider" | "stale" | "version" | "content_sha256" | "workspace_id" | "owner_id"
     > & {
       workspace_id?: string;
       owner_id?: string;
       version?: number;
       stale?: boolean;
-      stale_reason?: string | undefined;
+      stale_reason?: string;
     }
   ): KnowledgeNode {
     if (!node.project_id || node.project_id.trim().length === 0) {
@@ -418,12 +424,17 @@ export class KosmoraIntelligenceGraph {
         }
       }
 
-      const tokenCoverage = queryTokens.length > 0 ? matchedTokens / queryTokens.length : 0;
-      const bm25Score = Number(Math.min(1, tokenCoverage * 0.8 + termFrequencyBoost).toFixed(4));
+      const tokenCoverage =
+        queryTokens.length > 0 ? matchedTokens / queryTokens.length : 0;
+      const bm25Score = Number(
+        Math.min(1, tokenCoverage * 0.8 + termFrequencyBoost).toFixed(4)
+      );
 
       let cosineScore: number | null = null;
       if (queryVector && node.embedding_vector) {
-        cosineScore = Number(this.cosineSimilarity(queryVector, node.embedding_vector).toFixed(4));
+        cosineScore = Number(
+          this.cosineSimilarity(queryVector, node.embedding_vector).toFixed(4)
+        );
       }
 
       // Filter out completely unrelated nodes in keyword fallback mode if query has tokens
@@ -436,7 +447,9 @@ export class KosmoraIntelligenceGraph {
           e.project_id === projectId &&
           (e.from_node_id === node.node_id || e.to_node_id === node.node_id)
       );
-      const centralityBoost = Number(Math.min(0.25, connectedEdges.length * 0.05).toFixed(4));
+      const centralityBoost = Number(
+        Math.min(0.25, connectedEdges.length * 0.05).toFixed(4)
+      );
       const stalePenalty = node.stale ? 0.35 : 0;
 
       const baseSemanticScore =

@@ -32,7 +32,7 @@ import { verifyF127Module } from "./f127-global-cmdk-omni-search.js";
 import { verifyF128Module } from "./f128-graph-change-impact-analyzer.js";
 
 // Stage Barrel Export for packages/core/src/stage4-intelligence-graph (32 feature modules)
-export * from "./stage-kernel.js";
+export { Stage4GraphKernel } from "./stage-kernel.js";
 export * from "./f097-kosmora-graph-workspaces.js";
 export * from "./f098-intelligence-graph-layers.js";
 export * from "./f099-entity-relation-extractor.js";

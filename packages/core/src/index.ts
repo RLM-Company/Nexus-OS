@@ -14,4 +14,21 @@ export * from "./kosmora-skills-bus.js";
 export * from "./kosmora-intelligence-graph.js";
 export * from "./kosmora-enterprise-security.js";
 export * from "./kosmora-runtime-store.js";
+export * from "./kosmora-sovereign-cluster.js";
+export * from "./kosmora-formal-verification-engine.js";
+export * from "./kosmora-finops-compliance-engine.js";
+export * from "./kosmora-quantum-zk-engine.js";
+export * from "./kosmora-game-theory-engine.js";
+export * from "./kosmora-causal-bayesian-engine.js";
+export * from "./kosmora-homomorphic-vdf-engine.js";
 export * from "./kosmora-160-architecture.js";
+
+export * from "./kosmora-neurosymbolic-sat-engine.js";
+export * from "./kosmora-cybernetic-control-engine.js";
+export * from "./stage13-neurosymbolic-sat/index.js";
+export * from "./stage14-cybernetic-control/index.js";
+
+export * from "./kosmora-topological-persistence-engine.js";
+export * from "./kosmora-wasm-evolutionary-synth-engine.js";
+export * from "./stage15-topological-persistence/index.js";
+export * from "./stage16-wasm-evolutionary-synth/index.js";
