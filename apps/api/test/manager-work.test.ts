@@ -33,6 +33,7 @@ import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runti
 import { AccountStore } from "../src/account-settings/account-store.js";
 import { GAME_FIXTURES } from "./fixtures/game-packages.js";
 import type { GameGenre } from "@cosmora/contracts/game-package";
+import { GAME_SOURCE_FILES } from "./fixtures/game-source.js";
 
 const resources: (() => void)[] = [];
 afterEach(() => {
@@ -158,6 +159,56 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("accepts game source projects over HTTP and preserves all three code artifacts", async () => {
+    const f = await fixture({ draft: { files: GAME_SOURCE_FILES } });
+    const app = buildApp({
+      config: f.config,
+      database: f.database,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/projects/${f.project.id}/work`,
+        payload: {
+          ...request,
+          client_request_id: "source-http",
+          output_contract: { kind: "game_project" }
+        }
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      const work = response.json<{ id: string; request: CreateManagerWork }>();
+      expect(work.request.output_contract).toEqual({ kind: "game_project" });
+      await f.coordinator.execute(work.id, "local-owner");
+      expect(f.store.get(work.id, "local-owner")).toMatchObject({
+        status: "completed",
+        model_requests: 2,
+        draft: { files: GAME_SOURCE_FILES }
+      });
+      expect(f.store.runtime.artifacts(f.project.id, "local-owner", work.id)).toHaveLength(3);
+      expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(400);
+    } finally {
+      await app.close();
+      await f.coordinator.stop();
+    }
+  });
+  it("rejects incomplete source projects without publishing or retrying", async () => {
+    const f = await fixture({
+      request: { ...request, output_contract: { kind: "game_project" } },
+      draft: { files: GAME_SOURCE_FILES.slice(1) }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({
+      status: "failed",
+      error_code: "INVALID_GAME_PROJECT_RESULT",
+      model_requests: 2
+    });
+    expect(f.store.runtime.artifacts(f.project.id, "local-owner", f.work.id)).toHaveLength(0);
+    expect(f.calls).toHaveLength(2);
+    await f.coordinator.stop();
+  });
   it("accepts each game discriminator through HTTP without mutating its fields", async () => {
     const f = await fixture();
     const app = buildApp({

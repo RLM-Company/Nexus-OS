@@ -19,6 +19,7 @@ export const CreateManagerWorkSchema = Type.Object(
           { additionalProperties: false }
         ),
         Type.Object({ kind: Type.Literal("website") }, { additionalProperties: false }),
+        Type.Object({ kind: Type.Literal("game_project") }, { additionalProperties: false }),
         Type.Object(
           {
             kind: Type.Literal("game"),
@@ -52,8 +53,8 @@ export const ManagerWorkPlanSchema = Type.Object(
 );
 export type ManagerWorkPlan = Static<typeof ManagerWorkPlanSchema>;
 
-// Files are inert downloadable artifacts. No shell, arbitrary paths, executable
-// preview, deployment or host filesystem access is part of this first executor.
+// Server stores files as inert downloadable artifacts. Browser game execution is
+// a separate sandboxed Worker path; no shell or host filesystem access is granted here.
 export const ManagerWorkFilesSchema = Type.Object(
   {
     files: Type.Array(

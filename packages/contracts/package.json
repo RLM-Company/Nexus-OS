@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./game-project": {
+      "development": "./src/game-project.ts",
+      "types": "./src/game-project.ts",
+      "default": "./dist/game-project.js"
+    },
     "./game-package": {
       "development": "./src/game-package.ts",
       "types": "./src/game-package.ts",

@@ -8,6 +8,7 @@ import styles from "./workspace-sections.module.css";
 import { StudioDataSurface } from "./studio-data-workbench";
 import { MediaWorkbench } from "./media-generation/media-workbench";
 import { SitesWorkbench } from "./sites/sites-workbench";
+import { GamesWorkbench } from "./games/games-workbench";
 
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 
@@ -41,7 +42,7 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "research", label: "Deep Research", description: "Поиск, источники и отчёты" },
   { id: "presentations", label: "Презентации", description: "Слайды и PPTX" },
   { id: "sites", label: "Сайты", description: "Идея, структура и реализация" },
-  { id: "games", label: "Games", description: "Механика и прототипы игр" },
+  { id: "games", label: "Games", description: "Разработка игр" },
   { id: "apps", label: "Приложения", description: "Внешние сервисы" },
   { id: "features", label: "Возможности", description: "Что уже работает и что появится" },
   { id: "settings", label: "Настройки", description: "Ваше пространство" }
@@ -641,7 +642,7 @@ function Studio({ onNavigate }: Props) {
       status: "HTML и CSS"
     },
     games: {
-      description: "Создавайте аркады, игры на память и викторины, играйте и скачивайте HTML.",
+      description: "Разрабатывайте браузерные игры: код, запуск, отладка, версии и экспорт проекта.",
       action: "Создать игру",
       status: "Прототипирование"
     }
@@ -1348,11 +1349,7 @@ export function WorkspaceSections(props: Props) {
       break;
     case "games":
       content = (
-        <SitesWorkbench
-          projects={props.projects}
-          initialProjectId={props.activeProjectId}
-          kind="game"
-        />
+        <GamesWorkbench projects={props.projects} initialProjectId={props.activeProjectId} />
       );
       break;
     case "apps":
