@@ -3,7 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ManagerWork, WorkArtifactVersion, WorkCheckpointRecord } from "@cosmora/contracts";
 
 type ArtifactRow = Omit<WorkArtifactVersion, "published"> & { content: string; published: number };
-const metadata = (row: ArtifactRow): WorkArtifactVersion => ({
+const metadata = (row: Omit<ArtifactRow, "content">): WorkArtifactVersion => ({
   id: row.id,
   project_id: row.project_id,
   work_id: row.work_id,
@@ -84,11 +84,25 @@ export class WorkRuntimeStore {
     return (
       this.sqlite
         .prepare(
-          "SELECT a.* FROM work_artifact_versions a JOIN manager_work w ON w.id = a.work_id JOIN projects p ON p.id = a.project_id WHERE a.project_id = ? AND w.owner_id = ? AND p.owner_id = ?" +
+          "SELECT a.id,a.project_id,a.work_id,a.name,a.version,a.sha256,a.bytes,a.published,a.created_at FROM work_artifact_versions a JOIN manager_work w ON w.id = a.work_id JOIN projects p ON p.id = a.project_id WHERE a.project_id = ? AND w.owner_id = ? AND p.owner_id = ?" +
             (workId ? " AND a.work_id = ?" : "") +
             " ORDER BY a.rowid DESC LIMIT 100"
         )
         .all(projectId, ownerId, ownerId, ...(workId ? [workId] : [])) as ArtifactRow[]
+    ).map(metadata);
+  }
+  /** Metadata only; avoids loading file bodies before the caller applies its scan budget. */
+  publishedArtifacts(projectId: string, ownerId: string): WorkArtifactVersion[] {
+    return (
+      this.sqlite
+        .prepare(
+          `SELECT a.id,a.project_id,a.work_id,a.name,a.version,a.sha256,a.bytes,a.published,a.created_at
+       FROM work_artifact_versions a JOIN manager_work w ON w.id=a.work_id
+       JOIN projects p ON p.id=a.project_id
+       WHERE a.project_id=? AND w.owner_id=? AND p.owner_id=? AND a.published=1
+       AND json_extract(w.state_json,'$.status')='completed' ORDER BY a.rowid DESC LIMIT 101`
+        )
+        .all(projectId, ownerId, ownerId) as Omit<ArtifactRow, "content">[]
     ).map(metadata);
   }
   artifact(

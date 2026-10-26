@@ -1,6 +1,7 @@
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
 import { registerApexRoutes } from "./apex-routes.js";
+import { registerProjectKnowledgeRoutes } from "./project-knowledge-routes.js";
 import { RuntimeClock } from "@cosmora/model-gateway";
 import { ContextTooLargeError } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
@@ -875,6 +876,17 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   if (dependencies.canvasStore) registerCanvasRoutes(app, dependencies.canvasStore, identityFor);
   if (dependencies.projectStore)
     registerProjectMaterialsRoutes(app, dependencies.projectStore, identityFor);
+  if (dependencies.projectStore)
+    registerProjectKnowledgeRoutes(
+      app,
+      {
+        projects: dependencies.projectStore,
+        ...(dependencies.canvasStore ? { canvas: dependencies.canvasStore } : {}),
+        ...(dependencies.managerWorkStore ? { work: dependencies.managerWorkStore } : {}),
+        ...(dependencies.documentLibrary ? { documents: dependencies.documentLibrary } : {})
+      },
+      identityFor
+    );
   if (dependencies.projectStore && dependencies.canvasStore)
     registerArtifactContextRoutes(
       app,
