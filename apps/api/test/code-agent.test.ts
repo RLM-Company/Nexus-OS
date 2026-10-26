@@ -16,7 +16,8 @@ import {
   ModelGateway,
   ModelRegistry,
   ModelRouter,
-  OpenAICompatibleAdapter
+  OpenAICompatibleAdapter,
+  RuntimeClock
 } from "@cosmora/model-gateway";
 import {
   createCodeAgentExecutorServer,
@@ -116,6 +117,9 @@ const entry = (toolCalling: boolean): ModelRegistryEntry => ({
 
 async function fixture(
   options: {
+    clock?: RuntimeClock;
+    operationTimeoutMs?: number;
+    providerDelayMs?: number;
     providerStatus?: number;
     extraTreePaths?: number;
     ownerBudget?: CodeOwnerBudget;
@@ -249,6 +253,20 @@ async function fixture(
         );
       const response = responses[providerCalls.length - 1];
       if (!response) throw new Error("Unexpected provider turn");
+      if (options.providerDelayMs)
+        return new Promise<Response>((resolve, reject) => {
+          const signal = init?.signal;
+          const onAbort = () => {
+            clearTimeout(timer);
+            reject(signal?.reason instanceof Error ? signal.reason : Error("aborted"));
+          };
+          const timer = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve(new Response(response, { headers: { "content-type": "text/event-stream" } }));
+          }, options.providerDelayMs);
+          if (signal?.aborted) onAbort();
+          else signal?.addEventListener("abort", onAbort, { once: true });
+        });
       return Promise.resolve(
         new Response(response, { headers: { "content-type": "text/event-stream" } })
       );
@@ -268,7 +286,8 @@ async function fixture(
       )
     ),
     [],
-    { maxAttemptsPerRoute: 1 }
+    { maxAttemptsPerRoute: 1 },
+    options.clock
   );
   const manager = new ManagerService({
     preferredProvider: modelEntry.provider_id,
@@ -299,6 +318,8 @@ async function fixture(
     }
   };
   const service = new CodeAgentService({
+    ...(options.clock ? { clock: options.clock } : {}),
+    ...(options.operationTimeoutMs ? { operationTimeoutMs: options.operationTimeoutMs } : {}),
     store,
     github,
     drafts,
@@ -372,6 +393,83 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("reads the local clock tool and shares elapsed task time across model turns", async () => {
+    const clock = new RuntimeClock({
+      wallNow: () => Date.parse("2026-10-25T21:05:06Z")
+    });
+    const f = await fixture({
+      clock,
+      responses: [
+        toolResponse("runtime_clock", { operation: "now" }, "clock"),
+        toolResponse("read_file", { path: "src/add.js" }, "source"),
+        toolResponse("read_file", { path: "src/add.test.js" }, "test"),
+        proposalResponse()
+      ]
+    });
+    const id = await f.start();
+    await expect.poll(() => f.get(id).status).not.toBe("running");
+    const run = f.get(id);
+    expect(run.error).toBeUndefined();
+    expect(run.status).toBe("proposed");
+    expect(run.proposal_hash).toBeTruthy();
+    expect(f.providerCalls).toHaveLength(4);
+    const messages = f.providerCalls[1]!.messages as Array<{
+      role: string;
+      content: string;
+      tool_call_id?: string;
+    }>;
+    const result = JSON.parse(
+      messages.find((message) => message.tool_call_id === "clock")!.content
+    ) as { stopwatch: { elapsed_ms: number } };
+    expect(result).toMatchObject({
+      local_date: "2026-10-26",
+      time_zone: "Europe/Moscow",
+      stopwatch: { started_at: "2026-10-25T21:05:06.000Z" }
+    });
+    expect(result.stopwatch.elapsed_ms).toBeGreaterThanOrEqual(0);
+    expect(
+      messages.filter((message) => message.content.startsWith("KOSMORA_RUNTIME_CLOCK_V1"))
+    ).toHaveLength(1);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("stops an overdue Code operation without retrying or refunding uncertain provider usage", async () => {
+    const f = await fixture({ operationTimeoutMs: 100, providerDelayMs: 500 });
+    const id = await f.start();
+    const run = await f.wait(id, "failed");
+    await f.service.stop();
+    expect(run.error).toBe("TASK_TIME_BUDGET");
+    expect(run.publication_token).toBeUndefined();
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.service.view(f.get(id)).usage.unknown_attempts).toBe(1);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("never grants publication authority to a check that returns after its deadline", async () => {
+    const f = await fixture({
+      operationTimeoutMs: 200,
+      runner: {
+        async run(input) {
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          return {
+            status: "passed",
+            cleanupVerified: true,
+            snapshotDigest: input.expectedDigest!,
+            exitCode: 0,
+            stdout: "late synthetic result",
+            stderr: "",
+            truncated: false,
+            journal: []
+          };
+        }
+      }
+    });
+    const id = await f.start();
+    const review = await f.review(id);
+    const run = await f.check(id, review.draft!.plan.review_hash);
+    expect(run.error).toBe("TASK_TIME_BUDGET");
+    expect(run.check?.status).toBe("cancelled");
+    expect(run.publication_token).toBeUndefined();
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
   it("retains an allowlisted provider diagnostic without storing its body or releasing uncertain usage", async () => {
     const f = await fixture({ toolCalling: false, providerStatus: 402 });
     const id = await f.start();

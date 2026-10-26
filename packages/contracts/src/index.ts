@@ -31,6 +31,7 @@ export * from "./primitives.js";
 export * from "./runtime.js";
 export * from "./step-up.js";
 export * from "./usage.js";
+export * from "./runtime-clock.js";
 export * from "./manager-work.js";
 export * from "./work-runtime.js";
 export * from "./canvas-artifacts.js";
