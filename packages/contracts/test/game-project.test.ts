@@ -11,17 +11,19 @@ it("preserves custom source bytes and canonicalizes paths without executing anyt
   expect(result.files.map((item) => item.name)).toEqual(["scene.html", "styles.css", "game.js"]);
   expect(result.files[2]!.content).toBe(files[0]!.content);
 });
-it.each([
-  files.slice(1),
-  [...files, { name: "other.js", content: "x" }],
-  files.map((item) => ({ ...item, name: "game.js" })),
-  files.map((item) => (item.name === "game.js" ? { ...item, name: "../game.js" } : item)),
-  files.map((item) => ({ ...item, content: " " })),
-  files.map((item) => ({ ...item, content: "я".repeat(32001) })),
-  files.map((item) => ({ ...item, content: "x".repeat(50000) })),
-  files.map((item) => ({ ...item, content: "\0" })),
-  files.map((item) => ({ ...item, execute: true }))
-])("rejects incomplete, unsafe or oversized bundles", (value) => {
+it.each(
+  [
+    files.slice(1),
+    [...files, { name: "other.js", content: "x" }],
+    files.map((item) => ({ ...item, name: "game.js" })),
+    files.map((item) => (item.name === "game.js" ? { ...item, name: "../game.js" } : item)),
+    files.map((item) => ({ ...item, content: " " })),
+    files.map((item) => ({ ...item, content: "я".repeat(32001) })),
+    files.map((item) => ({ ...item, content: "x".repeat(50000) })),
+    files.map((item) => ({ ...item, content: "\0" })),
+    files.map((item) => ({ ...item, execute: true }))
+  ].map((value) => [value])
+)("rejects incomplete, unsafe or oversized bundles", (value) => {
   expect(() => validateGameProjectFiles(value)).toThrow("INVALID_GAME_PROJECT_RESULT");
 });
 it("rejects wrong format and malformed JSON", () => {
