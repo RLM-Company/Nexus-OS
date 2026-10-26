@@ -641,7 +641,7 @@ function Studio({ onNavigate }: Props) {
       status: "HTML и CSS"
     },
     games: {
-      description: "Опишите механику и подготовьте задачу на прототип игры.",
+      description: "Создавайте аркады, игры на память и викторины, играйте и скачивайте HTML.",
       action: "Создать игру",
       status: "Прототипирование"
     }
@@ -1288,51 +1288,6 @@ function Settings({
   );
 }
 
-function StudioBuild({
-  surface,
-  onCompose
-}: {
-  surface: "sites" | "games";
-  onCompose: Props["onCompose"];
-}) {
-  const [brief, setBrief] = useState("");
-  const game = surface === "games";
-  return (
-    <>
-      <Header icon={surface} eyebrow="Kosmora Studio" title={game ? "Games" : "Сайты"}>
-        {game ? "От механики до игрового прототипа." : "От идеи до рабочего сайта."}
-      </Header>
-      <form
-        className={styles.note}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (brief.trim())
-            onCompose(
-              `${game ? "Помоги создать браузерную игру" : "Помоги создать сайт"}. Задача: ${brief.trim()}\nСначала подготовь структуру, затем код и план проверки. Не заявляй о выполнении запуска или публикации без реальной проверки.`
-            );
-        }}
-      >
-        <label htmlFor="studio-build-brief">
-          {game ? "Идея и механика игры" : "Задача и содержание сайта"}
-        </label>
-        <textarea
-          id="studio-build-brief"
-          rows={5}
-          value={brief}
-          onChange={(e) => setBrief(e.target.value)}
-          maxLength={10000}
-          placeholder={
-            game ? "Жанр, управление, цель игрока…" : "Для кого сайт, страницы, функции…"
-          }
-        />
-        <button type="submit" disabled={!brief.trim()}>
-          Продолжить с Kosmora
-        </button>
-      </form>
-    </>
-  );
-}
-
 export function WorkspaceSections(props: Props) {
   let content: ReactNode;
   switch (props.surface) {
@@ -1392,7 +1347,13 @@ export function WorkspaceSections(props: Props) {
       );
       break;
     case "games":
-      content = <StudioBuild surface={props.surface} onCompose={props.onCompose} />;
+      content = (
+        <SitesWorkbench
+          projects={props.projects}
+          initialProjectId={props.activeProjectId}
+          kind="game"
+        />
+      );
       break;
     case "apps":
       content = <Apps {...props} />;

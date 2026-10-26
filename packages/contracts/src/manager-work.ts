@@ -18,7 +18,18 @@ export const CreateManagerWorkSchema = Type.Object(
           },
           { additionalProperties: false }
         ),
-        Type.Object({ kind: Type.Literal("website") }, { additionalProperties: false })
+        Type.Object({ kind: Type.Literal("website") }, { additionalProperties: false }),
+        Type.Object(
+          {
+            kind: Type.Literal("game"),
+            genre: Type.Union([
+              Type.Literal("arcade"),
+              Type.Literal("memory"),
+              Type.Literal("quiz")
+            ])
+          },
+          { additionalProperties: false }
+        )
       ])
     ),
     max_model_requests: Type.Integer({ minimum: 2, maximum: 3 }),

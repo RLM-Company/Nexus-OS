@@ -2,6 +2,7 @@ import { MockProviderAdapter } from "@cosmora/model-gateway";
 import { installPresentationWorkFixture } from "./presentation-work-provider.js";
 import { installChatReliabilityFixture } from "./chat-reliability-provider.js";
 import { installSiteWorkFixture } from "./site-work-provider.js";
+import { installGameWorkFixture } from "./game-work-provider.js";
 
 // Only the Playwright server imports this fixture. Keep the real HTTP server,
 // coordinator and SQLite lifecycle; hold this synthetic provider response until
@@ -40,4 +41,5 @@ MockProviderAdapter.prototype.stream = async function* (request, signal) {
 installChatReliabilityFixture();
 installPresentationWorkFixture();
 installSiteWorkFixture();
+installGameWorkFixture();
 await import("../../src/server.js");
