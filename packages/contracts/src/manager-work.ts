@@ -10,13 +10,16 @@ export const CreateManagerWorkSchema = Type.Object(
     worker_role: Type.Union([Type.Literal("analyst"), Type.Literal("architect")]),
     require_critic: Type.Optional(Type.Boolean()),
     output_contract: Type.Optional(
-      Type.Object(
-        {
-          kind: Type.Literal("presentation"),
-          slide_count: Type.Integer({ minimum: 3, maximum: 8 })
-        },
-        { additionalProperties: false }
-      )
+      Type.Union([
+        Type.Object(
+          {
+            kind: Type.Literal("presentation"),
+            slide_count: Type.Integer({ minimum: 3, maximum: 8 })
+          },
+          { additionalProperties: false }
+        ),
+        Type.Object({ kind: Type.Literal("website") }, { additionalProperties: false })
+      ])
     ),
     max_model_requests: Type.Integer({ minimum: 2, maximum: 3 }),
     max_input_tokens: Type.Integer({ minimum: 1000, maximum: 32000 }),

@@ -19,6 +19,7 @@ import { readCanvasFile } from "./canvas-file";
 import { createDocxReport, createPdfReport, downloadReport } from "../studio-files-report";
 import { MarkdownToolbar } from "./markdown-toolbar";
 import { CanvasSearch } from "./canvas-search";
+import { SitePreview } from "../sites/site-preview";
 import { ShiningText, SystemMessage } from "../ui/kosmora-controls";
 
 type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
@@ -52,6 +53,7 @@ const revisionSide = (revision: CanvasRevision): CanvasComparisonSide => ({
   content: revision.content
 });
 const blank: Draft = { title: "Без названия", format: "markdown", content: "", baseVersion: 0 };
+const blankSite: Draft = { ...blank, format: "html" };
 const formats: CanvasFormat[] = ["markdown", "text", "code", "html"];
 const names: Record<CanvasFormat, string> = {
   markdown: "Markdown",
@@ -104,11 +106,13 @@ const sanitizeName = (value: string, format: CanvasFormat): string => {
 export function CanvasEditor({
   projectId,
   initialArtifactId,
-  initialDraft
+  initialDraft,
+  sitePreview = false
 }: {
   projectId: string;
   initialArtifactId?: string;
   initialDraft?: CanvasSeed;
+  sitePreview?: boolean;
 }) {
   const [scope, setScope] = useState<{ projectId: string; ownerScope: string } | null>(null);
   const [scopeError, setScopeError] = useState("");
@@ -157,6 +161,7 @@ export function CanvasEditor({
       ownerScope={scope.ownerScope}
       {...(initialArtifactId ? { initialArtifactId } : {})}
       {...(initialDraft ? { initialDraft } : {})}
+      sitePreview={sitePreview}
     />
   );
 }
@@ -165,12 +170,14 @@ function ScopedCanvasEditor({
   projectId,
   ownerScope,
   initialArtifactId,
-  initialDraft
+  initialDraft,
+  sitePreview = false
 }: {
   projectId: string;
   ownerScope: string;
   initialArtifactId?: string;
   initialDraft?: CanvasSeed;
+  sitePreview?: boolean;
 }) {
   const lifecycle = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -190,7 +197,7 @@ function ScopedCanvasEditor({
     canvasDraftKey(
       ownerScope,
       projectId,
-      id === "new" && initialDraft ? initialDraft.storageId : id
+      id === "new" ? (initialDraft?.storageId ?? (sitePreview ? "site-new" : "new")) : id
     );
   const textEditor = useRef<HTMLTextAreaElement>(null);
   const editorId = useId();
@@ -201,7 +208,8 @@ function ScopedCanvasEditor({
   const [items, setItems] = useState<CanvasArtifact[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [loaded, setLoaded] = useState<Full | null>(null);
-  const [draft, setDraft] = useState<Draft>(blank);
+  const emptyDraft = sitePreview ? blankSite : blank;
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [draftStorageReady, setDraftStorageReady] = useState(false);
   const [history, setHistory] = useState<Meta[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -230,7 +238,7 @@ function ScopedCanvasEditor({
         draft.format !== loaded.revision.format ||
         draft.content !== loaded.revision.content ||
         draft.baseVersion !== loaded.artifact.version
-      : draft.title !== blank.title || draft.format !== blank.format || !!draft.content);
+      : draft.title !== emptyDraft.title || draft.format !== emptyDraft.format || !!draft.content);
   const reviewedDraftMatches =
     review?.kind === "conflict" &&
     draft.title === review.after.title &&
@@ -263,7 +271,7 @@ function ScopedCanvasEditor({
               format: initialDraft.format,
               baseVersion: 0
             }
-          : blank)
+          : emptyDraft)
     );
     setDraftStorageReady(true);
     setConflict(null);
@@ -295,7 +303,7 @@ function ScopedCanvasEditor({
     return () => {
       active = false;
     };
-  }, [base, readList, scopedRequest, initialArtifactId, initialDraft, reportLinkKey]);
+  }, [base, readList, scopedRequest, initialArtifactId, initialDraft, reportLinkKey, emptyDraft]);
   useEffect(() => {
     // The initial blank render must not delete a restored draft before hydration
     // completes, including React Strict Mode's repeated mount effects.
@@ -518,7 +526,7 @@ function ScopedCanvasEditor({
     } catch {
       /* optional */
     }
-    setDraft(local ?? blank);
+    setDraft(local ?? emptyDraft);
     setConflict(null);
     setError("");
     setNotice("");
@@ -647,7 +655,7 @@ function ScopedCanvasEditor({
         }
         setSelected("");
         setLoaded(null);
-        setDraft(blank);
+        setDraft(emptyDraft);
         setHistory([]);
         setConflict(null);
         setRevisionPreview(null);
@@ -781,8 +789,12 @@ function ScopedCanvasEditor({
     <section className={styles.root} aria-label="Редактор Canvas">
       <header className={styles.heading}>
         <div>
-          <h2>Canvas · Артефакты</h2>
-          <small>Текст, Markdown и код · хранение в проекте</small>
+          <h2>{sitePreview ? "Редактор сайта" : "Canvas · Артефакты"}</h2>
+          <small>
+            {sitePreview
+              ? "HTML и CSS · версии и сохранение в проекте"
+              : "Текст, Markdown и код · хранение в проекте"}
+          </small>
         </div>
         <button type="button" onClick={createNew} disabled={working}>
           + Новый
@@ -802,7 +814,8 @@ function ScopedCanvasEditor({
             >
               <strong>{item.title}</strong>
               <small>
-                {names[item.format]} · v{item.version}
+                {sitePreview && item.format === "html" ? "HTML / CSS" : names[item.format]} · v
+                {item.version}
               </small>
             </button>
           ))}
@@ -875,7 +888,7 @@ function ScopedCanvasEditor({
               >
                 {formats.map((f) => (
                   <option key={f} value={f}>
-                    {names[f]}
+                    {sitePreview && f === "html" ? "HTML / CSS" : names[f]}
                   </option>
                 ))}
               </select>
@@ -937,32 +950,36 @@ function ScopedCanvasEditor({
             <button type="button" onClick={download}>
               Скачать
             </button>
-            <button
-              type="button"
-              disabled={working || loading}
-              onClick={() => {
-                try {
-                  downloadReport(
-                    createDocxReport([draft.content]),
-                    sanitizeName(draft.title, "text").replace(/\.txt$/, ".docx")
-                  );
-                  setNotice(
-                    "Скачан DOCX с текущим текстом, включая несохранённые правки. Markdown и код сохранены как текст."
-                  );
-                } catch {
-                  setError("Не удалось подготовить DOCX. Текст остаётся в редакторе.");
-                }
-              }}
-            >
-              Скачать DOCX
-            </button>
-            <button
-              type="button"
-              disabled={working || loading || exportingPdf}
-              onClick={() => void exportPdf()}
-            >
-              {exportingPdf ? "Подготовка PDF…" : "Скачать PDF"}
-            </button>
+            {!sitePreview && (
+              <>
+                <button
+                  type="button"
+                  disabled={working || loading}
+                  onClick={() => {
+                    try {
+                      downloadReport(
+                        createDocxReport([draft.content]),
+                        sanitizeName(draft.title, "text").replace(/\.txt$/, ".docx")
+                      );
+                      setNotice(
+                        "Скачан DOCX с текущим текстом, включая несохранённые правки. Markdown и код сохранены как текст."
+                      );
+                    } catch {
+                      setError("Не удалось подготовить DOCX. Текст остаётся в редакторе.");
+                    }
+                  }}
+                >
+                  Скачать DOCX
+                </button>
+                <button
+                  type="button"
+                  disabled={working || loading || exportingPdf}
+                  onClick={() => void exportPdf()}
+                >
+                  {exportingPdf ? "Подготовка PDF…" : "Скачать PDF"}
+                </button>
+              </>
+            )}
             {selected && (
               <button type="button" onClick={remove} disabled={working}>
                 Удалить
@@ -1011,9 +1028,13 @@ function ScopedCanvasEditor({
             )}
           </div>
           <div className={styles.preview} aria-label="Безопасный предпросмотр">
-            <CanvasPreview content={preview} format={previewFormat} />
+            {sitePreview && previewFormat === "html" ? (
+              <SitePreview content={preview} />
+            ) : (
+              <CanvasPreview content={preview} format={previewFormat} />
+            )}
           </div>
-          {previewFormat === "html" && (
+          {previewFormat === "html" && !sitePreview && (
             <p className={styles.count}>
               HTML показан только как текст: скрипты и внешние ресурсы не выполняются.
             </p>

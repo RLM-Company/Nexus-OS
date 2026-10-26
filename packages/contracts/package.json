@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./website-document": {
+      "development": "./src/website-document.ts",
+      "types": "./src/website-document.ts",
+      "default": "./dist/website-document.js"
+    },
     "./intelligence-graph-context": {
       "development": "./src/intelligence-graph-context.ts",
       "types": "./src/intelligence-graph-context.ts",

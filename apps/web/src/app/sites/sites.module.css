@@ -1,0 +1,143 @@
+.root {
+  width: 100%;
+  min-width: 0;
+  color: var(--text, #242424);
+}
+.header {
+  margin-bottom: 24px;
+}
+.header small,
+.caption {
+  color: var(--muted, #676767);
+  font-size: 12px;
+}
+.header h2 {
+  font-size: 24px;
+  letter-spacing: -0.04em;
+  margin: 4px 0 8px;
+  font-weight: 550;
+}
+.header p {
+  color: var(--muted, #676767);
+}
+.form,
+.task {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--line, #e5e5e5);
+  border-radius: var(--radius-panel, 16px);
+  margin: 18px 0;
+  background: var(--panel, #fafafa);
+}
+.root label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}
+.root textarea,
+.root select {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  color: inherit;
+  background: var(--bg, #fff);
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--radius-control, 9px);
+}
+.root textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+.root button,
+.toolbar button {
+  font: inherit;
+  color: inherit;
+  padding: 8px 12px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--radius-control, 9px);
+  background: var(--bg, #fff);
+  cursor: pointer;
+}
+.root button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.root :is(button, select, textarea):focus-visible,
+.toolbar button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.root .primary {
+  color: var(--bg, #fff);
+  background: var(--text, #242424);
+  border-color: transparent;
+}
+.row,
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.task p,
+.task ol {
+  margin: 0;
+}
+.task ol {
+  padding-left: 22px;
+  color: var(--muted, #676767);
+  font-size: 12px;
+}
+.preview {
+  min-width: 0;
+  width: 100%;
+}
+.toolbar {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.toolbar [aria-pressed="true"] {
+  background: var(--surface-hover, #eaeaea);
+  border-color: var(--text, #242424);
+}
+.caption {
+  margin: 8px 0 12px;
+}
+.frameArea {
+  max-width: 100%;
+  overflow: auto;
+  background: #eee;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 10px;
+  padding: 10px;
+}
+.frame {
+  display: block;
+  border: 0;
+  margin: 0 auto;
+  height: 620px;
+  background: #fff;
+}
+.desktop {
+  width: 100%;
+  min-width: 320px;
+}
+.tablet {
+  width: 768px;
+}
+.mobile {
+  width: 375px;
+}
+@media (max-width: 600px) {
+  .form,
+  .task {
+    padding: 14px;
+  }
+  .header h2 {
+    font-size: 21px;
+  }
+  .frame {
+    height: 520px;
+  }
+}

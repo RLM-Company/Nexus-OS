@@ -1,4 +1,8 @@
 import { validateGeneratedPresentation } from "@cosmora/contracts/presentation-package";
+import {
+  validateWebsiteDocument,
+  WEBSITE_OUTPUT_INSTRUCTION
+} from "@cosmora/contracts/website-document";
 import { WorkDagCoordinator } from "./work-dag-coordinator.js";
 import { createHash } from "node:crypto";
 import {
@@ -248,7 +252,17 @@ export class ManagerWorkCoordinator {
     request.agent_id = "cosmora-work-" + request.role;
     request.task_type = "manager_work_" + stage;
     request.messages = [
-      { role: "system", content: prompts[stage] },
+      {
+        role: "system",
+        content:
+          prompts[stage] +
+          (work.request.output_contract?.kind === "website"
+            ? "\n" +
+              (stage === "draft"
+                ? WEBSITE_OUTPUT_INSTRUCTION
+                : "The final website artifact is a self-contained static index.html file, not a public deployment. Keep the prescribed JSON schema for this current stage.")
+            : "")
+      },
       {
         role: "user",
         content: JSON.stringify({
@@ -600,6 +614,11 @@ export class ManagerWorkCoordinator {
               throw new Error("INVALID_PRESENTATION_RESULT");
             }
           }
+          if (work.request.output_contract?.kind === "website") {
+            if (value.files.length !== 1 || value.files[0]!.name !== "index.html")
+              throw new Error("INVALID_WEBSITE_RESULT");
+            validateWebsiteDocument(value.files[0]!.content);
+          }
           work.draft = value;
           work.stage = work.plan?.needs_critic ? "review" : "publish";
           work = this.checkpoint(work, "Черновики файлов подготовлены; структура проверена");
@@ -623,6 +642,7 @@ export class ManagerWorkCoordinator {
         "EXECUTION_BUDGET_EXCEEDED",
         "INVALID_MODEL_OUTPUT",
         "INVALID_PRESENTATION_RESULT",
+        "INVALID_WEBSITE_RESULT",
         "UNSUPPORTED_ACTION",
         "POLICY_UNAVAILABLE",
         "GRAPH_UNAVAILABLE",
