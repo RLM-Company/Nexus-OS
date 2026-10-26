@@ -305,6 +305,18 @@ export class DocumentLibraryStore {
     return row ? { ...row, bytes: Buffer.from(row.bytes) } : null;
   }
 
+  chunk(projectId: string, ownerId: string, fileId: string, chunkId: number): LibraryHitRow | null {
+    return (
+      (this.sqlite
+        .prepare(
+          `SELECT c.id AS chunk_id,c.file_id,c.ordinal,c.page,c.line_start,c.line_end,c.content,f.name
+       FROM document_library_chunks c JOIN document_library_files f ON f.id=c.file_id
+       JOIN projects p ON p.id=f.project_id AND p.owner_id=f.owner_id
+       WHERE c.id=? AND f.id=? AND f.project_id=? AND f.owner_id=? AND f.status='ready'`
+        )
+        .get(chunkId, fileId, projectId, ownerId) as LibraryHitRow | undefined) ?? null
+    );
+  }
   search(
     projectId: string,
     ownerId: string,
