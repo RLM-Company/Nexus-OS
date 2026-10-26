@@ -17,3 +17,4 @@ export * from "./work-runtime/dag.js";
 export * from "./project-memory/index.js";
 export * from "./document-library.js";
 export * from "./table-analysis.js";
+export * from "./table-comparison.js";

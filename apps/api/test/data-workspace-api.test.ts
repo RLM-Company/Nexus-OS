@@ -464,6 +464,22 @@ it("requires a real owner session on every derived endpoint", async () => {
     identityResolver: new BearerSessionIdentityResolver(identities)
   });
   try {
+    const comparisonUrl = `${base}/${value.artifact.id}/compare`;
+    const comparisonBody = { before_version: 1, after_version: 1, alignment: { kind: "position" } };
+    expect(
+      (await secured.inject({ method: "POST", url: comparisonUrl, payload: comparisonBody }))
+        .statusCode
+    ).toBe(401);
+    expect(
+      (
+        await secured.inject({
+          method: "POST",
+          url: comparisonUrl,
+          payload: comparisonBody,
+          headers: { authorization: `Bearer ${token}` }
+        })
+      ).statusCode
+    ).toBe(200);
     for (const suffix of ["analysis", "rows", "export?format=json"]) {
       const url = `${base}/${value.artifact.id}/revisions/1/${suffix}`;
       expect((await secured.inject({ method: "GET", url })).statusCode).toBe(401);
@@ -484,4 +500,136 @@ it("requires a real owner session on every derived endpoint", async () => {
   } finally {
     await secured.close();
   }
+});
+
+it("compares immutable table versions with explicit matching and provenance without writing new versions", async () => {
+  const before = JSON.parse(snapshot()) as { table: { rows: string[][] } };
+  before.table.rows = [
+    ["001", "1"],
+    ["002", "2"],
+    ["003", "3"]
+  ];
+  const { value } = await create(JSON.stringify(before));
+  const after = JSON.parse(snapshot()) as { table: { rows: string[][] } };
+  after.table.rows = [
+    ["003", "3"],
+    ["002", "20"],
+    ["004", "4"]
+  ];
+  const updated = store.update("p", "local-owner", value.artifact.id, {
+    baseVersion: 1,
+    title: "Updated",
+    format: "code",
+    content: JSON.stringify(after),
+    source: { kind: "data_workspace" }
+  })!;
+  const url = `${base}/${value.artifact.id}/compare`;
+  const payload = {
+    before_version: 1,
+    after_version: 2,
+    alignment: { kind: "key", before_columns: [1], after_columns: [1] },
+    limit: 1
+  };
+  const response = await app.inject({ method: "POST", url, payload });
+  expect(response.statusCode, response.body).toBe(200);
+  expect(response.json()).toMatchObject({
+    source: {
+      table_id: value.artifact.id,
+      before: { version: 1, sha256: value.revision.sha256 },
+      after: { version: 2, sha256: updated.revision.sha256 }
+    },
+    scope: "all_original_rows",
+    sampled: false,
+    summary: {
+      added_rows: 1,
+      removed_rows: 1,
+      changed_rows: 1,
+      unchanged_rows: 1,
+      moved_rows: 1,
+      changed_cells: 1
+    },
+    detail: { total_changes: 3, returned_changes: 1, next_offset: 1, all_changes_included: false },
+    changes: [{ kind: "removed", before_row: 1, after_row: null }]
+  });
+  expect(response.headers["cache-control"]).toBe("private, no-store");
+  expect(response.json<{ changes: unknown[] }>().changes[0]).not.toHaveProperty("before");
+  const page = await app.inject({
+    method: "POST",
+    url,
+    payload: { ...payload, offset: 1, include_values: true }
+  });
+  expect(page.json()).toMatchObject({
+    changes: [{ kind: "changed", before: ["002", "2"], after: ["002", "20"] }],
+    detail: { next_offset: 2 }
+  });
+  expect(store.history("p", "local-owner", value.artifact.id)).toHaveLength(2);
+  for (const body of [
+    { ...payload, after_version: 20 },
+    { ...payload, before_version: 20 }
+  ])
+    expect((await app.inject({ method: "POST", url, payload: body })).statusCode).toBe(404);
+  expect((await foreign.inject({ method: "POST", url, payload })).statusCode).toBe(404);
+  expect(
+    (await app.inject({ method: "POST", url: url.replace("/p/", "/other/"), payload })).statusCode
+  ).toBe(404);
+  for (const body of [
+    { ...payload, owner_id: "forged" },
+    { ...payload, limit: 201 },
+    { ...payload, alignment: { kind: "key", before_columns: [0], after_columns: [1] } }
+  ])
+    expect((await app.inject({ method: "POST", url, payload: body })).statusCode).toBe(400);
+  const original = store.getRevision.bind(store);
+  vi.spyOn(store, "getRevision").mockImplementation((...args) => {
+    const r = original(...args);
+    return r && args[3] === 2 ? { ...r, content: "corrupt-private" } : r;
+  });
+  const corrupt = await app.inject({ method: "POST", url, payload });
+  expect(corrupt.statusCode).toBe(409);
+  expect(corrupt.body).not.toContain("corrupt-private");
+});
+
+it("refuses ambiguous keys and bounds large comparison responses without truncation", async () => {
+  const before = JSON.parse(snapshot()) as { table: { rows: string[][] } };
+  before.table.rows = [
+    ["A", "one"],
+    ["A", "two"]
+  ];
+  const { value } = await create(JSON.stringify(before));
+  const url = `${base}/${value.artifact.id}/compare`;
+  const payload = {
+    before_version: 1,
+    after_version: 1,
+    alignment: { kind: "key", before_columns: [1], after_columns: [1] }
+  };
+  const ambiguous = await app.inject({ method: "POST", url, payload });
+  expect(ambiguous.statusCode).toBe(422);
+  expect(ambiguous.json()).toEqual({
+    error: { code: "TABLE_COMPARE_DUPLICATE_KEY", side: "before", row: 2 }
+  });
+  const large = await create(snapshot("x".repeat(1_010_000)));
+  store.update("p", "local-owner", large.value.artifact.id, {
+    baseVersion: 1,
+    title: "Large",
+    format: "code",
+    content: snapshot("y".repeat(1_010_000)),
+    source: { kind: "data_workspace" }
+  });
+  const largeUrl = `${base}/${large.value.artifact.id}/compare`,
+    body = { before_version: 1, after_version: 2, alignment: { kind: "position" } };
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: largeUrl,
+        payload: { ...body, include_values: true }
+      })
+    ).statusCode
+  ).toBe(413);
+  const compact = await app.inject({ method: "POST", url: largeUrl, payload: body });
+  expect(compact.statusCode, compact.body).toBe(200);
+  expect(compact.body.length).toBeLessThan(2000);
+  expect(compact.json()).toMatchObject({
+    summary: { changed_rows: 1, changed_cells: 1 },
+    changes: [{ changed_columns: [2] }]
+  });
 });

@@ -1,11 +1,15 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
+import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import type { IdentityContext } from "@cosmora/contracts";
 import type { CanvasRevision } from "@cosmora/contracts/canvas-artifacts";
 import { DATA_SERVER_BYTES } from "@cosmora/contracts/data-workspace";
 import {
   TableAnalysisError,
+  TableComparisonError,
+  compareTables,
+  type TableAlignment,
   selectTable,
   profileTable,
   tableRows,
@@ -37,6 +41,10 @@ export function registerDataWorkspaceRoutes(
   const missing = (reply: { code(n: number): { send(v: unknown): unknown } }) =>
     reply.code(404).send({ error: { code: "DATA_WORKSPACE_NOT_FOUND" } });
   const handle = (reply: { code(n: number): { send(v: unknown): unknown } }, error: unknown) => {
+    if (error instanceof TableComparisonError)
+      return reply.code(error.code === "TABLE_COMPARE_INVALID" ? 400 : 422).send({
+        error: { code: error.code, ...(error.side ? { side: error.side, row: error.row } : {}) }
+      });
     if (error instanceof TableAnalysisError)
       return reply.code(400).send({ error: { code: error.code } });
     if (error instanceof CanvasConflictError)
@@ -83,6 +91,92 @@ export function registerDataWorkspaceRoutes(
         .header("x-content-type-options", "nosniff");
     return payload;
   });
+  const keyColumns = Type.Array(Type.Integer({ minimum: 1, maximum: 100 }), {
+    minItems: 1,
+    maxItems: 3,
+    uniqueItems: true
+  });
+  app.post<{
+    Params: Path;
+    Body: {
+      before_version: number;
+      after_version: number;
+      alignment: TableAlignment;
+      offset?: number;
+      limit?: number;
+      include_values?: boolean;
+    };
+  }>(
+    root + "/:id/compare",
+    {
+      bodyLimit: 4096,
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: Type.Object(
+          {
+            before_version: Type.Integer({ minimum: 1, maximum: 20 }),
+            after_version: Type.Integer({ minimum: 1, maximum: 20 }),
+            alignment: Type.Union([
+              Type.Object({ kind: Type.Literal("position") }, { additionalProperties: false }),
+              Type.Object(
+                {
+                  kind: Type.Literal("key"),
+                  before_columns: keyColumns,
+                  after_columns: keyColumns
+                },
+                { additionalProperties: false }
+              )
+            ]),
+            offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 160000 })),
+            limit: Type.Optional(Type.Integer({ minimum: 0, maximum: 200 })),
+            include_values: Type.Optional(Type.Boolean())
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (req, reply) => {
+      if (!ownTable(req, req.params)) return missing(reply);
+      const before = store.getRevision(
+        req.params.projectId,
+        owner(req),
+        req.params.id,
+        req.body.before_version
+      );
+      const after = store.getRevision(
+        req.params.projectId,
+        owner(req),
+        req.params.id,
+        req.body.after_version
+      );
+      if (!before || !after) return missing(reply);
+      if (!verified(before) || !verified(after)) return corrupt(reply);
+      try {
+        const result = compareTables(before.content, after.content, {
+          alignment: req.body.alignment,
+          ...(req.body.offset === undefined ? {} : { offset: req.body.offset }),
+          ...(req.body.limit === undefined ? {} : { limit: req.body.limit }),
+          ...(req.body.include_values === undefined
+            ? {}
+            : { include_values: req.body.include_values })
+        });
+        const content = JSON.stringify({
+          ...result,
+          source: {
+            table_id: req.params.id,
+            before: { version: before.version, sha256: before.sha256 },
+            after: { version: after.version, sha256: after.sha256 }
+          }
+        });
+        if (Buffer.byteLength(content) > 1_000_000)
+          return reply.code(413).send({ error: { code: "TABLE_COMPARE_RESULT_TOO_LARGE" } });
+        return reply.type("application/json; charset=utf-8").send(content);
+      } catch (error) {
+        return handle(reply, error);
+      }
+    }
+  );
   app.get<{ Params: { projectId: string } }>(
     root,
     { schema: { params: project } },
