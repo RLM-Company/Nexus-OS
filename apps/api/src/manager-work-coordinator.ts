@@ -406,6 +406,8 @@ export class ManagerWorkCoordinator {
           dispatchAllowed = true;
         } else if (event.type === "route.failed") {
           projects.failModelUsage(runId, event.route.attempt, event.errorCode);
+          if (event.diagnostic)
+            work = this.checkpoint(work, "Диагностика модели: " + event.diagnostic);
           // Close the Gateway iterator at its failure boundary, before its retry loop resumes.
           throw new GatewayRunError(
             event.errorCode,

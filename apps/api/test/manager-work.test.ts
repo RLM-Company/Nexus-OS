@@ -159,6 +159,32 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it.each([
+    { message: "Provider returned HTTP 503", diagnostic: "HTTP_503" },
+    { message: "untrusted upstream body with SECRET_SENTINEL", diagnostic: undefined }
+  ])(
+    "records only allowlisted provider diagnostics without retries",
+    async ({ message, diagnostic }) => {
+      const f = await fixture({
+        onCall: () => Promise.reject(new GatewayRunError("PROVIDER_ERROR", "mock", message, true))
+      });
+      await f.coordinator.execute(f.work.id, "local-owner");
+      expect(f.get()).toMatchObject({
+        status: "failed",
+        model_requests: 1,
+        error_code: "PROVIDER_ERROR"
+      });
+      const events = f
+        .get()
+        .events.map((event) => event.message)
+        .join("\n");
+      if (diagnostic) expect(events).toContain(diagnostic);
+      else expect(events).not.toContain("Диагностика модели:");
+      expect(events).not.toContain("SECRET_SENTINEL");
+      expect(f.calls).toHaveLength(1);
+      await f.coordinator.stop();
+    }
+  );
   it("accepts game source projects over HTTP and preserves all three code artifacts", async () => {
     const f = await fixture({ draft: { files: GAME_SOURCE_FILES } });
     const app = buildApp({

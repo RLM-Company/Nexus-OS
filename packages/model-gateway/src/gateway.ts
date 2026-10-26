@@ -277,7 +277,8 @@ export class ModelGateway {
             type: "route.failed",
             route,
             errorCode: normalized.code,
-            retryable: normalized.retryable
+            retryable: normalized.retryable,
+            ...(normalized.diagnostic ? { diagnostic: normalized.diagnostic } : {})
           };
           if (emittedOutput || normalized.code === "INTERRUPTED") throw normalized;
           lastError = normalized;
