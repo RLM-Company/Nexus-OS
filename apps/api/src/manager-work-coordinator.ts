@@ -1,4 +1,5 @@
 import { validateGeneratedPresentation } from "@cosmora/contracts/presentation-package";
+import { parseGamePackage, gameOutputInstruction } from "@cosmora/contracts/game-package";
 import {
   validateWebsiteDocument,
   WEBSITE_OUTPUT_INSTRUCTION
@@ -261,6 +262,12 @@ export class ManagerWorkCoordinator {
               (stage === "draft"
                 ? WEBSITE_OUTPUT_INSTRUCTION
                 : "The final website artifact is a self-contained static index.html file, not a public deployment. Keep the prescribed JSON schema for this current stage.")
+            : "") +
+          (work.request.output_contract?.kind === "game"
+            ? "\n" +
+              (stage === "draft"
+                ? gameOutputInstruction(work.request.output_contract.genre)
+                : `The final artifact is game.json: data for the built-in ${work.request.output_contract.genre} engine, not arbitrary executable code or deployment. Keep this stage's prescribed JSON schema.`)
             : "")
       },
       {
@@ -619,6 +626,11 @@ export class ManagerWorkCoordinator {
               throw new Error("INVALID_WEBSITE_RESULT");
             validateWebsiteDocument(value.files[0]!.content);
           }
+          if (work.request.output_contract?.kind === "game") {
+            if (value.files.length !== 1 || value.files[0]!.name !== "game.json")
+              throw Error("INVALID_GAME_RESULT");
+            parseGamePackage(value.files[0]!.content, work.request.output_contract.genre);
+          }
           work.draft = value;
           work.stage = work.plan?.needs_critic ? "review" : "publish";
           work = this.checkpoint(work, "Черновики файлов подготовлены; структура проверена");
@@ -643,6 +655,7 @@ export class ManagerWorkCoordinator {
         "INVALID_MODEL_OUTPUT",
         "INVALID_PRESENTATION_RESULT",
         "INVALID_WEBSITE_RESULT",
+        "INVALID_GAME_RESULT",
         "UNSUPPORTED_ACTION",
         "POLICY_UNAVAILABLE",
         "GRAPH_UNAVAILABLE",

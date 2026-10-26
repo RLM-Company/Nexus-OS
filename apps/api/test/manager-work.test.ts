@@ -31,6 +31,8 @@ import { buildApp } from "../src/app.js";
 import { ManagerWorkCoordinator, type WorkOwnerBudget } from "../src/manager-work-coordinator.js";
 import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runtime.js";
 import { AccountStore } from "../src/account-settings/account-store.js";
+import { GAME_FIXTURES } from "./fixtures/game-packages.js";
+import type { GameGenre } from "@cosmora/contracts/game-package";
 
 const resources: (() => void)[] = [];
 afterEach(() => {
@@ -156,6 +158,89 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("accepts each game discriminator through HTTP without mutating its fields", async () => {
+    const f = await fixture();
+    const app = buildApp({
+      config: f.config,
+      database: f.database,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const url = `/api/v1/projects/${f.project.id}/work`;
+      for (const genre of ["arcade", "memory", "quiz"] as GameGenre[]) {
+        const payload = {
+          ...request,
+          client_request_id: `http-${genre}`,
+          output_contract: { kind: "game", genre }
+        };
+        const response = await app.inject({ method: "POST", url, payload });
+        expect(response.statusCode, response.body).toBe(201);
+        expect(
+          response.json<{ request: { output_contract: unknown } }>().request.output_contract
+        ).toEqual({ kind: "game", genre });
+      }
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url,
+            payload: {
+              ...request,
+              client_request_id: "bad-genre",
+              output_contract: { kind: "game", genre: "fps" }
+            }
+          })
+        ).statusCode
+      ).toBe(400);
+      expect(f.calls).toHaveLength(0);
+    } finally {
+      await app.close();
+      await f.coordinator.stop();
+    }
+  });
+  it.each(["arcade", "memory", "quiz"] as GameGenre[])(
+    "creates validated %s game data with existing policy and accounting",
+    async (genre) => {
+      const content = JSON.stringify(GAME_FIXTURES[genre]);
+      const f = await fixture({
+        request: { ...request, output_contract: { kind: "game", genre } },
+        draft: { files: [{ name: "game.json", content }] }
+      });
+      await f.coordinator.execute(f.work.id, "local-owner");
+      expect(f.get()).toMatchObject({
+        status: "completed",
+        model_requests: 2,
+        draft: { files: [{ name: "game.json", content }] }
+      });
+      expect(f.store.runtime.artifacts(f.project.id, "local-owner", f.work.id)).toHaveLength(1);
+      expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(400);
+      await f.coordinator.stop();
+    }
+  );
+  it.each([
+    { ...GAME_FIXTURES.memory, script: "fetch('/private')" },
+    { ...GAME_FIXTURES.memory, pairs: ["A", "a", "B", "C"] },
+    GAME_FIXTURES.quiz
+  ])(
+    "rejects invalid game data or a genre mismatch without publication or a paid retry",
+    async (game) => {
+      const f = await fixture({
+        request: { ...request, output_contract: { kind: "game", genre: "memory" } },
+        draft: { files: [{ name: "game.json", content: JSON.stringify(game) }] }
+      });
+      await f.coordinator.execute(f.work.id, "local-owner");
+      expect(f.get()).toMatchObject({
+        status: "failed",
+        error_code: "INVALID_GAME_RESULT",
+        model_requests: 2
+      });
+      expect(f.store.runtime.artifacts(f.project.id, "local-owner", f.work.id)).toHaveLength(0);
+      expect(f.calls).toHaveLength(2);
+      await f.coordinator.stop();
+    }
+  );
   it("creates a website through the real Work route, validates HTML and keeps canonical accounting", async () => {
     const html =
       "<!doctype html><html lang='ru'><head><style>body{color:#222}</style></head><body><h1>Студия</h1><p>Проекты и контакты</p></body></html>";

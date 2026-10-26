@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Request } from "@playwright/test";
 
 async function project(request: APIRequestContext) {
   const response = await request.post("/api/v1/projects", {
@@ -71,9 +71,9 @@ test("static preview removes active markup and cannot fetch external resources",
   await page.getByRole("combobox", { name: "Проект сайта", exact: true }).selectOption(id);
   const canvas = page.getByRole("region", { name: "Редактор Canvas", exact: true });
   await canvas.getByRole("combobox", { name: "Формат", exact: true }).selectOption("html");
-  const requests: string[] = [];
+  const requests: Request[] = [];
   page.on("request", (req) => {
-    if (req.url().includes("blocked-site-preview.invalid")) requests.push(req.url());
+    if (req.url().includes("blocked-site-preview.invalid")) requests.push(req);
   });
   await canvas
     .getByLabel("Содержимое", { exact: true })
@@ -89,7 +89,9 @@ test("static preview removes active markup and cannot fetch external resources",
     ""
   );
   await page.waitForTimeout(700);
-  expect(requests).toEqual([]);
+  // Chromium can expose a request attempt even when CSP prevents network dispatch.
+  // An actual response, DNS/proxy failure or a pending request must not pass this check.
+  for (const attempted of requests) expect(attempted.failure()?.errorText).toMatch(/csp/i);
   await expect(page.getByRole("heading", { name: "Сайты", exact: true, level: 1 })).toBeVisible();
 });
 

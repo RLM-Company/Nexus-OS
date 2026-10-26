@@ -1,4 +1,5 @@
 import { registerWorkSkillRoutes } from "./work-skill-routes.js";
+import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import { registerWorkDagRoutes } from "./work-dag-routes.js";
 import { registerProjectMemoryRoutes } from "./project-memory-routes.js";
 import { registerWorkRuntimeRoutes } from "./work-runtime-routes.js";
@@ -58,7 +59,10 @@ export function registerManagerWorkRoutes(options: {
   });
   app.post<{ Params: Params; Body: CreateManagerWork }>(
     base,
-    { schema: { params, body: CreateManagerWorkSchema } },
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: { params, body: CreateManagerWorkSchema }
+    },
     (request, reply) => {
       const identity = identityFor(request);
       if (!owned(request)) return reply.code(404).send({ error: "PROJECT_NOT_FOUND" });
