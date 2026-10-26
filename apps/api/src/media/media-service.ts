@@ -38,6 +38,7 @@ type MediaAdapter = {
   ): Promise<{ text: string; usage?: CanonicalMediaUsage }>;
 };
 export interface MediaOptions {
+  baseUrl?: string;
   directory?: string;
   apiKey?: string;
   paidEnabled?: boolean;
@@ -78,9 +79,16 @@ export class MediaService {
   constructor(options: MediaOptions = {}) {
     this.store = options.directory ? new MediaFileStore(options.directory) : null;
     this.paidEnabled = options.paidEnabled === true;
-    this.registry = options.registry ?? new MediaCapabilityRegistry();
+    this.registry =
+      options.registry ??
+      new MediaCapabilityRegistry(
+        options.baseUrl?.startsWith("https://ru.cheapvibecode.ru/")
+          ? ["image_generation"]
+          : undefined
+      );
     this.adapter =
-      options.adapter ?? (options.apiKey ? new OpenAIMediaAdapter(options.apiKey) : undefined);
+      options.adapter ??
+      (options.apiKey ? new OpenAIMediaAdapter(options.apiKey, fetch, options.baseUrl) : undefined);
     this.emergencyStopped = options.emergencyStopped ?? (() => false);
     this.ownerActive = options.ownerActive ?? (() => true);
     this.budget = options.ownerBudget;

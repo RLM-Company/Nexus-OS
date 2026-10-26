@@ -1,4 +1,227 @@
 /* Only the owner's explicit composer/sidebar corrections of 18 October 2026. */
+/* Targeted owner follow-up, 25 October: compact message actions and full collapse. */
+.product-shell .message.assistant {
+  grid-template-columns: minmax(0, 1fr);
+}
+.product-shell .message .response-actions,
+.product-shell .message [class*="userActions"] {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 3px;
+  margin-top: 10px;
+  min-height: 32px;
+}
+.product-shell .message .message-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  margin: 0;
+  padding: 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: none;
+  line-height: 1;
+}
+.product-shell .message .message-action > svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.product-shell .message .message-action:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.product-shell .message .message-action:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.product-shell .message .message-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.chat-canvas-action {
+  position: relative;
+  display: inline-flex;
+}
+.chat-generated-image {
+  position: relative;
+  display: inline-block;
+  width: min(100%, 560px);
+  margin: 10px 0;
+}
+.chat-generated-image > img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+}
+.chat-generated-image > a {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: #111;
+  background: #fffffff2;
+}
+.chat-generated-image > a > svg {
+  width: 18px;
+  height: 18px;
+}
+.product-shell .sidebar > details:first-of-type {
+  max-width: calc(100% - 34px);
+}
+.chat-canvas-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  display: grid;
+  gap: 12px;
+  width: min(300px, 75vw);
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 12px 36px #00000014;
+}
+.chat-canvas-menu label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.chat-canvas-menu select {
+  width: 100%;
+}
+.product-shell .composer .chat-attachment-picker .attachment-clip {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 7px;
+}
+.product-shell .composer .chat-attachment-picker .attachment-clip > svg {
+  width: 18px;
+  height: 18px;
+}
+.model-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.model-controls [data-model-picker] summary > svg {
+  width: 13px;
+  height: 13px;
+  transform: rotate(90deg);
+}
+.product-shell .turbo-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.product-shell .turbo-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+.product-shell .turbo-toggle[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--bg);
+}
+.product-shell .turbo-toggle[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+.product-shell .response-followups {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.product-shell .response-followups button {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.product-shell .response-followups button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.sidebar-collapse-toggle {
+  position: fixed;
+  z-index: 60;
+  top: 18px;
+  left: calc(var(--sidebar-width) - 40px);
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 0;
+  border-radius: 8px;
+}
+.sidebar-collapse-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+.product-shell[data-sidebar-collapsed] .sidebar {
+  transform: translateX(-100%);
+  visibility: hidden;
+  pointer-events: none;
+}
+.product-shell[data-sidebar-collapsed] .workspace {
+  margin-left: 0;
+  width: 100%;
+}
+.product-shell[data-sidebar-collapsed] .sidebar-collapse-toggle {
+  left: 14px;
+}
+.product-shell[data-sidebar-collapsed] .workspace > header {
+  padding-left: 58px;
+}
+@media (max-width: 860px) {
+  .sidebar-collapse-toggle {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .product-shell .message .message-action {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+  }
+}
 @media (min-width: 861px) {
   .product-shell .sidebar {
     width: var(--sidebar-width, 244px);

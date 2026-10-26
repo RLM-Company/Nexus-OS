@@ -67,9 +67,74 @@
   color: var(--text, #171717);
   text-decoration: underline;
 }
+.asset > button {
+  justify-self: start;
+  border: 1px solid var(--line, #ddd);
+  background: transparent;
+  color: var(--text, #171717);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
 .history {
   display: grid;
   gap: 8px;
+}
+.emptyPreview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 300px;
+  padding: 36px 20px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: linear-gradient(145deg, #fafafa, #fff);
+  text-align: center;
+}
+.emptyPreview > svg {
+  width: 34px;
+  height: 34px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.emptyPreview strong {
+  font-size: 16px;
+  font-weight: 500;
+}
+.emptyPreview span,
+.emptyPreview small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.actions button svg {
+  width: 16px;
+  height: 16px;
+}
+.history button img {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.history > div {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  align-items: center;
+}
+.history button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
 }
 .history button {
   background: var(--panel, #f8f8f8);

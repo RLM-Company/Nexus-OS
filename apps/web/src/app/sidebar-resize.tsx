@@ -11,6 +11,27 @@ const bound = (width: number) =>
       window.innerWidth <= 860 ? MAX : Math.min(MAX, Math.max(MIN, window.innerWidth - 520))
     )
   );
+export function useSidebarCollapse() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem("kosmora.sidebar.collapsed.v1") === "true");
+    } catch {
+      /* Local storage can be disabled. Keep the panel usable for this visit. */
+    }
+    setHydrated(true);
+  }, []);
+  useEffect(() => {
+    if (hydrated)
+      try {
+        localStorage.setItem("kosmora.sidebar.collapsed.v1", String(collapsed));
+      } catch {
+        /* Collapsing does not depend on local storage. */
+      }
+  }, [collapsed, hydrated]);
+  return { collapsed, toggle: () => setCollapsed((value) => !value) };
+}
 export function useSidebarWidth() {
   const [width, setWidth] = useState(DEFAULT);
   const [ready, setReady] = useState(false);

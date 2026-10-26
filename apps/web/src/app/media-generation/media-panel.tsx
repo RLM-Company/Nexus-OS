@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./media-panel.module.css";
+import { WorkspaceIcon } from "../workspace-icons";
 
 export type MediaJob = {
   id: string;
@@ -50,7 +51,20 @@ export function useMediaCapabilities() {
         return (await response.json()) as MediaCapabilities;
       })
       .then((value) => {
-        if (mounted) setCapabilities(value.capabilities);
+        if (mounted) {
+          const normalize = (
+            entry: { ready?: boolean; model?: string | null; reason?: string | null } | undefined
+          ) => ({
+            ready: entry?.ready === true,
+            model: typeof entry?.model === "string" ? entry.model : null,
+            reason: typeof entry?.reason === "string" ? entry.reason : null
+          });
+          setCapabilities({
+            image_generation: normalize(value.capabilities?.image_generation),
+            speech: normalize(value.capabilities?.speech),
+            transcription: normalize(value.capabilities?.transcription)
+          });
+        }
       })
       .catch(() => {
         if (mounted) setCapabilities(null);
@@ -136,7 +150,6 @@ export function MediaGenerationPanel({
 }) {
   const caps = useMediaCapabilities();
   const { job, setJob, error, start, cancel, submitting } = useMediaJob();
-  const [consent, setConsent] = useState(false);
   const [history, setHistory] = useState<MediaJob[]>([]);
   const [revision, setRevision] = useState(0);
   const ready = caps?.image_generation?.ready === true;
@@ -168,20 +181,10 @@ export function MediaGenerationPanel({
       <p>Созданное изображение появится здесь. Его можно скачать и открыть из истории.</p>
       <p role="status" className={styles.status}>
         {ready
-          ? `Модель: ${caps?.image_generation.model}`
+          ? "Kosmora Studio · готово к генерации"
           : unavailableName(caps?.image_generation?.reason ?? null)}
       </p>
       {blockedReason && <p role="status">{blockedReason}</p>}
-      {ready && !blockedReason && (
-        <label className={styles.check}>
-          <input
-            type="checkbox"
-            checked={consent}
-            onChange={(event) => setConsent(event.target.checked)}
-          />
-          Подтверждаю генерацию с расходом баланса.
-        </label>
-      )}
       {prompt.trim().length > 2000 && (
         <p role="alert">
           Максимальная длина описания для генерации — 2000 символов. Текст не обрезается незаметно.
@@ -194,17 +197,15 @@ export function MediaGenerationPanel({
             !ready ||
             Boolean(blockedReason) ||
             submitting ||
-            !consent ||
             !prompt.trim() ||
             prompt.trim().length > 2000 ||
             Boolean(job && ["queued", "running"].includes(job.status))
           }
           onClick={() => {
             void start("image", prompt.trim());
-            setConsent(false);
           }}
         >
-          {submitting ? "Запускаем…" : "Сгенерировать изображение"}
+          <WorkspaceIcon name="images" /> {submitting ? "Запускаем…" : "Сгенерировать изображение"}
         </button>
         {job && ["queued", "running"].includes(job.status) && (
           <button type="button" onClick={() => void cancel()}>
@@ -213,6 +214,14 @@ export function MediaGenerationPanel({
         )}
       </div>
       {error && <p role="alert">{error}</p>}
+      {!job && (
+        <div className={styles.emptyPreview}>
+          <WorkspaceIcon name="images" />
+          <strong>От идеи — к изображению</strong>
+          <span>Опишите сцену и нажмите «Сгенерировать изображение».</span>
+          <small>PNG · 1024 × 1024</small>
+        </div>
+      )}
       {job && (
         <div className={styles.asset} role="status">
           <p>
@@ -237,6 +246,9 @@ export function MediaGenerationPanel({
           {history.map((item) => (
             <div key={item.id} className={styles.actions}>
               <button type="button" onClick={() => setJob(item)}>
+                {item.status === "done" && item.asset?.mime === "image/png" && (
+                  <img src={mediaAssetUrl(item.id)} alt="" loading="lazy" />
+                )}
                 {new Date(item.created_at).toLocaleString("ru")} · {statusName[item.status]}
               </button>
               {item.status === "done" && (

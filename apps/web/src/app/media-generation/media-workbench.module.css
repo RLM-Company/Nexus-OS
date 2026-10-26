@@ -4,6 +4,24 @@
   padding: 28px 24px 60px;
   color: var(--text);
 }
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: -10px;
+}
+.presets button {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 20px;
+  font-size: 11px;
+  padding: 6px 10px;
+}
+.presets button:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
 .header {
   margin-bottom: 28px;
 }

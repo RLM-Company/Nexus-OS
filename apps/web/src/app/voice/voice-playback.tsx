@@ -8,6 +8,55 @@ import {
   type MediaJob
 } from "../media-generation/media-panel";
 import styles from "./voice.module.css";
+import { WorkspaceIcon } from "../workspace-icons";
+
+export function CompactVoicePlayback({ text }: { text: string }) {
+  const [available, setAvailable] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const utterance = useRef<SpeechSynthesisUtterance | null>(null);
+  useEffect(() => {
+    setAvailable("speechSynthesis" in window && "SpeechSynthesisUtterance" in window);
+    return () => {
+      if (utterance.current) {
+        utterance.current.onend = null;
+        utterance.current.onerror = null;
+        window.speechSynthesis?.cancel();
+      }
+    };
+  }, []);
+  const label = speaking ? "Остановить озвучивание" : "Озвучить ответ";
+  return (
+    <button
+      type="button"
+      className="message-action"
+      aria-label={label}
+      title={available ? label : "Озвучивание недоступно в этом браузере"}
+      aria-pressed={speaking}
+      disabled={!available}
+      onClick={() => {
+        window.speechSynthesis.cancel();
+        if (speaking) {
+          setSpeaking(false);
+          return;
+        }
+        const next = new SpeechSynthesisUtterance(text);
+        try {
+          const rate = Number(localStorage.getItem("kosmora:voice-rate.v1") ?? 1);
+          if (Number.isFinite(rate) && rate >= 0.75 && rate <= 1.5) next.rate = rate;
+        } catch {
+          /* Browser storage is optional for speech playback. */
+        }
+        utterance.current = next;
+        next.lang = /[а-яё]/i.test(text) ? "ru-RU" : "en-US";
+        next.onend = next.onerror = () => setSpeaking(false);
+        window.speechSynthesis.speak(next);
+        setSpeaking(true);
+      }}
+    >
+      <WorkspaceIcon name={speaking ? "stop" : "sound"} />
+    </button>
+  );
+}
 
 function ExpandedPlayback({ text }: { text: string }) {
   const caps = useMediaCapabilities();

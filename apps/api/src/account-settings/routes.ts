@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
+import { MODEL_PROFILES, type ExecutionPreferences } from "./execution-profile.js";
 import type { IdentityContext } from "@cosmora/contracts";
 import {
   PreferenceConflictError,
@@ -40,6 +41,42 @@ export function registerAccountRoutes(
 ): void {
   const supportedEfforts = /^(gpt-[56]|o[1-9])/i.test(model.model) ? ["low", "medium", "high"] : [];
   app.put(
+    "/api/v1/personal-settings/execution",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        body: Type.Object(
+          {
+            expected_version: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER - 1 }),
+            model_profile: Type.Union([
+              Type.Literal("mercurius"),
+              Type.Literal("mars"),
+              Type.Literal("jupiter"),
+              Type.Literal("saturnus")
+            ]),
+            autonomy: Type.Integer({ minimum: 0, maximum: 6 }),
+            turbo: Type.Boolean()
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      try {
+        return {
+          execution: store.setExecution(
+            identityFor(request).owner_id,
+            request.body as Omit<ExecutionPreferences, "version"> & { expected_version: number }
+          )
+        };
+      } catch (error) {
+        if (error instanceof PreferenceConflictError)
+          return reply.code(409).send(replyError("Execution settings changed in another tab"));
+        throw error;
+      }
+    }
+  );
+  app.put(
     "/api/v1/personal-settings/reasoning",
     {
       validatorCompiler: TypeBoxValidatorCompiler,
@@ -68,6 +105,8 @@ export function registerAccountRoutes(
   app.get("/api/v1/personal-settings", (request) =>
     Promise.resolve({
       settings: store.get(identityFor(request).owner_id),
+      execution: store.getExecution(identityFor(request).owner_id),
+      profiles: MODEL_PROFILES,
       available_models: [model],
       relay_default: false,
       reasoning: {
