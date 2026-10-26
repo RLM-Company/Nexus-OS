@@ -2,7 +2,10 @@ import { Type } from "typebox";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { IdentityContext } from "@cosmora/contracts";
-import type { ArtifactContextRequest } from "@cosmora/contracts/artifact-context";
+import type {
+  ArtifactContextRequest,
+  ArtifactContextSource
+} from "@cosmora/contracts/artifact-context";
 import type { CanvasArtifactStore, ManagerWorkStore, ProjectStore } from "@cosmora/db";
 import { ArtifactContext, ArtifactContextError } from "./artifact-context.js";
 
@@ -75,6 +78,66 @@ export function registerArtifactContextRoutes(
       if (!owned(req)) return reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } });
       try {
         return service.preview(req.params.projectId, identityFor(req).owner_id, req.body);
+      } catch (error) {
+        if (!(error instanceof ArtifactContextError)) throw error;
+        return reply
+          .code(
+            error.message.endsWith("NOT_FOUND")
+              ? 404
+              : /CONFLICT|CORRUPT/.test(error.message)
+                ? 409
+                : error.message.endsWith("LIMIT")
+                  ? 413
+                  : 400
+          )
+          .send({ error: { code: error.message } });
+      }
+    }
+  );
+  app.post<{
+    Params: { projectId: string };
+    Body: { source: ArtifactContextSource; scope: "all" | "view"; columns?: number[] };
+  }>(
+    path + "/table-summary",
+    {
+      bodyLimit: 4096,
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: Type.Object(
+          {
+            source: Type.Object(
+              {
+                kind: Type.Literal("table"),
+                id: Type.String({ minLength: 1, maxLength: 128 }),
+                version: positive,
+                sha256: Type.String({ pattern: "^[a-f0-9]{64}$" })
+              },
+              { additionalProperties: false }
+            ),
+            scope: Type.Union([Type.Literal("all"), Type.Literal("view")]),
+            columns: Type.Optional(
+              Type.Array(Type.Integer({ minimum: 1, maximum: 100 }), {
+                minItems: 1,
+                maxItems: 100,
+                uniqueItems: true
+              })
+            )
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (req, reply) => {
+      if (!owned(req)) return reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } });
+      try {
+        return service.tableSummary(
+          req.params.projectId,
+          identityFor(req).owner_id,
+          req.body.source,
+          req.body.scope,
+          req.body.columns
+        );
       } catch (error) {
         if (!(error instanceof ArtifactContextError)) throw error;
         return reply
