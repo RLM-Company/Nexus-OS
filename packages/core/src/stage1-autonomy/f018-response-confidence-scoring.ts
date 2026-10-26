@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage1AutonomyKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F018_FEATURE_ID = "F018" as const;
 export const F018_STAGE = "stage1-autonomy" as const;
@@ -21,42 +29,20 @@ export type F018ResponseConfidenceScoringExecutionStatus =
   | "cancelled"
   | "failed";
 
-export interface F018ResponseConfidenceScoringConfig {
-  readonly featureId: typeof F018_FEATURE_ID;
-  readonly stage: typeof F018_STAGE;
-  readonly operationCode: typeof F018_OPERATION_CODE;
-  readonly contractVersion: typeof F018_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F018ResponseConfidenceScoringConfig = BaseFeatureConfig<
+  typeof F018_FEATURE_ID,
+  typeof F018_STAGE,
+  typeof F018_OPERATION_CODE
+>;
 
-export interface F018ResponseConfidenceScoringInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F018ResponseConfidenceScoringInput extends BaseFeatureInput {
   readonly task_id: string;
   readonly confidence_score: string | number;
   readonly evidence_density: string | number | boolean | readonly string[];
   readonly meets_threshold: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F018ResponseConfidenceScoringAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F018_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F018ResponseConfidenceScoringAuditEntry = BaseFeatureAuditEntry<typeof F018_FEATURE_ID>;
 
 export interface F018ResponseConfidenceScoringOutput {
   readonly featureId: typeof F018_FEATURE_ID;
@@ -76,14 +62,7 @@ export interface F018ResponseConfidenceScoringOutput {
   readonly auditRecord: F018ResponseConfidenceScoringAuditEntry;
 }
 
-export interface F018ResponseConfidenceScoringTelemetrySnapshot {
-  readonly featureId: typeof F018_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F018ResponseConfidenceScoringTelemetrySnapshot = BaseFeatureTelemetry<typeof F018_FEATURE_ID>;
 
 export const DEFAULT_F018_CONFIG: F018ResponseConfidenceScoringConfig = {
   featureId: F018_FEATURE_ID,
@@ -112,195 +91,27 @@ export function computeF018Digest(rawPayload: string): string {
   return `f018_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F018ResponseConfidenceScoringEngine {
-  private readonly config: F018ResponseConfidenceScoringConfig;
-  private readonly kernel: Stage1AutonomyKernel;
-  private readonly executionHistory: F018ResponseConfidenceScoringOutput[] = [];
-  private readonly auditLog: F018ResponseConfidenceScoringAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F018ResponseConfidenceScoringOutput }>();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
+export class F018ResponseConfidenceScoringEngine extends KosmoraFeatureAdapterBase<
+  typeof F018_FEATURE_ID,
+  typeof F018_STAGE,
+  typeof F018_OPERATION_CODE,
+  F018ResponseConfidenceScoringConfig,
+  F018ResponseConfidenceScoringInput,
+  F018ResponseConfidenceScoringOutput
+> {
   constructor(customConfig?: Partial<F018ResponseConfidenceScoringConfig>, kernel?: Stage1AutonomyKernel) {
-    this.config = {
-      ...DEFAULT_F018_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage1AutonomyKernel();
+    super(
+      DEFAULT_F018_CONFIG,
+      customConfig,
+      kernel ?? new Stage1AutonomyKernel(),
+      ["task_id", "confidence_score", "evidence_density", "meets_threshold"] as const,
+      F018ResponseConfidenceScoringValidationError
+    );
   }
-
-  public getConfig(): F018ResponseConfidenceScoringConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F018ResponseConfidenceScoringInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F018ResponseConfidenceScoringValidationError("requestId", "Request ID must be a non-empty string.");
+  protected override validateDomainInvariants(input: F018ResponseConfidenceScoringInput): void {
+    if (typeof input.confidence_score === "number" && input.confidence_score > 1000) {
+      throw new F018ResponseConfidenceScoringValidationError("confidence_score", "Metric 'confidence_score' exceeds maximum normalized ceiling (1000).");
     }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F018ResponseConfidenceScoringValidationError("projectId", "Project ID must be a non-empty string.");
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F018ResponseConfidenceScoringValidationError("workspaceId", "Workspace ID must be a non-empty string.");
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F018ResponseConfidenceScoringValidationError("tenantId", "Tenant ID must be a non-empty string.");
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F018ResponseConfidenceScoringValidationError("actorId", "Actor ID must be a non-empty string.");
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F018ResponseConfidenceScoringValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
-    }
-    if (this.config.strictValidation && String(input.task_id).trim().length === 0) {
-      throw new F018ResponseConfidenceScoringValidationError("task_id", "Primary domain attribute 'task_id' cannot be empty.");
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      task_id: input.task_id,
-      confidence_score: input.confidence_score,
-      evidence_density: input.evidence_density,
-      meets_threshold: input.meets_threshold
-    })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F018ResponseConfidenceScoringValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
-      }
-    }
-  }
-
-  public execute(input: F018ResponseConfidenceScoringInput): F018ResponseConfidenceScoringOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F018_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        task_id: input.task_id,
-        confidence_score: input.confidence_score,
-        evidence_density: input.evidence_density,
-        meets_threshold: input.meets_threshold
-      });
-      const payloadHash = computeF018Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F018ResponseConfidenceScoringValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F018_FEATURE_ID,
-        operationCode: F018_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          task_id: input.task_id,
-          confidence_score: input.confidence_score,
-          evidence_density: input.evidence_density,
-          meets_threshold: input.meets_threshold
-        }
-      });
-
-      const executionId = `exec_f018_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f018_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F018ResponseConfidenceScoringAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F018_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `confidence_estimator:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F018ResponseConfidenceScoringOutput = {
-        featureId: F018_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F018_OPERATION_CODE,
-        resolved_task_id: kernelResult.resolvedFields.task_id as string,
-        resolved_confidence_score: kernelResult.resolvedFields.confidence_score as string | number,
-        resolved_evidence_density: kernelResult.resolvedFields.evidence_density as string | number | boolean | readonly string[],
-        resolved_meets_threshold: kernelResult.resolvedFields.meets_threshold as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
-  }
-
-  public getTelemetrySnapshot(): F018ResponseConfidenceScoringTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F018_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F018ResponseConfidenceScoringAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F018ResponseConfidenceScoringOutput[] {
-    return [...this.executionHistory];
   }
 }
 

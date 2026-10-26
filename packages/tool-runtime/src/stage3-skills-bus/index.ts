@@ -32,7 +32,7 @@ import { verifyF095Module } from "./f095-automated-skill-chaining.js";
 import { verifyF096Module } from "./f096-tool-invocation-telemetry.js";
 
 // Stage Barrel Export for packages/tool-runtime/src/stage3-skills-bus (32 feature modules)
-export * from "./stage-kernel.js";
+export { Stage3SkillsKernel } from "./stage-kernel.js";
 export * from "./f065-chat-modular-skill-invoker.js";
 export * from "./f066-internal-skills-registry.js";
 export * from "./f067-custom-skill-builder.js";

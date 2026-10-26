@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage3SkillsKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage3SkillsKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F069_FEATURE_ID = "F069" as const;
 export const F069_STAGE = "stage3-skills-bus" as const;
@@ -21,42 +29,20 @@ export type F069GithubIssuesTwoWaySyncExecutionStatus =
   | "cancelled"
   | "failed";
 
-export interface F069GithubIssuesTwoWaySyncConfig {
-  readonly featureId: typeof F069_FEATURE_ID;
-  readonly stage: typeof F069_STAGE;
-  readonly operationCode: typeof F069_OPERATION_CODE;
-  readonly contractVersion: typeof F069_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F069GithubIssuesTwoWaySyncConfig = BaseFeatureConfig<
+  typeof F069_FEATURE_ID,
+  typeof F069_STAGE,
+  typeof F069_OPERATION_CODE
+>;
 
-export interface F069GithubIssuesTwoWaySyncInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F069GithubIssuesTwoWaySyncInput extends BaseFeatureInput {
   readonly repo_name: string;
   readonly issue_number: string | number;
   readonly sync_state: string | number | boolean | readonly string[];
   readonly linked_artifact_id: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F069GithubIssuesTwoWaySyncAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F069_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F069GithubIssuesTwoWaySyncAuditEntry = BaseFeatureAuditEntry<typeof F069_FEATURE_ID>;
 
 export interface F069GithubIssuesTwoWaySyncOutput {
   readonly featureId: typeof F069_FEATURE_ID;
@@ -76,14 +62,7 @@ export interface F069GithubIssuesTwoWaySyncOutput {
   readonly auditRecord: F069GithubIssuesTwoWaySyncAuditEntry;
 }
 
-export interface F069GithubIssuesTwoWaySyncTelemetrySnapshot {
-  readonly featureId: typeof F069_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F069GithubIssuesTwoWaySyncTelemetrySnapshot = BaseFeatureTelemetry<typeof F069_FEATURE_ID>;
 
 export const DEFAULT_F069_CONFIG: F069GithubIssuesTwoWaySyncConfig = {
   featureId: F069_FEATURE_ID,
@@ -112,195 +91,22 @@ export function computeF069Digest(rawPayload: string): string {
   return `f069_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F069GithubIssuesTwoWaySyncEngine {
-  private readonly config: F069GithubIssuesTwoWaySyncConfig;
-  private readonly kernel: Stage3SkillsKernel;
-  private readonly executionHistory: F069GithubIssuesTwoWaySyncOutput[] = [];
-  private readonly auditLog: F069GithubIssuesTwoWaySyncAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F069GithubIssuesTwoWaySyncOutput }>();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
+export class F069GithubIssuesTwoWaySyncEngine extends KosmoraFeatureAdapterBase<
+  typeof F069_FEATURE_ID,
+  typeof F069_STAGE,
+  typeof F069_OPERATION_CODE,
+  F069GithubIssuesTwoWaySyncConfig,
+  F069GithubIssuesTwoWaySyncInput,
+  F069GithubIssuesTwoWaySyncOutput
+> {
   constructor(customConfig?: Partial<F069GithubIssuesTwoWaySyncConfig>, kernel?: Stage3SkillsKernel) {
-    this.config = {
-      ...DEFAULT_F069_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage3SkillsKernel();
-  }
-
-  public getConfig(): F069GithubIssuesTwoWaySyncConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F069GithubIssuesTwoWaySyncInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F069GithubIssuesTwoWaySyncValidationError("requestId", "Request ID must be a non-empty string.");
-    }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F069GithubIssuesTwoWaySyncValidationError("projectId", "Project ID must be a non-empty string.");
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F069GithubIssuesTwoWaySyncValidationError("workspaceId", "Workspace ID must be a non-empty string.");
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F069GithubIssuesTwoWaySyncValidationError("tenantId", "Tenant ID must be a non-empty string.");
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F069GithubIssuesTwoWaySyncValidationError("actorId", "Actor ID must be a non-empty string.");
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F069GithubIssuesTwoWaySyncValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
-    }
-    if (this.config.strictValidation && String(input.repo_name).trim().length === 0) {
-      throw new F069GithubIssuesTwoWaySyncValidationError("repo_name", "Primary domain attribute 'repo_name' cannot be empty.");
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      repo_name: input.repo_name,
-      issue_number: input.issue_number,
-      sync_state: input.sync_state,
-      linked_artifact_id: input.linked_artifact_id
-    })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F069GithubIssuesTwoWaySyncValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
-      }
-    }
-  }
-
-  public execute(input: F069GithubIssuesTwoWaySyncInput): F069GithubIssuesTwoWaySyncOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F069_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        repo_name: input.repo_name,
-        issue_number: input.issue_number,
-        sync_state: input.sync_state,
-        linked_artifact_id: input.linked_artifact_id
-      });
-      const payloadHash = computeF069Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F069GithubIssuesTwoWaySyncValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F069_FEATURE_ID,
-        operationCode: F069_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          repo_name: input.repo_name,
-          issue_number: input.issue_number,
-          sync_state: input.sync_state,
-          linked_artifact_id: input.linked_artifact_id
-        }
-      });
-
-      const executionId = `exec_f069_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f069_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F069GithubIssuesTwoWaySyncAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F069_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `github_issues_bridge:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F069GithubIssuesTwoWaySyncOutput = {
-        featureId: F069_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F069_OPERATION_CODE,
-        resolved_repo_name: kernelResult.resolvedFields.repo_name as string,
-        resolved_issue_number: kernelResult.resolvedFields.issue_number as string | number,
-        resolved_sync_state: kernelResult.resolvedFields.sync_state as string | number | boolean | readonly string[],
-        resolved_linked_artifact_id: kernelResult.resolvedFields.linked_artifact_id as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
-  }
-
-  public getTelemetrySnapshot(): F069GithubIssuesTwoWaySyncTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F069_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F069GithubIssuesTwoWaySyncAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F069GithubIssuesTwoWaySyncOutput[] {
-    return [...this.executionHistory];
+    super(
+      DEFAULT_F069_CONFIG,
+      customConfig,
+      kernel ?? new Stage3SkillsKernel(),
+      ["repo_name", "issue_number", "sync_state", "linked_artifact_id"] as const,
+      F069GithubIssuesTwoWaySyncValidationError
+    );
   }
 }
 

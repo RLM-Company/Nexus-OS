@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage1AutonomyKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F016_FEATURE_ID = "F016" as const;
 export const F016_STAGE = "stage1-autonomy" as const;
@@ -21,42 +29,20 @@ export type F016SelfHealingSyntaxRetryExecutionStatus =
   | "cancelled"
   | "failed";
 
-export interface F016SelfHealingSyntaxRetryConfig {
-  readonly featureId: typeof F016_FEATURE_ID;
-  readonly stage: typeof F016_STAGE;
-  readonly operationCode: typeof F016_OPERATION_CODE;
-  readonly contractVersion: typeof F016_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F016SelfHealingSyntaxRetryConfig = BaseFeatureConfig<
+  typeof F016_FEATURE_ID,
+  typeof F016_STAGE,
+  typeof F016_OPERATION_CODE
+>;
 
-export interface F016SelfHealingSyntaxRetryInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F016SelfHealingSyntaxRetryInput extends BaseFeatureInput {
   readonly attempt_number: string;
   readonly syntax_repaired: string | number;
   readonly extracted_json: string | number | boolean | readonly string[];
   readonly diagnostic_delta: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F016SelfHealingSyntaxRetryAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F016_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F016SelfHealingSyntaxRetryAuditEntry = BaseFeatureAuditEntry<typeof F016_FEATURE_ID>;
 
 export interface F016SelfHealingSyntaxRetryOutput {
   readonly featureId: typeof F016_FEATURE_ID;
@@ -76,14 +62,7 @@ export interface F016SelfHealingSyntaxRetryOutput {
   readonly auditRecord: F016SelfHealingSyntaxRetryAuditEntry;
 }
 
-export interface F016SelfHealingSyntaxRetryTelemetrySnapshot {
-  readonly featureId: typeof F016_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F016SelfHealingSyntaxRetryTelemetrySnapshot = BaseFeatureTelemetry<typeof F016_FEATURE_ID>;
 
 export const DEFAULT_F016_CONFIG: F016SelfHealingSyntaxRetryConfig = {
   featureId: F016_FEATURE_ID,
@@ -112,195 +91,22 @@ export function computeF016Digest(rawPayload: string): string {
   return `f016_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F016SelfHealingSyntaxRetryEngine {
-  private readonly config: F016SelfHealingSyntaxRetryConfig;
-  private readonly kernel: Stage1AutonomyKernel;
-  private readonly executionHistory: F016SelfHealingSyntaxRetryOutput[] = [];
-  private readonly auditLog: F016SelfHealingSyntaxRetryAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F016SelfHealingSyntaxRetryOutput }>();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
+export class F016SelfHealingSyntaxRetryEngine extends KosmoraFeatureAdapterBase<
+  typeof F016_FEATURE_ID,
+  typeof F016_STAGE,
+  typeof F016_OPERATION_CODE,
+  F016SelfHealingSyntaxRetryConfig,
+  F016SelfHealingSyntaxRetryInput,
+  F016SelfHealingSyntaxRetryOutput
+> {
   constructor(customConfig?: Partial<F016SelfHealingSyntaxRetryConfig>, kernel?: Stage1AutonomyKernel) {
-    this.config = {
-      ...DEFAULT_F016_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage1AutonomyKernel();
-  }
-
-  public getConfig(): F016SelfHealingSyntaxRetryConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F016SelfHealingSyntaxRetryInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F016SelfHealingSyntaxRetryValidationError("requestId", "Request ID must be a non-empty string.");
-    }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F016SelfHealingSyntaxRetryValidationError("projectId", "Project ID must be a non-empty string.");
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F016SelfHealingSyntaxRetryValidationError("workspaceId", "Workspace ID must be a non-empty string.");
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F016SelfHealingSyntaxRetryValidationError("tenantId", "Tenant ID must be a non-empty string.");
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F016SelfHealingSyntaxRetryValidationError("actorId", "Actor ID must be a non-empty string.");
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F016SelfHealingSyntaxRetryValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
-    }
-    if (this.config.strictValidation && String(input.attempt_number).trim().length === 0) {
-      throw new F016SelfHealingSyntaxRetryValidationError("attempt_number", "Primary domain attribute 'attempt_number' cannot be empty.");
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      attempt_number: input.attempt_number,
-      syntax_repaired: input.syntax_repaired,
-      extracted_json: input.extracted_json,
-      diagnostic_delta: input.diagnostic_delta
-    })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F016SelfHealingSyntaxRetryValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
-      }
-    }
-  }
-
-  public execute(input: F016SelfHealingSyntaxRetryInput): F016SelfHealingSyntaxRetryOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F016_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        attempt_number: input.attempt_number,
-        syntax_repaired: input.syntax_repaired,
-        extracted_json: input.extracted_json,
-        diagnostic_delta: input.diagnostic_delta
-      });
-      const payloadHash = computeF016Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F016SelfHealingSyntaxRetryValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F016_FEATURE_ID,
-        operationCode: F016_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          attempt_number: input.attempt_number,
-          syntax_repaired: input.syntax_repaired,
-          extracted_json: input.extracted_json,
-          diagnostic_delta: input.diagnostic_delta
-        }
-      });
-
-      const executionId = `exec_f016_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f016_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F016SelfHealingSyntaxRetryAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F016_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `self_healing_retry:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F016SelfHealingSyntaxRetryOutput = {
-        featureId: F016_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F016_OPERATION_CODE,
-        resolved_attempt_number: kernelResult.resolvedFields.attempt_number as string,
-        resolved_syntax_repaired: kernelResult.resolvedFields.syntax_repaired as string | number,
-        resolved_extracted_json: kernelResult.resolvedFields.extracted_json as string | number | boolean | readonly string[],
-        resolved_diagnostic_delta: kernelResult.resolvedFields.diagnostic_delta as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
-  }
-
-  public getTelemetrySnapshot(): F016SelfHealingSyntaxRetryTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F016_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F016SelfHealingSyntaxRetryAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F016SelfHealingSyntaxRetryOutput[] {
-    return [...this.executionHistory];
+    super(
+      DEFAULT_F016_CONFIG,
+      customConfig,
+      kernel ?? new Stage1AutonomyKernel(),
+      ["attempt_number", "syntax_repaired", "extracted_json", "diagnostic_delta"] as const,
+      F016SelfHealingSyntaxRetryValidationError
+    );
   }
 }
 

@@ -56,6 +56,44 @@ export interface KosmoraWorkspaceViewModel {
     audit_chain_verified: boolean;
     audit_entries_count: number;
   };
+  sovereign_cluster_summary: {
+    leader_peer_id: string;
+    quorum_term: number;
+    fencing_token: number;
+    crdt_converged: boolean;
+    ed25519_slsa_attested: boolean;
+    distilled_skills_promoted: number;
+  };
+  formal_and_finops_summary: {
+    fsm_invariants_verified: boolean;
+    csp_anti_affinity_satisfied: boolean;
+    w3c_trace_critical_path_ms: number;
+    taint_analysis_clean: boolean;
+    ucb1_selected_provider: string;
+    dp_remaining_epsilon: number;
+    merkle_selective_disclosure_verified: boolean;
+    rtbf_zero_residue_confirmed: boolean;
+  };
+  quantum_and_gametheory_summary: {
+    hkdf_sha512_active: boolean;
+    shamir_threshold_scheme: string;
+    fiat_shamir_nizkp_verified: boolean;
+    lamport_pqc_signatures_verified: boolean;
+    shapley_efficiency_verified: boolean;
+    vcg_strategy_proof_verified: boolean;
+    schulze_condorcet_winner: string;
+    gale_shapley_blocking_pairs: number;
+  };
+  causal_and_homomorphic_summary: {
+    pearl_do_calculus_ace: number;
+    counterfactual_ite_verified: boolean;
+    bayesian_map_hypothesis: string;
+    thompson_selected_strategy: string;
+    paillier_homomorphic_verified: boolean;
+    wesolowski_vdf_verified: boolean;
+    macaroon_caveats_enforced: boolean;
+    byzantine_quorum_intersection_verified: boolean;
+  };
 }
 
 export const KOSMORA_MONOCHROME_THEME: WorkspacePaletteTheme = Object.freeze({
@@ -76,9 +114,9 @@ export function buildKosmoraWorkspaceViewModel(overrides?: {
   const tenantId = overrides?.tenant_id ?? "tenant_enterprise_01";
 
   return {
-    title: "Суверенная ИИ-ОС Kosmora — Центр управления (160 модулей)",
+    title: "Суверенная ИИ-ОС Kosmora — Центр управления (384 модуля, Stage 1–12)",
     subtitle:
-      "Детерминированное исполнение DAG, версионируемый холст артефактов, граф знаний с контролем устаревания и криптографический аудит",
+      "Детерминированное исполнение DAG, версионируемый холст CRDT/CAS, граф знаний, Raft-кворум, формальная верификация (Stage 7) и FinOps/ZK-комплаенс (Stage 8)",
     theme: KOSMORA_MONOCHROME_THEME,
     dag_summary: {
       plan_id: `plan_${projectId}_01`,
@@ -141,6 +179,44 @@ export function buildKosmoraWorkspaceViewModel(overrides?: {
       vault_cipher: "AES-256-GCM",
       audit_chain_verified: true,
       audit_entries_count: 18
+    },
+    sovereign_cluster_summary: {
+      leader_peer_id: "node-alpha",
+      quorum_term: 1,
+      fencing_token: 1001,
+      crdt_converged: true,
+      ed25519_slsa_attested: true,
+      distilled_skills_promoted: 4
+    },
+    formal_and_finops_summary: {
+      fsm_invariants_verified: true,
+      csp_anti_affinity_satisfied: true,
+      w3c_trace_critical_path_ms: 180,
+      taint_analysis_clean: true,
+      ucb1_selected_provider: "gemini_primary (gemini-2.5-pro)",
+      dp_remaining_epsilon: 1.5,
+      merkle_selective_disclosure_verified: true,
+      rtbf_zero_residue_confirmed: true
+    },
+    quantum_and_gametheory_summary: {
+      hkdf_sha512_active: true,
+      shamir_threshold_scheme: "GF(65537) k=3 of n=5",
+      fiat_shamir_nizkp_verified: true,
+      lamport_pqc_signatures_verified: true,
+      shapley_efficiency_verified: true,
+      vcg_strategy_proof_verified: true,
+      schulze_condorcet_winner: "arch_plan_a",
+      gale_shapley_blocking_pairs: 0
+    },
+    causal_and_homomorphic_summary: {
+      pearl_do_calculus_ace: 2.2,
+      counterfactual_ite_verified: true,
+      bayesian_map_hypothesis: "hyp_token_quota_throttled",
+      thompson_selected_strategy: "strategy_flagship_cot",
+      paillier_homomorphic_verified: true,
+      wesolowski_vdf_verified: true,
+      macaroon_caveats_enforced: true,
+      byzantine_quorum_intersection_verified: true
     }
   };
 }

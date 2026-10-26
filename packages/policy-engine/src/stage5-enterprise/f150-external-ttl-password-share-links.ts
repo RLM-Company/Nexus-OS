@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage5EnterpriseKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage5EnterpriseKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F150_FEATURE_ID = "F150" as const;
 export const F150_STAGE = "stage5-enterprise" as const;
@@ -21,42 +29,20 @@ export type F150ExternalTtlPasswordShareLinksExecutionStatus =
   | "cancelled"
   | "failed";
 
-export interface F150ExternalTtlPasswordShareLinksConfig {
-  readonly featureId: typeof F150_FEATURE_ID;
-  readonly stage: typeof F150_STAGE;
-  readonly operationCode: typeof F150_OPERATION_CODE;
-  readonly contractVersion: typeof F150_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F150ExternalTtlPasswordShareLinksConfig = BaseFeatureConfig<
+  typeof F150_FEATURE_ID,
+  typeof F150_STAGE,
+  typeof F150_OPERATION_CODE
+>;
 
-export interface F150ExternalTtlPasswordShareLinksInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F150ExternalTtlPasswordShareLinksInput extends BaseFeatureInput {
   readonly share_token: string;
   readonly artifact_id: string | number;
   readonly expires_at_iso: string | number | boolean | readonly string[];
   readonly password_protected: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F150ExternalTtlPasswordShareLinksAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F150_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F150ExternalTtlPasswordShareLinksAuditEntry = BaseFeatureAuditEntry<typeof F150_FEATURE_ID>;
 
 export interface F150ExternalTtlPasswordShareLinksOutput {
   readonly featureId: typeof F150_FEATURE_ID;
@@ -76,14 +62,7 @@ export interface F150ExternalTtlPasswordShareLinksOutput {
   readonly auditRecord: F150ExternalTtlPasswordShareLinksAuditEntry;
 }
 
-export interface F150ExternalTtlPasswordShareLinksTelemetrySnapshot {
-  readonly featureId: typeof F150_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F150ExternalTtlPasswordShareLinksTelemetrySnapshot = BaseFeatureTelemetry<typeof F150_FEATURE_ID>;
 
 export const DEFAULT_F150_CONFIG: F150ExternalTtlPasswordShareLinksConfig = {
   featureId: F150_FEATURE_ID,
@@ -112,195 +91,22 @@ export function computeF150Digest(rawPayload: string): string {
   return `f150_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F150ExternalTtlPasswordShareLinksEngine {
-  private readonly config: F150ExternalTtlPasswordShareLinksConfig;
-  private readonly kernel: Stage5EnterpriseKernel;
-  private readonly executionHistory: F150ExternalTtlPasswordShareLinksOutput[] = [];
-  private readonly auditLog: F150ExternalTtlPasswordShareLinksAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F150ExternalTtlPasswordShareLinksOutput }>();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
+export class F150ExternalTtlPasswordShareLinksEngine extends KosmoraFeatureAdapterBase<
+  typeof F150_FEATURE_ID,
+  typeof F150_STAGE,
+  typeof F150_OPERATION_CODE,
+  F150ExternalTtlPasswordShareLinksConfig,
+  F150ExternalTtlPasswordShareLinksInput,
+  F150ExternalTtlPasswordShareLinksOutput
+> {
   constructor(customConfig?: Partial<F150ExternalTtlPasswordShareLinksConfig>, kernel?: Stage5EnterpriseKernel) {
-    this.config = {
-      ...DEFAULT_F150_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage5EnterpriseKernel();
-  }
-
-  public getConfig(): F150ExternalTtlPasswordShareLinksConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F150ExternalTtlPasswordShareLinksInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F150ExternalTtlPasswordShareLinksValidationError("requestId", "Request ID must be a non-empty string.");
-    }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F150ExternalTtlPasswordShareLinksValidationError("projectId", "Project ID must be a non-empty string.");
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F150ExternalTtlPasswordShareLinksValidationError("workspaceId", "Workspace ID must be a non-empty string.");
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F150ExternalTtlPasswordShareLinksValidationError("tenantId", "Tenant ID must be a non-empty string.");
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F150ExternalTtlPasswordShareLinksValidationError("actorId", "Actor ID must be a non-empty string.");
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F150ExternalTtlPasswordShareLinksValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
-    }
-    if (this.config.strictValidation && String(input.share_token).trim().length === 0) {
-      throw new F150ExternalTtlPasswordShareLinksValidationError("share_token", "Primary domain attribute 'share_token' cannot be empty.");
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      share_token: input.share_token,
-      artifact_id: input.artifact_id,
-      expires_at_iso: input.expires_at_iso,
-      password_protected: input.password_protected
-    })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F150ExternalTtlPasswordShareLinksValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
-      }
-    }
-  }
-
-  public execute(input: F150ExternalTtlPasswordShareLinksInput): F150ExternalTtlPasswordShareLinksOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F150_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        share_token: input.share_token,
-        artifact_id: input.artifact_id,
-        expires_at_iso: input.expires_at_iso,
-        password_protected: input.password_protected
-      });
-      const payloadHash = computeF150Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F150ExternalTtlPasswordShareLinksValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F150_FEATURE_ID,
-        operationCode: F150_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          share_token: input.share_token,
-          artifact_id: input.artifact_id,
-          expires_at_iso: input.expires_at_iso,
-          password_protected: input.password_protected
-        }
-      });
-
-      const executionId = `exec_f150_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f150_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F150ExternalTtlPasswordShareLinksAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F150_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `secure_share_link_issuer:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F150ExternalTtlPasswordShareLinksOutput = {
-        featureId: F150_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F150_OPERATION_CODE,
-        resolved_share_token: kernelResult.resolvedFields.share_token as string,
-        resolved_artifact_id: kernelResult.resolvedFields.artifact_id as string | number,
-        resolved_expires_at_iso: kernelResult.resolvedFields.expires_at_iso as string | number | boolean | readonly string[],
-        resolved_password_protected: kernelResult.resolvedFields.password_protected as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
-  }
-
-  public getTelemetrySnapshot(): F150ExternalTtlPasswordShareLinksTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F150_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F150ExternalTtlPasswordShareLinksAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F150ExternalTtlPasswordShareLinksOutput[] {
-    return [...this.executionHistory];
+    super(
+      DEFAULT_F150_CONFIG,
+      customConfig,
+      kernel ?? new Stage5EnterpriseKernel(),
+      ["share_token", "artifact_id", "expires_at_iso", "password_protected"] as const,
+      F150ExternalTtlPasswordShareLinksValidationError
+    );
   }
 }
 

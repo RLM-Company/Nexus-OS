@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage1AutonomyKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage1AutonomyKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F032_FEATURE_ID = "F032" as const;
 export const F032_STAGE = "stage1-autonomy" as const;
@@ -21,42 +29,20 @@ export type F032NodeLatencyProfilerExecutionStatus =
   | "cancelled"
   | "failed";
 
-export interface F032NodeLatencyProfilerConfig {
-  readonly featureId: typeof F032_FEATURE_ID;
-  readonly stage: typeof F032_STAGE;
-  readonly operationCode: typeof F032_OPERATION_CODE;
-  readonly contractVersion: typeof F032_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F032NodeLatencyProfilerConfig = BaseFeatureConfig<
+  typeof F032_FEATURE_ID,
+  typeof F032_STAGE,
+  typeof F032_OPERATION_CODE
+>;
 
-export interface F032NodeLatencyProfilerInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F032NodeLatencyProfilerInput extends BaseFeatureInput {
   readonly graph_id: string;
   readonly bottleneck_node_id: string | number;
   readonly p95_latency_ms: string | number | boolean | readonly string[];
   readonly total_graph_ms: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F032NodeLatencyProfilerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F032_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F032NodeLatencyProfilerAuditEntry = BaseFeatureAuditEntry<typeof F032_FEATURE_ID>;
 
 export interface F032NodeLatencyProfilerOutput {
   readonly featureId: typeof F032_FEATURE_ID;
@@ -76,14 +62,7 @@ export interface F032NodeLatencyProfilerOutput {
   readonly auditRecord: F032NodeLatencyProfilerAuditEntry;
 }
 
-export interface F032NodeLatencyProfilerTelemetrySnapshot {
-  readonly featureId: typeof F032_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F032NodeLatencyProfilerTelemetrySnapshot = BaseFeatureTelemetry<typeof F032_FEATURE_ID>;
 
 export const DEFAULT_F032_CONFIG: F032NodeLatencyProfilerConfig = {
   featureId: F032_FEATURE_ID,
@@ -112,195 +91,22 @@ export function computeF032Digest(rawPayload: string): string {
   return `f032_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F032NodeLatencyProfilerEngine {
-  private readonly config: F032NodeLatencyProfilerConfig;
-  private readonly kernel: Stage1AutonomyKernel;
-  private readonly executionHistory: F032NodeLatencyProfilerOutput[] = [];
-  private readonly auditLog: F032NodeLatencyProfilerAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F032NodeLatencyProfilerOutput }>();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
+export class F032NodeLatencyProfilerEngine extends KosmoraFeatureAdapterBase<
+  typeof F032_FEATURE_ID,
+  typeof F032_STAGE,
+  typeof F032_OPERATION_CODE,
+  F032NodeLatencyProfilerConfig,
+  F032NodeLatencyProfilerInput,
+  F032NodeLatencyProfilerOutput
+> {
   constructor(customConfig?: Partial<F032NodeLatencyProfilerConfig>, kernel?: Stage1AutonomyKernel) {
-    this.config = {
-      ...DEFAULT_F032_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage1AutonomyKernel();
-  }
-
-  public getConfig(): F032NodeLatencyProfilerConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F032NodeLatencyProfilerInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F032NodeLatencyProfilerValidationError("requestId", "Request ID must be a non-empty string.");
-    }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F032NodeLatencyProfilerValidationError("projectId", "Project ID must be a non-empty string.");
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F032NodeLatencyProfilerValidationError("workspaceId", "Workspace ID must be a non-empty string.");
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F032NodeLatencyProfilerValidationError("tenantId", "Tenant ID must be a non-empty string.");
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F032NodeLatencyProfilerValidationError("actorId", "Actor ID must be a non-empty string.");
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F032NodeLatencyProfilerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
-    }
-    if (this.config.strictValidation && String(input.graph_id).trim().length === 0) {
-      throw new F032NodeLatencyProfilerValidationError("graph_id", "Primary domain attribute 'graph_id' cannot be empty.");
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      graph_id: input.graph_id,
-      bottleneck_node_id: input.bottleneck_node_id,
-      p95_latency_ms: input.p95_latency_ms,
-      total_graph_ms: input.total_graph_ms
-    })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F032NodeLatencyProfilerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
-      }
-    }
-  }
-
-  public execute(input: F032NodeLatencyProfilerInput): F032NodeLatencyProfilerOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F032_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        graph_id: input.graph_id,
-        bottleneck_node_id: input.bottleneck_node_id,
-        p95_latency_ms: input.p95_latency_ms,
-        total_graph_ms: input.total_graph_ms
-      });
-      const payloadHash = computeF032Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F032NodeLatencyProfilerValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F032_FEATURE_ID,
-        operationCode: F032_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          graph_id: input.graph_id,
-          bottleneck_node_id: input.bottleneck_node_id,
-          p95_latency_ms: input.p95_latency_ms,
-          total_graph_ms: input.total_graph_ms
-        }
-      });
-
-      const executionId = `exec_f032_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f032_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F032NodeLatencyProfilerAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F032_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `latency_profiler:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F032NodeLatencyProfilerOutput = {
-        featureId: F032_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F032_OPERATION_CODE,
-        resolved_graph_id: kernelResult.resolvedFields.graph_id as string,
-        resolved_bottleneck_node_id: kernelResult.resolvedFields.bottleneck_node_id as string | number,
-        resolved_p95_latency_ms: kernelResult.resolvedFields.p95_latency_ms as string | number | boolean | readonly string[],
-        resolved_total_graph_ms: kernelResult.resolvedFields.total_graph_ms as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
-  }
-
-  public getTelemetrySnapshot(): F032NodeLatencyProfilerTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F032_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F032NodeLatencyProfilerAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F032NodeLatencyProfilerOutput[] {
-    return [...this.executionHistory];
+    super(
+      DEFAULT_F032_CONFIG,
+      customConfig,
+      kernel ?? new Stage1AutonomyKernel(),
+      ["graph_id", "bottleneck_node_id", "p95_latency_ms", "total_graph_ms"] as const,
+      F032NodeLatencyProfilerValidationError
+    );
   }
 }
 

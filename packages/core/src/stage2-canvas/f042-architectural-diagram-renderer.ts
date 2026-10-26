@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage2CanvasKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F042_FEATURE_ID = "F042" as const;
 export const F042_STAGE = "stage2-canvas" as const;
@@ -21,42 +29,20 @@ export type F042ArchitecturalDiagramRendererExecutionStatus =
   | "cancelled"
   | "failed";
 
-export interface F042ArchitecturalDiagramRendererConfig {
-  readonly featureId: typeof F042_FEATURE_ID;
-  readonly stage: typeof F042_STAGE;
-  readonly operationCode: typeof F042_OPERATION_CODE;
-  readonly contractVersion: typeof F042_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F042ArchitecturalDiagramRendererConfig = BaseFeatureConfig<
+  typeof F042_FEATURE_ID,
+  typeof F042_STAGE,
+  typeof F042_OPERATION_CODE
+>;
 
-export interface F042ArchitecturalDiagramRendererInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F042ArchitecturalDiagramRendererInput extends BaseFeatureInput {
   readonly diagram_id: string;
   readonly dsl_engine: string | number;
   readonly nodes_rendered: string | number | boolean | readonly string[];
   readonly svg_payload: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F042ArchitecturalDiagramRendererAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F042_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F042ArchitecturalDiagramRendererAuditEntry = BaseFeatureAuditEntry<typeof F042_FEATURE_ID>;
 
 export interface F042ArchitecturalDiagramRendererOutput {
   readonly featureId: typeof F042_FEATURE_ID;
@@ -76,14 +62,7 @@ export interface F042ArchitecturalDiagramRendererOutput {
   readonly auditRecord: F042ArchitecturalDiagramRendererAuditEntry;
 }
 
-export interface F042ArchitecturalDiagramRendererTelemetrySnapshot {
-  readonly featureId: typeof F042_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F042ArchitecturalDiagramRendererTelemetrySnapshot = BaseFeatureTelemetry<typeof F042_FEATURE_ID>;
 
 export const DEFAULT_F042_CONFIG: F042ArchitecturalDiagramRendererConfig = {
   featureId: F042_FEATURE_ID,
@@ -112,195 +91,22 @@ export function computeF042Digest(rawPayload: string): string {
   return `f042_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F042ArchitecturalDiagramRendererEngine {
-  private readonly config: F042ArchitecturalDiagramRendererConfig;
-  private readonly kernel: Stage2CanvasKernel;
-  private readonly executionHistory: F042ArchitecturalDiagramRendererOutput[] = [];
-  private readonly auditLog: F042ArchitecturalDiagramRendererAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F042ArchitecturalDiagramRendererOutput }>();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
+export class F042ArchitecturalDiagramRendererEngine extends KosmoraFeatureAdapterBase<
+  typeof F042_FEATURE_ID,
+  typeof F042_STAGE,
+  typeof F042_OPERATION_CODE,
+  F042ArchitecturalDiagramRendererConfig,
+  F042ArchitecturalDiagramRendererInput,
+  F042ArchitecturalDiagramRendererOutput
+> {
   constructor(customConfig?: Partial<F042ArchitecturalDiagramRendererConfig>, kernel?: Stage2CanvasKernel) {
-    this.config = {
-      ...DEFAULT_F042_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage2CanvasKernel();
-  }
-
-  public getConfig(): F042ArchitecturalDiagramRendererConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F042ArchitecturalDiagramRendererInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F042ArchitecturalDiagramRendererValidationError("requestId", "Request ID must be a non-empty string.");
-    }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F042ArchitecturalDiagramRendererValidationError("projectId", "Project ID must be a non-empty string.");
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F042ArchitecturalDiagramRendererValidationError("workspaceId", "Workspace ID must be a non-empty string.");
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F042ArchitecturalDiagramRendererValidationError("tenantId", "Tenant ID must be a non-empty string.");
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F042ArchitecturalDiagramRendererValidationError("actorId", "Actor ID must be a non-empty string.");
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F042ArchitecturalDiagramRendererValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
-    }
-    if (this.config.strictValidation && String(input.diagram_id).trim().length === 0) {
-      throw new F042ArchitecturalDiagramRendererValidationError("diagram_id", "Primary domain attribute 'diagram_id' cannot be empty.");
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      diagram_id: input.diagram_id,
-      dsl_engine: input.dsl_engine,
-      nodes_rendered: input.nodes_rendered,
-      svg_payload: input.svg_payload
-    })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F042ArchitecturalDiagramRendererValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
-      }
-    }
-  }
-
-  public execute(input: F042ArchitecturalDiagramRendererInput): F042ArchitecturalDiagramRendererOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F042_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        diagram_id: input.diagram_id,
-        dsl_engine: input.dsl_engine,
-        nodes_rendered: input.nodes_rendered,
-        svg_payload: input.svg_payload
-      });
-      const payloadHash = computeF042Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F042ArchitecturalDiagramRendererValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F042_FEATURE_ID,
-        operationCode: F042_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          diagram_id: input.diagram_id,
-          dsl_engine: input.dsl_engine,
-          nodes_rendered: input.nodes_rendered,
-          svg_payload: input.svg_payload
-        }
-      });
-
-      const executionId = `exec_f042_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f042_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F042ArchitecturalDiagramRendererAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F042_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `diagram_renderer:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F042ArchitecturalDiagramRendererOutput = {
-        featureId: F042_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F042_OPERATION_CODE,
-        resolved_diagram_id: kernelResult.resolvedFields.diagram_id as string,
-        resolved_dsl_engine: kernelResult.resolvedFields.dsl_engine as string | number,
-        resolved_nodes_rendered: kernelResult.resolvedFields.nodes_rendered as string | number | boolean | readonly string[],
-        resolved_svg_payload: kernelResult.resolvedFields.svg_payload as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
-  }
-
-  public getTelemetrySnapshot(): F042ArchitecturalDiagramRendererTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F042_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F042ArchitecturalDiagramRendererAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F042ArchitecturalDiagramRendererOutput[] {
-    return [...this.executionHistory];
+    super(
+      DEFAULT_F042_CONFIG,
+      customConfig,
+      kernel ?? new Stage2CanvasKernel(),
+      ["diagram_id", "dsl_engine", "nodes_rendered", "svg_payload"] as const,
+      F042ArchitecturalDiagramRendererValidationError
+    );
   }
 }
 

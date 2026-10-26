@@ -32,7 +32,7 @@ import { verifyF063Module } from "./f063-canvas-trash-bin-restore.js";
 import { verifyF064Module } from "./f064-master-document-stitcher.js";
 
 // Stage Barrel Export for packages/core/src/stage2-canvas (32 feature modules)
-export * from "./stage-kernel.js";
+export { Stage2CanvasKernel } from "./stage-kernel.js";
 export * from "./f033-dual-pane-kosmora-canvas.js";
 export * from "./f034-versioned-canvas-reports.js";
 export * from "./f035-file-analysis-report-binding.js";

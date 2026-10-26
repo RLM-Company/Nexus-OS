@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage2CanvasKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage2CanvasKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F045_FEATURE_ID = "F045" as const;
 export const F045_STAGE = "stage2-canvas" as const;
@@ -21,42 +29,20 @@ export type F045MultitabCanvasManagerExecutionStatus =
   | "cancelled"
   | "failed";
 
-export interface F045MultitabCanvasManagerConfig {
-  readonly featureId: typeof F045_FEATURE_ID;
-  readonly stage: typeof F045_STAGE;
-  readonly operationCode: typeof F045_OPERATION_CODE;
-  readonly contractVersion: typeof F045_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F045MultitabCanvasManagerConfig = BaseFeatureConfig<
+  typeof F045_FEATURE_ID,
+  typeof F045_STAGE,
+  typeof F045_OPERATION_CODE
+>;
 
-export interface F045MultitabCanvasManagerInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F045MultitabCanvasManagerInput extends BaseFeatureInput {
   readonly workspace_id: string;
   readonly open_tab_ids: string | number;
   readonly active_tab_id: string | number | boolean | readonly string[];
   readonly pinned_tab_ids: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F045MultitabCanvasManagerAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F045_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F045MultitabCanvasManagerAuditEntry = BaseFeatureAuditEntry<typeof F045_FEATURE_ID>;
 
 export interface F045MultitabCanvasManagerOutput {
   readonly featureId: typeof F045_FEATURE_ID;
@@ -76,14 +62,7 @@ export interface F045MultitabCanvasManagerOutput {
   readonly auditRecord: F045MultitabCanvasManagerAuditEntry;
 }
 
-export interface F045MultitabCanvasManagerTelemetrySnapshot {
-  readonly featureId: typeof F045_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F045MultitabCanvasManagerTelemetrySnapshot = BaseFeatureTelemetry<typeof F045_FEATURE_ID>;
 
 export const DEFAULT_F045_CONFIG: F045MultitabCanvasManagerConfig = {
   featureId: F045_FEATURE_ID,
@@ -112,195 +91,22 @@ export function computeF045Digest(rawPayload: string): string {
   return `f045_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F045MultitabCanvasManagerEngine {
-  private readonly config: F045MultitabCanvasManagerConfig;
-  private readonly kernel: Stage2CanvasKernel;
-  private readonly executionHistory: F045MultitabCanvasManagerOutput[] = [];
-  private readonly auditLog: F045MultitabCanvasManagerAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F045MultitabCanvasManagerOutput }>();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
+export class F045MultitabCanvasManagerEngine extends KosmoraFeatureAdapterBase<
+  typeof F045_FEATURE_ID,
+  typeof F045_STAGE,
+  typeof F045_OPERATION_CODE,
+  F045MultitabCanvasManagerConfig,
+  F045MultitabCanvasManagerInput,
+  F045MultitabCanvasManagerOutput
+> {
   constructor(customConfig?: Partial<F045MultitabCanvasManagerConfig>, kernel?: Stage2CanvasKernel) {
-    this.config = {
-      ...DEFAULT_F045_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage2CanvasKernel();
-  }
-
-  public getConfig(): F045MultitabCanvasManagerConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F045MultitabCanvasManagerInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F045MultitabCanvasManagerValidationError("requestId", "Request ID must be a non-empty string.");
-    }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F045MultitabCanvasManagerValidationError("projectId", "Project ID must be a non-empty string.");
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F045MultitabCanvasManagerValidationError("workspaceId", "Workspace ID must be a non-empty string.");
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F045MultitabCanvasManagerValidationError("tenantId", "Tenant ID must be a non-empty string.");
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F045MultitabCanvasManagerValidationError("actorId", "Actor ID must be a non-empty string.");
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F045MultitabCanvasManagerValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
-    }
-    if (this.config.strictValidation && String(input.workspace_id).trim().length === 0) {
-      throw new F045MultitabCanvasManagerValidationError("workspace_id", "Primary domain attribute 'workspace_id' cannot be empty.");
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      workspace_id: input.workspace_id,
-      open_tab_ids: input.open_tab_ids,
-      active_tab_id: input.active_tab_id,
-      pinned_tab_ids: input.pinned_tab_ids
-    })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F045MultitabCanvasManagerValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
-      }
-    }
-  }
-
-  public execute(input: F045MultitabCanvasManagerInput): F045MultitabCanvasManagerOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F045_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        workspace_id: input.workspace_id,
-        open_tab_ids: input.open_tab_ids,
-        active_tab_id: input.active_tab_id,
-        pinned_tab_ids: input.pinned_tab_ids
-      });
-      const payloadHash = computeF045Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F045MultitabCanvasManagerValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F045_FEATURE_ID,
-        operationCode: F045_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          workspace_id: input.workspace_id,
-          open_tab_ids: input.open_tab_ids,
-          active_tab_id: input.active_tab_id,
-          pinned_tab_ids: input.pinned_tab_ids
-        }
-      });
-
-      const executionId = `exec_f045_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f045_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F045MultitabCanvasManagerAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F045_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `multitab_controller:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F045MultitabCanvasManagerOutput = {
-        featureId: F045_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F045_OPERATION_CODE,
-        resolved_workspace_id: kernelResult.resolvedFields.workspace_id as string,
-        resolved_open_tab_ids: kernelResult.resolvedFields.open_tab_ids as string | number,
-        resolved_active_tab_id: kernelResult.resolvedFields.active_tab_id as string | number | boolean | readonly string[],
-        resolved_pinned_tab_ids: kernelResult.resolvedFields.pinned_tab_ids as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
-  }
-
-  public getTelemetrySnapshot(): F045MultitabCanvasManagerTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F045_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F045MultitabCanvasManagerAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F045MultitabCanvasManagerOutput[] {
-    return [...this.executionHistory];
+    super(
+      DEFAULT_F045_CONFIG,
+      customConfig,
+      kernel ?? new Stage2CanvasKernel(),
+      ["workspace_id", "open_tab_ids", "active_tab_id", "pinned_tab_ids"] as const,
+      F045MultitabCanvasManagerValidationError
+    );
   }
 }
 

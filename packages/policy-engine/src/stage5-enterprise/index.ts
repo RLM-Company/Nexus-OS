@@ -32,7 +32,7 @@ import { verifyF159Module } from "./f159-storage-indexing-quota-monitor.js";
 import { verifyF160Module } from "./f160-full-tenant-portability-exporter.js";
 
 // Stage Barrel Export for packages/policy-engine/src/stage5-enterprise (32 feature modules)
-export * from "./stage-kernel.js";
+export { Stage5EnterpriseKernel } from "./stage-kernel.js";
 export * from "./f129-multitenant-digital-holding.js";
 export * from "./f130-row-level-security-isolation.js";
 export * from "./f131-granular-rbac-matrix.js";

@@ -5,7 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { Stage4GraphKernel, type StageKernelExecutionResult } from "./stage-kernel.js";
+import {
+  Stage4GraphKernel,
+  KosmoraFeatureAdapterBase,
+  type BaseFeatureAuditEntry,
+  type BaseFeatureConfig,
+  type BaseFeatureInput,
+  type BaseFeatureTelemetry,
+  type StageKernelExecutionResult
+} from "./stage-kernel.js";
 
 export const F121_FEATURE_ID = "F121" as const;
 export const F121_STAGE = "stage4-intelligence-graph" as const;
@@ -21,42 +29,20 @@ export type F121NaturalLanguageGraphQuerierExecutionStatus =
   | "cancelled"
   | "failed";
 
-export interface F121NaturalLanguageGraphQuerierConfig {
-  readonly featureId: typeof F121_FEATURE_ID;
-  readonly stage: typeof F121_STAGE;
-  readonly operationCode: typeof F121_OPERATION_CODE;
-  readonly contractVersion: typeof F121_CONTRACT_VERSION;
-  readonly timeoutMs: number;
-  readonly maxRetries: number;
-  readonly enableAuditTrail: boolean;
-  readonly enableTelemetry: boolean;
-  readonly strictValidation: boolean;
-}
+export type F121NaturalLanguageGraphQuerierConfig = BaseFeatureConfig<
+  typeof F121_FEATURE_ID,
+  typeof F121_STAGE,
+  typeof F121_OPERATION_CODE
+>;
 
-export interface F121NaturalLanguageGraphQuerierInput {
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly workspaceId: string;
-  readonly tenantId: string;
-  readonly actorId: string;
-  readonly autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
+export interface F121NaturalLanguageGraphQuerierInput extends BaseFeatureInput {
   readonly natural_question: string;
   readonly cypher_like_plan: string | number;
   readonly traversed_path: string | number | boolean | readonly string[];
   readonly synthesized_answer: string | number | boolean | Record<string, unknown>;
-  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-export interface F121NaturalLanguageGraphQuerierAuditEntry {
-  readonly eventId: string;
-  readonly featureId: typeof F121_FEATURE_ID;
-  readonly tenantId: string;
-  readonly projectId: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly payloadHash: string;
-  readonly recordedAt: string;
-}
+export type F121NaturalLanguageGraphQuerierAuditEntry = BaseFeatureAuditEntry<typeof F121_FEATURE_ID>;
 
 export interface F121NaturalLanguageGraphQuerierOutput {
   readonly featureId: typeof F121_FEATURE_ID;
@@ -76,14 +62,7 @@ export interface F121NaturalLanguageGraphQuerierOutput {
   readonly auditRecord: F121NaturalLanguageGraphQuerierAuditEntry;
 }
 
-export interface F121NaturalLanguageGraphQuerierTelemetrySnapshot {
-  readonly featureId: typeof F121_FEATURE_ID;
-  readonly totalRuns: number;
-  readonly successfulRuns: number;
-  readonly failedRuns: number;
-  readonly lastExecutionId: string | null;
-  readonly averageLatencyMs: number;
-}
+export type F121NaturalLanguageGraphQuerierTelemetrySnapshot = BaseFeatureTelemetry<typeof F121_FEATURE_ID>;
 
 export const DEFAULT_F121_CONFIG: F121NaturalLanguageGraphQuerierConfig = {
   featureId: F121_FEATURE_ID,
@@ -112,195 +91,22 @@ export function computeF121Digest(rawPayload: string): string {
   return `f121_${createHash("sha256").update(rawPayload).digest("hex").slice(0, 16)}`;
 }
 
-export class F121NaturalLanguageGraphQuerierEngine {
-  private readonly config: F121NaturalLanguageGraphQuerierConfig;
-  private readonly kernel: Stage4GraphKernel;
-  private readonly executionHistory: F121NaturalLanguageGraphQuerierOutput[] = [];
-  private readonly auditLog: F121NaturalLanguageGraphQuerierAuditEntry[] = [];
-  private readonly idempotencyStore = new Map<string, { payloadHash: string; output: F121NaturalLanguageGraphQuerierOutput }>();
-  private readonly cancelledRequests = new Set<string>();
-  private totalRuns = 0;
-  private successfulRuns = 0;
-  private failedRuns = 0;
-  private cumulativeLatencyMs = 0;
-
+export class F121NaturalLanguageGraphQuerierEngine extends KosmoraFeatureAdapterBase<
+  typeof F121_FEATURE_ID,
+  typeof F121_STAGE,
+  typeof F121_OPERATION_CODE,
+  F121NaturalLanguageGraphQuerierConfig,
+  F121NaturalLanguageGraphQuerierInput,
+  F121NaturalLanguageGraphQuerierOutput
+> {
   constructor(customConfig?: Partial<F121NaturalLanguageGraphQuerierConfig>, kernel?: Stage4GraphKernel) {
-    this.config = {
-      ...DEFAULT_F121_CONFIG,
-      ...(customConfig ?? {})
-    };
-    this.kernel = kernel ?? new Stage4GraphKernel();
-  }
-
-  public getConfig(): F121NaturalLanguageGraphQuerierConfig {
-    return { ...this.config };
-  }
-
-  public cancelRequest(requestId: string): void {
-    this.cancelledRequests.add(requestId);
-  }
-
-  public validateInput(input: F121NaturalLanguageGraphQuerierInput): void {
-    if (!input.requestId || input.requestId.trim().length === 0) {
-      throw new F121NaturalLanguageGraphQuerierValidationError("requestId", "Request ID must be a non-empty string.");
-    }
-    if (!input.projectId || input.projectId.trim().length === 0) {
-      throw new F121NaturalLanguageGraphQuerierValidationError("projectId", "Project ID must be a non-empty string.");
-    }
-    if (!input.workspaceId || input.workspaceId.trim().length === 0) {
-      throw new F121NaturalLanguageGraphQuerierValidationError("workspaceId", "Workspace ID must be a non-empty string.");
-    }
-    if (!input.tenantId || input.tenantId.trim().length === 0) {
-      throw new F121NaturalLanguageGraphQuerierValidationError("tenantId", "Tenant ID must be a non-empty string.");
-    }
-    if (!input.actorId || input.actorId.trim().length === 0) {
-      throw new F121NaturalLanguageGraphQuerierValidationError("actorId", "Actor ID must be a non-empty string.");
-    }
-    if (this.cancelledRequests.has(input.requestId)) {
-      throw new F121NaturalLanguageGraphQuerierValidationError("requestId", `Request '${input.requestId}' has been cancelled.`);
-    }
-    if (this.config.strictValidation && String(input.natural_question).trim().length === 0) {
-      throw new F121NaturalLanguageGraphQuerierValidationError("natural_question", "Primary domain attribute 'natural_question' cannot be empty.");
-    }
-    for (const [fieldKey, fieldVal] of Object.entries({
-      natural_question: input.natural_question,
-      cypher_like_plan: input.cypher_like_plan,
-      traversed_path: input.traversed_path,
-      synthesized_answer: input.synthesized_answer
-    })) {
-      if (typeof fieldVal === "number" && (!Number.isFinite(fieldVal) || Number.isNaN(fieldVal) || fieldVal < 0)) {
-        throw new F121NaturalLanguageGraphQuerierValidationError(fieldKey, `Numeric domain attribute '${fieldKey}' must be a non-negative finite number.`);
-      }
-    }
-  }
-
-  public execute(input: F121NaturalLanguageGraphQuerierInput): F121NaturalLanguageGraphQuerierOutput {
-    const startedMs = Date.now();
-    this.totalRuns += 1;
-
-    try {
-      this.validateInput(input);
-
-      const canonicalPayload = JSON.stringify({
-        featureId: F121_FEATURE_ID,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        natural_question: input.natural_question,
-        cypher_like_plan: input.cypher_like_plan,
-        traversed_path: input.traversed_path,
-        synthesized_answer: input.synthesized_answer
-      });
-      const payloadHash = computeF121Digest(canonicalPayload);
-
-      const existingIdempotent = this.idempotencyStore.get(input.requestId);
-      if (existingIdempotent) {
-        if (existingIdempotent.payloadHash !== payloadHash) {
-          throw new F121NaturalLanguageGraphQuerierValidationError(
-            "requestId",
-            `Idempotency conflict: requestId '${input.requestId}' was already executed with a different payload.`
-          );
-        }
-        this.successfulRuns += 1;
-        return {
-          ...existingIdempotent.output,
-          idempotentReplay: true
-        };
-      }
-
-      const kernelResult = this.kernel.executeDomainOperation({
-        featureId: F121_FEATURE_ID,
-        operationCode: F121_OPERATION_CODE,
-        requestId: input.requestId,
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        autonomyLevel: input.autonomyLevel,
-        domainFields: {
-          natural_question: input.natural_question,
-          cypher_like_plan: input.cypher_like_plan,
-          traversed_path: input.traversed_path,
-          synthesized_answer: input.synthesized_answer
-        }
-      });
-
-      const executionId = `exec_f121_${this.totalRuns}_${kernelResult.provenanceSha256.slice(0, 10)}`;
-      const timestampIso = new Date().toISOString();
-      const provenanceDigest = `f121_${kernelResult.provenanceSha256.slice(0, 16)}`;
-
-      const auditRecord: F121NaturalLanguageGraphQuerierAuditEntry = {
-        eventId: `aud_${executionId}`,
-        featureId: F121_FEATURE_ID,
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        action: `nl_graph_traversal:executed`,
-        payloadHash: provenanceDigest,
-        recordedAt: timestampIso
-      };
-
-      if (this.config.enableAuditTrail) {
-        this.auditLog.push(auditRecord);
-      }
-
-      const latencyMs = Math.max(1, Date.now() - startedMs);
-      this.cumulativeLatencyMs += latencyMs;
-      this.successfulRuns += 1;
-
-      const output: F121NaturalLanguageGraphQuerierOutput = {
-        featureId: F121_FEATURE_ID,
-        requestId: input.requestId,
-        executionId,
-        status: "completed",
-        operationCode: F121_OPERATION_CODE,
-        resolved_natural_question: kernelResult.resolvedFields.natural_question as string,
-        resolved_cypher_like_plan: kernelResult.resolvedFields.cypher_like_plan as string | number,
-        resolved_traversed_path: kernelResult.resolvedFields.traversed_path as string | number | boolean | readonly string[],
-        resolved_synthesized_answer: kernelResult.resolvedFields.synthesized_answer as string | number | boolean | Record<string, unknown>,
-        domainOutcome: kernelResult.domainOutcome,
-        idempotentReplay: false,
-        provenanceDigest,
-        latencyMs,
-        timestampIso,
-        auditRecord
-      };
-
-      this.idempotencyStore.set(input.requestId, { payloadHash, output });
-      this.executionHistory.push(output);
-      return output;
-    } catch (err) {
-      this.failedRuns += 1;
-      throw err;
-    }
-  }
-
-  public getTelemetrySnapshot(): F121NaturalLanguageGraphQuerierTelemetrySnapshot {
-    const last =
-      this.executionHistory.length > 0
-        ? this.executionHistory[this.executionHistory.length - 1]!.executionId
-        : null;
-    return {
-      featureId: F121_FEATURE_ID,
-      totalRuns: this.totalRuns,
-      successfulRuns: this.successfulRuns,
-      failedRuns: this.failedRuns,
-      lastExecutionId: last,
-      averageLatencyMs:
-        this.successfulRuns > 0
-          ? Number((this.cumulativeLatencyMs / this.successfulRuns).toFixed(3))
-          : 0
-    };
-  }
-
-  public getAuditTrail(): readonly F121NaturalLanguageGraphQuerierAuditEntry[] {
-    return [...this.auditLog];
-  }
-
-  public getExecutionHistory(): readonly F121NaturalLanguageGraphQuerierOutput[] {
-    return [...this.executionHistory];
+    super(
+      DEFAULT_F121_CONFIG,
+      customConfig,
+      kernel ?? new Stage4GraphKernel(),
+      ["natural_question", "cypher_like_plan", "traversed_path", "synthesized_answer"] as const,
+      F121NaturalLanguageGraphQuerierValidationError
+    );
   }
 }
 
