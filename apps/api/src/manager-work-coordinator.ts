@@ -314,6 +314,8 @@ export class ManagerWorkCoordinator {
       remainingOutput - gameReviewReserve
     );
     if (request.constraints.max_output_tokens < 1) throw new Error("EXECUTION_BUDGET_EXCEEDED");
+    if (work.request.output_contract?.kind === "game_project" && stage === "draft")
+      request.constraints.timeout_ms = Math.max(request.constraints.timeout_ms, 180_000);
     return request;
   }
 

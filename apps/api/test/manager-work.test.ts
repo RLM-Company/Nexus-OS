@@ -187,10 +187,12 @@ describe("durable Manager work", () => {
   );
   it("accepts game source projects over HTTP and preserves all three code artifacts", async () => {
     const limits: number[] = [];
+    const timeouts: number[] = [];
     const f = await fixture({
       draft: { files: GAME_SOURCE_FILES },
       onCall: (request) => {
         limits.push(request.constraints.max_output_tokens);
+        timeouts.push(request.constraints.timeout_ms);
         return Promise.resolve();
       }
     });
@@ -223,6 +225,7 @@ describe("durable Manager work", () => {
       expect(f.store.runtime.artifacts(f.project.id, "local-owner", work.id)).toHaveLength(3);
       expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(400);
       expect(limits).toEqual([1200, 4800]);
+      expect(timeouts).toEqual([60000, 180000]);
     } finally {
       await app.close();
       await f.coordinator.stop();
