@@ -49,6 +49,7 @@ export type ModelGatewayStreamEvent =
       route: ModelRouteAttempt;
       errorCode: GatewayErrorCode;
       retryable: boolean;
+      diagnostic?: string;
     }
   | {
       type: "response.completed";

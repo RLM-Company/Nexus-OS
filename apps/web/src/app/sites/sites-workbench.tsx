@@ -20,6 +20,8 @@ const labels: Record<string, string> = {
   cancelled: "Отменено"
 };
 const errors: Record<string, string> = {
+  INVALID_GAME_PROJECT_RESULT:
+    "Модель вернула неполный игровой проект. Проверьте задачу; автоматического платного повтора не было.",
   INVALID_GAME_RESULT:
     "Модель не вернула корректные данные выбранной игры. Платного повтора не было.",
   INVALID_WEBSITE_RESULT:
@@ -75,10 +77,10 @@ export function SitesWorkbench({
 }: {
   projects: { id: string; title: string; status: string }[];
   initialProjectId: string | null;
-  kind?: "website" | "game";
+  kind?: "website" | "game" | "game_project";
 }) {
   const [projectId, setProjectId] = useState(initialProjectId ?? "");
-  const game = kind === "game";
+  const game = kind !== "website";
   useEffect(() => {
     if (initialProjectId) setProjectId((current) => current || initialProjectId);
   }, [initialProjectId]);
@@ -89,7 +91,9 @@ export function SitesWorkbench({
         <h2>{game ? "Games" : "Сайты"}</h2>
         <p>
           {game
-            ? "Создайте играбельный прототип с ИИ, настройте правила и скачайте автономную игру."
+            ? kind === "game_project"
+              ? "Разрабатывайте браузерные игры: собственная механика, исходники, запуск, консоль и версии проекта."
+              : "Быстрые прототипы на готовых механиках: настройте правила и скачайте игру."
             : "Создайте страницу с ИИ, отредактируйте код и сохраните готовый HTML."}
         </p>
       </header>
@@ -130,9 +134,10 @@ function SiteProject({
 }: {
   projectId: string;
   canGenerate: boolean;
-  kind: "website" | "game";
+  kind: "website" | "game" | "game_project";
 }) {
-  const game = kind === "game";
+  const game = kind !== "website";
+  const sourceProject = kind === "game_project";
   const statusLabels = game
     ? { ...labels, running: "Создаём игру", completed: "Прототип готов" }
     : labels;
@@ -214,7 +219,11 @@ function SiteProject({
           client_request_id: crypto.randomUUID(),
           goal: brief.trim(),
           worker_role: "analyst",
-          output_contract: game ? { kind: "game", genre } : { kind: "website" },
+          output_contract: sourceProject
+            ? { kind: "game_project" }
+            : game
+              ? { kind: "game", genre }
+              : { kind: "website" },
           require_critic: false,
           max_model_requests: 3,
           max_input_tokens: 32000,
@@ -272,7 +281,7 @@ function SiteProject({
           void create();
         }}
       >
-        {game && (
+        {kind === "game" && (
           <label>
             Механика игры
             <select
@@ -295,9 +304,11 @@ function SiteProject({
             disabled={busy || uncertain}
             rows={4}
             placeholder={
-              game
-                ? "Тема, названия предметов, сложность или содержание вопросов. Например: космическая аркада — собрать звёзды и избегать астероидов…"
-                : "Например, страница студии архитектуры: проекты, услуги, команда и контакты. Спокойная типографика, адаптация для телефона…"
+              sourceProject
+                ? "Опишите игру: механика, управление, уровни, условия победы и визуальный стиль. Например: платформер про лунного робота с гравитацией, прыжками, препятствиями и перезапуском…"
+                : game
+                  ? "Тема, названия предметов, сложность или содержание вопросов. Например: космическая аркада — собрать звёзды и избегать астероидов…"
+                  : "Например, страница студии архитектуры: проекты, услуги, команда и контакты. Спокойная типографика, адаптация для телефона…"
             }
           />
         </label>
@@ -322,9 +333,11 @@ function SiteProject({
           )}
         </div>
         <p className={styles.caption}>
-          {game
-            ? "До трёх обращений к ИИ: план, данные игры и проверка по сложности. После создания можно играть без новых запросов к модели."
-            : "До трёх обращений к ИИ: план, HTML/CSS и проверка по сложности. Результат сохраняется в проекте; публикация в интернете выполняется отдельно."}
+          {sourceProject
+            ? "ИИ создаст scene.html, styles.css и game.js. Исходники можно менять, запускать в браузере, сохранять версиями и экспортировать целым проектом. Пока поддерживается Canvas 2D без внешних библиотек."
+            : game
+              ? "До трёх обращений к ИИ: план, данные игры и проверка по сложности. После создания можно играть без новых запросов к модели."
+              : "До трёх обращений к ИИ: план, HTML/CSS и проверка по сложности. Результат сохраняется в проекте; публикация в интернете выполняется отдельно."}
         </p>
         {!canGenerate && (
           <p>Генерация доступна в активном проекте. Сохранённые файлы можно открыть в редакторе.</p>
@@ -396,7 +409,8 @@ function SiteProject({
                   </button>
                 )}
                 {selected.status === "completed" &&
-                  selected.draft?.files[0]?.name === (game ? "game.json" : "index.html") && (
+                  (sourceProject ||
+                    selected.draft?.files[0]?.name === (game ? "game.json" : "index.html")) && (
                     <button
                       type="button"
                       disabled={busy}
@@ -405,7 +419,13 @@ function SiteProject({
                           storageId: `${kind}:${selected.id}`,
                           title: selected.plan?.summary.slice(0, 60) || (game ? "Игра" : "Сайт"),
                           format: game ? "code" : "html",
-                          content: selected.draft!.files[0]!.content
+                          content: sourceProject
+                            ? JSON.stringify(
+                                { format: "kosmora.game-project.v1", files: selected.draft!.files },
+                                null,
+                                2
+                              )
+                            : selected.draft!.files[0]!.content
                         })
                       }
                     >
@@ -421,7 +441,8 @@ function SiteProject({
         key={seed?.storageId ?? `${kind}-library`}
         projectId={projectId}
         sitePreview={!game}
-        gamePreview={game}
+        gamePreview={kind === "game"}
+        gameSource={sourceProject}
         {...(seed ? { initialDraft: seed } : {})}
       />
     </>

@@ -22,6 +22,7 @@ async function project(request: APIRequestContext) {
 async function create(page: Page, request: APIRequestContext, genre: "arcade" | "memory" | "quiz") {
   const id = await project(request);
   await page.goto(`/?surface=games&project=${id}`);
+  await page.getByRole("button", { name: "Готовые механики", exact: true }).click();
   await page.getByRole("combobox", { name: "Проект игры", exact: true }).selectOption(id);
   await page.getByRole("combobox", { name: "Механика игры", exact: true }).selectOption(genre);
   await page
@@ -80,6 +81,7 @@ test("generates a quiz, saves versions and exports a playable offline HTML file"
     await offline.close();
   }
   await page.reload();
+  await page.getByRole("button", { name: "Готовые механики", exact: true }).click();
   await page.getByRole("combobox", { name: "Проект игры", exact: true }).selectOption(id);
   await canvas
     .getByRole("navigation", { name: "Артефакты проекта" })

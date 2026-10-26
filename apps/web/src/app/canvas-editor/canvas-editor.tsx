@@ -21,6 +21,8 @@ import { MarkdownToolbar } from "./markdown-toolbar";
 import { CanvasSearch } from "./canvas-search";
 import { SitePreview } from "../sites/site-preview";
 import { GamePreview } from "../games/game-preview";
+import { GameSourceEditor } from "../games/game-source-editor";
+import { GameSourcePreview } from "../games/game-source-preview";
 import { ShiningText, SystemMessage } from "../ui/kosmora-controls";
 
 type Full = { artifact: CanvasArtifact; revision: CanvasRevision };
@@ -110,13 +112,15 @@ export function CanvasEditor({
   initialArtifactId,
   initialDraft,
   sitePreview = false,
-  gamePreview = false
+  gamePreview = false,
+  gameSource = false
 }: {
   projectId: string;
   initialArtifactId?: string;
   initialDraft?: CanvasSeed;
   sitePreview?: boolean;
   gamePreview?: boolean;
+  gameSource?: boolean;
 }) {
   const [scope, setScope] = useState<{ projectId: string; ownerScope: string } | null>(null);
   const [scopeError, setScopeError] = useState("");
@@ -167,6 +171,7 @@ export function CanvasEditor({
       {...(initialDraft ? { initialDraft } : {})}
       sitePreview={sitePreview}
       gamePreview={gamePreview}
+      gameSource={gameSource}
     />
   );
 }
@@ -177,7 +182,8 @@ function ScopedCanvasEditor({
   initialArtifactId,
   initialDraft,
   sitePreview = false,
-  gamePreview = false
+  gamePreview = false,
+  gameSource = false
 }: {
   projectId: string;
   ownerScope: string;
@@ -185,6 +191,7 @@ function ScopedCanvasEditor({
   initialDraft?: CanvasSeed;
   sitePreview?: boolean;
   gamePreview?: boolean;
+  gameSource?: boolean;
 }) {
   const lifecycle = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -205,7 +212,14 @@ function ScopedCanvasEditor({
       ownerScope,
       projectId,
       id === "new"
-        ? (initialDraft?.storageId ?? (gamePreview ? "game-new" : sitePreview ? "site-new" : "new"))
+        ? (initialDraft?.storageId ??
+            (gameSource
+              ? "game-source-new"
+              : gamePreview
+                ? "game-new"
+                : sitePreview
+                  ? "site-new"
+                  : "new"))
         : id
     );
   const textEditor = useRef<HTMLTextAreaElement>(null);
@@ -217,7 +231,7 @@ function ScopedCanvasEditor({
   const [items, setItems] = useState<CanvasArtifact[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [loaded, setLoaded] = useState<Full | null>(null);
-  const emptyDraft = gamePreview ? blankGame : sitePreview ? blankSite : blank;
+  const emptyDraft = gameSource || gamePreview ? blankGame : sitePreview ? blankSite : blank;
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [draftStorageReady, setDraftStorageReady] = useState(false);
   const [history, setHistory] = useState<Meta[]>([]);
@@ -717,7 +731,7 @@ function ScopedCanvasEditor({
       a = document.createElement("a");
     a.href = url;
     a.download =
-      gamePreview && snapshot.format === "code"
+      (gameSource || gamePreview) && snapshot.format === "code"
         ? sanitizeName(snapshot.title, "text").replace(/\.txt$/, ".json")
         : sanitizeName(snapshot.title, snapshot.format);
     a.click();
@@ -802,14 +816,22 @@ function ScopedCanvasEditor({
       <header className={styles.heading}>
         <div>
           <h2>
-            {gamePreview ? "Редактор игры" : sitePreview ? "Редактор сайта" : "Canvas · Артефакты"}
+            {gameSource
+              ? "Исходники игры"
+              : gamePreview
+                ? "Редактор игры"
+                : sitePreview
+                  ? "Редактор сайта"
+                  : "Canvas · Артефакты"}
           </h2>
           <small>
-            {gamePreview
-              ? "Данные игры · версии и автономный HTML"
-              : sitePreview
-                ? "HTML и CSS · версии и сохранение в проекте"
-                : "Текст, Markdown и код · хранение в проекте"}
+            {gameSource
+              ? "HTML, CSS и JavaScript · версии и сборка проекта"
+              : gamePreview
+                ? "Данные игры · версии и автономный HTML"
+                : sitePreview
+                  ? "HTML и CSS · версии и сохранение в проекте"
+                  : "Текст, Markdown и код · хранение в проекте"}
           </small>
         </div>
         <button type="button" onClick={createNew} disabled={working}>
@@ -910,42 +932,58 @@ function ScopedCanvasEditor({
               </select>
             </label>
           </div>
-          <label className={styles.textLabel} htmlFor={`${editorId}-body`}>
-            Содержимое
-          </label>
-          <CanvasSearch
-            key={selected || initialDraft?.storageId || "new"}
-            editor={textEditor}
-            value={draft.content}
-            disabled={working || loading}
-            onChange={(content) => setDraft((d) => ({ ...d, content }))}
-            onError={setError}
-          />
-          {draft.format === "markdown" && (
-            <MarkdownToolbar
-              editor={textEditor}
-              value={draft.content}
+          {gameSource && draft.format === "code" ? (
+            <GameSourceEditor
+              content={draft.content}
               disabled={working || loading}
-              onChange={(content) => setDraft((d) => ({ ...d, content }))}
-              onError={setError}
+              onChange={(content) => {
+                if (canvasBytes(content) > CANVAS_MAX_CONTENT_BYTES) {
+                  setError("Достигнут лимит 512 КиБ для проекта.");
+                  return;
+                }
+                setDraft((d) => ({ ...d, content }));
+              }}
             />
+          ) : (
+            <>
+              <label className={styles.textLabel} htmlFor={`${editorId}-body`}>
+                Содержимое
+              </label>
+              <CanvasSearch
+                key={selected || initialDraft?.storageId || "new"}
+                editor={textEditor}
+                value={draft.content}
+                disabled={working || loading}
+                onChange={(content) => setDraft((d) => ({ ...d, content }))}
+                onError={setError}
+              />
+              {draft.format === "markdown" && (
+                <MarkdownToolbar
+                  editor={textEditor}
+                  value={draft.content}
+                  disabled={working || loading}
+                  onChange={(content) => setDraft((d) => ({ ...d, content }))}
+                  onError={setError}
+                />
+              )}
+              <textarea
+                ref={textEditor}
+                id={`${editorId}-body`}
+                spellCheck={draft.format !== "code"}
+                className={styles.textarea}
+                disabled={working || loading}
+                value={draft.content}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (canvasBytes(value) > CANVAS_MAX_CONTENT_BYTES) {
+                    setError("Достигнут лимит 512 КиБ для текста.");
+                    return;
+                  }
+                  setDraft((d) => ({ ...d, content: value }));
+                }}
+              />
+            </>
           )}
-          <textarea
-            ref={textEditor}
-            id={`${editorId}-body`}
-            spellCheck={draft.format !== "code"}
-            className={styles.textarea}
-            disabled={working || loading}
-            value={draft.content}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (canvasBytes(value) > CANVAS_MAX_CONTENT_BYTES) {
-                setError("Достигнут лимит 512 КиБ для текста.");
-                return;
-              }
-              setDraft((d) => ({ ...d, content: value }));
-            }}
-          />
           <div className={styles.count}>
             {canvasBytes(draft.content).toLocaleString("ru")} /{" "}
             {CANVAS_MAX_CONTENT_BYTES.toLocaleString("ru")} байт
@@ -966,7 +1004,7 @@ function ScopedCanvasEditor({
             <button type="button" onClick={download}>
               Скачать
             </button>
-            {!sitePreview && !gamePreview && (
+            {!sitePreview && !gamePreview && !gameSource && (
               <>
                 <button
                   type="button"
@@ -1044,7 +1082,9 @@ function ScopedCanvasEditor({
             )}
           </div>
           <div className={styles.preview} aria-label="Безопасный предпросмотр">
-            {gamePreview && previewFormat === "code" ? (
+            {gameSource && previewFormat === "code" ? (
+              <GameSourcePreview content={preview} />
+            ) : gamePreview && previewFormat === "code" ? (
               <GamePreview content={preview} />
             ) : sitePreview && previewFormat === "html" ? (
               <SitePreview content={preview} />

@@ -1,6 +1,10 @@
 import { validateGeneratedPresentation } from "@cosmora/contracts/presentation-package";
 import { parseGamePackage, gameOutputInstruction } from "@cosmora/contracts/game-package";
 import {
+  validateGameProjectFiles,
+  GAME_PROJECT_INSTRUCTION
+} from "@cosmora/contracts/game-project";
+import {
   validateWebsiteDocument,
   WEBSITE_OUTPUT_INSTRUCTION
 } from "@cosmora/contracts/website-document";
@@ -268,6 +272,12 @@ export class ManagerWorkCoordinator {
               (stage === "draft"
                 ? gameOutputInstruction(work.request.output_contract.genre)
                 : `The final artifact is game.json: data for the built-in ${work.request.output_contract.genre} engine, not arbitrary executable code or deployment. Keep this stage's prescribed JSON schema.`)
+            : "") +
+          (work.request.output_contract?.kind === "game_project"
+            ? "\n" +
+              (stage === "draft"
+                ? GAME_PROJECT_INSTRUCTION
+                : "The final artifact is a custom Canvas 2D browser game project: scene.html, styles.css and game.js using the game Worker API. Keep this stage's prescribed JSON schema.")
             : "")
       },
       {
@@ -290,11 +300,22 @@ export class ManagerWorkCoordinator {
     ];
     request.routing.fallback_allowed = false;
     request.routing.estimated_input_tokens = estimateInputTokensUpperBound(request.messages);
+    const remainingOutput = work.request.max_output_tokens - work.reserved_output_tokens;
+    const gameReviewReserve =
+      work.request.output_contract?.kind === "game_project" &&
+      stage === "draft" &&
+      work.plan?.needs_critic
+        ? Math.min(request.constraints.max_output_tokens, Math.floor(remainingOutput / 4))
+        : 0;
     request.constraints.max_output_tokens = Math.min(
-      request.constraints.max_output_tokens,
-      work.request.max_output_tokens - work.reserved_output_tokens
+      work.request.output_contract?.kind === "game_project" && stage === "draft"
+        ? 6000
+        : request.constraints.max_output_tokens,
+      remainingOutput - gameReviewReserve
     );
     if (request.constraints.max_output_tokens < 1) throw new Error("EXECUTION_BUDGET_EXCEEDED");
+    if (work.request.output_contract?.kind === "game_project" && stage === "draft")
+      request.constraints.timeout_ms = Math.max(request.constraints.timeout_ms, 180_000);
     return request;
   }
 
@@ -396,6 +417,8 @@ export class ManagerWorkCoordinator {
           dispatchAllowed = true;
         } else if (event.type === "route.failed") {
           projects.failModelUsage(runId, event.route.attempt, event.errorCode);
+          if (event.diagnostic)
+            work = this.checkpoint(work, "Диагностика модели: " + event.diagnostic);
           // Close the Gateway iterator at its failure boundary, before its retry loop resumes.
           throw new GatewayRunError(
             event.errorCode,
@@ -626,6 +649,9 @@ export class ManagerWorkCoordinator {
               throw new Error("INVALID_WEBSITE_RESULT");
             validateWebsiteDocument(value.files[0]!.content);
           }
+          if (work.request.output_contract?.kind === "game_project") {
+            validateGameProjectFiles(value.files);
+          }
           if (work.request.output_contract?.kind === "game") {
             if (value.files.length !== 1 || value.files[0]!.name !== "game.json")
               throw Error("INVALID_GAME_RESULT");
@@ -656,6 +682,7 @@ export class ManagerWorkCoordinator {
         "INVALID_PRESENTATION_RESULT",
         "INVALID_WEBSITE_RESULT",
         "INVALID_GAME_RESULT",
+        "INVALID_GAME_PROJECT_RESULT",
         "UNSUPPORTED_ACTION",
         "POLICY_UNAVAILABLE",
         "GRAPH_UNAVAILABLE",

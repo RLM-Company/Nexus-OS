@@ -1,0 +1,50 @@
+.editor {
+  min-width: 0;
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.tabs button {
+  font: inherit;
+  padding: 7px 10px;
+  color: inherit;
+  background: var(--bg, #fff);
+  border: 1px solid var(--line, #ddd);
+  border-radius: 8px;
+}
+.tabs button[aria-pressed="true"] {
+  background: var(--surface-hover, #eee);
+  border-color: currentColor;
+}
+.editor label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.editor textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 350px;
+  padding: 14px;
+  color: inherit;
+  background: var(--bg, #fff);
+  border: 1px solid var(--line, #ddd);
+  border-radius: 10px;
+  font:
+    12px/1.7 ui-monospace,
+    monospace;
+  tab-size: 2;
+  resize: vertical;
+}
+.editor p {
+  color: var(--muted, #666);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.editor :is(button, textarea):focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
