@@ -330,6 +330,164 @@ describe("saved artifact context snapshots", () => {
     expect(projects.getMaterials(project)?.instructions).toBe("saved");
     expect(projects.getMaterials(project)?.version).toBe(1);
   });
+  it("prepares a compact table summary for existing project/chat attachments without calling a model", async () => {
+    const data = parseDataWorkspace(table());
+    data.table.rows = Array.from({ length: 1200 }, (_, i) => [
+      String(i).padStart(5, "0"),
+      String(i + 1),
+      "private-row-" + i
+    ]);
+    const created = canvas.create(project, "local-owner", {
+      title: "Summary",
+      format: "code",
+      content: JSON.stringify(data),
+      source: { kind: "data_workspace" }
+    })!;
+    const source = (await candidates()).find((c) => c.id === created.artifact.id)!;
+    const response = await app.inject({
+      method: "POST",
+      url: base() + "/artifacts/table-summary",
+      payload: { source: sourceRef(source), scope: "all", columns: [1, 2] }
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const value = response.json<{
+      attachment: { name: string; content: string };
+      attachment_sha256: string;
+      summary_only: boolean;
+      analyzed_rows: number;
+    }>();
+    expect(value).toMatchObject({
+      summary_only: true,
+      raw_rows_included: false,
+      analyzed_rows: 1200,
+      omitted_columns: 1
+    });
+    expect(value.attachment.content).not.toContain("private-row-");
+    expect(value.attachment.content.length).toBeLessThan(8000);
+    expect(value.attachment_sha256).toBe(hash(value.attachment.content));
+    const body = JSON.parse(value.attachment.content) as {
+      statistics: { columns: Array<{ numeric: null | { count: number; sum: number } }> };
+    };
+    expect(body.statistics.columns[1]!.numeric).toMatchObject({
+      count: 1200,
+      sum: (1200 * 1201) / 2
+    });
+    expect(projects.getMaterials(project)?.version).toBe(0);
+    // The ordinary reviewed-materials path accepts the preview without a new integration or UI.
+    const saved = await app.inject({
+      method: "PUT",
+      url: base(),
+      payload: { version: 0, instructions: "", attachments: [value.attachment] }
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const run = projects.createMessage(
+      project,
+      "Explain summary",
+      "table-summary-request",
+      "local-owner"
+    )!;
+    expect(projects.getMaterialsForRun(run.run.id)?.attachments).toEqual([value.attachment]);
+    const work = works.create(project, "local-owner", "local-owner", {
+      client_request_id: "table-summary-work",
+      goal: "Explain saved statistics",
+      worker_role: "analyst",
+      max_model_requests: 3,
+      max_input_tokens: 32000,
+      max_output_tokens: 6000
+    })!;
+    expect(works.get(work.id, "local-owner")?.materials?.attachments).toEqual([value.attachment]);
+    data.table.rows = [["changed", "999", "replacement"]];
+    canvas.update(project, "local-owner", created.artifact.id, {
+      baseVersion: 1,
+      title: "Changed",
+      format: "code",
+      content: JSON.stringify(data),
+      source: { kind: "data_workspace" }
+    });
+    const repeated = await app.inject({
+      method: "POST",
+      url: base() + "/artifacts/table-summary",
+      payload: { source: sourceRef(source), scope: "all", columns: [1, 2] }
+    });
+    expect(repeated.json()).toEqual(value);
+    expect(projects.getMaterialsForRun(run.run.id)?.attachments).toEqual([value.attachment]);
+    expect(canvas.history(project, "local-owner", created.artifact.id)).toHaveLength(2);
+  });
+  it("checks table summary provenance, owner boundaries, projection and size without silently truncating", async () => {
+    const data = parseDataWorkspace(table());
+    data.settings.columns = [2];
+    const created = canvas.create(project, "local-owner", {
+      title: "T",
+      format: "code",
+      content: JSON.stringify(data),
+      source: { kind: "data_workspace" }
+    })!;
+    const source = (await candidates()).find((c) => c.id === created.artifact.id)!;
+    const url = base() + "/artifacts/table-summary",
+      payload = { source: sourceRef(source), scope: "view" };
+    expect((await foreign.inject({ method: "POST", url, payload })).statusCode).toBe(404);
+    expect(
+      (await app.inject({ method: "POST", url, payload: { ...payload, columns: [1] } })).statusCode
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          payload: { ...payload, source: { ...sourceRef(source), sha256: "0".repeat(64) } }
+        })
+      ).statusCode
+    ).toBe(409);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          payload: { ...payload, source: { ...sourceRef(source), kind: "canvas" } }
+        })
+      ).statusCode
+    ).toBe(400);
+    expect(
+      (await app.inject({ method: "POST", url, payload: { ...payload, owner_id: "forged" } }))
+        .statusCode
+    ).toBe(400);
+    const original = canvas.getRevision.bind(canvas);
+    vi.spyOn(canvas, "getRevision").mockImplementation((...args) => {
+      const r = original(...args);
+      return r ? { ...r, content: "corrupt-private" } : null;
+    });
+    const corrupt = await app.inject({ method: "POST", url, payload });
+    expect(corrupt.statusCode).toBe(409);
+    expect(corrupt.body).not.toContain("corrupt-private");
+    vi.restoreAllMocks();
+    data.table.headers[0] = "huge-".repeat(1900);
+    canvas.update(project, "local-owner", created.artifact.id, {
+      baseVersion: 1,
+      title: "T",
+      format: "code",
+      content: JSON.stringify(data),
+      source: { kind: "data_workspace" }
+    });
+    const updated = (await candidates()).find((c) => c.id === created.artifact.id)!;
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          payload: { source: sourceRef(updated), scope: "all" }
+        })
+      ).statusCode
+    ).toBe(413);
+    // Explicitly selecting a smaller set succeeds, with excluded columns declared.
+    const narrow = await app.inject({
+      method: "POST",
+      url,
+      payload: { source: sourceRef(updated), scope: "all", columns: [2] }
+    });
+    expect(narrow.statusCode, narrow.body).toBe(200);
+    expect(narrow.json()).toMatchObject({ omitted_columns: 2, summary_only: true });
+    expect(projects.getMaterials(project)?.version).toBe(0);
+  });
   it("rejects extra request fields, empty text and wrong source range types", async () => {
     createText("");
     const source = (await candidates())[0]!;
