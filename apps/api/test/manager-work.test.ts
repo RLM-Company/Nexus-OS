@@ -54,6 +54,7 @@ const defaultPlan = {
 
 async function fixture(
   options: {
+    request?: CreateManagerWork;
     plan?: object;
     draft?: object;
     review?: object;
@@ -134,7 +135,7 @@ async function fixture(
     ownerBudget: options.ownerBudget ?? accountStore
   };
   const coordinator = new ManagerWorkCoordinator(dependencies);
-  const work = store.create(project.id, "local-owner", "local-owner", request)!;
+  const work = store.create(project.id, "local-owner", "local-owner", options.request ?? request)!;
   const get = () => store.get(work.id, "local-owner")!;
   return {
     database,
@@ -155,6 +156,76 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("creates a website through the real Work route, validates HTML and keeps canonical accounting", async () => {
+    const html =
+      "<!doctype html><html lang='ru'><head><style>body{color:#222}</style></head><body><h1>Студия</h1><p>Проекты и контакты</p></body></html>";
+    const f = await fixture({
+      draft: { files: [{ name: "index.html", content: html }] },
+      onCall: async (req) => {
+        await Promise.resolve();
+        const system = req.messages[0]!.content;
+        expect(system).toContain("index.html");
+        if (req.task_type === "manager_work_plan") expect(system).toContain('"complexity"');
+      }
+    });
+    const app = buildApp({
+      config: f.config,
+      database: f.database,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const payload = {
+        ...request,
+        client_request_id: "website-route",
+        goal: "Страница студии",
+        output_contract: { kind: "website" }
+      };
+      const url = `/api/v1/projects/${f.project.id}/work`;
+      const created = await app.inject({ method: "POST", url, payload });
+      expect(created.statusCode, created.body).toBe(201);
+      const id = created.json<{ id: string }>().id;
+      await f.coordinator.execute(id, "local-owner");
+      expect(f.store.get(id, "local-owner")).toMatchObject({
+        status: "completed",
+        model_requests: 2
+      });
+      expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft"]);
+      expect((await app.inject({ method: "POST", url, payload })).json<{ id: string }>().id).toBe(
+        id
+      );
+      const file = await app.inject({ url: `${url}/${id}/files/index.html` });
+      expect(file.body).toBe(html);
+      expect(file.headers["content-disposition"]).toContain("attachment");
+      expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(400);
+    } finally {
+      await app.close();
+      await f.coordinator.stop();
+    }
+  });
+  it.each([
+    [{ name: "result.md", content: "Not a site" }],
+    [{ name: "index.html", content: "<html><body>Truncated" }],
+    [{ name: "index.html", content: "<html><body><script>alert(1)</script></body></html>" }]
+  ])(
+    "rejects malformed website outputs without publishing or paid retries: %j",
+    async (...files) => {
+      const f = await fixture({
+        request: { ...request, output_contract: { kind: "website" } },
+        draft: { files }
+      });
+      await f.coordinator.execute(f.work.id, "local-owner");
+      expect(f.get()).toMatchObject({
+        status: "failed",
+        error_code: "INVALID_WEBSITE_RESULT",
+        model_requests: 2
+      });
+      expect(f.store.runtime.artifacts(f.project.id, "local-owner", f.work.id)).toHaveLength(0);
+      expect(f.calls).toHaveLength(2);
+      await f.coordinator.stop();
+    }
+  );
   it("accounts accepted Skill text before dispatch and refuses input that exceeds the existing task ceiling", async () => {
     const f = await fixture();
     const skill = new OwnerSkillStore(f.database.sqlite).create("local-owner", {

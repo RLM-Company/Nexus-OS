@@ -7,6 +7,7 @@ import { PLANNED_CAPABILITIES, type CapabilityArea } from "./workspace-capabilit
 import styles from "./workspace-sections.module.css";
 import { StudioDataSurface } from "./studio-data-workbench";
 import { MediaWorkbench } from "./media-generation/media-workbench";
+import { SitesWorkbench } from "./sites/sites-workbench";
 
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 
@@ -635,9 +636,9 @@ function Studio({ onNavigate }: Props) {
       status: "Слайды"
     },
     sites: {
-      description: "Подготовьте структуру и задачу на создание сайта.",
+      description: "Создайте страницу с ИИ, отредактируйте HTML и сохраните версии.",
       action: "Создать сайт",
-      status: "Проектирование"
+      status: "HTML и CSS"
     },
     games: {
       description: "Опишите механику и подготовьте задачу на прототип игры.",
@@ -1386,6 +1387,10 @@ export function WorkspaceSections(props: Props) {
       );
       break;
     case "sites":
+      content = (
+        <SitesWorkbench projects={props.projects} initialProjectId={props.activeProjectId} />
+      );
+      break;
     case "games":
       content = <StudioBuild surface={props.surface} onCompose={props.onCompose} />;
       break;
