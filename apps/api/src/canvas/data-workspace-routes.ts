@@ -4,6 +4,15 @@ import { Type } from "typebox";
 import type { IdentityContext } from "@cosmora/contracts";
 import type { CanvasRevision } from "@cosmora/contracts/canvas-artifacts";
 import { DATA_SERVER_BYTES } from "@cosmora/contracts/data-workspace";
+import {
+  TableAnalysisError,
+  selectTable,
+  profileTable,
+  tableRows,
+  exportTableCsv,
+  exportTableJson,
+  type TableScope
+} from "@cosmora/core";
 import { type CanvasArtifactStore, CanvasConflictError, CanvasLimitError } from "@cosmora/db";
 
 export function registerDataWorkspaceRoutes(
@@ -28,6 +37,8 @@ export function registerDataWorkspaceRoutes(
   const missing = (reply: { code(n: number): { send(v: unknown): unknown } }) =>
     reply.code(404).send({ error: { code: "DATA_WORKSPACE_NOT_FOUND" } });
   const handle = (reply: { code(n: number): { send(v: unknown): unknown } }, error: unknown) => {
+    if (error instanceof TableAnalysisError)
+      return reply.code(400).send({ error: { code: error.code } });
     if (error instanceof CanvasConflictError)
       return reply.code(409).send({
         error: { code: "DATA_WORKSPACE_VERSION_CONFLICT", currentVersion: error.currentVersion }
@@ -167,6 +178,74 @@ export function registerDataWorkspaceRoutes(
       return verified(revision) ? revision : corrupt(reply);
     }
   );
+  // Read-only derived results are always pinned to an immutable, checksum-verified revision.
+  const scopeSchema = Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("view")]));
+  type DerivedQuery = {
+    scope?: TableScope;
+    offset?: number;
+    limit?: number;
+    format?: "csv" | "json";
+  };
+  for (const operation of ["analysis", "rows", "export"] as const) {
+    const querystring =
+      operation === "rows"
+        ? Type.Object(
+            {
+              scope: scopeSchema,
+              offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 80_000 })),
+              limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 }))
+            },
+            { additionalProperties: false }
+          )
+        : operation === "export"
+          ? Type.Object(
+              {
+                scope: scopeSchema,
+                format: Type.Union([Type.Literal("csv"), Type.Literal("json")])
+              },
+              { additionalProperties: false }
+            )
+          : Type.Object({ scope: scopeSchema }, { additionalProperties: false });
+    app.get<{ Params: Path & { version: number }; Querystring: DerivedQuery }>(
+      root + "/:id/revisions/:version/" + operation,
+      { schema: { params: revisionParams, querystring } },
+      (req, reply) => {
+        if (!ownTable(req, req.params)) return missing(reply);
+        const revision = store.getRevision(
+          req.params.projectId,
+          owner(req),
+          req.params.id,
+          req.params.version
+        );
+        if (!revision) return missing(reply);
+        if (!verified(revision)) return corrupt(reply);
+        reply
+          .header("x-table-version", String(revision.version))
+          .header("x-table-sha256", revision.sha256);
+        try {
+          const selection = selectTable(revision.content, req.query.scope ?? "view");
+          if (operation === "analysis") return profileTable(selection);
+          if (operation === "rows")
+            return tableRows(selection, req.query.offset ?? 0, req.query.limit ?? 100);
+          const format = req.query.format!;
+          const content = format === "csv" ? exportTableCsv(selection) : exportTableJson(selection);
+          if (Buffer.byteLength(content) > 32_000_000)
+            return reply.code(413).send({ error: { code: "TABLE_EXPORT_TOO_LARGE" } });
+          return reply
+            .header(
+              "content-disposition",
+              `attachment; filename="kosmora-table-v${revision.version}-${selection.scope}.${format}"`
+            )
+            .header("content-security-policy", "default-src 'none'; sandbox")
+            .header("x-export-sha256", createHash("sha256").update(content).digest("hex"))
+            .type(format === "csv" ? "text/csv; charset=utf-8" : "application/json; charset=utf-8")
+            .send(content);
+        } catch (error) {
+          return handle(reply, error);
+        }
+      }
+    );
+  }
   app.get<{ Params: Path & { version: number } }>(
     root + "/:id/revisions/:version/download",
     { schema: { params: revisionParams } },

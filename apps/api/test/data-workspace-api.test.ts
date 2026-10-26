@@ -1,10 +1,14 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { parseDataWorkspace } from "@cosmora/contracts/data-workspace";
 import { loadServerConfig } from "@cosmora/config";
-import { CanvasArtifactStore, openDatabase, runMigrations } from "@cosmora/db";
+import { CanvasArtifactStore, IdentityStore, openDatabase, runMigrations } from "@cosmora/db";
 import { buildApp } from "../src/app.js";
-import { StaticIdentityResolver, LOCAL_DEVELOPMENT_IDENTITY } from "../src/identity.js";
+import {
+  StaticIdentityResolver,
+  BearerSessionIdentityResolver,
+  LOCAL_DEVELOPMENT_IDENTITY
+} from "../src/identity.js";
 import { canvasPrivacyAdapter } from "../src/canvas/canvas-privacy.js";
 
 type Full = {
@@ -328,4 +332,156 @@ it("enforces a twenty-version ceiling and an atomic project history quota", asyn
   }
   expect(count).toBe(17);
   expect(db.sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+});
+
+it("profiles and pages a pinned saved view without changing the table or history", async () => {
+  const input = JSON.parse(snapshot()) as {
+    table: { rows: string[][] };
+    settings: { filters: unknown[]; sort: unknown; columns: number[] };
+  };
+  input.table.rows = [
+    ["001", "1,5"],
+    ["002", "2,5"],
+    ["003", "bad"],
+    ["002", "2,5"]
+  ];
+  input.settings.filters = [{ column: 1, operator: "greater", value: "2" }];
+  input.settings.sort = { column: 1, direction: "desc" };
+  const { value } = await create(JSON.stringify(input));
+  const url = `${base}/${value.artifact.id}/revisions/1`;
+  const analysis = await app.inject({ method: "GET", url: url + "/analysis" });
+  expect(analysis.statusCode, analysis.body).toBe(200);
+  expect(analysis.json()).toMatchObject({
+    analyzed_rows: 2,
+    source_rows: 4,
+    duplicate_rows: 1,
+    sampled: false
+  });
+  expect(analysis.headers["x-table-sha256"]).toBe(value.revision.sha256);
+  expect(analysis.headers["cache-control"]).toBe("private, no-store");
+  expect(analysis.headers["x-content-type-options"]).toBe("nosniff");
+  const all = await app.inject({ method: "GET", url: url + "/analysis?scope=all" });
+  expect(all.json()).toMatchObject({
+    analyzed_rows: 4,
+    columns: [{ numeric: null }, { numeric: { invalid: 1, sum: 6.5 } }]
+  });
+  const rows = await app.inject({ method: "GET", url: url + "/rows?limit=1&offset=1" });
+  expect(rows.statusCode).toBe(200);
+  expect(rows.json()).toMatchObject({
+    total_rows: 2,
+    next_offset: null,
+    rows: [{ source_row: 4, cells: ["002", "2,5"] }]
+  });
+  await app.inject({
+    method: "PUT",
+    url: `${base}/${value.artifact.id}`,
+    payload: { baseVersion: 1, title: "new", content: snapshot("99") }
+  });
+  expect((await app.inject({ method: "GET", url: url + "/analysis" })).json()).toEqual(
+    analysis.json()
+  );
+  expect(store.history("p", "local-owner", value.artifact.id)).toHaveLength(2);
+});
+
+it("exports complete view data with formula-safe CSV, exact JSON and output checksums", async () => {
+  const input = JSON.parse(snapshot()) as { table: { rows: string[][] } };
+  input.table.rows = [
+    ['=HYPERLINK("https://invalid")', "-2"],
+    ["001", "3"]
+  ];
+  const { value } = await create(JSON.stringify(input));
+  const url = `${base}/${value.artifact.id}/revisions/1/export`;
+  const csv = await app.inject({ method: "GET", url: url + "?format=csv" });
+  expect(csv.statusCode, csv.body).toBe(200);
+  expect(csv.body).toContain("\"'=HYPERLINK(");
+  expect(csv.body).toContain(',"-2"');
+  expect(csv.headers["x-export-sha256"]).toBe(
+    createHash("sha256").update(csv.rawPayload).digest("hex")
+  );
+  expect(csv.headers["content-disposition"]).toContain("v1-view.csv");
+  const json = await app.inject({ method: "GET", url: url + "?format=json&scope=all" });
+  expect(json.statusCode).toBe(200);
+  expect(json.json()).toMatchObject({
+    format: "kosmora.table-export.v1",
+    rows: [{ cells: input.table.rows[0] }, { cells: input.table.rows[1] }]
+  });
+  expect(store.history("p", "local-owner", value.artifact.id)).toHaveLength(1);
+});
+
+it("keeps derived endpoints private and rejects corrupt revisions, bad queries and other artifact types", async () => {
+  const { value } = await create();
+  const url = `${base}/${value.artifact.id}/revisions/1`;
+  for (const suffix of ["/analysis", "/rows", "/export?format=csv"]) {
+    expect((await foreign.inject({ method: "GET", url: url + suffix })).statusCode).toBe(404);
+    expect(
+      (await app.inject({ method: "GET", url: url.replace("/p/", "/other/") + suffix })).statusCode
+    ).toBe(404);
+  }
+  for (const suffix of [
+    "/analysis?scope=evil",
+    "/rows?limit=501",
+    "/rows?offset=-1",
+    "/export?format=html",
+    "/export"
+  ]) {
+    expect((await app.inject({ method: "GET", url: url + suffix })).statusCode).toBe(400);
+  }
+  const text = store.create("p", "local-owner", {
+    title: "secret",
+    format: "text",
+    content: "private"
+  })!;
+  expect(
+    (await app.inject({ method: "GET", url: `${base}/${text.artifact.id}/revisions/1/analysis` }))
+      .statusCode
+  ).toBe(404);
+  const original = store.getRevision.bind(store);
+  vi.spyOn(store, "getRevision").mockImplementation((...args) => {
+    const revision = original(...args);
+    return revision ? { ...revision, content: "corrupt-secret" } : null;
+  });
+  for (const suffix of ["/analysis", "/rows", "/export?format=json"]) {
+    const result = await app.inject({ method: "GET", url: url + suffix });
+    expect(result.statusCode).toBe(409);
+    expect(result.body).not.toContain("corrupt-secret");
+  }
+});
+
+it("requires a real owner session on every derived endpoint", async () => {
+  const { value } = await create();
+  const identities = new IdentityStore(db.sqlite);
+  identities.registerActor("local-owner", "table-owner", "owner");
+  const token = identities.issueSession({
+    ownerId: "local-owner",
+    actorId: "table-owner",
+    assurance: "single_factor",
+    ttlMs: 60000
+  }).token;
+  const secured = buildApp({
+    config: loadServerConfig({ NODE_ENV: "test" }),
+    database: db,
+    canvasStore: store,
+    identityResolver: new BearerSessionIdentityResolver(identities)
+  });
+  try {
+    for (const suffix of ["analysis", "rows", "export?format=json"]) {
+      const url = `${base}/${value.artifact.id}/revisions/1/${suffix}`;
+      expect((await secured.inject({ method: "GET", url })).statusCode).toBe(401);
+      expect(
+        (await secured.inject({ method: "GET", url, headers: { authorization: "Bearer forged" } }))
+          .statusCode
+      ).toBe(401);
+      expect(
+        (
+          await secured.inject({
+            method: "GET",
+            url,
+            headers: { authorization: `Bearer ${token}` }
+          })
+        ).statusCode
+      ).toBe(200);
+    }
+  } finally {
+    await secured.close();
+  }
 });
