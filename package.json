@@ -28,7 +28,8 @@
     "test:secrets": "node --test scripts/test/check-secrets.test.mjs",
     "test:profile": "node scripts/manager-compatible-fixture-smoke.mjs",
     "typecheck": "turbo run typecheck",
-    "check": "pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm test:connection && pnpm test:secrets && pnpm build && pnpm test:profile && pnpm test:e2e"
+    "check:core": "pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm test:connection && pnpm test:secrets && pnpm build && pnpm test:profile",
+    "check": "pnpm check:core && pnpm test:e2e"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

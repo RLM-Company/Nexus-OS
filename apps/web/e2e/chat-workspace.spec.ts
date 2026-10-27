@@ -66,30 +66,38 @@ test("legacy folders stay hidden while server pins persist and folder removal ke
   ).toBeVisible();
   expect((await request.get(`/api/v1/chats/${accepted.chat.id}`)).ok()).toBeTruthy();
 });
-test("exclusions are explicitly saved and restored without deleting original messages", async ({
+test("context exclusions persist by API without restoring the removed chat control or deleting history", async ({
   page,
   request
 }) => {
   const accepted = await seed(request, "Контекст: сохраняемый важный факт");
+  const path = `/api/v1/chats/${accepted.chat.id}`;
+  const before = await (await request.get(path)).json();
   await page.goto(`/?chat=${accepted.chat.id}`);
-  await page.getByRole("button", { name: "Контекст переписки", exact: true }).click();
-  const panel = page.getByRole("region", { name: "Контекст переписки", exact: true });
-  const box = panel.getByRole("checkbox").first();
-  await expect(box).toBeEnabled();
-  await box.uncheck();
-  await panel.getByRole("button", { name: "Сохранить контекст", exact: true }).click();
-  await expect(panel.getByRole("status")).toContainText("Контекст сохранён");
-  await page.reload();
-  await page.getByRole("button", { name: "Контекст переписки", exact: true }).click();
-  await expect(
-    page
-      .getByRole("region", { name: "Контекст переписки", exact: true })
-      .getByRole("checkbox")
-      .first()
-  ).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Контекст переписки", exact: true })).toHaveCount(
+    0
+  );
+  const original = (await (await request.get(`${path}/context`)).json()).context;
+  const excluded_ids = [before.messages[0].id];
   expect(
-    (await (await request.get(`/api/v1/chats/${accepted.chat.id}`)).json()).messages
-  ).toHaveLength(2);
+    (
+      await request.put(`${path}/context`, {
+        data: {
+          expected_version: original.version,
+          excluded_ids,
+          summary: "",
+          summary_through: null
+        }
+      })
+    ).ok()
+  ).toBeTruthy();
+  await page.reload();
+  await expect(page.locator(".message")).toHaveCount(before.messages.length);
+  expect((await (await request.get(`${path}/context`)).json()).context).toMatchObject({
+    excluded_ids,
+    version: original.version + 1
+  });
+  expect((await (await request.get(path)).json()).messages).toEqual(before.messages);
 });
 test("ordinary chat answer transfers into project Canvas once and survives reload", async ({
   page,
@@ -117,7 +125,7 @@ test("ordinary chat answer transfers into project Canvas once and survives reloa
   expect((await (await request.get(`/api/v1/projects/${id}/canvas`)).json()).items).toHaveLength(1);
 });
 
-test("extractive summary is reviewed, edited, explicitly saved and restored", async ({
+test("extractive summary API requires explicit save and survives browser reload without altering history", async ({
   page,
   request
 }) => {
@@ -131,19 +139,33 @@ test("extractive summary is reviewed, edited, explicitly saved and restored", as
     ).json();
     await request.get(next.stream_url);
   }
+  const path = `/api/v1/chats/${accepted.chat.id}`;
+  const before = await (await request.get(path)).json();
+  const original = (await (await request.get(`${path}/context`)).json()).context;
   await page.goto(`/?chat=${accepted.chat.id}`);
-  await page.getByRole("button", { name: "Контекст переписки", exact: true }).click();
-  await page.getByRole("button", { name: "Подготовить выдержку", exact: true }).click();
-  const field = page.getByLabel("Сводка ранней истории", { exact: true });
-  await expect(field).toHaveValue(/Ранний факт/);
-  await field.fill("Проверенная пользователем сводка.");
-  await page.getByRole("button", { name: "Сохранить контекст", exact: true }).click();
-  await expect(
-    page.getByRole("region", { name: "Контекст переписки", exact: true }).getByRole("status")
-  ).toContainText("Контекст сохранён");
+  const response = await request.post(`${path}/context/draft`, { data: { excluded_ids: [] } });
+  expect(response.ok()).toBeTruthy();
+  const draft = await response.json();
+  expect(draft.summary).toContain("Ранний факт");
+  expect((await (await request.get(`${path}/context`)).json()).context).toEqual(original);
+  const summary = "Проверенная пользователем сводка.";
+  expect(
+    (
+      await request.put(`${path}/context`, {
+        data: {
+          expected_version: original.version,
+          excluded_ids: [],
+          summary,
+          summary_through: draft.summary_through
+        }
+      })
+    ).ok()
+  ).toBeTruthy();
   await page.reload();
-  await page.getByRole("button", { name: "Контекст переписки", exact: true }).click();
-  await expect(page.getByLabel("Сводка ранней истории", { exact: true })).toHaveValue(
-    "Проверенная пользователем сводка."
-  );
+  await expect(page.locator(".message")).toHaveCount(before.messages.length);
+  expect((await (await request.get(`${path}/context`)).json()).context).toMatchObject({
+    summary,
+    summary_through: draft.summary_through
+  });
+  expect((await (await request.get(path)).json()).messages).toEqual(before.messages);
 });

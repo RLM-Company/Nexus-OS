@@ -101,7 +101,7 @@ test("keeps the Skills controls within a narrow screen", async ({ page, request 
   await page.screenshot({ path: test.info().outputPath("chat-skills-mobile.png") });
 });
 
-test("opens only the accepted answer Skill snapshot after catalog deletion without another generation", async ({
+test("retains the accepted Skill snapshot through the API without adding answer controls or generating", async ({
   page,
   request
 }) => {
@@ -114,7 +114,7 @@ test("opens only the accepted answer Skill snapshot after catalog deletion witho
     data: { content: "Проверка снимка", client_message_id: randomUUID() }
   });
   expect(next.status()).toBe(202);
-  const accepted = (await next.json()) as { stream_url: string };
+  const accepted = (await next.json()) as { stream_url: string; run_id: string };
   await request.get(`${api}${accepted.stream_url}`);
   expect(
     (
@@ -123,17 +123,29 @@ test("opens only the accepted answer Skill snapshot after catalog deletion witho
       })
     ).status()
   ).toBe(204);
-  await page.reload();
-  const snapshot = page.getByLabel("Skills этого ответа", { exact: true }).last();
-  let reads = 0;
-  await page.route("**/chat-runs/*/skills", async (route) => {
-    reads++;
-    await route.continue();
+  const before = await (await request.get(`${api}/api/v1/chats/${chatId}`)).json();
+  const writes: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && new URL(r.url()).pathname.includes(`/chats/${chatId}/messages`))
+      writes.push(r.url());
   });
-  await snapshot.locator("summary").click();
-  await expect(snapshot.locator("pre")).toContainText("<script>window.skillInjected=true</script>");
-  expect(await snapshot.locator("script").count()).toBe(0);
-  await snapshot.locator("summary").click();
-  await snapshot.locator("summary").click();
-  expect(reads).toBe(1);
+  await page.reload();
+  await expect(page.locator(".message")).toHaveCount(before.messages.length);
+  await expect(page.getByLabel("Skills этого ответа", { exact: true })).toHaveCount(0);
+  for (let read = 0; read < 2; read++) {
+    const response = await request.get(`${api}/api/v1/chat-runs/${accepted.run_id}/skills`);
+    expect(response.ok()).toBeTruthy();
+    expect((await response.json()).snapshot.items).toEqual([
+      expect.objectContaining({
+        skill_id: skill.id,
+        version: 1,
+        instructions: "<script>window.skillInjected=true</script> Сравнивай источники."
+      })
+    ]);
+  }
+  expect(await page.evaluate(() => Object.hasOwn(window, "skillInjected"))).toBe(false);
+  expect((await (await request.get(`${api}/api/v1/chats/${chatId}`)).json()).messages).toEqual(
+    before.messages
+  );
+  expect(writes).toEqual([]);
 });

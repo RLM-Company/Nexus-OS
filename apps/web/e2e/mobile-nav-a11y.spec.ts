@@ -9,8 +9,8 @@ test("exposes the active mobile navigation destination", async ({ page }) => {
   const modes = nav.getByRole("button", { name: "Режимы", exact: true });
   const drawer = page.getByRole("dialog", { name: "Ваше пространство" });
   const modeRows = drawer.locator(".drawer-modes");
-  const code = modeRows.getByRole("button", { name: /^Code(?:\s|$)/ });
-  const work = modeRows.getByRole("button", { name: /^Work(?:\s|$)/ });
+  const code = modeRows.getByRole("button", { name: "Coscode", exact: true });
+  const work = modeRows.getByRole("button", { name: "Koswork", exact: true });
 
   await expect(newChat).toHaveAttribute("aria-current", "page");
   await expect(modes).not.toHaveAttribute("aria-current");
@@ -29,7 +29,7 @@ test("exposes the active mobile navigation destination", async ({ page }) => {
   await modes.click();
   await expect(work).toHaveAttribute("aria-current", "page");
   await expect(code).not.toHaveAttribute("aria-current");
-  await modeRows.getByRole("button", { name: /^Чат(?:\s|$)/ }).click();
+  await modeRows.getByRole("button", { name: "Kosmora", exact: true }).click();
   await expect(drawer).toBeHidden();
   await expect(newChat).toHaveAttribute("aria-current", "page");
   await expect(modes).not.toHaveAttribute("aria-current");

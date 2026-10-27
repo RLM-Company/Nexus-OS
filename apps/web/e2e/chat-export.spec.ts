@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { unzipSync, strFromU8 } from "fflate";
 import { expect, test, type Page } from "@playwright/test";
+import { isWorkspaceWrite } from "./fixtures/navigation-writes";
 
 const chatId = "a1090011-0001-4000-8000-000000000001";
 const projectId = "a1090011-0001-4000-8000-000000000002";
@@ -39,7 +40,7 @@ const messages = [
 async function fixture(page: Page, project = false) {
   const writes: string[] = [];
   page.on("request", (request) => {
-    if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method())) writes.push(request.url());
+    if (isWorkspaceWrite(request)) writes.push(request.url());
   });
   await page.route("**/api/v1/chats", (route) =>
     route.fulfill({

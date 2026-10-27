@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 
 test("renders safe Markdown, downloads code, renames and restores an archived chat", async ({
   page,
-  context
+  context,
+  request
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
@@ -29,11 +30,17 @@ test("renders safe Markdown, downloads code, renames and restores an archived ch
   await page.getByRole("button", { name: "Сохранить название" }).click();
   await expect(page.locator(".sidebar strong").filter({ hasText: title })).toBeVisible();
   await expect(page.locator(".topbar").getByRole("heading", { level: 1 })).toHaveText(title);
+  const chatId = new URL(page.url()).searchParams.get("chat")!;
+  await page.getByLabel("Настройки чата", { exact: true }).click();
   await page.getByRole("button", { name: "Убрать чат в архив" }).click();
   await expect(page.locator(".sidebar strong").filter({ hasText: title })).toHaveCount(0);
   await expect(page.locator(".topbar").getByRole("heading", { level: 1 })).toHaveText("Новый чат");
-  await page.getByText("Архив чатов", { exact: true }).click();
-  await page.getByRole("button", { name: `Восстановить ${title}`, exact: true }).click();
+  // The owner removed the sidebar archive entry; restoration remains available by API.
+  await expect(page.locator(".sidebar").getByText("Архив чатов", { exact: true })).toHaveCount(0);
+  expect(
+    (await request.patch(`/api/v1/chats/${chatId}`, { data: { archived: false } })).ok()
+  ).toBeTruthy();
+  await page.reload();
   await expect(page.locator(".sidebar strong").filter({ hasText: title })).toBeVisible();
   await page.locator(".sidebar").getByRole("button", { name: title, exact: true }).click();
   await page.reload();

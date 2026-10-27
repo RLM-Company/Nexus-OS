@@ -327,7 +327,7 @@ test("late history and stream cannot affect the newly selected chat", async ({ p
   await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled();
 });
 
-test("long Markdown and code copy and download retain the complete answer", async ({
+test("long Markdown retains the complete answer in copy and chat export", async ({
   page,
   context
 }) => {
@@ -346,14 +346,17 @@ test("long Markdown and code copy and download retain the complete answer", asyn
   const copied = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n");
   expect(copied.length).toBeGreaterThan(35000);
   expect(copied).toContain("| Код | Готов |");
+  await expect(reply.getByRole("button", { name: "Скачать ответ", exact: true })).toHaveCount(0);
+  await page.getByLabel("Настройки чата", { exact: true }).click();
   const downloaded = page.waitForEvent("download");
-  await reply.getByRole("button", { name: "Скачать ответ", exact: true }).click();
+  await page.getByLabel("Формат файла", { exact: true }).selectOption("markdown");
+  await page.getByRole("button", { name: "Скачать переписку", exact: true }).click();
   const download = await downloaded;
-  expect(download.suggestedFilename()).toBe("kosmora-answer.md");
+  expect(download.suggestedFilename()).toMatch(/\.md$/);
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk as Buffer));
-  expect(Buffer.concat(chunks).toString("utf8")).toBe(copied);
+  expect(Buffer.concat(chunks).toString("utf8").replace(/\r\n/g, "\n")).toContain(copied);
 });
 
 test("ordinary-chat cancellation after reload restores a request without sending it", async ({

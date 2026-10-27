@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { isWorkspaceWrite } from "./fixtures/navigation-writes";
 
 const chatIds = [
   "10a92d27-0001-4000-8000-000000000001",
@@ -36,7 +37,7 @@ const history = (chatId: string) =>
 async function savedChats(page: Page) {
   const writes: string[] = [];
   page.on("request", (request) => {
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method())) writes.push(request.url());
+    if (isWorkspaceWrite(request)) writes.push(request.url());
   });
   await page.route("**/api/v1/chats", async (route) => {
     if (route.request().method() === "GET") await route.fulfill({ json: { items: chats } });
@@ -161,20 +162,24 @@ test("search paginates long histories, treats query as literal text and wraps na
   expect(writes).toEqual([]);
 });
 
-test("request actions copy the full text and append it to the existing composer draft", async ({
+test("request copy preserves the full text and leaves the existing composer draft intact", async ({
   page,
   context
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const writes = await savedChats(page);
   const request = page.locator(".message.user").first();
-  await request.getByRole("button", { name: "Копировать запрос", exact: true }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(contents[0]);
   const composer = page.getByLabel("Сообщение Kosmora", { exact: true });
   await composer.fill("Существующий текст");
-  await request.getByRole("button", { name: "Вставить в сообщение", exact: true }).click();
-  await expect(composer).toHaveValue(`Существующий текст\n\n${contents[0]}`);
-  await expect(composer).toBeFocused();
+  const copy = request.getByRole("button", { name: "Копировать запрос", exact: true });
+  await copy.click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(contents[0]);
+  await expect(copy.locator("svg")).toHaveCount(1);
+  await expect(copy.locator("span")).toHaveCSS("position", "absolute");
+  await expect(
+    request.getByRole("button", { name: "Вставить в сообщение", exact: true })
+  ).toHaveCount(0);
+  await expect(composer).toHaveValue("Существующий текст");
   await expect(page.locator(".message")).toHaveCount(4);
   expect(writes).toEqual([]);
 });

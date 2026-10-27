@@ -108,13 +108,23 @@ test("reaches every primary workspace from the phone navigation", async ({ page 
     .click();
   await expect(page.locator(".topbar h1")).toHaveText("Audit Project");
 
-  for (const label of ["Skills", "Code", "Work", "Изображения", "Видео", "Sound", "Мультиагент"]) {
+  for (const label of [
+    "Skills",
+    "Coscode",
+    "Koswork",
+    "Изображения",
+    "Видео",
+    "Sound",
+    "Multi-Agent"
+  ]) {
     await mobileNav.getByRole("button", { name: "Все разделы" }).click();
     await page
       .getByRole("dialog", { name: "Ваше пространство" })
       .getByRole("button", { name: new RegExp(`^${label}(?:\\s|$)`) })
       .click();
-    await expect(page.locator(".topbar h1")).toHaveText(label);
+    await expect(page.locator(".topbar h1")).toHaveText(
+      ["Coscode", "Koswork"].includes(label) ? "Новый чат" : label
+    );
   }
 
   await mobileNav.getByRole("button", { name: "Новый чат", exact: true }).click();
@@ -225,16 +235,15 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   const modeTrigger = sidebar.getByLabel("Режимы Kosmora", { exact: true });
   const modeMenu = sidebar.locator(".workspace-mode-menu");
 
-  for (const name of ["Work", "Code"]) {
+  for (const name of ["Koswork", "Coscode"]) {
     await expect(
       sidebar.locator(".sidebar-tools").getByRole("button", { name, exact: true })
     ).toHaveCount(0);
     await modeTrigger.focus();
     await page.keyboard.press("Enter");
     await expect(modeMenu).toHaveAttribute("open", "");
-    await page.keyboard.press("Tab");
-    await expect(modeMenu.getByRole("link", { name: /^Настройки/ })).toBeFocused();
-    const destinations = name === "Work" ? ["Чат", "Work"] : ["Чат", "Work", "Code"];
+    const destinations =
+      name === "Koswork" ? ["Kosmora", "Koswork"] : ["Kosmora", "Koswork", "Coscode"];
     for (const destination of destinations) {
       await page.keyboard.press("Tab");
       await expect(modeMenu.getByRole("button", { name: destination, exact: true })).toBeFocused();
@@ -242,8 +251,11 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
     await page.keyboard.press("Enter");
     await expect(modeMenu).not.toHaveAttribute("open");
     await expect(modeTrigger).toBeFocused();
-    await expect(page.locator(".topbar h1")).toHaveText(name);
+    await expect(page.locator(".topbar h1")).toHaveText("Новый чат");
   }
+  // Return from the separate Coscode workspace before testing shared navigation.
+  await modeTrigger.click();
+  await modeMenu.getByRole("button", { name: "Kosmora", exact: true }).click();
 
   await newChat.focus();
   await page.keyboard.press("Tab");
@@ -255,19 +267,15 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   await expect(chats).toHaveAttribute("aria-expanded", "false");
 
   await page.keyboard.press("Tab");
-  await expect(sidebar.locator(".chat-archive-panel summary")).toBeFocused();
-  await page.keyboard.press("Tab");
   await expect(projects).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(projects).toBeFocused();
   await expect(projects).toHaveAttribute("aria-expanded", "false");
 
-  for (const name of ["Мультиагент", "Skills"]) {
-    const destination = page.locator(".sidebar-tools").getByRole("button", { name, exact: true });
-    await page.keyboard.press("Tab");
-    await expect(destination).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(destination).toBeFocused();
-    await expect(page.locator(".topbar h1")).toHaveText(name);
-  }
+  await expect(sidebar.getByText("Архив чатов", { exact: true })).toHaveCount(0);
+  const studio = sidebar.getByRole("button", { name: "Kosmora Studio", exact: true });
+  await studio.focus();
+  await page.keyboard.press("Enter");
+  await expect(studio).toBeFocused();
+  await expect(studio).toHaveAttribute("aria-expanded", "true");
 });

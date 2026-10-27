@@ -12,12 +12,18 @@ test("persists a selected workspace across reload without creating a project", a
   await page.getByLabel("Режимы Kosmora", { exact: true }).click();
   await page
     .locator(".workspace-mode-menu")
-    .getByRole("button", { name: /^Work(?:\s|$)/ })
+    .getByRole("button", { name: "Koswork", exact: true })
     .click();
-  await expect(page.locator(".topbar h1")).toHaveText("Work");
+  await expect(page.getByRole("button", { name: "Работа", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
 
   await page.reload();
-  await expect(page.locator(".topbar h1")).toHaveText("Work");
+  await expect(page.getByRole("button", { name: "Работа", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
   expect(projectPosts).toBe(0);
 });
 
@@ -30,12 +36,12 @@ test("keeps the persisted workspace usable at 390x844", async ({ page }) => {
   await page
     .getByRole("dialog", { name: "Ваше пространство" })
     .locator(".drawer-modes")
-    .getByRole("button", { name: /^Code(?:\s|$)/ })
+    .getByRole("button", { name: "Coscode", exact: true })
     .click();
-  await expect(page.locator(".topbar h1")).toHaveText("Code");
+  await expect(page.locator(".sidebar")).toHaveAttribute("data-space", "coscode");
 
   await page.reload();
-  await expect(page.locator(".topbar h1")).toHaveText("Code");
+  await expect(page.locator(".sidebar")).toHaveAttribute("data-space", "coscode");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true
   );

@@ -136,7 +136,9 @@ test("restores separate media settings without automatic generation", async ({ p
   expect(writes).toEqual([]);
 });
 
-test("transfers a Code brief into an unsent chat draft", async ({ page }) => {
+test("Coscode keeps a development brief as an unsent draft across mode changes", async ({
+  page
+}) => {
   const writes: string[] = [];
   page.on("request", (request) => {
     if (request.method() === "POST" && !request.url().endsWith("/chat-navigation/import-pins"))
@@ -146,21 +148,18 @@ test("transfers a Code brief into an unsent chat draft", async ({ page }) => {
   const modeTrigger = page.getByLabel("Режимы Kosmora", { exact: true });
   const modeMenu = page.locator(".workspace-mode-menu");
   await modeTrigger.click();
-  await modeMenu.getByRole("button", { name: /^Code(?:\s|$)/ }).click();
-  await page.getByLabel("Описание задачи разработки").fill("Добавить поиск по названиям проектов");
-  await page.getByLabel(/Критерии готовности/).fill("Поиск не зависит от регистра");
-  await modeTrigger.click();
-  await modeMenu.getByRole("button", { name: /^Work(?:\s|$)/ }).click();
-  await modeTrigger.click();
-  await modeMenu.getByRole("button", { name: /^Code(?:\s|$)/ }).click();
-  await expect(page.getByLabel("Описание задачи разработки")).toHaveValue(
-    "Добавить поиск по названиям проектов"
+  await modeMenu.getByRole("button", { name: "Coscode", exact: true }).click();
+  const composer = page.getByLabel("Сообщение Kosmora", { exact: true });
+  await composer.fill(
+    "Добавить поиск по названиям проектов\nКритерии готовности: поиск не зависит от регистра"
   );
-  await page.getByRole("button", { name: "Обсудить с Kosmora" }).click();
-  const composer = page.getByLabel("Сообщение Kosmora");
+  await modeTrigger.click();
+  await modeMenu.getByRole("button", { name: "Koswork", exact: true }).click();
+  await modeTrigger.click();
+  await modeMenu.getByRole("button", { name: "Coscode", exact: true }).click();
+  await expect(page.locator('.sidebar[data-space="coscode"]')).toBeVisible();
   await expect(composer).toHaveValue(/Добавить поиск по названиям проектов/);
-  await expect(composer).toHaveValue(/Поиск не зависит от регистра/);
-  await expect(composer).toBeFocused();
+  await expect(composer).toHaveValue(/поиск не зависит от регистра/);
   expect(writes).toEqual([]);
 });
 

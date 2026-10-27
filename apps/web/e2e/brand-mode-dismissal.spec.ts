@@ -11,9 +11,13 @@ for (const surface of ["studio", "skills"] as const) {
     await expect(disclosure).toHaveAttribute("open", "");
     await expect(disclosure.locator('[aria-current="page"]')).toHaveCount(0);
 
-    await disclosure.getByRole("button", { name: "Work", exact: true }).click();
-    await expect(page).toHaveURL(/(?:\?|&)surface=work(?:&|$)/);
-    await expect(page.locator(".topbar h1")).toHaveText("Work");
+    await disclosure.getByRole("button", { name: "Koswork", exact: true }).click();
+    await expect(page).toHaveURL(/(?:\?|&)mode=work(?:&|$)/);
+    await expect(page.locator(".topbar h1")).toHaveText("Новый чат");
+    await expect(page.getByRole("button", { name: "Работа", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
     await expect(disclosure).not.toHaveAttribute("open");
     await expect(trigger).toBeFocused();
   });
@@ -42,7 +46,7 @@ test("Escape closes the mode menu from its buttons and after tabbing outside", a
   const trigger = page.getByLabel("Режимы Kosmora", { exact: true });
   const disclosure = page.locator(".workspace-mode-menu");
   await trigger.click();
-  const lastMode = disclosure.getByRole("button", { name: "Code", exact: true });
+  const lastMode = disclosure.getByRole("button", { name: "Multi-Agent", exact: true });
   await lastMode.focus();
   await page.keyboard.press("Escape");
   await expect(disclosure).not.toHaveAttribute("open");
@@ -51,10 +55,6 @@ test("Escape closes the mode menu from its buttons and after tabbing outside", a
   await trigger.press("Enter");
   await expect(disclosure).toHaveAttribute("open", "");
   await lastMode.focus();
-  await page.keyboard.press("Tab");
-  await expect(
-    disclosure.getByRole("link", { name: "Глубокий поиск и отчёты", exact: true })
-  ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
     page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true })
