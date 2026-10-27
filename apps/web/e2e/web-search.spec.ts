@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-test("searches on request and attaches sources without submitting a model message", async ({
+test("ordinary chat keeps the retired web-search control hidden and does not search or generate on editing", async ({
   page
 }) => {
   let searches = 0,
@@ -29,15 +29,13 @@ test("searches on request and attaches sources without submitting a model messag
     if (request.method() === "POST" && /\/api\/v1\/chats/.test(request.url())) modelRequests++;
   });
   await page.goto("/");
+  await expect(page.getByLabel("Поиск", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Поисковый запрос", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Сообщение Kosmora", { exact: true }).fill("TypeScript documentation");
+  await expect(page.getByRole("button", { name: "Поиск в чате", exact: true })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
+  // Explicit source search/attachment is covered through Studio's actual entry point
+  // in studio-search-sources.spec.ts; the removed composer control must not return.
   expect(searches).toBe(0);
-  await page.getByLabel("Поиск", { exact: true }).click();
-  await page.getByLabel("Поисковый запрос").fill("TypeScript documentation");
-  await page.getByRole("button", { name: "Найти источники" }).click();
-  await expect(page.getByRole("link", { name: "TypeScript", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Приложить источники к сообщению" }).click();
-  await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(
-    "web-sources.md"
-  );
-  expect(searches).toBe(1);
   expect(modelRequests).toBe(0);
 });

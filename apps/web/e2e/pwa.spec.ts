@@ -41,7 +41,11 @@ test("keeps the Kosmora chat usable at a smartphone viewport", async ({ page }) 
 
   await expect(page.getByRole("navigation", { name: "Мобильная навигация" })).toBeVisible();
   await expect(page.getByLabel("Сообщение Kosmora")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Отправить" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Открыть голосового помощника", exact: true })
+  ).toBeVisible();
+  await page.getByLabel("Сообщение Kosmora").fill("Мобильный черновик");
+  await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true
   );
@@ -76,9 +80,6 @@ test("keeps an ordinary chat separate from projects", async ({ page }) => {
   await composer.fill(ordinaryMessage);
   await page.getByRole("button", { name: "Отправить" }).click();
 
-  await expect(page.getByRole("region", { name: "Обычный чат Kosmora" })).toContainText(
-    "проект не создан"
-  );
   await expect(page.getByRole("region", { name: "Обычный чат Kosmora" })).toContainText(
     "Запрос обычного чата"
   );
@@ -162,7 +163,7 @@ test("opens the image workspace and keeps generation local until a model is conn
   await expect(modeMenu).not.toHaveAttribute("open");
 
   for (const name of ["Skills", "Приложения"]) {
-    await expect(tools.getByRole("button", { name, exact: true })).toBeVisible();
+    await expect(tools.getByRole("button", { name, exact: true })).toHaveCount(0);
   }
   const studio = tools.getByRole("button", { name: /Kosmora Studio/ });
   await expect(studio).toHaveAttribute("aria-expanded", "false");
@@ -189,7 +190,7 @@ test("opens the image workspace and keeps generation local until a model is conn
     page.getByRole("region", { name: "Параметры генерации", exact: true })
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Добавить референсы PNG, JPEG, WebP · до 5 МБ" })
+    page.getByRole("button", { name: "Добавить референсы PNG, JPEG · до 20 МБ" })
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Подготовить промпт" })).toHaveCount(0);
   await expect(

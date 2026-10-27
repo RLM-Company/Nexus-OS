@@ -269,12 +269,14 @@ test("an accepted but deleted attempt never recreates a Skill after reload", asy
   await page.route(`**${base}`, async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     const result = await route.fetch();
+    expect(result.status()).toBe(201);
     createdId = ((await result.json()) as { id: string }).id;
     await route.abort("failed");
   });
   await page.route(`**${base}/creations/*`, (route) => route.abort("failed"));
   await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
   await expect(page.getByRole("region", { name: "Проверка создания" })).toBeVisible();
+  await expect.poll(() => createdId).toMatch(/^[a-f0-9-]{36}$/);
   expect(
     (await request.delete(`${base}/${createdId}`, { data: { expected_version: 1 } })).status()
   ).toBe(204);

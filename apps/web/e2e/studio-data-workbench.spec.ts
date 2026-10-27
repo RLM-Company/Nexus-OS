@@ -232,7 +232,7 @@ test("Data: invalid replacement during parsing clears pending state and allows a
   });
   await expect(
     page.getByRole("region", { name: "Data Workbench" }).getByRole("alert")
-  ).toContainText("Поддерживаются только CSV");
+  ).toContainText("Поддерживаются CSV, TSV, XLSX и workspace JSON.");
   await expect(page.getByRole("button", { name: "Отменить обработку" })).toHaveCount(0);
   await expect(page.getByText("pending.csv", { exact: true })).toHaveCount(0);
   await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({

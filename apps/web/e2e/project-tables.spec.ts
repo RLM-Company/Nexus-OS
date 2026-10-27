@@ -24,7 +24,7 @@ test("Studio waits for its project before accepting a file and retains the table
     await route.continue();
   });
   await page.goto(`/?project=${projectId}&surface=files`);
-  const files = page.getByRole("region", { name: "Крупные файлы", exact: true });
+  const files = page.getByRole("region", { name: "Анализ файлов", exact: true });
   try {
     await expect(files.getByRole("status")).toContainText("Открываю рабочую область");
     await expect(page.getByLabel("Открыть таблицу или сохранённый проект")).toHaveCount(0);

@@ -42,7 +42,11 @@ test("finds and transfers a selected part of a large Unicode document without a 
     route.fulfill({ json: { process_stop: { active: true } } })
   );
   await page.goto("/?surface=files");
-  await expect(page.getByRole("heading", { name: "Анализ файлов" })).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Анализ файлов", exact: true })
+      .getByRole("heading", { name: "Анализ файлов", exact: true })
+  ).toBeVisible();
   const content =
     "# Начало\n" +
     "Большой документ с данными. 😀\n".repeat(3_000) +
