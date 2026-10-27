@@ -196,12 +196,27 @@ export class ManagerWorkStore {
     dormant = false,
     dagBinding?: ManagerWork["dag_binding"]
   ): ManagerWork | null {
+    return this.transaction(() =>
+      this.createAccepted(projectId, ownerId, actorId, request, dormant, dagBinding)
+    );
+  }
+
+  private createAccepted(
+    projectId: string,
+    ownerId: string,
+    actorId: string,
+    request: CreateManagerWork,
+    dormant: boolean,
+    dagBinding?: ManagerWork["dag_binding"]
+  ): ManagerWork | null {
     this.assertWritable(ownerId);
     const mode = this.dag.projectMode(projectId, ownerId);
     if (mode === "cancelled") throw new ManagerWorkConflict("PROJECT_CANCELLED");
     if (
       !this.sqlite
-        .prepare("SELECT id FROM projects WHERE id = ? AND owner_id = ? AND status = 'ACTIVE'")
+        .prepare(
+          "SELECT id FROM projects WHERE id = ? AND owner_id = ? AND status IN ('DRAFT','ACTIVE')"
+        )
         .get(projectId, ownerId)
     )
       return null;
@@ -222,6 +237,11 @@ export class ManagerWorkStore {
       )
       .get(projectId, ownerId) as { count: number };
     if (outstanding.count >= 50) throw new ManagerWorkConflict("WORK_QUEUE_LIMIT");
+    // Activation, accepted materials and all Work snapshots are one transaction.
+    // Queue/fence/snapshot failures cannot leave a draft partially activated.
+    this.sqlite
+      .prepare("UPDATE projects SET status='ACTIVE' WHERE id=? AND owner_id=? AND status='DRAFT'")
+      .run(projectId, ownerId);
     const at = new Date().toISOString();
     const materials = new ProjectStore(this.sqlite).getMaterials(projectId, ownerId);
     const state: ManagerWork = {
@@ -255,15 +275,13 @@ export class ManagerWorkStore {
       created_at: at,
       updated_at: at
     };
-    this.transaction(() => {
-      this.sqlite
-        .prepare(
-          "INSERT INTO manager_work (id, project_id, owner_id, client_request_id, version, state_json) VALUES (?, ?, ?, ?, 1, ?)"
-        )
-        .run(state.id, projectId, ownerId, request.client_request_id, JSON.stringify(state));
-      this.skills.captureWork(state.id, projectId, ownerId, dagBinding?.graph_id);
-      this.runtime.checkpoint(state);
-    });
+    this.sqlite
+      .prepare(
+        "INSERT INTO manager_work (id, project_id, owner_id, client_request_id, version, state_json) VALUES (?, ?, ?, ?, 1, ?)"
+      )
+      .run(state.id, projectId, ownerId, request.client_request_id, JSON.stringify(state));
+    this.skills.captureWork(state.id, projectId, ownerId, dagBinding?.graph_id);
+    this.runtime.checkpoint(state);
     return state;
   }
 

@@ -528,6 +528,9 @@ export class ManagerWorkCoordinator {
     }
     try {
       if (work.stage === "plan") {
+        // Older prepared projects may predate policy initialization. Use the
+        // normal A0 default before spending; retain any existing owner policy.
+        if (!policy.ensureProfile(work.project_id)) throw new Error("POLICY_UNAVAILABLE");
         // Verify every potential role before spending on a plan that cannot run.
         for (const stage of ["plan", "draft", "review"] as const) {
           this.dependencies.gateway.assertRoute(this.request({ ...work, stage }, work.id));

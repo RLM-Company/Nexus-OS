@@ -21,6 +21,7 @@
     "check:secrets": "node scripts/check-secrets.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:release:api": "pnpm --filter @cosmora/api exec vitest run --maxWorkers=2 test/stage-one-workflow.test.ts test/projects.test.ts test/manager-work.test.ts test/work-dag.test.ts test/project-knowledge.test.ts test/artifact-context.test.ts test/data-workspace-api.test.ts test/identity-boundary.test.ts test/chat-images.test.ts test/code-agent.test.ts",
     "test:e2e": "pnpm --filter @cosmora/web test:e2e",
     "test:deploy": "node --test deploy/alpha/test/*.test.mjs",
     "test:connection": "node --test scripts/test/provider-connection-check.test.mjs",
