@@ -119,6 +119,7 @@ import {
   type GeneralChatStore,
   type IdentityStore,
   type PolicyStore,
+  type PayStore,
   type PatternLibraryStore,
   type ProjectStore,
   type StoredMessage,
@@ -145,6 +146,8 @@ import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 import type { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
 import type { ManagerWorkStore } from "@cosmora/db";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
+import type { PayGateway } from "./pay-gateway.js";
+import { registerPayRoutes } from "./pay-routes.js";
 import { registerManagerWorkRoutes } from "./manager-work-routes.js";
 import {
   autonomyProfileStepUpChallenge,
@@ -163,6 +166,9 @@ export interface AppDependencies {
   managerWorkStore?: ManagerWorkStore;
   managerWorkCoordinator?: ManagerWorkCoordinator;
   usageStore?: UsageStore;
+  payStore?: PayStore;
+  payGateway?: PayGateway;
+  payPlans?: Record<string, number>;
   emergencyStopStore?: EmergencyStopStore;
   policyStore?: PolicyStore;
   patternLibraryStore?: PatternLibraryStore;
@@ -598,6 +604,15 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     }
     requestIdentities.set(request, identity);
   });
+
+  if (dependencies.payStore) {
+    registerPayRoutes(app, {
+      store: dependencies.payStore,
+      plans: dependencies.payPlans ?? {},
+      ...(dependencies.payGateway ? { gateway: dependencies.payGateway } : {}),
+      identityFor
+    });
+  }
 
   app.get(
     "/api/v1/health",
