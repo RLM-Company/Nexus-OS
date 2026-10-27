@@ -68,7 +68,7 @@ export function registerPayRoutes(app: FastifyInstance, options: PayRouteOptions
       const planPrice = Object.hasOwn(plans, request.body.plan_code)
         ? plans[request.body.plan_code]
         : undefined;
-      if (!Number.isSafeInteger(planPrice) || planPrice === undefined ||
+      if (typeof planPrice !== "number" || !Number.isSafeInteger(planPrice) ||
           planPrice < 100 || planPrice > 100_000_000) {
         return reply.code(400).send(errorBody(
           request.id, "VALIDATION_ERROR", "Plan is not configured"
