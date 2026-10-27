@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "apps/api/**"
+      - "apps/web/**"
       - "packages/db/**"
       - ".github/workflows/kosmora-pay-core.yml"
 
@@ -29,5 +30,7 @@ jobs:
         run: pnpm --filter @cosmora/db typecheck
       - name: Typecheck API
         run: pnpm --filter @cosmora/api typecheck
+      - name: Typecheck web
+        run: pnpm --filter @cosmora/web typecheck
       - name: Test payment core
         run: pnpm --filter @cosmora/api exec vitest run test/pay-core.test.ts
