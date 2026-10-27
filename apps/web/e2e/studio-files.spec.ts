@@ -154,7 +154,11 @@ test("keeps file analysis usable on mobile and restores the Studio section", asy
     true
   );
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Анализ файлов" })).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Анализ файлов", exact: true })
+      .getByRole("heading", { name: "Анализ файлов", exact: true })
+  ).toBeVisible();
   await expect(page.getByLabel("Содержимое документа")).toHaveCount(0);
 });
 

@@ -162,9 +162,8 @@ test("opens the image workspace and keeps generation local until a model is conn
   await modeTrigger.click();
   await expect(modeMenu).not.toHaveAttribute("open");
 
-  for (const name of ["Skills", "Приложения"]) {
-    await expect(tools.getByRole("button", { name, exact: true })).toHaveCount(0);
-  }
+  await expect(tools.getByRole("button", { name: "Skills", exact: true })).toHaveCount(0);
+  await expect(tools.getByRole("button", { name: "Приложения", exact: true })).toBeVisible();
   const studio = tools.getByRole("button", { name: /Kosmora Studio/ });
   await expect(studio).toHaveAttribute("aria-expanded", "false");
   await studio.click();

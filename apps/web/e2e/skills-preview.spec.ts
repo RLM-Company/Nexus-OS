@@ -24,7 +24,10 @@ test("opens Skills preview from its workspace URL without restoring a sidebar en
   page
 }) => {
   await page.goto("/?surface=skills");
-  await page.getByRole("link", { name: "Смотреть каталог", exact: true }).click();
+  await page
+    .getByRole("region", { name: "Skills", exact: true })
+    .locator('a[href="/skills"]')
+    .click();
   await expect(page).toHaveURL(/\/skills$/);
   await expect(page.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
 });
