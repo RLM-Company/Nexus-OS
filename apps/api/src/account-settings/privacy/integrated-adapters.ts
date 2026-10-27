@@ -15,6 +15,7 @@ import type { ResearchStore } from "../../research/research-store.js";
 import type { ResearchCoordinator } from "../../research/research-coordinator.js";
 import type { MediaService } from "../../media/media-service.js";
 import type { CodeAgentService } from "../../code-agent/service.js";
+import type { GithubDraftStore } from "../../github-integration.js";
 
 const recordSet = (sql: DatabaseSync, query: string, owner: string): Record<string, unknown>[] =>
   sql.prepare(query).all(owner);
@@ -273,14 +274,16 @@ export class CodeIntegratedPrivacyAdapter implements PrivacyAdapter {
   readonly id = "code";
   constructor(
     private readonly sql: DatabaseSync,
-    private readonly service: CodeAgentService
+    private readonly service: CodeAgentService,
+    private readonly githubDrafts?: GithubDraftStore
   ) {}
   async quiesce(owner: string, epoch: number) {
-    await this.service.quiesceOwner(owner);
+    await Promise.all([this.service.quiesceOwner(owner), this.githubDrafts?.quiesceOwner(owner)]);
     return finish(epoch);
   }
   async resume(owner: string) {
     this.service.resumeOwner(owner);
+    this.githubDrafts?.resumeOwner(owner);
   }
   async export(owner: string): Promise<PrivacySection> {
     return {

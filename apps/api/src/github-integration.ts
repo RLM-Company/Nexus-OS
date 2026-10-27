@@ -486,7 +486,66 @@ export class GithubIntegration {
 }
 
 export class GithubDraftStore {
+  private stopping = false;
+  private operations = new Map<symbol, { owner: string; done: Promise<void> }>();
+  private ownerFences = new Map<string, { epoch: number | null; drained: boolean }>();
   constructor(readonly sqlite: DatabaseSync) {}
+  writable(owner: string): boolean {
+    return (
+      !this.stopping &&
+      !this.ownerFences.has(owner) &&
+      !this.sqlite
+        .prepare("SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id=? AND state<>'active'")
+        .get(owner)
+    );
+  }
+  async operation<T>(owner: string, execute: () => Promise<T>): Promise<T> {
+    if (!this.writable(owner)) throw new GithubIntegrationError("GITHUB_CONFLICT");
+    const key = Symbol();
+    let settled = () => {};
+    const done = new Promise<void>((resolve) => {
+      settled = resolve;
+    });
+    this.operations.set(key, { owner, done });
+    try {
+      return await execute();
+    } finally {
+      this.operations.delete(key);
+      settled();
+    }
+  }
+  async quiesceOwner(owner: string): Promise<void> {
+    const row = this.sqlite
+      .prepare("SELECT epoch,state FROM kosmora_owner_data_lifecycle WHERE owner_id=?")
+      .get(owner);
+    const fence = this.ownerFences.get(owner) ?? {
+      epoch: row?.state === "quiescing" ? Number(row.epoch) : null,
+      drained: false
+    };
+    this.ownerFences.set(owner, fence);
+    await Promise.all(
+      [...this.operations.values()].filter((op) => op.owner === owner).map((op) => op.done)
+    );
+    fence.drained = true;
+  }
+  resumeOwner(owner: string): void {
+    const fence = this.ownerFences.get(owner);
+    if (!fence) return;
+    const row = this.sqlite
+      .prepare("SELECT epoch,state FROM kosmora_owner_data_lifecycle WHERE owner_id=?")
+      .get(owner);
+    if (
+      !fence.drained ||
+      (row && row.state !== "active") ||
+      (fence.epoch !== null && Number(row?.epoch) !== fence.epoch)
+    )
+      throw new GithubIntegrationError("GITHUB_CONFLICT");
+    this.ownerFences.delete(owner);
+  }
+  async stop(): Promise<void> {
+    this.stopping = true;
+    await Promise.all([...this.operations.values()].map((op) => op.done));
+  }
   get(id: string, owner: string): GithubDraft | null {
     const row = this.sqlite
       .prepare(
@@ -511,14 +570,10 @@ export class GithubDraftStore {
     integration: GithubIntegration,
     input: Parameters<GithubIntegration["prepare"]>[1]
   ): Promise<GithubDraft> {
+    if (!this.writable(owner)) throw new GithubIntegrationError("GITHUB_CONFLICT");
     const id = randomUUID();
     const plan = await integration.prepare(id, input);
-    if (
-      this.sqlite
-        .prepare("SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id=? AND state<>'active'")
-        .get(owner)
-    )
-      throw new GithubIntegrationError("GITHUB_CONFLICT");
+    if (!this.writable(owner)) throw new GithubIntegrationError("GITHUB_CONFLICT");
     const now = new Date().toISOString();
     this.sqlite
       .prepare(
@@ -528,6 +583,7 @@ export class GithubDraftStore {
     return this.get(id, owner)!;
   }
   claim(id: string, owner: string, hash: string): GithubDraft {
+    if (!this.writable(owner)) throw new GithubIntegrationError("GITHUB_CONFLICT");
     const draft = this.get(id, owner);
     if (!draft || draft.status !== "review" || draft.plan.review_hash !== hash)
       throw new GithubIntegrationError("GITHUB_CONFLICT");

@@ -240,7 +240,9 @@ try {
     new ResearchIntegratedPrivacyAdapter(database.sqlite, researchStore, () => researchCoordinator)
   );
   ownerPrivacy.register(new MediaIntegratedPrivacyAdapter(mediaService));
-  ownerPrivacy.register(new CodeIntegratedPrivacyAdapter(database.sqlite, codeAgentService));
+  ownerPrivacy.register(
+    new CodeIntegratedPrivacyAdapter(database.sqlite, codeAgentService, githubDraftStore)
+  );
   ownerPrivacy.register(new AgentStudioPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new PolicyProjectsPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new PresentationPrivacyAdapter(database.sqlite));
