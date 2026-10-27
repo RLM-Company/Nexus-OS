@@ -397,6 +397,232 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("joins manual read-only reconciliation before exporting and preserves the acknowledged PR without new writes", async () => {
+    let hold = false,
+      entered = false,
+      release = () => {};
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const f = await fixture({
+      githubBarrier: (path, method) => {
+        if (hold && path === "/pulls" && method === "GET") {
+          entered = true;
+          return barrier;
+        }
+        return Promise.resolve();
+      }
+    });
+    const draft = await f.drafts.create(owner, f.project, f.service.deps.github, {
+      base_branch: "main",
+      base_sha: head,
+      title: "Recover acknowledged PR",
+      files: [changes[0]!]
+    });
+    const app = buildApp({
+      config: loadServerConfig({ NODE_ENV: "test" }),
+      database: f.database,
+      projectStore: f.projects,
+      githubIntegration: f.service.deps.github,
+      githubDraftStore: f.drafts,
+      emergencyStopStore: f.emergency
+    });
+    const path = `/api/v1/projects/${f.project}/github-drafts/${draft.id}`;
+    const adapter = new CodeIntegratedPrivacyAdapter(f.database.sqlite, f.service, f.drafts);
+    try {
+      f.losePrResponse();
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: path + "/publish",
+            payload: { approve: true, review_hash: draft.plan.review_hash }
+          })
+        ).statusCode
+      ).toBe(503);
+      expect(f.drafts.get(draft.id, owner)?.status).toBe("uncertain");
+      const writes = f.githubCalls.filter((call) => call.method === "POST").length;
+      hold = true;
+      const reconcile = app
+        .inject({ method: "POST", url: path + "/reconcile" })
+        .then((response) => response);
+      await expect.poll(() => entered).toBe(true);
+      f.database.sqlite
+        .prepare(
+          "INSERT INTO kosmora_owner_data_lifecycle(owner_id,epoch,state,operation_id,started_at,updated_at) VALUES(?,11,'quiescing','export','now','now')"
+        )
+        .run(owner);
+      let drained = false;
+      const drain = adapter.quiesce(owner, 11).then((receipt) => {
+        drained = true;
+        return receipt;
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      expect(drained).toBe(false);
+      release();
+      expect((await reconcile).statusCode).toBe(200);
+      await drain;
+      expect(f.drafts.get(draft.id, owner)?.status).toBe("published");
+      expect(f.githubCalls.filter((call) => call.method === "POST")).toHaveLength(writes);
+      expect(f.providerCalls).toEqual([]);
+      f.database.sqlite
+        .prepare("UPDATE kosmora_owner_data_lifecycle SET state='active' WHERE owner_id=?")
+        .run(owner);
+      await adapter.resume(owner);
+    } finally {
+      release();
+      await app.close();
+    }
+  });
+
+  it.each(["/git/trees", "/pulls"])(
+    "drains the manual GitHub route at %s through the actual privacy adapter",
+    async (heldPath) => {
+      let entered = false,
+        release = () => {};
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const f = await fixture({
+        githubBarrier: (path, method) => {
+          if (path === heldPath && method === "POST") {
+            entered = true;
+            return barrier;
+          }
+          return Promise.resolve();
+        }
+      });
+      const draft = await f.drafts.create(owner, f.project, f.service.deps.github, {
+        base_branch: "main",
+        base_sha: head,
+        title: "Manual reviewed change",
+        files: [changes[0]!]
+      });
+      const app = buildApp({
+        config: loadServerConfig({ NODE_ENV: "test" }),
+        database: f.database,
+        projectStore: f.projects,
+        githubIntegration: f.service.deps.github,
+        githubDraftStore: f.drafts,
+        emergencyStopStore: f.emergency
+      });
+      const adapter = new CodeIntegratedPrivacyAdapter(f.database.sqlite, f.service, f.drafts);
+      const publication = app
+        .inject({
+          method: "POST",
+          url: `/api/v1/projects/${f.project}/github-drafts/${draft.id}/publish`,
+          payload: { approve: true, review_hash: draft.plan.review_hash }
+        })
+        .then((response) => response);
+      try {
+        await expect.poll(() => entered).toBe(true);
+        f.database.sqlite
+          .prepare(
+            "INSERT INTO kosmora_owner_data_lifecycle(owner_id,epoch,state,operation_id,started_at,updated_at) VALUES(?,7,'quiescing','export','now','now')"
+          )
+          .run(owner);
+        let drained = false;
+        const drain = adapter.quiesce(owner, 7).then((receipt) => {
+          drained = true;
+          return receipt;
+        });
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        expect(drained).toBe(false);
+        expect(f.drafts.writable(owner)).toBe(false);
+        release();
+        const response = await publication;
+        expect(response.statusCode, response.body).toBe(heldPath === "/pulls" ? 200 : 409);
+        expect(await drain).toEqual({ drained: true, fence_epoch: 7 });
+        expect(f.drafts.get(draft.id, owner)?.status).toBe(
+          heldPath === "/pulls" ? "published" : "uncertain"
+        );
+        f.database.sqlite
+          .prepare(
+            "UPDATE kosmora_owner_data_lifecycle SET state='active',epoch=8 WHERE owner_id=?"
+          )
+          .run(owner);
+        await expect(adapter.resume(owner)).rejects.toThrow("EXECUTION_STOPPED");
+        expect(f.drafts.writable(owner)).toBe(false);
+        f.database.sqlite
+          .prepare("UPDATE kosmora_owner_data_lifecycle SET epoch=7 WHERE owner_id=?")
+          .run(owner);
+        await adapter.resume(owner);
+        expect(f.drafts.writable(owner)).toBe(true);
+        expect(
+          f.githubCalls.filter((call) => call.method === "POST").map((call) => call.path)
+        ).toEqual(
+          heldPath === "/pulls"
+            ? ["/git/trees", "/git/commits", "/git/refs", "/pulls"]
+            : ["/git/trees"]
+        );
+        expect(f.providerCalls).toEqual([]);
+      } finally {
+        release();
+        await publication;
+        await app.close();
+      }
+    }
+  );
+
+  it("waits for a manual GitHub publication on Fastify close and prevents following writes", async () => {
+    let entered = false,
+      release = () => {};
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const f = await fixture({
+      githubBarrier: (path, method) => {
+        if (path === "/git/trees" && method === "POST") {
+          entered = true;
+          return barrier;
+        }
+        return Promise.resolve();
+      }
+    });
+    const draft = await f.drafts.create(owner, f.project, f.service.deps.github, {
+      base_branch: "main",
+      base_sha: head,
+      title: "Manual change",
+      files: [changes[0]!]
+    });
+    const app = buildApp({
+      config: loadServerConfig({ NODE_ENV: "test" }),
+      database: f.database,
+      projectStore: f.projects,
+      githubIntegration: f.service.deps.github,
+      githubDraftStore: f.drafts,
+      emergencyStopStore: f.emergency
+    });
+    const publication = app
+      .inject({
+        method: "POST",
+        url: `/api/v1/projects/${f.project}/github-drafts/${draft.id}/publish`,
+        payload: { approve: true, review_hash: draft.plan.review_hash }
+      })
+      .then((response) => response);
+    try {
+      await expect.poll(() => entered).toBe(true);
+      let closed = false;
+      const close = app.close().then(() => {
+        closed = true;
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      expect(closed).toBe(false);
+      release();
+      expect((await publication).statusCode).toBe(409);
+      await close;
+      expect(f.drafts.get(draft.id, owner)?.status).toBe("uncertain");
+      expect(
+        f.githubCalls.filter((call) => call.method === "POST").map((call) => call.path)
+      ).toEqual(["/git/trees"]);
+      expect(f.providerCalls).toEqual([]);
+    } finally {
+      release();
+      await publication;
+      await app.close();
+    }
+  });
+
   it("rejects a late review draft behind the privacy fence, then permits an explicit retry without another model call", async () => {
     let hold = false,
       entered = false,

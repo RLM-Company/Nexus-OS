@@ -90,6 +90,7 @@ export function registerGithubRoutes(options: {
   );
   const { drafts, projects, emergency } = options;
   if (!drafts || !projects) return;
+  app.addHook("preClose", () => drafts.stop());
   const params = Type.Object(
     { projectId: Type.String({ minLength: 1 }), id: Type.Optional(Type.String({ minLength: 1 })) },
     { additionalProperties: false }
@@ -146,11 +147,13 @@ export function registerGithubRoutes(options: {
       if (!owned(request)) return reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } });
       return handle(
         () =>
-          drafts.create(
-            identityFor(request).owner_id,
-            request.params.projectId,
-            integration,
-            request.body
+          drafts.operation(identityFor(request).owner_id, () =>
+            drafts.create(
+              identityFor(request).owner_id,
+              request.params.projectId,
+              integration,
+              request.body
+            )
           ),
         reply
       );
@@ -175,32 +178,46 @@ export function registerGithubRoutes(options: {
     (request, reply) => {
       if (!get(request)) return reply.code(404).send({ error: { code: "DRAFT_NOT_FOUND" } });
       const owner = identityFor(request).owner_id;
-      const allowed = () =>
+      const emergencyAllowed = () =>
         emergency !== undefined && !emergency.getBlockingStop(request.params.projectId, owner);
-      if (!allowed())
+      if (!emergencyAllowed())
         return reply.code(403).send({
           error: { code: "EMERGENCY_STOP_ACTIVE", message: "Отправка изменений остановлена." }
         });
-      return handle(async () => {
-        const draft = drafts.claim(request.params.id, owner, request.body.review_hash);
-        let writeAttempted = false;
-        try {
-          const url = await integration.publish(
-            draft.plan,
-            allowed,
-            (commit) => drafts.checkpoint(draft.id, owner, commit),
-            () => {
-              writeAttempted = true;
+      const allowed = () => {
+        const project = projects.getProject(request.params.projectId, owner);
+        return (
+          emergencyAllowed() &&
+          drafts.writable(owner) &&
+          !!project &&
+          ["DRAFT", "ACTIVE"].includes(project.status)
+        );
+      };
+      return handle(
+        () =>
+          drafts.operation(owner, async () => {
+            if (!allowed()) throw new GithubIntegrationError("GITHUB_CONFLICT");
+            const draft = drafts.claim(request.params.id, owner, request.body.review_hash);
+            let writeAttempted = false;
+            try {
+              const url = await integration.publish(
+                draft.plan,
+                allowed,
+                (commit) => drafts.checkpoint(draft.id, owner, commit),
+                () => {
+                  writeAttempted = true;
+                }
+              );
+              drafts.finish(draft.id, owner, url);
+              return drafts.get(draft.id, owner);
+            } catch (error) {
+              if (writeAttempted) drafts.finish(draft.id, owner, null);
+              else drafts.release(draft.id, owner);
+              throw error;
             }
-          );
-          drafts.finish(draft.id, owner, url);
-          return drafts.get(draft.id, owner);
-        } catch (error) {
-          if (writeAttempted) drafts.finish(draft.id, owner, null);
-          else drafts.release(draft.id, owner);
-          throw error;
-        }
-      }, reply);
+          }),
+        reply
+      );
     }
   );
   app.post<{ Params: Params }>(
@@ -209,11 +226,15 @@ export function registerGithubRoutes(options: {
     (request, reply) => {
       const draft = get(request);
       if (!draft) return reply.code(404).send({ error: { code: "DRAFT_NOT_FOUND" } });
-      return handle(async () => {
-        const url = await integration.reconcile(draft);
-        if (url) drafts.reconcile(draft.id, identityFor(request).owner_id, url);
-        return drafts.get(draft.id, identityFor(request).owner_id);
-      }, reply);
+      return handle(
+        () =>
+          drafts.operation(identityFor(request).owner_id, async () => {
+            const url = await integration.reconcile(draft);
+            if (url) drafts.reconcile(draft.id, identityFor(request).owner_id, url);
+            return drafts.get(draft.id, identityFor(request).owner_id);
+          }),
+        reply
+      );
     }
   );
 }
