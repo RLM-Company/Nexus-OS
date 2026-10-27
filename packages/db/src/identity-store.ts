@@ -352,7 +352,7 @@ export class IdentityStore {
 
   disableActor(actorId: string, ownerId: string, disabledBy: string, reason: string): boolean {
     const actor = this.getActor(actorId, ownerId);
-    if (!actor || actor.status !== "active") return false;
+    if (!actor || actor.status !== "active" || actor.kind === "owner") return false;
     const timestamp = this.#nowIso();
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
@@ -376,6 +376,43 @@ export class IdentityStore {
         "actor.disabled",
         "success",
         "ACTOR_DISABLED",
+        timestamp
+      );
+      this.#sqlite.exec("COMMIT;");
+      return true;
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  /**
+   * Re-activate a suspended non-owner actor. Prior sessions remain revoked:
+   * the actor must authenticate again to obtain a new session.
+   */
+  enableActor(actorId: string, ownerId: string, enabledBy: string, reason: string): boolean {
+    const actor = this.getActor(actorId, ownerId);
+    if (!actor || actor.status !== "disabled" || actor.kind === "owner") return false;
+    const timestamp = this.#nowIso();
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const result = this.#sqlite
+        .prepare(
+          `UPDATE identity_actors SET status = 'active', updated_at = ?
+           WHERE actor_id = ? AND owner_id = ? AND status = 'disabled' AND kind <> 'owner'`
+        )
+        .run(timestamp, actorId, ownerId);
+      if (Number(result.changes) !== 1) {
+        this.#sqlite.exec("ROLLBACK;");
+        return false;
+      }
+      this.#recordAudit(
+        ownerId,
+        enabledBy,
+        null,
+        "actor.enabled",
+        "success",
+        "ACTOR_ENABLED",
         timestamp
       );
       this.#sqlite.exec("COMMIT;");
