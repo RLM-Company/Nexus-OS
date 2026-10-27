@@ -1,9 +1,13 @@
 # Kosmora OS
 
-Kosmora OS is an owner-controlled, policy-gated AI project workspace. This repository contains the
-integrated product and safety foundations and a bounded, durable Manager work runtime for creating
-downloadable files. The private MVP also provides owner-operated GitHub and web search integrations.
-The AI executor does not execute arbitrary code or external actions.
+Kosmora OS is an owner-controlled, policy-gated AI project workspace with chat, durable Work tasks,
+documents, Canvas, tables, GitHub/Code, images and bounded website/game development flows.
+Code checks use a separate isolated executor; external publication remains an explicitly approved flow.
+
+The current integrated source and verification checkpoint is
+[the 27 October release candidate](docs/handoff/STAGE_ONE_RELEASE_CANDIDATE_2026-10-27.md).
+Older handoffs describe their dated snapshots. A catalog entry, local mock test or source module
+alone does not establish an enabled product feature or live-provider readiness.
 
 ## Current integrated scope
 
@@ -21,14 +25,22 @@ The AI executor does not execute arbitrary code or external actions.
   chat rename, export, reversible archive and a bounded model context retaining full stored history;
 - owner-bound GitHub repository browsing, code import into unsent chat drafts, editing/new files,
   persisted before/after review and explicit publication to a new branch and draft PR;
+- Code-agent proposals bound to an immutable repository snapshot, owner-selected review,
+  isolated approved checks, publication proof and read-only reconciliation after uncertain writes;
 - optional private SearXNG search with source links/snippets attached only by an owner action;
 - private versioned personal Skills for ordinary chat and Work, immutable accepted instruction
   snapshots and literal per-answer/task provenance; historical mock catalog preview remains inert;
 - text-only AI presentation creation through the existing budgeted Work pipeline, strict local slide validation, reviewed immutable-result import and editable PPTX downloads;
 - Canvas text/code editor with immutable revisions, literal bounded version comparison, reviewed
   restore/conflict resolution, exact historical downloads and local UTF-8 file drafts;
-- local Image, Video and Sound prompt workspaces that do not send prompts to an external model while
-  that model surface is disconnected;
+- saved tables, document-library evidence and project memory; server analysis, version comparison,
+  compact table summaries and verified project-evidence excerpts have scoped APIs, with remaining
+  visual connections recorded in `docs/design/VISUAL_WAITLIST.md`;
+- configured image generation/editing in chat and Studio; disconnected Video and Sound surfaces
+  retain preparation/export behavior rather than claiming completed generation;
+- website and browser-game source generation/editing, immutable artifacts, isolated previews and
+  offline export; Games is a development workspace;
+- authoritative date/time snapshots, timezone/calendar tools and monotonic task timers;
 - Agent Studio catalogs, blueprints and owner/delegated proposal flows with idempotent writes and
   Decision Trace records;
 - Autonomy Control Center with the canonical A0–A6 profile, point-override editor, server authority
@@ -63,18 +75,21 @@ The AI executor does not execute arbitrary code or external actions.
 - Manager work executes a bounded plan → draft → optional review → publication flow through Model
   Gateway. The default route is mock-only; an external provider requires a reviewed role/task route
   and server-side credentials. A configured credential alone does not prove live readiness.
-- Generated files are inert downloads. Shell execution, repository edits, research, deployment and
-  messaging tools are unavailable to this executor; plans requiring them fail visibly.
+- Ordinary Work creates files through its bounded workflow. Code checks, research and isolated
+  website/game previews have separate scoped execution paths. General host-shell execution,
+  arbitrary deployment and unrestricted messaging are not provided by the Work executor.
 - Project materials are runtime context for new accepted requests. Historical browser-local metadata
   remains available only in the explicit `context_preview=1` demonstration.
-- Images require a Registry route with independently verified vision support. The current CheapVibeCode
-  profile does not advertise vision; image history/payload support is not live-provider acceptance.
+- Vision and image generation/editing require separately supported provider routes. Storing an
+  image attachment does not establish live vision acceptance for every configured chat model.
 - GitHub is owner-operated and repository/owner-bound. Every publication requires the exact saved
   review hash and approval; changed bases fail. No merge or automatic write retry is provided.
-- Search supplies search-engine snippets, not full-page retrieval or autonomous browsing.
+- The search-engine endpoint supplies snippets. Document-library evidence and research use their
+  own source/context workflows; unrestricted autonomous browsing is not implied.
 - Skills preview does not execute packages or arbitrary code, and the historical GitHub preview does not authenticate
   to GitHub or perform repository writes.
-- External tool effects and the local daemon are not connected to an autonomous agent loop.
+- External effects are limited to the implemented, scoped product workflows and their approvals.
+  A general-purpose host daemon or unrestricted autonomous agent is not exposed.
 - The historical Manager Runtime Step 6 acceptance was
   `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`. The later bounded work runtime is implemented;
   that does not establish a general autonomous task-graph executor or production readiness.
@@ -82,8 +97,8 @@ The AI executor does not execute arbitrary code or external actions.
   explicit owner inputs, included in the server authority diff and consumed atomically by Tool
   Runtime.
 - The final Manager system prompt belongs to roadmap Step 7 and must be written with the owner.
-- The private alpha uses an opt-in CheapVibeCode candidate. A production provider and managed
-  Secret Manager backend remain unselected.
+- Hosted alpha uses privately configured provider credentials and reviewed routes. Local defaults
+  remain mock-only; a managed Secret Manager backend is separate deployment work.
 - The first closed paid beta remains limited to A0–A2; A3–A6 require later security and economic
   gates.
 
@@ -107,7 +122,8 @@ Web runs at `http://127.0.0.1:3000`, API at `http://127.0.0.1:3100`, and health 
 `GET /api/v1/model-runtime`. The web app proxies `/api/*` to `COSMORA_API_ORIGIN`.
 Ordinary chat uses `GET/POST /api/v1/chats`, persists outside the project tables, and streams from
 `GET /api/v1/chat-runs/:runId/events`. A project is created only by the explicit
-`POST /api/v1/projects` confirmation path.
+`POST /api/v1/projects` or empty-project `POST /api/v1/projects/empty` path. Empty projects remain
+drafts until their first accepted chat or Work task activates them atomically.
 Operational counters and active safety alerts are available at `GET /api/v1/operations/status`.
 The bounded owner-only Policy Decision Trace is available at
 `GET /api/v1/projects/:projectId/decision-trace?limit=50`; its response excludes purpose,
