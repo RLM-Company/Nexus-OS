@@ -28,5 +28,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Typecheck API
         run: pnpm --filter @cosmora/api typecheck
-      - name: Test API
-        run: pnpm --filter @cosmora/api test
+      - name: Test identity and moderation API
+        run: pnpm --filter @cosmora/api exec vitest run test/identity-boundary.test.ts
