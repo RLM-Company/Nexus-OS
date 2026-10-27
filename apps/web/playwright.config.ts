@@ -36,7 +36,9 @@ export default defineConfig({
       }
     },
     {
-      command: production ? "pnpm build && pnpm start" : "pnpm dev",
+      command: production
+        ? "pnpm --filter @cosmora/contracts build && pnpm build && pnpm start"
+        : "pnpm dev",
       url: "http://127.0.0.1:3000",
       reuseExistingServer: false,
       timeout: production ? 180_000 : 60_000,

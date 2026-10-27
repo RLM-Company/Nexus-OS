@@ -110,16 +110,23 @@ test("media uses generator workspaces, local references and no fake prompt resul
   ).toHaveCount(0);
   await expect(generate).toBeEnabled();
   const tinyPng = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2ioAAAAASUVORK5CYII=",
+    await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 16;
+      canvas.getContext("2d")!.fillRect(0, 0, 16, 16);
+      return canvas.toDataURL("image/png").split(",")[1]!;
+    }),
     "base64"
   );
   await page
     .getByLabel("Файлы референсов", { exact: true })
     .setInputFiles({ name: "orbit.png", mimeType: "image/png", buffer: tinyPng });
   await expect(page.getByRole("img", { name: "orbit.png", exact: true })).toBeVisible();
-  await expect(generate).toBeDisabled();
   await expect(
-    page.getByRole("status").filter({ hasText: "не поддерживает их передачу" })
+    page.getByRole("button", { name: "Изменить изображение", exact: true })
+  ).toBeDisabled();
+  await expect(
+    page.getByText("Редактирование изображений пока недоступно", { exact: true })
   ).toBeVisible();
   await page.screenshot({ path: "../../qa/owner-ui-images.png" });
   await page.getByRole("button", { name: "Убрать референс orbit.png", exact: true }).click();

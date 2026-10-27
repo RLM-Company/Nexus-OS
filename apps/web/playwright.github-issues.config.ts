@@ -34,7 +34,7 @@ export default defineConfig({
     },
     {
       command: production
-        ? "pnpm build && pnpm exec next start -H 127.0.0.1 -p 3220"
+        ? "pnpm --filter @cosmora/contracts build && pnpm build && pnpm exec next start -H 127.0.0.1 -p 3220"
         : "pnpm exec next dev -H 127.0.0.1 -p 3220",
       url: "http://127.0.0.1:3220",
       reuseExistingServer: false,
