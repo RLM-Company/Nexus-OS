@@ -34,6 +34,7 @@ import {
   EmergencyStopStateSchema,
   HealthResponseSchema,
   IdentityAuditListResponseSchema,
+  IdentityActorSchema,
   MessageAcceptedResponseSchema,
   ModelRuntimeStatusSchema,
   OwnerSessionListResponseSchema,
@@ -668,6 +669,69 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         return response;
       }
     );
+
+    // Account moderation is deliberately scoped to non-owner technical actors.
+    // Corporate owners cannot be removed using this API.
+    const actorModerationBody = Type.Object(
+      { reason: Type.String({ minLength: 8, maxLength: 256 }) },
+      { additionalProperties: false }
+    );
+    const actorModerationParams = Type.Object(
+      { actorId: Type.String({ minLength: 1, maxLength: 256 }) },
+      { additionalProperties: false }
+    );
+
+    for (const action of ["suspend", "restore"] as const) {
+      app.post(
+        `/api/v1/identity/actors/:actorId/${action}`,
+        {
+          schema: {
+            params: actorModerationParams,
+            body: actorModerationBody,
+            response: {
+              200: IdentityActorSchema,
+              403: ApiErrorSchema,
+              404: ApiErrorSchema
+            }
+          }
+        },
+        (request, reply) => {
+          const identity = identityFor(request);
+          if (identity.assurance !== "multi_factor") {
+            return reply
+              .status(403)
+              .send(errorBody(request.id, "STEP_UP_REQUIRED", "Multi-factor authentication is required"));
+          }
+          const actor = identityStore.getActor(request.params.actorId, identity.owner_id);
+          if (!actor) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "IDENTITY_ACTOR_NOT_FOUND", "Identity actor not found"));
+          }
+          if (actor.kind === "owner" || actor.actor_id === identity.actor_id) {
+            return reply
+              .status(403)
+              .send(errorBody(request.id, "FORBIDDEN", "Owner accounts cannot be moderated here"));
+          }
+          if (action === "suspend" && actor.status === "active") {
+            identityStore.disableActor(actor.actor_id, identity.owner_id, identity.actor_id, request.body.reason);
+          } else if (action === "restore" && actor.status === "disabled") {
+            identityStore.enableActor(actor.actor_id, identity.owner_id, identity.actor_id, request.body.reason);
+          }
+          const updated = identityStore.getActor(actor.actor_id, identity.owner_id);
+          if (!updated) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "IDENTITY_ACTOR_NOT_FOUND", "Identity actor not found"));
+          }
+          app.log.info(
+            { actorId: identity.actor_id, targetActorId: actor.actor_id, action, status: updated.status },
+            "Owner-moderated technical actor"
+          );
+          return updated;
+        }
+      );
+    }
 
     app.post(
       "/api/v1/identity/sessions/:sessionId/revoke",
