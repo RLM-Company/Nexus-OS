@@ -9,6 +9,7 @@ import {
   IdentityStore,
   openDatabase,
   PolicyStore,
+  PayStore,
   PatternLibraryStore,
   runMigrations,
   StepUpProofStore,
@@ -30,6 +31,7 @@ import { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { ManagerRuntimeProjectStore } from "./manager-runtime-project-store.js";
 import { buildModelRuntime } from "./model-runtime.js";
 import { RuntimeMetrics } from "./operations.js";
+import { YooKassaGateway } from "./pay-gateway.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
@@ -71,6 +73,20 @@ try {
   const demoManagerStore = new DemoManagerStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
+  // No live payment creation without explicit merchant configuration.
+  const payEnabled = process.env.KOSMORA_PAY_ENABLED === "true";
+  const plansRaw = process.env.KOSMORA_PAY_PLANS_JSON ?? "{}";
+  const payPlans: Record<string, number> = JSON.parse(plansRaw) as Record<string, number>;
+  if (typeof payPlans !== "object" || payPlans === null || Array.isArray(payPlans)) {
+    throw new Error("KOSMORA_PAY_PLANS_JSON must be a JSON object");
+  }
+  const payGateway = payEnabled
+    ? new YooKassaGateway(
+        process.env.YOOKASSA_SHOP_ID ?? "",
+        process.env.YOOKASSA_SECRET_KEY ?? "",
+        process.env.KOSMORA_PAY_RETURN_URL ?? ""
+      )
+    : undefined;
   const stepUpProofStore = new StepUpProofStore(database.sqlite);
   const runtimeMetrics = new RuntimeMetrics();
   const identityResolver =
@@ -106,6 +122,9 @@ try {
     managerWorkCoordinator,
     demoManagerCoordinator: new DemoManagerCoordinator(demoManagerStore),
     usageStore: new UsageStore(database.sqlite),
+    payStore: new PayStore(database.sqlite),
+    payGateway,
+    payPlans,
     emergencyStopStore,
     policyStore,
     patternLibraryStore: new PatternLibraryStore(database.sqlite),
