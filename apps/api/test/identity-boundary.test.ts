@@ -364,6 +364,53 @@ describe("API identity boundary", () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it("moderates only same-owner technical actors with MFA and preserves revoked sessions", async () => {
+    const mfaToken = identityStore.issueSession({
+      ownerId: "owner-1",
+      actorId: "owner-actor-1",
+      assurance: "multi_factor",
+      ttlMs: 60_000
+    }).token;
+    const endpoint = "/api/v1/identity/actors/agent-actor-1";
+    const payload = { reason: "Confirmed security investigation" };
+    const withoutMfa = await app.inject({
+      method: "POST", url: `${endpoint}/suspend`,
+      headers: { authorization: `Bearer ${ownerOneToken}` }, payload
+    });
+    expect(withoutMfa.statusCode).toBe(403);
+    expect(identityStore.getActor("agent-actor-1", "owner-1")?.status).toBe("active");
+
+    const protectedOwner = await app.inject({
+      method: "POST", url: "/api/v1/identity/actors/owner-actor-1/suspend",
+      headers: { authorization: `Bearer ${mfaToken}` }, payload
+    });
+    expect(protectedOwner.statusCode).toBe(403);
+
+    const crossOwner = await app.inject({
+      method: "POST", url: "/api/v1/identity/actors/owner-actor-2/suspend",
+      headers: { authorization: `Bearer ${mfaToken}` }, payload
+    });
+    expect(crossOwner.statusCode).toBe(404);
+
+    const suspended = await app.inject({
+      method: "POST", url: `${endpoint}/suspend`,
+      headers: { authorization: `Bearer ${mfaToken}` }, payload
+    });
+    expect(suspended.statusCode, suspended.body).toBe(200);
+    expect(suspended.json()).toMatchObject({ actor_id: "agent-actor-1", status: "disabled" });
+    expect(identityStore.resolveSession(agentToken)).toBeNull();
+
+    const restored = await app.inject({
+      method: "POST", url: `${endpoint}/restore`,
+      headers: { authorization: `Bearer ${mfaToken}` }, payload
+    });
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(restored.json()).toMatchObject({ actor_id: "agent-actor-1", status: "active" });
+    expect(identityStore.resolveSession(agentToken)).toBeNull();
+    expect(identityStore.listAuditEvents("owner-1").map((entry) => entry.event_type))
+      .toEqual(expect.arrayContaining(["actor.disabled", "actor.enabled"]));
+  });
+
   it("fails production construction without an explicit resolver", async () => {
     await app.close();
     database.close();
