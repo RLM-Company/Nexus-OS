@@ -141,6 +141,13 @@
       "when": 1790380800000,
       "tag": "0019_manager_work",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1793116800000,
+      "tag": "0020_kosmora_pay",
+      "breakpoints": true
     }
   ]
 }
