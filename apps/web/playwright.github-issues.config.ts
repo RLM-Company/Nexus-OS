@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+const production = ["1", "true"].includes(process.env.KOSMORA_E2E_PRODUCTION ?? "");
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "github-issues.spec.ts",
@@ -26,16 +27,18 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "pnpm --dir ../api exec node --import tsx --conditions=development test/fixtures/github-issues-browser-server.ts",
+        "pnpm --dir ../api exec node --require ../../scripts/windows-node-user.cjs --import tsx --conditions=development test/fixtures/github-issues-browser-server.ts",
       url: "http://127.0.0.1:3219/api/v1/health",
       reuseExistingServer: false,
       timeout: 60_000
     },
     {
-      command: "pnpm exec next dev -H 127.0.0.1 -p 3220",
+      command: production
+        ? "pnpm build && pnpm exec next start -H 127.0.0.1 -p 3220"
+        : "pnpm exec next dev -H 127.0.0.1 -p 3220",
       url: "http://127.0.0.1:3220",
       reuseExistingServer: false,
-      timeout: 60_000,
+      timeout: production ? 180_000 : 60_000,
       env: { COSMORA_API_ORIGIN: "http://127.0.0.1:3219", NEXT_TELEMETRY_DISABLED: "1" }
     }
   ],

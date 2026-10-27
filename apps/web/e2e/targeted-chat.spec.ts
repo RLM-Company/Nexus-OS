@@ -133,7 +133,11 @@ test("model and effort picker persists the effort and fits mobile; Studio routes
     const response = await route.fetch();
     const data = await response.json();
     await route.fulfill({
-      json: { ...data, reasoning: { effort, supported_efforts: ["low", "medium", "high"] } }
+      json: {
+        ...data,
+        execution: { ...data.execution, turbo: false },
+        reasoning: { effort, supported_efforts: ["low", "medium", "high"] }
+      }
     });
   });
   await page.route("**/api/v1/personal-settings/reasoning", async (route) => {

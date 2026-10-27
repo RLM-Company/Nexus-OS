@@ -8,7 +8,7 @@ test("shows a visible keyboard focus ring on media prompt textareas", async ({ p
     .click();
   await page.getByRole("button", { name: "Изображения", exact: true }).click();
 
-  const prompt = page.getByLabel("Промпт для изображения");
+  const prompt = page.getByLabel("Описание изображения", { exact: true });
   await prompt.focus();
   await expect(prompt).toBeFocused();
 

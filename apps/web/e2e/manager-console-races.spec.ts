@@ -47,7 +47,11 @@ const fixture = async (page: Page) => {
   await page.route("**/api/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body: unknown;
-    if (route.request().method() === "POST" && path === "/api/v1/chats") {
+    if (path === "/api/v1/navigation-context") {
+      body = { owner_id: "local-owner" };
+    } else if (["/api/v1/chat-navigation", "/api/v1/chat-navigation/import-pins"].includes(path)) {
+      body = { folders: [], assignments: [], chats: [], projects: [] };
+    } else if (route.request().method() === "POST" && path === "/api/v1/chats") {
       state.generalChatCreated = true;
       body = {
         chat: {

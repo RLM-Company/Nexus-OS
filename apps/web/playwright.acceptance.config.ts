@@ -4,7 +4,7 @@ import base from "./playwright.config";
 // Reproducible local acceptance without pnpm startup-time dependency changes.
 // An optional preinstalled browser stays outside application dependencies.
 const executablePath = process.env.KOSMORA_E2E_CHROMIUM_EXECUTABLE;
-const production = process.env.KOSMORA_E2E_PRODUCTION === "true";
+const production = ["1", "true"].includes(process.env.KOSMORA_E2E_PRODUCTION ?? "");
 const servers = Array.isArray(base.webServer)
   ? base.webServer
   : base.webServer

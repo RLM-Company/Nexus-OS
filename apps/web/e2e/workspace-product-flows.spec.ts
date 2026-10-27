@@ -81,7 +81,7 @@ test("shows a searchable plan with real entry points and honest future requireme
   await page.getByRole("textbox", { name: "Поиск возможностей" }).fill("автономность");
   await expect(page.getByText("Custom автономность")).toBeVisible();
   await page.getByRole("textbox", { name: "Поиск возможностей" }).fill("");
-  await page.getByRole("button", { name: /Studio.*Редакторы промптов/ }).click();
+  await page.getByRole("button", { name: /Studio.*Файлы и медиа-инструменты/ }).click();
   await expect(
     page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
   ).toBeVisible();

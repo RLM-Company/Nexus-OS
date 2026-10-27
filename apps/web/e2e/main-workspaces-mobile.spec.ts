@@ -8,7 +8,7 @@ const mobileWorkspaces = [
   { button: "Coscode", heading: "Новый чат" },
   { button: "Koswork", heading: "Новый чат" },
   { button: "Изображения", heading: "Создание изображений" },
-  { button: "Видео", heading: "Видео" },
+  { button: "Видео", heading: "Создание видео" },
   { button: "Sound", heading: "Sound" },
   { button: "Multi-Agent", heading: "Multi-Agent" }
 ] as const;

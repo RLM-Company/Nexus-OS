@@ -21,8 +21,15 @@ test("new-chat mode preserves draft, stores Work and stays between title and act
     const title = await page.locator(".topbar h1").boundingBox();
     const toggle = await modes.boundingBox();
     const actions = await page.locator(".topbar-actions").boundingBox();
-    expect(title!.x + title!.width).toBeLessThanOrEqual(toggle!.x + 1);
-    expect(toggle!.x + toggle!.width).toBeLessThanOrEqual(actions!.x + 1);
+    if (width > 600) {
+      expect(title!.x + title!.width).toBeLessThanOrEqual(toggle!.x + 1);
+      expect(toggle!.x + toggle!.width).toBeLessThanOrEqual(actions!.x + 1);
+    } else {
+      expect(toggle!.y).toBeGreaterThanOrEqual(
+        Math.max(title!.y + title!.height, actions!.y + actions!.height)
+      );
+      expect(toggle!.x + toggle!.width / 2).toBeCloseTo(width / 2, 0);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       width
     );
@@ -83,9 +90,11 @@ test("effort drag commits once on release and failed save restores previous valu
   let fail = false;
   await page.route("**/api/v1/personal-settings", async (route) => {
     const response = await route.fetch();
+    const data = await response.json();
     await route.fulfill({
       json: {
-        ...(await response.json()),
+        ...data,
+        execution: { ...data.execution, turbo: false },
         reasoning: { effort, supported_efforts: ["low", "medium", "high"] }
       }
     });

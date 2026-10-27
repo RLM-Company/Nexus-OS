@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { isWorkspaceWrite } from "./fixtures/navigation-writes";
 
 const ids = ["ee120001-0001-4000-8000-000000000001", "ee120001-0001-4000-8000-000000000002"];
 const projectId = "ee120001-0001-4000-8000-000000000003";
@@ -13,6 +14,7 @@ const chats = ids.map((id, index) => ({
 
 async function fixture(page: Page, owner = "local-owner") {
   const writes: string[] = [];
+  const pins = new Map<string, string[]>();
   let project = {
     id: projectId,
     title: "Проект задач",
@@ -22,8 +24,29 @@ async function fixture(page: Page, owner = "local-owner") {
     last_message_preview: "План"
   };
   page.on("request", (request) => {
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method()))
+    if (isWorkspaceWrite(request))
       writes.push(request.method() + " " + new URL(request.url()).pathname);
+  });
+  const navigation = () => ({
+    folders: [],
+    assignments: [],
+    chats: pins.get(owner) ?? [],
+    projects: []
+  });
+  await page.route("**/api/v1/chat-navigation", (route) => route.fulfill({ json: navigation() }));
+  await page.route("**/api/v1/chat-navigation/import-pins", (route) =>
+    route.fulfill({ json: navigation() })
+  );
+  await page.route("**/api/v1/chat-navigation/pins/chats/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    const current = pins.get(owner) ?? [];
+    pins.set(
+      owner,
+      route.request().postDataJSON().pinned
+        ? [...new Set([...current, id])]
+        : current.filter((item) => item !== id)
+    );
+    return route.fulfill({ json: navigation() });
   });
   await page.route("**/api/v1/navigation-context", (route) =>
     route.fulfill({ json: { owner_id: owner } })
@@ -67,33 +90,40 @@ async function fixture(page: Page, owner = "local-owner") {
   });
   await page.goto(`/?chat=${ids[0]}`);
   await expect(page.locator(".topbar h1")).toHaveText(chats[0]!.title);
-  return writes;
+  return {
+    writes,
+    changeOwner: (next: string) => {
+      owner = next;
+    }
+  };
 }
 
 test("pins persist per owner, reorder only on pinning and survive ordinary chat reads", async ({
   page
 }) => {
-  const writes = await fixture(page);
+  const { writes, changeOwner } = await fixture(page);
   const labels = page.locator("#sidebar-chat-list .chat-item strong");
   await expect(labels).toHaveText(chats.map((chat) => chat.title));
-  await page.locator(`[aria-describedby="pin-chat-${ids[1]}"]`).click();
+  await page.getByLabel(`Действия с чатом «${chats[1]!.title}»`, { exact: true }).click();
+  await page
+    .getByRole("dialog", { name: `Меню чата «${chats[1]!.title}»`, exact: true })
+    .getByRole("button", { name: "Закрепить", exact: true })
+    .click();
   await expect(labels).toHaveText([chats[1]!.title, chats[0]!.title]);
   await page.locator("#sidebar-chat-list .chat-item").filter({ hasText: chats[0]!.title }).click();
   await expect(labels).toHaveText([chats[1]!.title, chats[0]!.title]);
   await page.reload();
   await expect(labels).toHaveText([chats[1]!.title, chats[0]!.title]);
-  await page.route("**/api/v1/navigation-context", (route) =>
-    route.fulfill({ json: { owner_id: "other-owner" } })
-  );
+  changeOwner("other-owner");
   await page.reload();
   await expect(labels).toHaveText(chats.map((chat) => chat.title));
-  expect(writes).toEqual([]);
+  expect(writes).toEqual([`PUT /api/v1/chat-navigation/pins/chats/${ids[1]}`]);
 });
 
 test("Ctrl K searches and navigates without losing the draft; other dialogs keep their boundary", async ({
   page
 }) => {
-  const writes = await fixture(page);
+  const { writes } = await fixture(page);
   const composer = page.getByLabel("Сообщение Kosmora", { exact: true });
   await composer.fill("Мой черновик");
   await composer.press("Control+k");
@@ -113,7 +143,7 @@ test("Ctrl K searches and navigates without losing the draft; other dialogs keep
   await expect(dialog).toBeHidden();
   await expect(search).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Быстрый переход", exact: true }).click();
+  await page.keyboard.press("Control+k");
   await input.fill("старая");
   await input.press("Enter");
   await expect(page.locator(".topbar h1")).toHaveText("Старая беседа");
@@ -123,7 +153,7 @@ test("Ctrl K searches and navigates without losing the draft; other dialogs keep
 test("renames a project, keeps pins and restores title on reload with one PATCH", async ({
   page
 }) => {
-  const writes = await fixture(page);
+  const { writes } = await fixture(page);
   await page.goto(`/?project=${projectId}&view=project`);
   const panel = page.getByRole("tabpanel", { name: "Проект", exact: true });
   await panel.getByLabel("Название проекта", { exact: true }).fill("Новое название проекта");
@@ -137,8 +167,8 @@ test("renames a project, keeps pins and restores title on reload with one PATCH"
 
 test("quick switcher fits mobile and empty searches never dispatch actions", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const writes = await fixture(page);
-  await page.getByRole("button", { name: "Быстрый переход", exact: true }).click();
+  const { writes } = await fixture(page);
+  await page.keyboard.press("Control+k");
   const dialog = page.getByRole("dialog", { name: "Быстрый переход", exact: true });
   await dialog.getByLabel("Найти чат, проект или раздел").fill("Нет такого результата");
   await expect(dialog).toContainText("Совпадений нет");

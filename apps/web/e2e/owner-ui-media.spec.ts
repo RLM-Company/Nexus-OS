@@ -105,7 +105,9 @@ test("media uses generator workspaces, local references and no fake prompt resul
   await expect(page.getByRole("button", { name: "Подготовить промпт" })).toHaveCount(0);
   await page.getByLabel("Описание изображения", { exact: true }).fill("Лунная станция");
   const generate = page.getByRole("button", { name: "Сгенерировать изображение", exact: true });
-  await page.getByRole("checkbox", { name: "Подтверждаю генерацию с расходом баланса." }).check();
+  await expect(
+    page.getByRole("checkbox", { name: "Подтверждаю генерацию с расходом баланса." })
+  ).toHaveCount(0);
   await expect(generate).toBeEnabled();
   const tinyPng = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2ioAAAAASUVORK5CYII=",

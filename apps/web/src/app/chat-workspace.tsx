@@ -5,13 +5,8 @@ import Link from "next/link";
 import styles from "./chat-workspace.module.css";
 import { WorkspaceIcon } from "./workspace-icons";
 import { pinnedNavigationKey, readPinnedNavigation } from "./pinned-navigation";
+import { readNavigationState, type NavigationState as Navigation } from "./navigation-state";
 
-type Navigation = {
-  folders: Array<{ id: string; title: string }>;
-  assignments: Array<{ chat_id: string; folder_id: string }>;
-  chats: string[];
-  projects: string[];
-};
 type Context = {
   excluded_ids: string[];
   summary: string;
@@ -62,6 +57,9 @@ async function request<T>(
     );
   return data;
 }
+async function requestNavigation(...args: Parameters<typeof request>): Promise<Navigation> {
+  return readNavigationState(await request<unknown>(...args));
+}
 export function useChatNavigation() {
   const [navigation, setNavigation] = useState<Navigation>(empty);
   const [ready, setReady] = useState(false);
@@ -76,7 +74,7 @@ export function useChatNavigation() {
     const load = () => {
       if (pending.current) return;
       const observed = revision.current;
-      void request<Navigation>("/api/v1/chat-navigation", undefined, "GET", controller.signal)
+      void requestNavigation("/api/v1/chat-navigation", undefined, "GET", controller.signal)
         .then((n) => {
           if (!controller.signal.aborted && observed === revision.current) {
             setNavigation(n);
@@ -97,7 +95,7 @@ export function useChatNavigation() {
     )
       .then(async ({ owner_id }) => {
         const legacy = readPinnedNavigation(window.localStorage, pinnedNavigationKey(owner_id));
-        const next = await request<Navigation>(
+        const next = await requestNavigation(
           "/api/v1/chat-navigation/import-pins",
           legacy,
           "POST",
@@ -123,7 +121,7 @@ export function useChatNavigation() {
     setBusy(true);
     setNotice(null);
     try {
-      const next = await request<Navigation>(path, body, method);
+      const next = await requestNavigation(path, body, method);
       if (live.current) setNavigation(next);
       return true;
     } catch (cause) {
@@ -131,7 +129,7 @@ export function useChatNavigation() {
         setNotice(cause instanceof Error ? cause.message : "Не удалось сохранить.");
         // Reconcile an uncertain write once with a read, never resend it automatically.
         try {
-          setNavigation(await request<Navigation>("/api/v1/chat-navigation"));
+          setNavigation(await requestNavigation("/api/v1/chat-navigation"));
         } catch {
           /* Keep last known state. */
         }
