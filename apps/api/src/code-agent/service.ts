@@ -119,6 +119,16 @@ export class CodeAgentService {
   private readonly taskClocks = new Map<string, RuntimeStopwatch>();
   private authorityChecks = new Map<string, Set<() => boolean>>();
   private active = new Map<string, { controller: AbortController; done: Promise<void> }>();
+  private external = new Map<
+    string,
+    { owner: string; controller: AbortController; done: Promise<void> }
+  >();
+  private stoppedOwners = new Set<string>();
+  private ownerDrains = new Map<
+    string,
+    { epoch: number | null; ids: string[]; drained: boolean }
+  >();
+  private stopping = false;
   constructor(readonly deps: CodeAgentDependencies) {
     this.clock = deps.clock ?? new RuntimeClock();
     this.operationTimeoutMs = deps.operationTimeoutMs ?? 600_000;
@@ -190,11 +200,102 @@ export class CodeAgentService {
     }
   }
   async quiesceOwner(ownerId: string): Promise<void> {
+    this.stoppedOwners.add(ownerId);
+    const fence = this.deps.store.sqlite
+      .prepare("SELECT epoch,state FROM kosmora_owner_data_lifecycle WHERE owner_id=?")
+      .get(ownerId);
+    const ids = this.deps.store.sqlite
+      .prepare(
+        "SELECT id FROM code_agent_runs WHERE owner_id=? AND json_extract(state_json,'$.status') IN ('running','checking','publishing')"
+      )
+      .all(ownerId)
+      .map((row) => String(row.id));
+    const snapshot = this.ownerDrains.get(ownerId) ?? {
+      epoch: fence?.state === "quiescing" ? Number(fence.epoch) : null,
+      ids,
+      drained: false
+    };
+    this.ownerDrains.set(ownerId, snapshot);
     const owned = [...this.active.entries()].filter(([id]) =>
       Boolean(this.deps.store.get(id, ownerId))
     );
+    const external = [...this.external.values()].filter((operation) => operation.owner === ownerId);
     for (const [, active] of owned) active.controller.abort();
-    await Promise.allSettled(owned.map(([, active]) => active.done));
+    for (const operation of external) operation.controller.abort();
+    await Promise.allSettled([
+      ...owned.map(([, active]) => active.done),
+      ...external.map((operation) => operation.done)
+    ]);
+    snapshot.drained = true;
+  }
+  resumeOwner(ownerId: string): void {
+    const snapshot = this.ownerDrains.get(ownerId);
+    if (!snapshot) return;
+    const fence = this.deps.store.sqlite
+      .prepare("SELECT epoch,state FROM kosmora_owner_data_lifecycle WHERE owner_id=?")
+      .get(ownerId);
+    if (
+      !snapshot.drained ||
+      (fence && fence.state !== "active") ||
+      (snapshot.epoch !== null && Number(fence?.epoch) !== snapshot.epoch)
+    )
+      throw new CodeAgentError("EXECUTION_STOPPED");
+    for (const id of snapshot.ids) {
+      const run = this.deps.store.get(id, ownerId);
+      if (!run || !["running", "checking", "publishing"].includes(run.status)) continue;
+      const draft = run.draft_id ? this.deps.drafts.get(run.draft_id, ownerId) : null;
+      const status =
+        run.status === "publishing"
+          ? draft?.status === "published"
+            ? "published"
+            : draft?.status === "review"
+              ? "checked"
+              : "uncertain"
+          : "failed";
+      this.deps.store.save(
+        {
+          ...run,
+          status,
+          publication_token: undefined,
+          error:
+            status === "published"
+              ? undefined
+              : status === "uncertain"
+                ? "RECONCILIATION_REQUIRED"
+                : "OWNER_PRIVACY_INTERRUPTED"
+        },
+        "Операция с данными завершена; прерванные действия автоматически не повторяются"
+      );
+    }
+    this.ownerDrains.delete(ownerId);
+    this.stoppedOwners.delete(ownerId);
+  }
+  private async externalOperation<T>(run: CodeAgentRun, operation: () => Promise<T>): Promise<T> {
+    this.live(run);
+    if (
+      this.active.has(run.id) ||
+      this.external.has(run.id) ||
+      this.active.size + this.external.size >= 2
+    )
+      throw new CodeAgentError("WORKSPACE_BUSY");
+    const controller = new AbortController();
+    let settled = () => {};
+    const done = new Promise<void>((resolve) => {
+      settled = resolve;
+    });
+    this.external.set(run.id, { owner: run.owner_id, controller, done });
+    const deadline = setTimeout(
+      () => controller.abort(new CodeAgentError("TASK_TIME_BUDGET")),
+      this.operationTimeoutMs
+    );
+    deadline.unref?.();
+    try {
+      return await operation();
+    } finally {
+      clearTimeout(deadline);
+      this.external.delete(run.id);
+      settled();
+    }
   }
   private stopped(run: CodeAgentRun) {
     return (
@@ -203,7 +304,7 @@ export class CodeAgentService {
     );
   }
   private live(run: CodeAgentRun, signal?: AbortSignal) {
-    const active = this.active.get(run.id)?.controller.signal;
+    const active = (this.active.get(run.id) ?? this.external.get(run.id))?.controller.signal;
     if (
       active?.aborted &&
       active.reason instanceof CodeAgentError &&
@@ -217,7 +318,9 @@ export class CodeAgentService {
       this.stopped(run) ||
       signal?.aborted ||
       active?.aborted ||
-      run.status === "cancelled"
+      run.status === "cancelled" ||
+      this.stopping ||
+      this.stoppedOwners.has(run.owner_id)
     )
       throw new CodeAgentError("EXECUTION_STOPPED");
     if (
@@ -431,7 +534,9 @@ export class CodeAgentService {
     },
     request: { client_request_id?: string; request_digest?: string } = {}
   ): CodeAgentRun {
-    if (this.active.size >= 2) throw new CodeAgentError("WORKSPACE_BUSY");
+    if (this.stopping || this.stoppedOwners.has(identity.owner_id))
+      throw new CodeAgentError("EXECUTION_STOPPED");
+    if (this.active.size + this.external.size >= 2) throw new CodeAgentError("WORKSPACE_BUSY");
     if (
       identity.owner_id !== this.deps.github.ownerId ||
       !this.deps.projects.getProject(project, identity.owner_id)
@@ -470,7 +575,11 @@ export class CodeAgentService {
     return run;
   }
   private launch(run: CodeAgentRun, work: (signal: AbortSignal) => Promise<void>) {
-    if (this.active.has(run.id) || this.active.size >= 2)
+    if (
+      this.active.has(run.id) ||
+      this.external.has(run.id) ||
+      this.active.size + this.external.size >= 2
+    )
       throw new CodeAgentError("WORKSPACE_BUSY");
     const controller = new AbortController();
     this.taskClocks.set(run.id, this.clock.start());
@@ -542,8 +651,15 @@ export class CodeAgentService {
     this.active.set(run.id, { controller, done });
   }
   async stop() {
+    this.stopping = true;
     for (const a of this.active.values()) a.controller.abort();
-    await Promise.all([...this.active.values()].map((a) => a.done));
+    for (const a of this.external.values()) a.controller.abort();
+    await this.whenIdle();
+  }
+  async whenIdle(): Promise<void> {
+    await Promise.allSettled(
+      [...this.active.values(), ...this.external.values()].map((a) => a.done)
+    );
   }
   cancel(id: string, owner: string) {
     const run = this.current(id, owner);
@@ -937,7 +1053,16 @@ export class CodeAgentService {
     owner: string,
     input: { proposal_hash: string; files: GithubFileChange[] }
   ) {
-    const run = this.current(id, owner);
+    return this.externalOperation(this.current(id, owner), () =>
+      this.reviewAccepted(id, owner, input)
+    );
+  }
+  private async reviewAccepted(
+    id: string,
+    owner: string,
+    input: { proposal_hash: string; files: GithubFileChange[] }
+  ) {
+    let run = this.current(id, owner);
     if (
       !["proposed", "review", "checked", "failed"].includes(run.status) ||
       input.proposal_hash !== run.proposal_hash ||
@@ -953,7 +1078,10 @@ export class CodeAgentService {
       throw new CodeAgentError("PATCH_SNAPSHOT");
     if (run.proposal_hash !== hash({ base: run.base_sha, proposal: run.proposal }))
       throw new CodeAgentError("PATCH_BASE");
-    const action = "review-" + hash(input.files);
+    // A failed read-only preparation must not permanently replay a previous
+    // policy recovery result. Each explicit attempt has a durable CAS/version.
+    run = this.deps.store.save(run, "Принята новая попытка подготовки просмотра");
+    const action = "review-" + hash([input.files, run.version]);
     const draft = await this.guarded(
       run,
       action,
@@ -968,6 +1096,7 @@ export class CodeAgentService {
         })
     );
     const latest = this.current(id, owner);
+    this.live(latest);
     if (
       !["proposed", "review", "checked", "failed"].includes(latest.status) ||
       latest.version !== run.version
@@ -1068,7 +1197,8 @@ export class CodeAgentService {
       input.approve !== true
     )
       throw new CodeAgentError("STALE_REVIEW");
-    if (this.active.size >= 2 || this.active.has(id)) throw new CodeAgentError("WORKSPACE_BUSY");
+    if (this.active.size + this.external.size >= 2 || this.active.has(id) || this.external.has(id))
+      throw new CodeAgentError("WORKSPACE_BUSY");
     const next = this.deps.store.save(
       { ...run, status: "checking", auto_check_requested: input.check, proposal_check: undefined },
       "Запрошена бесплатная повторная проверка"
@@ -1144,7 +1274,8 @@ export class CodeAgentService {
       throw new CodeAgentError("STALE_REVIEW");
     this.reviewed(run, input.review_hash);
     this.live(run);
-    if (this.active.size >= 2 || this.active.has(id)) throw new CodeAgentError("WORKSPACE_BUSY");
+    if (this.active.size + this.external.size >= 2 || this.active.has(id) || this.external.has(id))
+      throw new CodeAgentError("WORKSPACE_BUSY");
     const next = this.deps.store.save(
       {
         ...run,
@@ -1209,6 +1340,15 @@ export class CodeAgentService {
     return this.view(next);
   }
   async publish(
+    id: string,
+    owner: string,
+    input: { review_hash: string; publication_token: string; approve: true }
+  ) {
+    return this.externalOperation(this.current(id, owner), () =>
+      this.publishAccepted(id, owner, input)
+    );
+  }
+  private async publishAccepted(
     id: string,
     owner: string,
     input: { review_hash: string; publication_token: string; approve: true }
@@ -1313,6 +1453,9 @@ export class CodeAgentService {
     );
   }
   async reconcile(id: string, owner: string) {
+    return this.externalOperation(this.current(id, owner), () => this.reconcileAccepted(id, owner));
+  }
+  private async reconcileAccepted(id: string, owner: string) {
     const run = this.current(id, owner);
     if (run.status === "published") return this.view(run);
     if (run.status === "checked") {

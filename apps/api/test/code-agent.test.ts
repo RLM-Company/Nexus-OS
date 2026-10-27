@@ -35,6 +35,7 @@ import { LOCAL_DEVELOPMENT_IDENTITY } from "../src/identity.js";
 import { buildApp } from "../src/app.js";
 import { AccountStore } from "../src/account-settings/account-store.js";
 import { SharedOwnerBudget } from "../src/account-settings/shared-owner-budget.js";
+import { CodeIntegratedPrivacyAdapter } from "../src/account-settings/privacy/integrated-adapters.js";
 
 const owner = "local-owner",
   head = "a".repeat(40),
@@ -128,6 +129,7 @@ async function fixture(
     responses?: string[];
     runner?: CodeAgentWorkspaceRunner;
     onGithub?: (path: string, method: string) => void;
+    githubBarrier?: (path: string, method: string) => Promise<void>;
     registry?: ModelRegistryDocument;
     registryNow?: number;
   } = {}
@@ -221,10 +223,11 @@ async function fixture(
             ]
           : [];
       else value = { default_branch: "main", private: true };
-      return Promise.resolve(
-        new Response(JSON.stringify(value), {
-          headers: { "content-type": "application/json" }
-        })
+      return Promise.resolve(options.githubBarrier?.(path, method)).then(
+        () =>
+          new Response(JSON.stringify(value), {
+            headers: { "content-type": "application/json" }
+          })
       );
     }
   });
@@ -340,6 +343,7 @@ async function fixture(
     actor_id: requestOwner
   }));
   resources.push(async () => {
+    await service.stop();
     await app.close();
     database.close();
   });
@@ -393,6 +397,227 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("rejects a late review draft behind the privacy fence, then permits an explicit retry without another model call", async () => {
+    let hold = false,
+      entered = false,
+      release = () => {};
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const f = await fixture({
+      githubBarrier: (path) => {
+        if (hold && path.startsWith("/commits/")) {
+          entered = true;
+          return barrier;
+        }
+        return Promise.resolve();
+      }
+    });
+    const id = await f.start();
+    const proposal = await f.wait(id, "proposed");
+    const input = { proposal_hash: proposal.proposal_hash!, files: changes };
+    hold = true;
+    const review = f.service.review(id, owner, input);
+    const observed = Promise.allSettled([review]);
+    const adapter = new CodeIntegratedPrivacyAdapter(f.database.sqlite, f.service);
+    try {
+      await expect.poll(() => entered).toBe(true);
+      f.database.sqlite
+        .prepare(
+          "INSERT INTO kosmora_owner_data_lifecycle(owner_id,epoch,state,operation_id,started_at,updated_at) VALUES(?,3,'quiescing','export','now','now')"
+        )
+        .run(owner);
+      const drained = adapter.quiesce(owner, 3);
+      release();
+      const result = await observed;
+      await drained;
+      expect(result[0].status).toBe("rejected");
+      expect(f.drafts.list(f.project, owner)).toEqual([]);
+      expect(f.get(id).status).toBe("proposed");
+      f.database.sqlite
+        .prepare("UPDATE kosmora_owner_data_lifecycle SET state='active' WHERE owner_id=?")
+        .run(owner);
+      await adapter.resume(owner);
+      hold = false;
+      const calls = f.providerCalls.length;
+      expect((await f.service.review(id, owner, input)).status).toBe("review");
+      expect(f.providerCalls).toHaveLength(calls);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    } finally {
+      release();
+      await observed;
+    }
+  });
+
+  it.each(["/git/trees", "/pulls"])(
+    "joins publication behind a real privacy fence at %s without a repeated write",
+    async (heldPath) => {
+      let release = () => {};
+      let entered = false;
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const f = await fixture({
+        githubBarrier: (path, method) => {
+          if (path === heldPath && method === "POST") {
+            entered = true;
+            return barrier;
+          }
+          return Promise.resolve();
+        }
+      });
+      const adapter = new CodeIntegratedPrivacyAdapter(f.database.sqlite, f.service);
+      const id = await f.start(),
+        review = await f.review(id),
+        reviewHash = review.draft!.plan.review_hash;
+      await f.check(id, reviewHash);
+      const publication = f.service.publish(id, owner, {
+        review_hash: reviewHash,
+        publication_token: f.get(id).publication_token!,
+        approve: true
+      });
+      const observed = Promise.allSettled([publication]);
+      try {
+        await expect.poll(() => entered).toBe(true);
+        f.database.sqlite
+          .prepare(
+            "INSERT INTO kosmora_owner_data_lifecycle(owner_id,epoch,state,operation_id,started_at,updated_at) VALUES(?,9,'quiescing','export','now','now')"
+          )
+          .run(owner);
+        let drained = false;
+        const drain = adapter.quiesce(owner, 9).then((receipt) => {
+          drained = true;
+          return receipt;
+        });
+        expect(() => f.service.resumeOwner(owner)).toThrow("EXECUTION_STOPPED");
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        expect(drained).toBe(false);
+        release();
+        await observed;
+        expect(await drain).toEqual({ drained: true, fence_epoch: 9 });
+        const finalStatus = heldPath === "/pulls" ? "published" : "uncertain";
+        expect(f.drafts.get(f.get(id).draft_id!, owner)?.status).toBe(finalStatus);
+        expect(f.get(id).status).toBe("publishing"); // SQLite correctly forbade checkpoint writes while fenced.
+        f.database.sqlite
+          .prepare(
+            "UPDATE kosmora_owner_data_lifecycle SET state='active',epoch=10 WHERE owner_id=?"
+          )
+          .run(owner);
+        expect(() => f.service.resumeOwner(owner)).toThrow("EXECUTION_STOPPED");
+        f.database.sqlite
+          .prepare("UPDATE kosmora_owner_data_lifecycle SET epoch=9 WHERE owner_id=?")
+          .run(owner);
+        await adapter.resume(owner);
+        expect(f.get(id).status).toBe(finalStatus);
+        expect(f.get(id).error).toBe(
+          finalStatus === "uncertain" ? "RECONCILIATION_REQUIRED" : undefined
+        );
+        expect(f.get(id).publication_token).toBeUndefined();
+        await f.service.reconcile(id, owner);
+        expect(f.githubCalls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(
+          heldPath === "/pulls"
+            ? ["/git/trees", "/git/commits", "/git/refs", "/pulls"]
+            : ["/git/trees"]
+        );
+      } finally {
+        release();
+        await observed;
+      }
+    }
+  );
+
+  it("closes the actual Fastify application only after stopping its injected Code service", async () => {
+    const f = await fixture({ providerDelayMs: 10000, responses: [proposalResponse()] });
+    const app = buildApp({
+      config: loadServerConfig({ NODE_ENV: "test" }),
+      database: f.database,
+      projectStore: f.projects,
+      policyStore: f.policy,
+      emergencyStopStore: f.emergency,
+      modelGateway: f.service.deps.gateway,
+      manager: f.service.deps.manager,
+      githubIntegration: f.service.deps.github,
+      githubDraftStore: f.drafts,
+      codeAgentService: f.service,
+      ownerBudget: f.service.deps.ownerBudget!
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: f.base,
+        payload: { task: "Fix", base_branch: "main", files: ["src/add.js"] }
+      });
+      const id = response.json<{ id: string }>().id;
+      await expect.poll(() => f.providerCalls.length).toBe(1);
+      await app.close();
+      expect(f.get(id).status).toBe("failed");
+      expect(() =>
+        f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+          task: "New task after close",
+          base_branch: "main",
+          files: ["src/add.js"]
+        })
+      ).toThrow("EXECUTION_STOPPED");
+      expect(f.providerCalls).toHaveLength(1);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it.each(["stop", "privacy"] as const)(
+    "drains an in-flight GitHub publication on %s before reporting completion",
+    async (operation) => {
+      let release = () => {};
+      let entered = false;
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const f = await fixture({
+        githubBarrier: (path, method) => {
+          if (path === "/git/trees" && method === "POST") {
+            entered = true;
+            return barrier;
+          }
+          return Promise.resolve();
+        }
+      });
+      const id = await f.start(),
+        review = await f.review(id),
+        reviewHash = review.draft!.plan.review_hash;
+      await f.check(id, reviewHash);
+      const publication = f.service.publish(id, owner, {
+        review_hash: reviewHash,
+        publication_token: f.get(id).publication_token!,
+        approve: true
+      });
+      // Observe rejection immediately, including when a privacy fence blocks a checkpoint.
+      const settled = Promise.allSettled([publication]);
+      try {
+        await expect.poll(() => entered).toBe(true);
+        let drained = false;
+        const drain = (
+          operation === "stop" ? f.service.stop() : f.service.quiesceOwner(owner)
+        ).then(() => {
+          drained = true;
+        });
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        expect(drained).toBe(false);
+        release();
+        await settled;
+        await drain;
+        expect(f.githubCalls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual([
+          "/git/trees"
+        ]);
+        expect(f.get(id).status).toBe("uncertain");
+        expect(f.get(id).error).toBe("RECONCILIATION_REQUIRED");
+      } finally {
+        release();
+        await settled;
+      }
+    }
+  );
+
   it("reads the local clock tool and shares elapsed task time across model turns", async () => {
     const clock = new RuntimeClock({
       wallNow: () => Date.parse("2026-10-25T21:05:06Z")
@@ -1591,7 +1816,7 @@ describe("one text proposal → exact diff → optional approved automatic check
       auto_check: { check: "syntax", approve: true }
     }).id;
     await expect.poll(() => f.get(id).proposal_check?.status).toBe("unavailable");
-    await f.service.stop();
+    await f.service.whenIdle();
     const request = {
       proposal_hash: f.get(id).proposal_hash!,
       check: "syntax" as const,
@@ -1599,7 +1824,7 @@ describe("one text proposal → exact diff → optional approved automatic check
     };
     expect(f.service.retryProposalCheck(id, owner, request).status).toBe("checking");
     await expect.poll(() => f.get(id).proposal_check?.status).toBe("timed_out");
-    await f.service.stop();
+    await f.service.whenIdle();
     f.service.retryProposalCheck(id, owner, request);
     await expect.poll(() => f.get(id).proposal_check?.status).toBe("passed");
     expect(f.providerCalls).toHaveLength(1);
@@ -1688,7 +1913,7 @@ describe("Code automatic execution lifecycle", () => {
     }).id;
     await expect.poll(() => entered).toBe(true);
     f.service.cancel(id, owner);
-    await f.service.stop();
+    await f.service.whenIdle();
     expect(f.get(id).proposal_check).toMatchObject({
       status: "unavailable",
       cleanupVerified: false

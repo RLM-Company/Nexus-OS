@@ -513,6 +513,12 @@ export class GithubDraftStore {
   ): Promise<GithubDraft> {
     const id = randomUUID();
     const plan = await integration.prepare(id, input);
+    if (
+      this.sqlite
+        .prepare("SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id=? AND state<>'active'")
+        .get(owner)
+    )
+      throw new GithubIntegrationError("GITHUB_CONFLICT");
     const now = new Date().toISOString();
     this.sqlite
       .prepare(
