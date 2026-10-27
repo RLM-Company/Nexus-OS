@@ -1,0 +1,33 @@
+name: Kosmora Pay Core
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "packages/db/**"
+      - ".github/workflows/kosmora-pay-core.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  pay-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck database
+        run: pnpm --filter @cosmora/db typecheck
+      - name: Typecheck API
+        run: pnpm --filter @cosmora/api typecheck
+      - name: Test payment core
+        run: pnpm --filter @cosmora/api exec vitest run test/pay-core.test.ts
