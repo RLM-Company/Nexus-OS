@@ -123,7 +123,7 @@ try {
     demoManagerCoordinator: new DemoManagerCoordinator(demoManagerStore),
     usageStore: new UsageStore(database.sqlite),
     payStore: new PayStore(database.sqlite),
-    payGateway,
+    ...(payGateway ? { payGateway } : {}),
     payPlans,
     emergencyStopStore,
     policyStore,
