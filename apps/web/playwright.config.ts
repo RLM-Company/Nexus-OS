@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const production = process.env.KOSMORA_E2E_PRODUCTION === "1";
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
@@ -32,10 +34,10 @@ export default defineConfig({
       }
     },
     {
-      command: "pnpm dev",
+      command: production ? "pnpm build && pnpm start" : "pnpm dev",
       url: "http://127.0.0.1:3000",
       reuseExistingServer: false,
-      timeout: 60_000,
+      timeout: production ? 180_000 : 60_000,
       env: {
         ...process.env,
         COSMORA_API_ORIGIN: "http://127.0.0.1:3100",

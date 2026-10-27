@@ -1,16 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-test("model selection preserves fresh Relay preferences and sends only accepted fields", async ({
+test("branded profile selection uses fresh execution version without overwriting Relay preferences", async ({
   page
 }) => {
   let version = 1;
   let saved: Record<string, unknown> | null = null;
+  let preferenceWrites = 0;
   await page.route("**/api/v1/personal-settings", async (route) => {
     if (route.request().method() === "PUT") {
-      saved = route.request().postDataJSON() as Record<string, unknown>;
-      await route.fulfill({
-        json: { settings: { ...saved, version: ++version, updated_at: "2026-10-10" } }
-      });
+      preferenceWrites++;
+      await route.abort();
       return;
     }
     await route.fulfill({
@@ -28,27 +27,40 @@ test("model selection preserves fresh Relay preferences and sends only accepted 
         },
         available_models: [
           { provider: "fixture", model: "fixture-model", capabilities: { streaming: true } }
+        ],
+        execution: { version, model_profile: "mercurius", autonomy: 2, turbo: false },
+        profiles: [
+          { id: "mercurius", name: "Kosmora Mercurius", description: "Быстрый профиль" },
+          { id: "mars", name: "Kosmora Mars", description: "Рабочий профиль" }
         ]
       }
     });
   });
+  await page.route("**/api/v1/personal-settings/execution", async (route) => {
+    saved = route.request().postDataJSON();
+    await route.fulfill({ json: { execution: { ...saved, version: ++version } } });
+  });
   await page.goto("/interface-kit");
+  await expect(page.getByLabel("Выбор модели")).toHaveAttribute("aria-disabled", "false");
   await page.getByLabel("Выбор модели").click();
-  await expect(page.getByRole("button", { name: "fixture-model fixture" })).toBeEnabled();
+  const mars = page.getByRole("button", { name: /Kosmora Mars/ });
+  await expect(mars).toBeEnabled();
   version = 2;
-  await page.getByRole("button", { name: "fixture-model fixture" }).click();
-  await expect(page.getByLabel("Выбор модели")).toContainText("fixture-model");
+  await mars.click();
+  await expect(page.getByLabel("Выбор модели")).toContainText("Kosmora Mars");
   expect(saved).toMatchObject({
     expected_version: 2,
-    relay_enabled: true,
-    preferred_provider: "fixture",
-    preferred_model: "fixture-model"
+    model_profile: "mars",
+    autonomy: 2,
+    turbo: false
   });
+  expect(preferenceWrites).toBe(0);
+  expect(saved).not.toHaveProperty("relay_enabled");
   expect(saved).not.toHaveProperty("updated_at");
   expect(saved).not.toHaveProperty("version");
   await page.getByLabel("Выбор модели").click();
   await page.getByLabel("Выбор модели").press("Escape");
-  await expect(page.getByRole("button", { name: "По умолчанию", exact: true })).not.toBeVisible();
+  await expect(mars).not.toBeVisible();
 });
 
 test("file tree supports collapse, arrows and selection without leaving the page", async ({

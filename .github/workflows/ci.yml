@@ -72,6 +72,7 @@ jobs:
 
       - name: Run all browser scenarios with local fixtures
         env:
+          KOSMORA_E2E_PRODUCTION: "1"
           NEXT_TELEMETRY_DISABLED: "1"
           TURBO_TELEMETRY_DISABLED: "1"
         run: pnpm test:e2e

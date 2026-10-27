@@ -83,20 +83,24 @@ test("settings can disable the token quota and persist actual interface preferen
   await page.goto("/personal-settings");
   await expect(page.getByRole("heading", { name: "Настройки", exact: true })).toBeVisible();
   const quota = page.getByRole("switch", { name: "Персональное ограничение расхода токенов" });
-  await quota.check();
+  await expect(quota).toBeEnabled();
+  if (!(await quota.isChecked())) await quota.click();
   await expect
     .poll(
       async () =>
         (await (await request.get("/api/v1/personal-settings")).json()).settings.max_total_tokens
     )
     .toBe(200000);
-  await quota.uncheck();
+  await expect(quota).toBeChecked();
+  await expect(quota).toBeEnabled();
+  await quota.click();
   await expect
     .poll(
       async () =>
         (await (await request.get("/api/v1/personal-settings")).json()).settings.max_total_tokens
     )
     .toBeNull();
+  await expect(quota).not.toBeChecked();
   await page.getByRole("switch", { name: "Увеличенный текст", exact: true }).check();
   await page.screenshot({ path: "../../qa/settings-20261025.png", fullPage: true });
   await page.goto("/");
