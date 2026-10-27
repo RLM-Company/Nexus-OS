@@ -416,6 +416,13 @@ export class ProjectStore {
 
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
+      // Accepting the first task activates a prepared project in the same commit
+      // as its message/run. A rejected insert must leave the draft untouched.
+      this.#sqlite
+        .prepare(
+          "UPDATE projects SET status = 'ACTIVE' WHERE id = ? AND owner_id = ? AND status = 'DRAFT'"
+        )
+        .run(projectId, ownerId);
       const accepted = this.#insertMessage(
         projectId,
         chatId,
@@ -429,7 +436,11 @@ export class ProjectStore {
         .prepare("UPDATE projects SET updated_at = ? WHERE id = ?")
         .run(timestamp, projectId);
       this.#sqlite.exec("COMMIT;");
-      return { ...accepted, project: { ...project, updated_at: timestamp }, duplicate: false };
+      return {
+        ...accepted,
+        project: { ...accepted.project, updated_at: timestamp },
+        duplicate: false
+      };
     } catch (error) {
       this.#sqlite.exec("ROLLBACK;");
       throw error;

@@ -760,6 +760,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           request.body.title,
           owner
         );
+        dependencies.policyStore?.ensureProfile(project.id);
+        dependencies.usageStore?.ensureLimit(project.id, owner);
         reply.code(201);
         return {
           project,
@@ -771,7 +773,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   }
   if (dependencies.registration) registerRegistrationRoutes(app, dependencies.registration);
   registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
-  if(dependencies.projectStore)registerApexRoutes(app,dependencies.projectStore,identityFor);
+  if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
 
   app.get(
     "/api/v1/health",
@@ -2676,6 +2678,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             .status(404)
             .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
         }
+        dependencies.policyStore?.ensureProfile(accepted.project.id);
+        dependencies.usageStore?.ensureLimit(accepted.project.id, identityFor(request).owner_id);
         return reply.status(accepted.duplicate ? 200 : 202).send(acceptedResponse(accepted));
       }
     );

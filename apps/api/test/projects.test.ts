@@ -5,6 +5,7 @@ import { buildApp } from "../src/app.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
 import { AccountStore } from "../src/account-settings/account-store.js";
 import { MockProviderAdapter } from "@cosmora/model-gateway";
+import { ManagerRuntimeProjectStore } from "../src/manager-runtime-project-store.js";
 
 describe("project chat API", () => {
   const config = loadServerConfig({
@@ -85,6 +86,56 @@ describe("project chat API", () => {
       payload: { title: 123, client_project_id: crypto.randomUUID() }
     });
     expect(invalid.statusCode).toBe(400);
+  });
+
+  it("activates an empty draft on its first accepted message so a restarted worker can pick it up", async () => {
+    const id = "aa120001-0001-4000-8000-000000000003";
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects/empty",
+      payload: { title: "Prepared project", client_project_id: id }
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(projectStore.getProject(id)?.status).toBe("DRAFT");
+    const payload = { content: "Start the prepared project", client_message_id: "activate-draft" };
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${id}/messages`,
+      payload
+    });
+    expect(accepted.statusCode, accepted.body).toBe(202);
+    expect(projectStore.getProject(id)?.status).toBe("ACTIVE");
+    expect(new ManagerRuntimeProjectStore(database.sqlite).listQueuedManagerRuns()).toContainEqual({
+      run_id: accepted.json<{ run_id: string }>().run_id,
+      project_id: id,
+      owner_id: "local-owner"
+    });
+    expect(accepted.json<{ project: { status: string } }>().project.status).toBe("ACTIVE");
+    const duplicate = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${id}/messages`,
+      payload
+    });
+    expect(duplicate.statusCode, duplicate.body).toBe(200);
+    expect(
+      database.sqlite.prepare("SELECT count(*) n FROM runs WHERE project_id=?").get(id)?.n
+    ).toBe(1);
+  });
+
+  it("rolls back draft activation when accepting its first run fails", () => {
+    const id = crypto.randomUUID();
+    projectStore.createEmptyProject(id, "Untouched draft");
+    database.sqlite.exec(
+      "CREATE TEMP TRIGGER reject_fixture_run BEFORE INSERT ON runs BEGIN SELECT RAISE(ABORT,'fixture insert failed'); END"
+    );
+    expect(() => projectStore.createMessage(id, "First task", "failed-first-run")).toThrow(
+      "fixture insert failed"
+    );
+    expect(projectStore.getProject(id)?.status).toBe("DRAFT");
+    expect(projectStore.listMessages(id)).toEqual([]);
+    expect(
+      database.sqlite.prepare("SELECT count(*) n FROM runs WHERE project_id=?").get(id)?.n
+    ).toBe(0);
   });
 
   it("creates a project and reuses the idempotent request", async () => {

@@ -159,6 +159,92 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("accepts the first Work in a prepared draft project and activates it atomically", async () => {
+    const f = await fixture();
+    const id = crypto.randomUUID();
+    f.projects.createEmptyProject(id, "Prepared Work");
+    const app = buildApp({
+      config: f.config,
+      database: f.database,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/projects/${id}/work`,
+        payload: { ...request, client_request_id: "first-draft-work" }
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      expect(f.projects.getProject(id)?.status).toBe("ACTIVE");
+      expect(response.json<{ status: string }>().status).toBe("queued");
+      expect(f.calls).toEqual([]);
+      // An older draft with no policy must receive the normal default and stop
+      // at the existing approval gate, not fail after paying for its plan.
+      const work = response.json<{ id: string }>();
+      await f.coordinator.execute(work.id, "local-owner");
+      expect(f.policy.getProfile(id)?.base_level).toBe("A0");
+      expect(f.store.get(work.id, "local-owner")).toMatchObject({
+        status: "awaiting_approval",
+        error_code: null
+      });
+      expect(f.calls).toEqual(["manager_work_plan"]);
+    } finally {
+      await app.close();
+      await f.coordinator.stop();
+    }
+  });
+
+  it("rolls back activation and all accepted Work state when capturing its snapshot fails", async () => {
+    const f = await fixture();
+    const id = crypto.randomUUID();
+    f.projects.createEmptyProject(id, "Untouched draft");
+    f.database.sqlite.exec(
+      "CREATE TEMP TRIGGER reject_fixture_snapshot BEFORE INSERT ON manager_work_skill_snapshots BEGIN SELECT RAISE(ABORT,'fixture snapshot failed'); END"
+    );
+    expect(() =>
+      f.store.create(id, "local-owner", "local-owner", {
+        ...request,
+        client_request_id: "failed-snapshot"
+      })
+    ).toThrow("fixture snapshot failed");
+    expect(f.projects.getProject(id)?.status).toBe("DRAFT");
+    expect(f.store.list(id, "local-owner")).toEqual([]);
+    expect(f.calls).toEqual([]);
+    await f.coordinator.stop();
+  });
+
+  it("never activates a foreign, archived, failed, cancelled or privacy-fenced project", async () => {
+    const f = await fixture();
+    for (const status of ["ARCHIVED", "FAILED"] as const) {
+      const id = crypto.randomUUID();
+      f.projects.createEmptyProject(id, status);
+      f.database.sqlite.prepare("UPDATE projects SET status=? WHERE id=?").run(status, id);
+      expect(f.store.create(id, "local-owner", "local-owner", request)).toBeNull();
+      expect(f.projects.getProject(id)?.status).toBe(status);
+    }
+    const id = crypto.randomUUID();
+    f.projects.createEmptyProject(id, "Private draft");
+    expect(f.store.create(id, "another-owner", "another-owner", request)).toBeNull();
+    f.database.sqlite
+      .prepare(
+        "INSERT INTO work_project_controls(project_id,owner_id,mode) VALUES(?,?,'cancelled')"
+      )
+      .run(id, "local-owner");
+    expect(() => f.store.create(id, "local-owner", "local-owner", request)).toThrow(
+      "PROJECT_CANCELLED"
+    );
+    f.database.sqlite.prepare("DELETE FROM work_project_controls WHERE project_id=?").run(id);
+    f.store.fenceOwner("local-owner");
+    expect(() => f.store.create(id, "local-owner", "local-owner", request)).toThrow(
+      "OWNER_QUIESCED"
+    );
+    expect(f.projects.getProject(id)?.status).toBe("DRAFT");
+    expect(f.calls).toEqual([]);
+    await f.coordinator.stop();
+  });
+
   it.each([
     { message: "Provider returned HTTP 503", diagnostic: "HTTP_503" },
     { message: "untrusted upstream body with SECRET_SENTINEL", diagnostic: undefined }
