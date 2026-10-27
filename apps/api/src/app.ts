@@ -819,23 +819,22 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     dependencies.modelGateway &&
     dependencies.manager
   ) {
-    registerCodeAgentRoutes(
-      app,
+    const code =
       dependencies.codeAgentService ??
-        new CodeAgentService({
-          store: new CodeAgentStore(dependencies.githubDraftStore.sqlite),
-          github: dependencies.githubIntegration,
-          drafts: dependencies.githubDraftStore,
-          projects: dependencies.projectStore,
-          policy: dependencies.policyStore,
-          emergency: dependencies.emergencyStopStore,
-          gateway: dependencies.modelGateway,
-          manager: dependencies.manager,
-          runner: dependencies.codeAgentRunner ?? configuredCodeAgentExecutor(),
-          ...(dependencies.ownerBudget ? { ownerBudget: dependencies.ownerBudget } : {})
-        }),
-      identityFor
-    );
+      new CodeAgentService({
+        store: new CodeAgentStore(dependencies.githubDraftStore.sqlite),
+        github: dependencies.githubIntegration,
+        drafts: dependencies.githubDraftStore,
+        projects: dependencies.projectStore,
+        policy: dependencies.policyStore,
+        emergency: dependencies.emergencyStopStore,
+        gateway: dependencies.modelGateway,
+        manager: dependencies.manager,
+        runner: dependencies.codeAgentRunner ?? configuredCodeAgentExecutor(),
+        ...(dependencies.ownerBudget ? { ownerBudget: dependencies.ownerBudget } : {})
+      });
+    registerCodeAgentRoutes(app, code, identityFor);
+    app.addHook("preClose", () => code.stop());
   }
   if (dependencies.documentLibrary)
     registerDocumentLibraryRoutes(app, dependencies.documentLibrary, identityFor);

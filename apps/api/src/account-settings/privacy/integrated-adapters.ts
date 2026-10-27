@@ -279,6 +279,9 @@ export class CodeIntegratedPrivacyAdapter implements PrivacyAdapter {
     await this.service.quiesceOwner(owner);
     return finish(epoch);
   }
+  async resume(owner: string) {
+    this.service.resumeOwner(owner);
+  }
   async export(owner: string): Promise<PrivacySection> {
     return {
       records: {
