@@ -1041,6 +1041,9 @@ export default function ControlCenterPage() {
         <div className={styles.readOnly}>
           <i /> Guarded owner actions
         </div>
+        <Link href="/pay" className={styles.back}>
+          Kosmora Pay →
+        </Link>
         <Link href="/" className={styles.back}>
           ← Рабочая область
         </Link>
