@@ -17,6 +17,42 @@ export const systemMetadata = sqliteTable("cosmora_system_metadata", {
   updatedAt: text("updated_at").notNull()
 });
 
+export const payOrders = sqliteTable(
+  "pay_orders",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    customerRef: text("customer_ref").notNull(),
+    planCode: text("plan_code").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    currency: text("currency").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    status: text("status").notNull(),
+    providerPaymentId: text("provider_payment_id"),
+    confirmationUrl: text("confirmation_url"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("pay_orders_owner_idempotency_unique").on(table.ownerId, table.idempotencyKey),
+    uniqueIndex("pay_orders_provider_unique").on(table.providerPaymentId),
+    index("pay_orders_owner_created").on(table.ownerId, table.createdAt)
+  ]
+);
+
+export const payOrderEvents = sqliteTable(
+  "pay_order_events",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id").notNull().references(() => payOrders.id),
+    ownerId: text("owner_id").notNull(),
+    status: text("status").notNull(),
+    source: text("source").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [index("pay_events_order_created").on(table.orderId, table.createdAt)]
+);
+
 export const identityActors = sqliteTable(
   "identity_actors",
   {
