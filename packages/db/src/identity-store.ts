@@ -351,17 +351,23 @@ export class IdentityStore {
   }
 
   disableActor(actorId: string, ownerId: string, disabledBy: string, reason: string): boolean {
+    if (reason.trim().length < 8 || reason.length > 256)
+      throw new Error("Invalid moderation reason");
     const actor = this.getActor(actorId, ownerId);
-    if (!actor || actor.status !== "active") return false;
+    if (!actor || actor.status !== "active" || actor.kind === "owner") return false;
     const timestamp = this.#nowIso();
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
-      this.#sqlite
+      const result = this.#sqlite
         .prepare(
           `UPDATE identity_actors SET status = 'disabled', updated_at = ?
-           WHERE actor_id = ? AND owner_id = ? AND status = 'active'`
+           WHERE actor_id = ? AND owner_id = ? AND status = 'active' AND kind <> 'owner'`
         )
         .run(timestamp, actorId, ownerId);
+      if (!result.changes) {
+        this.#sqlite.exec("ROLLBACK;");
+        return false;
+      }
       this.#sqlite
         .prepare(
           `UPDATE identity_sessions
@@ -378,6 +384,47 @@ export class IdentityStore {
         "ACTOR_DISABLED",
         timestamp
       );
+      this.#recordActorModeration(ownerId, actorId, disabledBy, "suspend", reason, timestamp);
+      this.#sqlite.exec("COMMIT;");
+      return true;
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  /**
+   * Re-activate a suspended non-owner actor. Prior sessions remain revoked:
+   * the actor must authenticate again to obtain a new session.
+   */
+  enableActor(actorId: string, ownerId: string, enabledBy: string, reason: string): boolean {
+    if (reason.trim().length < 8 || reason.length > 256)
+      throw new Error("Invalid moderation reason");
+    const actor = this.getActor(actorId, ownerId);
+    if (!actor || actor.status !== "disabled" || actor.kind === "owner") return false;
+    const timestamp = this.#nowIso();
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const result = this.#sqlite
+        .prepare(
+          `UPDATE identity_actors SET status = 'active', updated_at = ?
+           WHERE actor_id = ? AND owner_id = ? AND status = 'disabled' AND kind <> 'owner'`
+        )
+        .run(timestamp, actorId, ownerId);
+      if (Number(result.changes) !== 1) {
+        this.#sqlite.exec("ROLLBACK;");
+        return false;
+      }
+      this.#recordAudit(
+        ownerId,
+        enabledBy,
+        null,
+        "actor.enabled",
+        "success",
+        "ACTOR_ENABLED",
+        timestamp
+      );
+      this.#recordActorModeration(ownerId, actorId, enabledBy, "restore", reason, timestamp);
       this.#sqlite.exec("COMMIT;");
       return true;
     } catch (error) {
@@ -401,6 +448,27 @@ export class IdentityStore {
       )
       .all(ownerId, limit) as unknown as SqlRow[];
     return rows.map(asAuditEvent);
+  }
+
+  listActorModerations(ownerId: string): Record<string, unknown>[] {
+    return this.#sqlite
+      .prepare(
+        "SELECT * FROM identity_actor_moderations WHERE owner_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100"
+      )
+      .all(ownerId);
+  }
+
+  #recordActorModeration(
+    ownerId: string,
+    target: string,
+    performer: string,
+    action: string,
+    reason: string,
+    at: string
+  ): void {
+    this.#sqlite
+      .prepare("INSERT INTO identity_actor_moderations VALUES(?,?,?,?,?,?,?)")
+      .run(randomUUID(), ownerId, target, performer, action, reason.trim(), at);
   }
 
   listRecentOwnerSessionEvents(

@@ -2,6 +2,13 @@ import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
 import { registerApexRoutes } from "./apex-routes.js";
 import { registerProjectKnowledgeRoutes } from "./project-knowledge-routes.js";
+import { registerProjectAutomationRoutes } from "./project-automation-routes.js";
+import { ProjectAutomation } from "./project-automation.js";
+import { ProjectKnowledge } from "./project-knowledge.js";
+import type { ProjectAutomationStore } from "@cosmora/db";
+import type { PayStore } from "@cosmora/db";
+import type { PayGateway } from "./pay-gateway.js";
+import { registerPayRoutes } from "./pay-routes.js";
 import { RuntimeClock } from "@cosmora/model-gateway";
 import { ContextTooLargeError } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
@@ -40,6 +47,7 @@ import {
   EmergencyStopStateSchema,
   HealthResponseSchema,
   IdentityAuditListResponseSchema,
+  IdentityActorSchema,
   MessageAcceptedResponseSchema,
   ModelRuntimeStatusSchema,
   OwnerSessionListResponseSchema,
@@ -227,6 +235,10 @@ export interface AppDependencies {
   demoManagerStore?: DemoManagerStore;
   demoManagerCoordinator?: DemoManagerCoordinator;
   managerWorkStore?: ManagerWorkStore;
+  projectAutomationStore?: ProjectAutomationStore;
+  payStore?: PayStore;
+  payGateway?: PayGateway;
+  payPlans?: Record<string, number>;
   managerWorkCoordinator?: ManagerWorkCoordinator;
   usageStore?: UsageStore;
   emergencyStopStore?: EmergencyStopStore;
@@ -774,6 +786,16 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   if (dependencies.registration) registerRegistrationRoutes(app, dependencies.registration);
   registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
+  if (dependencies.payStore)
+    registerPayRoutes(app, {
+      store: dependencies.payStore,
+      plans: dependencies.payPlans ?? {},
+      ...(dependencies.payGateway ? { gateway: dependencies.payGateway } : {}),
+      stopped: () =>
+        dependencies.emergencyStopStore?.getProcessStop() !== null &&
+        dependencies.emergencyStopStore?.getProcessStop() !== undefined,
+      identityFor
+    });
 
   app.get(
     "/api/v1/health",
@@ -896,6 +918,27 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       identityFor,
       dependencies.managerWorkStore
     );
+  if (
+    dependencies.projectAutomationStore &&
+    dependencies.projectStore &&
+    dependencies.managerWorkStore
+  )
+    registerProjectAutomationRoutes(
+      app,
+      new ProjectAutomation(
+        dependencies.projectAutomationStore,
+        dependencies.managerWorkStore,
+        new ProjectKnowledge({
+          ...(dependencies.canvasStore ? { canvas: dependencies.canvasStore } : {}),
+          work: dependencies.managerWorkStore,
+          ...(dependencies.documentLibrary ? { documents: dependencies.documentLibrary } : {})
+        }),
+        now
+      ),
+      dependencies.projectStore,
+      identityFor,
+      dependencies.managerWorkCoordinator?.dag
+    );
 
   if (dependencies.identityStore) {
     const identityStore = dependencies.identityStore;
@@ -946,6 +989,90 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         return response;
       }
     );
+
+    // Account moderation is deliberately scoped to non-owner technical actors.
+    // Corporate owners cannot be removed using this API.
+    const actorModerationBody = Type.Object(
+      { reason: Type.String({ minLength: 8, maxLength: 256, pattern: "\\S.{6}\\S" }) },
+      { additionalProperties: false }
+    );
+    const actorModerationParams = Type.Object(
+      { actorId: Type.String({ minLength: 1, maxLength: 256 }) },
+      { additionalProperties: false }
+    );
+    app.get("/api/v1/identity/actor-moderations", (request, reply) => {
+      reply.header("cache-control", "private, no-store");
+      return { items: identityStore.listActorModerations(identityFor(request).owner_id) };
+    });
+
+    for (const action of ["suspend", "restore"] as const) {
+      app.post(
+        `/api/v1/identity/actors/:actorId/${action}`,
+        {
+          schema: {
+            params: actorModerationParams,
+            body: actorModerationBody,
+            response: {
+              200: IdentityActorSchema,
+              403: ApiErrorSchema,
+              404: ApiErrorSchema
+            }
+          }
+        },
+        async (request, reply) => {
+          const identity = identityFor(request);
+          if (identity.assurance !== "multi_factor") {
+            return reply
+              .status(403)
+              .send(
+                errorBody(request.id, "STEP_UP_REQUIRED", "Multi-factor authentication is required")
+              );
+          }
+          const actor = identityStore.getActor(request.params.actorId, identity.owner_id);
+          if (!actor) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "IDENTITY_ACTOR_NOT_FOUND", "Identity actor not found"));
+          }
+          if (actor.kind === "owner" || actor.actor_id === identity.actor_id) {
+            return reply
+              .status(403)
+              .send(errorBody(request.id, "FORBIDDEN", "Owner accounts cannot be moderated here"));
+          }
+          if (action === "suspend" && actor.status === "active") {
+            identityStore.disableActor(
+              actor.actor_id,
+              identity.owner_id,
+              identity.actor_id,
+              request.body.reason
+            );
+          } else if (action === "restore" && actor.status === "disabled") {
+            identityStore.enableActor(
+              actor.actor_id,
+              identity.owner_id,
+              identity.actor_id,
+              request.body.reason
+            );
+          }
+          const updated = identityStore.getActor(actor.actor_id, identity.owner_id);
+          if (!updated) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "IDENTITY_ACTOR_NOT_FOUND", "Identity actor not found"));
+          }
+          app.log.info(
+            {
+              actorId: identity.actor_id,
+              targetActorId: actor.actor_id,
+              action,
+              status: updated.status
+            },
+            "Owner-moderated technical actor"
+          );
+          return updated;
+        }
+      );
+    }
 
     app.post(
       "/api/v1/identity/sessions/:sessionId/revoke",

@@ -11,6 +11,7 @@ import {
   openDatabase,
   PolicyStore,
   ProjectStore,
+  ProjectAutomationStore,
   runMigrations
 } from "@cosmora/db";
 import {
@@ -26,6 +27,8 @@ import { buildApp } from "../src/app.js";
 import { ManagerWorkCoordinator } from "../src/manager-work-coordinator.js";
 import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runtime.js";
 import { AccountStore } from "../src/account-settings/account-store.js";
+import { ProjectAutomation } from "../src/project-automation.js";
+import { ProjectKnowledge } from "../src/project-knowledge.js";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -256,6 +259,50 @@ describe("Work priorities and deadlines", () => {
 });
 
 describe("executable durable Work DAG", () => {
+  it("runs an adapted Gemini playbook through actual Work planning, publishing, accounting and evaluation", async () => {
+    const f = await fixture();
+    const service = new ProjectAutomation(
+      new ProjectAutomationStore(f.db.sqlite),
+      f.store,
+      new ProjectKnowledge({ work: f.store })
+    );
+    const scope = { owner, project: f.project.id };
+    const book = service.createPlaybook(scope, owner, {
+      client_request_id: "gemini-book",
+      title: "Brief",
+      definition: {
+        title_template: "Brief {{topic}}",
+        variables: [{ key: "topic", label: "Topic", required: true }],
+        nodes: [
+          { id: "brief", title: "Brief", goal: "Create an exact {{topic}} brief", depends_on: [] }
+        ]
+      }
+    });
+    const prepared = service.instantiate(scope, owner, book.id, {
+      client_request_id: "gemini-run",
+      playbook_version: 1,
+      variables: { topic: "Moon" }
+    });
+    expect(f.calls).toHaveLength(0);
+    const completed = await f.execute(prepared.mission, "brief");
+    expect(completed.nodes[0]?.status).toBe("completed");
+    const child = f.store.get(completed.nodes[0]!.attempts[0]!.work_id, owner)!;
+    expect(child.model_requests).toBe(2);
+    expect(child.status).toBe("completed");
+    expect(f.calls.map((call) => call.task_type)).toEqual([
+      "manager_work_plan",
+      "manager_work_draft"
+    ]);
+    const suite = service.createSuite(scope, {
+      client_request_id: "suite",
+      title: "Brief content",
+      rules: [{ file: "result.md", kind: "contains", value: "Dependency evidence" }]
+    });
+    expect(service.evaluate(scope, suite.id, child.id, "evaluation").body).toMatchObject({
+      passed: true,
+      model_quality_assessed: false
+    });
+  });
   it("cancels one unstarted step, freezes its identity across edits and preserves other plans and results", async () => {
     const f = await fixture();
     let graph = await f.execute(f.create(), "independent");

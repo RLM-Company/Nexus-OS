@@ -19,3 +19,7 @@ export * from "./document-library.js";
 export * from "./table-analysis.js";
 export * from "./table-comparison.js";
 export * from "./project-knowledge.js";
+export * from "./project-automation.js";
+export * from "./graph-evidence-comparison.js";
+export * from "./graph-source-usage.js";
+export * from "./graph-citation-refresh.js";

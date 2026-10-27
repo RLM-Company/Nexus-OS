@@ -1,4 +1,5 @@
 import { WorkSkillStore } from "./work-skill-store.js";
+import { automationTransaction } from "./project-automation-store.js";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -282,14 +283,6 @@ export class WorkDagStore {
     );
   }
   private transaction<T>(fn: () => T): T {
-    this.sqlite.exec("BEGIN IMMEDIATE");
-    try {
-      const value = fn();
-      this.sqlite.exec("COMMIT");
-      return value;
-    } catch (e) {
-      this.sqlite.exec("ROLLBACK");
-      throw e;
-    }
+    return automationTransaction(this.sqlite, fn);
   }
 }

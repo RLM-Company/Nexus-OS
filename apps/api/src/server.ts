@@ -79,6 +79,9 @@ import { NotificationPrivacyAdapter } from "./notification-privacy.js";
 import { OwnerSkillPrivacyAdapter } from "./owner-skill-privacy.js";
 import { EmailChangePrivacyAdapter } from "./email-change-privacy.js";
 import { canvasPrivacyAdapter } from "./canvas/canvas-privacy.js";
+import { ProjectAutomationStore } from "@cosmora/db";
+import { PayStore } from "@cosmora/db";
+import { ProjectAutomationPrivacy } from "./project-automation-privacy.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
@@ -141,7 +144,7 @@ try {
   const ownerSkillStore = new OwnerSkillStore(database.sqlite);
   const researchStore = new ResearchStore(database.sqlite);
   const ownerPrivacy = new OwnerPrivacyCoordinator(database.sqlite, {
-    required: [...REQUIRED_PRIVACY_STORES, "intelligence-graphs"]
+    required: [...REQUIRED_PRIVACY_STORES, "intelligence-graphs", "project-automation"]
   });
   const graphRepository = new SqliteIntelligenceGraphWorkspaceRepository(database.sqlite);
   const graphService = new IntelligenceGraphWorkspaceService(graphRepository);
@@ -251,6 +254,7 @@ try {
   ownerPrivacy.register(new EmailChangePrivacyAdapter(database.sqlite));
   ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
   ownerPrivacy.register(intelligenceGraphPrivacyAdapter(graphRepository));
+  ownerPrivacy.register(new ProjectAutomationPrivacy(database.sqlite));
   app = buildApp({
     runtimeClock: modelRuntime.clock,
     intelligenceGraphWorkspace: {
@@ -335,6 +339,9 @@ try {
     projectStore,
     demoManagerStore,
     managerWorkStore,
+    projectAutomationStore: new ProjectAutomationStore(database.sqlite),
+    // Merchant activation is a separate release. This integration exposes read-only accounting and a disabled checkout.
+    payStore: new PayStore(database.sqlite),
     managerWorkCoordinator,
     demoManagerCoordinator: new DemoManagerCoordinator(demoManagerStore),
     usageStore: new UsageStore(database.sqlite),

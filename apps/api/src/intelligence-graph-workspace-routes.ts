@@ -1,6 +1,9 @@
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
   IntelligenceGraphWorkspaceError,
+  compareEvidenceAudits,
+  buildSourceUsages,
+  prepareCitationRefresh,
   type IntelligenceGraphWorkspaceService
 } from "@cosmora/core";
 import { IntelligenceGraphPrivacyError, type ProjectStore } from "@cosmora/db";
@@ -607,6 +610,117 @@ export const registerIntelligenceGraphWorkspaceRoutes = (
                 Number(request.query.revision)
               )
             );
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/evidence-comparison",
+      {
+        schema: {
+          params: GraphScope,
+          querystring: Type.Object(
+            {
+              before: Type.String({ pattern: "^[1-9][0-9]{0,15}$" }),
+              after: Type.String({ pattern: "^[1-9][0-9]{0,15}$" })
+            },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          const { projectId, graphId } = request.params;
+          const before = Number(request.query.before),
+            after = Number(request.query.after);
+          if (!Number.isSafeInteger(before) || !Number.isSafeInteger(after) || before >= after)
+            throw new IntelligenceGraphWorkspaceError(
+              "BAD_INPUT",
+              "Two ordered saved revisions are required"
+            );
+          const a = dependencies.service.auditEvidence(owner, projectId, graphId, before),
+            b = dependencies.service.auditEvidence(owner, projectId, graphId, after);
+          return reply
+            .header("Cache-Control", "private, no-store")
+            .send(compareEvidenceAudits(a.report, a.sha256, b.report, b.sha256));
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+    route.get(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/source-usage",
+      {
+        schema: {
+          params: GraphScope,
+          querystring: Type.Object(
+            { revision: Type.String({ pattern: "^[1-9][0-9]{0,15}$" }) },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          const audit = dependencies.service.auditEvidence(
+            owner,
+            request.params.projectId,
+            request.params.graphId,
+            Number(request.query.revision)
+          );
+          return reply.header("Cache-Control", "private, no-store").send({
+            format: "kosmora.graph-source-usage.v1",
+            graph: audit.report.graph,
+            audit_sha256: audit.sha256,
+            items: buildSourceUsages(audit.report),
+            citations_establish_truth: false
+          });
+        } catch (error) {
+          return handleFailure(reply, error);
+        }
+      }
+    );
+    route.post(
+      "/api/v1/projects/:projectId/intelligence-graphs/:graphId/citation-refresh-preview",
+      {
+        schema: {
+          params: GraphScope,
+          body: Type.Object(
+            { expected_revision: Revision, edge: Ref },
+            { additionalProperties: false }
+          )
+        }
+      },
+      async (request, reply) => {
+        const owner = await authenticate(request, reply, request.params.projectId);
+        if (!owner) return;
+        try {
+          const graph = dependencies.service.get(
+            owner,
+            request.params.projectId,
+            request.params.graphId
+          );
+          if (graph.revision !== request.body.expected_revision)
+            throw new IntelligenceGraphWorkspaceError(
+              "REVISION_CONFLICT",
+              "Refresh the graph before reviewing a citation"
+            );
+          let preview;
+          try {
+            preview = prepareCitationRefresh(graph, request.body.edge);
+          } catch (error) {
+            throw new IntelligenceGraphWorkspaceError(
+              "BAD_INPUT",
+              error instanceof Error ? error.message : "Citation unavailable"
+            );
+          }
+          return reply
+            .header("Cache-Control", "private, no-store")
+            .send({ expected_revision: graph.revision, preview, written: false });
         } catch (error) {
           return handleFailure(reply, error);
         }

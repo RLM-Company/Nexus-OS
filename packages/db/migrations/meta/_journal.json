@@ -358,6 +358,27 @@
       "when": 1792915200000,
       "tag": "0052_execution_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1793102400000,
+      "tag": "0053_project_automation",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1793102400001,
+      "tag": "0054_actor_moderation_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1793102400002,
+      "tag": "0055_kosmora_pay",
+      "breakpoints": true
     }
   ]
 }

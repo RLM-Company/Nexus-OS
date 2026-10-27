@@ -73,6 +73,195 @@ const setup = async () => {
 };
 
 describe("owner-scoped evidence audit HTTP endpoint", () => {
+  it("serves checked source usage and literal revision comparisons without changing graph state", async () => {
+    const f = await setup();
+    try {
+      const root = f.url.replace("/evidence-audit", "");
+      const count = () => f.db.sqlite.prepare("SELECT total_changes() n").get()!.n;
+      const initial = count();
+      const usage = await f.app.inject({ method: "GET", url: root + "/source-usage?revision=1" });
+      expect(usage.statusCode, usage.body).toBe(200);
+      expect(usage.json()).toMatchObject({
+        citations_establish_truth: false,
+        items: [{ counts: { claims: 1, citations: 1 } }]
+      });
+      expect(count()).toBe(initial);
+      const current = f.service.edit("owner-a", "project-a", f.graph.graph_id, 1, {
+        kind: "rename",
+        title: "Changed title"
+      });
+      const after = count();
+      const comparison = await f.app.inject({
+        method: "GET",
+        url: root + `/evidence-comparison?before=1&after=${current.revision}`
+      });
+      expect(comparison.statusCode, comparison.body).toBe(200);
+      expect(comparison.json()).toMatchObject({
+        counts: { added: 0, removed: 0, changed: 0, unchanged: 1 }
+      });
+      expect(count()).toBe(after);
+      for (const query of [
+        "before=2&after=1",
+        "before=1.2&after=2",
+        "before=1&after=9007199254740992"
+      ])
+        expect(
+          (await f.app.inject({ method: "GET", url: root + "/evidence-comparison?" + query }))
+            .statusCode
+        ).toBe(400);
+      const foreign = f.makeApp("owner-b");
+      expect(
+        (await foreign.inject({ method: "GET", url: root + "/source-usage?revision=1" })).statusCode
+      ).toBe(404);
+      await foreign.close();
+    } finally {
+      await f.close();
+    }
+  });
+  it("previews citation refresh from server-owned versions and rejects stale revision", async () => {
+    const f = await setup();
+    try {
+      const root = f.url.replace("/evidence-audit", "");
+      const edge = f.graph.edges[0]!;
+      const response = await f.app.inject({
+        method: "POST",
+        url: root + "/citation-refresh-preview",
+        payload: { expected_revision: 1, edge: { id: edge.edge_id, version: edge.edge_version } }
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.json()).toMatchObject({
+        written: false,
+        preview: { state: "already_current" }
+      });
+      f.service.edit("owner-a", "project-a", f.graph.graph_id, 1, { kind: "rename", title: "v2" });
+      expect(
+        (
+          await f.app.inject({
+            method: "POST",
+            url: root + "/citation-refresh-preview",
+            payload: {
+              expected_revision: 1,
+              edge: { id: edge.edge_id, version: edge.edge_version }
+            }
+          })
+        ).statusCode
+      ).toBe(409);
+    } finally {
+      await f.close();
+    }
+  });
+  it("refreshes an unchanged literal quote to a reviewed source version with CAS and immutable history", async () => {
+    const f = await setup();
+    try {
+      const graphUrl = f.url.replace("/evidence-audit", "");
+      const source = f.graph.nodes.find((n) => n.kind === "Source")!;
+      const firstClaim = f.graph.nodes.find((n) => n.kind === "Claim")!;
+      let graph = f.service.edit("owner-a", "project-a", f.graph.graph_id, 1, {
+        kind: "add_node",
+        node_kind: "Claim",
+        label: "Вторая позиция",
+        detail: "Позиция для связи"
+      });
+      const secondClaim = graph.nodes.find(
+        (n) => n.node_id !== firstClaim.node_id && n.kind === "Claim"
+      )!;
+      const edgeId = f.graph.edges[0]!.edge_id;
+      graph = f.service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+        kind: "revise_edge",
+        edge_id: edgeId,
+        from: { id: firstClaim.node_id, version: 1 },
+        to: { id: secondClaim.node_id, version: 1 }
+      });
+      graph = f.service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+        kind: "cite_edge",
+        edge_id: edgeId,
+        source: { id: source.node_id, version: 1 },
+        location: "Прежнее место",
+        excerpt: "Точная цитата"
+      });
+      const originalRevision = graph.revision;
+      const original = (
+        await f.app.inject({ method: "GET", url: f.url + `?revision=${originalRevision}` })
+      ).json<unknown>();
+      graph = f.service.edit("owner-a", "project-a", graph.graph_id, graph.revision, {
+        kind: "revise_node",
+        node: { id: source.node_id, version: 1 },
+        label: "Изменённый источник",
+        detail: "Добавленная строка\r\nТочная цитата\r\nНовый контекст"
+      });
+      const latestSource = graph.nodes.find(
+        (n) => n.node_id === source.node_id && n.verification_status === "discovered"
+      )!;
+      const baseRevision = graph.revision;
+      const before = structuredClone(graph);
+      const stale = (
+        await f.app.inject({ method: "GET", url: f.url + `?revision=${baseRevision}` })
+      ).json<{ report: IntelligenceGraphEvidenceAudit }>();
+      expect(stale.report.statistics.with_historical_citations_only).toBe(1);
+      expect(f.service.get("owner-a", "project-a", graph.graph_id)).toEqual(before);
+      const response = await f.app.inject({
+        method: "POST",
+        url: graphUrl + "/edits",
+        payload: {
+          expected_revision: baseRevision,
+          operation: {
+            kind: "cite_edge",
+            edge_id: edgeId,
+            source: { id: latestSource.node_id, version: latestSource.node_version },
+            location: "Новая строка 2",
+            excerpt: "Точная цитата"
+          }
+        }
+      });
+      expect(response.statusCode).toBe(200);
+      const after = f.service.get("owner-a", "project-a", graph.graph_id);
+      expect(after.revision).toBe(baseRevision + 1);
+      const liveEdge = after.edges.find(
+        (e) => e.edge_id === edgeId && e.verification_status === "discovered"
+      )!;
+      expect(liveEdge.evidence_ref).toMatchObject({
+        source_id: source.node_id,
+        source_version: latestSource.node_version,
+        location: "Новая строка 2"
+      });
+      expect(liveEdge.evidence_excerpt).toBe("Точная цитата");
+      expect(
+        after.edges.some(
+          (e) =>
+            e.edge_id === edgeId &&
+            e.verification_status === "superseded" &&
+            e.evidence_ref.source_version === 1
+        )
+      ).toBe(true);
+      const fresh = f.service.auditEvidence("owner-a", "project-a", graph.graph_id, after.revision);
+      expect(fresh.report.statistics).toMatchObject({
+        with_current_citations: 1,
+        with_historical_citations_only: 0
+      });
+      expect(
+        (await f.app.inject({ method: "GET", url: f.url + `?revision=${originalRevision}` })).json()
+      ).toEqual(original);
+      const duplicate = await f.app.inject({
+        method: "POST",
+        url: graphUrl + "/edits",
+        payload: {
+          expected_revision: baseRevision,
+          operation: {
+            kind: "cite_edge",
+            edge_id: edgeId,
+            source: { id: source.node_id, version: latestSource.node_version },
+            location: "Повтор",
+            excerpt: "Точная цитата"
+          }
+        }
+      });
+      expect(duplicate.statusCode).toBe(409);
+      expect(f.service.get("owner-a", "project-a", graph.graph_id)).toEqual(after);
+      expect(f.projects.getMaterials("project-a", "owner-a")!.version).toBe(0);
+    } finally {
+      await f.close();
+    }
+  });
   it("reads the exact saved revision with a reproducible hash and no graph/material writes", async () => {
     const f = await setup();
     try {
