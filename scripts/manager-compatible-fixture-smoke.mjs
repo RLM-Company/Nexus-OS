@@ -36,6 +36,7 @@ writeFileSync(registryPath, JSON.stringify(registry));
 let calls = 0;
 const stages = [];
 let api;
+let startupError = "";
 
 const fixtures = {
   plan: {
@@ -134,20 +135,30 @@ try {
       MANAGER_MAX_OUTPUT_TOKENS: "1200",
       RUNTIME_EMERGENCY_STOP: "false"
     },
-    stdio: "ignore"
+    stdio: ["ignore", "ignore", "pipe"]
+  });
+  api.stderr.on("data", (chunk) => {
+    startupError = (startupError + String(chunk)).slice(-8000);
   });
   const origin = `http://127.0.0.1:${apiPort}`;
   let ready = false;
-  for (let attempt = 0; attempt < 80; attempt++) {
+  const startupDeadline = performance.now() + 30_000;
+  while (api.exitCode === null && performance.now() < startupDeadline) {
     try {
-      ready = (await fetch(origin + "/api/v1/health")).ok;
+      ready = (await fetch(origin + "/api/v1/health", { signal: AbortSignal.timeout(2000) })).ok;
       if (ready) break;
     } catch {
       // The API process is still starting.
     }
     await wait(100);
   }
-  assert(ready, "Production API did not start");
+  let diagnostic = startupError
+    .replaceAll(credential, "[fixture-credential]")
+    .replaceAll(token, "[fixture-session]");
+  for (const [name, value] of Object.entries(process.env))
+    if (/TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY/i.test(name) && value && value.length >= 6)
+      diagnostic = diagnostic.replaceAll(value, "[redacted]");
+  assert(ready, "Production API did not start: " + diagnostic);
   assert.equal((await fetch(origin + "/api/v1/projects")).status, 401);
   const request = async (path, method = "GET", data) => {
     const response = await fetch(origin + path, {

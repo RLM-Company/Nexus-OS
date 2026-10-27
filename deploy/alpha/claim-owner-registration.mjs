@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 // One-time offline migration of the existing owner's password into the new account table.
 // Run only after 0036 has been applied, with API/edge stopped and a verified database backup.
@@ -9,12 +9,14 @@ const ownerId = process.env.KOSMORA_CLAIM_OWNER_ID;
 const email = process.env.KOSMORA_CLAIM_EMAIL?.trim().toLowerCase();
 const passwordFile = process.env.KOSMORA_CLAIM_PASSWORD_HASH_FILE;
 if (
-  !dbPath?.startsWith("/") ||
+  !dbPath ||
+  !isAbsolute(dbPath) ||
   !ownerId ||
   !email ||
   email.length > 254 ||
   !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email) ||
-  !passwordFile?.startsWith("/")
+  !passwordFile ||
+  !isAbsolute(passwordFile)
 ) {
   throw Error("Set absolute database/hash-file paths, existing owner ID and a valid email");
 }
