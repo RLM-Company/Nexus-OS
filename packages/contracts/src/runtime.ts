@@ -94,6 +94,7 @@ export type EmergencyStopClearanceListResponse = Static<
 const GatewayFailureCountersSchema = Type.Object(
   {
     ROUTE_UNAVAILABLE: Type.Integer({ minimum: 0 }),
+    CONTEXT_TOO_LARGE: Type.Integer({ minimum: 0 }),
     PROVIDER_TIMEOUT: Type.Integer({ minimum: 0 }),
     PROVIDER_ERROR: Type.Integer({ minimum: 0 }),
     CIRCUIT_OPEN: Type.Integer({ minimum: 0 }),

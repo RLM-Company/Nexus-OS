@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
-import type { Currency } from "@cosmora/contracts";
+import {
+  sameChatAttachments,
+  isValidChatAttachments,
+  attachmentContextSize,
+  type ChatAttachment,
+  type ChatTextAttachment,
+  type Currency
+} from "@cosmora/contracts";
 
 export const LOCAL_OWNER_ID = "local-owner";
 
@@ -8,6 +15,11 @@ export class IdempotencyConflictError extends Error {
   constructor() {
     super("Idempotency key was already used for another request");
     this.name = "IdempotencyConflictError";
+  }
+}
+export class ProjectMaterialsFencedError extends Error {
+  constructor() {
+    super("PROJECT_MATERIALS_OWNER_FENCED");
   }
 }
 
@@ -39,6 +51,14 @@ export interface StoredProject {
   updated_at: string;
 }
 
+export interface ProjectMaterials {
+  project_id: string;
+  version: number;
+  instructions: string;
+  attachments: ChatTextAttachment[];
+  updated_at: string;
+}
+
 export interface StoredMessage {
   id: string;
   project_id: string;
@@ -46,6 +66,7 @@ export interface StoredMessage {
   role: "user" | "assistant" | "system_event";
   content_type: "text";
   content: string;
+  attachments?: ChatAttachment[];
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
   reply_to_message_id: string | null;
   run_id: string | null;
@@ -110,7 +131,12 @@ export interface AcceptedMessage {
 type SqlRow = Record<string, unknown>;
 
 const asProject = (row: SqlRow): StoredProject => row as unknown as StoredProject;
-const asMessage = (row: SqlRow): StoredMessage => row as unknown as StoredMessage;
+const asMessage = (row: SqlRow): StoredMessage => {
+  const { attachments_json, ...message } = row;
+  const attachments =
+    typeof attachments_json === "string" ? (JSON.parse(attachments_json) as ChatAttachment[]) : [];
+  return { ...message, ...(attachments.length ? { attachments } : {}) } as unknown as StoredMessage;
+};
 const asRun = (row: SqlRow): StoredRun => row as unknown as StoredRun;
 const asModelUsage = (row: SqlRow): StoredModelUsage => row as unknown as StoredModelUsage;
 const now = (): string => new Date().toISOString();
@@ -161,6 +187,17 @@ export class ProjectStore {
     return row ? asProject(row) : null;
   }
 
+  renameProject(projectId: string, ownerId: string, title: string): StoredProject | null {
+    const normalized = title.trim();
+    if (!normalized || normalized.length > 160) throw new Error("Invalid project title");
+    const current = this.getProject(projectId, ownerId);
+    if (!current || current.title === normalized) return current;
+    this.#sqlite
+      .prepare("UPDATE projects SET title = ?, updated_at = ? WHERE id = ? AND owner_id = ?")
+      .run(normalized, now(), projectId, ownerId);
+    return this.getProject(projectId, ownerId);
+  }
+
   getMainChatId(projectId: string, ownerId = LOCAL_OWNER_ID): string | null {
     const row = this.#get(
       this.#sqlite.prepare(
@@ -174,27 +211,150 @@ export class ProjectStore {
     return typeof row?.id === "string" ? row.id : null;
   }
 
+  getMaterials(projectId: string, ownerId = LOCAL_OWNER_ID): ProjectMaterials | null {
+    const project = this.getProject(projectId, ownerId);
+    if (!project) return null;
+    const row = this.#sqlite
+      .prepare(
+        "SELECT version, instructions, attachments_json, updated_at FROM project_materials WHERE project_id = ?"
+      )
+      .get(projectId);
+    return row
+      ? {
+          project_id: projectId,
+          version: Number(row.version),
+          instructions: String(row.instructions),
+          attachments: JSON.parse(String(row.attachments_json)) as ChatTextAttachment[],
+          updated_at: String(row.updated_at)
+        }
+      : {
+          project_id: projectId,
+          version: 0,
+          instructions: "",
+          attachments: [],
+          updated_at: project.created_at
+        };
+  }
+
+  setMaterials(
+    projectId: string,
+    ownerId: string,
+    input: { version: number; instructions: string; attachments: ChatTextAttachment[] }
+  ): ProjectMaterials | null {
+    if (
+      input.instructions.length > 4000 ||
+      !isValidChatAttachments(input.attachments) ||
+      input.attachments.some((file) => !("content" in file)) ||
+      new TextEncoder().encode(input.instructions).length +
+        input.attachments.reduce((sum, file) => sum + attachmentContextSize(file), 0) >
+        24000
+    )
+      throw new Error("Invalid project materials");
+    this.#sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const lifecycle = this.#sqlite
+        .prepare("SELECT state FROM kosmora_owner_data_lifecycle WHERE owner_id=?")
+        .get(ownerId) as { state: string } | undefined;
+      if (lifecycle && lifecycle.state !== "active") throw new ProjectMaterialsFencedError();
+      const current = this.getMaterials(projectId, ownerId);
+      if (!current) {
+        this.#sqlite.exec("ROLLBACK");
+        return null;
+      }
+      if (current.version !== input.version) throw new IdempotencyConflictError();
+      this.#sqlite
+        .prepare(
+          "INSERT INTO project_materials (project_id, version, instructions, attachments_json, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(project_id) DO UPDATE SET version = excluded.version, instructions = excluded.instructions, attachments_json = excluded.attachments_json, updated_at = excluded.updated_at"
+        )
+        .run(
+          projectId,
+          current.version + 1,
+          input.instructions,
+          JSON.stringify(input.attachments),
+          now()
+        );
+      this.#sqlite.exec("COMMIT");
+      return this.getMaterials(projectId, ownerId);
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  getMaterialsForRun(runId: string, ownerId = LOCAL_OWNER_ID): ProjectMaterials | null {
+    if (!this.getRun(runId, ownerId)) return null;
+    const row = this.#sqlite
+      .prepare("SELECT project_materials_json FROM runs WHERE id = ?")
+      .get(runId);
+    const materials = JSON.parse(
+      String(row?.project_materials_json ?? "{}")
+    ) as Partial<ProjectMaterials>;
+    return materials.project_id ? (materials as ProjectMaterials) : null;
+  }
+
   listMessages(projectId: string, ownerId = LOCAL_OWNER_ID): StoredMessage[] {
     return this.#sqlite
       .prepare(
-        `SELECT m.id, m.project_id, m.chat_id, m.role, m.content_type, m.content, m.status,
+        `SELECT m.id, m.project_id, m.chat_id, m.role, m.content_type, m.content, m.attachments_json, m.status,
           m.reply_to_message_id, m.run_id, m.error_code, m.created_at, m.updated_at
          FROM messages m
          JOIN projects p ON p.id = m.project_id
          WHERE m.project_id = ? AND p.owner_id = ?
          ORDER BY m.created_at ASC, m.rowid ASC`
       )
-      .all(projectId, ownerId) as unknown as StoredMessage[];
+      .all(projectId, ownerId)
+      .map(asMessage);
+  }
+
+  createEmptyProject(
+    projectId: string,
+    title: string,
+    ownerId = LOCAL_OWNER_ID,
+    initialStatus: "DRAFT" | "ACTIVE" = "DRAFT"
+  ): StoredProject {
+    const normalized = title.trim();
+    if (!normalized || normalized.length > 160) throw new Error("Invalid project title");
+    this.#sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const existing = this.#sqlite
+        .prepare("SELECT owner_id,title FROM projects WHERE id=?")
+        .get(projectId) as { owner_id: string; title: string } | undefined;
+      if (existing) {
+        if (existing.owner_id !== ownerId || existing.title !== normalized)
+          throw new IdempotencyConflictError();
+      } else {
+        const timestamp = now();
+        this.#sqlite
+          .prepare(
+            "INSERT INTO projects (id,owner_id,title,status,created_at,updated_at) VALUES (?,?,?,?,?,?)"
+          )
+          .run(projectId, ownerId, normalized, initialStatus, timestamp, timestamp);
+        this.#sqlite
+          .prepare("INSERT INTO chats (id,project_id,kind,created_at) VALUES (?,?,'main',?)")
+          .run(randomUUID(), projectId, timestamp);
+      }
+      const project = this.getProject(projectId, ownerId)!;
+      this.#sqlite.exec("COMMIT");
+      return project;
+    } catch (cause) {
+      this.#sqlite.exec("ROLLBACK");
+      throw cause;
+    }
   }
 
   createProject(
     initialMessage: string,
     clientMessageId: string,
-    ownerId = LOCAL_OWNER_ID
+    ownerId = LOCAL_OWNER_ID,
+    attachments: ChatAttachment[] = []
   ): AcceptedMessage {
     const existing = this.findByClientMessageId(clientMessageId, ownerId);
     if (existing) {
-      if (existing.userMessage.content !== initialMessage) throw new IdempotencyConflictError();
+      if (
+        existing.userMessage.content !== initialMessage ||
+        !sameChatAttachments(existing.userMessage.attachments ?? [], attachments)
+      )
+        throw new IdempotencyConflictError();
       return { ...existing, duplicate: true };
     }
 
@@ -218,7 +378,8 @@ export class ProjectStore {
         initialMessage,
         clientMessageId,
         timestamp,
-        ownerId
+        ownerId,
+        attachments
       );
       this.#sqlite.exec("COMMIT;");
       return { ...accepted, duplicate: false };
@@ -232,13 +393,18 @@ export class ProjectStore {
     projectId: string,
     content: string,
     clientMessageId: string,
-    ownerId = LOCAL_OWNER_ID
+    ownerId = LOCAL_OWNER_ID,
+    attachments: ChatAttachment[] = []
   ): AcceptedMessage | null {
     const project = this.getProject(projectId, ownerId);
     if (!project) return null;
     const existing = this.findByClientMessageId(clientMessageId, ownerId);
     if (existing) {
-      if (existing.project.id !== projectId || existing.userMessage.content !== content) {
+      if (
+        existing.project.id !== projectId ||
+        existing.userMessage.content !== content ||
+        !sameChatAttachments(existing.userMessage.attachments ?? [], attachments)
+      ) {
         throw new IdempotencyConflictError();
       }
       return { ...existing, duplicate: true };
@@ -250,19 +416,31 @@ export class ProjectStore {
 
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
+      // Accepting the first task activates a prepared project in the same commit
+      // as its message/run. A rejected insert must leave the draft untouched.
+      this.#sqlite
+        .prepare(
+          "UPDATE projects SET status = 'ACTIVE' WHERE id = ? AND owner_id = ? AND status = 'DRAFT'"
+        )
+        .run(projectId, ownerId);
       const accepted = this.#insertMessage(
         projectId,
         chatId,
         content,
         clientMessageId,
         timestamp,
-        ownerId
+        ownerId,
+        attachments
       );
       this.#sqlite
         .prepare("UPDATE projects SET updated_at = ? WHERE id = ?")
         .run(timestamp, projectId);
       this.#sqlite.exec("COMMIT;");
-      return { ...accepted, project: { ...project, updated_at: timestamp }, duplicate: false };
+      return {
+        ...accepted,
+        project: { ...accepted.project, updated_at: timestamp },
+        duplicate: false
+      };
     } catch (error) {
       this.#sqlite.exec("ROLLBACK;");
       throw error;
@@ -275,22 +453,40 @@ export class ProjectStore {
     content: string,
     clientMessageId: string,
     timestamp: string,
-    ownerId: string
+    ownerId: string,
+    attachments: ChatAttachment[]
   ): Omit<AcceptedMessage, "duplicate"> {
     const userMessageId = randomUUID();
     const runId = randomUUID();
     this.#sqlite
       .prepare(
-        "INSERT INTO runs (id, project_id, chat_id, status, created_at, updated_at) VALUES (?, ?, ?, 'queued', ?, ?)"
+        "INSERT INTO runs (id, project_id, chat_id, status, project_materials_json, created_at, updated_at) VALUES (?, ?, ?, 'queued', ?, ?, ?)"
       )
-      .run(runId, projectId, chatId, timestamp, timestamp);
+      .run(
+        runId,
+        projectId,
+        chatId,
+        JSON.stringify(this.getMaterials(projectId, ownerId)),
+        timestamp,
+        timestamp
+      );
     this.#sqlite
       .prepare(
         `INSERT INTO messages
-          (id, project_id, chat_id, role, content_type, content, status, client_message_id, run_id, created_at, updated_at)
-         VALUES (?, ?, ?, 'user', 'text', ?, 'completed', ?, ?, ?, ?)`
+          (id, project_id, chat_id, role, content_type, content, attachments_json, status, client_message_id, run_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'user', 'text', ?, ?, 'completed', ?, ?, ?, ?)`
       )
-      .run(userMessageId, projectId, chatId, content, clientMessageId, runId, timestamp, timestamp);
+      .run(
+        userMessageId,
+        projectId,
+        chatId,
+        content,
+        JSON.stringify(attachments),
+        clientMessageId,
+        runId,
+        timestamp,
+        timestamp
+      );
 
     const project = this.getProject(projectId, ownerId);
     if (!project) throw new Error(`Project ${projectId} disappeared during message creation`);
@@ -300,7 +496,7 @@ export class ProjectStore {
       userMessage: asMessage(
         this.#get(
           this.#sqlite.prepare(
-            `SELECT id, project_id, chat_id, role, content_type, content, status,
+            `SELECT id, project_id, chat_id, role, content_type, content, attachments_json, status,
               reply_to_message_id, run_id, error_code, created_at, updated_at
              FROM messages WHERE id = ?`
           ),
@@ -326,7 +522,7 @@ export class ProjectStore {
   ): Omit<AcceptedMessage, "duplicate"> | null {
     const messageRow = this.#get(
       this.#sqlite.prepare(
-        `SELECT m.id, m.project_id, m.chat_id, m.role, m.content_type, m.content, m.status,
+        `SELECT m.id, m.project_id, m.chat_id, m.role, m.content_type, m.content, m.attachments_json, m.status,
           m.reply_to_message_id, m.run_id, m.error_code, m.created_at, m.updated_at
          FROM messages m
          JOIN projects p ON p.id = m.project_id
@@ -565,7 +761,7 @@ export class ProjectStore {
     if (!run) return [];
     return this.#sqlite
       .prepare(
-        `SELECT id, project_id, chat_id, role, content_type, content, status,
+        `SELECT id, project_id, chat_id, role, content_type, content, attachments_json, status,
           reply_to_message_id, run_id, error_code, created_at, updated_at
          FROM messages
          WHERE project_id = ?
@@ -574,14 +770,15 @@ export class ProjectStore {
            )
          ORDER BY rowid ASC`
       )
-      .all(run.project_id, runId) as unknown as StoredMessage[];
+      .all(run.project_id, runId)
+      .map(asMessage);
   }
 
   getAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredMessage | null {
     if (!this.getRun(runId, ownerId)) return null;
     const row = this.#get(
       this.#sqlite.prepare(
-        `SELECT id, project_id, chat_id, role, content_type, content, status,
+        `SELECT id, project_id, chat_id, role, content_type, content, attachments_json, status,
           reply_to_message_id, run_id, error_code, created_at, updated_at
          FROM messages WHERE run_id = ? AND role = 'assistant'`
       ),
@@ -611,7 +808,7 @@ export class ProjectStore {
     return asMessage(
       this.#get(
         this.#sqlite.prepare(
-          `SELECT id, project_id, chat_id, role, content_type, content, status,
+          `SELECT id, project_id, chat_id, role, content_type, content, attachments_json, status,
             reply_to_message_id, run_id, error_code, created_at, updated_at
            FROM messages WHERE id = ?`
         ),

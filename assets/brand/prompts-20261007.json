@@ -1,0 +1,14 @@
+{
+  "mode": "built-in image_gen",
+  "reference": "Helmet alternative 1, 2026-10-07",
+  "variants": [
+    {
+      "id": "kosmora-lockup",
+      "prompt": "Use case: precise-object-edit / logo-brand. Input image is the selected edit target. It shows an astronaut helmet with a white dome outlined in black, a large black side-facing visor, circular side fitting, small collar and a diagonal elliptical orbital ring. Preserve this exact mark, viewpoint, geometry and proportions as closely as possible. The helmet dome and small collar highlights must be opaque WHITE, the visor, outline and orbit must be BLACK. Background outside the logo must be genuinely transparent. Flat crisp vector-like artwork, no gradients, glow, shadows, textures, extra ornaments or watermarks. Change only the wordmark from COSMORA to \"KOSMORA\" (K O S M O R A), keeping the same bold geometric sans serif, spacing and placement below the symbol. ONE complete centered logo on a square canvas. Keep generous margins. No extra text."
+    },
+    {
+      "id": "kosmora-symbol",
+      "prompt": "Use case: precise-object-edit / logo-brand. Input image is the selected edit target. It shows an astronaut helmet with a white dome outlined in black, a large black side-facing visor, circular side fitting, small collar and a diagonal elliptical orbital ring. Preserve this exact mark, viewpoint, geometry and proportions as closely as possible. The helmet dome and small collar highlights must be opaque WHITE, the visor, outline and orbit must be BLACK. Background outside the logo must be genuinely transparent. Flat crisp vector-like artwork, no gradients, glow, shadows, textures, extra ornaments or watermarks. Remove the wordmark entirely and produce ONLY this selected helmet-and-orbit symbol as an app-ready cutout. No letters or text. Center the complete symbol prominently on a square canvas with approximately 12 percent clear margin on every side. Keep the same left-facing visor and slanted orbit from the reference. All white helmet areas must have opaque white fill; do not make the helmet see-through."
+    }
+  ]
+}

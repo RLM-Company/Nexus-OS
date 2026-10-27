@@ -1,3 +1,5 @@
+import type { ProjectMemorySnapshot, WorkRuntimeProgress } from "./work-runtime.js";
+import type { ChatTextAttachment } from "./chat-attachments.js";
 import { Type, type Static } from "typebox";
 import { EntityIdSchema } from "./primitives.js";
 
@@ -6,6 +8,31 @@ export const CreateManagerWorkSchema = Type.Object(
     client_request_id: EntityIdSchema,
     goal: Type.String({ minLength: 1, maxLength: 8000, pattern: "\\S" }),
     worker_role: Type.Union([Type.Literal("analyst"), Type.Literal("architect")]),
+    require_critic: Type.Optional(Type.Boolean()),
+    output_contract: Type.Optional(
+      Type.Union([
+        Type.Object(
+          {
+            kind: Type.Literal("presentation"),
+            slide_count: Type.Integer({ minimum: 3, maximum: 8 })
+          },
+          { additionalProperties: false }
+        ),
+        Type.Object({ kind: Type.Literal("website") }, { additionalProperties: false }),
+        Type.Object({ kind: Type.Literal("game_project") }, { additionalProperties: false }),
+        Type.Object(
+          {
+            kind: Type.Literal("game"),
+            genre: Type.Union([
+              Type.Literal("arcade"),
+              Type.Literal("memory"),
+              Type.Literal("quiz")
+            ])
+          },
+          { additionalProperties: false }
+        )
+      ])
+    ),
     max_model_requests: Type.Integer({ minimum: 2, maximum: 3 }),
     max_input_tokens: Type.Integer({ minimum: 1000, maximum: 32000 }),
     max_output_tokens: Type.Integer({ minimum: 256, maximum: 8000 })
@@ -26,8 +53,8 @@ export const ManagerWorkPlanSchema = Type.Object(
 );
 export type ManagerWorkPlan = Static<typeof ManagerWorkPlanSchema>;
 
-// Files are inert downloadable artifacts. No shell, arbitrary paths, executable
-// preview, deployment or host filesystem access is part of this first executor.
+// Server stores files as inert downloadable artifacts. Browser game execution is
+// a separate sandboxed Worker path; no shell or host filesystem access is granted here.
 export const ManagerWorkFilesSchema = Type.Object(
   {
     files: Type.Array(
@@ -74,6 +101,16 @@ export interface ManagerWork {
   owner_id: string;
   actor_id: string;
   request: CreateManagerWork;
+  materials?: {
+    instructions: string;
+    attachments: ChatTextAttachment[];
+  };
+  memory_snapshot?: ProjectMemorySnapshot;
+  graph_context?: ProjectMemorySnapshot;
+  task_graph?: WorkRuntimeProgress;
+  result_sources?: { run_id: string; provider: string; model: string; stage: ManagerWorkStage }[];
+  dag_binding?: { graph_id: string; node_id: string; attempt: number; bound: boolean };
+  owner_budget_hold_id?: string | null;
   status: ManagerWorkStatus;
   stage: ManagerWorkStage;
   version: number;

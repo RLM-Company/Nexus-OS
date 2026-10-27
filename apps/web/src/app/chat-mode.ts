@@ -60,7 +60,7 @@ export const chooseGreeting = ({
   let winningRace = Number.POSITIVE_INFINITY;
 
   GREETINGS.forEach((greeting, index) => {
-    const timeFit = greeting.period === "all" ? 1 : greeting.period === currentPeriod ? 1.9 : 0.28;
+    const timeFit = greeting.period === "all" ? 1 : greeting.period === currentPeriod ? 1.9 : 0;
     const novelty = greeting.text === previous ? 0 : 1;
     const weight = greeting.baseWeight * timeFit * novelty;
     const race = -Math.log(seededUnit(seed, index)) / weight;

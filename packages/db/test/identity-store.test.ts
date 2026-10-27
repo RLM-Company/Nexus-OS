@@ -98,7 +98,7 @@ describe("IdentityStore", () => {
       const store = new IdentityStore(database.sqlite, {
         now: () => Date.parse("2026-08-27T12:00:00.000Z")
       });
-      store.registerActor("owner-1", "shared-actor-id", "owner");
+      store.registerActor("owner-1", "shared-actor-id", "agent");
       expect(() => store.registerActor("owner-2", "shared-actor-id", "owner")).toThrow(
         IdentityStoreConflictError
       );

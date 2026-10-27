@@ -1,0 +1,508 @@
+/* Only the owner's explicit composer/sidebar corrections of 18 October 2026. */
+/* Targeted owner follow-up, 25 October: compact message actions and full collapse. */
+.product-shell .message.assistant {
+  grid-template-columns: minmax(0, 1fr);
+}
+.product-shell .message .response-actions,
+.product-shell .message [class*="userActions"] {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 3px;
+  margin-top: 10px;
+  min-height: 32px;
+}
+.product-shell .message .message-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  margin: 0;
+  padding: 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: none;
+  line-height: 1;
+}
+.product-shell .message .message-action > svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.product-shell .message .message-action:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.product-shell .message .message-action:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.product-shell .message .message-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.chat-canvas-action {
+  position: relative;
+  display: inline-flex;
+}
+.chat-generated-image {
+  position: relative;
+  display: inline-block;
+  width: min(100%, 560px);
+  margin: 10px 0;
+}
+.chat-generated-image > img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+}
+.chat-generated-image > a {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: #111;
+  background: #fffffff2;
+}
+.chat-generated-image > a > svg {
+  width: 18px;
+  height: 18px;
+}
+.chat-generated-image > a:last-child {
+  right: 54px;
+}
+.product-shell .sidebar > details:first-of-type {
+  max-width: calc(100% - 34px);
+}
+.chat-canvas-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  display: grid;
+  gap: 12px;
+  width: min(300px, 75vw);
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 12px 36px #00000014;
+}
+.chat-canvas-menu label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.chat-canvas-menu select {
+  width: 100%;
+}
+.product-shell .composer .chat-attachment-picker .attachment-clip {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 7px;
+}
+.product-shell .composer .chat-attachment-picker .attachment-clip > svg {
+  width: 18px;
+  height: 18px;
+}
+.model-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.model-controls [data-model-picker] summary > svg {
+  width: 13px;
+  height: 13px;
+  transform: rotate(90deg);
+}
+.product-shell .turbo-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.product-shell .turbo-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+.product-shell .turbo-toggle[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--bg);
+}
+.product-shell .turbo-toggle[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+.product-shell .response-followups {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.product-shell .response-followups button {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.product-shell .response-followups button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.sidebar-collapse-toggle {
+  position: fixed;
+  z-index: 60;
+  top: 18px;
+  left: calc(var(--sidebar-width) - 40px);
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 0;
+  border-radius: 8px;
+}
+.sidebar-collapse-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+.product-shell[data-sidebar-collapsed] .sidebar {
+  transform: translateX(-100%);
+  visibility: hidden;
+  pointer-events: none;
+}
+.product-shell[data-sidebar-collapsed] .workspace {
+  margin-left: 0;
+  width: 100%;
+}
+.product-shell[data-sidebar-collapsed] .sidebar-collapse-toggle {
+  left: 14px;
+}
+.product-shell[data-sidebar-collapsed] .workspace > header {
+  padding-left: 58px;
+}
+@media (max-width: 860px) {
+  .sidebar-collapse-toggle {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .product-shell .message .message-action {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+  }
+}
+@media (min-width: 861px) {
+  .product-shell .sidebar {
+    width: var(--sidebar-width, 244px);
+  }
+  .product-shell .workspace {
+    margin-left: var(--sidebar-width, 244px);
+    width: calc(100% - var(--sidebar-width, 244px));
+  }
+}
+.product-shell .brand-mark {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.product-shell .brand-mark svg {
+  width: 28px;
+  height: 28px;
+}
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  z-index: 85;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after,
+.sidebar-resizer[data-resizing]::after {
+  background: var(--line-strong);
+}
+.chat-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.chat-mode-switch button {
+  padding: 7px 22px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 7px;
+  font-size: 14px;
+  line-height: 1.4;
+  background: transparent;
+  color: var(--muted);
+}
+.chat-mode-switch button[aria-pressed="true"] {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 3px #0001;
+}
+@media (max-width: 600px) {
+  .chat-mode-switch {
+    margin: 0;
+  }
+  .chat-mode-switch button {
+    padding: 6px 16px;
+  }
+}
+.product-shell .topbar.has-mode-switch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+.product-shell .topbar.has-mode-switch > div:first-child {
+  min-width: 0;
+}
+.product-shell .topbar.has-mode-switch .topbar-actions {
+  justify-self: end;
+}
+.product-shell .sidebar .sidebar-create-project {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--sidebar-label-size);
+  text-align: left;
+}
+.sidebar-create-project svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+.sidebar-create-project > span:last-child {
+  margin-left: auto;
+  font-size: 18px;
+  color: var(--muted);
+}
+.product-shell .sidebar .sidebar-create-project:hover {
+  background: var(--surface);
+}
+@media (max-width: 600px) {
+  .product-shell .topbar.has-mode-switch {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .product-shell .topbar.has-mode-switch .chat-mode-switch {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: center;
+  }
+  .product-shell .topbar.has-mode-switch .topbar-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+.product-shell {
+  --sidebar-icon-size: 18px;
+  --sidebar-heading-size: 12px;
+  --sidebar-label-size: 13px;
+  --sidebar-caption-size: 11px;
+}
+.product-shell .sidebar :is(.sidebar-tool, .projects-heading, .new-project, .account-trigger) > svg,
+.product-shell .sidebar .new-project > span > svg,
+.product-shell .sidebar .coscode-space-tools svg {
+  width: var(--sidebar-icon-size);
+  height: var(--sidebar-icon-size);
+  flex-shrink: 0;
+}
+.product-shell .sidebar .projects-heading {
+  font-size: var(--sidebar-heading-size);
+  font-weight: 550;
+}
+.product-shell .sidebar :is(.sidebar-tool, .new-project, .project-item strong) {
+  font-size: var(--sidebar-label-size);
+}
+.product-shell .sidebar .project-item strong {
+  font-weight: 450;
+}
+.product-shell .sidebar .project-item small {
+  font-size: var(--sidebar-caption-size);
+}
+.product-shell .sidebar .projects-heading small {
+  font-size: var(--sidebar-caption-size);
+}
+.product-shell .sidebar .navigation-search input {
+  font-size: var(--sidebar-label-size);
+}
+.product-shell .sidebar .navigation-pin svg {
+  width: var(--sidebar-icon-size);
+  height: var(--sidebar-icon-size);
+}
+.product-shell .sidebar .pinnable-navigation-item:has(details[open]) {
+  z-index: 75;
+}
+.product-shell .sidebar .pinnable-navigation-item {
+  position: relative;
+}
+.coscode-space-tools {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.coscode-space-tools a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: var(--sidebar-label-size);
+  border-radius: 8px;
+}
+.coscode-space-tools a:hover {
+  background: var(--surface);
+}
+.product-shell .chat-search-trigger {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.product-shell .chat-search-trigger:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.chat-search-trigger svg {
+  width: 18px;
+  height: 18px;
+}
+.product-shell .composer {
+  padding: 15px 14px 11px;
+  border-radius: 22px;
+}
+.product-shell .composer textarea {
+  min-height: 62px;
+  font-size: 15px;
+  line-height: 1.55;
+  padding: 2px 4px 8px;
+}
+.product-shell .composer-controls {
+  align-items: center;
+  gap: 8px;
+}
+.product-shell .composer-tools {
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 5px;
+}
+.product-shell .composer-footer {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+.product-shell .chat-attachment-picker .attachment-clip {
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+}
+.product-shell .chat-attachment-picker .attachment-clip svg {
+  width: 20px;
+  height: 20px;
+}
+.product-shell .composer-send-control > button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+.product-shell .composer-send-control > button > svg {
+  width: 20px;
+  height: 20px;
+}
+@media (max-width: 600px) {
+  .product-shell .composer-tools [data-model-picker] > div {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    width: auto;
+    max-height: min(440px, 65dvh);
+  }
+  .product-shell .composer {
+    padding: 12px 10px 9px;
+  }
+  .product-shell .composer textarea {
+    min-height: 56px;
+  }
+  .product-shell .composer-send-control > button {
+    width: 40px;
+    height: 40px;
+  }
+  .product-shell .chat-attachment-picker .attachment-clip {
+    width: 38px;
+    height: 38px;
+  }
+  .product-shell .composer-tools [data-model-picker] summary {
+    max-width: min(160px, 39vw);
+    padding: 5px 4px;
+  }
+}

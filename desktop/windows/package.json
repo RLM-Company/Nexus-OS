@@ -1,0 +1,80 @@
+{
+  "name": "cosmora-windows-desktop",
+  "version": "0.11.2",
+  "private": true,
+  "description": "Thin Windows desktop client for the hosted Kosmora workspace",
+  "main": "main.cjs",
+  "author": "RLM-Company",
+  "license": "UNLICENSED",
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check downloads-preload.cjs && node --check download-history.cjs && node --check download-center.cjs && node --check downloads.js && node --check connection-policy.cjs && node --check smoke-mode.cjs && node --check connection.js && node --check desktop-state.cjs && node --check desktop-recovery.cjs && node --check draft-store.cjs && node --check draft-session-gate.cjs && node --check owner-session.cjs && node --check update-policy.cjs && node --check update-service.cjs && node --check ci/create-signed-update.cjs && node --test test/*.test.cjs",
+    "pack:win": "electron-builder --win nsis --x64 --publish never",
+    "verify:unsigned": "node ci/verify-unsigned-policy.cjs",
+    "pack:unsigned:win": "powershell -NoProfile -File ci/build-unsigned.ps1"
+  },
+  "build": {
+    "appId": "com.cosmora.desktop",
+    "productName": "Kosmora",
+    "electronVersion": "44.5.1",
+    "asar": true,
+    "protocols": [
+      {
+        "name": "Kosmora deep links",
+        "schemes": [
+          "kosmora"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "download-history.cjs",
+      "download-center.cjs",
+      "downloads-preload.cjs",
+      "downloads.html",
+      "downloads.css",
+      "downloads.js",
+      "preload.cjs",
+      "connection-policy.cjs",
+      "smoke-mode.cjs",
+      "desktop-state.cjs",
+      "desktop-recovery.cjs",
+      "draft-store.cjs",
+      "draft-session-gate.cjs",
+      "owner-session.cjs",
+      "update-policy.cjs",
+      "update-service.cjs",
+      "update-trust.json",
+      "connection.html",
+      "connection.js",
+      "connection.css",
+      "build/icon.ico",
+      "build/icon.svg"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Kosmora-Setup-${version}-${arch}.${ext}",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kosmora",
+      "uninstallDisplayName": "Kosmora",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

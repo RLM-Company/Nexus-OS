@@ -28,5 +28,5 @@ test("recovers from malformed persisted sidebar section state", async ({ page })
   );
   await expect
     .poll(async () => page.evaluate(() => window.localStorage.getItem("cosmora:sidebar-sections")))
-    .toBe('{"chats":true,"projects":true}');
+    .toBe('{"chats":true,"projects":true,"studio":false}');
 });

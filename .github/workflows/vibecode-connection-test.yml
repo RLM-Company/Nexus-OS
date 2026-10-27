@@ -1,12 +1,19 @@
-name: VibeCode connection test
+name: Model provider connection check
 
 on:
   workflow_dispatch:
+    inputs:
+      live_trial:
+        description: Send one generation request (8 output tokens); requires execution stop cleared
+        type: boolean
+        required: false
+        default: false
   push:
     branches:
       - feat/b0-2-model-registry-router
     paths:
       - .github/workflows/vibecode-connection-test.yml
+      - scripts/provider-connection-check.mjs
 
 permissions:
   contents: read
@@ -17,106 +24,24 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify VibeCode API
+    name: Check provider access and model catalog
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       MODEL_PROVIDER: ${{ vars.MODEL_PROVIDER }}
+      MODEL_PROVIDER_ID: ${{ vars.MODEL_PROVIDER_ID }}
       MODEL_BASE_URL: ${{ vars.MODEL_BASE_URL }}
       MODEL_NAME: ${{ vars.MODEL_NAME }}
       MODEL_FALLBACK_TO_MOCK: ${{ vars.MODEL_FALLBACK_TO_MOCK }}
-      MANAGER_TIMEOUT_MS: ${{ vars.MANAGER_TIMEOUT_MS }}
-      MANAGER_MAX_OUTPUT_TOKENS: ${{ vars.MANAGER_MAX_OUTPUT_TOKENS }}
+      MODEL_MAX_ATTEMPTS_PER_ROUTE: ${{ vars.MODEL_MAX_ATTEMPTS_PER_ROUTE }}
+      RUNTIME_EMERGENCY_STOP: ${{ vars.RUNTIME_EMERGENCY_STOP }}
       MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+      COSMORA_ALLOW_PAID_CONNECTION_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.live_trial == true && 'SEND_ONE_BOUNDED_REQUEST' || '' }}
 
     steps:
-      - name: Validate configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          missing=0
-          for name in MODEL_PROVIDER MODEL_BASE_URL MODEL_NAME MODEL_API_KEY; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "::error::${name} is not configured"
-              missing=1
-            fi
-          done
-          [[ "${missing}" -eq 0 ]]
-          case "${MODEL_PROVIDER}" in
-            openai-compatible | anthropic-compatible) ;;
-            *)
-              echo "::error::MODEL_PROVIDER must be openai-compatible or anthropic-compatible"
-              exit 1
-              ;;
-          esac
-
-      - name: Verify streaming model response
-        shell: bash
-        run: |
-          set -euo pipefail
-          response_file="$(mktemp)"
-          trap 'rm -f "${response_file}"' EXIT
-
-          if [[ "${MODEL_PROVIDER}" == "anthropic-compatible" ]]; then
-            endpoint="${MODEL_BASE_URL%/}/messages"
-            payload="$(jq -nc --arg model "${MODEL_NAME}" '{
-              model: $model,
-              messages: [{role: "user", content: "Reply with exactly OK."}],
-              max_tokens: 8,
-              stream: true
-            }')"
-            headers=(
-              --header "x-api-key: ${MODEL_API_KEY}"
-              --header "anthropic-version: 2023-06-01"
-              --header "Content-Type: application/json"
-            )
-          else
-            endpoint="${MODEL_BASE_URL%/}/chat/completions"
-            payload="$(jq -nc --arg model "${MODEL_NAME}" '{
-              model: $model,
-              messages: [{role: "user", content: "Reply with exactly OK."}],
-              max_tokens: 8,
-              stream: true
-            }')"
-            headers=(
-              --header "Authorization: Bearer ${MODEL_API_KEY}"
-              --header "Content-Type: application/json"
-            )
-          fi
-
-          status="$(curl --silent --show-error \
-            --max-time 45 \
-            --output "${response_file}" \
-            --write-out "%{http_code}" \
-            --request POST "${endpoint}" \
-            "${headers[@]}" \
-            --data "${payload}")"
-
-          if [[ "${status}" != "200" ]]; then
-            detail="$(jq -r '.error.message // .message // "No structured error message returned"' "${response_file}" 2>/dev/null || printf '%s' 'Unreadable error response')"
-            detail="$(printf '%s' "${detail}" | tr '\n\r' '  ' | sed -E 's/vk-[[:alnum:]_.-]+/[REDACTED]/g' | cut -c1-500)"
-            echo "::error::VibeCode returned HTTP ${status}: ${detail}"
-            exit 1
-          fi
-
-          grep -q '^data:' "${response_file}" || {
-            echo "::error::Response is not an SSE stream"
-            exit 1
-          }
-          if [[ "${MODEL_PROVIDER}" == "anthropic-compatible" ]]; then
-            grep -Eq '"type"[[:space:]]*:[[:space:]]*"content_block_delta"' "${response_file}" || {
-              echo "::error::Anthropic SSE stream contains no content block delta"
-              exit 1
-            }
-            grep -Eq '"type"[[:space:]]*:[[:space:]]*"text_delta"' "${response_file}" || {
-              echo "::error::Anthropic SSE stream contains no text delta"
-              exit 1
-            }
-          else
-            grep -q '"delta"' "${response_file}" || {
-              echo "::error::OpenAI SSE stream contains no model delta"
-              exit 1
-            }
-          fi
-
-          echo "VibeCode authorization, model routing, and SSE streaming are available."
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Check connection (discovery by default; no retries)
+        run: node scripts/provider-connection-check.mjs

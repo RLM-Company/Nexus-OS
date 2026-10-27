@@ -131,7 +131,7 @@ const main = async () => {
   const runToken = crypto.randomUUID();
   const ordinary = await postJson("/api/v1/chats", "Ordinary chat create", {
     initial_message:
-      "Ответь одним коротким предложением: соединение с обычным чатом Cosmora работает.",
+      "Ответь одним коротким предложением: соединение с обычным чатом Kosmora работает.",
     client_message_id: `live-smoke-chat-${runToken}`
   });
   assertAcceptedRun(ordinary, "/api/v1/chat-runs/", "Ordinary chat");

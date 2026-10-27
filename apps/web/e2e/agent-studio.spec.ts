@@ -106,7 +106,12 @@ test("saves proposal-only Agent Studio team changes without activation", async (
   request
 }) => {
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Agent Studio" })).toHaveAttribute(
+  await page.getByLabel("Режимы Kosmora", { exact: true }).click();
+  await page
+    .locator(".workspace-mode-menu")
+    .getByRole("button", { name: "Multi-Agent", exact: true })
+    .click();
+  await expect(page.getByRole("link", { name: "Agent Studio", exact: true })).toHaveAttribute(
     "href",
     "/agent-studio"
   );

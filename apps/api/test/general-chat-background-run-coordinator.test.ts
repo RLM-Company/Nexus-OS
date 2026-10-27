@@ -1,11 +1,18 @@
 import { loadServerConfig } from "@cosmora/config";
-import { EmergencyStopStore, openDatabase, ProjectStore, runMigrations } from "@cosmora/db";
+import {
+  OwnerSkillStore,
+  EmergencyStopStore,
+  openDatabase,
+  ProjectStore,
+  runMigrations
+} from "@cosmora/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { GeneralChatBackgroundRunCoordinator } from "../src/general-chat-background-run-coordinator.js";
 import { GeneralChatRuntimeStore } from "../src/general-chat-runtime-store.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
 import { RuntimeMetrics } from "../src/operations.js";
+import { AccountStore } from "../src/account-settings/account-store.js";
 
 describe("GeneralChatBackgroundRunCoordinator", () => {
   const config = loadServerConfig({
@@ -19,10 +26,13 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
   let metrics: RuntimeMetrics;
   let coordinator: GeneralChatBackgroundRunCoordinator;
   let runtime: Awaited<ReturnType<typeof buildModelRuntime>>;
+  let accountStore: AccountStore;
 
   beforeEach(async () => {
     database = openDatabase(":memory:");
     await runMigrations(database);
+    accountStore = new AccountStore(database.sqlite);
+    accountStore.migrate();
     runtime = await buildModelRuntime(config);
     store = new GeneralChatRuntimeStore(database.sqlite);
     stopStore = new EmergencyStopStore(database.sqlite);
@@ -33,6 +43,7 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
       chat: runtime.chat,
       runtimeMetrics: metrics,
       emergencyStopStore: stopStore,
+      accountStore,
       pollIntervalMs: 10,
       controlPollIntervalMs: 10,
       maxConcurrentRuns: 2
@@ -43,6 +54,136 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
   afterEach(async () => {
     await coordinator.stop();
     database.close();
+  });
+
+  it("dispatches one explicit image request without also calling the text model", async () => {
+    await coordinator.stop();
+    const imageGeneration = vi.fn().mockResolvedValue("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    const textModel = vi.spyOn(runtime.gateway, "stream");
+    coordinator = new GeneralChatBackgroundRunCoordinator({
+      store,
+      modelGateway: runtime.gateway,
+      chat: runtime.chat,
+      runtimeMetrics: metrics,
+      accountStore,
+      imageGeneration,
+      pollIntervalMs: 10
+    });
+    coordinator.start();
+    const accepted = store.createChat(
+      "Нарисуй монохромный постер",
+      "image-background-request",
+      "local-owner"
+    );
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("succeeded"));
+    expect(imageGeneration).toHaveBeenCalledTimes(1);
+    expect(imageGeneration.mock.calls[0]?.slice(0, 2)).toEqual([
+      "local-owner",
+      "Нарисуй монохромный постер"
+    ]);
+    expect(textModel).not.toHaveBeenCalled();
+    expect(store.getAssistantMessage(accepted.run.id)?.content).toContain("/api/v1/media/assets/");
+  });
+
+  it("dispatches explicit attached-photo edits without invoking the text model", async () => {
+    await coordinator.stop();
+    const imageGeneration = vi.fn().mockResolvedValue("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    const textModel = vi.spyOn(runtime.gateway, "stream");
+    const reference = {
+      kind: "image" as const,
+      name: "circle.png",
+      media_type: "image/png" as const,
+      data_base64:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/5d8AAAAASUVORK5CYII="
+    };
+    coordinator = new GeneralChatBackgroundRunCoordinator({
+      store,
+      modelGateway: runtime.gateway,
+      chat: runtime.chat,
+      runtimeMetrics: metrics,
+      imageGeneration,
+      pollIntervalMs: 10
+    });
+    coordinator.start();
+    const accepted = store.createChat(
+      "Измени изображение: сделай фон серым",
+      "image-edit-background",
+      "local-owner",
+      [reference]
+    );
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("succeeded"));
+    expect(imageGeneration).toHaveBeenCalledTimes(1);
+    expect(imageGeneration.mock.calls[0]?.[3]).toEqual([reference]);
+    expect(textModel).not.toHaveBeenCalled();
+  });
+
+  it("does not dispatch a second image when the first generation fails", async () => {
+    await coordinator.stop();
+    const imageGeneration = vi.fn().mockRejectedValue(new Error("provider unavailable"));
+    const textModel = vi.spyOn(runtime.gateway, "stream");
+    coordinator = new GeneralChatBackgroundRunCoordinator({
+      store,
+      modelGateway: runtime.gateway,
+      chat: runtime.chat,
+      runtimeMetrics: metrics,
+      imageGeneration,
+      pollIntervalMs: 10
+    });
+    coordinator.start();
+    const accepted = store.createChat("Создай изображение горы", "image-background-failure");
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("failed"));
+    expect(imageGeneration).toHaveBeenCalledTimes(1);
+    expect(textModel).not.toHaveBeenCalled();
+  });
+
+  it("dispatches only the accepted Skill snapshot after catalog mutation, without an observer", async () => {
+    const first = store.createChat("Начало", "skills-background-seed");
+    store.cancelRun(first.run.id);
+    const skills = new OwnerSkillStore(database.sqlite);
+    const skill = skills.create("local-owner", {
+      name: "Brief",
+      summary: "Кратко",
+      instructions: "PINNED_SKILL_V1"
+    });
+    store.skills.update(first.chat.id, "local-owner", 0, [{ skill_id: skill.id, version: 1 }]);
+    const spy = vi.spyOn(runtime.gateway, "stream");
+    const next = store.createMessage(first.chat.id, "Продолжение", "skills-background-next")!;
+    skills.update("local-owner", skill.id, 1, {
+      name: "Brief",
+      summary: "Кратко",
+      instructions: "DO_NOT_USE_V2"
+    });
+    skills.delete("local-owner", skill.id, 2);
+    await vi.waitFor(() => expect(store.getRun(next.run.id)?.status).toBe("succeeded"), {
+      timeout: 3000
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const request = spy.mock.calls[0]![0];
+    expect(request.messages.findLast((message) => message.role === "user")?.content).toContain(
+      "PINNED_SKILL_V1"
+    );
+    expect(request.messages.some((message) => message.content.includes("DO_NOT_USE_V2"))).toBe(
+      false
+    );
+    expect(request.messages[0]?.content).not.toContain("PINNED_SKILL_V1");
+    expect(store.skills.get(first.chat.id, "local-owner").items).toEqual([]);
+  });
+
+  it("uses persisted chat memory when dispatching without an SSE observer", async () => {
+    const first = store.createChat("Начало", "memory-background-seed");
+    store.cancelRun(first.run.id);
+    store.updateChatMemory(first.chat.id, "local-owner", "Отвечать на TypeScript", 0);
+    const spy = vi.spyOn(runtime.gateway, "stream");
+    const next = store.createMessage(first.chat.id, "Продолжение", "memory-background-next")!;
+    await vi.waitFor(() => expect(store.getRun(next.run.id)?.status).toBe("succeeded"), {
+      timeout: 3000
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const request = spy.mock.calls[0]![0];
+    expect(request.messages.findLast((message) => message.role === "user")?.content).toContain(
+      "Отвечать на TypeScript"
+    );
+    expect(request.messages[0]?.content).not.toContain("Отвечать на TypeScript");
   });
 
   it("executes a queued ordinary-chat run without any SSE consumer", async () => {
@@ -83,6 +224,7 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
       chat: runtime.chat,
       manager: runtime.manager,
       runtimeMetrics: metrics,
+      accountStore,
       generalChatRunExecutionMode: "background"
     });
     try {

@@ -1,12 +1,16 @@
 export * from "./agent-studio.js";
 export * from "./auth.js";
 export * from "./domain.js";
+export * from "./chat-attachments.js";
 export * from "./companion.js";
 export * from "./demo-manager.js";
 export * from "./errors.js";
 export * from "./events.js";
 export * from "./health.js";
 export * from "./identity.js";
+export * from "./intelligence-graph.js";
+export * from "./intelligence-graph-workspace.js";
+export * from "./intelligence-graph-context.js";
 export * from "./manager-runtime.js";
 export * from "./manager-runtime-artifact-task-binding.js";
 export * from "./manager-runtime-artifact-provenance.js";
@@ -27,4 +31,19 @@ export * from "./primitives.js";
 export * from "./runtime.js";
 export * from "./step-up.js";
 export * from "./usage.js";
+export * from "./runtime-clock.js";
 export * from "./manager-work.js";
+export * from "./work-runtime.js";
+export * from "./canvas-artifacts.js";
+export * from "./work-dag.js";
+export * from "./work-schedule.js";
+export * from "./chat-memory.js";
+export * from "./chat-skills.js";
+export * from "./chat-branches.js";
+
+export * from "./work-skills.js";
+export * from "./work-plan-package.js";
+
+export * from "./intelligence-graph-package.js";
+export type { IntelligenceGraphEvidenceAudit } from "./intelligence-graph-audit.js";
+export * from "./project-automation.js";

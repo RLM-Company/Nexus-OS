@@ -1,0 +1,260 @@
+.workbench {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 28px 24px 60px;
+  color: var(--text);
+}
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: -10px;
+}
+.presets button {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 20px;
+  font-size: 11px;
+  padding: 6px 10px;
+}
+.presets button:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+.header {
+  margin-bottom: 28px;
+}
+.header > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.header h2 {
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 550;
+  margin: 14px 0 10px;
+  letter-spacing: -0.6px;
+}
+.header p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+.layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.1fr);
+  gap: 24px;
+  align-items: start;
+}
+.controls {
+  display: grid;
+  gap: 24px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--bg);
+  min-width: 0;
+}
+.field {
+  display: grid;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.field textarea,
+.field select {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: inherit;
+  background: var(--bg);
+  font: inherit;
+  font-weight: 400;
+}
+.field textarea {
+  line-height: 1.65;
+  resize: vertical;
+}
+.field textarea:focus,
+.field select:focus {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.sectionTitle h3 {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0;
+}
+.sectionTitle span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 18px 12px;
+  border: 1px dashed var(--line-strong, #aaa);
+  border-radius: 12px;
+  color: inherit;
+  background: var(--panel);
+  font-size: 13px;
+}
+.upload small {
+  width: 100%;
+  color: var(--muted);
+  font-size: 11px;
+}
+.hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 10px 0 0;
+}
+.thumbnails {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.thumbnails figure {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+}
+.thumbnails img {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  object-fit: cover;
+}
+.thumbnails figcaption {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  margin-top: 4px;
+}
+.thumbnails button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  padding: 4px;
+  background: var(--bg);
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+.thumbnails button svg {
+  width: 13px;
+  height: 13px;
+}
+.ratios {
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+.ratios legend {
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.ratios > div {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ratios button {
+  flex: 1;
+  padding: 10px 8px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+}
+.ratios button[aria-pressed="true"] {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+.result {
+  min-width: 0;
+}
+.result > section {
+  margin: 0;
+}
+.empty {
+  display: flex;
+  min-height: 460px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+}
+.empty > svg {
+  width: 38px;
+  height: 38px;
+  color: var(--muted);
+}
+.empty h3 {
+  font-size: 17px;
+  font-weight: 500;
+  margin: 0;
+}
+.empty p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.empty button {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--bg);
+}
+@media (max-width: 1000px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .workbench {
+    padding: 20px 12px 50px;
+  }
+  .header h2 {
+    font-size: 24px;
+  }
+  .controls {
+    padding: 18px;
+  }
+  .empty {
+    min-height: 300px;
+  }
+}

@@ -1,0 +1,114 @@
+.panel {
+  display: grid;
+  gap: 3px;
+  margin: 6px 4px 0;
+  padding: 5px;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 4px 14px #00000008;
+}
+
+.panel .row,
+.mobileModes .row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 54px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--motion-ease);
+}
+
+.panel .row:hover,
+.mobileModes .row:hover {
+  background: var(--panel);
+}
+
+.panel .row[aria-current="page"],
+.mobileModes .row[aria-current="page"] {
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+
+.panel .row:focus-visible,
+.mobileModes .row:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.panel .row > svg,
+.mobileModes .row > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+
+.panel .row > svg:last-child,
+.mobileModes .row > svg:last-child {
+  width: 16px;
+  height: 16px;
+  color: var(--text);
+}
+
+.panel .row > span,
+.mobileModes .row > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.panel .row strong,
+.mobileModes .row strong {
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.3;
+}
+
+.panel .row small,
+.mobileModes .row small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.utilities {
+  display: grid;
+  gap: 3px;
+  margin-top: 3px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.utilities .row {
+  grid-template-columns: 18px minmax(0, 1fr);
+}
+
+.mobileModes .row {
+  min-height: 58px;
+}
+
+.mobileModes .row strong {
+  font-size: 14px;
+}
+
+.mobileModes .row small {
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    transition: none;
+  }
+}

@@ -271,7 +271,7 @@ describe("shared contracts", () => {
         email: null,
         email_verified: false,
         phone_verified: true,
-        display_name: "Cosmora User",
+        display_name: "Kosmora User",
         linked_at: "2026-09-19T18:00:00.000Z",
         last_verified_at: "2026-09-19T18:00:00.000Z"
       })

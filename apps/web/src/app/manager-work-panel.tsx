@@ -1,10 +1,18 @@
 "use client";
+import { PersonalSkillSettings } from "./chat-skill-settings";
+import { AcceptedSkillView } from "./accepted-skill-view";
+import { CodeFiles } from "./ui/code-files";
 
 import Link from "next/link";
+import { WorkManagerDag } from "./work-manager-dag";
+import { WorkManagerProgress } from "./work-manager-progress";
+import { WorkManagerMemory } from "./work-manager-memory";
 import { useEffect, useRef, useState } from "react";
+import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
 type Work = {
   id: string;
+  request?: { goal: string };
   version: number;
   status: string;
   stage: string;
@@ -17,6 +25,7 @@ type Work = {
   review: { verdict: string; reason: string } | null;
   events: { sequence: number; message: string; at: string }[];
 };
+const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
 const labels: Record<string, string> = {
   queued: "В очереди",
   running: "Выполняется",
@@ -32,21 +41,33 @@ const errors: Record<string, string> = {
     "Модель вернула результат неподходящего формата. Автоматического платного повтора не будет.",
   EXECUTION_BUDGET_EXCEEDED: "Достигнут заданный предел запросов или токенов.",
   PROJECT_TOKEN_LIMIT_EXCEEDED: "Достигнут лимит токенов проекта.",
+  USAGE_LIMIT_EXCEEDED: "Достигнут личный лимит токенов. Проверьте расходы и лимиты аккаунта.",
   PROJECT_COST_LIMIT_EXCEEDED: "Достигнут денежный лимит проекта.",
   PROJECT_USAGE_EVIDENCE_MISSING:
     "Не хватает подтверждённых данных о расходах. Новый запрос не отправлен.",
   CRITIC_REJECTED: "Критик не принял черновик. Файлы не опубликованы.",
   RECOVERY_REQUIRED:
     "Запрос был прерван. Чтобы не списать токены повторно, он не отправлен заново.",
+  GRAPH_UNAVAILABLE:
+    "Подключённый граф не вернул допустимый контекст. Запрос к модели не отправлен.",
+  INVALID_PRESENTATION_RESULT:
+    "Слайды не прошли локальную проверку формата, количества или размера текста. Автоматического платного повтора нет.",
+  INVALID_ARTIFACT_CONTENT: "Файл JSON не прошёл проверку формата. Сохранение остановлено.",
   UNSUPPORTED_ACTION: "План требует недоступных действий. Сейчас поддерживается создание файлов.",
   ROUTE_UNAVAILABLE: "Настроенная модель недоступна для этой роли или задачи.",
-  EMERGENCY_STOP: "Работа остановлена защитой проекта.",
+  EMERGENCY_STOP: "Работа прервана аварийной остановкой. Проверьте состояние в Центре управления.",
   DENIED: "Профиль проекта запрещает сохранение файлов.",
   WAITING_CONFIRMATION: "Подтвердите сохранение в центре управления, затем продолжите работу."
 };
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...init, cache: "no-store" });
+  const response = await fetch(url, {
+    ...init,
+    cache: "no-store",
+    signal: init?.signal
+      ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)])
+      : AbortSignal.timeout(15000)
+  });
   if (!response.ok)
     throw new Error(
       response.status === 409
@@ -65,13 +86,18 @@ export function ManagerWorkPanel({
 }) {
   const [goal, setGoal] = useState(initialGoal);
   const [role, setRole] = useState("analyst");
+  const [critic, setCritic] = useState(true);
   const [work, setWork] = useState<Work | null>(null);
+  const [works, setWorks] = useState<Work[]>([]);
+  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [runtime, setRuntime] = useState<{ mode: string; model: string } | null>(null);
+  const executionGate = useExecutionGate(projectId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
   const mutationEpoch = useRef(0);
-  const pending = useRef<{ goal: string; role: string; id: string } | null>(null);
+  const pending = useRef<{ goal: string; role: string; critic: boolean; id: string } | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
   useEffect(() => {
     const controller = new AbortController();
@@ -86,13 +112,24 @@ export function ManagerWorkPanel({
           })
         ]);
         if (!controller.signal.aborted && epoch === mutationEpoch.current && !lock.current) {
-          const latest = list.items[0] ?? null;
+          const latest = selectedWorkId
+            ? (list.items.find((item) => item.id === selectedWorkId) ?? list.items[0] ?? null)
+            : (list.items[0] ?? null);
+          if (selectedWorkId && !list.items.some((item) => item.id === selectedWorkId))
+            setSelectedWorkId(null);
+          setWorks((current) =>
+            list.items.map((item) => {
+              const previous = current.find((candidate) => candidate.id === item.id);
+              return previous && previous.version > item.version ? previous : item;
+            })
+          );
           setWork((previous) =>
             previous && latest && previous.id === latest.id && previous.version > latest.version
               ? previous
               : latest
           );
           setRuntime(model);
+          setHistoryLoaded(true);
         }
       } catch {
         if (!controller.signal.aborted)
@@ -106,8 +143,10 @@ export function ManagerWorkPanel({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [base]);
+  }, [base, selectedWorkId]);
   const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
+    if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
+      return;
     if (lock.current) return;
     mutationEpoch.current++;
     lock.current = true;
@@ -120,51 +159,93 @@ export function ManagerWorkPanel({
         url += "/" + encodeURIComponent(work.id) + "/control";
         body = { version: work.version, action };
       } else {
-        if (!pending.current || pending.current.goal !== goal || pending.current.role !== role)
-          pending.current = { goal, role, id: crypto.randomUUID() };
+        if (
+          !pending.current ||
+          pending.current.goal !== goal ||
+          pending.current.role !== role ||
+          pending.current.critic !== critic
+        )
+          pending.current = { goal, role, critic, id: crypto.randomUUID() };
         body = {
           client_request_id: pending.current.id,
           goal,
           worker_role: role,
+          require_critic: critic,
           max_model_requests: 3,
           max_input_tokens: 32000,
           max_output_tokens: 6000
         };
       }
-      setWork(
-        await json<Work>(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body)
-        })
+      const updated = await json<Work>(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      setSelectedWorkId(updated.id);
+      setWork(updated);
+      setWorks((current) =>
+        current.some((item) => item.id === updated.id)
+          ? current.map((item) => (item.id === updated.id ? updated : item))
+          : [updated, ...current].slice(0, 80)
       );
       if (!action) pending.current = null;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Не удалось выполнить действие");
+      setError(
+        cause instanceof Error && cause.name === "TimeoutError"
+          ? "Ответ задерживается. Проверьте задачи проекта: сервер мог уже принять действие."
+          : cause instanceof Error
+            ? cause.message
+            : "Не удалось выполнить действие"
+      );
     } finally {
       lock.current = false;
       setBusy(false);
     }
   };
-  const active = work && !["completed", "failed", "cancelled"].includes(work.status);
+  const active = work && isActive(work);
+  const projectHasActiveWork = Boolean(active) || works.some(isActive);
   return (
-    <section className="manager-demo" aria-label="Выполнение задачи Manager">
-      <header>
-        <strong>Создать результат с Manager</strong>
-        <span role="status">{work ? labels[work.status] : "Новая задача"}</span>
+    <section className="manager-demo manager-work-panel" aria-label="Выполнение задачи Manager">
+      <header className="manager-work-header">
+        <div>
+          <small className="manager-work-kicker">Выполнение в рамках проекта</small>
+          <strong>Создать результат с Manager</strong>
+        </div>
+        <span className={`manager-work-status ${work?.status ?? "new"}`} role="status">
+          {work ? labels[work.status] : "Новая задача"}
+        </span>
       </header>
-      <p>
+      <p className="manager-work-runtime">
         {runtime?.mode === "mock"
           ? "Демонстрационный режим: модели не вызываются, файлы помечены mock."
           : runtime
             ? "Модель: " + runtime.model
             : "Проверка подключения…"}
       </p>
-      <p>
+      <p className="manager-work-boundary">
         Manager → выбранный исполнитель → Критик по риску. Роли используют настроенную модель.
         Результат — файлы для скачивания; запуск кода и публикация пока недоступны.
       </p>
-      <label>
+      {executionGate !== "clear" && (
+        <p className="manager-work-boundary" data-testid="manager-execution-gate">
+          {executionGateLabels[executionGate]} Сохранённые результаты остаются доступны.{" "}
+          <Link href={"/control-center?project=" + encodeURIComponent(projectId)}>
+            Центр управления
+          </Link>
+        </p>
+      )}
+      <details>
+        <summary>Skills Work</summary>
+        <PersonalSkillSettings
+          key={projectId}
+          path={`/api/v1/projects/${encodeURIComponent(projectId)}/work-skills`}
+          disabled={busy}
+          label="Skills Work проекта"
+          description="До трёх инструкций для новых задач и планов. Применяется сохранённый выбор. Принятые задачи, шаги сохранённых планов и их повторы используют исходный снимок. Новые версии подключаются явно."
+          emptyMessage="Создайте личный Skill, чтобы использовать его в Work."
+        />
+      </details>
+      <label className="manager-work-field">
         Задача
         <textarea
           aria-label="Задача для выполнения"
@@ -172,38 +253,86 @@ export function ManagerWorkPanel({
           maxLength={8000}
           rows={4}
           onChange={(e) => setGoal(e.target.value)}
-          disabled={Boolean(active) || busy}
+          disabled={busy || !historyLoaded}
         />
       </label>
-      <label>
+      <label className="manager-work-field">
         Исполнитель{" "}
         <select
           aria-label="Исполнитель задачи"
           value={role}
           onChange={(e) => setRole(e.target.value)}
-          disabled={Boolean(active) || busy}
+          disabled={busy || !historyLoaded}
         >
           <option value="analyst">Аналитик</option>
           <option value="architect">Архитектор</option>
         </select>
       </label>
-      <p>
-        Предел на задачу: 3 обращения к модели, 32 000 входных и 6 000 выходных токенов. Повторы
-        тоже входят в предел. Автономность наследуется от проекта.
+      <p className="manager-work-limits">
+        Предел на задачу: 3 обращения к модели, 32 000 входных и 6 000 выходных токенов.
+        Автоматических платных повторов нет. Автономность наследуется от проекта.
       </p>
+      <label className="manager-work-field">
+        <input
+          type="checkbox"
+          checked={critic}
+          disabled={busy || !historyLoaded}
+          onChange={(e) => setCritic(e.target.checked)}
+        />
+        Проверить готовые файлы Критиком
+      </label>
       <button
         type="button"
-        disabled={busy || Boolean(active) || !goal.trim() || !runtime}
+        className="manager-work-submit"
+        disabled={busy || !goal.trim() || !runtime || !historyLoaded || executionGate !== "clear"}
         onClick={() => void act()}
       >
         Создать файлы
       </button>
+      {!historyLoaded && <p className="manager-work-usage">Загружаем задачи проекта…</p>}
       {error && <p role="alert">{error}</p>}
+      {works.length > 0 && (
+        <div className="manager-work-history">
+          <strong>Задачи проекта</strong>
+          <div
+            className="manager-work-history-list"
+            role="group"
+            aria-label="История задач Manager"
+          >
+            {works.map((item, index) => (
+              <button
+                type="button"
+                key={item.id}
+                aria-pressed={item.id === (selectedWorkId ?? works[0]?.id)}
+                onClick={() => {
+                  setSelectedWorkId(item.id);
+                  setWork(item);
+                  setError("");
+                }}
+              >
+                <span>{item.request?.goal ?? `Задача ${index + 1}`}</span>
+                <small>{labels[item.status] ?? "Состояние неизвестно"}</small>
+              </button>
+            ))}
+          </div>
+          {projectHasActiveWork && !active && (
+            <p>Другая задача ещё выполняется. Откройте её в списке, чтобы увидеть шаги.</p>
+          )}
+        </div>
+      )}
+      <WorkManagerDag key={"dag:" + projectId} projectId={projectId} />
+      <WorkManagerMemory key={projectId} projectId={projectId} />
       {work && (
         <>
-          <p>Обращений к модели: {work.model_requests} / 3</p>
+          <WorkManagerProgress projectId={projectId} workId={work.id} version={work.version} />
+          <AcceptedSkillView
+            key={work.id}
+            path={base + "/" + encodeURIComponent(work.id) + "/skills"}
+            label="Skills этой задачи"
+          />
+          <p className="manager-work-usage">Обращений к модели: {work.model_requests} / 3</p>
           {work.plan && (
-            <div>
+            <div className="manager-work-plan">
               <strong>{work.plan.summary}</strong>
               <p>{work.plan.instructions}</p>
               <p>
@@ -212,49 +341,74 @@ export function ManagerWorkPanel({
               </p>
             </div>
           )}
-          <ol aria-label="Шаги выполнения">
+          {work.draft && <CodeFiles files={work.draft.files} />}
+          <ol
+            className="manager-work-events"
+            aria-label="Шаги выполнения"
+            aria-live="polite"
+            aria-relevant="additions"
+          >
             {work.events.map((e) => (
               <li key={e.sequence}>{e.message}</li>
             ))}
           </ol>
           {work.review && (
-            <p>
+            <p className={`manager-work-review ${work.review.verdict.toLowerCase()}`}>
               Критик: {work.review.verdict}. {work.review.reason}
             </p>
           )}
           {work.error_code && (
-            <p role="alert">
+            <p className="manager-work-error" role="alert">
               {errors[work.error_code] ??
                 "Работа остановлена. Сохранённые этапы доступны; автоматического повтора нет."}
             </p>
           )}
           {work.status === "awaiting_approval" && (
-            <button disabled={busy} onClick={() => void act("approve")}>
+            <button
+              className="manager-work-action primary"
+              disabled={busy || executionGate !== "clear"}
+              onClick={() => void act("approve")}
+            >
               Подтвердить план
             </button>
           )}
           {["running", "queued"].includes(work.status) && (
-            <button disabled={busy || work.pause_requested} onClick={() => void act("pause")}>
+            <button
+              className="manager-work-action"
+              disabled={busy || work.pause_requested}
+              onClick={() => void act("pause")}
+            >
               {work.pause_requested ? "Ожидается пауза" : "Пауза"}
             </button>
           )}
           {["paused", "blocked"].includes(work.status) && (
-            <button disabled={busy} onClick={() => void act("resume")}>
+            <button
+              className="manager-work-action primary"
+              disabled={busy || executionGate !== "clear"}
+              onClick={() => void act("resume")}
+            >
               Продолжить
             </button>
           )}
           {active && (
-            <button disabled={busy} onClick={() => void act("cancel")}>
+            <button
+              className="manager-work-action"
+              disabled={busy}
+              onClick={() => void act("cancel")}
+            >
               Остановить задачу
             </button>
           )}
           {work.status === "blocked" && (
-            <Link href={"/control-center?project=" + encodeURIComponent(projectId)}>
+            <Link
+              className="manager-work-permissions"
+              href={"/control-center?project=" + encodeURIComponent(projectId)}
+            >
               Разрешения проекта
             </Link>
           )}
           {work.status === "completed" && (
-            <ul aria-label="Готовые файлы">
+            <ul className="manager-work-files" aria-label="Готовые файлы">
               {work.draft?.files.map((file) => (
                 <li key={file.name}>
                   <a

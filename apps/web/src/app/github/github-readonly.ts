@@ -85,7 +85,7 @@ const mockCommit: GitHubCommit = {
   sha: "403ed7143f062bb005a21c2fe1dde53434394e2a",
   shortSha: "403ed71",
   message: "Guarded live model smoke test",
-  author: "Cosmora"
+  author: "Kosmora"
 };
 
 const failureFor = (mode: MockGitHubMode): GitHubResult<never> | null => {

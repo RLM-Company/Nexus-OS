@@ -1,0 +1,165 @@
+.panel {
+  margin-top: 24px;
+  padding: 22px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 16px;
+  background: var(--bg, #fff);
+  color: var(--text, #171717);
+  display: grid;
+  gap: 12px;
+}
+.panel h3,
+.panel h4 {
+  margin: 0;
+}
+.panel p {
+  margin: 0;
+  color: var(--muted, #666);
+  line-height: 1.55;
+}
+.status {
+  padding: 10px 12px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 8px;
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+.check input {
+  margin-top: 4px;
+  accent-color: var(--text, #171717);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.actions button,
+.history button {
+  background: var(--text, #171717);
+  color: var(--bg, #fff);
+  border: 1px solid var(--line, #ddd);
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.asset {
+  display: grid;
+  gap: 12px;
+}
+.asset img {
+  max-width: 100%;
+  max-height: 600px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid #777;
+  border-radius: 8px;
+}
+.asset a {
+  color: var(--text, #171717);
+  text-decoration: underline;
+}
+.asset > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+  border: 1px solid var(--line, #ddd);
+  background: transparent;
+  color: var(--text, #171717);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.asset > button svg {
+  width: 16px;
+  height: 16px;
+}
+.history {
+  display: grid;
+  gap: 8px;
+}
+.emptyPreview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 300px;
+  padding: 36px 20px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: linear-gradient(145deg, #fafafa, #fff);
+  text-align: center;
+}
+.emptyPreview > svg {
+  width: 34px;
+  height: 34px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.emptyPreview strong {
+  font-size: 16px;
+  font-weight: 500;
+}
+.emptyPreview span,
+.emptyPreview small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.actions button svg {
+  width: 16px;
+  height: 16px;
+}
+.history button img {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.history > div {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  align-items: center;
+}
+.history button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+}
+.history button {
+  background: var(--panel, #f8f8f8);
+  color: var(--text, #171717);
+  text-align: left;
+}
+@media (prefers-color-scheme: light) {
+  .panel {
+    background: #fff;
+    color: #111;
+  }
+  .panel p {
+    color: #444;
+  }
+  .status {
+    border-color: #bbb;
+  }
+  .asset a {
+    color: #111;
+  }
+}

@@ -39,6 +39,10 @@ const installShellFixture = async (
         credential_configured: false,
         fallback_to_mock: false
       };
+    } else if (path === "/api/v1/operations/status") {
+      body = { process_stop: null };
+    } else if (path === "/api/v1/operations/emergency-stop") {
+      body = null;
     } else if (path === `/api/v1/projects/${auditProject.id}`) {
       body = {
         project: auditProject,
@@ -97,12 +101,30 @@ test("reaches every primary workspace from the phone navigation", async ({ page 
   const mobileNav = page.getByRole("navigation", { name: "Мобильная навигация" });
   await expect(mobileNav).toBeVisible();
 
-  await mobileNav.getByRole("button", { name: "Проекты", exact: true }).click();
+  await mobileNav.getByRole("button", { name: "Все разделы" }).click();
+  await page
+    .getByRole("dialog", { name: "Ваше пространство" })
+    .getByRole("button", { name: auditProject.title, exact: true })
+    .click();
   await expect(page.locator(".topbar h1")).toHaveText("Audit Project");
 
-  for (const label of ["Skills", "Code", "Work", "Изображения", "Видео", "Sound", "Мультиагент"]) {
-    await mobileNav.getByRole("button", { name: label, exact: true }).click();
-    await expect(page.locator(".topbar h1")).toHaveText(label);
+  for (const label of [
+    "Skills",
+    "Coscode",
+    "Koswork",
+    "Изображения",
+    "Видео",
+    "Sound",
+    "Multi-Agent"
+  ]) {
+    await mobileNav.getByRole("button", { name: "Все разделы" }).click();
+    await page
+      .getByRole("dialog", { name: "Ваше пространство" })
+      .getByRole("button", { name: new RegExp(`^${label}(?:\\s|$)`) })
+      .click();
+    await expect(page.locator(".topbar h1")).toHaveText(
+      ["Coscode", "Koswork"].includes(label) ? "Новый чат" : label
+    );
   }
 
   await mobileNav.getByRole("button", { name: "Новый чат", exact: true }).click();
@@ -119,7 +141,11 @@ test("keeps mobile navigation, composer and long-chat scrolling usable", async (
   await waitForProjectList(page);
 
   const mobileNav = page.getByRole("navigation", { name: "Мобильная навигация" });
-  await mobileNav.getByRole("button", { name: "Проекты", exact: true }).click();
+  await mobileNav.getByRole("button", { name: "Все разделы" }).click();
+  await page
+    .getByRole("dialog", { name: "Ваше пространство" })
+    .getByRole("button", { name: auditProject.title, exact: true })
+    .click();
 
   const composer = page.getByLabel("Сообщение менеджеру");
   const messages = page.locator(".messages");
@@ -145,6 +171,9 @@ test("does not render secret fields returned alongside model runtime metadata", 
   page
 }) => {
   const secretMarker = "sk-audit-secret-marker";
+  await page.route("**/api/v1/operations/status", async (route) => {
+    await route.fulfill({ json: { process_stop: null } });
+  });
   await page.route("**/api/v1/model-runtime", async (route) => {
     await route.fulfill({
       status: 200,
@@ -163,7 +192,7 @@ test("does not render secret fields returned alongside model runtime metadata", 
   });
 
   await page.goto("/model-status");
-  await expect(page.getByTestId("runtime-readiness")).toContainText("Готово к запуску");
+  await expect(page.getByTestId("runtime-readiness")).toContainText("Провайдер настроен");
   await expect(page.locator("body")).not.toContainText(secretMarker);
   await expect(page.locator("body")).not.toContainText("MODEL_API_KEY=must-not-render");
 });
@@ -184,7 +213,7 @@ test("shows a readable API failure and preserves the unsent message", async ({ p
   });
 
   await page.goto("/");
-  const composer = page.getByLabel("Сообщение Cosmora");
+  const composer = page.getByLabel("Сообщение Kosmora");
   await composer.fill("Сообщение, которое нельзя потерять");
   await page.getByRole("button", { name: "Отправить" }).click();
 
@@ -203,12 +232,34 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   const newChat = sidebar.getByRole("button", { name: "Новый чат" });
   const chats = sidebar.getByRole("button", { name: /Чаты/ });
   const projects = sidebar.getByRole("button", { name: /Проекты/ });
-  const skills = page.locator(".sidebar-tools").getByRole("button", {
-    name: "Skills",
-    exact: true
-  });
+  const modeTrigger = sidebar.getByLabel("Режимы Kosmora", { exact: true });
+  const modeMenu = sidebar.locator(".workspace-mode-menu");
+
+  for (const name of ["Koswork", "Coscode"]) {
+    await expect(
+      sidebar.locator(".sidebar-tools").getByRole("button", { name, exact: true })
+    ).toHaveCount(0);
+    await modeTrigger.focus();
+    await page.keyboard.press("Enter");
+    await expect(modeMenu).toHaveAttribute("open", "");
+    const destinations =
+      name === "Koswork" ? ["Kosmora", "Koswork"] : ["Kosmora", "Koswork", "Coscode"];
+    for (const destination of destinations) {
+      await page.keyboard.press("Tab");
+      await expect(modeMenu.getByRole("button", { name: destination, exact: true })).toBeFocused();
+    }
+    await page.keyboard.press("Enter");
+    await expect(modeMenu).not.toHaveAttribute("open");
+    await expect(modeTrigger).toBeFocused();
+    await expect(page.locator(".topbar h1")).toHaveText("Новый чат");
+  }
+  // Return from the separate Coscode workspace before testing shared navigation.
+  await modeTrigger.click();
+  await modeMenu.getByRole("button", { name: "Kosmora", exact: true }).click();
 
   await newChat.focus();
+  await page.keyboard.press("Tab");
+  await expect(sidebar.getByLabel("Поиск чатов и проектов")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(chats).toBeFocused();
   await page.keyboard.press("Enter");
@@ -221,9 +272,10 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   await expect(projects).toBeFocused();
   await expect(projects).toHaveAttribute("aria-expanded", "false");
 
-  await page.keyboard.press("Tab");
-  await expect(skills).toBeFocused();
+  await expect(sidebar.getByText("Архив чатов", { exact: true })).toHaveCount(0);
+  const studio = sidebar.getByRole("button", { name: "Kosmora Studio", exact: true });
+  await studio.focus();
   await page.keyboard.press("Enter");
-  await expect(skills).toBeFocused();
-  await expect(page.locator(".topbar h1")).toHaveText("Skills");
+  await expect(studio).toBeFocused();
+  await expect(studio).toHaveAttribute("aria-expanded", "true");
 });

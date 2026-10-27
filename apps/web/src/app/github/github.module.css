@@ -1,27 +1,300 @@
 .page {
+  --repo-ink: var(--text, #242424);
+  --repo-muted: var(--muted, #676767);
+  --repo-line: var(--line, #e5e5e5);
+  --repo-paper: var(--bg, #ffffff);
+  --repo-panel: var(--panel, #f7f7f7);
   min-height: 100vh;
   min-height: 100dvh;
-  padding: clamp(1.25rem, 3vw, 2.5rem);
-  background:
-    radial-gradient(circle at top right, rgba(109, 91, 208, 0.08), transparent 34rem), var(--bg);
+  padding: clamp(1.25rem, 3vw, 2rem) clamp(1rem, 3vw, 2rem) 3rem;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  align-items: flex-end;
+}
+.page button {
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 0.5rem);
+  background: var(--repo-paper);
+  color: var(--text);
+  min-height: 2.5rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease;
+}
+.page button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.page button:not(:disabled):hover {
+  background: var(--surface-hover);
+}
+.page button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.page input:not([type="checkbox"]),
+.page select,
+.page textarea {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 0.5rem);
+  background: var(--bg);
+  color: var(--text);
+  max-width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  font-size: 0.875rem;
+  transition: border-color 140ms ease;
+}
+.page :is(button, input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+.page :is(input, select, textarea):focus-visible {
+  outline-offset: 1px;
+}
+.page button.primary {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: white;
+}
+.page button.primary:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+.repository,
+.editor label {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  width: fit-content;
+  max-width: 100%;
+}
+.toolbar label,
+.review > label,
+.reviewFields label {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+.explorer {
+  display: grid;
+  grid-template-columns: minmax(13rem, 0.85fr) minmax(0, 2.8fr);
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  background: var(--bg);
+}
+.files {
+  max-height: 36rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.125rem;
+  padding: 0.375rem;
+  border: 0;
+  background: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.files button {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  flex-shrink: 0;
+  border-color: transparent;
+  background: transparent;
+  padding-inline: 0.625rem;
+  min-height: 2.25rem;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+.files button > svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.files button > span {
+  min-width: 0;
+  line-height: 1.55;
+}
+.files > p {
+  padding: 0.5rem 0.625rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.fileLoading {
+  line-height: 1.6;
+}
+.files button[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--surface-hover);
+  box-shadow: inset 2px 0 0 var(--repo-ink);
+  font-weight: 500;
+}
+.editor {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: var(--bg);
+}
+.editor h2 {
+  overflow-wrap: anywhere;
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.editor textarea {
+  display: block;
+  width: calc(100% - 2rem);
+  min-height: 25rem;
+  margin: 1rem;
+  resize: vertical;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  tab-size: 2;
+  background: var(--repo-panel);
+  border-radius: 0.5rem;
+  font-variant-ligatures: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong, #cdcdcd) transparent;
+  caret-color: var(--repo-ink);
+}
+.review {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  background: var(--bg);
+  box-shadow: 0 1px 2px #00000004;
+}
+.review details {
+  margin: 1rem 0;
+  padding: 0.75rem 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.review summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.25rem 0;
+}
+.review input[type="checkbox"] {
+  accent-color: var(--accent-strong);
+}
+.review code {
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.review p {
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.review h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.review a {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+.diff > div {
+  min-width: 0;
+}
+.diff > div:first-child pre {
+  background: #f1f1f1;
+  border-left: 3px dashed #b0b0b0;
+}
+.diff > div:last-child pre {
+  background: #fafafa;
+  border-left: 3px solid #555555;
+}
+.diff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+.diff pre {
+  overflow: auto;
+  max-height: 25rem;
+  background: var(--bg);
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  margin: 0.5rem 0 0;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-variant-ligatures: none;
+  tab-size: 2;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong, #cdcdcd) transparent;
+}
+.diff strong {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--repo-line);
+  border-radius: 999px;
+  background: var(--repo-panel);
+}
+@media (max-width: 42rem) {
+  .explorer,
+  .diff {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .files {
+    max-height: 12rem;
+  }
 }
 
 .shell {
-  width: min(100%, 72rem);
+  width: min(100%, 70rem);
   margin: 0 auto;
 }
 
 .header {
   display: grid;
-  gap: 1.25rem;
+  gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
 .backLink {
   width: fit-content;
   color: var(--muted);
-  font-size: 0.9rem;
-  font-weight: 650;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: color 140ms ease;
 }
 
 .backLink:hover {
@@ -30,34 +303,34 @@
 
 .eyebrow {
   margin: 0 0 0.45rem;
-  color: var(--accent-strong);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .header h1 {
   margin: 0;
-  font-size: clamp(2rem, 5vw, 3.4rem);
-  letter-spacing: -0.045em;
-  line-height: 1;
+  font-size: 1.5rem;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  font-weight: 600;
 }
 
 .lead {
-  max-width: 48rem;
-  margin: 0.85rem 0 0;
+  max-width: 42rem;
+  margin: 0;
   color: var(--muted);
-  font-size: clamp(0.98rem, 2vw, 1.08rem);
-  line-height: 1.65;
+  font-size: 0.875rem;
+  line-height: 1.6;
 }
 
 .card {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 1.2rem 3rem rgba(31, 35, 48, 0.08);
+  border-radius: 0.75rem;
+  background: var(--bg);
+  box-shadow: 0 1px 2px #00000004;
 }
 
 .loading,
@@ -65,11 +338,14 @@
 .warning,
 .error,
 .ready {
-  padding: clamp(1.15rem, 3vw, 1.6rem);
+  padding: 1.125rem;
 }
 
 .loading {
   color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--panel);
 }
 
 .empty,
@@ -89,11 +365,16 @@
 }
 
 .warning {
-  background: rgba(218, 163, 67, 0.12);
+  background: var(--panel);
 }
 
 .error {
-  background: rgba(237, 122, 95, 0.1);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--text);
+  border-radius: 0.625rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .warning button,
@@ -102,11 +383,11 @@
   margin-top: 0.25rem;
   padding: 0.6rem 0.85rem;
   border: 1px solid var(--line);
-  border-radius: 0.7rem;
+  border-radius: 0.5rem;
   background: var(--panel);
   color: var(--text);
   font: inherit;
-  font-weight: 700;
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -125,12 +406,12 @@
 .readonlyBadge {
   padding: 0.25rem 0.55rem;
   border-radius: 999px;
-  background: rgba(22, 134, 111, 0.12);
-  color: var(--green);
-  font-size: 0.74rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  border: 1px solid var(--repo-line);
 }
 
 .sections {
@@ -141,9 +422,9 @@
 
 .section {
   min-width: 0;
-  padding: 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.9rem;
+  padding: 0.875rem 1rem;
+  border: 0;
+  border-radius: 0.625rem;
   background: var(--panel);
 }
 
@@ -164,7 +445,7 @@
 
 .section a {
   color: var(--accent-strong);
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .preview {
@@ -176,8 +457,8 @@
 
 .preview button {
   padding: 0.7rem 0.8rem;
-  border: 1px dashed var(--line);
-  border-radius: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
   background: transparent;
   color: var(--muted);
   text-align: left;
@@ -189,6 +470,269 @@
   font-size: 0.78rem;
 }
 
+.headerBody,
+.heading,
+.repositoryBar,
+.repositoryState,
+.panelHeading,
+.editorHeading,
+.reviewHeading,
+.changeRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.headerBody,
+.repositoryBar,
+.panelHeading,
+.reviewHeading {
+  justify-content: space-between;
+}
+.headerIcon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.headerIcon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.heading .eyebrow {
+  margin: 0 0 0.15rem;
+  font-size: 0.75rem;
+}
+.repositoryBar {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--repo-paper);
+  box-shadow: 0 1px 2px #00000004;
+}
+.repository {
+  min-width: 0;
+  flex: 1;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.repository select {
+  padding: 0;
+  min-height: 1.5rem;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  opacity: 1;
+  appearance: none;
+}
+.repositoryState {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  gap: 0.4rem;
+}
+.repositoryState > span {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--text);
+}
+.infoLine,
+.previewLink {
+  margin: 0.75rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.branchPages {
+  justify-content: flex-end;
+  align-items: center;
+  margin: 0.75rem 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.branchPages button {
+  min-height: 2rem;
+  padding: 0.375rem 0.625rem;
+  background: transparent;
+  font-size: 0.75rem;
+}
+.fileToolbar {
+  padding: 0.875rem 1rem;
+  margin: 0.75rem 0;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--repo-panel);
+}
+.fileToolbar label {
+  gap: 0.25rem;
+  flex: 1;
+  font-size: 0.75rem;
+}
+.fileToolbar .fileSearch {
+  flex: 1.5;
+}
+.fileToolbar > button {
+  flex-shrink: 0;
+  background: var(--bg);
+}
+.filePane {
+  min-width: 0;
+  background: #fafafa;
+  border-right: 1px solid var(--line);
+}
+.panelHeading,
+.editorHeading {
+  min-height: 3rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.8125rem;
+  background: var(--repo-paper);
+}
+.panelHeading strong {
+  font-weight: 500;
+}
+.panelHeading > span,
+.reviewHeading > span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.editorHeading svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.editor > label {
+  padding: 1rem 1rem 0;
+}
+.editor > .toolbar {
+  padding: 0 1rem;
+}
+.editor > p {
+  padding: 0 1rem;
+  font-size: 0.8125rem;
+}
+.editorEmpty {
+  display: grid;
+  min-height: 27rem;
+  align-content: center;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted);
+}
+.editorEmpty > span {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0.5rem;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  background: var(--panel);
+  color: var(--repo-ink);
+}
+.editorEmpty h2 {
+  color: var(--text);
+  font-size: 1rem;
+}
+.editorEmpty p {
+  margin: 0;
+}
+.editorEmpty small {
+  max-width: 22rem;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.reviewFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 1rem;
+  margin: 1.25rem 0;
+}
+.reviewFields > div {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.5rem;
+}
+.reviewFields p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.changeRow {
+  padding: 0.625rem 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.8125rem;
+}
+.changeRow button:first-child {
+  flex: 1;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+.changeRow + .primary,
+.review > .primary {
+  margin: 0.875rem 0;
+}
+.draftReview {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+.draftReview h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.draftReview > p {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.approval {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin: 1rem 0;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.approval input {
+  flex-shrink: 0;
+  margin-top: 0.25rem;
+  width: 1rem;
+  height: 1rem;
+}
+.notice {
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  border: 1px solid var(--line);
+  border-radius: 0.625rem;
+  background: var(--panel);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+}
+.previewLink {
+  margin-top: 1.5rem;
+}
+.previewLink a:hover {
+  color: var(--text);
+}
+
 @media (max-width: 42rem) {
   .page {
     padding: max(1rem, env(safe-area-inset-top)) max(0.9rem, env(safe-area-inset-right))
@@ -197,5 +741,85 @@
 
   .sections {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .headerBody,
+  .repositoryBar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .fileToolbar {
+    align-items: stretch;
+  }
+  .fileToolbar label {
+    flex-basis: 100%;
+  }
+  .fileToolbar .fileSearch {
+    flex-basis: 100%;
+  }
+  .filePane {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .reviewFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .review {
+    padding: 1rem;
+  }
+  .editorEmpty {
+    min-height: 16rem;
+    padding: 1.5rem;
+  }
+  .editor textarea {
+    min-height: 20rem;
+  }
+}
+
+@media (pointer: coarse) {
+  .page button,
+  .page input:not([type="checkbox"]),
+  .page select {
+    min-height: 2.75rem;
+  }
+  .repository select {
+    min-height: 1.5rem;
+    font-size: 0.875rem;
+  }
+
+  .page input:not([type="checkbox"]),
+  .page select,
+  .page textarea {
+    font-size: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page :is(button, a, input, select, textarea) {
+    transition: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .page {
+    --repo-line: #8a8a8a;
+    --repo-muted: #454545;
+  }
+  .page :is(button, input, select, textarea),
+  .explorer,
+  .repositoryBar,
+  .fileToolbar,
+  .review,
+  .diff pre,
+  .readonlyBadge,
+  .notice {
+    border-color: #8a8a8a;
+  }
+  .lead,
+  .infoLine,
+  .repositoryState,
+  .editorEmpty,
+  .reviewFields p,
+  .diff strong {
+    color: #454545;
   }
 }

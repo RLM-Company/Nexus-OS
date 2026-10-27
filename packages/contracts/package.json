@@ -4,10 +4,90 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./apex": {
+      "development": "./src/apex.ts",
+      "types": "./src/apex.ts",
+      "default": "./dist/apex.js"
+    },
+    "./game-project": {
+      "development": "./src/game-project.ts",
+      "types": "./src/game-project.ts",
+      "default": "./dist/game-project.js"
+    },
+    "./game-package": {
+      "development": "./src/game-package.ts",
+      "types": "./src/game-package.ts",
+      "default": "./dist/game-package.js"
+    },
+    "./website-document": {
+      "development": "./src/website-document.ts",
+      "types": "./src/website-document.ts",
+      "default": "./dist/website-document.js"
+    },
+    "./intelligence-graph-context": {
+      "development": "./src/intelligence-graph-context.ts",
+      "types": "./src/intelligence-graph-context.ts",
+      "default": "./dist/intelligence-graph-context.js"
+    },
+    "./work-schedule": {
+      "development": "./src/work-schedule.ts",
+      "types": "./src/work-schedule.ts",
+      "default": "./dist/work-schedule.js"
+    },
+    "./intelligence-graph-package": {
+      "development": "./src/intelligence-graph-package.ts",
+      "types": "./src/intelligence-graph-package.ts",
+      "default": "./dist/intelligence-graph-package.js"
+    },
+    "./work-dag": {
+      "development": "./src/work-dag.ts",
+      "types": "./src/work-dag.ts",
+      "default": "./dist/work-dag.js"
+    },
+    "./work-plan-package": {
+      "development": "./src/work-plan-package.ts",
+      "types": "./src/work-plan-package.ts",
+      "default": "./dist/work-plan-package.js"
+    },
+    "./artifact-context": {
+      "development": "./src/artifact-context.ts",
+      "types": "./src/artifact-context.ts",
+      "default": "./dist/artifact-context.js"
+    },
+    "./chat-memory": {
+      "development": "./src/chat-memory.ts",
+      "types": "./src/chat-memory.ts",
+      "default": "./dist/chat-memory.js"
+    },
+    "./canvas-artifacts": {
+      "development": "./src/canvas-artifacts.ts",
+      "types": "./src/canvas-artifacts.ts",
+      "default": "./dist/canvas-artifacts.js"
+    },
+    "./chat-attachments": {
+      "development": "./src/chat-attachments.ts",
+      "types": "./src/chat-attachments.ts",
+      "default": "./dist/chat-attachments.js"
+    },
     ".": {
       "development": "./src/index.ts",
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./chat-skills": {
+      "development": "./src/chat-skills.ts",
+      "types": "./src/chat-skills.ts",
+      "default": "./dist/chat-skills.js"
+    },
+    "./data-workspace": {
+      "development": "./src/data-workspace.ts",
+      "types": "./src/data-workspace.ts",
+      "default": "./dist/data-workspace.js"
+    },
+    "./presentation-package": {
+      "development": "./src/presentation-package.ts",
+      "types": "./src/presentation-package.ts",
+      "default": "./dist/presentation-package.js"
     }
   },
   "files": [

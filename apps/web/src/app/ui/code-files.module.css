@@ -1,0 +1,72 @@
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  overflow: hidden;
+  margin: 16px 0;
+  min-width: 0;
+}
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  padding: 4px 8px;
+}
+.tabs {
+  display: flex;
+  overflow: auto;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: thin;
+}
+.toolbar button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+.toolbar button svg {
+  width: 13px;
+  height: 13px;
+}
+.toolbar button[aria-selected="true"] {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 3px #0001;
+}
+.toolbar button:hover {
+  background: var(--surface);
+}
+.toolbar button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+.code {
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  max-height: 380px;
+  color: var(--text);
+  font: 12px/1.7 var(--font-mono);
+  tab-size: 2;
+}
+.code code {
+  font: inherit;
+}
+.panel > p {
+  font-size: 12px;
+  padding: 0 16px;
+}
+@media (max-width: 600px) {
+  .toolbar > button span {
+    display: none;
+  }
+}

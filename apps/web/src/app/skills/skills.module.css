@@ -1,8 +1,10 @@
 .page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: clamp(1rem, 3vw, 2.5rem);
+  padding: clamp(1.25rem, 3vw, 2rem);
   background: var(--bg);
+  color: var(--text);
+  font-size: 0.875rem;
 }
 
 .shell {
@@ -12,44 +14,55 @@
 
 .header {
   display: grid;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
 }
 
 .backLink {
   width: fit-content;
   color: var(--muted);
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: color 140ms ease;
+}
+
+.backLink:hover {
+  color: var(--text);
+}
+
+.page :is(button, a):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
 }
 
 .eyebrow {
   margin: 0 0 0.45rem;
-  color: var(--accent-strong);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .header h1 {
   margin: 0;
-  font-size: clamp(2rem, 5vw, 3.4rem);
-  letter-spacing: -0.04em;
+  font-size: clamp(1.5rem, 2.5vw, 1.875rem);
+  letter-spacing: -0.035em;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .lead {
-  max-width: 48rem;
-  margin: 0.75rem 0 0;
+  max-width: 42rem;
+  margin: 0.6rem 0 0;
   color: var(--muted);
   line-height: 1.6;
 }
 
 .boundary {
-  margin-bottom: 1rem;
-  padding: 1rem;
-  border: 1px solid var(--line);
-  border-radius: 1rem;
+  margin-bottom: 1.25rem;
+  padding: 0.875rem 1rem;
+  border: 0;
+  border-radius: 0.625rem;
   background: var(--panel);
 }
 
@@ -67,17 +80,170 @@
 .catalog {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
+  gap: 1rem;
+  margin: 1.5rem 0 3rem;
+}
+
+.sidebar,
+.editor {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--bg);
+}
+
+.sidebarHeader,
+.editorHeading,
+.actions,
+.history > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.sidebar h2,
+.editor h2,
+.examples h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.sidebar > p {
+  color: var(--muted);
+}
+.sidebar button,
+.actions button,
+.history button {
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.sidebar button:hover,
+.actions button:hover,
+.history button:hover {
+  background: var(--surface-hover);
+}
+.sidebar button:disabled,
+.actions button:disabled,
+.history button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sidebar .skillRow,
+.sidebar .activeSkill {
+  display: grid;
+  width: 100%;
+  text-align: left;
+  margin-top: 0.6rem;
+  gap: 0.2rem;
+  overflow-wrap: anywhere;
+}
+.sidebar .activeSkill {
+  border-color: var(--text);
+}
+.sidebar .importButton {
+  width: 100%;
+  margin-top: 0.7rem;
+}
+.fileInput {
+  display: none;
+}
+.sidebar small,
+.editorHeading span {
+  color: var(--muted);
+}
+.editor {
+  display: grid;
+  align-content: start;
   gap: 0.9rem;
+}
+.editor label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+.editor input,
+.editor select,
+.editor textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+}
+.editor textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+.actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.actions button:first-child {
+  background: var(--text);
+  color: var(--bg);
+}
+.message {
+  margin: 0;
+  padding: 0.65rem;
+  background: var(--panel);
+  border-radius: 0.4rem;
+}
+.preview {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+.preview h3 {
+  margin: 0;
+}
+.preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.55;
+}
+.history {
+  display: grid;
+  gap: 0.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+.history h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.history > div {
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--line);
+}
+.examples > h2 {
+  margin-bottom: 1rem;
 }
 
 .card {
   display: grid;
-  gap: 1rem;
+  gap: 0.875rem;
   min-width: 0;
-  padding: 1rem;
+  padding: 1.125rem;
   border: 1px solid var(--line);
-  border-radius: 1rem;
-  background: var(--panel);
+  border-radius: 0.75rem;
+  background: var(--bg);
 }
 
 .cardHeader {
@@ -104,8 +270,8 @@
   border-radius: 999px;
   background: var(--surface-hover);
   color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 800;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .summary {
@@ -128,9 +294,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.25rem 0.6rem;
-  padding: 0.7rem;
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  padding: 0.7rem 0;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
 
 .permission div {
@@ -139,8 +305,8 @@
 }
 
 .permission > span {
-  font-size: 0.72rem;
-  font-weight: 800;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .permission p {
@@ -154,24 +320,106 @@
 .card button {
   align-self: end;
   width: 100%;
-  padding: 0.7rem;
+  min-height: 2.5rem;
+  padding: 0.625rem 0.75rem;
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
-  background: var(--surface-hover);
+  border-radius: 0.5rem;
+  background: var(--panel);
   color: var(--muted);
   font: inherit;
-  font-weight: 700;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: default;
 }
 
 @media (max-width: 56rem) {
   .catalog {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 42rem) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .catalog {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .page {
     padding: max(1rem, env(safe-area-inset-top)) max(0.9rem, env(safe-area-inset-right))
       max(1rem, env(safe-area-inset-bottom)) max(0.9rem, env(safe-area-inset-left));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page :is(button, a) {
+    transition: none;
+  }
+}
+
+.importPanel {
+  margin: 1rem 0;
+  display: grid;
+  gap: 0.65rem;
+}
+.importPanel input[type="file"] {
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.5rem;
+}
+.importPanel .preview {
+  padding: 0.5rem;
+  max-height: 34rem;
+  overflow: auto;
+}
+.search {
+  display: grid;
+  gap: 0.4rem;
+  margin: 1rem 0;
+}
+.search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+}
+.review {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+.comparison > section > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+.comparison pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 25rem;
+  overflow: auto;
+  font: inherit;
+  padding: 0.6rem;
+  background: var(--panel);
+}
+.editor .check,
+.check {
+  display: flex;
+  align-items: start;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+.editor .check input,
+.check input {
+  width: auto;
+  flex: 0 0 auto;
+}
+@media (max-width: 600px) {
+  .comparison > section > div {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

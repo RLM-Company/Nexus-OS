@@ -1,0 +1,107 @@
+.slider {
+  padding: 1px 0 7px;
+}
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 550;
+}
+.heading output {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 450;
+}
+.slider input {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: none;
+  accent-color: var(--text);
+}
+.slider input::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9px;
+  background: linear-gradient(
+    to right,
+    var(--text) 0 var(--effort-fill),
+    var(--line) var(--effort-fill) 100%
+  );
+}
+.slider input::-webkit-slider-thumb {
+  appearance: none;
+  width: 17px;
+  height: 17px;
+  margin-top: -4.5px;
+  border: 3px solid var(--bg);
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow:
+    0 0 0 1px var(--text),
+    0 2px 4px #0002;
+  transition: box-shadow 120ms ease;
+}
+.slider input::-moz-range-track {
+  height: 8px;
+  border-radius: 9px;
+  background: var(--line);
+}
+.slider input::-moz-range-progress {
+  height: 8px;
+  background: var(--text);
+}
+.slider input::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 1px var(--text);
+}
+.slider input:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+.slider input:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ticks {
+  display: flex;
+  justify-content: space-between;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.ticks span {
+  position: relative;
+  padding-top: 5px;
+}
+.ticks span::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 3px;
+  width: 1px;
+  background: var(--line-strong);
+}
+.ticks span[data-active] {
+  color: var(--text);
+  font-weight: 550;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slider input::-webkit-slider-thumb {
+    transition: none;
+  }
+}

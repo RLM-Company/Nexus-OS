@@ -1,4 +1,10 @@
 import type { ModelRequest } from "@cosmora/contracts";
+import {
+  assertToolCall,
+  assertToolTranscript,
+  MAX_TOOL_ARGUMENT_BYTES,
+  MAX_TOOL_CALLS
+} from "./tool-transcript.js";
 import { GatewayRunError, type ModelProviderAdapter, type ProviderStreamEvent } from "./types.js";
 
 export interface OpenAICompatibleAdapterOptions {
@@ -13,7 +19,16 @@ interface CompletionChunk {
   error?: unknown;
   model?: string;
   choices?: Array<{
-    delta?: { content?: string | null };
+    index?: number;
+    delta?: {
+      content?: string | null;
+      tool_calls?: Array<{
+        index: number;
+        id?: string;
+        type?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
     finish_reason?: string | null;
   }>;
   usage?: {
@@ -40,6 +55,10 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncGenerator<ProviderStreamEvent> {
+    const allowedNames = assertToolTranscript(request, this.id);
+    const previousCallIds = new Set(
+      request.messages.flatMap((message) => message.tool_calls?.map((call) => call.id) ?? [])
+    );
     const response = await this.#fetch(`${this.#baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -48,8 +67,25 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       },
       body: JSON.stringify({
         model: this.#model,
-        messages: request.messages,
+        messages: request.messages.map(({ role, content, images, tool_calls, tool_call_id }) => ({
+          role,
+          ...(tool_calls ? { tool_calls } : {}),
+          ...(tool_call_id ? { tool_call_id } : {}),
+          content: images?.length
+            ? [
+                { type: "text", text: content },
+                ...images.map((image) => ({
+                  type: "image_url",
+                  image_url: { url: `data:${image.media_type};base64,${image.data_base64}` }
+                }))
+              ]
+            : content
+        })),
+        ...(request.tools ? { tools: request.tools, tool_choice: "auto" } : {}),
         max_tokens: request.constraints.max_output_tokens,
+        ...(request.constraints.reasoning_effort && /^(gpt-[56]|o[1-9])/i.test(this.#model)
+          ? { reasoning_effort: request.constraints.reasoning_effort }
+          : {}),
         stream: true,
         stream_options: { include_usage: true }
       }),
@@ -68,13 +104,15 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       throw new GatewayRunError("PROVIDER_ERROR", this.id, "Provider returned an empty body", true);
     }
 
+    const calls = new Map<number, { id: string; name: string; arguments: string }>();
+    let argumentBytes = 0;
     let resolvedModel = this.#model;
     let finishReason: string | null = null;
     let ended = false;
     let hasText = false;
     let usage = { inputTokens: null as number | null, outputTokens: null as number | null };
 
-    for await (const payload of this.#readDataPayloads(response.body)) {
+    for await (const payload of this.#readDataPayloads(response.body, signal)) {
       if (payload === "[DONE]") {
         ended = true;
         break;
@@ -101,7 +139,79 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
         );
       }
       if (chunk.model) resolvedModel = chunk.model;
+      if (chunk.choices && (!Array.isArray(chunk.choices) || chunk.choices.length > 1)) {
+        throw new GatewayRunError(
+          "PROVIDER_ERROR",
+          this.id,
+          "Invalid provider stream event",
+          false
+        );
+      }
       const choice = chunk.choices?.[0];
+      if (choice?.index !== undefined && choice.index !== 0) {
+        throw new GatewayRunError(
+          "PROVIDER_ERROR",
+          this.id,
+          "Invalid provider stream event",
+          false
+        );
+      }
+      const fragments = choice?.delta?.tool_calls;
+      if (fragments !== undefined) {
+        if (
+          finishReason !== null ||
+          !Array.isArray(fragments) ||
+          !allowedNames.size ||
+          fragments.length > MAX_TOOL_CALLS
+        ) {
+          throw new GatewayRunError(
+            "PROVIDER_ERROR",
+            this.id,
+            "Invalid structured tool call",
+            false
+          );
+        }
+        for (const fragment of fragments) {
+          if (
+            !fragment ||
+            !Number.isInteger(fragment.index) ||
+            fragment.index < 0 ||
+            fragment.index >= MAX_TOOL_CALLS ||
+            (fragment.type !== undefined && fragment.type !== "function") ||
+            (fragment.id !== undefined && typeof fragment.id !== "string") ||
+            (fragment.function !== undefined &&
+              (!fragment.function || typeof fragment.function !== "object")) ||
+            (fragment.function?.name !== undefined && typeof fragment.function.name !== "string") ||
+            (fragment.function?.arguments !== undefined &&
+              typeof fragment.function.arguments !== "string")
+          ) {
+            throw new GatewayRunError(
+              "PROVIDER_ERROR",
+              this.id,
+              "Invalid structured tool call",
+              false
+            );
+          }
+          const call = calls.get(fragment.index) ?? { id: "", name: "", arguments: "" };
+          call.id += fragment.id ?? "";
+          call.name += fragment.function?.name ?? "";
+          call.arguments += fragment.function?.arguments ?? "";
+          argumentBytes += new TextEncoder().encode(fragment.function?.arguments ?? "").length;
+          if (
+            call.id.length > 128 ||
+            call.name.length > 64 ||
+            argumentBytes > MAX_TOOL_ARGUMENT_BYTES
+          ) {
+            throw new GatewayRunError(
+              "PROVIDER_ERROR",
+              this.id,
+              "Invalid structured tool call",
+              false
+            );
+          }
+          calls.set(fragment.index, call);
+        }
+      }
       const delta = choice?.delta?.content;
       if (delta !== undefined && delta !== null && typeof delta !== "string") {
         throw new GatewayRunError("PROVIDER_ERROR", this.id, "Invalid text delta", false);
@@ -113,7 +223,17 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
         hasText ||= delta.trim().length > 0;
         yield { type: "text.delta", delta };
       }
-      if (choice?.finish_reason) finishReason = choice.finish_reason;
+      if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
+        if (finishReason !== null || typeof choice.finish_reason !== "string") {
+          throw new GatewayRunError(
+            "PROVIDER_ERROR",
+            this.id,
+            "Invalid provider stream event",
+            false
+          );
+        }
+        finishReason = choice.finish_reason;
+      }
       if (chunk.usage) {
         usage = {
           inputTokens: chunk.usage.prompt_tokens ?? null,
@@ -122,7 +242,10 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       }
     }
 
-    if (!ended || finishReason !== "stop" || !hasText) {
+    if (
+      !ended ||
+      (calls.size ? finishReason !== "tool_calls" : finishReason !== "stop" || !hasText)
+    ) {
       throw new GatewayRunError(
         "PROVIDER_ERROR",
         this.id,
@@ -130,24 +253,61 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
         false
       );
     }
+    const completeCalls = [...calls.entries()].sort(([a], [b]) => a - b);
+    const ids = new Set<string>();
+    try {
+      for (const [index, call] of completeCalls) {
+        if (index !== ids.size || ids.has(call.id) || previousCallIds.has(call.id))
+          throw new Error("Duplicate or noncontiguous tool call");
+        assertToolCall(call.id, call.name, call.arguments, allowedNames);
+        ids.add(call.id);
+      }
+    } catch (cause) {
+      throw new GatewayRunError("PROVIDER_ERROR", this.id, "Invalid structured tool call", false, {
+        cause
+      });
+    }
+    for (const [, call] of completeCalls) {
+      if (signal.aborted)
+        throw new GatewayRunError("INTERRUPTED", this.id, "Model run was interrupted", false);
+      yield { type: "tool.call", ...call };
+    }
     yield {
       type: "response.completed",
       provider: this.id,
       model: resolvedModel,
-      finishReason,
+      finishReason: finishReason!,
       usage
     };
   }
 
-  async *#readDataPayloads(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+  async *#readDataPayloads(
+    stream: ReadableStream<Uint8Array>,
+    signal: AbortSignal
+  ): AsyncGenerator<string> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
 
+    const onAbort = (): void => {
+      void reader.cancel().catch(() => undefined);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
     try {
       while (true) {
+        if (signal.aborted)
+          throw new GatewayRunError("INTERRUPTED", this.id, "Model run was interrupted", false);
         const { done, value } = await reader.read();
+        if (signal.aborted)
+          throw new GatewayRunError("INTERRUPTED", this.id, "Model run was interrupted", false);
         buffer += decoder.decode(value, { stream: !done });
+        if (buffer.length > 262_144)
+          throw new GatewayRunError(
+            "PROVIDER_ERROR",
+            this.id,
+            "Invalid provider stream event",
+            false
+          );
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() ?? "";
         for (const line of lines) {
@@ -157,6 +317,7 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       }
       if (buffer.startsWith("data:")) yield buffer.slice(5).trim();
     } finally {
+      signal.removeEventListener("abort", onAbort);
       await reader.cancel().catch(() => undefined);
       reader.releaseLock();
     }

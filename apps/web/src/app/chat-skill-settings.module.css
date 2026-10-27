@@ -1,0 +1,34 @@
+.skills {
+  min-width: 0;
+}
+.item {
+  display: grid;
+  gap: 6px;
+  padding-block: 6px;
+}
+.skills .choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  cursor: pointer;
+}
+.choice input {
+  margin-top: 4px;
+  flex: none;
+}
+.choice span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.choice small {
+  display: block;
+  color: var(--muted);
+}
+.preview {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 12px;
+}

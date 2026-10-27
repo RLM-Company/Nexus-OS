@@ -1,4 +1,6 @@
+import { ContextTooLargeError } from "@cosmora/core";
 import type { ChatService } from "@cosmora/core";
+import type { ChatImageAttachment } from "@cosmora/contracts";
 import type { EmergencyStopStore, StoredGeneralChatMessage } from "@cosmora/db";
 import {
   GatewayRunError,
@@ -11,6 +13,14 @@ import type {
   QueuedGeneralChatRun
 } from "./general-chat-runtime-store.js";
 import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.js";
+import type { AccountStore } from "./account-settings/account-store.js";
+import { imageCreationPrompt, ChatImageError } from "./media/chat-images.js";
+import {
+  QuotaExceededError,
+  RelayExecution,
+  RelayProtectionError,
+  RelayUnavailableError
+} from "./account-settings/relay-execution.js";
 
 export interface GeneralChatBackgroundRunCoordinatorOptions {
   store: GeneralChatRuntimeStore;
@@ -22,6 +32,13 @@ export interface GeneralChatBackgroundRunCoordinatorOptions {
   pollIntervalMs?: number;
   controlPollIntervalMs?: number;
   maxConcurrentRuns?: number;
+  accountStore?: AccountStore;
+  imageGeneration?: (
+    ownerId: string,
+    prompt: string,
+    signal: AbortSignal,
+    references?: readonly ChatImageAttachment[]
+  ) => Promise<string>;
 }
 
 type ActiveRun = {
@@ -35,6 +52,9 @@ const positiveInteger = (value: number | undefined, fallback: number): number =>
 
 export class GeneralChatBackgroundRunCoordinator {
   readonly #store: GeneralChatRuntimeStore;
+  readonly #accountStore: AccountStore | undefined;
+  readonly #imageGeneration: GeneralChatBackgroundRunCoordinatorOptions["imageGeneration"];
+  readonly #relay: RelayExecution | undefined;
   readonly #modelGateway: ModelGateway;
   readonly #chat: ChatService;
   readonly #runtimeMetrics: RuntimeMetrics;
@@ -50,6 +70,11 @@ export class GeneralChatBackgroundRunCoordinator {
 
   constructor(options: GeneralChatBackgroundRunCoordinatorOptions) {
     this.#store = options.store;
+    this.#accountStore = options.accountStore;
+    this.#imageGeneration = options.imageGeneration;
+    this.#relay = options.accountStore
+      ? new RelayExecution(options.accountStore, options.modelGateway)
+      : undefined;
     this.#modelGateway = options.modelGateway;
     this.#chat = options.chat;
     this.#runtimeMetrics = options.runtimeMetrics;
@@ -72,6 +97,11 @@ export class GeneralChatBackgroundRunCoordinator {
     this.#pollTimer.unref?.();
   }
 
+  async quiesceOwner(ownerId: string): Promise<void> {
+    const active = [...this.#activeRuns.values()].filter((run) => run.ownerId === ownerId);
+    for (const run of active) run.controller.abort(new Error("OWNER_PRIVACY_QUIESCE"));
+    await Promise.allSettled(active.map((run) => run.task));
+  }
   async stop(): Promise<void> {
     this.#stopping = true;
     if (this.#pollTimer !== null) {
@@ -153,6 +183,7 @@ export class GeneralChatBackgroundRunCoordinator {
     }, this.#controlPollIntervalMs);
     controlTimer.unref?.();
 
+    const mainHolds = new Map<number, string>();
     try {
       const conversation = this.#store.getConversationForRun(queued.run_id, queued.owner_id);
       if (conversation.length === 0) {
@@ -164,11 +195,54 @@ export class GeneralChatBackgroundRunCoordinator {
         );
       }
 
-      const modelRequest = this.#chat.buildRequest({
+      const latestUser = conversation.findLast((message) => message.role === "user");
+      const references = (latestUser?.attachments ?? []).filter(
+        (file): file is ChatImageAttachment => "data_base64" in file
+      );
+      const imagePrompt = latestUser
+        ? imageCreationPrompt(latestUser.content, references.length > 0)
+        : null;
+      if (imagePrompt) {
+        if (latestUser?.attachments?.some((file) => !("data_base64" in file)))
+          throw new ChatImageError("IMAGE_REFERENCES_UNSUPPORTED");
+        if (!this.#imageGeneration) throw new ChatImageError("MEDIA_UNAVAILABLE");
+        const assetId = await this.#imageGeneration(
+          queued.owner_id,
+          imagePrompt,
+          controller.signal,
+          references
+        );
+        controller.signal.throwIfAborted();
+        if (this.#store.completeImageRun(queued.run_id, queued.owner_id, assetId))
+          this.#runtimeMetrics.runCompleted();
+        return;
+      }
+      let modelRequest = this.#chat.buildRequest({
         chatId: queued.chat_id,
         runId: queued.run_id,
-        messages: conversation
+        messages: conversation,
+        memoryNotes: this.#store.getChatMemory(queued.chat_id, queued.owner_id)?.memory_notes ?? "",
+        skills: this.#store.skills.forRun(queued.run_id, queued.owner_id)?.items ?? []
       });
+      if (
+        this.#accountStore?.getRelay(queued.owner_id, queued.chat_id) &&
+        !this.#accountStore.getExecution(queued.owner_id).turbo &&
+        conversation.some((message) => message.attachments?.length)
+      )
+        throw new RelayProtectionError(
+          "Attachments are not translated without explicit format permission"
+        );
+      const prepared = this.#relay
+        ? await this.#relay.prepare(
+            queued.owner_id,
+            queued.chat_id,
+            queued.run_id,
+            modelRequest,
+            controller.signal
+          )
+        : { request: modelRequest, relay: false };
+      modelRequest = prepared.request;
+      let pendingEnglish = "";
       let completed: Extract<ModelGatewayStreamEvent, { type: "response.completed" }> | undefined;
 
       for await (const event of this.#modelGateway.stream(modelRequest, controller.signal)) {
@@ -191,12 +265,39 @@ export class GeneralChatBackgroundRunCoordinator {
             },
             "Background general chat route attempt selected"
           );
-          const reserved = this.#store.reserveModelUsage(
-            queued.run_id,
-            event.route,
-            queued.owner_id
-          );
+          if (!this.#accountStore) throw new Error("OWNER_BUDGET_UNAVAILABLE");
+          {
+            const hold = this.#accountStore.reserve(
+              queued.owner_id,
+              queued.run_id,
+              event.route.attempt,
+              event.route.estimated_input_tokens + event.route.max_output_tokens,
+              "main",
+              queued.chat_id,
+              event.route.provider_id,
+              event.route.model_id
+            );
+            mainHolds.set(event.route.attempt, hold);
+          }
+          // Canonical denial (or local SQL failure) happened BEFORE dispatch:
+          // release only this proven pre-dispatch hold, not an uncertain charge.
+          let reserved: ReturnType<GeneralChatRuntimeStore["reserveModelUsage"]>;
+          try {
+            reserved = this.#store.reserveModelUsage(queued.run_id, event.route, queued.owner_id);
+          } catch (error) {
+            const hold = mainHolds.get(event.route.attempt);
+            if (hold) {
+              this.#accountStore.releaseBeforeDispatch(hold);
+              mainHolds.delete(event.route.attempt);
+            }
+            throw error;
+          }
           if (!reserved) {
+            const hold = mainHolds.get(event.route.attempt);
+            if (hold) {
+              this.#accountStore.releaseBeforeDispatch(hold);
+              mainHolds.delete(event.route.attempt);
+            }
             throw new GatewayRunError(
               "ROUTE_UNAVAILABLE",
               event.route.provider_id,
@@ -207,6 +308,8 @@ export class GeneralChatBackgroundRunCoordinator {
         } else if (event.type === "route.failed") {
           this.#runtimeMetrics.routeFailed(event.errorCode);
           this.#store.failModelUsage(queued.run_id, event.route.attempt, event.errorCode);
+          const hold = mainHolds.get(event.route.attempt);
+          if (hold) this.#accountStore?.uncertainReservation(hold, "main");
           this.#logger?.warn(
             {
               runId: queued.run_id,
@@ -220,8 +323,9 @@ export class GeneralChatBackgroundRunCoordinator {
             "Background general chat route attempt failed"
           );
         } else if (event.type === "text.delta") {
-          this.#store.appendAssistantDelta(assistant.id, event.delta);
-        } else {
+          if (prepared.relay) pendingEnglish += event.delta;
+          else this.#store.appendAssistantDelta(assistant.id, event.delta);
+        } else if (event.type === "response.completed") {
           completed = event;
         }
       }
@@ -235,10 +339,30 @@ export class GeneralChatBackgroundRunCoordinator {
         );
       }
 
+      if (prepared.relay) {
+        if (!pendingEnglish.trim()) throw new RelayUnavailableError("No text to translate");
+        const translated = await this.#relay!.finish(
+          queued.owner_id,
+          queued.chat_id,
+          queued.run_id,
+          modelRequest,
+          pendingEnglish,
+          controller.signal
+        );
+        this.#store.appendAssistantDelta(assistant.id, translated);
+      }
       this.#store.completeRun(queued.run_id, completed.provider, completed.model, completed.usage, {
         attempt: completed.route.attempt,
         calculatedCost: completed.calculatedCost
       });
+      const hold = mainHolds.get(completed.route.attempt);
+      if (hold)
+        this.#accountStore?.completeReservation(
+          hold,
+          "main",
+          completed.usage.inputTokens,
+          completed.usage.outputTokens
+        );
       this.#runtimeMetrics.runCompleted();
       this.#logger?.info(
         {
@@ -254,6 +378,11 @@ export class GeneralChatBackgroundRunCoordinator {
         "Background general chat run completed"
       );
     } catch (error) {
+      if (error instanceof ChatImageError) {
+        this.#store.failRun(queued.run_id, error.code);
+        this.#runtimeMetrics.runFailed("PROVIDER_ERROR");
+        return;
+      }
       if (controller.signal.reason instanceof EmergencyStopActivatedError) {
         this.#store.failRun(queued.run_id, "EMERGENCY_STOP");
         this.#runtimeMetrics.runFailed("EMERGENCY_STOP");
@@ -279,12 +408,29 @@ export class GeneralChatBackgroundRunCoordinator {
         return;
       }
 
+      if (
+        error instanceof RelayUnavailableError ||
+        error instanceof RelayProtectionError ||
+        error instanceof QuotaExceededError
+      ) {
+        const code =
+          error instanceof QuotaExceededError ? "USAGE_LIMIT_EXCEEDED" : "RELAY_UNAVAILABLE";
+        this.#store.failRun(queued.run_id, code);
+        this.#runtimeMetrics.runFailed("PROVIDER_ERROR");
+        this.#logger?.warn(
+          { runId: queued.run_id, chatId: queued.chat_id, code },
+          "Chat preflight or relay failed closed"
+        );
+        return;
+      }
       const gatewayError =
-        error instanceof GatewayRunError
-          ? error
-          : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
-              cause: error
-            });
+        error instanceof ContextTooLargeError
+          ? new GatewayRunError("CONTEXT_TOO_LARGE", "gateway", error.message, false)
+          : error instanceof GatewayRunError
+            ? error
+            : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
+                cause: error
+              });
       this.#store.failRun(queued.run_id, gatewayError.code);
       this.#runtimeMetrics.runFailed(gatewayError.code);
       this.#logger?.warn(
@@ -297,6 +443,7 @@ export class GeneralChatBackgroundRunCoordinator {
         "Background general chat provider run failed"
       );
     } finally {
+      for (const hold of mainHolds.values()) this.#accountStore?.uncertainReservation(hold, "main");
       clearInterval(controlTimer);
     }
   }

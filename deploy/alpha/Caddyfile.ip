@@ -1,0 +1,12 @@
+{
+	default_sni {$COSMORA_DEMO_DOMAIN}
+}
+
+{$COSMORA_DEMO_DOMAIN} {
+	tls {
+		issuer acme https://acme-v02.api.letsencrypt.org/directory {
+			profile shortlived
+		}
+	}
+	import owner-routes.caddy
+}

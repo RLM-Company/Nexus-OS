@@ -1,0 +1,23 @@
+.keyword {
+  font-weight: 650;
+  color: #222;
+}
+.string {
+  color: #555;
+}
+.number {
+  color: #333;
+  font-weight: 550;
+}
+.comment {
+  color: #737373;
+  font-style: italic;
+}
+@media (forced-colors: active) {
+  .keyword,
+  .string,
+  .number,
+  .comment {
+    color: CanvasText;
+  }
+}

@@ -1,0 +1,113 @@
+.menu {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.menu summary {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  list-style: none;
+  cursor: pointer;
+  color: var(--muted);
+}
+.menu summary::-webkit-details-marker {
+  display: none;
+}
+.menu summary:hover,
+.menu[open] summary {
+  background: var(--surface);
+  color: var(--text);
+}
+.menu summary svg {
+  width: 18px;
+  height: 18px;
+}
+.panel {
+  position: fixed;
+  width: 248px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg, #fff);
+  color: var(--text, #171717);
+  border-radius: 12px;
+  box-shadow: var(--shadow-popover);
+  z-index: 250;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.panel button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.panel button:hover {
+  background: var(--surface);
+}
+.panel button svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+.panel button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.panel .destructive {
+  color: var(--text, #171717);
+}
+.panel hr {
+  border: 0;
+  border-top: 1px solid var(--line, #ddd);
+  margin: 6px 4px;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 3px 6px 9px;
+}
+.heading strong {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.heading button {
+  width: 28px;
+  padding: 5px;
+}
+.panel p {
+  margin: 6px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.panel label {
+  display: grid;
+  gap: 7px;
+  padding: 6px;
+  font-size: 12px;
+}
+.panel input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px;
+  background: var(--bg);
+  color: var(--text);
+}

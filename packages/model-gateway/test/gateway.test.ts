@@ -7,6 +7,8 @@ import {
   ModelRegistry,
   ModelRouter,
   OpenAICompatibleAdapter,
+  RuntimeClock,
+  CLOCK_CONTEXT_RESERVATION,
   type ModelGatewayStreamEvent,
   type ModelProviderAdapter,
   type ProviderStreamEvent
@@ -102,6 +104,61 @@ const collectProvider = async (
 };
 
 describe("ModelGateway", () => {
+  it("refreshes the clock on a permitted retry without duplicating context or reservation", async () => {
+    let wall = Date.parse("2026-10-25T20:59:59Z"),
+      monotonic = 0;
+    const clock = new RuntimeClock({ wallNow: () => wall, monotonicNow: () => monotonic });
+    const observed: ModelRequest[] = [];
+    const adapter: ModelProviderAdapter = {
+      id: "mock",
+      modelId: "manager-b0.1",
+      stream: async function* (req, signal) {
+        observed.push(req);
+        if (observed.length === 1) {
+          await Promise.resolve();
+          throw new GatewayRunError("PROVIDER_ERROR", "mock", "Unavailable", true);
+        }
+        yield* new MockProviderAdapter().stream(req, signal);
+      }
+    };
+    const gateway = new ModelGateway(
+      [adapter],
+      router([entry()]),
+      [],
+      {
+        maxAttemptsPerRoute: 2,
+        sleep: () => {
+          wall += 2000;
+          monotonic += 2000;
+          return Promise.resolve();
+        }
+      },
+      clock
+    );
+    const events = await collectGateway(gateway.stream(request()));
+    expect(
+      events
+        .filter((event) => event.type === "route.selected")
+        .map((event) => event.route.estimated_input_tokens)
+    ).toEqual([100 + CLOCK_CONTEXT_RESERVATION, 100 + CLOCK_CONTEXT_RESERVATION]);
+    expect(observed).toHaveLength(2);
+    for (const req of observed)
+      expect(
+        req.messages.filter((message) => message.content.startsWith("KOSMORA_RUNTIME_CLOCK_V1"))
+      ).toHaveLength(1);
+    expect(observed[1]!.messages[1]!.content).toContain('"local_date":"2026-10-26"');
+    expect(observed[1]!.messages[1]!.content).toContain('"elapsed_ms":2000');
+  });
+  it("includes clock context in pre-dispatch registry limits", () => {
+    const gateway = new ModelGateway(
+      [new MockProviderAdapter()],
+      router([entry({ context_window_tokens: 1000, max_output_tokens: 500 })]),
+      [],
+      {},
+      new RuntimeClock()
+    );
+    expect(() => gateway.assertRoute(request())).toThrow();
+  });
   it("rejects duplicate provider adapter identities", () => {
     expect(
       () =>
@@ -529,6 +586,37 @@ describe("ModelGateway", () => {
 });
 
 describe("OpenAICompatibleAdapter", () => {
+  it.each(["low", "medium", "high"] as const)(
+    "passes native reasoning effort %s without changing the token limit",
+    async (effort) => {
+      let sent: Record<string, unknown> = {};
+      const adapter = new OpenAICompatibleAdapter({
+        id: "fixture",
+        baseUrl: "https://provider.example/v1",
+        apiKey: "fixture-key",
+        model: "gpt-5.1",
+        fetchImplementation: (_url, init) => {
+          if (typeof init?.body !== "string") throw new Error("Expected JSON body");
+          sent = JSON.parse(init.body) as Record<string, unknown>;
+          return Promise.resolve(
+            new Response(
+              'data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+            )
+          );
+        }
+      });
+      await collectProvider(
+        adapter.stream(
+          request({
+            constraints: { timeout_ms: 1000, max_output_tokens: 500, reasoning_effort: effort }
+          }),
+          new AbortController().signal
+        )
+      );
+      expect(sent.reasoning_effort).toBe(effort);
+      expect(sent.max_tokens).toBe(500);
+    }
+  );
   it("parses text, usage and model from an SSE response", async () => {
     let authorization = "";
     const adapter = new OpenAICompatibleAdapter({

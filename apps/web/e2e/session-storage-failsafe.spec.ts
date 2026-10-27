@@ -14,6 +14,10 @@ test("keeps the ordinary chat usable when sessionStorage is unavailable", async 
 
   await expect(page.locator(".topbar .eyebrow")).toHaveText("Обычный чат");
   await expect(page.locator(".hero h2")).not.toBeEmpty();
-  await expect(page.getByLabel("Сообщение Cosmora")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Отправить" })).toBeVisible();
+  await expect(page.getByLabel("Сообщение Kosmora")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Открыть голосового помощника", exact: true })
+  ).toBeVisible();
+  await page.getByLabel("Сообщение Kosmora").fill("Черновик без sessionStorage");
+  await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled();
 });

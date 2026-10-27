@@ -4,7 +4,7 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   const initialTask = "Оформи как проект: B0.1 — проверь сохранение после перезапуска";
 
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill(initialTask);
+  await page.getByLabel("Сообщение Kosmora").fill(initialTask);
   const createProject = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/v1/projects") && response.request().method() === "POST"
@@ -28,11 +28,8 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
       .getByRole("region", { name: "Главный чат проекта" })
       .getByText("Следующий этап подключит настоящего менеджера")
   ).toBeVisible();
-  await expect(
-    page
-      .getByRole("region", { name: "Главный чат проекта" })
-      .getByText("Последний ответ: mock · manager-b0.1")
-  ).toBeVisible();
+  // Provider internals are deliberately absent from the conversation UI.
+  await expect(page.getByText("Последний ответ: mock · manager-b0.1")).toHaveCount(0);
   await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
   await expect(page).toHaveURL(new RegExp(`project=${createdBody.project.id}&view=chat`));
   await page.getByRole("tab", { name: "Проект" }).click();
@@ -45,7 +42,8 @@ test("creates a project, streams, restores history and cancels a run", async ({ 
   await expect(projectFacts).toContainText("Recovery");
   await expect(projectFacts).toContainText("Не требуется");
   await expect(projectFacts).toContainText("Сообщений");
-  await expect(page.getByRole("link", { name: "Control Center" })).toHaveAttribute(
+  await page.getByLabel("Аккаунт владельца").click();
+  await expect(page.getByRole("link", { name: "Автономность и безопасность" })).toHaveAttribute(
     "href",
     `/control-center?project=${createdBody.project.id}`
   );
@@ -190,7 +188,7 @@ test("surfaces server-confirmed owner decisions and recovery in the Manager Cons
 
   await page.goto("/");
   await page
-    .getByLabel("Сообщение Cosmora")
+    .getByLabel("Сообщение Kosmora")
     .fill("Оформи как проект: Project Alpha — проверь карточки решений");
   const createdProject = page.waitForResponse(
     (response) =>

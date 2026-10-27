@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Kosmora runtime expiry hourly and back up daily
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5min
+Unit=kosmora-maintenance.service
+
+[Install]
+WantedBy=timers.target

@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { safeApiError } from "../safe-api-error";
+import { KosmoraBrandMark } from "../kosmora-brand";
+import RuntimeOverview from "./runtime-overview";
 import styles from "./control-center.module.css";
 
 type AutonomyLevel = "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
@@ -310,10 +312,12 @@ export default function ControlCenterPage() {
   const [runtimeRefreshRequired, setRuntimeRefreshRequired] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const loadEpoch = useRef(0);
   const actionPending =
     previewing || applying || limitPreviewing || limitApplying || deciding || stopping || clearing;
 
   const load = useCallback(async (id: string): Promise<void> => {
+    const epoch = ++loadEpoch.current;
     setLoading(true);
     setError(null);
     setNotice(null);
@@ -374,6 +378,7 @@ export default function ControlCenterPage() {
           "/api/v1/operations/emergency-stop/clearance-events?limit=50"
         )
       ]);
+      if (epoch !== loadEpoch.current) return;
       setData({
         profile: profileResponse.profile,
         confirmations: confirmationsResponse.items,
@@ -397,10 +402,11 @@ export default function ControlCenterPage() {
       );
       setLimitCurrency(usageLimitResponse.limit.max_cost?.currency ?? "USD");
     } catch (cause) {
+      if (epoch !== loadEpoch.current) return;
       setData(null);
       setError(cause instanceof Error ? cause.message : "Не удалось загрузить Control Center");
     } finally {
-      setLoading(false);
+      if (epoch === loadEpoch.current) setLoading(false);
     }
   }, []);
 
@@ -1032,9 +1038,11 @@ export default function ControlCenterPage() {
     <main className={styles.shell}>
       <header className={styles.topbar}>
         <div className={styles.brand}>
-          <span className={styles.orbit} aria-hidden="true" />
+          <span className={styles.orbit} aria-hidden="true">
+            <KosmoraBrandMark />
+          </span>
           <div>
-            <span>Cosmora</span>
+            <span>Kosmora</span>
             <strong>Autonomy Control Center</strong>
           </div>
         </div>
@@ -1086,13 +1094,16 @@ export default function ControlCenterPage() {
       )}
 
       {!projectId ? (
-        <section className={styles.emptyState}>
-          <span>CONTROL PLANE</span>
-          <h2>Выберите проект</h2>
-          <p>
-            Профиль автономности и подтверждения всегда загружаются в границах выбранного проекта.
-          </p>
-        </section>
+        <>
+          <RuntimeOverview />
+          <section className={styles.emptyState}>
+            <span>CONTROL PLANE</span>
+            <h2>Выберите проект</h2>
+            <p>
+              Профиль автономности и подтверждения всегда загружаются в границах выбранного проекта.
+            </p>
+          </section>
+        </>
       ) : data ? (
         <>
           <section className={styles.metrics} aria-label="Сводка автономности">

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("shows the safe mock-only GitHub read-only dashboard", async ({ page }) => {
-  await page.goto("/github");
+  await page.goto("/github/preview");
 
   await expect(page.getByRole("heading", { name: "GitHub" })).toBeVisible();
   await expect(page.getByTestId("github-ready")).toContainText("Read-only");
@@ -20,22 +20,22 @@ test("shows the safe mock-only GitHub read-only dashboard", async ({ page }) => 
 });
 
 test("shows empty, offline and generic error states without internal details", async ({ page }) => {
-  await page.goto("/github?state=empty");
+  await page.goto("/github/preview?state=empty");
   await expect(page.getByTestId("github-empty")).toBeVisible();
 
-  await page.goto("/github?state=offline");
+  await page.goto("/github/preview?state=offline");
   await expect(page.getByTestId("github-offline")).toBeVisible();
   await page.getByTestId("github-retry").click();
   await expect(page.getByTestId("github-ready")).toBeVisible();
 
-  await page.goto("/github?state=error");
+  await page.goto("/github/preview?state=error");
   await expect(page.getByTestId("github-error")).toContainText("Внутренние детали не отображаются");
   await expect(page.locator("body")).not.toContainText("stack");
 });
 
 test("keeps the GitHub preview within the mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/github");
+  await page.goto("/github/preview");
   await expect(page.getByTestId("github-readonly-card")).toBeVisible();
 
   const layout = await page.evaluate(() => ({

@@ -81,7 +81,7 @@ test("keeps Project Context isolated while switching projects", async ({ page })
     });
   });
 
-  await page.goto("/?project=context-alpha&view=context");
+  await page.goto("/?context_preview=1&project=context-alpha&view=context");
 
   let panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
   await expect(panel.getByText("Подключено 2 из 3")).toBeVisible();

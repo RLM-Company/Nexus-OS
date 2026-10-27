@@ -1,0 +1,5 @@
+# Match .editorconfig and Prettier on every platform, including core.autocrlf=true.
+* text=auto eol=lf
+
+# Unified patch context represents an empty line with one leading space.
+*.patch whitespace=-blank-at-eol

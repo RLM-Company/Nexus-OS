@@ -1,6 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { ChatSkillStore } from "./chat-skill-store.js";
+import { ChatWorkspaceStore } from "./chat-workspace-store.js";
+import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { Currency } from "@cosmora/contracts";
+import {
+  isValidChatAttachments,
+  CHAT_MEMORY_MAX_LENGTH,
+  type ChatMemory,
+  type ChatBranchList,
+  type CreateChatBranch,
+  sameChatAttachments,
+  type ChatAttachment,
+  type Currency
+} from "@cosmora/contracts";
 import {
   IdempotencyConflictError,
   LOCAL_OWNER_ID,
@@ -15,9 +26,13 @@ export class GeneralChatBusyError extends Error {
   }
 }
 
+export class ChatMemoryConflictError extends Error {}
+export class ChatBranchValidationError extends Error {}
+
 export interface StoredGeneralChat {
   id: string;
   title: string;
+  mode: "kosmora" | "work" | "coscode";
   created_at: string;
   updated_at: string;
 }
@@ -28,6 +43,7 @@ export interface StoredGeneralChatMessage {
   role: "user" | "assistant";
   content_type: "text";
   content: string;
+  attachments?: ChatAttachment[];
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
   run_id: string | null;
   error_code: string | null;
@@ -79,8 +95,22 @@ export interface AcceptedGeneralChatMessage {
 type SqlRow = Record<string, unknown>;
 const timestamp = (): string => new Date().toISOString();
 const asChat = (row: SqlRow): StoredGeneralChat => row as unknown as StoredGeneralChat;
-const asMessage = (row: SqlRow): StoredGeneralChatMessage =>
-  row as unknown as StoredGeneralChatMessage;
+const asMessage = (row: SqlRow): StoredGeneralChatMessage => {
+  const { attachments_json, ...message } = row;
+  if (typeof attachments_json !== "string") throw new Error("Invalid persisted chat attachments");
+  const attachments = JSON.parse(attachments_json) as ChatAttachment[];
+  return {
+    ...message,
+    ...(attachments.length ? { attachments } : {})
+  } as unknown as StoredGeneralChatMessage;
+};
+const sameAttachments = (
+  message: StoredGeneralChatMessage,
+  attachments: ChatAttachment[]
+): boolean => sameChatAttachments(message.attachments ?? [], attachments);
+const assertAttachments = (attachments: ChatAttachment[]): void => {
+  if (!isValidChatAttachments(attachments)) throw new Error("Invalid chat attachments");
+};
 const asRun = (row: SqlRow): StoredGeneralChatRun => row as unknown as StoredGeneralChatRun;
 const asUsage = (row: SqlRow): StoredGeneralChatUsage => row as unknown as StoredGeneralChatUsage;
 const titleFor = (content: string): string => {
@@ -88,7 +118,7 @@ const titleFor = (content: string): string => {
   return compact.length > 58 ? `${compact.slice(0, 57)}…` : compact;
 };
 
-const MESSAGE_COLUMNS = `id, chat_id, role, content_type, content, status,
+const MESSAGE_COLUMNS = `id, chat_id, role, content_type, content, attachments_json, status,
   run_id, error_code, created_at, updated_at`;
 const RUN_COLUMNS = `id, chat_id, status, provider, model_resolved,
   input_tokens, output_tokens, created_at, updated_at`;
@@ -99,24 +129,29 @@ const USAGE_COLUMNS = `usage_id, run_id, chat_id, attempt, status, registry_vers
 
 export class GeneralChatStore {
   readonly #sqlite: DatabaseSync;
+  readonly workspace: ChatWorkspaceStore;
+  readonly skills: ChatSkillStore;
 
   constructor(sqlite: DatabaseSync) {
     this.#sqlite = sqlite;
+    this.workspace = new ChatWorkspaceStore(sqlite);
+    this.skills = new ChatSkillStore(sqlite);
   }
 
   listChats(
-    ownerId = LOCAL_OWNER_ID
+    ownerId = LOCAL_OWNER_ID,
+    archived = false
   ): Array<StoredGeneralChat & { last_message_preview: string | null }> {
     return this.#sqlite
       .prepare(
-        `SELECT c.id, c.title, c.created_at, c.updated_at,
+        `SELECT c.id, c.title, c.mode, c.created_at, c.updated_at,
           (SELECT substr(content, 1, 240) FROM general_chat_messages m
            WHERE m.chat_id = c.id ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1)
            AS last_message_preview
-         FROM general_chats c WHERE c.owner_id = ?
+         FROM general_chats c WHERE c.owner_id = ? AND c.archived = ?
          ORDER BY c.updated_at DESC`
       )
-      .all(ownerId) as unknown as Array<
+      .all(ownerId, Number(archived)) as unknown as Array<
       StoredGeneralChat & { last_message_preview: string | null }
     >;
   }
@@ -124,10 +159,96 @@ export class GeneralChatStore {
   getChat(chatId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChat | null {
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, created_at, updated_at FROM general_chats WHERE id = ? AND owner_id = ?"
+        "SELECT id, title, mode, created_at, updated_at FROM general_chats WHERE id = ? AND owner_id = ?"
       )
       .get(chatId, ownerId) as SqlRow | undefined;
     return row ? asChat(row) : null;
+  }
+
+  getChatMemory(chatId: string, ownerId = LOCAL_OWNER_ID): ChatMemory | null {
+    if (!this.getChat(chatId, ownerId)) return null;
+    const row = this.#sqlite
+      .prepare("SELECT memory_notes, version, updated_at FROM chat_memory_notes WHERE chat_id=?")
+      .get(chatId) as ChatMemory | undefined;
+    return row ?? { memory_notes: "", version: 0, updated_at: null };
+  }
+
+  updateChatMemory(
+    chatId: string,
+    ownerId: string,
+    memoryNotes: string,
+    expectedVersion: number
+  ): ChatMemory | null {
+    if (
+      typeof memoryNotes !== "string" ||
+      memoryNotes.length > CHAT_MEMORY_MAX_LENGTH ||
+      !Number.isSafeInteger(expectedVersion) ||
+      expectedVersion < 0
+    )
+      throw new Error("Invalid chat memory");
+    this.#sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.getChatMemory(chatId, ownerId);
+      if (!current) {
+        this.#sqlite.exec("COMMIT");
+        return null;
+      }
+      if (
+        this.#sqlite
+          .prepare(
+            "SELECT 1 FROM general_chat_runs WHERE chat_id=? AND status IN ('queued','running')"
+          )
+          .get(chatId)
+      )
+        throw new GeneralChatBusyError();
+      if (current.version !== expectedVersion || expectedVersion === Number.MAX_SAFE_INTEGER)
+        throw new ChatMemoryConflictError("Chat memory changed elsewhere");
+      this.#sqlite
+        .prepare(
+          `INSERT INTO chat_memory_notes(chat_id,memory_notes,version,updated_at) VALUES(?,?,?,?)
+         ON CONFLICT(chat_id) DO UPDATE SET memory_notes=excluded.memory_notes,
+         version=excluded.version,updated_at=excluded.updated_at`
+        )
+        .run(chatId, memoryNotes, current.version + 1, timestamp());
+      const result = this.getChatMemory(chatId, ownerId);
+      this.#sqlite.exec("COMMIT");
+      return result;
+    } catch (cause) {
+      this.#sqlite.exec("ROLLBACK");
+      throw cause;
+    }
+  }
+
+  updateChat(
+    chatId: string,
+    ownerId: string,
+    update: { title?: string; archived?: boolean }
+  ): StoredGeneralChat | null {
+    const chat = this.getChat(chatId, ownerId);
+    if (!chat) return null;
+    if (update.title !== undefined && (!update.title.trim() || update.title.length > 160))
+      throw new Error("Invalid chat title");
+    if (
+      update.archived === true &&
+      this.#sqlite
+        .prepare(
+          "SELECT 1 FROM general_chat_runs WHERE chat_id = ? AND status IN ('queued', 'running')"
+        )
+        .get(chatId)
+    )
+      throw new GeneralChatBusyError();
+    this.#sqlite
+      .prepare(
+        "UPDATE general_chats SET title = ?, archived = coalesce(?, archived), updated_at = ? WHERE id = ? AND owner_id = ?"
+      )
+      .run(
+        update.title?.trim() ?? chat.title,
+        update.archived === undefined ? null : Number(update.archived),
+        timestamp(),
+        chatId,
+        ownerId
+      );
+    return this.getChat(chatId, ownerId);
   }
 
   listMessages(chatId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage[] {
@@ -137,17 +258,237 @@ export class GeneralChatStore {
         `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages
          WHERE chat_id = ? ORDER BY created_at ASC, rowid ASC`
       )
-      .all(chatId) as unknown as StoredGeneralChatMessage[];
+      .all(chatId)
+      .map((row) => asMessage(row as SqlRow));
+  }
+
+  listChatBranches(chatId: string, ownerId = LOCAL_OWNER_ID): ChatBranchList | null {
+    if (!this.getChat(chatId, ownerId)) return null;
+    const ancestry = this.#sqlite
+      .prepare("SELECT root_chat_id FROM chat_branches WHERE chat_id=?")
+      .get(chatId) as { root_chat_id: string | null } | undefined;
+    const root =
+      ancestry?.root_chat_id && this.getChat(ancestry.root_chat_id, ownerId)
+        ? ancestry.root_chat_id
+        : chatId;
+    const items = this.#sqlite
+      .prepare(
+        `SELECT c.id AS chat_id,c.title,coalesce(b.kind,'original') AS kind,c.created_at
+       FROM general_chats c LEFT JOIN chat_branches b ON b.chat_id=c.id
+       WHERE c.owner_id=? AND (c.id=? OR b.root_chat_id=?)
+       ORDER BY CASE WHEN c.id=? THEN 0 ELSE 1 END,b.rowid`
+      )
+      .all(ownerId, root, root, root) as unknown as ChatBranchList["items"];
+    return { root_chat_id: root, items };
+  }
+
+  createChatBranch(
+    chatId: string,
+    ownerId: string,
+    input: CreateChatBranch
+  ): AcceptedGeneralChatMessage | null {
+    const digest = createHash("sha256")
+      .update(
+        JSON.stringify([
+          chatId,
+          input.message_id,
+          input.kind,
+          input.kind === "edit" ? input.content : null
+        ])
+      )
+      .digest("hex");
+    this.#sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const parent = this.getChat(chatId, ownerId);
+      if (!parent) {
+        this.#sqlite.exec("COMMIT");
+        return null;
+      }
+      const existing = this.getChat(input.client_branch_id, ownerId);
+      const metadata = this.#sqlite
+        .prepare("SELECT request_digest FROM chat_branches WHERE chat_id=?")
+        .get(input.client_branch_id) as { request_digest: string } | undefined;
+      if (existing) {
+        if (metadata?.request_digest !== digest) throw new IdempotencyConflictError();
+        const accepted = this.findByClientMessageId(`branch:${input.client_branch_id}`, ownerId);
+        if (!accepted || accepted.chat.id !== existing.id) throw new IdempotencyConflictError();
+        this.#sqlite.exec("COMMIT");
+        return { ...accepted, duplicate: true };
+      }
+      if (
+        this.#sqlite.prepare("SELECT 1 FROM general_chats WHERE id=?").get(input.client_branch_id)
+      )
+        throw new IdempotencyConflictError();
+      if (this.findByClientMessageId(`branch:${input.client_branch_id}`, ownerId))
+        throw new IdempotencyConflictError();
+      if (
+        this.#sqlite
+          .prepare(
+            "SELECT 1 FROM general_chat_runs WHERE chat_id=? AND status IN ('queued','running')"
+          )
+          .get(chatId)
+      )
+        throw new GeneralChatBusyError();
+      const selected = this.#sqlite
+        .prepare(
+          `SELECT rowid AS position,${MESSAGE_COLUMNS} FROM general_chat_messages WHERE chat_id=? AND id=?`
+        )
+        .get(chatId, input.message_id) as SqlRow | undefined;
+      if (!selected) {
+        this.#sqlite.exec("COMMIT");
+        return null;
+      }
+      const source = asMessage(selected);
+      let pivot = selected;
+      if (input.kind === "regenerate") {
+        if (source.role !== "assistant")
+          throw new ChatBranchValidationError("Выберите ответ ассистента.");
+        const user = this.#sqlite
+          .prepare(
+            `SELECT rowid AS position,${MESSAGE_COLUMNS} FROM general_chat_messages WHERE chat_id=? AND role='user' AND rowid<? ORDER BY rowid DESC LIMIT 1`
+          )
+          .get(chatId, Number(selected.position)) as SqlRow | undefined;
+        if (!user) throw new ChatBranchValidationError("Не найден исходный запрос.");
+        pivot = user;
+      } else if (
+        source.role !== "user" ||
+        !input.content.trim() ||
+        input.content.length > 100_000
+      ) {
+        throw new ChatBranchValidationError("Выберите непустой запрос пользователя.");
+      }
+      const family = this.listChatBranches(chatId, ownerId)!;
+      if (family.items.length >= 33)
+        throw new ChatBranchValidationError("В этой переписке уже 32 варианта. Начните новый чат.");
+      const size = this.#sqlite
+        .prepare(
+          `SELECT count(*) AS n,coalesce(sum(length(CAST(content AS BLOB))+length(CAST(attachments_json AS BLOB))+1000),0) AS bytes FROM general_chat_messages WHERE chat_id=? AND rowid<?`
+        )
+        .get(chatId, Number(pivot.position)) as { n: number; bytes: number };
+      if (size.n > 400 || size.bytes > 8 * 1024 * 1024)
+        throw new ChatBranchValidationError(
+          "Слишком большая история для варианта. Начните новый чат с нужной выборкой."
+        );
+      const prefix = this.#sqlite
+        .prepare(
+          `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE chat_id=? AND rowid<? ORDER BY rowid`
+        )
+        .all(chatId, Number(pivot.position))
+        .map((row) => asMessage(row as SqlRow));
+      const original = asMessage(pivot);
+      const content = input.kind === "edit" ? input.content : original.content;
+      const attachments = original.attachments ?? [];
+      const bytes = Buffer.byteLength(
+        JSON.stringify([...prefix, { content, attachments }]),
+        "utf8"
+      );
+      if (prefix.length > 400 || bytes > 8 * 1024 * 1024)
+        throw new ChatBranchValidationError(
+          "Слишком большая история для варианта. Начните новый чат с нужной выборкой."
+        );
+      const createdAt = timestamp();
+      const stem =
+        prefix.length === 0 ? titleFor(content) : parent.title.replace(/ · вариант \d+$/u, "");
+      const title = `${stem.slice(0, 130)} · вариант ${family.items.length}`;
+      this.#sqlite
+        .prepare(
+          "INSERT INTO general_chats(id,owner_id,title,mode,created_at,updated_at) VALUES(?,?,?,?,?,?)"
+        )
+        .run(input.client_branch_id, ownerId, title, parent.mode, createdAt, createdAt);
+      const copy = this.#sqlite.prepare(
+        `INSERT INTO general_chat_messages(id,chat_id,owner_id,role,content_type,content,attachments_json,status,run_id,error_code,created_at,updated_at)
+         VALUES(?,?,?,?,'text',?,?,?,NULL,?,?,?)`
+      );
+      const copiedIds = new Map(prefix.map((message) => [message.id, randomUUID()]));
+      for (const message of prefix)
+        copy.run(
+          copiedIds.get(message.id)!,
+          input.client_branch_id,
+          ownerId,
+          message.role,
+          message.content,
+          JSON.stringify(message.attachments ?? []),
+          message.status,
+          message.error_code,
+          message.created_at,
+          message.updated_at
+        );
+      this.workspace.copySelection(chatId, input.client_branch_id, ownerId, copiedIds);
+      this.skills.copy(chatId, input.client_branch_id, ownerId);
+      const memory = this.getChatMemory(chatId, ownerId);
+      if (memory?.memory_notes)
+        this.#sqlite
+          .prepare(
+            "INSERT INTO chat_memory_notes(chat_id,memory_notes,version,updated_at) VALUES(?,?,1,?)"
+          )
+          .run(input.client_branch_id, memory.memory_notes, createdAt);
+      this.#sqlite
+        .prepare(
+          `INSERT INTO kosmora_chat_preferences(chat_id,owner_id,relay_enabled)
+         SELECT ?,owner_id,relay_enabled FROM kosmora_chat_preferences WHERE chat_id=? AND owner_id=?`
+        )
+        .run(input.client_branch_id, chatId, ownerId);
+      const accepted = this.#insertMessage(
+        input.client_branch_id,
+        content,
+        `branch:${input.client_branch_id}`,
+        createdAt,
+        ownerId,
+        attachments
+      );
+      this.#sqlite
+        .prepare(
+          "INSERT INTO chat_branches(chat_id,parent_chat_id,root_chat_id,source_message_id,kind,request_digest) VALUES(?,?,?,?,?,?)"
+        )
+        .run(
+          input.client_branch_id,
+          chatId,
+          family.root_chat_id,
+          input.message_id,
+          input.kind,
+          digest
+        );
+      this.#sqlite.exec("COMMIT");
+      return { ...accepted, duplicate: false };
+    } catch (cause) {
+      this.#sqlite.exec("ROLLBACK");
+      throw cause;
+    }
+  }
+
+  deleteChat(chatId: string, ownerId: string): boolean {
+    if (!this.getChat(chatId, ownerId)) return false;
+    if (
+      this.#sqlite
+        .prepare(
+          "SELECT 1 FROM general_chat_runs WHERE chat_id=? AND status IN ('queued','running')"
+        )
+        .get(chatId)
+    )
+      throw new GeneralChatBusyError();
+    this.#sqlite
+      .prepare("DELETE FROM general_chats WHERE id=? AND owner_id=?")
+      .run(chatId, ownerId);
+    return true;
   }
 
   createChat(
     initialMessage: string,
     clientMessageId: string,
-    ownerId = LOCAL_OWNER_ID
+    ownerId = LOCAL_OWNER_ID,
+    attachments: ChatAttachment[] = [],
+    mode: StoredGeneralChat["mode"] = "kosmora"
   ): AcceptedGeneralChatMessage {
+    assertAttachments(attachments);
+    if (!["kosmora", "work", "coscode"].includes(mode)) throw new Error("Invalid chat mode");
     const existing = this.findByClientMessageId(clientMessageId, ownerId);
     if (existing) {
-      if (existing.userMessage.content !== initialMessage) throw new IdempotencyConflictError();
+      if (
+        existing.chat.mode !== mode ||
+        existing.userMessage.content !== initialMessage ||
+        !sameAttachments(existing.userMessage, attachments)
+      )
+        throw new IdempotencyConflictError();
       return { ...existing, duplicate: true };
     }
 
@@ -157,15 +498,16 @@ export class GeneralChatStore {
     try {
       this.#sqlite
         .prepare(
-          "INSERT INTO general_chats (id, owner_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+          "INSERT INTO general_chats (id, owner_id, title, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
         )
-        .run(chatId, ownerId, titleFor(initialMessage), createdAt, createdAt);
+        .run(chatId, ownerId, titleFor(initialMessage), mode, createdAt, createdAt);
       const accepted = this.#insertMessage(
         chatId,
         initialMessage,
         clientMessageId,
         createdAt,
-        ownerId
+        ownerId,
+        attachments
       );
       this.#sqlite.exec("COMMIT;");
       return { ...accepted, duplicate: false };
@@ -179,13 +521,19 @@ export class GeneralChatStore {
     chatId: string,
     content: string,
     clientMessageId: string,
-    ownerId = LOCAL_OWNER_ID
+    ownerId = LOCAL_OWNER_ID,
+    attachments: ChatAttachment[] = []
   ): AcceptedGeneralChatMessage | null {
+    assertAttachments(attachments);
     const chat = this.getChat(chatId, ownerId);
     if (!chat) return null;
     const existing = this.findByClientMessageId(clientMessageId, ownerId);
     if (existing) {
-      if (existing.chat.id !== chatId || existing.userMessage.content !== content) {
+      if (
+        existing.chat.id !== chatId ||
+        existing.userMessage.content !== content ||
+        !sameAttachments(existing.userMessage, attachments)
+      ) {
         throw new IdempotencyConflictError();
       }
       return { ...existing, duplicate: true };
@@ -200,7 +548,14 @@ export class GeneralChatStore {
     const createdAt = timestamp();
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
-      const accepted = this.#insertMessage(chatId, content, clientMessageId, createdAt, ownerId);
+      const accepted = this.#insertMessage(
+        chatId,
+        content,
+        clientMessageId,
+        createdAt,
+        ownerId,
+        attachments
+      );
       this.#sqlite
         .prepare("UPDATE general_chats SET updated_at = ? WHERE id = ?")
         .run(createdAt, chatId);
@@ -217,7 +572,8 @@ export class GeneralChatStore {
     content: string,
     clientMessageId: string,
     createdAt: string,
-    ownerId: string
+    ownerId: string,
+    attachments: ChatAttachment[]
   ): Omit<AcceptedGeneralChatMessage, "duplicate"> {
     const runId = randomUUID();
     const messageId = randomUUID();
@@ -229,10 +585,21 @@ export class GeneralChatStore {
     this.#sqlite
       .prepare(
         `INSERT INTO general_chat_messages
-          (id, chat_id, owner_id, role, content_type, content, status, client_message_id, run_id, created_at, updated_at)
-         VALUES (?, ?, ?, 'user', 'text', ?, 'completed', ?, ?, ?, ?)`
+          (id, chat_id, owner_id, role, content_type, content, attachments_json, status, client_message_id, run_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'user', 'text', ?, ?, 'completed', ?, ?, ?, ?)`
       )
-      .run(messageId, chatId, ownerId, content, clientMessageId, runId, createdAt, createdAt);
+      .run(
+        messageId,
+        chatId,
+        ownerId,
+        content,
+        JSON.stringify(attachments),
+        clientMessageId,
+        runId,
+        createdAt,
+        createdAt
+      );
+    this.skills.snapshotRun(runId, chatId, ownerId);
     const chat = this.getChat(chatId, ownerId);
     const userMessage = this.#sqlite
       .prepare(`SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE id = ?`)
@@ -250,7 +617,7 @@ export class GeneralChatStore {
   ): Omit<AcceptedGeneralChatMessage, "duplicate"> | null {
     const row = this.#sqlite
       .prepare(
-        `SELECT m.id, m.chat_id, m.role, m.content_type, m.content, m.status,
+        `SELECT m.id, m.chat_id, m.role, m.content_type, m.content, m.attachments_json, m.status,
           m.run_id, m.error_code, m.created_at, m.updated_at
          FROM general_chat_messages m
          JOIN general_chats c ON c.id = m.chat_id
@@ -280,14 +647,16 @@ export class GeneralChatStore {
   getConversationForRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage[] {
     const run = this.getRun(runId, ownerId);
     if (!run) return [];
-    return this.#sqlite
+    const messages = this.#sqlite
       .prepare(
         `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages
          WHERE chat_id = ? AND rowid <= (
            SELECT rowid FROM general_chat_messages WHERE run_id = ? AND role = 'user' LIMIT 1
          ) ORDER BY rowid ASC`
       )
-      .all(run.chat_id, runId) as unknown as StoredGeneralChatMessage[];
+      .all(run.chat_id, runId)
+      .map((row) => asMessage(row as SqlRow));
+    return this.workspace.applyContext(run.chat_id, ownerId, messages);
   }
 
   getAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage | null {

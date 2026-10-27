@@ -2,6 +2,39 @@ import { Type, type Static } from "typebox";
 import { ModelFeatureSchema } from "./model-registry.js";
 import { CurrencySchema, EntityIdSchema } from "./primitives.js";
 
+/** Provider-native structured tool transcript; execution remains a separate policy decision. */
+export const ModelToolCallSchema = Type.Object(
+  {
+    id: Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" }),
+    type: Type.Literal("function"),
+    function: Type.Object(
+      {
+        name: Type.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }),
+        arguments: Type.String({ minLength: 2, maxLength: 65_536 })
+      },
+      { additionalProperties: false }
+    )
+  },
+  { additionalProperties: false }
+);
+export type ModelToolCall = Static<typeof ModelToolCallSchema>;
+
+export const ModelToolDefinitionSchema = Type.Object(
+  {
+    type: Type.Literal("function"),
+    function: Type.Object(
+      {
+        name: Type.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }),
+        description: Type.Optional(Type.String({ maxLength: 2_000 })),
+        parameters: Type.Record(Type.String(), Type.Unknown())
+      },
+      { additionalProperties: false }
+    )
+  },
+  { additionalProperties: false }
+);
+export type ModelToolDefinition = Static<typeof ModelToolDefinitionSchema>;
+
 export const ModelMessageSchema = Type.Object(
   {
     role: Type.Union([
@@ -10,7 +43,23 @@ export const ModelMessageSchema = Type.Object(
       Type.Literal("assistant"),
       Type.Literal("tool")
     ]),
-    content: Type.String()
+    content: Type.String(),
+    tool_calls: Type.Optional(Type.Array(ModelToolCallSchema, { minItems: 1, maxItems: 16 })),
+    tool_call_id: Type.Optional(
+      Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" })
+    ),
+    images: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            media_type: Type.Union([Type.Literal("image/png"), Type.Literal("image/jpeg")]),
+            data_base64: Type.String({ minLength: 1, maxLength: 1_333_336 })
+          },
+          { additionalProperties: false }
+        ),
+        { maxItems: 2 }
+      )
+    )
   },
   { additionalProperties: false }
 );
@@ -25,10 +74,14 @@ export const ModelRequestSchema = Type.Object(
     role: Type.String({ minLength: 1, maxLength: 128, pattern: "^[^\\s]+$" }),
     task_type: Type.String({ minLength: 1, maxLength: 128, pattern: "^[^\\s]+$" }),
     messages: Type.Array(ModelMessageSchema, { minItems: 1 }),
+    tools: Type.Optional(Type.Array(ModelToolDefinitionSchema, { minItems: 1, maxItems: 16 })),
     constraints: Type.Object(
       {
         timeout_ms: Type.Integer({ minimum: 1, maximum: 600_000 }),
-        max_output_tokens: Type.Integer({ minimum: 1, maximum: 100_000 })
+        max_output_tokens: Type.Integer({ minimum: 1, maximum: 100_000 }),
+        reasoning_effort: Type.Optional(
+          Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")])
+        )
       },
       { additionalProperties: false }
     ),

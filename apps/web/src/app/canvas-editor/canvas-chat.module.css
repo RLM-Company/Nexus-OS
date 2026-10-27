@@ -1,0 +1,61 @@
+.chatBody,
+.chatSplit {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.chatBody {
+  display: flex;
+  flex-direction: column;
+}
+.chatBody > div {
+  flex: 1;
+  min-height: 0;
+}
+.chatSplit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.18fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.chatSplit > div {
+  min-height: 0;
+  overflow: auto;
+}
+.chatEditor {
+  min-width: 0;
+  max-height: 72vh;
+  overflow-y: auto;
+  border-left: 1px solid #bbb;
+  padding: 0 0 0 16px;
+}
+.chatAction {
+  font: inherit;
+  background: transparent;
+  border: 1px solid #777;
+  color: inherit;
+  padding: 6px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.chatAction:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+@media (max-width: 1150px) {
+  .chatSplit {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .chatSplit > div:first-child {
+    min-height: 180px;
+    max-height: 42vh;
+  }
+  .chatEditor {
+    max-height: none;
+    border-left: 0;
+    border-top: 1px solid #bbb;
+    padding: 16px 0 0;
+  }
+}

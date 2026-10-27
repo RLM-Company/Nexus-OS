@@ -12,7 +12,7 @@ test("locks the browser install prompt against synchronous duplicate clicks", as
         };
         target.__installPromptCalls ??= 0;
 
-        if (!document.querySelector('[aria-label="Установить Cosmora"]')) {
+        if (!document.querySelector('[aria-label="Установить Kosmora"]')) {
           const event = Object.assign(new Event("beforeinstallprompt", { cancelable: true }), {
             prompt: () => {
               target.__installPromptCalls = (target.__installPromptCalls ?? 0) + 1;
@@ -25,15 +25,15 @@ test("locks the browser install prompt against synchronous duplicate clicks", as
           window.dispatchEvent(event);
         }
 
-        return Boolean(document.querySelector('[aria-label="Установить Cosmora"]'));
+        return Boolean(document.querySelector('[aria-label="Установить Kosmora"]'));
       })
     )
     .toBe(true);
 
-  const install = page.getByRole("button", { name: "Установить Cosmora" });
+  const install = page.getByRole("button", { name: "Установить Kosmora" });
 
   await page.evaluate(() => {
-    const button = document.querySelector<HTMLButtonElement>('[aria-label="Установить Cosmora"]');
+    const button = document.querySelector<HTMLButtonElement>('[aria-label="Установить Kosmora"]');
     button?.click();
     button?.click();
   });

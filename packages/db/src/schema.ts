@@ -373,6 +373,7 @@ export const runs = sqliteTable(
       .notNull()
       .references(() => chats.id, { onDelete: "cascade" }),
     status: text("status").notNull(),
+    projectMaterialsJson: text("project_materials_json").notNull().default("{}"),
     provider: text("provider"),
     modelResolved: text("model_resolved"),
     inputTokens: integer("input_tokens"),
@@ -396,6 +397,7 @@ export const messages = sqliteTable(
     role: text("role").notNull(),
     contentType: text("content_type").notNull(),
     content: text("content").notNull(),
+    attachmentsJson: text("attachments_json").notNull().default("[]"),
     status: text("status").notNull(),
     clientMessageId: text("client_message_id"),
     replyToMessageId: text("reply_to_message_id"),
@@ -416,6 +418,10 @@ export const generalChats = sqliteTable(
     id: text("id").primaryKey(),
     ownerId: text("owner_id").notNull(),
     title: text("title").notNull(),
+    mode: text("mode", { enum: ["kosmora", "work", "coscode"] })
+      .notNull()
+      .default("kosmora"),
+    archived: integer("archived").notNull().default(0),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
   },
@@ -454,6 +460,7 @@ export const generalChatMessages = sqliteTable(
     role: text("role").notNull(),
     contentType: text("content_type").notNull(),
     content: text("content").notNull(),
+    attachmentsJson: text("attachments_json").notNull().default("[]"),
     status: text("status").notNull(),
     clientMessageId: text("client_message_id"),
     runId: text("run_id").references(() => generalChatRuns.id, { onDelete: "set null" }),
@@ -754,4 +761,96 @@ export const managerWorkFiles = sqliteTable(
     content: text("content").notNull()
   },
   (table) => [primaryKey({ columns: [table.executionId, table.name] })]
+);
+
+export const projectMaterials = sqliteTable("project_materials", {
+  projectId: text("project_id")
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  instructions: text("instructions").notNull(),
+  attachmentsJson: text("attachments_json").notNull().default("[]"),
+  updatedAt: text("updated_at").notNull()
+});
+export const githubChangeDrafts = sqliteTable(
+  "github_change_drafts",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("review"),
+    planJson: text("plan_json").notNull(),
+    prUrl: text("pr_url"),
+    publishedSha: text("published_sha"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    index("github_drafts_owner_project").on(table.ownerId, table.projectId, table.createdAt)
+  ]
+);
+
+export const intelligenceGraphWorkspaces = sqliteTable(
+  "intelligence_graph_workspaces",
+  {
+    graphId: text("graph_id").primaryKey().notNull(),
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    revision: integer("revision").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    check("graph_revision_positive", sql`${table.revision} >= 1`),
+    index("intelligence_graph_workspaces_owner_project_idx").on(
+      table.ownerId,
+      table.projectId,
+      table.updatedAt,
+      table.graphId
+    )
+  ]
+);
+export const intelligenceGraphWorkspaceRevisions = sqliteTable(
+  "intelligence_graph_workspace_revisions",
+  {
+    graphId: text("graph_id")
+      .notNull()
+      .references(() => intelligenceGraphWorkspaces.graphId, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    snapshotJson: text("snapshot_json").notNull(),
+    summary: text("summary").notNull(),
+    restoredFromRevision: integer("restored_from_revision"),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.graphId, table.revision] }),
+    check("graph_history_revision_positive", sql`${table.revision} >= 1`),
+    check("graph_history_json_valid", sql`json_valid(${table.snapshotJson})`),
+    index("intelligence_graph_workspace_revisions_history_idx").on(table.graphId, table.revision)
+  ]
+);
+export const intelligenceGraphImportReceipts = sqliteTable(
+  "intelligence_graph_import_receipts",
+  {
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    creationKey: text("creation_key").notNull(),
+    packageSha256: text("package_sha256").notNull(),
+    graphId: text("graph_id").references(() => intelligenceGraphWorkspaces.graphId, {
+      onDelete: "set null"
+    }),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerId, table.projectId, table.creationKey] }),
+    check("graph_import_key_length", sql`length(${table.creationKey}) BETWEEN 16 AND 128`),
+    check("graph_import_sha256_length", sql`length(${table.packageSha256})=64`)
+  ]
 );

@@ -3,6 +3,9 @@ import { EmergencyStopStore, openDatabase, ProjectStore, runMigrations } from "@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
+import { AccountStore } from "../src/account-settings/account-store.js";
+import { MockProviderAdapter } from "@cosmora/model-gateway";
+import { ManagerRuntimeProjectStore } from "../src/manager-runtime-project-store.js";
 
 describe("project chat API", () => {
   const config = loadServerConfig({
@@ -14,6 +17,7 @@ describe("project chat API", () => {
   let projectStore: ProjectStore;
   let emergencyStopStore: EmergencyStopStore;
   let app: ReturnType<typeof buildApp>;
+  let accountStore: AccountStore;
 
   beforeEach(async () => {
     database = openDatabase(":memory:");
@@ -21,19 +25,117 @@ describe("project chat API", () => {
     const runtime = await buildModelRuntime(config);
     projectStore = new ProjectStore(database.sqlite);
     emergencyStopStore = new EmergencyStopStore(database.sqlite);
+    accountStore = new AccountStore(database.sqlite);
     app = buildApp({
       config,
       database,
       projectStore,
       emergencyStopStore,
       modelGateway: runtime.gateway,
-      manager: runtime.manager
+      manager: runtime.manager,
+      accountStore
     });
   });
 
   afterEach(async () => {
     await app.close();
     database.close();
+    vi.restoreAllMocks();
+  });
+
+  it("creates an empty owner project idempotently without a model run or dispatch", async () => {
+    const spy = vi.spyOn(MockProviderAdapter.prototype, "stream");
+    const payload = {
+      title: "  Документы  ",
+      client_project_id: "aa120001-0001-4000-8000-000000000001"
+    };
+    const first = await app.inject({ method: "POST", url: "/api/v1/projects/empty", payload });
+    const second = await app.inject({ method: "POST", url: "/api/v1/projects/empty", payload });
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+    const body = first.json<{
+      project: { id: string; title: string; status: string };
+      chat_id: string;
+      messages: unknown[];
+    }>();
+    expect(body.project).toMatchObject({
+      id: payload.client_project_id,
+      title: "Документы",
+      status: "DRAFT"
+    });
+    expect(body.messages).toEqual([]);
+    expect(second.json<{ chat_id: string }>().chat_id).toBe(body.chat_id);
+    expect(projectStore.listProjects()).toHaveLength(1);
+    expect(database.sqlite.prepare("SELECT count(*) n FROM runs").get()?.n).toBe(0);
+    expect(spy).not.toHaveBeenCalled();
+    const foreign = projectStore.createEmptyProject(
+      "aa120001-0001-4000-8000-000000000002",
+      "Чужой",
+      "foreign-owner"
+    );
+    const collision = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects/empty",
+      payload: { ...payload, client_project_id: foreign.id }
+    });
+    expect(collision.statusCode).toBe(409);
+    expect(projectStore.getProject(foreign.id)).toBeNull();
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects/empty",
+      payload: { title: 123, client_project_id: crypto.randomUUID() }
+    });
+    expect(invalid.statusCode).toBe(400);
+  });
+
+  it("activates an empty draft on its first accepted message so a restarted worker can pick it up", async () => {
+    const id = "aa120001-0001-4000-8000-000000000003";
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects/empty",
+      payload: { title: "Prepared project", client_project_id: id }
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(projectStore.getProject(id)?.status).toBe("DRAFT");
+    const payload = { content: "Start the prepared project", client_message_id: "activate-draft" };
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${id}/messages`,
+      payload
+    });
+    expect(accepted.statusCode, accepted.body).toBe(202);
+    expect(projectStore.getProject(id)?.status).toBe("ACTIVE");
+    expect(new ManagerRuntimeProjectStore(database.sqlite).listQueuedManagerRuns()).toContainEqual({
+      run_id: accepted.json<{ run_id: string }>().run_id,
+      project_id: id,
+      owner_id: "local-owner"
+    });
+    expect(accepted.json<{ project: { status: string } }>().project.status).toBe("ACTIVE");
+    const duplicate = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${id}/messages`,
+      payload
+    });
+    expect(duplicate.statusCode, duplicate.body).toBe(200);
+    expect(
+      database.sqlite.prepare("SELECT count(*) n FROM runs WHERE project_id=?").get(id)?.n
+    ).toBe(1);
+  });
+
+  it("rolls back draft activation when accepting its first run fails", () => {
+    const id = crypto.randomUUID();
+    projectStore.createEmptyProject(id, "Untouched draft");
+    database.sqlite.exec(
+      "CREATE TEMP TRIGGER reject_fixture_run BEFORE INSERT ON runs BEGIN SELECT RAISE(ABORT,'fixture insert failed'); END"
+    );
+    expect(() => projectStore.createMessage(id, "First task", "failed-first-run")).toThrow(
+      "fixture insert failed"
+    );
+    expect(projectStore.getProject(id)?.status).toBe("DRAFT");
+    expect(projectStore.listMessages(id)).toEqual([]);
+    expect(
+      database.sqlite.prepare("SELECT count(*) n FROM runs WHERE project_id=?").get(id)?.n
+    ).toBe(0);
   });
 
   it("creates a project and reuses the idempotent request", async () => {
@@ -58,7 +160,81 @@ describe("project chat API", () => {
     expect(conflict.statusCode).toBe(409);
     expect(conflict.json<{ error: { code: string } }>().error.code).toBe("IDEMPOTENCY_CONFLICT");
   });
+  it("enforces owner quota on the inline project chat path before provider dispatch", async () => {
+    accountStore.update("local-owner", {
+      ...accountStore.get("local-owner"),
+      expected_version: 0,
+      max_total_tokens: 1
+    });
+    const dispatch = vi.spyOn(MockProviderAdapter.prototype, "stream");
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: {
+        initial_message: "Не отправляй платный запрос сверх квоты",
+        client_message_id: "owner-budget-inline"
+      }
+    });
+    const stream = await app.inject({
+      method: "GET",
+      url: created.json<{ stream_url: string }>().stream_url
+    });
+    expect(stream.body).toContain("USAGE_LIMIT_EXCEEDED");
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(accountStore.summary("local-owner").total_counted_tokens).toBe(0);
+  });
 
+  it("renames a project for its owner and keeps the title in the project list", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: { initial_message: "Исходная задача", client_message_id: "rename-project-1" }
+    });
+    const id = created.json<{ project: { id: string } }>().project.id;
+
+    const renamed = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${id}`,
+      payload: { title: "  Новое название  " }
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json<{ project: { title: string } }>().project.title).toBe("Новое название");
+    expect(projectStore.getProject(id)?.title).toBe("Новое название");
+    expect(projectStore.renameProject(id, "another-owner", "Чужое имя")).toBeNull();
+    const foreign = projectStore.createProject("Чужой проект", "foreign-project", "another-owner");
+    const denied = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${foreign.project.id}`,
+      payload: { title: "Недопустимая правка" }
+    });
+    expect(denied.statusCode).toBe(404);
+    expect(projectStore.getProject(foreign.project.id, "another-owner")?.title).toBe(
+      "Чужой проект"
+    );
+    const context = await app.inject({ method: "GET", url: "/api/v1/navigation-context" });
+    expect(context.statusCode).toBe(200);
+    expect(context.json()).toEqual({ owner_id: "local-owner" });
+
+    const projects = await app.inject({ method: "GET", url: "/api/v1/projects" });
+    expect(projects.json<{ items: Array<{ title: string }> }>().items[0]?.title).toBe(
+      "Новое название"
+    );
+    for (const title of ["  ", "x".repeat(161), null, 123, true]) {
+      const invalid = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/projects/${id}`,
+        payload: { title }
+      });
+      expect(invalid.statusCode).toBe(400);
+    }
+    const missing = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/projects/missing",
+      payload: { title: "Нет проекта" }
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(projectStore.getProject(id)?.title).toBe("Новое название");
+  });
   it("streams and persists the mock manager response", async () => {
     const created = await app.inject({
       method: "POST",
@@ -101,6 +277,27 @@ describe("project chat API", () => {
     const preview = projects.json<{ items: Array<{ last_message_preview: string | null }> }>()
       .items[0]?.last_message_preview;
     expect(preview?.length).toBeLessThanOrEqual(240);
+  });
+  it("releases only a proven local pre-dispatch rejection from the project quota", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      payload: {
+        initial_message: "Проверь две независимые квоты",
+        client_message_id: "project-quota-inline"
+      }
+    });
+    const body = created.json<{ stream_url: string; project: { id: string } }>();
+    database.sqlite
+      .prepare(
+        "INSERT INTO project_usage_limits(project_id,owner_id,version,max_total_tokens,created_at,updated_at) VALUES(?,'local-owner',1,1,?,?) ON CONFLICT(project_id) DO UPDATE SET max_total_tokens=1"
+      )
+      .run(body.project.id, new Date().toISOString(), new Date().toISOString());
+    const dispatch = vi.spyOn(MockProviderAdapter.prototype, "stream");
+    const stream = await app.inject({ method: "GET", url: body.stream_url });
+    expect(stream.body).toContain("PROJECT_TOKEN_LIMIT_EXCEEDED");
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(accountStore.summary("local-owner").total_counted_tokens).toBe(0);
   });
 
   it("persists every retry as a separate failed Usage Ledger attempt", async () => {

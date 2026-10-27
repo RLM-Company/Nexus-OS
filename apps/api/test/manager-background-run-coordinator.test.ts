@@ -5,6 +5,8 @@ import { ManagerBackgroundRunCoordinator } from "../src/manager-background-run-c
 import { ManagerRuntimeProjectStore } from "../src/manager-runtime-project-store.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
 import { RuntimeMetrics } from "../src/operations.js";
+import { AccountStore } from "../src/account-settings/account-store.js";
+import { MockProviderAdapter } from "@cosmora/model-gateway";
 
 describe("ManagerBackgroundRunCoordinator", () => {
   const config = loadServerConfig({
@@ -17,6 +19,7 @@ describe("ManagerBackgroundRunCoordinator", () => {
   let stopStore: EmergencyStopStore;
   let metrics: RuntimeMetrics;
   let coordinator: ManagerBackgroundRunCoordinator;
+  let accountStore: AccountStore;
 
   beforeEach(async () => {
     database = openDatabase(":memory:");
@@ -25,6 +28,7 @@ describe("ManagerBackgroundRunCoordinator", () => {
     store = new ManagerRuntimeProjectStore(database.sqlite);
     stopStore = new EmergencyStopStore(database.sqlite);
     metrics = new RuntimeMetrics();
+    accountStore = new AccountStore(database.sqlite);
     coordinator = new ManagerBackgroundRunCoordinator({
       store,
       modelGateway: runtime.gateway,
@@ -33,7 +37,8 @@ describe("ManagerBackgroundRunCoordinator", () => {
       emergencyStopStore: stopStore,
       pollIntervalMs: 10,
       controlPollIntervalMs: 10,
-      maxConcurrentRuns: 2
+      maxConcurrentRuns: 2,
+      accountStore
     });
     coordinator.start();
   });
@@ -41,6 +46,7 @@ describe("ManagerBackgroundRunCoordinator", () => {
   afterEach(async () => {
     await coordinator.stop();
     database.close();
+    vi.restoreAllMocks();
   });
 
   it("executes a queued Manager run without any SSE consumer", async () => {
@@ -66,6 +72,24 @@ describe("ManagerBackgroundRunCoordinator", () => {
       metrics: { runs_started: 1, runs_completed: 1, route_attempts: 1 }
     });
   });
+  it("blocks a project chat against the shared owner quota before provider dispatch", async () => {
+    accountStore.update("local-owner", {
+      ...accountStore.get("local-owner"),
+      expected_version: 0,
+      max_total_tokens: 1
+    });
+    const dispatch = vi.spyOn(MockProviderAdapter.prototype, "stream");
+    const accepted = store.createProject(
+      "Запрос не должен достичь провайдера",
+      "account-quota-project"
+    );
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("failed"), {
+      timeout: 2_000
+    });
+    expect(store.getAssistantMessage(accepted.run.id)?.error_code).toBe("USAGE_LIMIT_EXCEEDED");
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(accountStore.summary("local-owner").total_counted_tokens).toBe(0);
+  });
 
   it("observes an explicit owner cancellation and does not relabel it as failure", async () => {
     const accepted = store.createProject("Запусти длинный ответ", "background-cancel-1");
@@ -89,6 +113,8 @@ describe("ManagerBackgroundRunCoordinator", () => {
     expect(store.getModelUsageForRun(accepted.run.id)).toEqual([
       expect.objectContaining({ status: "cancelled", error_code: "CANCELLED_BY_OWNER" })
     ]);
+    expect(accountStore.summary("local-owner").total_counted_tokens).toBeGreaterThan(0);
+    expect(accountStore.summary("local-owner").in_flight_or_uncertain_holds).toBe(0);
     expect(metrics.snapshot(stopStore, 0).metrics).toMatchObject({
       runs_cancelled: 1,
       runs_failed: 0

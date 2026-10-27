@@ -1,0 +1,14 @@
+services:
+  api:
+    environment:
+      WEB_SEARCH_ORIGIN: http://search:8080
+  search:
+    image: searxng/searxng@sha256:c642712fcedcdaa78fac44f71eada86aff510745826ba1bd1a368211fea2ce7f
+    restart: unless-stopped
+    environment:
+      SEARXNG_SETTINGS_PATH: /etc/searxng/settings.yml
+    volumes:
+      - ./private/search-settings.yml:/etc/searxng/settings.yml:ro
+    networks: [internal]
+    mem_limit: 384m
+    cpus: 0.5

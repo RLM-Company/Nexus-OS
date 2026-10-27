@@ -1,0 +1,163 @@
+import { expect, test, type Page } from "@playwright/test";
+import { isWorkspaceWrite } from "./fixtures/navigation-writes";
+
+const desktopMode = async (page: Page, mode: "Kosmora" | "Koswork" | "Coscode") => {
+  await page.getByLabel("Режимы Kosmora", { exact: true }).click();
+  await page
+    .locator(".workspace-mode-menu")
+    .getByRole("button", { name: new RegExp(`^${mode}(?:\\s|$)`) })
+    .click();
+  await expect(page.locator(".workspace-mode-menu")).not.toHaveAttribute("open");
+};
+
+test("brand mode disclosure supports keyboard closing and replaces duplicate navigation", async ({
+  page
+}) => {
+  await page.goto("/");
+  const trigger = page.getByLabel("Режимы Kosmora", { exact: true });
+  const disclosure = page.locator(".workspace-mode-menu");
+  await expect(trigger).toHaveAttribute("aria-controls", /.+/);
+  await expect(
+    page.locator(".sidebar-tools").getByRole("button", { name: /^(Koswork|Coscode)(?:\s|$)/ })
+  ).toHaveCount(0);
+
+  await trigger.focus();
+  await trigger.press("Enter");
+  await expect(disclosure).toHaveAttribute("open", "");
+  await expect(disclosure.getByRole("button", { name: "Kosmora", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page"
+  );
+  await expect(disclosure.getByRole("button", { name: "Koswork", exact: true })).toBeVisible();
+  await expect(disclosure.getByRole("button", { name: "Coscode", exact: true })).toBeVisible();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Escape");
+  await expect(disclosure).not.toHaveAttribute("open");
+  await expect(trigger).toBeFocused();
+});
+
+test("switching Work and Code preserves an unsent chat draft and a shareable route", async ({
+  page
+}) => {
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (isWorkspaceWrite(request)) writes.push(request.url());
+  });
+  await page.goto("/");
+  const draft = "Подготовить презентацию Kosmora, сохранить этот черновик";
+  await page.getByLabel("Сообщение Kosmora", { exact: true }).fill(draft);
+
+  await desktopMode(page, "Koswork");
+  await expect(page).toHaveURL(/(?:\?|&)mode=work(?:&|$)/);
+  await expect(page.getByRole("button", { name: "Работа", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await desktopMode(page, "Coscode");
+  await expect(page).toHaveURL(/(?:\?|&)mode=coscode(?:&|$)/);
+  await page.reload();
+  await expect(page.locator('.sidebar[data-space="coscode"]')).toBeVisible();
+  await desktopMode(page, "Kosmora");
+  await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toHaveValue(draft);
+  expect([null, "manager"]).toContain(new URL(page.url()).searchParams.get("surface"));
+  expect(writes).toEqual([]);
+});
+
+test("mode menu aligns links and buttons within the sidebar at desktop widths", async ({
+  page
+}) => {
+  for (const width of [900, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/?surface=code");
+    await page.getByLabel("Режимы Kosmora", { exact: true }).click();
+    const panel = page.getByRole("navigation", { name: "Режимы работы", exact: true });
+    const panelBox = await panel.boundingBox();
+    expect(panelBox).not.toBeNull();
+    const rows = panel.locator("button, a");
+    await expect(rows).toHaveCount(4);
+    await expect(panel.getByRole("link", { name: /Настройки/ })).toHaveCount(0);
+    let labelLeft: number | undefined;
+    for (const row of await rows.all()) {
+      const rowBox = await row.boundingBox();
+      const iconBox = await row.locator("svg").first().boundingBox();
+      const titleBox = await row.locator("strong").boundingBox();
+      const descriptionBox = await row.locator("small").boundingBox();
+      expect(rowBox && iconBox && titleBox && descriptionBox).toBeTruthy();
+      expect(titleBox!.x).toBeGreaterThan(iconBox!.x + iconBox!.width);
+      expect(descriptionBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height);
+      expect(descriptionBox!.x).toBeCloseTo(titleBox!.x, 0);
+      expect(descriptionBox!.x + descriptionBox!.width).toBeLessThanOrEqual(
+        panelBox!.x + panelBox!.width
+      );
+      expect(rowBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+      expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
+      if (labelLeft !== undefined) expect(titleBox!.x).toBeCloseTo(labelLeft, 0);
+      labelLeft = titleBox!.x;
+    }
+    await expect(panel.getByRole("button", { name: "Coscode", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    await page.screenshot({ path: `../../qa/kosmora-mode-menu-${width}.png` });
+    await page.keyboard.press("Escape");
+  }
+});
+
+test("mobile mode drawer returns to the existing chat draft", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const draft = "Мобильный черновик для презентации";
+  await page.getByLabel("Сообщение Kosmora", { exact: true }).fill(draft);
+  const nav = page.getByRole("navigation", { name: "Мобильная навигация" });
+  const trigger = nav.getByRole("button", { name: "Режимы", exact: true });
+  const drawer = page.getByRole("dialog", { name: "Ваше пространство" });
+
+  for (const mode of ["Koswork", "Coscode", "Kosmora"] as const) {
+    await trigger.click();
+    await drawer
+      .locator(".drawer-modes")
+      .getByRole("button", { name: new RegExp(`^${mode}(?:\\s|$)`) })
+      .click();
+    await expect(drawer).toBeHidden();
+  }
+  await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toHaveValue(draft);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true
+  );
+});
+
+test("switching spaces starts a clean chat and preserves the project's unsent draft when reopened", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("http://127.0.0.1:3100/api/v1/projects", {
+    data: {
+      initial_message: "Create a local fixture project for restoring workspace modes.",
+      client_message_id: crypto.randomUUID()
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const projectId = ((await created.json()) as { project: { id: string } }).project.id;
+  await page.goto(`/?project=${encodeURIComponent(projectId)}&view=chat`);
+  const composer = page.getByLabel("Сообщение менеджеру", { exact: true });
+  await expect(composer).toBeEnabled();
+  const draft = "Сохранить черновик в выбранном проекте после смены режимов";
+  await composer.fill(draft);
+
+  await desktopMode(page, "Koswork");
+  expect(new URL(page.url()).searchParams.get("project")).toBeNull();
+  await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toHaveValue("");
+  await desktopMode(page, "Coscode");
+  await expect(page.locator('.sidebar[data-space="coscode"]')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.sidebar[data-space="coscode"]')).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("project")).toBeNull();
+  expect(new URL(page.url()).searchParams.get("mode")).toBe("coscode");
+
+  await desktopMode(page, "Kosmora");
+  await page.goto(`/?project=${encodeURIComponent(projectId)}&view=chat`);
+  await expect(composer).toHaveValue(draft);
+  expect(new URL(page.url()).searchParams.get("project")).toBe(projectId);
+  expect(new URL(page.url()).searchParams.get("view")).toBe("chat");
+  expect(new URL(page.url()).searchParams.get("surface")).toBeNull();
+});

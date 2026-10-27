@@ -1,3 +1,16 @@
+import { registerGithubIssueRoutes } from "./github-issue-routes.js";
+import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
+import { registerApexRoutes } from "./apex-routes.js";
+import { registerProjectKnowledgeRoutes } from "./project-knowledge-routes.js";
+import { registerProjectAutomationRoutes } from "./project-automation-routes.js";
+import { ProjectAutomation } from "./project-automation.js";
+import { ProjectKnowledge } from "./project-knowledge.js";
+import type { ProjectAutomationStore } from "@cosmora/db";
+import type { PayStore } from "@cosmora/db";
+import type { PayGateway } from "./pay-gateway.js";
+import { registerPayRoutes } from "./pay-routes.js";
+import { RuntimeClock } from "@cosmora/model-gateway";
+import { ContextTooLargeError } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { ServerConfig } from "@cosmora/config";
 import { composeDemoManagerPlan, type ChatService, type ManagerService } from "@cosmora/core";
@@ -34,11 +47,13 @@ import {
   EmergencyStopStateSchema,
   HealthResponseSchema,
   IdentityAuditListResponseSchema,
+  IdentityActorSchema,
   MessageAcceptedResponseSchema,
   ModelRuntimeStatusSchema,
   OwnerSessionListResponseSchema,
   OwnerSessionViewSchema,
   ProjectDetailResponseSchema,
+  ProjectSchema,
   DemoManagerRunListResponseSchema,
   DemoManagerRunSchema,
   ProjectListResponseSchema,
@@ -55,8 +70,10 @@ import {
   RuntimeOperationsStatusSchema,
   UpdateCapabilityProfileRequestSchema,
   UpdateProjectUsageLimitRequestSchema,
+  UpdateProjectTitleRequestSchema,
   createCapabilityProfile,
   hasUniqueCapabilityOverrideIds,
+  isValidChatAttachments,
   requiresStepUp,
   type ApiError,
   type AgentBlueprintListResponse,
@@ -144,23 +161,84 @@ import {
 import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 import type { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
 import type { ManagerWorkStore } from "@cosmora/db";
+import { registerArtifactContextRoutes } from "./artifact-context-routes.js";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { registerManagerWorkRoutes } from "./manager-work-routes.js";
+import { registerIntelligenceGraphWorkspaceRoutes } from "./intelligence-graph-workspace-routes.js";
+import type { IntelligenceGraphWorkspaceService } from "@cosmora/core";
 import {
   autonomyProfileStepUpChallenge,
   projectUsageLimitStepUpChallenge
 } from "./step-up-challenge.js";
 import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-routes.js";
+import { registerCodeAgentRoutes } from "./code-agent/routes.js";
+import { CodeAgentService } from "./code-agent/service.js";
+import { CodeAgentStore } from "./code-agent/store.js";
+import type { CodeAgentWorkspaceRunner } from "@cosmora/tool-runtime";
+import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
+import { GithubIntegration, type GithubDraftStore } from "./github-integration.js";
+import { registerGithubRoutes } from "./github-routes.js";
+import { WebSearch, registerWebSearchRoutes } from "./web-search.js";
+import { registerProjectMaterialsRoutes } from "./project-materials-routes.js";
+import { registerAccountRoutes } from "./account-settings/routes.js";
+import { registerPrivacyRoutes } from "./account-settings/privacy/routes.js";
+import type { OwnerPrivacyCoordinator } from "./account-settings/privacy/coordinator.js";
+import { registerDocumentLibraryRoutes } from "./document-library-routes.js";
+import { registerDocumentAnswerRoutes } from "./document-answer-routes.js";
+import type { DocumentAnswerService } from "./document-answer-service.js";
+import { registerChatHistorySearchRoutes } from "./chat-history-search-routes.js";
+import { registerPresentationWorkRoutes } from "./presentation-work-routes.js";
+import { registerPresentationRoutes } from "./presentation-routes.js";
+import { registerNotificationRoutes } from "./notification-routes.js";
+import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
+import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
+import type { ResearchOwnerBudget } from "./research/research-synthesis.js";
+import type { CodeOwnerBudget } from "./code-agent/owner-budget.js";
+import type { AccountStore } from "./account-settings/account-store.js";
+import type {
+  DocumentLibraryStore,
+  ChatHistorySearchStore,
+  PresentationStore,
+  NotificationStore,
+  OwnerSkillStore
+} from "@cosmora/db";
+import { QuotaExceededError } from "./account-settings/account-store.js";
+import { registerResearchRoutes } from "./research/research-routes.js";
+import type { ResearchCoordinator } from "./research/research-coordinator.js";
+import type { ResearchStore } from "./research/research-store.js";
+import { registerMediaRoutes } from "./media/media-routes.js";
+import { registerCanvasRoutes } from "./canvas/canvas-routes.js";
+import type { CanvasArtifactStore } from "@cosmora/db";
+import type { MediaService } from "./media/media-service.js";
 
 export interface AppDependencies {
+  runtimeClock?: RuntimeClock;
   config: ServerConfig;
+  accountStore?: AccountStore;
+  ownerPrivacy?: OwnerPrivacyCoordinator;
+  documentLibrary?: DocumentLibraryStore;
+  documentAnswerService?: DocumentAnswerService;
+  chatHistorySearchStore?: ChatHistorySearchStore;
+  presentationStore?: PresentationStore;
+  notificationStore?: NotificationStore;
+  ownerSkillStore?: OwnerSkillStore;
+  researchBudget?: ResearchOwnerBudget;
+  ownerBudget?: CodeOwnerBudget;
+  codeAgentService?: CodeAgentService;
+  researchCoordinatorCreated?: (coordinator: ResearchCoordinator) => void;
+  accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   identityStore?: IdentityStore;
+  registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
   projectStore?: ProjectStore;
   demoManagerStore?: DemoManagerStore;
   demoManagerCoordinator?: DemoManagerCoordinator;
   managerWorkStore?: ManagerWorkStore;
+  projectAutomationStore?: ProjectAutomationStore;
+  payStore?: PayStore;
+  payGateway?: PayGateway;
+  payPlans?: Record<string, number>;
   managerWorkCoordinator?: ManagerWorkCoordinator;
   usageStore?: UsageStore;
   emergencyStopStore?: EmergencyStopStore;
@@ -179,7 +257,16 @@ export interface AppDependencies {
   runtimeMetrics?: RuntimeMetrics;
   managerRunExecutionMode?: "stream" | "background";
   generalChatRunExecutionMode?: "stream" | "background";
+  codeAgentRunner?: CodeAgentWorkspaceRunner;
+  githubIntegration?: GithubIntegration;
+  githubDraftStore?: GithubDraftStore;
+  webSearch?: WebSearch;
+  researchStore?: ResearchStore;
+  mediaService?: MediaService;
+  canvasStore?: CanvasArtifactStore;
   now?: () => string;
+  /** Explicit integration-only switch; absent is OFF. */
+  intelligenceGraphWorkspace?: { enabled: boolean; service: IntelligenceGraphWorkspaceService };
 }
 
 const stepUpToken = (value: string | string[] | undefined): string | null =>
@@ -546,6 +633,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   }
 
   const app = Fastify({
+    bodyLimit: 3_000_000,
     logger:
       dependencies.config.nodeEnv === "test"
         ? false
@@ -571,7 +659,36 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   };
 
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url.split("?", 1)[0] === "/api/v1/health") return;
+    const path = request.url.split("?", 1)[0];
+    if (path === "/api/v1/health") return;
+    if (
+      dependencies.registration &&
+      (path === "/login" ||
+        path === "/register" ||
+        path === "/resend-verification" ||
+        path === "/forgot-password" ||
+        path === "/auth/register" ||
+        path === "/auth/resend-verification" ||
+        path === "/auth/login" ||
+        path === "/auth/confirm" ||
+        path === "/auth/recovery/request" ||
+        path === "/auth/recovery/reset" ||
+        path === "/auth/google" ||
+        path === "/auth/google/link" ||
+        path === "/auth/google/callback" ||
+        path === "/auth/account" ||
+        path === "/auth/account/email" ||
+        path === "/auth/account/password" ||
+        path === "/auth/account/method/remove" ||
+        path === "/auth/account/sessions" ||
+        path === "/auth/account/sessions/revoke" ||
+        path === "/auth/account/email-change/request" ||
+        path === "/auth/account/email-change/confirm" ||
+        path === "/auth/account/activity" ||
+        path === "/auth/logout" ||
+        path === "/auth/verify")
+    )
+      return;
     let identity: IdentityContext | null = null;
     try {
       identity = await identityResolver.resolve(request);
@@ -599,6 +716,87 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     requestIdentities.set(request, identity);
   });
 
+  if (dependencies.intelligenceGraphWorkspace?.enabled) {
+    if (!dependencies.projectStore) throw new Error("Graph workspace requires ProjectStore");
+    registerIntelligenceGraphWorkspaceRoutes(app, {
+      enabled: true,
+      service: dependencies.intelligenceGraphWorkspace.service,
+      projects: dependencies.projectStore,
+      materials: dependencies.projectStore,
+      identity: identityResolver
+    });
+  }
+
+  app.get(
+    "/api/v1/navigation-context",
+    {
+      schema: {
+        response: {
+          200: Type.Object(
+            { owner_id: Type.String({ minLength: 1, maxLength: 160 }) },
+            { additionalProperties: false }
+          )
+        }
+      }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      return { owner_id: identityFor(request).owner_id };
+    }
+  );
+
+  if (dependencies.projectStore) {
+    const projects = dependencies.projectStore;
+    app.post(
+      "/api/v1/projects/empty",
+      {
+        schema: {
+          body: Type.Object(
+            {
+              title: Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }),
+              client_project_id: Type.String({
+                pattern:
+                  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+              })
+            },
+            { additionalProperties: false }
+          ),
+          response: { 201: ProjectDetailResponseSchema, 409: ApiErrorSchema }
+        },
+        validatorCompiler: TypeBoxValidatorCompiler
+      },
+      (request, reply) => {
+        const owner = identityFor(request).owner_id;
+        const project = projects.createEmptyProject(
+          request.body.client_project_id,
+          request.body.title,
+          owner
+        );
+        dependencies.policyStore?.ensureProfile(project.id);
+        dependencies.usageStore?.ensureLimit(project.id, owner);
+        reply.code(201);
+        return {
+          project,
+          chat_id: projects.getMainChatId(project.id, owner)!,
+          messages: projects.listMessages(project.id, owner)
+        };
+      }
+    );
+  }
+  if (dependencies.registration) registerRegistrationRoutes(app, dependencies.registration);
+  registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
+  if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
+  if (dependencies.payStore)
+    registerPayRoutes(app, {
+      store: dependencies.payStore,
+      plans: dependencies.payPlans ?? {},
+      ...(dependencies.payGateway ? { gateway: dependencies.payGateway } : {}),
+      stopped: () =>
+        dependencies.emergencyStopStore?.getProcessStop() !== null &&
+        dependencies.emergencyStopStore?.getProcessStop() !== undefined,
+      identityFor
+    });
+
   app.get(
     "/api/v1/health",
     { schema: { response: { 200: HealthResponseSchema, 503: HealthResponseSchema } } },
@@ -618,6 +816,129 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       return reply.status(database === "ok" ? 200 : 503).send(response);
     }
   );
+
+  if (dependencies.projectStore)
+    registerGithubIssueRoutes({
+      app,
+      integration: dependencies.githubIntegration ?? new GithubIntegration(),
+      projects: dependencies.projectStore,
+      identityFor
+    });
+  registerGithubRoutes({
+    app,
+    integration: dependencies.githubIntegration ?? new GithubIntegration(),
+    identityFor,
+    ...(dependencies.githubDraftStore ? { drafts: dependencies.githubDraftStore } : {}),
+    ...(dependencies.projectStore ? { projects: dependencies.projectStore } : {}),
+    ...(dependencies.emergencyStopStore ? { emergency: dependencies.emergencyStopStore } : {})
+  });
+  if (
+    dependencies.githubIntegration &&
+    dependencies.githubDraftStore &&
+    dependencies.projectStore &&
+    dependencies.policyStore &&
+    dependencies.emergencyStopStore &&
+    dependencies.modelGateway &&
+    dependencies.manager
+  ) {
+    const code =
+      dependencies.codeAgentService ??
+      new CodeAgentService({
+        store: new CodeAgentStore(dependencies.githubDraftStore.sqlite),
+        github: dependencies.githubIntegration,
+        drafts: dependencies.githubDraftStore,
+        projects: dependencies.projectStore,
+        policy: dependencies.policyStore,
+        emergency: dependencies.emergencyStopStore,
+        gateway: dependencies.modelGateway,
+        manager: dependencies.manager,
+        runner: dependencies.codeAgentRunner ?? configuredCodeAgentExecutor(),
+        ...(dependencies.ownerBudget ? { ownerBudget: dependencies.ownerBudget } : {})
+      });
+    registerCodeAgentRoutes(app, code, identityFor);
+    app.addHook("preClose", () => code.stop());
+  }
+  if (dependencies.documentLibrary)
+    registerDocumentLibraryRoutes(app, dependencies.documentLibrary, identityFor);
+  if (dependencies.documentAnswerService)
+    registerDocumentAnswerRoutes(app, dependencies.documentAnswerService, identityFor);
+  if (dependencies.chatHistorySearchStore)
+    registerChatHistorySearchRoutes(app, dependencies.chatHistorySearchStore, identityFor);
+  if (dependencies.presentationStore)
+    registerPresentationRoutes(app, dependencies.presentationStore, identityFor);
+  if (dependencies.presentationStore && dependencies.managerWorkStore && dependencies.projectStore)
+    registerPresentationWorkRoutes({
+      app,
+      presentations: dependencies.presentationStore,
+      works: dependencies.managerWorkStore,
+      projects: dependencies.projectStore,
+      identityFor
+    });
+  if (dependencies.notificationStore)
+    registerNotificationRoutes(app, dependencies.notificationStore, identityFor);
+  if (dependencies.ownerSkillStore)
+    registerOwnerSkillRoutes(app, dependencies.ownerSkillStore, identityFor);
+  registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
+  if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
+    const coordinator = registerResearchRoutes({
+      app,
+      store: dependencies.researchStore,
+      ...(dependencies.modelGateway ? { gateway: dependencies.modelGateway } : {}),
+      ...(dependencies.manager ? { manager: dependencies.manager } : {}),
+      ...(dependencies.researchBudget ? { ownerBudget: dependencies.researchBudget } : {}),
+      search: dependencies.webSearch ?? new WebSearch(),
+      projects: dependencies.projectStore,
+      policy: dependencies.policyStore,
+      identityFor,
+      ...(dependencies.emergencyStopStore ? { emergency: dependencies.emergencyStopStore } : {})
+    });
+    dependencies.researchCoordinatorCreated?.(coordinator);
+    app.addHook("onClose", () => coordinator.stop());
+  }
+  if (dependencies.mediaService) registerMediaRoutes(app, dependencies.mediaService, identityFor);
+  if (dependencies.canvasStore) registerCanvasRoutes(app, dependencies.canvasStore, identityFor);
+  if (dependencies.projectStore)
+    registerProjectMaterialsRoutes(app, dependencies.projectStore, identityFor);
+  if (dependencies.projectStore)
+    registerProjectKnowledgeRoutes(
+      app,
+      {
+        projects: dependencies.projectStore,
+        ...(dependencies.canvasStore ? { canvas: dependencies.canvasStore } : {}),
+        ...(dependencies.managerWorkStore ? { work: dependencies.managerWorkStore } : {}),
+        ...(dependencies.documentLibrary ? { documents: dependencies.documentLibrary } : {})
+      },
+      identityFor
+    );
+  if (dependencies.projectStore && dependencies.canvasStore)
+    registerArtifactContextRoutes(
+      app,
+      dependencies.projectStore,
+      dependencies.canvasStore,
+      identityFor,
+      dependencies.managerWorkStore
+    );
+  if (
+    dependencies.projectAutomationStore &&
+    dependencies.projectStore &&
+    dependencies.managerWorkStore
+  )
+    registerProjectAutomationRoutes(
+      app,
+      new ProjectAutomation(
+        dependencies.projectAutomationStore,
+        dependencies.managerWorkStore,
+        new ProjectKnowledge({
+          ...(dependencies.canvasStore ? { canvas: dependencies.canvasStore } : {}),
+          work: dependencies.managerWorkStore,
+          ...(dependencies.documentLibrary ? { documents: dependencies.documentLibrary } : {})
+        }),
+        now
+      ),
+      dependencies.projectStore,
+      identityFor,
+      dependencies.managerWorkCoordinator?.dag
+    );
 
   if (dependencies.identityStore) {
     const identityStore = dependencies.identityStore;
@@ -668,6 +989,90 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         return response;
       }
     );
+
+    // Account moderation is deliberately scoped to non-owner technical actors.
+    // Corporate owners cannot be removed using this API.
+    const actorModerationBody = Type.Object(
+      { reason: Type.String({ minLength: 8, maxLength: 256, pattern: "\\S.{6}\\S" }) },
+      { additionalProperties: false }
+    );
+    const actorModerationParams = Type.Object(
+      { actorId: Type.String({ minLength: 1, maxLength: 256 }) },
+      { additionalProperties: false }
+    );
+    app.get("/api/v1/identity/actor-moderations", (request, reply) => {
+      reply.header("cache-control", "private, no-store");
+      return { items: identityStore.listActorModerations(identityFor(request).owner_id) };
+    });
+
+    for (const action of ["suspend", "restore"] as const) {
+      app.post(
+        `/api/v1/identity/actors/:actorId/${action}`,
+        {
+          schema: {
+            params: actorModerationParams,
+            body: actorModerationBody,
+            response: {
+              200: IdentityActorSchema,
+              403: ApiErrorSchema,
+              404: ApiErrorSchema
+            }
+          }
+        },
+        async (request, reply) => {
+          const identity = identityFor(request);
+          if (identity.assurance !== "multi_factor") {
+            return reply
+              .status(403)
+              .send(
+                errorBody(request.id, "STEP_UP_REQUIRED", "Multi-factor authentication is required")
+              );
+          }
+          const actor = identityStore.getActor(request.params.actorId, identity.owner_id);
+          if (!actor) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "IDENTITY_ACTOR_NOT_FOUND", "Identity actor not found"));
+          }
+          if (actor.kind === "owner" || actor.actor_id === identity.actor_id) {
+            return reply
+              .status(403)
+              .send(errorBody(request.id, "FORBIDDEN", "Owner accounts cannot be moderated here"));
+          }
+          if (action === "suspend" && actor.status === "active") {
+            identityStore.disableActor(
+              actor.actor_id,
+              identity.owner_id,
+              identity.actor_id,
+              request.body.reason
+            );
+          } else if (action === "restore" && actor.status === "disabled") {
+            identityStore.enableActor(
+              actor.actor_id,
+              identity.owner_id,
+              identity.actor_id,
+              request.body.reason
+            );
+          }
+          const updated = identityStore.getActor(actor.actor_id, identity.owner_id);
+          if (!updated) {
+            return reply
+              .status(404)
+              .send(errorBody(request.id, "IDENTITY_ACTOR_NOT_FOUND", "Identity actor not found"));
+          }
+          app.log.info(
+            {
+              actorId: identity.actor_id,
+              targetActorId: actor.actor_id,
+              action,
+              status: updated.status
+            },
+            "Owner-moderated technical actor"
+          );
+          return updated;
+        }
+      );
+    }
 
     app.post(
       "/api/v1/identity/sessions/:sessionId/revoke",
@@ -987,12 +1392,18 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     });
   }
 
+  if (dependencies.accountStore && dependencies.accountModel)
+    registerAccountRoutes(app, dependencies.accountStore, identityFor, dependencies.accountModel);
+  if (dependencies.accountStore && dependencies.ownerPrivacy)
+    registerPrivacyRoutes(app, dependencies.ownerPrivacy, dependencies.accountStore, identityFor);
+
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerGeneralChatRoutes({
       app,
       store: dependencies.generalChatStore,
       modelGateway: dependencies.modelGateway,
       chat: dependencies.chat,
+      ...(dependencies.accountStore ? { accountStore: dependencies.accountStore } : {}),
       runtimeMetrics,
       activeRuns,
       runObservers,
@@ -1658,6 +2069,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         schema: {
           body: CreateProjectRequestSchema,
           response: {
+            400: ApiErrorSchema,
             201: MessageAcceptedResponseSchema,
             200: MessageAcceptedResponseSchema,
             409: ApiErrorSchema
@@ -1665,10 +2077,16 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
       },
       async (request, reply) => {
+        if (!isValidChatAttachments(request.body.attachments ?? [])) {
+          return reply
+            .status(400)
+            .send(errorBody(request.id, "VALIDATION_ERROR", "Invalid attachments"));
+        }
         const accepted = store.createProject(
           request.body.initial_message,
           request.body.client_message_id,
-          identityFor(request).owner_id
+          identityFor(request).owner_id,
+          request.body.attachments
         );
         dependencies.policyStore?.ensureProfile(accepted.project.id);
         dependencies.usageStore?.ensureLimit(accepted.project.id, identityFor(request).owner_id);
@@ -2321,6 +2739,33 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       }
     );
 
+    app.patch(
+      "/api/v1/projects/:projectId",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          body: UpdateProjectTitleRequestSchema,
+          response: {
+            200: Type.Object({ project: ProjectSchema }, { additionalProperties: false }),
+            404: ApiErrorSchema
+          }
+        },
+        validatorCompiler: TypeBoxValidatorCompiler
+      },
+      async (request, reply) => {
+        const project = store.renameProject(
+          request.params.projectId,
+          identityFor(request).owner_id,
+          request.body.title
+        );
+        if (!project)
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        return { project };
+      }
+    );
+
     app.post(
       "/api/v1/projects/:projectId/messages",
       {
@@ -2333,6 +2778,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           },
           body: CreateMessageRequestSchema,
           response: {
+            400: ApiErrorSchema,
             202: MessageAcceptedResponseSchema,
             200: MessageAcceptedResponseSchema,
             404: ApiErrorSchema,
@@ -2341,17 +2787,25 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         }
       },
       async (request, reply) => {
+        if (!isValidChatAttachments(request.body.attachments ?? [])) {
+          return reply
+            .status(400)
+            .send(errorBody(request.id, "VALIDATION_ERROR", "Invalid attachments"));
+        }
         const accepted = store.createMessage(
           request.params.projectId,
           request.body.content,
           request.body.client_message_id,
-          identityFor(request).owner_id
+          identityFor(request).owner_id,
+          request.body.attachments
         );
         if (!accepted) {
           return reply
             .status(404)
             .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
         }
+        dependencies.policyStore?.ensureProfile(accepted.project.id);
+        dependencies.usageStore?.ensureLimit(accepted.project.id, identityFor(request).owner_id);
         return reply.status(accepted.duplicate ? 200 : 202).send(acceptedResponse(accepted));
       }
     );
@@ -2705,10 +3159,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         const controller = new AbortController();
         activeRuns.set(run.id, { projectId: run.project_id, ownerId, controller });
         runtimeMetrics.runStarted();
+        const accountHolds = new Map<number, string>();
         try {
           const modelRequest = manager.buildRequest({
             projectId: run.project_id,
             runId: run.id,
+            materials: store.getMaterialsForRun(run.id, ownerId),
             messages: conversation
           });
           for await (const event of modelGateway.stream(modelRequest, controller.signal)) {
@@ -2725,8 +3181,26 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                 },
                 "Model route attempt selected"
               );
-              const reserved = store.reserveModelUsage(run.id, event.route, ownerId);
+              const hold = dependencies.accountStore?.reserve(
+                ownerId,
+                run.id,
+                event.route.attempt,
+                event.route.estimated_input_tokens + event.route.max_output_tokens,
+                "main",
+                run.project_id,
+                event.route.provider_id,
+                event.route.model_id
+              );
+              if (hold) accountHolds.set(event.route.attempt, hold);
+              let reserved: ReturnType<ProjectStore["reserveModelUsage"]>;
+              try {
+                reserved = store.reserveModelUsage(run.id, event.route, ownerId);
+              } catch (error) {
+                if (hold) dependencies.accountStore?.releaseBeforeDispatch(hold);
+                throw error;
+              }
               if (!reserved) {
+                if (hold) dependencies.accountStore?.releaseBeforeDispatch(hold);
                 throw new GatewayRunError(
                   "ROUTE_UNAVAILABLE",
                   event.route.provider_id,
@@ -2749,6 +3223,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                 "Model route attempt failed"
               );
               store.failModelUsage(run.id, event.route.attempt, event.errorCode);
+              const hold = accountHolds.get(event.route.attempt);
+              if (hold) dependencies.accountStore?.uncertainReservation(hold, "main");
             } else if (event.type === "text.delta") {
               store.appendAssistantDelta(assistant.id, event.delta);
               size += event.delta.length;
@@ -2761,7 +3237,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
                   delta: event.delta
                 }
               });
-            } else {
+            } else if (event.type === "response.completed") {
               completed = event;
             }
           }
@@ -2777,6 +3253,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             attempt: completed.route.attempt,
             calculatedCost: completed.calculatedCost
           });
+          const hold = accountHolds.get(completed.route.attempt);
+          if (hold)
+            dependencies.accountStore?.completeReservation(
+              hold,
+              "main",
+              completed.usage.inputTokens,
+              completed.usage.outputTokens
+            );
           runtimeMetrics.runCompleted();
           app.log.info(
             {
@@ -2845,7 +3329,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             );
             return reply;
           }
-          if (error instanceof ProjectUsageLimitExceededError) {
+          if (
+            error instanceof ProjectUsageLimitExceededError ||
+            error instanceof QuotaExceededError
+          ) {
             store.failRun(run.id, error.code);
             runtimeMetrics.runFailed("USAGE_LIMIT_EXCEEDED");
             sendEvent(reply, {
@@ -2860,11 +3347,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             return reply;
           }
           const gatewayError =
-            error instanceof GatewayRunError
-              ? error
-              : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
-                  cause: error
-                });
+            error instanceof ContextTooLargeError
+              ? new GatewayRunError("CONTEXT_TOO_LARGE", "gateway", error.message, false)
+              : error instanceof GatewayRunError
+                ? error
+                : new GatewayRunError("PROVIDER_ERROR", "gateway", "Model gateway failed", true, {
+                    cause: error
+                  });
           const code = gatewayError.code;
           store.failRun(run.id, code);
           runtimeMetrics.runFailed(code);
@@ -2877,6 +3366,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             "Model provider run failed"
           );
         } finally {
+          for (const hold of accountHolds.values())
+            dependencies.accountStore?.uncertainReservation(hold, "main");
           activeRuns.delete(run.id);
         }
         endEventStream(reply);
@@ -2886,6 +3377,16 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   }
 
   app.setErrorHandler((error, request, reply) => {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      error.statusCode === 413
+    ) {
+      return reply
+        .status(413)
+        .send(errorBody(request.id, "VALIDATION_ERROR", "Request body is too large"));
+    }
     if (error instanceof IdempotencyConflictError) {
       return reply
         .status(409)
@@ -2917,6 +3418,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   );
 
   app.addHook("preClose", () => {
+    dependencies.mediaService?.stop();
     for (const observer of runObservers) observer.abort();
     for (const active of activeRuns.values()) {
       active.controller.abort(new Error("API process is shutting down"));

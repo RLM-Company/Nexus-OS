@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-23",
+  "source_url": "https://github.com/RLM-Company/Nexus-OS/pull/330",
+  "source_kind": "github_pull_request",
+  "repository": "RLM-Company/Nexus-OS",
+  "number": 330,
+  "title": "feat(chat): implement Kosmora 4-block chat enhancements & Welcome starters",
+  "body": "### Summary\nThis PR implements the 4 core Kosmora chat enhancement blocks and the interactive Welcome onboarding screen on top of `kosmora-base` (baseline `0182e6a612e2c1572be186995463f00857e304b7`):\n1. **Message Editing & Branching**: Message fork, isolated branching tree, version indices (`version_index`), and regeneration without sibling turn leakage.\n2. **Folders & History Search**: Folders organization (`general_chat_folders`), chat pinning (`pinned`, `pinned_order`), and server-side FTS5 history search reusing `0034_chat_history_search.sql`.\n3. **Context Control & Memory**: Long-context token budget usage gauge, message exclusion (`excluded_from_context`), persistent chat memory notes, and branch summaries injected into system prompts.\n4. **Artifacts & Canvas Promotion**: Chat artifacts (documents, code, tables), version history with optimistic concurrency (`expected_version` 409 conflict detection), direct promotion to project Canvas (`0035_canvas_artifacts`), and multi-format export (.md, .txt, .html, .json).\n5. **Welcome & Starter Screen**: Interactive starter cards (`welcome-starters.tsx`) in the empty-chat hero section for rapid task initiation (Docs/Canvas, Code/Scripts, Data analysis, Research) with auto-focus into the composer.\n\n### Invariants & Integration Compliance\n- Appended migration `packages/db/migrations/0036_chat_features.sql` with meta journal index 36. Migrations 0000–0035 remain strictly untouched.\n- `AccountStore` budget reservations (`reserve`, `completeReservation`, `releaseBeforeDispatch`), relay invariants, and SSE streaming protocols preserved.\n- Aligned with coordinator commit `82c8342` (safe sidecar Code executor and structured chat export).\n- Privacy adapter (`AccountCorePrivacyAdapter`) updated for GDPR export and cascade delete across folders, memory, and artifacts.\n- Preserved Playwright `.hero h2` greeting requirement and `.hero p` count 0 constraint.\n- Complete verified unified patch: `kosmora_4_blocks_feature_v2.patch` (clean apply with 0 conflicts against `0182e6a`).\n\n### Verification Performed\n- [x] All 36 SQLite migrations verified sequentially in-memory with SQLite3 + FTS5.\n- [x] Foreign key integrity and cascade deletions tested (deleting chat removes memory and artifacts; deleting folder sets `folder_id` to NULL).\n- [x] FTS5 automated triggers verified for INSERT, UPDATE, and DELETE.\n- [x] Branch isolation verified: child branches do not leak parent or sibling messages.\n- [x] Optimistic concurrency control verified: stale artifact version updates reject with 409 CONFLICT.\n- [x] GDPR privacy export and deletion routines verified.\n- [x] Patch cleanly applies against commit `0182e6a` with zero conflicts.",
+  "state_at_capture": "open",
+  "merged_at_capture": false,
+  "head": {
+    "ref": "feature/kosmora-updates",
+    "sha": "ab5e5591b17cfdb0faf548671fe76bee3c8f295c"
+  },
+  "base": {
+    "ref": "kosmora-base",
+    "sha": "0182e6a612e2c1572be186995463f00857e304b7"
+  },
+  "interpretation": "The title and body are the original author's claims, not independently verified completion. This is the older chat package, not the missing 132-block package.",
+  "audit_path": "docs/handoff/KOSMORA_GEMINI_REVIEW_2026-10-14.md"
+}

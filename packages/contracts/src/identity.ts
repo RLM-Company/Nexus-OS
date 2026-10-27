@@ -102,7 +102,9 @@ export const IdentityAuditEventSchema = Type.Object(
       Type.Literal("session.issued"),
       Type.Literal("session.revoked"),
       Type.Literal("session.expired"),
+      Type.Literal("login.failed"),
       Type.Literal("actor.disabled"),
+      Type.Literal("actor.enabled"),
       Type.Literal("step_up.issued"),
       Type.Literal("step_up.consumed"),
       Type.Literal("step_up.rejected")

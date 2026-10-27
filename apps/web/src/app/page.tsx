@@ -1,11 +1,59 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent
+} from "react";
 import { assessTaskComplexity, chooseGreeting, type TaskComplexity } from "./chat-mode";
+import { SidebarResize, useSidebarWidth, useSidebarCollapse } from "./sidebar-resize";
 import { InstallApp } from "./install-app";
+import { ChatResponse } from "./chat-response";
+import { VoiceComposer } from "./voice/voice-composer";
+import { CompactVoicePlayback } from "./voice/voice-playback";
+import { VoiceAssistant } from "./voice/voice-assistant";
+import { LoadingDots } from "./ui/feedback";
+import { ModelPicker, SystemMessage } from "./ui/kosmora-controls";
+import { CanvasEditor } from "./canvas-editor/canvas-editor";
+import canvasChat from "./canvas-editor/canvas-chat.module.css";
+import { ChatHistoryActions } from "./chat-history-actions";
+import { ChatBranches, ChatBranchButton } from "./chat-branches";
+import { useChatNavigation, ChatContextPanel, ChatToCanvas } from "./chat-workspace";
+import { ChatItemMenu } from "./chat-item-menu";
+import { CreateProjectDialog } from "./create-project-dialog";
+import { ChatSearchTrigger } from "./chat-search-trigger";
+import { ProjectTitleEditor } from "./project-title-editor";
+import { QuickSwitcher } from "./quick-switcher";
+import { pinsFirst } from "./pinned-navigation";
+import { clearComposerDraft, readComposerDraft, saveComposerDraft } from "./composer-draft-storage";
+import {
+  desktopDraftBridge,
+  nativeDraftScope,
+  purgeUnscopedLegacyDrafts
+} from "./desktop-draft-bridge";
 import { ProjectContextPanel } from "./project-context-panel";
+import { ProjectContextPreview } from "./project-context-preview";
 import { ManagerWorkPanel } from "./manager-work-panel";
+import { useExecutionGate } from "./use-execution-gate";
+import { WorkspaceIcon } from "./workspace-icons";
+import { AccountMenu, MobileNavigation, WorkspaceModeMenu } from "./workspace-navigation";
+import {
+  ChatAttachmentPicker,
+  ChatMessageAttachments,
+  useChatAttachments
+} from "./chat-attachments";
+import { isValidChatAttachments, type ChatAttachment } from "@cosmora/contracts/chat-attachments";
+import {
+  WorkspaceSections,
+  TOOL_ITEMS,
+  STUDIO_ITEMS,
+  type ToolSurface,
+  type UiPreferences
+} from "./workspace-sections";
 
 type Project = {
   id: string;
@@ -24,6 +72,7 @@ type Message = {
   role: "user" | "assistant" | "system_event";
   content_type: "text";
   content: string;
+  attachments?: ChatAttachment[];
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
   reply_to_message_id: string | null;
   run_id: string | null;
@@ -50,6 +99,7 @@ type LocalChatMessage = {
   role: "user" | "assistant";
   content_type: "text";
   content: string;
+  attachments?: ChatAttachment[];
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
   run_id: string | null;
   error_code: string | null;
@@ -60,9 +110,12 @@ type LocalChatMessage = {
 type ProjectProposal = {
   content: string;
   assessment: TaskComplexity;
+  attachments?: ChatAttachment[];
 };
 
+type ChatMode = "kosmora" | "work" | "coscode";
 type LocalChatSession = {
+  mode?: ChatMode;
   id: string;
   title: string;
   messages: LocalChatMessage[];
@@ -73,14 +126,14 @@ type LocalChatSession = {
 };
 
 type GeneralChatAcceptedResponse = {
-  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at">;
+  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at" | "mode">;
   user_message: LocalChatMessage;
   run_id: string;
   stream_url: string;
 };
 
 type GeneralChatDetail = {
-  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at">;
+  chat: Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at" | "mode">;
   messages: LocalChatMessage[];
 };
 
@@ -110,43 +163,52 @@ type ProjectTabKeyEvent = {
 };
 
 const PROJECT_VIEW_ORDER: ProjectView[] = ["chat", "plan", "project", "context"];
-type WorkspaceSurface =
-  "manager" | "skills" | "code" | "work" | "images" | "video" | "sound" | "multi-agent";
-
-type ToolSurface = Exclude<WorkspaceSurface, "manager">;
-
-const TOOL_ITEMS: Array<{
-  id: ToolSurface;
-  label: string;
-  description: string;
-}> = [
-  { id: "skills", label: "Skills", description: "Инструменты и специализации" },
-  { id: "code", label: "Code", description: "Работа с кодом" },
-  { id: "work", label: "Work", description: "Рабочие материалы" },
-  { id: "images", label: "Изображения", description: "Создание и редактирование" },
-  { id: "video", label: "Видео", description: "Сценарии и генерация" },
-  { id: "sound", label: "Sound", description: "Голос, музыка и аудио" },
-  { id: "multi-agent", label: "Мультиагент", description: "Команда ИИ-агентов" }
-];
+type WorkspaceSurface = "manager" | ToolSurface;
 
 const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
-  manager: "Cosmora Manager",
+  manager: "Kosmora",
+  research: "Deep Research",
+  presentations: "Презентации",
+  sites: "Сайты",
+  games: "Games",
+  studio: "Kosmora Studio",
+  files: "Анализ файлов",
   skills: "Skills",
-  code: "Code",
-  work: "Work",
+  code: "Coscode",
+  work: "Koswork",
   images: "Изображения",
   video: "Видео",
   sound: "Sound",
-  "multi-agent": "Мультиагент"
+  "multi-agent": "Multi-Agent",
+  apps: "Приложения",
+  features: "Возможности",
+  settings: "Настройки"
 };
 
 const isProjectView = (value: string | null): value is ProjectView =>
   value === "chat" || value === "plan" || value === "project" || value === "context";
 
-const replaceConsoleRoute = (projectId: string | null, view: ProjectView = "chat"): void => {
-  const route = projectId
+const replaceConsoleRoute = (
+  projectId: string | null,
+  view: ProjectView = "chat",
+  generalChatId: string | null = null
+): void => {
+  let route = projectId
     ? `/?project=${encodeURIComponent(projectId)}&view=${encodeURIComponent(view)}`
-    : "/";
+    : generalChatId
+      ? `/?chat=${encodeURIComponent(generalChatId)}`
+      : "/";
+  const currentParams = new URLSearchParams(window.location.search);
+  const mode = currentParams.get("mode");
+  if (mode && ["kosmora", "work", "coscode"].includes(mode))
+    route += `${route.includes("?") ? "&" : "?"}mode=${encodeURIComponent(mode)}`;
+  if (currentParams.get("space") === "coscode")
+    route += `${route.includes("?") ? "&" : "?"}space=coscode`;
+  const planId = currentParams.get("plan");
+  if (projectId && view === "plan" && currentParams.get("project") === projectId && planId)
+    route += `&plan=${encodeURIComponent(planId)}`;
+  if (currentParams.get("context_preview") === "1")
+    route += `${route.includes("?") ? "&" : "?"}context_preview=1`;
   window.history.replaceState(window.history.state, "", route);
 };
 
@@ -216,6 +278,12 @@ const RUN_PHASE_LABEL: Record<RunPhase, string> = {
   cancelled: "Остановлен"
 };
 
+const CHAT_RUN_PHASE_LABEL: Record<RunPhase, string> = {
+  ...RUN_PHASE_LABEL,
+  running: "Kosmora отвечает",
+  streaming: "Kosmora отвечает · поток"
+};
+
 const PROJECT_STATUS_LABEL: Record<Project["status"], string> = {
   DRAFT: "Черновик",
   ACTIVE: "Активен",
@@ -223,12 +291,7 @@ const PROJECT_STATUS_LABEL: Record<Project["status"], string> = {
   ARCHIVED: "В архиве"
 };
 
-const SparkIcon = () => (
-  <svg aria-hidden="true" viewBox="0 0 24 24">
-    <path d="M12 2l1.55 5.3L19 9l-5.45 1.7L12 16l-1.55-5.3L5 9l5.45-1.7L12 2Z" />
-    <path d="m19 15 .75 2.25L22 18l-2.25.75L19 21l-.75-2.25L16 18l2.25-.75L19 15Z" />
-  </svg>
-);
+const SparkIcon = () => <WorkspaceIcon name="cosmora" />;
 
 const GridIcon = () => (
   <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -248,361 +311,30 @@ const ShieldIcon = () => (
 
 const SendIcon = () => (
   <svg aria-hidden="true" viewBox="0 0 24 24">
-    <path d="m4 4 17 8-17 8 3-8-3-8Z" />
-    <path d="M7 12h14" />
+    <path
+      d="M12 19V5m-6 6 6-6 6 6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   </svg>
 );
 
-const ToolIcon = ({ kind }: { kind: ToolSurface | "projects" | "new-chat" }) => {
-  if (kind === "new-chat") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <path d="M12 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9" />
-        <path d="m17 3 4 4-9 9-4 1 1-4 8-10Z" />
-      </svg>
-    );
-  }
-  if (kind === "projects") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v8A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-10Z" />
-      </svg>
-    );
-  }
-  if (kind === "code") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16" />
-      </svg>
-    );
-  }
-  if (kind === "work") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <rect x="3" y="7" width="18" height="13" rx="2" />
-        <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 12h18" />
-      </svg>
-    );
-  }
-  if (kind === "images") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <rect x="3" y="3" width="18" height="18" rx="3" />
-        <circle cx="8.5" cy="8.5" r="1.5" />
-        <path d="m4 17 5-5 4 4 2-2 5 5" />
-      </svg>
-    );
-  }
-  if (kind === "video") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <rect x="3" y="5" width="18" height="14" rx="3" />
-        <path d="m10 9 5 3-5 3V9Z" />
-      </svg>
-    );
-  }
-  if (kind === "sound") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <path d="M4 14v-4M8 18V6M12 21V3M16 17V7M20 14v-4" />
-      </svg>
-    );
-  }
-  if (kind === "multi-agent") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <circle cx="8" cy="8" r="3" />
-        <circle cx="17" cy="7" r="2" />
-        <path d="M3 20a5 5 0 0 1 10 0M14 20a4 4 0 0 1 8 0" />
-      </svg>
-    );
-  }
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
-      <circle cx="12" cy="12" r="4" />
-    </svg>
-  );
-};
+const ToolIcon = ({ kind }: { kind: ToolSurface | "projects" | "new-chat" | "chats" }) => (
+  <WorkspaceIcon name={kind} />
+);
 
-const CapabilityWorkspace = ({
-  surface,
-  projects,
-  agentStudioHref,
-  controlCenterHref
-}: {
-  surface: ToolSurface;
-  projects: ProjectSummary[];
-  agentStudioHref: string;
-  controlCenterHref: string;
-}) => {
-  const [prompt, setPrompt] = useState("");
-  const [format, setFormat] = useState("1:1");
-  const [style, setStyle] = useState("Авто");
-  const [notice, setNotice] = useState<string | null>(null);
-
-  const mediaPromptLabel =
-    surface === "images" ? "изображения" : surface === "video" ? "видео" : "аудио";
-
-  if (surface === "skills") {
-    return (
-      <section className="capability-workspace" aria-labelledby="skills-title">
-        <header className="capability-hero">
-          <span className="capability-icon">
-            <ToolIcon kind="skills" />
-          </span>
-          <div>
-            <small>Библиотека возможностей</small>
-            <h2 id="skills-title">Skills</h2>
-          </div>
-        </header>
-        <p className="capability-lead">
-          Подключайте специализации Менеджера и управляйте их доступом в одном месте.
-        </p>
-        <div className="capability-grid">
-          <Link className="capability-card" href="/skills" aria-label="Каталог Skills">
-            <span>
-              <ToolIcon kind="skills" />
-            </span>
-            <div>
-              <strong>Каталог Skills</strong>
-              <p>Manifest и permissions preview без запуска произвольного кода.</p>
-            </div>
-            <i>Preview</i>
-          </Link>
-          <Link className="capability-card" href={agentStudioHref}>
-            <span>
-              <ToolIcon kind="multi-agent" />
-            </span>
-            <div>
-              <strong>Agent Studio</strong>
-              <p>Роли, навыки и безопасная конфигурация агентов.</p>
-            </div>
-            <i>Открыть</i>
-          </Link>
-          <Link className="capability-card" href={controlCenterHref}>
-            <span>
-              <ShieldIcon />
-            </span>
-            <div>
-              <strong>Контроль доступа</strong>
-              <p>Подтверждения, recovery и текущие границы автономности.</p>
-            </div>
-            <i>Открыть</i>
-          </Link>
-        </div>
-      </section>
-    );
-  }
-
-  if (surface === "work") {
-    return (
-      <section className="capability-workspace" aria-labelledby="work-title">
-        <header className="capability-hero">
-          <span className="capability-icon">
-            <ToolIcon kind="work" />
-          </span>
-          <div>
-            <small>Рабочее пространство</small>
-            <h2 id="work-title">Work</h2>
-          </div>
-        </header>
-        <p className="capability-lead">
-          Проекты, материалы и результаты Менеджера — без смешивания с личным чатом.
-        </p>
-        <div className="work-overview">
-          <article>
-            <small>Проекты</small>
-            <strong>{projects.length}</strong>
-            <p>Сохранено в локальном контуре</p>
-          </article>
-          <article>
-            <small>Внешние действия</small>
-            <strong>Отключены</strong>
-            <p>Требования step-up сохранены</p>
-          </article>
-        </div>
-      </section>
-    );
-  }
-
-  if (surface === "multi-agent") {
-    return (
-      <section className="capability-workspace" aria-labelledby="multi-agent-title">
-        <header className="capability-hero">
-          <span className="capability-icon">
-            <ToolIcon kind="multi-agent" />
-          </span>
-          <div>
-            <small>Оркестрация команды</small>
-            <h2 id="multi-agent-title">Мультиагент</h2>
-          </div>
-        </header>
-        <p className="capability-lead">
-          Собирайте роли вокруг одной цели. Активация реальных агентов остаётся выключенной.
-        </p>
-        <div className="agent-preview" aria-label="Предпросмотр команды агентов">
-          <div>
-            <span>M</span>
-            <strong>Менеджер</strong>
-            <small>Координация</small>
-          </div>
-          <div>
-            <span>A</span>
-            <strong>Аналитик</strong>
-            <small>Исследование</small>
-          </div>
-          <div>
-            <span>C</span>
-            <strong>Критик</strong>
-            <small>Проверка</small>
-          </div>
-        </div>
-        <Link className="primary-capability-action" href={agentStudioHref}>
-          Настроить в Agent Studio
-        </Link>
-      </section>
-    );
-  }
-
-  if (surface === "code") {
-    return (
-      <section className="capability-workspace" aria-labelledby="code-title">
-        <header className="capability-hero">
-          <span className="capability-icon">
-            <ToolIcon kind="code" />
-          </span>
-          <div>
-            <small>Разработка с Менеджером</small>
-            <h2 id="code-title">Code</h2>
-          </div>
-        </header>
-        <p className="capability-lead">
-          Опишите изменение в репозитории. Выполнение появится после безопасного подключения модели
-          и инструментов.
-        </p>
-        <div className="code-placeholder" aria-label="Рабочая область кода">
-          <div className="code-placeholder-bar">
-            <i />
-            <i />
-            <i />
-            <span>Новая задача</span>
-          </div>
-          <pre>
-            <code>
-              {
-                "// Здесь появятся план, изменения и проверки\n// Все действия останутся видимыми и подтверждаемыми"
-              }
-            </code>
-          </pre>
-        </div>
-        <p className="connection-note">
-          <ShieldIcon /> Инструменты кода пока не подключены
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <section className="capability-workspace media-workspace" aria-labelledby={`${surface}-title`}>
-      <header className="capability-hero">
-        <span className="capability-icon">
-          <ToolIcon kind={surface} />
-        </span>
-        <div>
-          <small>
-            {surface === "images"
-              ? "Визуальная студия"
-              : surface === "video"
-                ? "Видео-студия"
-                : "Аудио-студия"}
-          </small>
-          <h2 id={`${surface}-title`}>
-            {surface === "images" ? "Создание изображений" : SURFACE_TITLE[surface]}
-          </h2>
-        </div>
-      </header>
-      <p className="capability-lead">
-        {surface === "images"
-          ? "Опишите кадр, выберите формат и подготовьте запрос для генерации изображения."
-          : surface === "video"
-            ? "Сформулируйте сцену и подготовьте запрос для будущей видеомодели."
-            : "Опишите голос, музыку или звуковую сцену для будущей аудиомодели."}
-      </p>
-      <form
-        className="media-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setNotice(
-            `Промпт для ${mediaPromptLabel} подготовлен локально и не отправлен внешней модели.`
-          );
-        }}
-      >
-        <label htmlFor={`${surface}-prompt`}>Что вы хотите создать?</label>
-        <textarea
-          id={`${surface}-prompt`}
-          aria-label={`Промпт для ${mediaPromptLabel}`}
-          value={prompt}
-          onChange={(event) => {
-            setPrompt(event.target.value);
-            setNotice(null);
-          }}
-          placeholder={
-            surface === "images"
-              ? "Например: минималистичный космический город на рассвете…"
-              : surface === "video"
-                ? "Опишите сцену, движение камеры и настроение…"
-                : "Опишите голос, темп и атмосферу…"
-          }
-        />
-        <div className="media-settings">
-          <fieldset>
-            <legend>Формат</legend>
-            <div className="format-options">
-              {(surface === "sound"
-                ? ["Короткий", "Средний", "Длинный"]
-                : ["1:1", "16:9", "9:16"]
-              ).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={format === value ? "active" : ""}
-                  onClick={() => setFormat(value)}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <label className="style-control">
-            Стиль
-            <select value={style} onChange={(event) => setStyle(event.target.value)}>
-              {(surface === "sound"
-                ? ["Авто", "Голос", "Музыка", "Атмосфера"]
-                : ["Авто", "Фотореализм", "Иллюстрация", "Кино"]
-              ).map((value) => (
-                <option key={value}>{value}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="media-submit-row">
-          <span className="connection-note">
-            <ShieldIcon /> Внешняя модель не подключена
-          </span>
-          <button type="submit" disabled={!prompt.trim()}>
-            Подготовить промпт
-          </button>
-        </div>
-        {notice && (
-          <p className="media-notice" role="status">
-            {notice}
-          </p>
-        )}
-      </form>
-    </section>
-  );
-};
+const PinIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <path
+      d="M8 3h8l-1 6 3 3v2H6v-2l3-3-1-6ZM12 14v7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
 
 const safeApiErrorMessage = (status: number): string => {
   if (status === 401 || status === 403) return "Недостаточно прав для этого действия.";
@@ -644,7 +376,11 @@ const clientId = (): string =>
 
 const SIDEBAR_SECTIONS_STORAGE_KEY = "cosmora:sidebar-sections";
 const WORKSPACE_SURFACE_STORAGE_KEY = "cosmora:workspace-surface";
+const COMPOSER_DRAFT_STORAGE_PREFIX = "cosmora:composer-draft:";
 const EMPTY_LOCAL_CHAT_MESSAGES: LocalChatMessage[] = [];
+
+const composerDraftStorageKey = (projectId: string | null, chatId: string | null): string =>
+  `${COMPOSER_DRAFT_STORAGE_PREFIX}${projectId ? `project:${projectId}` : chatId ? `chat:${chatId}` : "new-chat"}`;
 
 const isToolSurface = (value: string | null): value is ToolSurface =>
   TOOL_ITEMS.some((item) => item.id === value);
@@ -658,14 +394,32 @@ const greetingSeed = (): number => {
 
 const displayedContent = (message: Message): string | null => {
   if (message.status === "cancelled") return "Запуск остановлен владельцем.";
-  if (message.status === "failed") return "Запуск завершился с ошибкой.";
+  if (message.status === "failed")
+    return message.error_code === "CONTEXT_TOO_LARGE"
+      ? "Сообщение и материалы слишком большие. Сократите текст или число файлов и повторите отправку."
+      : message.error_code === "ROUTE_UNAVAILABLE"
+        ? "Для этого запроса нет доступного маршрута модели с нужными возможностями."
+        : "Запуск завершился с ошибкой.";
   if (message.content) return message.content;
   return null;
 };
 
 const displayedGeneralContent = (message: LocalChatMessage): string | null => {
+  if (message.status === "failed" && message.error_code?.startsWith("IMAGE_"))
+    return message.error_code === "IMAGE_REFERENCES_UNSUPPORTED"
+      ? "Этот режим пока создаёт изображения по текстовому описанию. Уберите вложения и повторите запрос."
+      : message.error_code === "IMAGE_PROMPT_TOO_LONG"
+        ? "Сократите описание изображения до 2000 символов."
+        : "Не удалось создать изображение. Автоматического повторного списания не было; можно повторить запрос вручную.";
+  if (message.status === "failed" && message.error_code === "MEDIA_UNAVAILABLE")
+    return "Генерация изображений сейчас недоступна. Текстовый чат продолжает работать.";
   if (message.status === "cancelled") return "Ответ остановлен владельцем.";
-  if (message.status === "failed") return "Ответ завершился с ошибкой.";
+  if (message.status === "failed")
+    return message.error_code === "CONTEXT_TOO_LARGE"
+      ? "Сообщение и материалы слишком большие. Сократите текст или число файлов и повторите отправку."
+      : message.error_code === "ROUTE_UNAVAILABLE"
+        ? "Для этого запроса нет доступного маршрута модели с нужными возможностями."
+        : "Ответ завершился с ошибкой.";
   return message.content || null;
 };
 
@@ -765,6 +519,8 @@ const generalMessagePlaceholder = (id: string, chatId: string, runId: string): L
 export default function Home() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [canvasOpen, setCanvasOpen] = useState(false);
+  const executionGate = useExecutionGate(activeProject?.id);
   const [chatId, setChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [autonomyProfile, setAutonomyProfile] = useState<AutonomyProfile | null>(null);
@@ -772,26 +528,60 @@ export default function Home() {
   const [demoRuns, setDemoRuns] = useState<DemoManagerRun[]>([]);
   const [demoActionPending, setDemoActionPending] = useState(false);
   const [draft, setDraft] = useState("");
+  const [draftStorageReadyKey, setDraftStorageReadyKey] = useState<string | null>(null);
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  const [draftRecoveryNotice, setDraftRecoveryNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialRouteReady, setInitialRouteReady] = useState(false);
   const [sending, setSending] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<ModelRuntimeStatus | null>(null);
-  const [lastCompletedRoute, setLastCompletedRoute] = useState<CompletedRoute | null>(null);
+  const [, setLastCompletedRoute] = useState<CompletedRoute | null>(null);
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const [projectView, setProjectView] = useState<ProjectView>("chat");
+  const [contextPreview, setContextPreview] = useState(false);
+  useEffect(() => {
+    setContextPreview(new URLSearchParams(window.location.search).get("context_preview") === "1");
+  }, []);
+  const sidebarWidth = useSidebarWidth();
+  const sidebarCollapse = useSidebarCollapse();
   const [surface, setSurface] = useState<WorkspaceSurface>("manager");
+  const [chatMode, setChatMode] = useState<ChatMode>("kosmora");
+  const [codeSpace, setCodeSpace] = useState(false);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [greeting, setGreeting] = useState("Чем могу помочь?");
   const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
+  const chatNavigation = useChatNavigation();
+  const pins = chatNavigation.navigation;
+  const pinsHydrated = chatNavigation.ready;
+  const pinNotice = chatNavigation.notice;
+  const [contextChatId, setContextChatId] = useState<string | null>(null);
   const [activeLocalChatId, setActiveLocalChatId] = useState<string | null>(null);
+  const [branchSelection, setBranchSelection] = useState<{
+    chatId: string;
+    message: LocalChatMessage;
+  } | null>(null);
   const [localChatsHydrated, setLocalChatsHydrated] = useState(false);
   const [chatsExpanded, setChatsExpanded] = useState(true);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [studioExpanded, setStudioExpanded] = useState(false);
+  const [navigationQuery, setNavigationQuery] = useState("");
+  const [preferences, setPreferences] = useState<UiPreferences>({
+    compact: false,
+    largeText: false
+  });
+  const [preferencesNotice, setPreferencesNotice] = useState("");
   const [sidebarSectionsHydrated, setSidebarSectionsHydrated] = useState(false);
   const [workspaceSurfaceHydrated, setWorkspaceSurfaceHydrated] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const followMessagesRef = useRef(true);
+  const [fileDragActive, setFileDragActive] = useState(false);
+
+  const [voiceAssistantOpen, setVoiceAssistantOpen] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const navigationSearchRef = useRef<HTMLInputElement | null>(null);
   const viewEpochRef = useRef(0);
   const selectedProjectRef = useRef<string | null>(null);
   const viewRequestRef = useRef(0);
@@ -801,8 +591,217 @@ export default function Home() {
   const submitPendingRef = useRef(false);
   const projectPromotionPendingRef = useRef(false);
   const activeLocalChat = localChats.find((chat) => chat.id === activeLocalChatId) ?? null;
+  const navigationSearch = navigationQuery.trim().toLocaleLowerCase("ru");
+  const spaceChats = localChats.filter((chat) =>
+    codeSpace ? ["coscode", "work"].includes(chat.mode ?? "kosmora") : chat.mode !== "coscode"
+  );
+  const matchingChats = pinsFirst(
+    spaceChats.filter(
+      (chat) => !navigationSearch || chat.title.toLocaleLowerCase("ru").includes(navigationSearch)
+    ),
+    pins.chats
+  );
+  const matchingProjects = pinsFirst(
+    navigationSearch
+      ? projects.filter((project) =>
+          project.title.toLocaleLowerCase("ru").includes(navigationSearch)
+        )
+      : projects,
+    pins.projects
+  );
   const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
   const projectProposal = activeLocalChat?.projectProposal ?? null;
+  const composerDraftKey = composerDraftStorageKey(
+    activeProject?.id ?? selectedProjectRef.current,
+    activeLocalChatId
+  );
+  const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
+  const pendingComposeRef = useRef<{ prompt: string; files: ChatAttachment[] } | null>(null);
+  const acceptedDraftRef = useRef<{ key: string; text: string } | null>(null);
+  const pendingComposerFocusRef = useRef(false);
+  const draftRecoveryKeyRef = useRef<string | null>(null);
+  const attachmentScope = `${composerDraftKey}:${viewEpochRef.current}`;
+
+  useEffect(() => {
+    const field = composerRef.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${Math.min(176, Math.max(56, field.scrollHeight))}px`;
+  }, [draft, surface, activeProject?.id, localChatMessages.length]);
+  const changePin = (kind: "chats" | "projects", id: string) => {
+    void chatNavigation.mutate(`/api/v1/chat-navigation/pins/${kind}/${encodeURIComponent(id)}`, {
+      pinned: !pins[kind].includes(id)
+    });
+  };
+
+  useEffect(() => {
+    setDraftStorageReadyKey(null);
+    acceptedDraftRef.current = null;
+    const native = desktopDraftBridge(window);
+    const scope = nativeDraftScope(composerDraftKey);
+    if (native) {
+      // The pre-v0.11.1 localStorage drafts have no owner ID; removing them even
+      // before login prevents the next account from reading their contents.
+      try {
+        purgeUnscopedLegacyDrafts(window.localStorage);
+      } catch {
+        /* best effort */
+      }
+      setDraft("");
+      chatAttachments.replace([]); // Never restore file bytes into a native text-only draft.
+      setDraftRecoveryNotice(null);
+      let cancelled = false;
+      if (!scope) {
+        setDraftRecoveryNotice("Недопустимый идентификатор черновика.");
+        setDraftStorageReadyKey(attachmentScope);
+        return;
+      }
+      void native
+        .load(scope)
+        .then((result) => {
+          if (cancelled) return;
+          if (result.ok) {
+            setDraft(result.text ?? "");
+            setDraftRecoveryNotice(
+              result.text ? "Восстановлен локальный текстовый черновик Windows." : null
+            );
+          } else {
+            setDraftRecoveryNotice(
+              result.message ?? "Для восстановления требуется подтверждённый вход."
+            );
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setDraftRecoveryNotice("Черновик Windows пока недоступен.");
+        })
+        .finally(() => {
+          if (!cancelled) setDraftStorageReadyKey(attachmentScope);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+    try {
+      const saved = readComposerDraft(window.localStorage, composerDraftKey);
+      setDraft(saved.text);
+      chatAttachments.replace(saved.files);
+      const sameScope = draftRecoveryKeyRef.current === composerDraftKey;
+      draftRecoveryKeyRef.current = composerDraftKey;
+      // Strict-mode remount/reconciliation must not erase a recovery warning after
+      // the available text has already been saved without the damaged materials.
+      setDraftRecoveryNotice((current) => saved.notice ?? (sameScope ? current : null));
+    } catch {
+      setDraftRecoveryNotice("Сохранение черновика в этом браузере недоступно.");
+    }
+    setDraftStorageReadyKey(attachmentScope);
+  }, [attachmentScope]);
+
+  useEffect(() => {
+    const pending = pendingComposeRef.current;
+    if (!pending || draftStorageReadyKey !== attachmentScope) return;
+    pendingComposeRef.current = null;
+    setDraft(pending.prompt);
+    chatAttachments.replace(pending.files);
+    pendingComposerFocusRef.current = true;
+    // Consume only after the new chat scope and its draft hydration have settled.
+  }, [attachmentScope, chatAttachments, draftStorageReadyKey]);
+
+  useEffect(() => {
+    if (
+      !pendingComposerFocusRef.current ||
+      surface !== "manager" ||
+      loading ||
+      !initialRouteReady ||
+      draftStorageReadyKey !== attachmentScope
+    )
+      return;
+    const frame = window.requestAnimationFrame(() => {
+      const composer = composerRef.current;
+      if (!composer || composer.disabled) return;
+      composer.focus();
+      pendingComposerFocusRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [attachmentScope, draftStorageReadyKey, initialRouteReady, loading, surface]);
+
+  useEffect(() => {
+    if (draftStorageReadyKey !== attachmentScope) return;
+    const native = desktopDraftBridge(window);
+    if (native) {
+      const scope = nativeDraftScope(composerDraftKey);
+      if (!scope) return;
+      const flush = () => {
+        // Do not resurrect a server-acknowledged message if the window closes
+        // before React has committed the empty composer after acceptance.
+        if (
+          acceptedDraftRef.current?.key === composerDraftKey &&
+          acceptedDraftRef.current.text === draft
+        )
+          return;
+        native.flush(scope, draft);
+      };
+      window.addEventListener("pagehide", flush);
+      let cancelled = false;
+      const timer = window.setTimeout(() => {
+        // A POST still in flight can have been accepted even if its HTTP response was lost.
+        // Do not race a delayed autosave against a server-acknowledged clear.
+        if (
+          submitPendingRef.current ||
+          (acceptedDraftRef.current?.key === composerDraftKey &&
+            acceptedDraftRef.current.text === draft)
+        )
+          return;
+        if (!draft) acceptedDraftRef.current = null;
+        void native
+          .save(scope, draft)
+          .then((result) => {
+            if (!cancelled)
+              setDraftNotice(
+                result.ok ? null : (result.message ?? "Не удалось сохранить черновик Windows.")
+              );
+          })
+          .catch(() => {
+            if (!cancelled) setDraftNotice("Не удалось сохранить черновик Windows.");
+          });
+      }, 300);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
+        window.removeEventListener("pagehide", flush);
+      };
+    }
+    try {
+      setDraftNotice(
+        saveComposerDraft(window.localStorage, composerDraftKey, draft, chatAttachments.files)
+      );
+    } catch {
+      setDraftNotice("Сохранение черновика в этом браузере недоступно.");
+    }
+  }, [attachmentScope, composerDraftKey, draft, draftStorageReadyKey, chatAttachments.files]);
+
+  useEffect(() => {
+    try {
+      const raw: unknown = JSON.parse(
+        window.localStorage.getItem("cosmora:ui-preferences") ?? "{}"
+      );
+      if (raw && typeof raw === "object") {
+        const value = raw as Record<string, unknown>;
+        setPreferences({ compact: value.compact === true, largeText: value.largeText === true });
+      }
+    } catch {
+      /* Keep defaults when storage is unavailable or malformed. */
+    }
+  }, []);
+
+  const updatePreferences = (value: UiPreferences): void => {
+    setPreferences(value);
+    try {
+      window.localStorage.setItem("cosmora:ui-preferences", JSON.stringify(value));
+      setPreferencesNotice("Настройки сохранены в этом браузере.");
+    } catch {
+      setPreferencesNotice("Настройки применены. Сохранение в браузере недоступно.");
+    }
+  };
 
   const rotateGreeting = useCallback((): void => {
     const next = chooseGreeting({
@@ -827,7 +826,7 @@ export default function Home() {
   const loadGeneralChats = useCallback(async () => {
     const data = await api<{
       items: Array<
-        Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at"> & {
+        Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at" | "mode"> & {
           last_message_preview: string | null;
         }
       >;
@@ -855,7 +854,7 @@ export default function Home() {
         api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
       ]);
     } catch {
-      setError("API Cosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
+      setError("API Kosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
     } finally {
       setLoading(false);
     }
@@ -876,7 +875,8 @@ export default function Home() {
     try {
       const saved = JSON.parse(
         window.localStorage.getItem(SIDEBAR_SECTIONS_STORAGE_KEY) ?? "{}"
-      ) as { chats?: boolean; projects?: boolean };
+      ) as { chats?: boolean; projects?: boolean; studio?: boolean };
+      if (typeof saved.studio === "boolean") setStudioExpanded(saved.studio);
       if (typeof saved.chats === "boolean") setChatsExpanded(saved.chats);
       if (typeof saved.projects === "boolean") setProjectsExpanded(saved.projects);
     } catch {
@@ -890,17 +890,52 @@ export default function Home() {
     try {
       window.localStorage.setItem(
         SIDEBAR_SECTIONS_STORAGE_KEY,
-        JSON.stringify({ chats: chatsExpanded, projects: projectsExpanded })
+        JSON.stringify({ chats: chatsExpanded, projects: projectsExpanded, studio: studioExpanded })
       );
     } catch {
       // Section toggles still work for the current page when storage is unavailable.
     }
-  }, [chatsExpanded, projectsExpanded, sidebarSectionsHydrated]);
+  }, [chatsExpanded, projectsExpanded, studioExpanded, sidebarSectionsHydrated]);
 
   useEffect(() => {
     try {
+      const params = new URLSearchParams(window.location.search);
+      const requestedMode = params.get("mode");
+      const requestedSurface = params.get("surface");
+      if (
+        !isToolSurface(requestedSurface) &&
+        ["kosmora", "work", "coscode"].includes(requestedMode ?? "")
+      ) {
+        setChatMode(requestedMode as ChatMode);
+        setCodeSpace(requestedMode === "coscode" || params.get("space") === "coscode");
+        setSurface("manager");
+        setWorkspaceSurfaceHydrated(true);
+        return;
+      }
+      if (requestedSurface === "work" || requestedSurface === "code") {
+        setChatMode(requestedSurface === "code" ? "coscode" : "work");
+        setCodeSpace(requestedSurface === "code");
+        setSurface("manager");
+        setWorkspaceSurfaceHydrated(true);
+        return;
+      }
+      if (isToolSurface(requestedSurface)) {
+        setSurface(requestedSurface);
+        if (["studio", "files", "images", "video", "sound"].includes(requestedSurface))
+          setStudioExpanded(true);
+        setWorkspaceSurfaceHydrated(true);
+        return;
+      }
       const savedSurface = window.localStorage.getItem(WORKSPACE_SURFACE_STORAGE_KEY);
-      if (isToolSurface(savedSurface)) setSurface(savedSurface);
+      if (isToolSurface(savedSurface)) {
+        if (savedSurface === "work" || savedSurface === "code") {
+          setChatMode(savedSurface === "code" ? "coscode" : "work");
+          setCodeSpace(savedSurface === "code");
+          setSurface("manager");
+        } else setSurface(savedSurface);
+        if (["studio", "files", "images", "video", "sound"].includes(savedSurface))
+          setStudioExpanded(true);
+      }
     } catch {
       // Keep Manager as the safe default when local UI storage is unavailable.
     }
@@ -910,11 +945,20 @@ export default function Home() {
   useEffect(() => {
     if (!workspaceSurfaceHydrated) return;
     try {
-      window.localStorage.setItem(WORKSPACE_SURFACE_STORAGE_KEY, surface);
+      window.localStorage.setItem(
+        WORKSPACE_SURFACE_STORAGE_KEY,
+        surface === "manager"
+          ? chatMode === "coscode"
+            ? "code"
+            : chatMode === "work"
+              ? "work"
+              : "manager"
+          : surface
+      );
     } catch {
       // Surface selection remains usable for the current page without persistence.
     }
-  }, [surface, workspaceSurfaceHydrated]);
+  }, [surface, chatMode, workspaceSurfaceHydrated]);
 
   useEffect(() => {
     void reloadShellData();
@@ -926,7 +970,14 @@ export default function Home() {
   }, [reloadShellData]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    followMessagesRef.current = true;
+  }, [activeLocalChatId, activeProject?.id]);
+  useEffect(() => {
+    if (!followMessagesRef.current) return;
+    const frame = requestAnimationFrame(() =>
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant", block: "end" })
+    );
+    return () => cancelAnimationFrame(frame);
   }, [localChatMessages, messages]);
 
   const loadProjectView = useCallback(async (projectId: string) => {
@@ -986,10 +1037,13 @@ export default function Home() {
 
   const loadGeneralChatView = useCallback(async (generalChatId: string) => {
     const epoch = viewEpochRef.current;
+    const requestId = ++viewRequestRef.current;
     const detail = await api<GeneralChatDetail>(
       `/api/v1/chats/${encodeURIComponent(generalChatId)}`
     );
-    if (epoch !== viewEpochRef.current) return;
+    if (epoch !== viewEpochRef.current || requestId !== viewRequestRef.current) return;
+    setChatMode(detail.chat.mode ?? "kosmora");
+    if (detail.chat.mode !== "work") setCodeSpace(detail.chat.mode === "coscode");
     const restoredRun = restoredRunState(detail.messages);
     if (restoredRun.activeRunId === null) {
       streamRef.current?.close();
@@ -1003,10 +1057,20 @@ export default function Home() {
           detail.messages[detail.messages.length - 1]?.content ??
           existing?.last_message_preview ??
           null,
-        messages: detail.messages,
+        messages: detail.messages.map((message) => {
+          const live = existing?.messages.find((candidate) => candidate.id === message.id);
+          return message.status === "streaming" &&
+            live &&
+            live.content.length > message.content.length
+            ? { ...message, content: live.content }
+            : message;
+        }),
         projectProposal: existing?.projectProposal ?? null
       };
-      return [updated, ...current.filter((chat) => chat.id !== generalChatId)];
+      // Reading history updates cached content, not the server's activity order.
+      return existing
+        ? current.map((chat) => (chat.id === generalChatId ? updated : chat))
+        : [...current, updated];
     });
     setRunPhase(restoredRun.phase);
     setActiveRunId(restoredRun.activeRunId);
@@ -1057,11 +1121,24 @@ export default function Home() {
   }, [activeLocalChatId, activeProject, loadGeneralChatView, runPhase]);
 
   const openProject = useCallback(
-    async (projectId: string, view: ProjectView = "chat"): Promise<void> => {
+    async (
+      projectId: string,
+      view: ProjectView = "chat",
+      restoredSurface: WorkspaceSurface = "manager"
+    ): Promise<void> => {
       const epoch = ++viewEpochRef.current;
-      setSurface("manager");
+      setSurface(restoredSurface);
       selectedProjectRef.current = projectId;
       replaceConsoleRoute(projectId, view);
+      if (restoredSurface !== "manager") {
+        const route = new URL(window.location.href);
+        route.searchParams.set("surface", restoredSurface);
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${route.pathname}${route.search}${route.hash}`
+        );
+      }
       streamRef.current?.close();
       streamRef.current = null;
       setActiveRunId(null);
@@ -1096,10 +1173,64 @@ export default function Home() {
     if (loading || initialRouteHandledRef.current) return;
     initialRouteHandledRef.current = true;
     const params = new URLSearchParams(window.location.search);
+    const imported = params.get("github_import");
+    if (imported && /^[a-f0-9-]{36}$/.test(imported)) {
+      try {
+        const key = `cosmora:github-import:${imported}`;
+        const stored = window.sessionStorage.getItem(key);
+        if (stored) {
+          const material = JSON.parse(stored) as { attachment: ChatAttachment; prompt: string };
+          if (
+            isValidChatAttachments([material.attachment]) &&
+            typeof material.prompt === "string" &&
+            material.prompt.length <= 1000
+          ) {
+            chatAttachments.replace([material.attachment]);
+            setDraft(material.prompt);
+            setSurface("manager");
+            pendingComposerFocusRef.current = true;
+          }
+          window.sessionStorage.removeItem(key);
+        }
+        window.history.replaceState(null, "", "/");
+      } catch {
+        setError("Не удалось открыть файл из GitHub. Прикрепите его к чату отдельно.");
+      }
+      setInitialRouteReady(true);
+      return;
+    }
     const projectId = params.get("project");
-    if (!projectId) return;
+    if (!projectId) {
+      const generalChatId = params.get("chat");
+      if (generalChatId) {
+        setActiveLocalChatId(generalChatId);
+        setLoading(true);
+        const epoch = viewEpochRef.current;
+        void loadGeneralChatView(generalChatId)
+          .catch(() => {
+            if (epoch === viewEpochRef.current)
+              setError("Не удалось открыть чат. Повторите выбор в истории.");
+          })
+          .finally(() => {
+            if (epoch === viewEpochRef.current) {
+              setLoading(false);
+              setInitialRouteReady(true);
+            }
+          });
+      } else {
+        setInitialRouteReady(true);
+      }
+      return;
+    }
     const requestedView = params.get("view");
-    void openProject(projectId, isProjectView(requestedView) ? requestedView : "chat");
+    const requestedSurface = params.get("surface");
+    void openProject(
+      projectId,
+      isProjectView(requestedView) ? requestedView : "chat",
+      isToolSurface(requestedSurface) ? requestedSurface : "manager"
+    ).finally(() => {
+      setInitialRouteReady(true);
+    });
   }, [loading, openProject]);
 
   const selectProjectView = (view: ProjectView): void => {
@@ -1171,6 +1302,10 @@ export default function Home() {
       let streamContent = "";
       const isCurrent = (): boolean =>
         epoch === viewEpochRef.current && streamRef.current === source;
+
+      source.onopen = () => {
+        if (isCurrent()) setError(null);
+      };
 
       const closeSource = (): void => {
         source.close();
@@ -1275,7 +1410,8 @@ export default function Home() {
 
       source.onerror = () => {
         if (!isCurrent()) return;
-        closeSource();
+        // EventSource reconnects to this read-only observer; it never resubmits input.
+        if (source.readyState === EventSource.CLOSED) closeSource();
         if (!finished) {
           setError("Поток ответа прерван. Проверяю сохранённое состояние запуска на сервере.");
         }
@@ -1305,6 +1441,9 @@ export default function Home() {
       let finished = false;
       const isCurrent = (): boolean =>
         epoch === viewEpochRef.current && streamRef.current === source;
+      source.onopen = () => {
+        if (isCurrent()) setError(null);
+      };
       const closeSource = (): void => {
         source.close();
         if (streamRef.current === source) streamRef.current = null;
@@ -1361,6 +1500,7 @@ export default function Home() {
       });
       source.addEventListener("run.completed", (raw) => {
         if (!isCurrent()) return;
+        viewRequestRef.current += 1;
         const event = JSON.parse(String(raw.data)) as {
           data: { provider: string; model_resolved: string };
         };
@@ -1382,18 +1522,27 @@ export default function Home() {
           );
         });
       });
-      source.addEventListener("run.failed", () => {
+      source.addEventListener("run.failed", (raw) => {
         if (!isCurrent()) return;
+        const failure = JSON.parse(String(raw.data)) as { data: { error_code: string } };
+        viewRequestRef.current += 1;
         finished = true;
         closeSource();
         setSending(false);
         setActiveRunId(null);
         setRunPhase("failed");
-        setError("Ответ завершился с ошибкой. Внутренние детали скрыты.");
+        setError(
+          failure.data.error_code === "RELAY_UNAVAILABLE"
+            ? "Перевод не выполнен. Запрос не отправлен без English Relay. Можно выключить перевод и отправить исходный запрос вручную."
+            : failure.data.error_code === "USAGE_LIMIT_EXCEEDED"
+              ? "Лимит токенов достигнут. Измените квоту в персональных настройках."
+              : "Ответ завершился с ошибкой. Внутренние детали скрыты."
+        );
         void refreshGeneralChat(chatIdForRun).catch(() => undefined);
       });
       source.addEventListener("run.cancelled", () => {
         if (!isCurrent()) return;
+        viewRequestRef.current += 1;
         finished = true;
         closeSource();
         setSending(false);
@@ -1403,7 +1552,7 @@ export default function Home() {
       });
       source.onerror = () => {
         if (!isCurrent()) return;
-        closeSource();
+        if (source.readyState === EventSource.CLOSED) closeSource();
         if (!finished) {
           setError("Поток ответа прерван. Проверяю сохранённое состояние на сервере.");
         }
@@ -1451,6 +1600,7 @@ export default function Home() {
       return;
     }
     if (epoch !== viewEpochRef.current) return;
+    viewRequestRef.current += 1;
     streamRef.current?.close();
     streamRef.current = null;
     setSending(false);
@@ -1466,7 +1616,16 @@ export default function Home() {
     });
   };
 
-  const recoverableMessage = recoverableUserMessage(messages);
+  const failedChatReply = localChatMessages.findLast((message) => message.role === "assistant");
+  const recoverableChatMessage =
+    failedChatReply && ["failed", "cancelled"].includes(failedChatReply.status)
+      ? localChatMessages.find(
+          (message) => message.role === "user" && message.run_id === failedChatReply.run_id
+        )
+      : undefined;
+  const recoverableMessage = activeProject
+    ? recoverableUserMessage(messages)
+    : recoverableChatMessage;
   const demoSource = latestDemoSource(messages);
   const latestDemoRun = demoRuns[0] ?? null;
 
@@ -1550,14 +1709,25 @@ export default function Home() {
   const restoreRunDraft = (): void => {
     if (!recoverableMessage) return;
     setDraft(recoverableMessage.content);
+    chatAttachments.replace(recoverableMessage.attachments ?? []);
     setError(null);
     window.requestAnimationFrame(() => composerRef.current?.focus());
   };
 
-  const submit = async (event: FormEvent): Promise<void> => {
-    event.preventDefault();
-    const content = draft.trim();
-    if (!content || sending || loading || submitPendingRef.current) return;
+  const submit = async (event?: FormEvent, voiceContent?: string): Promise<void> => {
+    event?.preventDefault();
+    const content = (voiceContent ?? draft).trim();
+    if (
+      !content ||
+      sending ||
+      loading ||
+      !initialRouteReady ||
+      draftStorageReadyKey !== attachmentScope ||
+      chatAttachments.reading ||
+      submitPendingRef.current ||
+      executionGate !== "clear"
+    )
+      return;
     submitPendingRef.current = true;
     try {
       if (!activeProject) {
@@ -1567,36 +1737,78 @@ export default function Home() {
         setRunPhase("queued");
         setError(null);
         setLastCompletedRoute(null);
-        setDraft("");
         try {
           const accepted = activeLocalChatId
             ? await api<GeneralChatAcceptedResponse>(
                 `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`,
                 {
                   method: "POST",
-                  body: JSON.stringify({ content, client_message_id: clientId() })
+                  body: JSON.stringify({
+                    content,
+                    client_message_id: clientId(),
+                    attachments: chatAttachments.files
+                  })
                 }
               )
             : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
                 method: "POST",
-                body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+                body: JSON.stringify({
+                  initial_message: content,
+                  mode: chatMode,
+                  client_message_id: clientId(),
+                  attachments: chatAttachments.files
+                })
               });
+          acceptedDraftRef.current = { key: composerDraftKey, text: draft };
+          const acceptedScope = nativeDraftScope(composerDraftKey);
+          if (acceptedScope)
+            void desktopDraftBridge(window)
+              ?.clear(acceptedScope)
+              .catch(() => undefined);
+          try {
+            clearComposerDraft(window.localStorage, composerDraftKey);
+          } catch {
+            /* Acceptance is authoritative. */
+          }
           if (epoch !== viewEpochRef.current) {
             void loadGeneralChats().catch(() => undefined);
             return;
           }
-          const proposal = assessment.requiresProject ? { content, assessment } : null;
+          chatAttachments.replace([]);
+          setDraft("");
+          viewRequestRef.current += 1;
+          const materials = [
+            ...localChatMessages
+              .filter((message) => message.role === "user")
+              .flatMap((message) => message.attachments ?? []),
+            ...chatAttachments.files
+          ];
+          const proposal =
+            assessment.requiresProject && isValidChatAttachments(materials)
+              ? { content, assessment, attachments: materials }
+              : null;
           setLocalChats((current) => {
             const existing = current.find((chat) => chat.id === accepted.chat.id);
             const updated: LocalChatSession = {
               ...accepted.chat,
               last_message_preview: content.slice(0, 240),
-              messages: [...(existing?.messages ?? []), accepted.user_message],
+              messages: [
+                ...(existing?.messages ?? []).filter(
+                  (message) => message.id !== accepted.user_message.id
+                ),
+                accepted.user_message
+              ],
               projectProposal: proposal
             };
             return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
           });
+          try {
+            clearComposerDraft(window.localStorage, composerDraftKey);
+          } catch {
+            // Server acceptance is authoritative even when local draft cleanup is unavailable.
+          }
           setActiveLocalChatId(accepted.chat.id);
+          replaceConsoleRoute(null, "chat", accepted.chat.id);
           followGeneralChatStream(accepted);
           void loadGeneralChats().catch(() => {
             if (epoch === viewEpochRef.current) {
@@ -1606,9 +1818,17 @@ export default function Home() {
         } catch (cause) {
           if (epoch !== viewEpochRef.current) return;
           setDraft(content);
+          const scope = nativeDraftScope(composerDraftKey);
+          if (scope)
+            void desktopDraftBridge(window)
+              ?.save(scope, content)
+              .catch(() => undefined);
           setSending(false);
           setRunPhase("failed");
-          setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
+          setError(
+            `${cause instanceof Error ? cause.message : "Не удалось подтвердить отправку"} ` +
+              "Если соединение прервалось, результат запроса неизвестен. Проверьте историю чата перед ручной повторной отправкой: она может списать токены повторно."
+          );
         }
         return;
       }
@@ -1620,21 +1840,37 @@ export default function Home() {
       setRunPhase("queued");
       setError(null);
       setLastCompletedRoute(null);
-      setDraft("");
       try {
         const accepted = await api<AcceptedResponse>(
           `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
           {
             method: "POST",
-            body: JSON.stringify({ content, client_message_id: clientId() })
+            body: JSON.stringify({
+              content,
+              client_message_id: clientId(),
+              attachments: chatAttachments.files
+            })
           }
         );
 
+        acceptedDraftRef.current = { key: composerDraftKey, text: draft };
+        const acceptedScope = nativeDraftScope(composerDraftKey);
+        if (acceptedScope)
+          void desktopDraftBridge(window)
+            ?.clear(acceptedScope)
+            .catch(() => undefined);
+        try {
+          clearComposerDraft(window.localStorage, composerDraftKey);
+        } catch {
+          /* Acceptance is authoritative. */
+        }
         if (epoch !== viewEpochRef.current) {
           void loadProjects().catch(() => undefined);
           return;
         }
         selectedProjectRef.current = accepted.project.id;
+        chatAttachments.replace([]);
+        setDraft("");
         replaceConsoleRoute(accepted.project.id, "chat");
         // Invalidate snapshots fetched before server acceptance of this run.
         viewRequestRef.current += 1;
@@ -1659,9 +1895,17 @@ export default function Home() {
       } catch (cause) {
         if (epoch !== viewEpochRef.current) return;
         setDraft(content);
+        const scope = nativeDraftScope(composerDraftKey);
+        if (scope)
+          void desktopDraftBridge(window)
+            ?.save(scope, content)
+            .catch(() => undefined);
         setSending(false);
         setRunPhase("failed");
-        setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
+        setError(
+          `${cause instanceof Error ? cause.message : "Не удалось подтвердить отправку"} ` +
+            "Если соединение прервалось, результат запроса неизвестен. Проверьте историю чата перед ручной повторной отправкой: она может списать токены повторно."
+        );
       }
     } finally {
       submitPendingRef.current = false;
@@ -1669,12 +1913,13 @@ export default function Home() {
   };
 
   const promoteToProject = async (): Promise<void> => {
+    if (executionGate !== "clear") return;
     if (!projectProposal || !activeLocalChatId || loading || projectPromotionPendingRef.current)
       return;
     projectPromotionPendingRef.current = true;
     const content = projectProposal.content;
     const sourceChatId = activeLocalChatId;
-    const epoch = viewEpochRef.current;
+    let epoch = viewEpochRef.current;
     setSending(true);
     setRunPhase("queued");
     setError(null);
@@ -1682,12 +1927,21 @@ export default function Home() {
     try {
       const accepted = await api<AcceptedResponse>("/api/v1/projects", {
         method: "POST",
-        body: JSON.stringify({ initial_message: content, client_message_id: clientId() })
+        body: JSON.stringify({
+          initial_message: content,
+          client_message_id: clientId(),
+          attachments: projectProposal.attachments ?? []
+        })
       });
       if (epoch !== viewEpochRef.current) {
         void loadProjects().catch(() => undefined);
         return;
       }
+      // Promotion changes the active view. Ignore pending reads from the source chat.
+      epoch = ++viewEpochRef.current;
+      setSending(true);
+      setRunPhase("queued");
+      setLastCompletedRoute(null);
       selectedProjectRef.current = accepted.project.id;
       replaceConsoleRoute(accepted.project.id, "chat");
       viewRequestRef.current += 1;
@@ -1730,6 +1984,8 @@ export default function Home() {
 
   const resetToLocalChat = (chatId: string | null, rotate = false): void => {
     viewEpochRef.current += 1;
+    // An explicit navigation replaces a still-pending initial route selection.
+    setInitialRouteReady(true);
     selectedProjectRef.current = null;
     streamRef.current?.close();
     streamRef.current = null;
@@ -1751,13 +2007,33 @@ export default function Home() {
     setError(null);
     setLoading(false);
     if (rotate) rotateGreeting();
-    replaceConsoleRoute(null);
+    replaceConsoleRoute(null, "chat", chatId);
   };
 
-  const newChat = (): void => resetToLocalChat(null, true);
+  const newChat = (): void => {
+    // Explicitly starting afresh from the unnamed composer discards that draft.
+    // Named chats/projects retain their own draft when navigating away.
+    if (!activeProject && !selectedProjectRef.current && !activeLocalChatId) {
+      const scope = nativeDraftScope(composerDraftKey);
+      if (scope)
+        void desktopDraftBridge(window)
+          ?.clear(scope)
+          .catch(() => undefined);
+      try {
+        clearComposerDraft(window.localStorage, composerDraftKey);
+      } catch {
+        /* Still clear the current view. */
+      }
+    }
+    if (codeSpace) setChatMode("coscode");
+    resetToLocalChat(null, true);
+  };
 
   const openLocalChat = async (chatId: string): Promise<void> => {
     if (!localChats.some((chat) => chat.id === chatId)) return;
+    const openingMode = localChats.find((chat) => chat.id === chatId)?.mode ?? "kosmora";
+    setChatMode(openingMode);
+    if (openingMode !== "work") setCodeSpace(openingMode === "coscode");
     resetToLocalChat(chatId);
     const epoch = viewEpochRef.current;
     setLoading(true);
@@ -1767,6 +2043,31 @@ export default function Home() {
       if (epoch === viewEpochRef.current) {
         setError(cause instanceof Error ? cause.message : "Не удалось открыть чат");
       }
+    } finally {
+      if (epoch === viewEpochRef.current) setLoading(false);
+    }
+  };
+
+  const openChatBranch = async (
+    id: string,
+    accepted?: GeneralChatAcceptedResponse
+  ): Promise<void> => {
+    setBranchSelection(null);
+    resetToLocalChat(id);
+    const epoch = viewEpochRef.current;
+    setLoading(true);
+    try {
+      await loadGeneralChats();
+      if (epoch !== viewEpochRef.current) return;
+      await loadGeneralChatView(id);
+      if (epoch === viewEpochRef.current && accepted) {
+        setSending(true);
+        setRunPhase("queued");
+        followGeneralChatStream(accepted);
+      }
+    } catch {
+      if (epoch === viewEpochRef.current)
+        setError("Вариант сохранён. Не удалось открыть переписку; выберите её в истории.");
     } finally {
       if (epoch === viewEpochRef.current) setLoading(false);
     }
@@ -1788,29 +2089,142 @@ export default function Home() {
     ? `/agent-studio?project=${encodeURIComponent(activeProject.id)}`
     : "/agent-studio";
 
-  const selectSurface = (nextSurface: ToolSurface): void => {
+  const selectSurface = (nextSurface: WorkspaceSurface): void => {
+    if (["manager", "work", "code"].includes(nextSurface)) {
+      const nextMode: ChatMode =
+        nextSurface === "code" ? "coscode" : nextSurface === "work" ? "work" : "kosmora";
+      if ((nextMode !== chatMode || surface !== "manager") && (activeLocalChatId || activeProject))
+        resetToLocalChat(null);
+      setChatMode(nextMode);
+      setCodeSpace(nextMode === "coscode");
+      setSurface("manager");
+      const route = new URL(window.location.href);
+      route.searchParams.delete("surface");
+      route.searchParams.set("mode", nextMode);
+      route.searchParams.set("space", nextMode === "coscode" ? "coscode" : "kosmora");
+      window.history.replaceState(window.history.state, "", route.pathname + route.search);
+      return;
+    }
+    if (nextSurface === "research" || nextSurface === "presentations") {
+      window.location.assign(nextSurface === "research" ? "/research-workspace" : "/presentations");
+      return;
+    }
     setSurface(nextSurface);
-    setError(null);
+    if (nextSurface === "manager") {
+      replaceConsoleRoute(
+        activeProject?.id ?? selectedProjectRef.current,
+        projectView,
+        activeLocalChatId
+      );
+      return;
+    }
+    if (["studio", "files", "images", "video", "sound"].includes(nextSurface))
+      setStudioExpanded(true);
+    const route = new URL(window.location.href);
+    route.searchParams.delete("mode");
+    route.searchParams.delete("space");
+    route.searchParams.set("surface", nextSurface);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${route.pathname}${route.search}${route.hash}`
+    );
   };
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">
-            <SparkIcon />
-          </span>
-          <span>Cosmora</span>
-          <span className="version">AI</span>
-        </div>
+    <div
+      className={`app-shell product-shell${preferences.compact ? " compact-navigation" : ""}${preferences.largeText ? " large-text" : ""}`}
+      style={{ "--sidebar-width": `${sidebarWidth.width}px` } as CSSProperties}
+      data-sidebar-collapsed={sidebarCollapse.collapsed || undefined}
+    >
+      <button
+        type="button"
+        className="sidebar-collapse-toggle"
+        aria-label={
+          sidebarCollapse.collapsed ? "Развернуть боковую панель" : "Свернуть боковую панель"
+        }
+        title={sidebarCollapse.collapsed ? "Развернуть боковую панель" : "Свернуть боковую панель"}
+        aria-expanded={!sidebarCollapse.collapsed}
+        onClick={sidebarCollapse.toggle}
+      >
+        <WorkspaceIcon name={sidebarCollapse.collapsed ? "panel-open" : "panel-close"} />
+      </button>
+      <aside
+        className="sidebar"
+        data-space={codeSpace ? "coscode" : "kosmora"}
+        inert={sidebarCollapse.collapsed}
+      >
+        <SidebarResize width={sidebarWidth.width} onChange={sidebarWidth.setWidth} />
+        <WorkspaceModeMenu
+          surface={
+            surface === "manager"
+              ? codeSpace
+                ? "code"
+                : chatMode === "work"
+                  ? "work"
+                  : "manager"
+              : surface
+          }
+          onNavigate={selectSurface}
+        />
+        {codeSpace && (
+          <div className="coscode-space-tools">
+            <Link
+              href={
+                activeProject
+                  ? `/code-agent?project=${encodeURIComponent(activeProject.id)}`
+                  : "/code-agent"
+              }
+            >
+              <WorkspaceIcon name="code" /> Репозиторий и изменения
+            </Link>
+            <Link href="/github">
+              <WorkspaceIcon name="projects" /> GitHub
+            </Link>
+            <Link href={controlCenterHref}>
+              <WorkspaceIcon name="settings" /> Настройки Coscode
+            </Link>
+          </div>
+        )}
 
         <button className="new-project" onClick={newChat}>
           <span>
             <ToolIcon kind="new-chat" />
-          </span>{" "}
-          Новый чат
+          </span>
+          <span className="new-chat-label">Новый чат</span>
         </button>
 
+        <div className="navigation-search">
+          <WorkspaceIcon name="search" />
+          <input
+            ref={navigationSearchRef}
+            aria-label="Поиск чатов и проектов"
+            placeholder="Поиск чатов и проектов"
+            value={navigationQuery}
+            onChange={(event) => {
+              setNavigationQuery(event.target.value);
+              if (event.target.value.trim()) {
+                setChatsExpanded(true);
+                setProjectsExpanded(true);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setNavigationQuery("");
+            }}
+          />
+          {navigationQuery && (
+            <button
+              type="button"
+              aria-label="Очистить поиск"
+              onClick={() => {
+                setNavigationQuery("");
+                navigationSearchRef.current?.focus();
+              }}
+            >
+              <WorkspaceIcon name="close" />
+            </button>
+          )}
+        </div>
         <nav className="navigation" aria-label="Основная навигация">
           <section className="sidebar-section">
             <button
@@ -1820,9 +2234,9 @@ export default function Home() {
               aria-controls="sidebar-chat-list"
               onClick={() => setChatsExpanded((current) => !current)}
             >
-              <ToolIcon kind="new-chat" />
+              <ToolIcon kind="chats" />
               <span>Чаты</span>
-              <small>{localChats.length}</small>
+              <small>{spaceChats.length}</small>
               <span className="section-chevron" aria-hidden="true">
                 ›
               </span>
@@ -1832,29 +2246,55 @@ export default function Home() {
                 className={`project-list chat-list${localChats.length === 0 ? " empty-list" : ""}`}
                 id="sidebar-chat-list"
               >
-                {localChats.map((chat) => (
-                  <button
-                    key={chat.id}
-                    type="button"
-                    className={
-                      surface === "manager" && activeLocalChatId === chat.id
-                        ? "project-item chat-item active"
-                        : "project-item chat-item"
-                    }
-                    onClick={() => void openLocalChat(chat.id)}
-                  >
-                    <span>
-                      <strong>{chat.title}</strong>
-                      <small>{chat.last_message_preview ?? "Обычный чат"}</small>
-                    </span>
-                  </button>
+                {matchingChats.map((chat) => (
+                  <div className="pinnable-navigation-item" key={chat.id}>
+                    <button
+                      type="button"
+                      className={
+                        surface === "manager" && activeLocalChatId === chat.id
+                          ? "project-item chat-item active"
+                          : "project-item chat-item"
+                      }
+                      onClick={() => void openLocalChat(chat.id)}
+                    >
+                      <span>
+                        <strong id={`pin-chat-${chat.id}`}>{chat.title}</strong>
+                        <small>{chat.last_message_preview ?? "Обычный чат"}</small>
+                      </span>
+                    </button>
+                    <ChatItemMenu
+                      id={chat.id}
+                      title={chat.title}
+                      pinned={pins.chats.includes(chat.id)}
+                      disabled={!pinsHydrated || (sending && activeLocalChatId === chat.id)}
+                      onPin={() => changePin("chats", chat.id)}
+                      onOpen={() => void openLocalChat(chat.id)}
+                      onRename={(title) =>
+                        setLocalChats((current) =>
+                          current.map((item) => (item.id === chat.id ? { ...item, title } : item))
+                        )
+                      }
+                      onDelete={() => {
+                        setLocalChats((current) => current.filter((item) => item.id !== chat.id));
+                        if (activeLocalChatId === chat.id) newChat();
+                      }}
+                    />
+                  </div>
                 ))}
-                {localChatsHydrated && localChats.length === 0 && (
-                  <p className="empty-projects">Чаты появятся после первого сообщения.</p>
+                {navigationSearch && matchingChats.length === 0 && (
+                  <p className="empty-projects">Чаты не найдены.</p>
+                )}
+                {localChatsHydrated && localChats.length === 0 && !navigationSearch && (
+                  <p className="empty-projects">Пока нет чатов</p>
                 )}
               </div>
             )}
           </section>
+          {pinNotice && (
+            <p className="pin-notice" role="status">
+              {pinNotice}
+            </p>
+          )}
           <section className="sidebar-section">
             <button
               type="button"
@@ -1872,33 +2312,77 @@ export default function Home() {
             </button>
             {projectsExpanded && (
               <div className="project-list" id="sidebar-project-list">
-                {projects.map((project) => (
-                  <button
-                    key={project.id}
-                    className={
-                      surface === "manager" && activeProject?.id === project.id
-                        ? "project-item active"
-                        : "project-item"
-                    }
-                    onClick={() => void openProject(project.id)}
-                  >
-                    <span className="project-glyph">{project.title.slice(0, 1).toUpperCase()}</span>
-                    <span>
-                      <strong>{project.title}</strong>
-                      <small>{project.last_message_preview ?? "Новый проект"}</small>
-                    </span>
-                  </button>
+                <button
+                  type="button"
+                  className="sidebar-create-project"
+                  onClick={() => setCreateProjectOpen(true)}
+                >
+                  <WorkspaceIcon name="projects" />
+                  <span>Создать проект</span>
+                  <span aria-hidden="true">+</span>
+                </button>
+                {matchingProjects.map((project) => (
+                  <div className="pinnable-navigation-item" key={project.id}>
+                    <button
+                      className={
+                        surface === "manager" && activeProject?.id === project.id
+                          ? "project-item active"
+                          : "project-item"
+                      }
+                      onClick={() => void openProject(project.id)}
+                    >
+                      <span className="project-glyph">
+                        {project.title.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span>
+                        <strong id={`pin-project-${project.id}`}>{project.title}</strong>
+                        <small>{project.last_message_preview ?? "Новый проект"}</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="navigation-pin"
+                      aria-label={`${pins.projects.includes(project.id) ? "Открепить" : "Закрепить"} проект`}
+                      aria-describedby={`pin-project-${project.id}`}
+                      aria-pressed={pins.projects.includes(project.id)}
+                      disabled={!pinsHydrated}
+                      onClick={() => changePin("projects", project.id)}
+                    >
+                      <PinIcon />
+                    </button>
+                  </div>
                 ))}
-                {!loading && projects.length === 0 && (
-                  <p className="empty-projects">
-                    Проект появится только после вашего подтверждения.
-                  </p>
+                {navigationSearch && matchingProjects.length === 0 && (
+                  <p className="empty-projects">Проекты не найдены.</p>
+                )}
+                {!loading && projects.length === 0 && !navigationSearch && (
+                  <p className="empty-projects">Пока нет проектов</p>
                 )}
               </div>
             )}
           </section>
           <div className="sidebar-tools" aria-label="Рабочие области">
-            {TOOL_ITEMS.map((item) => (
+            {TOOL_ITEMS.filter(
+              (item) =>
+                ![
+                  "work",
+                  "code",
+                  "studio",
+                  "files",
+                  "images",
+                  "video",
+                  "sound",
+                  "settings",
+                  "apps",
+                  "features",
+                  "multi-agent",
+                  "research",
+                  "presentations",
+                  "sites",
+                  "games",
+                  "skills"
+                ].includes(item.id)
+            ).map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -1910,25 +2394,76 @@ export default function Home() {
                 <span>{item.label}</span>
               </button>
             ))}
+            {!codeSpace && (
+              <section className="sidebar-section studio-section">
+                <button
+                  type="button"
+                  className="projects-heading sidebar-section-toggle studio-toggle"
+                  aria-expanded={studioExpanded}
+                  aria-controls="studio-tools"
+                  onClick={() => {
+                    if (!studioExpanded) selectSurface("studio");
+                    else setStudioExpanded(false);
+                  }}
+                >
+                  <ToolIcon kind="studio" />
+                  <span>Kosmora Studio</span>
+                  <span className="section-chevron" aria-hidden="true">
+                    ›
+                  </span>
+                </button>
+                {studioExpanded && (
+                  <div className="studio-tools" id="studio-tools">
+                    <button
+                      type="button"
+                      className={surface === "studio" ? "sidebar-tool active" : "sidebar-tool"}
+                      aria-current={surface === "studio" ? "page" : undefined}
+                      onClick={() => selectSurface("studio")}
+                    >
+                      <ToolIcon kind="studio" />
+                      <span>Обзор Studio</span>
+                    </button>
+                    {STUDIO_ITEMS.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={surface === item.id ? "sidebar-tool active" : "sidebar-tool"}
+                        aria-current={surface === item.id ? "page" : undefined}
+                        onClick={() => selectSurface(item.id)}
+                      >
+                        <ToolIcon kind={item.id} />
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+            <button
+              type="button"
+              className={surface === "apps" ? "sidebar-tool active" : "sidebar-tool"}
+              aria-current={surface === "apps" ? "page" : undefined}
+              onClick={() => selectSurface("apps")}
+            >
+              <ToolIcon kind="apps" />
+              <span>Приложения</span>
+            </button>
+            <button
+              type="button"
+              className={surface === "features" ? "sidebar-tool active" : "sidebar-tool"}
+              aria-current={surface === "features" ? "page" : undefined}
+              onClick={() => selectSurface("features")}
+            >
+              <ToolIcon kind="features" />
+              <span>Возможности</span>
+            </button>
           </div>
         </nav>
 
-        <div className="profile">
-          <span className="avatar">M</span>
-          <span>
-            <strong>Владелец</strong>
-            <small>Локальный контур</small>
-          </span>
-          <span className="profile-dot" />
-        </div>
-        <div className="profile-actions" aria-label="Служебные разделы">
-          <Link href={agentStudioHref} aria-label="Agent Studio" title="Agent Studio">
-            <ToolIcon kind="multi-agent" />
-          </Link>
-          <Link href={controlCenterHref} aria-label="Control Center" title="Control Center">
-            <ShieldIcon />
-          </Link>
-        </div>
+        <AccountMenu
+          onSettings={() => selectSurface("settings")}
+          controlCenterHref={controlCenterHref}
+        />
       </aside>
 
       <main
@@ -1941,43 +2476,114 @@ export default function Home() {
         }
         id="workspace"
       >
-        <header className="topbar">
+        <header
+          className={`topbar${surface === "manager" && !activeProject && !activeLocalChatId && !codeSpace ? " has-mode-switch" : ""}`}
+        >
           <div>
             <span className="eyebrow">
               {surface === "manager"
                 ? activeProject
                   ? "Активный проект"
                   : "Обычный чат"
-                : "Cosmora workspace"}
+                : "Kosmora workspace"}
             </span>
-            <h1>
+            <h1 id="workspace-title">
               {surface === "manager"
-                ? (activeProject?.title ?? "Новый чат")
+                ? (activeProject?.title ?? activeLocalChat?.title ?? "Новый чат")
                 : SURFACE_TITLE[surface]}
             </h1>
           </div>
-          <div className="system-status" aria-label="Статус системы">
-            <Link
-              className="runtime-status-link"
-              href="/github"
-              title="Открыть безопасный GitHub read-only preview"
-            >
-              GitHub preview
-            </Link>
-            <Link
-              className="runtime-status-link"
-              href="/model-status"
-              title="Открыть состояние подключения модели"
-            >
-              <i className="status-dot" />
-              {runtime && runtime.mode !== "mock" ? "Провайдер настроен" : "Модель не подключена"}
-            </Link>
-            <span className="privacy-badge">
-              <ShieldIcon />
-              {runtime && runtime.mode !== "mock" ? "Внешний провайдер" : "Локальные данные"}
-            </span>
+          {surface === "manager" && !activeProject && !activeLocalChatId && !codeSpace && (
+            <div className="chat-mode-switch" role="group" aria-label="Режим нового чата">
+              <button
+                type="button"
+                aria-pressed={chatMode === "kosmora"}
+                onClick={() => selectSurface("manager")}
+              >
+                Чат
+              </button>
+              <button
+                type="button"
+                aria-pressed={chatMode === "work"}
+                onClick={() => selectSurface("work")}
+              >
+                Работа
+              </button>
+            </div>
+          )}
+          <div className="topbar-actions">
+            <InstallApp />
+            {surface === "manager" && (
+              <ChatHistoryActions
+                key={`${activeLocalChat?.id ?? activeProject?.id ?? "new-chat"}:${activeLocalChat?.title ?? activeProject?.title ?? ""}`}
+                id={activeProject ? null : (activeLocalChat?.id ?? null)}
+                title={activeProject?.title ?? activeLocalChat?.title ?? "Новый чат"}
+                messages={activeProject ? messages : localChatMessages}
+                conversationId={activeProject ? chatId : (activeLocalChat?.id ?? null)}
+                projectId={activeProject?.id ?? null}
+                disabled={sending || loading}
+                showRelay={!activeProject}
+                onRecover={restoreRunDraft}
+                runError={error}
+                onVoice={() => {
+                  setVoiceAssistantOpen(true);
+                }}
+                onChange={(title) =>
+                  setLocalChats((current) =>
+                    current.map((chat) =>
+                      chat.id === activeLocalChat?.id ? { ...chat, title } : chat
+                    )
+                  )
+                }
+                onArchive={() => {
+                  setLocalChats((current) =>
+                    current.filter((chat) => chat.id !== activeLocalChat?.id)
+                  );
+                  newChat();
+                }}
+              />
+            )}
+            {surface === "manager" && (
+              <ChatSearchTrigger
+                title={activeProject?.title ?? activeLocalChat?.title ?? "Новый чат"}
+                messages={activeProject ? messages : localChatMessages}
+              />
+            )}
+            <QuickSwitcher
+              hiddenTrigger
+              chats={pinsFirst(spaceChats, pins.chats)}
+              projects={pinsFirst(projects, pins.projects)}
+              onNewChat={newChat}
+              onOpenChat={(id) => void openLocalChat(id)}
+              onOpenProject={(id) => void openProject(id)}
+              onNavigate={selectSurface}
+            />
+            {surface === "manager" && (activeProject || activeLocalChat) && (
+              <button
+                type="button"
+                className="topbar-pin"
+                disabled={!pinsHydrated}
+                aria-pressed={
+                  activeProject
+                    ? pins.projects.includes(activeProject.id)
+                    : pins.chats.includes(activeLocalChat!.id)
+                }
+                aria-label={
+                  activeProject
+                    ? `${pins.projects.includes(activeProject.id) ? "Открепить" : "Закрепить"} проект`
+                    : `${pins.chats.includes(activeLocalChat!.id) ? "Открепить" : "Закрепить"} чат`
+                }
+                aria-describedby="workspace-title"
+                onClick={() =>
+                  activeProject
+                    ? changePin("projects", activeProject.id)
+                    : changePin("chats", activeLocalChat!.id)
+                }
+              >
+                <PinIcon />
+              </button>
+            )}
           </div>
-          <InstallApp />
         </header>
 
         {activeProject && (
@@ -2052,7 +2658,7 @@ export default function Home() {
           >
             ＋ Новый
           </button>
-          {localChats.slice(0, 5).map((chat) => (
+          {spaceChats.slice(0, 5).map((chat) => (
             <button
               key={chat.id}
               className={!activeProject && activeLocalChatId === chat.id ? "active" : ""}
@@ -2074,6 +2680,22 @@ export default function Home() {
 
         {activeProject && projectView === "project" && (
           <div className="project-context view-panel" role="tabpanel" aria-label="Проект">
+            <ProjectTitleEditor
+              key={activeProject.id}
+              project={activeProject}
+              onSaved={(renamed) => {
+                setActiveProject((current) =>
+                  current?.id === renamed.id ? { ...current, ...renamed } : current
+                );
+                setProjects((current) =>
+                  current
+                    .map((project) =>
+                      project.id === renamed.id ? { ...project, ...renamed } : project
+                    )
+                    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+                );
+              }}
+            />
             <section className="project-facts" aria-label="Информация о проекте">
               <span>
                 <small>Статус проекта</small>
@@ -2178,13 +2800,21 @@ export default function Home() {
           </div>
         )}
 
-        {activeProject && projectView === "context" && (
-          <ProjectContextPanel
-            projectId={activeProject.id}
-            projectTitle={activeProject.title}
-            messageCount={messages.length}
-          />
-        )}
+        {activeProject &&
+          projectView === "context" &&
+          (contextPreview ? (
+            <ProjectContextPreview
+              projectId={activeProject.id}
+              projectTitle={activeProject.title}
+              messageCount={messages.length}
+            />
+          ) : (
+            <ProjectContextPanel
+              projectId={activeProject.id}
+              projectTitle={activeProject.title}
+              messageCount={messages.length}
+            />
+          ))}
 
         {activeProject && projectView === "plan" && (
           <div className="project-context view-panel" role="tabpanel" aria-label="План">
@@ -2295,89 +2925,193 @@ export default function Home() {
                 <SparkIcon />
               </span>
               <div>
-                <strong>Cosmora Manager</strong>
+                <strong>Kosmora Manager</strong>
                 <span className="project-mode-label">Менеджер · мультиагентный проект</span>
-                <small>
-                  {lastCompletedRoute
-                    ? `Последний ответ: ${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
-                    : runtime && runtime.mode !== "mock"
-                      ? `${runtime.model} · fallback ${runtime.fallback_to_mock ? "включён" : "выключен"}`
-                      : "MockProvider · история сохраняется"}
-                </small>
+                <small>Переписка</small>
               </div>
               <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">
                 <i /> {RUN_PHASE_LABEL[runPhase]}
               </span>
             </div>
-            <div className="messages" aria-live="polite">
-              {messages.map((message) => (
-                <article key={message.id} className={`message ${message.role}`}>
-                  <span className="message-avatar">
-                    {message.role === "user" ? "M" : <SparkIcon />}
-                  </span>
-                  <div>
-                    <header>
-                      <strong>{message.role === "user" ? "Вы" : "Cosmora Manager"}</strong>
-                      <time>
-                        {new Date(message.created_at).toLocaleTimeString("ru", {
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        })}
-                      </time>
-                    </header>
-                    <p>
-                      {displayedContent(message) || (
-                        <span className="typing">
-                          Формирую ответ<span>…</span>
-                        </span>
+            <button
+              className={canvasChat.chatAction}
+              type="button"
+              onClick={() => setCanvasOpen((open) => !open)}
+              aria-expanded={canvasOpen}
+            >
+              {canvasOpen ? "Закрыть Canvas" : "Открыть Canvas"}
+            </button>
+            <div className={canvasOpen ? canvasChat.chatSplit : canvasChat.chatBody}>
+              <div
+                className="messages"
+                aria-live="polite"
+                onScroll={(event) => {
+                  const area = event.currentTarget;
+                  followMessagesRef.current =
+                    area.scrollHeight - area.scrollTop - area.clientHeight < 64;
+                }}
+              >
+                {messages.map((message) => (
+                  <article
+                    key={message.id}
+                    id={`chat-message-${message.id}`}
+                    tabIndex={-1}
+                    className={`message ${message.role}`}
+                  >
+                    {message.role === "user" && (
+                      <span className="message-avatar">
+                        <WorkspaceIcon name="owner" />
+                      </span>
+                    )}
+                    <div>
+                      {message.role !== "assistant" && (
+                        <header>
+                          <strong>Вы</strong>
+                          <time>
+                            {new Date(message.created_at).toLocaleTimeString("ru", {
+                              hour: "2-digit",
+                              minute: "2-digit"
+                            })}
+                          </time>
+                        </header>
                       )}
-                    </p>
-                  </div>
-                </article>
-              ))}
-              <div ref={messagesEndRef} />
+                      <ChatResponse
+                        content={displayedContent(message)}
+                        assistant={message.role === "assistant"}
+                        complete={message.status === "completed" && message.role !== "system_event"}
+                        streaming={message.status === "streaming"}
+                        actions={
+                          message.role === "assistant" && message.status === "completed" ? (
+                            <CompactVoicePlayback text={message.content} />
+                          ) : null
+                        }
+                        onFollowUp={(prompt) => {
+                          setDraft((current) =>
+                            current.trim() ? `${current}\n\n${prompt}` : prompt
+                          );
+                          composerRef.current?.focus();
+                        }}
+                      />
+                      <ChatMessageAttachments files={message.attachments ?? []} />
+                    </div>
+                  </article>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+              {canvasOpen && (
+                <div className={canvasChat.chatEditor}>
+                  <CanvasEditor key={activeProject.id} projectId={activeProject.id} />
+                </div>
+              )}
             </div>
           </section>
         ) : localChatMessages.length > 0 ? (
-          <section className="chat-panel general-chat-panel" aria-label="Обычный чат Cosmora">
+          <section className="chat-panel general-chat-panel" aria-label="Обычный чат Kosmora">
+            {activeLocalChatId && (
+              <ChatBranches
+                key={activeLocalChatId}
+                chatId={activeLocalChatId}
+                message={
+                  branchSelection?.chatId === activeLocalChatId ? branchSelection.message : null
+                }
+                disabled={sending || loading}
+                onClose={() => setBranchSelection(null)}
+                onOpen={(id) => void openChatBranch(id)}
+                onCreated={(accepted) => void openChatBranch(accepted.chat.id, accepted)}
+              />
+            )}
+            {activeLocalChatId && contextChatId === activeLocalChatId && (
+              <ChatContextPanel
+                key={`context:${activeLocalChatId}`}
+                chatId={activeLocalChatId}
+                messages={localChatMessages}
+                disabled={sending || loading || executionGate !== "clear"}
+                onClose={() => setContextChatId(null)}
+              />
+            )}
             <div className="chat-heading general-chat-heading">
               <div>
-                <strong>Cosmora</strong>
-                <small>
-                  {lastCompletedRoute
-                    ? `${lastCompletedRoute.provider} · ${lastCompletedRoute.model}`
-                    : runtime && runtime.mode !== "mock"
-                      ? `${runtime.model} · обычный чат`
-                      : "Обычный чат · история на сервере · проект не создан"}
-                </small>
+                <strong>Kosmora</strong>
+                <small>Переписка</small>
               </div>
               <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">
-                <i /> {RUN_PHASE_LABEL[runPhase]}
+                <i /> {CHAT_RUN_PHASE_LABEL[runPhase]}
               </span>
             </div>
-            <div className="messages" aria-live="polite">
+            <div
+              className="messages"
+              aria-live="polite"
+              onScroll={(event) => {
+                const area = event.currentTarget;
+                followMessagesRef.current =
+                  area.scrollHeight - area.scrollTop - area.clientHeight < 64;
+              }}
+            >
               {localChatMessages.map((message) => (
-                <article key={message.id} className={`message ${message.role}`}>
-                  <span className="message-avatar">
-                    {message.role === "user" ? "В" : <SparkIcon />}
-                  </span>
+                <article
+                  key={message.id}
+                  id={`chat-message-${message.id}`}
+                  tabIndex={-1}
+                  className={`message ${message.role}`}
+                >
+                  {message.role === "user" && (
+                    <span className="message-avatar">
+                      <WorkspaceIcon name="owner" />
+                    </span>
+                  )}
                   <div>
-                    <header>
-                      <strong>{message.role === "user" ? "Вы" : "Cosmora"}</strong>
-                      <time>
-                        {new Date(message.created_at).toLocaleTimeString("ru", {
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        })}
-                      </time>
-                    </header>
-                    <p>
-                      {displayedGeneralContent(message) || (
-                        <span className="typing">
-                          Формирую ответ<span>…</span>
-                        </span>
-                      )}
-                    </p>
+                    {message.role === "user" && (
+                      <header>
+                        <strong>Вы</strong>
+                        <time>
+                          {new Date(message.created_at).toLocaleTimeString("ru", {
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })}
+                        </time>
+                      </header>
+                    )}
+                    <ChatResponse
+                      content={displayedGeneralContent(message)}
+                      assistant={message.role === "assistant"}
+                      complete={message.status === "completed"}
+                      streaming={message.status === "streaming"}
+                      actions={
+                        <>
+                          {message.role === "assistant" && message.status === "completed" && (
+                            <CompactVoicePlayback text={message.content} />
+                          )}
+                          {activeLocalChatId &&
+                            message.role === "assistant" &&
+                            message.status === "completed" && (
+                              <ChatToCanvas
+                                key={message.id}
+                                chatId={activeLocalChatId}
+                                message={message}
+                                projects={projects}
+                              />
+                            )}
+                          {activeLocalChatId &&
+                            message.status !== "streaming" &&
+                            message.status !== "pending" && (
+                              <ChatBranchButton
+                                assistant={message.role === "assistant"}
+                                disabled={sending || loading || executionGate !== "clear"}
+                                onClick={() =>
+                                  setBranchSelection({ chatId: activeLocalChatId, message })
+                                }
+                              />
+                            )}
+                        </>
+                      }
+                      onFollowUp={(prompt) => {
+                        setDraft((current) =>
+                          current.trim() ? `${current}\n\n${prompt}` : prompt
+                        );
+                        composerRef.current?.focus();
+                      }}
+                    />
+                    <ChatMessageAttachments files={message.attachments ?? []} />
                   </div>
                 </article>
               ))}
@@ -2396,7 +3130,7 @@ export default function Home() {
                     <div className="proposal-actions">
                       <button
                         type="button"
-                        disabled={loading}
+                        disabled={loading || executionGate !== "clear"}
                         onClick={() => void promoteToProject()}
                       >
                         Оформить как проект
@@ -2425,122 +3159,255 @@ export default function Home() {
         ) : null}
 
         <form
+          autoComplete="off"
           className={
             activeProject || localChatMessages.length > 0 ? "composer chat-composer" : "composer"
           }
+          data-file-drag={fileDragActive || undefined}
+          onDragOver={(event) => {
+            if (!event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            if (
+              !sending &&
+              !loading &&
+              initialRouteReady &&
+              !chatAttachments.reading &&
+              draftStorageReadyKey === attachmentScope
+            )
+              setFileDragActive(true);
+          }}
+          onDragLeave={(event) => {
+            if (
+              !(event.relatedTarget instanceof Node) ||
+              !event.currentTarget.contains(event.relatedTarget)
+            )
+              setFileDragActive(false);
+          }}
+          onDrop={(event) => {
+            if (!event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            setFileDragActive(false);
+            if (
+              sending ||
+              loading ||
+              !initialRouteReady ||
+              chatAttachments.reading ||
+              draftStorageReadyKey !== attachmentScope
+            )
+              return;
+            const files = Array.from(event.dataTransfer.files);
+            if (files.length) void chatAttachments.add(files);
+          }}
           onSubmit={(event) => void submit(event)}
         >
           <label htmlFor="task">
-            {activeProject ? "Сообщение менеджеру" : "Сообщение Cosmora"}
+            {activeProject ? "Сообщение менеджеру" : "Сообщение Kosmora"}
           </label>
           <textarea
             id="task"
             ref={composerRef}
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraftRecoveryNotice(null);
+              setDraft(event.target.value);
+            }}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            disabled={sending || loading}
+            disabled={
+              sending || loading || !initialRouteReady || draftStorageReadyKey !== attachmentScope
+            }
             placeholder={
               activeProject ? "Уточните задачу или добавьте требование…" : "Спросите что-нибудь…"
             }
           />
-          <div className="composer-footer">
-            <span role={error ? "alert" : undefined} aria-live={error ? "assertive" : "polite"}>
-              {error ??
-                (sending
-                  ? "Cosmora выполняет запуск…"
-                  : chatId
-                    ? "Enter — отправить · Shift+Enter — новая строка"
-                    : "Обычный чат · проект создаётся только с вашего согласия")}
-            </span>
-            {sending ? (
-              <button
-                type="button"
-                className="cancel-run"
-                disabled={!activeRunId}
-                onClick={() => void cancelRun()}
-              >
-                <span className="stop-icon" /> Остановить
-              </button>
-            ) : (
-              <div className="composer-actions">
-                {error && (
-                  <button
-                    type="button"
-                    className="restore-run"
-                    onClick={() => void reloadShellData()}
-                  >
-                    ↻ Повторить
-                  </button>
-                )}
-                {recoverableMessage && !draft.trim() && (
-                  <button type="button" className="restore-run" onClick={restoreRunDraft}>
-                    ↻ Вернуть запрос в редактор
-                  </button>
-                )}
-                <button disabled={!draft.trim() || loading} aria-label="Отправить">
-                  <SendIcon />
-                  Отправить
+          <div className="composer-controls">
+            <div className="composer-tools">
+              {
+                <ChatAttachmentPicker
+                  files={chatAttachments.files}
+                  reading={chatAttachments.reading}
+                  error={chatAttachments.error ?? draftNotice ?? draftRecoveryNotice}
+                  disabled={
+                    sending ||
+                    loading ||
+                    !initialRouteReady ||
+                    draftStorageReadyKey !== attachmentScope
+                  }
+                  onAdd={(files) => void chatAttachments.add(files)}
+                  onRemove={(index) =>
+                    chatAttachments.replace(
+                      chatAttachments.files.filter((_, position) => position !== index)
+                    )
+                  }
+                />
+              }
+              <ModelPicker disabled={sending || loading || !initialRouteReady} />
+            </div>
+            <div className="composer-footer">
+              <VoiceComposer
+                disabled={sending || loading || !initialRouteReady}
+                onInsert={(text) => setDraft((current) => (current ? `${current} ${text}` : text))}
+              />
+              {error ? (
+                <SystemMessage>{error}</SystemMessage>
+              ) : sending ? (
+                <LoadingDots label="Kosmora выполняет запуск" />
+              ) : (
+                <span />
+              )}
+              {sending ? (
+                <button
+                  type="button"
+                  className="cancel-run"
+                  disabled={!activeRunId}
+                  onClick={() => void cancelRun()}
+                >
+                  <span className="stop-icon" /> Остановить
                 </button>
-              </div>
-            )}
+              ) : (
+                <div className="composer-actions">
+                  {error && (
+                    <button
+                      type="button"
+                      className="restore-run"
+                      onClick={() => void reloadShellData()}
+                    >
+                      ↻ Повторить
+                    </button>
+                  )}
+                  {recoverableMessage && !draft.trim() && (
+                    <button type="button" className="restore-run" onClick={restoreRunDraft}>
+                      ↻ Вернуть запрос в редактор
+                    </button>
+                  )}
+                  <span
+                    className="composer-send-control"
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      if (!loading && initialRouteReady && !draft.trim())
+                        setVoiceAssistantOpen(true);
+                    }}
+                  >
+                    <button
+                      type={draft.trim() ? "submit" : "button"}
+                      data-send-mode={draft.trim() ? "text" : "voice"}
+                      onClick={() => {
+                        if (!draft.trim()) setVoiceAssistantOpen(true);
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "ContextMenu" ||
+                          (event.shiftKey && event.key === "F10")
+                        ) {
+                          event.preventDefault();
+                          if (!draft.trim()) setVoiceAssistantOpen(true);
+                        }
+                      }}
+                      disabled={
+                        loading ||
+                        !initialRouteReady ||
+                        chatAttachments.reading ||
+                        executionGate !== "clear"
+                      }
+                      aria-label={draft.trim() ? "Отправить" : "Открыть голосового помощника"}
+                      title={draft.trim() ? "Отправить" : "Голосовой помощник"}
+                    >
+                      {draft.trim() ? <SendIcon /> : <WorkspaceIcon name="sound" />}
+                    </button>
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </form>
 
+        {voiceAssistantOpen && (
+          <VoiceAssistant
+            onClose={() => setVoiceAssistantOpen(false)}
+            onSend={(text) => submit(undefined, text)}
+            busy={sending || loading}
+            canSend={
+              initialRouteReady &&
+              draftStorageReadyKey === attachmentScope &&
+              !draft.trim() &&
+              !chatAttachments.files.length &&
+              !chatAttachments.reading &&
+              executionGate === "clear"
+            }
+            error={error}
+            reply={(() => {
+              const last = (activeProject ? messages : localChatMessages)
+                .filter((message) => message.role === "assistant" && message.status === "completed")
+                .at(-1);
+              return last ? { id: last.id, text: last.content } : null;
+            })()}
+          />
+        )}
+
         {surface !== "manager" && (
-          <CapabilityWorkspace
+          <WorkspaceSections
             key={surface}
             surface={surface}
             projects={projects}
             agentStudioHref={agentStudioHref}
             controlCenterHref={controlCenterHref}
+            activeProjectId={activeProject?.id ?? null}
+            loading={loading || !initialRouteReady}
+            error={error}
+            onRetry={() => void reloadShellData()}
+            onOpenProject={(id, view) => void openProject(id, view)}
+            onLibraryProjectCreated={(id) => {
+              void loadProjects().catch(() => undefined);
+              void openProject(id, "chat", "files");
+            }}
+            onDataProjectAvailable={() => {
+              void loadProjects().catch(() => undefined);
+            }}
+            onNavigate={selectSurface}
+            onCompose={(prompt, files = []) => {
+              pendingComposeRef.current = { prompt, files };
+              newChat();
+            }}
+            preferences={preferences}
+            onPreferences={updatePreferences}
+            preferencesNotice={preferencesNotice}
+            runtime={runtime}
           />
         )}
       </main>
 
-      <nav className="mobile-nav" aria-label="Мобильная навигация">
-        <button
-          type="button"
-          className={surface === "manager" && !activeProject && !activeLocalChatId ? "active" : ""}
-          aria-current={
-            surface === "manager" && !activeProject && !activeLocalChatId ? "page" : undefined
-          }
-          onClick={newChat}
-        >
-          <ToolIcon kind="new-chat" />
-          <span>Новый чат</span>
-        </button>
-        <button
-          type="button"
-          className={surface === "manager" && activeProject ? "active" : ""}
-          aria-current={surface === "manager" && activeProject ? "page" : undefined}
-          onClick={() => {
-            if (activeProject) setSurface("manager");
-            else if (projects[0]) void openProject(projects[0].id);
-            else newChat();
+      {createProjectOpen && (
+        <CreateProjectDialog
+          onClose={() => setCreateProjectOpen(false)}
+          onCreated={(id) => {
+            setCreateProjectOpen(false);
+            setProjectsExpanded(true);
+            void loadProjects().catch(() => undefined);
+            void openProject(id);
           }}
-        >
-          <ToolIcon kind="projects" />
-          <span>Проекты</span>
-        </button>
-        {TOOL_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={surface === item.id ? "active" : ""}
-            aria-current={surface === item.id ? "page" : undefined}
-            onClick={() => selectSurface(item.id)}
-          >
-            <ToolIcon kind={item.id} />
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </nav>
+        />
+      )}
+      <MobileNavigation
+        surface={
+          surface === "manager"
+            ? codeSpace
+              ? "code"
+              : chatMode === "work"
+                ? "work"
+                : "manager"
+            : surface
+        }
+        onNewChat={newChat}
+        onNavigate={selectSurface}
+        chats={pinsFirst(spaceChats, pins.chats)}
+        projects={pinsFirst(projects, pins.projects)}
+        onOpenChat={(id) => void openLocalChat(id)}
+        onOpenProject={(id) => void openProject(id)}
+      />
     </div>
   );
 }

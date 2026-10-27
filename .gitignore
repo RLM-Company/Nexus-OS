@@ -17,3 +17,14 @@ test-results/
 pnpm-debug.log*
 .DS_Store
 Thumbs.db
+
+/apps/web/public/generated/
+
+# Local integration evidence and temporary test data are not release sources.
+/qa/
+/.tmp/
+/apps/api/.privacy-lint-report.json
+/apps/api/.privacy-test-temp/
+/apps/api/.work-dag-test-temp/
+/apps/web/.data-test-temp/
+/apps/web/.primitives-test-temp/

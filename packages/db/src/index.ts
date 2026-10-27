@@ -6,14 +6,14 @@ import { drizzle, type RemoteCallback, type SqliteRemoteDatabase } from "drizzle
 import { migrate, type ProxyMigrator } from "drizzle-orm/sqlite-proxy/migrator";
 import * as schema from "./schema.js";
 
-export type CosmoraDatabase = SqliteRemoteDatabase<typeof schema>;
+export type KosmoraDatabase = SqliteRemoteDatabase<typeof schema>;
 
 export interface DatabaseHealth {
   ping(): void;
 }
 
 export interface DatabaseHandle extends DatabaseHealth {
-  db: CosmoraDatabase;
+  db: KosmoraDatabase;
   sqlite: DatabaseSync;
   close(): void;
 }
@@ -71,6 +71,24 @@ export const openDatabase = (databaseUrl: string): DatabaseHandle => {
   };
 };
 
+/** Detect the historical 76e44320 journal hole before Drizzle would skip migration 25. */
+export const assertDocumentLibraryUpgradeReady = (sqlite: DatabaseSync): void => {
+  const has = (name: string) =>
+    Boolean(
+      sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name)
+    );
+  const modern = has("project_memory"); // 0026 was in 76e44320; 0025 was not.
+  const original = has("document_library_files"),
+    chunks = has("document_library_chunks"),
+    fts = has("document_library_fts");
+  if (
+    (modern && !original) ||
+    ([original, chunks, fts].some(Boolean) && ![original, chunks, fts].every(Boolean))
+  )
+    throw Error(
+      "SQLITE_LIBRARY_0025_UPGRADE_REQUIRED: stop API; back up; run scripts/retrofit-document-library.mjs offline"
+    );
+};
 export const runMigrations = (
   database: Pick<DatabaseHandle, "db" | "sqlite">,
   folder = migrationsFolder
@@ -91,6 +109,25 @@ export const runMigrations = (
     }
   };
 
+  // Some previous unshipped integration snapshots contained the old 0030 table without
+  // a run_id retention key; that schema cannot prove deduplicated owner quota after deletion.
+  const retained = database.sqlite
+    .prepare(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='kosmora_retained_accounting'"
+    )
+    .get();
+  if (
+    retained &&
+    !(
+      database.sqlite.prepare("PRAGMA table_info(kosmora_retained_accounting)").all() as Array<{
+        name: string;
+      }>
+    ).some((row) => row.name === "run_id")
+  )
+    throw Error(
+      "SQLITE_RETAINED_USAGE_SCHEMA_UPGRADE_REQUIRED: offline schema recovery needed before startup"
+    );
+  assertDocumentLibraryUpgradeReady(database.sqlite);
   return migrate(database.db, applyQueries, { migrationsFolder: folder });
 };
 
@@ -106,5 +143,22 @@ export * from "./manager-work-store.js";
 export * from "./pattern-library-store.js";
 export * from "./policy-store.js";
 export * from "./project-store.js";
+export * from "./intelligence-graph-workspace-store.js";
 export * from "./step-up-proof-store.js";
 export * from "./usage-store.js";
+export * from "./project-memory-store.js";
+export * from "./work-runtime-store.js";
+export * from "./work-dag-store.js";
+export * from "./document-library-store.js";
+export * from "./canvas-artifact-store.js";
+export * from "./document-answer-store.js";
+export * from "./chat-history-search-store.js";
+export * from "./presentation-store.js";
+export * from "./notification-store.js";
+export * from "./owner-skill-store.js";
+
+export * from "./chat-workspace-store.js";
+export * from "./chat-skill-store.js";
+export * from "./work-skill-store.js";
+export * from "./project-automation-store.js";
+export * from "./pay-store.js";

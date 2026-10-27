@@ -1,8 +1,13 @@
-# Cosmora OS
+# Kosmora OS
 
-Cosmora OS is an owner-controlled, policy-gated AI project workspace. This repository contains the
-integrated product and safety foundations; it does not yet contain an autonomous Manager or worker
-agent runtime.
+Kosmora OS is an owner-controlled, policy-gated AI project workspace with chat, durable Work tasks,
+documents, Canvas, tables, GitHub/Code, images and bounded website/game development flows.
+Code checks use a separate isolated executor; external publication remains an explicitly approved flow.
+
+The current integrated source and verification checkpoint is
+[the 27 October release candidate](docs/handoff/STAGE_ONE_RELEASE_CANDIDATE_2026-10-27.md).
+Older handoffs describe their dated snapshots. A catalog entry, local mock test or source module
+alone does not establish an enabled product feature or live-provider readiness.
 
 ## Current integrated scope
 
@@ -10,12 +15,32 @@ agent runtime.
 
 - responsive Next.js project shell with separately persisted ordinary chats and projects,
   server-side streaming, cancellation and restart recovery;
-- browser-local Project Context preview with bounded source metadata, explicit preview before
-  connecting a source, per-project local isolation, safe redaction and explicit clear confirmation;
-- mock-only Skills preview with read/preview permissions and disabled arbitrary execution, plus a
-  mock/read-only GitHub preview with strict `github.com` URL allowlisting and disabled write actions;
-- local Image, Video and Sound prompt workspaces that do not send prompts to an external model while
-  that model surface is disconnected;
+- Manager work panel with plan, file drafts, optional Critic review, owner controls and saved task
+  history with downloads from earlier completed tasks; dependency plans support sequential execution,
+  independent copies across owned projects, reviewed portable JSON import/export, search, renaming
+  and reversible archival retaining results and accepted instructions;
+- server-persisted project instructions and text/code/PDF/DOCX materials, optimistic version checks
+  and a material snapshot taken when each message or Manager work item is accepted;
+- chat text/code/PDF/DOCX attachments and PNG/JPEG multimodal payloads, safe Markdown/code downloads,
+  chat rename, export, reversible archive and a bounded model context retaining full stored history;
+- owner-bound GitHub repository browsing, code import into unsent chat drafts, editing/new files,
+  persisted before/after review and explicit publication to a new branch and draft PR;
+- Code-agent proposals bound to an immutable repository snapshot, owner-selected review,
+  isolated approved checks, publication proof and read-only reconciliation after uncertain writes;
+- optional private SearXNG search with source links/snippets attached only by an owner action;
+- private versioned personal Skills for ordinary chat and Work, immutable accepted instruction
+  snapshots and literal per-answer/task provenance; historical mock catalog preview remains inert;
+- text-only AI presentation creation through the existing budgeted Work pipeline, strict local slide validation, reviewed immutable-result import and editable PPTX downloads;
+- Canvas text/code editor with immutable revisions, literal bounded version comparison, reviewed
+  restore/conflict resolution, exact historical downloads and local UTF-8 file drafts;
+- saved tables, document-library evidence and project memory; server analysis, version comparison,
+  compact table summaries and verified project-evidence excerpts have scoped APIs, with remaining
+  visual connections recorded in `docs/design/VISUAL_WAITLIST.md`;
+- configured image generation/editing in chat and Studio; disconnected Video and Sound surfaces
+  retain preparation/export behavior rather than claiming completed generation;
+- website and browser-game source generation/editing, immutable artifacts, isolated previews and
+  offline export; Games is a development workspace;
+- authoritative date/time snapshots, timezone/calendar tools and monotonic task timers;
 - Agent Studio catalogs, blueprints and owner/delegated proposal flows with idempotent writes and
   Decision Trace records;
 - Autonomy Control Center with the canonical A0–A6 profile, point-override editor, server authority
@@ -42,20 +67,38 @@ agent runtime.
   provenance, conflict, checkpoint, readiness and deterministic scenario release-gate contracts;
 - 19 canonical Manager Runtime scenario entries covering all 13 required categories and every
   autonomy level A0–A6.
+- durable Manager work coordinator with SQLite task state, bounded model requests and token
+  reservations, restart reconciliation and Policy Runtime checks before publishing files.
 
 ## Current boundary
 
-- Manager and worker agents do not execute task graphs or make model calls as agents yet.
-- Project Context source selection is browser-local preview state, not authoritative runtime context.
-- Skills preview does not execute packages or arbitrary code, and GitHub preview does not authenticate
+- Manager work executes a bounded plan → draft → optional review → publication flow through Model
+  Gateway. The default route is mock-only; an external provider requires a reviewed role/task route
+  and server-side credentials. A configured credential alone does not prove live readiness.
+- Ordinary Work creates files through its bounded workflow. Code checks, research and isolated
+  website/game previews have separate scoped execution paths. General host-shell execution,
+  arbitrary deployment and unrestricted messaging are not provided by the Work executor.
+- Project materials are runtime context for new accepted requests. Historical browser-local metadata
+  remains available only in the explicit `context_preview=1` demonstration.
+- Vision and image generation/editing require separately supported provider routes. Storing an
+  image attachment does not establish live vision acceptance for every configured chat model.
+- GitHub is owner-operated and repository/owner-bound. Every publication requires the exact saved
+  review hash and approval; changed bases fail. No merge or automatic write retry is provided.
+- The search-engine endpoint supplies snippets. Document-library evidence and research use their
+  own source/context workflows; unrestricted autonomous browsing is not implied.
+- Skills preview does not execute packages or arbitrary code, and the historical GitHub preview does not authenticate
   to GitHub or perform repository writes.
-- External tool effects and the local daemon are not connected to an autonomous agent loop.
-- Manager Runtime Step 6 is accepted as `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`.
+- External effects are limited to the implemented, scoped product workflows and their approvals.
+  A general-purpose host daemon or unrestricted autonomous agent is not exposed.
+- The historical Manager Runtime Step 6 acceptance was
+  `PASS — CONTRACT FOUNDATION / NO AGENT RUNTIME`. The later bounded work runtime is implemented;
+  that does not establish a general autonomous task-graph executor or production readiness.
 - Roadmap Step 5 owner-facing control slices are implemented. Finite-use override counters are
   explicit owner inputs, included in the server authority diff and consumed atomically by Tool
   Runtime.
 - The final Manager system prompt belongs to roadmap Step 7 and must be written with the owner.
-- No production provider or production Secret Manager backend has been selected.
+- Hosted alpha uses privately configured provider credentials and reviewed routes. Local defaults
+  remain mock-only; a managed Secret Manager backend is separate deployment work.
 - The first closed paid beta remains limited to A0–A2; A3–A6 require later security and economic
   gates.
 
@@ -79,7 +122,8 @@ Web runs at `http://127.0.0.1:3000`, API at `http://127.0.0.1:3100`, and health 
 `GET /api/v1/model-runtime`. The web app proxies `/api/*` to `COSMORA_API_ORIGIN`.
 Ordinary chat uses `GET/POST /api/v1/chats`, persists outside the project tables, and streams from
 `GET /api/v1/chat-runs/:runId/events`. A project is created only by the explicit
-`POST /api/v1/projects` confirmation path.
+`POST /api/v1/projects` or empty-project `POST /api/v1/projects/empty` path. Empty projects remain
+drafts until their first accepted chat or Work task activates them atomically.
 Operational counters and active safety alerts are available at `GET /api/v1/operations/status`.
 The bounded owner-only Policy Decision Trace is available at
 `GET /api/v1/projects/:projectId/decision-trace?limit=50`; its response excludes purpose,
@@ -124,13 +168,25 @@ terminal:
 pnpm demo:preflight
 ```
 
+To verify the complete Manager path without a model key or paid requests, run this once while
+`pnpm demo` is open:
+
+```bash
+pnpm manager:demo-smoke
+```
+
+It creates an A2 test project, completes the mock plan, draft and Critic stages, downloads the
+result through the web proxy, then checks saved state and idempotency. It refuses a non-local
+origin, a non-mock model route or a configured model credential before creating anything. The
+test project remains in the local SQLite history so its result can be inspected in the Console.
+
 LAN mode is for a temporary internal walkthrough only. Do not use it on a public or untrusted
 network, and stop both processes after the demo. The exact owner walkthrough and recovery notes are
 in `docs/handoff/SUNDAY_MANAGER_DEMO_RUNBOOK_2026-09-11.md`.
 
 ## Install the Manager Console as an app
 
-Cosmora ships an installable PWA manifest, desktop/mobile app icons, standalone display metadata
+Kosmora ships an installable PWA manifest, desktop/mobile app icons, standalone display metadata
 and safe-area-aware layouts. On the local laptop, start `pnpm demo`, open
 `http://127.0.0.1:3000`, then use the visible **Install** action or the browser's install control.
 The installed app opens in its own window while continuing to use the same local API and SQLite
@@ -143,45 +199,62 @@ unavailable, the app reports that state instead of displaying potentially stale 
 
 ## Connect a model provider
 
-Keep the API key only in a local `.env` file (never paste it into chat or commit it):
+The current private-alpha profile uses CheapVibeCode. Keep the API key only in a protected,
+ignored environment file (never paste it into chat or commit it). For local development, replace
+the mock provider values in the repository-root `.env` with this profile:
 
 ```dotenv
+NODE_ENV=development
 MODEL_PROVIDER=openai-compatible
-MODEL_PROVIDER_ID=vibecode
-MODEL_REGISTRY_PATH=config/model-registry.vibecode.v1.json
-MODEL_BASE_URL=https://vibecode.moe/v1
+MODEL_PROVIDER_ID=cheapvibecode
+MODEL_REGISTRY_PATH=config/model-registry.cheapvibecode.manager-work-preview.v1.json
+MODEL_BASE_URL=https://ru.cheapvibecode.ru/v1
 MODEL_API_KEY=your-local-secret
 MODEL_NAME=gpt-5.5
 MODEL_FALLBACK_TO_MOCK=false
-MODEL_MAX_ATTEMPTS_PER_ROUTE=2
-MODEL_RETRY_BASE_DELAY_MS=250
-MODEL_RETRY_MAX_DELAY_MS=2000
-MODEL_CIRCUIT_FAILURE_THRESHOLD=3
-MODEL_CIRCUIT_OPEN_MS=30000
-RUNTIME_EMERGENCY_STOP=false
+MODEL_MAX_ATTEMPTS_PER_ROUTE=1
+MANAGER_MAX_OUTPUT_TOKENS=1200
+RUNTIME_EMERGENCY_STOP=true
 ```
 
 The API `demo`, `dev` and `start` commands load this repository-root `.env` directly; the browser
 process does not receive the credential. Repository-relative registry paths resolve from the
-repository root, so the profile above works regardless of the shell working directory. Start the
-console with `pnpm demo`, then verify the live route without sending a paid model request:
+repository root, so the profile above works regardless of the shell working directory. Verify
+the key, configured model and balance using read-only provider requests while execution is stopped:
 
 ```bash
-pnpm manager:preflight
+node --env-file=.env scripts/provider-connection-check.mjs
 ```
 
-At handoff, the only secret-dependent steps are: copy `.env.example` to a local `.env`, fill the
-external-provider block and `MODEL_API_KEY`, start `pnpm demo`, then run the preflight above. Do not
-commit `.env`. With `MODEL_FALLBACK_TO_MOCK=false`, an unavailable live provider fails visibly
-instead of returning a synthetic answer.
+Discovery sends no generation request and does not establish that a model can complete a task.
+The connection workflow uses the same read-only default; its optional eight-token live trial has
+explicit execution guards. Keep the environment and persisted process stops active while funding
+is deferred. After a deliberate live-trial decision, `pnpm manager:preflight` separately checks
+the running local API, route permissions and clear stops without calling a model. It intentionally
+fails while execution remains stopped. With `MODEL_FALLBACK_TO_MOCK=false`, an unavailable live
+provider fails visibly instead of returning a synthetic answer.
 
-The checked-in owner-preview registry also permits `claude-sonnet-5` through the
-`anthropic-compatible` protocol. Its dated provider evidence expires on 2026-10-13 and must be
-reverified rather than silently reused. The default registry remains mock-only, so removing the
-local `.env` returns the repository to its safe local mode.
+The CheapVibeCode candidate allows ordinary/project chat and the Manager, Analyst and Critic work
+stages. It caps the route at 32,000 context and 1,200 output tokens. Its catalog evidence expires
+on 10 October 2026 and must be refreshed before using an expired route. Provider-declared
+streaming support has not yet been exercised with a paid response; JSON conformance, pricing and
+privacy remain unverified. Confidential routing is disabled and no monetary cap is proven.
+Historical VibeCode discovery registries are separate providers and are not the current profile.
+
+After building the packages, `node scripts/manager-compatible-fixture-smoke.mjs` verifies the
+current candidate's route constraints with a local streaming fixture: production authentication,
+project chat, three Manager stages, Critic and download. It uses a temporary database, fixture
+credential and isolated fixture evidence; it neither extends the production registry's expiry
+nor contacts a real provider. Removing the local `.env` restores the default mock configuration.
+
+The secret scan checks tracked files, new non-ignored source files and staged changes. It allows
+ignored private runtime files and still rejects a credential if that file is force-added to Git.
+Docker also excludes `.env` files from build contexts. See the
+[current launch checkpoint](docs/handoff/COSMORA_LAUNCH_2026-10-03.md) for deployment evidence and
+remaining release gates.
 
 An OpenAI-compatible provider must expose streaming `POST /chat/completions`; an
-Anthropic-compatible provider must expose streaming `POST /messages`. Cosmora does not expose the
+Anthropic-compatible provider must expose streaming `POST /messages`. Kosmora does not expose the
 key through its health or runtime-status APIs. If the provider fails before the first response
 token, optional mock fallback keeps the local workflow usable; after output begins, the gateway
 fails the run instead of mixing responses from two models.
@@ -199,7 +272,7 @@ only for requests without a hard cost limit; unknown privacy never qualifies for
 routing. A configured project ceiling is checked atomically against committed usage and active
 reservations before a new route reservation is created; missing token/cost evidence or a currency
 mismatch fails closed. There is no automatic top-up. External route metadata must be backed by
-dated evidence; Cosmora does not infer model capabilities or silently substitute another model.
+dated evidence; Kosmora does not infer model capabilities or silently substitute another model.
 
 `loadServerConfig` validates that a credential exists but discards its value after parsing. The API
 composition root resolves `MODEL_API_KEY` asynchronously immediately before constructing the
@@ -273,6 +346,12 @@ development machine with
 - Every tool execution must pass through `packages/tool-runtime` and Policy Runtime.
 - Secrets are server-only and never committed.
 - Future packages reference local packages with `workspace:*`.
+
+For the current integration candidate and remaining release gates, see
+[integrated hosted alpha checkpoint](docs/handoff/COSMORA_INTEGRATED_ALPHA_2026-10-01.md).
+It records the deployed revision, complete local verification, draft PR stack and remaining gates.
+Historical checkpoints describe their own
+revisions and must not be treated as the current runtime boundary.
 
 See `docs/decisions/ADR-001-technology-stack.md`,
 `docs/decisions/ADR-002-model-gateway.md`, the

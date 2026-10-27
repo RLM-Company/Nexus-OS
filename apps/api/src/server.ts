@@ -1,6 +1,15 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
+import { RuntimeClock } from "@cosmora/model-gateway";
 import {
   AgentBlueprintStore,
+  DocumentLibraryStore,
+  CanvasArtifactStore,
+  DocumentAnswerStore,
+  ChatHistorySearchStore,
+  PresentationStore,
+  NotificationStore,
+  OwnerSkillStore,
+  SqliteIntelligenceGraphWorkspaceRepository,
   AgentInstanceStore,
   AgentStudioMutationStore,
   DemoManagerStore,
@@ -30,6 +39,49 @@ import { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { ManagerRuntimeProjectStore } from "./manager-runtime-project-store.js";
 import { buildModelRuntime } from "./model-runtime.js";
 import { RuntimeMetrics } from "./operations.js";
+import { GithubIntegration, GithubDraftStore } from "./github-integration.js";
+import { WebSearch } from "./web-search.js";
+import { AccountStore } from "./account-settings/account-store.js";
+import { loadModelRegistryDocument } from "./model-runtime.js";
+import { ResearchStore } from "./research/research-store.js";
+import { MediaService } from "./media/media-service.js";
+import { generateChatImage } from "./media/chat-images.js";
+import { AccountMediaBudget } from "./media/account-media-budget.js";
+import { resolve } from "node:path";
+import { SharedOwnerBudget } from "./account-settings/shared-owner-budget.js";
+import {
+  OwnerPrivacyCoordinator,
+  REQUIRED_PRIVACY_STORES
+} from "./account-settings/privacy/coordinator.js";
+import { IntelligenceGraphWorkspaceService } from "@cosmora/core";
+import { intelligenceGraphPrivacyAdapter } from "./intelligence-graph-privacy.js";
+import { AccountCorePrivacyAdapter } from "./account-settings/privacy/account-core-adapter.js";
+import {
+  DocumentsPrivacyAdapter,
+  WorkPrivacyAdapter,
+  ResearchIntegratedPrivacyAdapter,
+  MediaIntegratedPrivacyAdapter,
+  CodeIntegratedPrivacyAdapter,
+  AgentStudioPrivacyAdapter,
+  PolicyProjectsPrivacyAdapter
+} from "./account-settings/privacy/integrated-adapters.js";
+import { DocumentAnswerService } from "./document-answer-service.js";
+import { ProjectResearchOwnerBudget } from "./research/research-synthesis.js";
+import type { ResearchCoordinator } from "./research/research-coordinator.js";
+import { CodeAgentService } from "./code-agent/service.js";
+import { CodeAgentStore } from "./code-agent/store.js";
+import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
+import { RegistrationStore } from "./registration-store.js";
+import { GoogleIdentity } from "./google-identity.js";
+import { sendWithLocalMta } from "./registration-routes.js";
+import { PresentationPrivacyAdapter } from "./presentation-privacy.js";
+import { NotificationPrivacyAdapter } from "./notification-privacy.js";
+import { OwnerSkillPrivacyAdapter } from "./owner-skill-privacy.js";
+import { EmailChangePrivacyAdapter } from "./email-change-privacy.js";
+import { canvasPrivacyAdapter } from "./canvas/canvas-privacy.js";
+import { ProjectAutomationStore } from "@cosmora/db";
+import { PayStore } from "@cosmora/db";
+import { ProjectAutomationPrivacy } from "./project-automation-privacy.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
@@ -38,6 +90,8 @@ let managerBackgroundCoordinator: ManagerBackgroundRunCoordinator | undefined;
 let generalChatBackgroundCoordinator: GeneralChatBackgroundRunCoordinator | undefined;
 let managerWorkCoordinator: ManagerWorkCoordinator | undefined;
 let shuttingDown = false;
+let researchCoordinator: ResearchCoordinator | null = null;
+const stopResearchCoordinator = (): Promise<void> | undefined => researchCoordinator?.stop();
 
 const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   if (shuttingDown) return;
@@ -48,11 +102,12 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     process.exitCode = 0;
     return;
   }
-  app.log.info({ signal }, "Shutting down Cosmora API");
+  app.log.info({ signal }, "Shutting down Kosmora API");
   await Promise.all([
     managerBackgroundCoordinator?.stop(),
     generalChatBackgroundCoordinator?.stop(),
-    managerWorkCoordinator?.stop()
+    managerWorkCoordinator?.stop(),
+    stopResearchCoordinator()
   ]);
   await app.close();
   process.exitCode = 0;
@@ -63,16 +118,45 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
 try {
   await runMigrations(database);
+  const accountStore = new AccountStore(database.sqlite);
+  const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
   const modelRuntime = await buildModelRuntime(config, {
+    clock: new RuntimeClock({ timeZone: process.env.KOSMORA_TIME_ZONE ?? "Europe/Moscow" }),
     secretResolver: new EnvironmentSecretResolver()
   });
   const projectStore = new ManagerRuntimeProjectStore(database.sqlite);
   const generalChatStore = new GeneralChatRuntimeStore(database.sqlite);
+  const sharedBudget = new SharedOwnerBudget(accountStore, projectStore);
+  const documentLibrary = new DocumentLibraryStore(database.sqlite);
+  const canvasStore = new CanvasArtifactStore(database.sqlite);
+  const documentAnswerStore = new DocumentAnswerStore(database.sqlite);
+  const documentAnswerService = new DocumentAnswerService(
+    documentLibrary,
+    documentAnswerStore,
+    modelRuntime.gateway,
+    modelRuntime.chat,
+    sharedBudget
+  );
+  documentAnswerStore.recoverInterrupted();
+  const chatHistorySearchStore = new ChatHistorySearchStore(database.sqlite);
+  const presentationStore = new PresentationStore(database.sqlite);
+  const notificationStore = new NotificationStore(database.sqlite);
+  const ownerSkillStore = new OwnerSkillStore(database.sqlite);
+  const researchStore = new ResearchStore(database.sqlite);
+  const ownerPrivacy = new OwnerPrivacyCoordinator(database.sqlite, {
+    required: [...REQUIRED_PRIVACY_STORES, "intelligence-graphs", "project-automation"]
+  });
+  const graphRepository = new SqliteIntelligenceGraphWorkspaceRepository(database.sqlite);
+  const graphService = new IntelligenceGraphWorkspaceService(graphRepository);
   const demoManagerStore = new DemoManagerStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
   const stepUpProofStore = new StepUpProofStore(database.sqlite);
   const runtimeMetrics = new RuntimeMetrics();
+  if (recoveredAccountHolds > 0)
+    process.stdout.write(
+      `Reconciled ${recoveredAccountHolds} verified owner holds after restart\n`
+    );
   const identityResolver =
     config.nodeEnv === "production"
       ? new BearerSessionIdentityResolver(identityStore)
@@ -88,6 +172,7 @@ try {
   const managerWorkStore = new ManagerWorkStore(database.sqlite);
   const policyStore = new PolicyStore(database.sqlite);
   managerWorkCoordinator = new ManagerWorkCoordinator({
+    ownerBudget: accountStore,
     store: managerWorkStore,
     projects: projectStore,
     policy: policyStore,
@@ -95,14 +180,168 @@ try {
     gateway: modelRuntime.gateway,
     manager: modelRuntime.manager
   });
+  const githubIntegration = new GithubIntegration({
+    ownerId: process.env.GITHUB_OWNER_ID ?? (config.nodeEnv === "production" ? "" : "local-owner"),
+    ...(process.env.GITHUB_TOKEN ? { token: process.env.GITHUB_TOKEN } : {}),
+    ...(process.env.GITHUB_REPOSITORY ? { repository: process.env.GITHUB_REPOSITORY } : {})
+  });
+  const githubDraftStore = new GithubDraftStore(database.sqlite);
+  const codeAgentService = new CodeAgentService({
+    clock: modelRuntime.clock,
+    store: new CodeAgentStore(database.sqlite),
+    github: githubIntegration,
+    drafts: githubDraftStore,
+    projects: projectStore,
+    policy: policyStore,
+    emergency: emergencyStopStore,
+    gateway: modelRuntime.gateway,
+    manager: modelRuntime.manager,
+    runner: configuredCodeAgentExecutor(),
+    ownerBudget: sharedBudget
+  });
+  const mediaService = new MediaService({
+    imageEditingEnabled: process.env.KOSMORA_MEDIA_EDIT_ENABLED === "true",
+    ownerBudget: new AccountMediaBudget(
+      accountStore,
+      process.env.KOSMORA_MEDIA_BASE_URL?.includes("cheapvibecode.ru") ? "cheapvibecode" : "openai"
+    ),
+    ...(process.env.KOSMORA_MEDIA_BASE_URL ? { baseUrl: process.env.KOSMORA_MEDIA_BASE_URL } : {}),
+    ...(process.env.KOSMORA_MEDIA_DIR
+      ? { directory: process.env.KOSMORA_MEDIA_DIR }
+      : config.nodeEnv === "production"
+        ? { directory: "/var/lib/cosmora/media" }
+        : { directory: resolve(process.cwd(), ".data/media") }),
+    ...(process.env.KOSMORA_MEDIA_OPENAI_API_KEY
+      ? { apiKey: process.env.KOSMORA_MEDIA_OPENAI_API_KEY }
+      : process.env.KOSMORA_MEDIA_USE_CHAT_CREDENTIAL === "true" &&
+          process.env.KOSMORA_MEDIA_BASE_URL === config.modelBaseUrl &&
+          process.env.MODEL_API_KEY
+        ? { apiKey: process.env.MODEL_API_KEY }
+        : {}),
+    paidEnabled: process.env.KOSMORA_MEDIA_PAID_ENABLED === "true",
+    emergencyStopped: () => emergencyStopStore.getProcessStop() !== null,
+    ownerActive: (ownerId) => ownerPrivacy.overview(ownerId).lifecycle === "active"
+  });
+  ownerPrivacy.register(
+    new AccountCorePrivacyAdapter(database.sqlite, async (owner) => {
+      await Promise.all([
+        managerBackgroundCoordinator?.quiesceOwner(owner),
+        generalChatBackgroundCoordinator?.quiesceOwner(owner)
+      ]);
+    })
+  );
+  ownerPrivacy.register(
+    new DocumentsPrivacyAdapter(
+      database.sqlite,
+      documentLibrary,
+      documentAnswerStore,
+      documentAnswerService
+    )
+  );
+  ownerPrivacy.register(new WorkPrivacyAdapter(database.sqlite, managerWorkCoordinator));
+  ownerPrivacy.register(
+    new ResearchIntegratedPrivacyAdapter(database.sqlite, researchStore, () => researchCoordinator)
+  );
+  ownerPrivacy.register(new MediaIntegratedPrivacyAdapter(mediaService));
+  ownerPrivacy.register(
+    new CodeIntegratedPrivacyAdapter(database.sqlite, codeAgentService, githubDraftStore)
+  );
+  ownerPrivacy.register(new AgentStudioPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new PolicyProjectsPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new PresentationPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new NotificationPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new OwnerSkillPrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new EmailChangePrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
+  ownerPrivacy.register(intelligenceGraphPrivacyAdapter(graphRepository));
+  ownerPrivacy.register(new ProjectAutomationPrivacy(database.sqlite));
   app = buildApp({
+    runtimeClock: modelRuntime.clock,
+    intelligenceGraphWorkspace: {
+      enabled: process.env.KOSMORA_GRAPH_WORKSPACE_ENABLED === "true",
+      service: graphService
+    },
+    canvasStore,
+    researchStore,
+    researchBudget: new ProjectResearchOwnerBudget(database.sqlite, projectStore, accountStore),
+    researchCoordinatorCreated: (coordinator) => {
+      researchCoordinator = coordinator;
+    },
+    documentLibrary,
+    documentAnswerService,
+    chatHistorySearchStore,
+    presentationStore,
+    notificationStore,
+    ownerSkillStore,
+    ownerPrivacy,
+    ownerBudget: sharedBudget,
+    codeAgentService,
+    mediaService,
+    webSearch: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
+    githubIntegration,
+    githubDraftStore,
     config,
     database,
+    accountStore,
+    accountModel: (() => {
+      const entry = loadModelRegistryDocument(
+        config.modelRegistryPath ?? "config/model-registry.v1.json"
+      ).entries.find(
+        (e) => e.provider_id === config.modelProviderId && e.model_id === config.modelName
+      );
+      return {
+        provider: config.modelProviderId,
+        model: config.modelName,
+        capabilities: {
+          streaming: Boolean(entry?.capabilities.streaming),
+          vision: Boolean(entry?.capabilities.vision)
+        }
+      };
+    })(),
     identityStore,
+    ...(process.env.KOSMORA_REGISTRATION_ENABLED === "1"
+      ? {
+          registration: {
+            origin: config.webOrigin,
+            store: new RegistrationStore(database.sqlite),
+            identity: identityStore,
+            ...(process.env.KOSMORA_GOOGLE_CLIENT_ID && process.env.KOSMORA_GOOGLE_CLIENT_SECRET
+              ? {
+                  google: new GoogleIdentity(
+                    process.env.KOSMORA_GOOGLE_CLIENT_ID,
+                    process.env.KOSMORA_GOOGLE_CLIENT_SECRET,
+                    `${config.webOrigin}/auth/google/callback`
+                  )
+                }
+              : {}),
+            ...(process.env.KOSMORA_SENDMAIL_PATH && process.env.KOSMORA_EMAIL_FROM
+              ? {
+                  sendVerification: sendWithLocalMta(
+                    process.env.KOSMORA_SENDMAIL_PATH,
+                    process.env.KOSMORA_EMAIL_FROM
+                  ),
+                  sendPasswordReset: sendWithLocalMta(
+                    process.env.KOSMORA_SENDMAIL_PATH,
+                    process.env.KOSMORA_EMAIL_FROM,
+                    "reset"
+                  ),
+                  sendEmailChange: sendWithLocalMta(
+                    process.env.KOSMORA_SENDMAIL_PATH,
+                    process.env.KOSMORA_EMAIL_FROM,
+                    "email-change"
+                  )
+                }
+              : {})
+          }
+        }
+      : {}),
     generalChatStore,
     projectStore,
     demoManagerStore,
     managerWorkStore,
+    projectAutomationStore: new ProjectAutomationStore(database.sqlite),
+    // Merchant activation is a separate release. This integration exposes read-only accounting and a disabled checkout.
+    payStore: new PayStore(database.sqlite),
     managerWorkCoordinator,
     demoManagerCoordinator: new DemoManagerCoordinator(demoManagerStore),
     usageStore: new UsageStore(database.sqlite),
@@ -126,6 +365,7 @@ try {
     closeDatabase: () => database.close()
   });
   managerBackgroundCoordinator = new ManagerBackgroundRunCoordinator({
+    accountStore,
     store: projectStore,
     modelGateway: modelRuntime.gateway,
     manager: modelRuntime.manager,
@@ -134,12 +374,15 @@ try {
     logger: app.log
   });
   generalChatBackgroundCoordinator = new GeneralChatBackgroundRunCoordinator({
+    imageGeneration: (owner, prompt, signal, references) =>
+      generateChatImage(mediaService, owner, prompt, signal, references),
     store: generalChatStore,
     modelGateway: modelRuntime.gateway,
     chat: modelRuntime.chat,
     runtimeMetrics,
     emergencyStopStore,
-    logger: app.log
+    logger: app.log,
+    accountStore
   });
   if (recoveredRuns > 0) {
     app.log.warn({ recoveredRuns }, "Recovered interrupted runs after restart");
@@ -155,14 +398,15 @@ try {
   await Promise.all([
     managerBackgroundCoordinator?.stop(),
     generalChatBackgroundCoordinator?.stop(),
-    managerWorkCoordinator?.stop()
+    managerWorkCoordinator?.stop(),
+    stopResearchCoordinator()
   ]);
   if (app) {
-    app.log.error(error, "Failed to start Cosmora API");
+    app.log.error(error, "Failed to start Kosmora API");
     await app.close();
   } else {
     database.close();
-    process.stderr.write("Failed to start Cosmora API\n");
+    process.stderr.write("Failed to start Kosmora API\n");
   }
   process.exitCode = 1;
 }

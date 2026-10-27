@@ -1,0 +1,175 @@
+--- a/apps/web/src/app/page.tsx
++++ b/apps/web/src/app/page.tsx
+@@ -15,6 +15,7 @@
+ import { RelaySwitch } from "./personal-settings/relay-switch";
+ import { ChatArchivePanel } from "./chat-archive-panel";
+ import { clearComposerDraft, readComposerDraft, saveComposerDraft } from "./composer-draft-storage";
++import { desktopDraftBridge, nativeDraftScope, purgeUnscopedLegacyDrafts } from "./desktop-draft-bridge";
+ import { ProjectContextPanel } from "./project-context-panel";
+ import { ProjectContextPreview } from "./project-context-preview";
+ import { ManagerWorkPanel } from "./manager-work-panel";
+@@ -531,6 +532,7 @@
+   );
+   const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
+   const pendingComposeRef = useRef<{ prompt: string; files: ChatAttachment[] } | null>(null);
++  const acceptedDraftRef = useRef<{ key: string; text: string } | null>(null);
+   const pendingComposerFocusRef = useRef(false);
+   const draftRecoveryKeyRef = useRef<string | null>(null);
+   const attachmentScope = `${composerDraftKey}:${viewEpochRef.current}`;
+@@ -544,6 +546,37 @@
+ 
+   useEffect(() => {
+     setDraftStorageReadyKey(null);
++    acceptedDraftRef.current = null;
++    const native = desktopDraftBridge(window);
++    const scope = nativeDraftScope(composerDraftKey);
++    if (native) {
++      // The pre-v0.11.1 localStorage drafts have no owner ID; removing them even
++      // before login prevents the next account from reading their contents.
++      try { purgeUnscopedLegacyDrafts(window.localStorage); } catch { /* best effort */ }
++      setDraft("");
++      chatAttachments.replace([]); // Never restore file bytes into a native text-only draft.
++      setDraftRecoveryNotice(null);
++      let cancelled = false;
++      if (!scope) {
++        setDraftRecoveryNotice("Недопустимый идентификатор черновика.");
++        setDraftStorageReadyKey(attachmentScope);
++        return;
++      }
++      void native.load(scope).then((result) => {
++        if (cancelled) return;
++        if (result.ok) {
++          setDraft(result.text ?? "");
++          setDraftRecoveryNotice(result.text ? "Восстановлен локальный текстовый черновик Windows." : null);
++        } else {
++          setDraftRecoveryNotice(result.message ?? "Для восстановления требуется подтверждённый вход.");
++        }
++      }).catch(() => {
++        if (!cancelled) setDraftRecoveryNotice("Черновик Windows пока недоступен.");
++      }).finally(() => {
++        if (!cancelled) setDraftStorageReadyKey(attachmentScope);
++      });
++      return () => { cancelled = true; };
++    }
+     try {
+       const saved = readComposerDraft(window.localStorage, composerDraftKey);
+       setDraft(saved.text);
+@@ -561,13 +594,13 @@
+ 
+   useEffect(() => {
+     const pending = pendingComposeRef.current;
+-    if (!pending) return;
++    if (!pending || draftStorageReadyKey !== attachmentScope) return;
+     pendingComposeRef.current = null;
+     setDraft(pending.prompt);
+     chatAttachments.replace(pending.files);
+     pendingComposerFocusRef.current = true;
+     // Consume only after the new chat scope and its draft hydration have settled.
+-  }, [attachmentScope, chatAttachments]);
++  }, [attachmentScope, chatAttachments, draftStorageReadyKey]);
+ 
+   useEffect(() => {
+     if (
+@@ -589,6 +622,31 @@
+ 
+   useEffect(() => {
+     if (draftStorageReadyKey !== attachmentScope) return;
++    const native = desktopDraftBridge(window);
++    if (native) {
++      const scope = nativeDraftScope(composerDraftKey);
++      if (!scope) return;
++      const flush = () => {
++        // Do not resurrect a server-acknowledged message if the window closes
++        // before React has committed the empty composer after acceptance.
++        if (acceptedDraftRef.current?.key === composerDraftKey &&
++            acceptedDraftRef.current.text === draft) return;
++        native.flush(scope, draft);
++      };
++      window.addEventListener("pagehide", flush);
++      let cancelled = false;
++      const timer = window.setTimeout(() => {
++        // A POST still in flight can have been accepted even if its HTTP response was lost.
++        // Do not race a delayed autosave against a server-acknowledged clear.
++        if (submitPendingRef.current ||
++            (acceptedDraftRef.current?.key === composerDraftKey && acceptedDraftRef.current.text === draft)) return;
++        if (!draft) acceptedDraftRef.current = null;
++        void native.save(scope, draft).then((result) => {
++          if (!cancelled) setDraftNotice(result.ok ? null : result.message ?? "Не удалось сохранить черновик Windows.");
++        }).catch(() => { if (!cancelled) setDraftNotice("Не удалось сохранить черновик Windows."); });
++      }, 300);
++      return () => { cancelled = true; window.clearTimeout(timer); window.removeEventListener("pagehide", flush); };
++    }
+     try {
+       setDraftNotice(
+         saveComposerDraft(window.localStorage, composerDraftKey, draft, chatAttachments.files)
+@@ -1540,6 +1598,9 @@
+                   attachments: chatAttachments.files
+                 })
+               });
++          acceptedDraftRef.current = { key: composerDraftKey, text: content };
++          const acceptedScope = nativeDraftScope(composerDraftKey);
++          if (acceptedScope) void desktopDraftBridge(window)?.clear(acceptedScope).catch(() => undefined);
+           try {
+             clearComposerDraft(window.localStorage, composerDraftKey);
+           } catch {
+@@ -1572,6 +1633,9 @@
+             };
+             return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
+           });
++          acceptedDraftRef.current = { key: composerDraftKey, text: content };
++          const acceptedScope = nativeDraftScope(composerDraftKey);
++          if (acceptedScope) void desktopDraftBridge(window)?.clear(acceptedScope).catch(() => undefined);
+           try {
+             clearComposerDraft(window.localStorage, composerDraftKey);
+           } catch {
+@@ -1588,9 +1652,14 @@
+         } catch (cause) {
+           if (epoch !== viewEpochRef.current) return;
+           setDraft(content);
++          const scope = nativeDraftScope(composerDraftKey);
++          if (scope) void desktopDraftBridge(window)?.save(scope, content).catch(() => undefined);
+           setSending(false);
+           setRunPhase("failed");
+-          setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
++          setError(
++            `${cause instanceof Error ? cause.message : "Не удалось подтвердить отправку"} ` +
++            "Если соединение прервалось, результат запроса неизвестен. Проверьте историю чата перед ручной повторной отправкой: она может списать токены повторно."
++          );
+         }
+         return;
+       }
+@@ -1615,6 +1684,9 @@
+           }
+         );
+ 
++        acceptedDraftRef.current = { key: composerDraftKey, text: content };
++        const acceptedScope = nativeDraftScope(composerDraftKey);
++        if (acceptedScope) void desktopDraftBridge(window)?.clear(acceptedScope).catch(() => undefined);
+         try {
+           clearComposerDraft(window.localStorage, composerDraftKey);
+         } catch {
+@@ -1651,9 +1723,14 @@
+       } catch (cause) {
+         if (epoch !== viewEpochRef.current) return;
+         setDraft(content);
++        const scope = nativeDraftScope(composerDraftKey);
++        if (scope) void desktopDraftBridge(window)?.save(scope, content).catch(() => undefined);
+         setSending(false);
+         setRunPhase("failed");
+-        setError(cause instanceof Error ? cause.message : "Не удалось отправить сообщение");
++        setError(
++            `${cause instanceof Error ? cause.message : "Не удалось подтвердить отправку"} ` +
++            "Если соединение прервалось, результат запроса неизвестен. Проверьте историю чата перед ручной повторной отправкой: она может списать токены повторно."
++          );
+       }
+     } finally {
+       submitPendingRef.current = false;
+@@ -1762,6 +1839,8 @@
+     // Explicitly starting afresh from the unnamed composer discards that draft.
+     // Named chats/projects retain their own draft when navigating away.
+     if (!activeProject && !selectedProjectRef.current && !activeLocalChatId) {
++      const scope = nativeDraftScope(composerDraftKey);
++      if (scope) void desktopDraftBridge(window)?.clear(scope).catch(() => undefined);
+       try {
+         clearComposerDraft(window.localStorage, composerDraftKey);
+       } catch {

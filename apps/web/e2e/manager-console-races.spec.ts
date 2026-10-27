@@ -38,6 +38,7 @@ const fixture = async (page: Page) => {
   const state = {
     alpha: detail("alpha"),
     waitForAlpha: Promise.resolve(),
+    waitForGeneral: Promise.resolve(),
     unavailablePolicy: false,
     failProjectList: false,
     generalChatCreated: false,
@@ -46,7 +47,11 @@ const fixture = async (page: Page) => {
   await page.route("**/api/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body: unknown;
-    if (route.request().method() === "POST" && path === "/api/v1/chats") {
+    if (path === "/api/v1/navigation-context") {
+      body = { owner_id: "local-owner" };
+    } else if (["/api/v1/chat-navigation", "/api/v1/chat-navigation/import-pins"].includes(path)) {
+      body = { folders: [], assignments: [], chats: [], projects: [] };
+    } else if (route.request().method() === "POST" && path === "/api/v1/chats") {
       state.generalChatCreated = true;
       body = {
         chat: {
@@ -69,6 +74,12 @@ const fixture = async (page: Page) => {
         },
         run_id: "general-run-alpha",
         stream_url: "/api/v1/chat-runs/general-run-alpha/events"
+      };
+    } else if (path === "/api/v1/chats/general-alpha") {
+      await state.waitForGeneral;
+      body = {
+        chat: { id: "general-alpha", title: "Оформи новую задачу как проект" },
+        messages: []
       };
     } else if (path === "/api/v1/chats") {
       body = {
@@ -99,6 +110,10 @@ const fixture = async (page: Page) => {
       body = { items: [project("alpha"), project("beta")] };
     } else if (path === "/api/v1/model-runtime") {
       body = { mode: "mock", provider: "mock", model: "fixture", fallback_to_mock: false };
+    } else if (path === "/api/v1/operations/status") {
+      body = { process_stop: null };
+    } else if (path === "/api/v1/operations/emergency-stop") {
+      body = null;
     } else if (path === "/api/v1/projects/alpha") {
       const snapshot = structuredClone(state.alpha);
       await state.waitForAlpha;
@@ -228,13 +243,50 @@ test("preserves an accepted run when only the sidebar refresh fails", async ({ p
   const state = await fixture(page);
   state.alpha = detail("alpha", "", "streaming");
   await page.goto("/");
-  await page.getByLabel("Сообщение Cosmora").fill("Оформи новую задачу как проект");
+  await page.getByLabel("Сообщение Kosmora").fill("Оформи новую задачу как проект");
   await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await page.getByRole("button", { name: "Оформить как проект" }).click();
   await expect(page.getByText("Проект создан. Не удалось обновить список проектов.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Остановить" })).toBeEnabled();
   await expect(page.getByLabel("Сообщение менеджеру")).toHaveValue("");
   expect(state.posts).toBe(1);
+});
+
+test("keeps the project stream when an old ordinary-chat refresh completes after promotion", async ({
+  page
+}) => {
+  const state = await fixture(page);
+  let release!: () => void;
+  state.waitForGeneral = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.goto("/");
+  await page.getByLabel("Сообщение Kosmora").fill("Оформи новую задачу как проект");
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
+  const oldRead = page.waitForRequest("**/api/v1/chats/general-alpha");
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("fixture:sse", {
+        detail: { type: "run.completed", data: { provider: "mock", model_resolved: "fixture" } }
+      })
+    );
+  });
+  await oldRead;
+  await page.getByRole("button", { name: "Оформить как проект" }).click();
+  await expect(page.getByRole("heading", { name: "Project Alpha", exact: true })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
+  const oldResponse = page.waitForResponse("**/api/v1/chats/general-alpha");
+  release();
+  await oldResponse;
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
+  await expect(page.locator("html")).toHaveAttribute("data-observer", "open");
+  await expect(page.getByRole("button", { name: "Остановить", exact: true })).toBeEnabled();
 });
 
 test("shows unavailable policy reads as unknown instead of empty queues", async ({ page }) => {

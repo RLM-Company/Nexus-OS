@@ -8,6 +8,7 @@ import {
   ModelRegistry,
   ModelRouter,
   OpenAICompatibleAdapter,
+  RuntimeClock,
   type ModelProviderAdapter
 } from "@cosmora/model-gateway";
 import { readFileSync } from "node:fs";
@@ -21,6 +22,7 @@ const DEFAULT_REGISTRY_PATH = fileURLToPath(
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 export interface ModelRuntime {
+  clock: RuntimeClock;
   gateway: ModelGateway;
   chat: ChatService;
   manager: ManagerService;
@@ -28,6 +30,7 @@ export interface ModelRuntime {
 }
 
 export interface ModelRuntimeOptions {
+  clock?: RuntimeClock;
   registryDocument?: ModelRegistryDocument;
   secretResolver?: SecretResolver;
 }
@@ -52,6 +55,7 @@ export const buildModelRuntime = async (
   config: ServerConfig,
   options: ModelRuntimeOptions = {}
 ): Promise<ModelRuntime> => {
+  const clock = options.clock ?? new RuntimeClock();
   const document =
     options.registryDocument ??
     loadModelRegistryDocument(config.modelRegistryPath ?? DEFAULT_REGISTRY_PATH);
@@ -100,6 +104,7 @@ export const buildModelRuntime = async (
   }
 
   return {
+    clock,
     gateway: new ModelGateway(
       adapters,
       router,
@@ -110,7 +115,8 @@ export const buildModelRuntime = async (
         retryMaxDelayMs: config.modelRetryMaxDelayMs,
         circuitFailureThreshold: config.modelCircuitFailureThreshold,
         circuitOpenMs: config.modelCircuitOpenMs
-      }
+      },
+      clock
     ),
     chat: new ChatService({
       preferredProvider,

@@ -141,6 +141,244 @@
       "when": 1790380800000,
       "tag": "0019_manager_work",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1790985600000,
+      "tag": "0020_chat_text_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1791072000000,
+      "tag": "0021_project_message_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1791072000001,
+      "tag": "0022_github_change_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1791072000002,
+      "tag": "0023_project_materials",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791072000003,
+      "tag": "0024_chat_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791489600000,
+      "tag": "0025_document_library",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1791580800001,
+      "tag": "0026_work_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1791580800002,
+      "tag": "0027_personal_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1791580800003,
+      "tag": "0028_research_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1791580800005,
+      "tag": "0030_owner_privacy_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791580800006,
+      "tag": "0031_work_dag",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1791580800007,
+      "tag": "0032_document_answers",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1791580800009,
+      "tag": "0034_chat_history_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1791580800010,
+      "tag": "0035_canvas_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1791580800011,
+      "tag": "0036_account_registration",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1791580800012,
+      "tag": "0037_account_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1791580800013,
+      "tag": "0038_presentations",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1791580800014,
+      "tag": "0039_notification_center",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791580800015,
+      "tag": "0040_owner_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1791580800016,
+      "tag": "0041_account_email_change",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1791580800017,
+      "tag": "0042_chat_memory_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1791580800018,
+      "tag": "0043_chat_branches",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1791580800019,
+      "tag": "0044_chat_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "6",
+      "when": 1791580800020,
+      "tag": "0045_presentation_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "6",
+      "when": 1791580800021,
+      "tag": "0046_chat_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1791580800022,
+      "tag": "0047_work_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1791580800023,
+      "tag": "0048_presentation_work_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1791580800024,
+      "tag": "0049_chat_modes_reasoning",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1791580800025,
+      "tag": "0050_owner_skill_creations",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1791580800026,
+      "tag": "0051_intelligence_graph_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1792915200000,
+      "tag": "0052_execution_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1793102400000,
+      "tag": "0053_project_automation",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1793102400001,
+      "tag": "0054_actor_moderation_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1793102400002,
+      "tag": "0055_kosmora_pay",
+      "breakpoints": true
     }
   ]
 }

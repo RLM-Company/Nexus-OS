@@ -1,0 +1,266 @@
+.interfaceOptions {
+  display: grid;
+  gap: 18px;
+  margin: 16px 0;
+}
+.page {
+  min-height: 100vh;
+  background: #fff;
+  color: #111;
+  max-width: 960px;
+  margin: auto;
+  padding: 42px 22px;
+  font:
+    14px/1.5 system-ui,
+    sans-serif;
+}
+.page a {
+  color: #222;
+}
+.page h1 {
+  font-size: clamp(24px, 3vw, 30px);
+  letter-spacing: -0.04em;
+}
+.page h2 {
+  font-size: 21px;
+}
+.page h3 {
+  font-size: 16px;
+}
+.page section {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg);
+  padding: 24px;
+  margin: 18px 0;
+  scroll-margin-top: 80px;
+}
+.page label {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  font-weight: 550;
+}
+.page select,
+.page input:not([type="checkbox"]) {
+  width: 100%;
+  max-width: 600px;
+  border: 1px solid #aaa;
+  border-radius: 8px;
+  padding: 11px;
+  background: #fff;
+  color: #111;
+  font: inherit;
+}
+.page button,
+.download {
+  display: inline-block;
+  padding: 10px 16px;
+  border: 1px solid #222;
+  border-radius: 8px;
+  color: #111;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  margin: 5px 10px 5px 0;
+  text-decoration: none;
+}
+.page button:hover,
+.download:hover {
+  background: #eee;
+}
+.page button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.muted {
+  color: #666;
+}
+.check {
+  display: flex !important;
+  align-items: center;
+  gap: 12px !important;
+}
+.check input {
+  accent-color: #111;
+  width: 18px;
+  height: 18px;
+}
+.scroll {
+  overflow-x: auto;
+}
+.scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.scroll td,
+.scroll th {
+  border-bottom: 1px solid #ddd;
+  padding: 9px;
+}
+.danger {
+  border-color: #555 !important;
+}
+.sectionsNav {
+  position: sticky;
+  top: 8px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 22px 0;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 2px 7px #00000004;
+}
+.sectionsNav a {
+  padding: 7px 11px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 12px;
+}
+.sectionsNav a:hover,
+.sectionsNav a:focus-visible {
+  background: var(--bg);
+}
+@media (max-width: 600px) {
+  .page {
+    padding: 24px 14px;
+  }
+  .page section {
+    padding: 16px;
+  }
+  .sectionsNav a {
+    padding: 6px 8px;
+  }
+}
+
+.page {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  gap: 0 36px;
+  max-width: 1080px;
+  padding: 36px 32px 72px;
+}
+.page > nav:first-child {
+  grid-column: 1/-1;
+  margin-bottom: 28px;
+  font-size: 12px;
+}
+.page > h1,
+.page > p,
+.page > section,
+.page > div {
+  grid-column: 2;
+}
+.page > h1 {
+  margin: 0 0 8px;
+  font-weight: 550;
+}
+.page > p {
+  margin: 0 0 24px;
+}
+.page > .sectionsNav {
+  grid-column: 1;
+  grid-row: 4 / span 12;
+  align-self: start;
+}
+.page .sectionsNav {
+  display: flex;
+  flex-direction: column;
+  top: 24px;
+  padding: 7px;
+  margin: 0;
+  background: #f6f6f6;
+  border: 0;
+  box-shadow: none;
+  border-radius: 14px;
+}
+.page .sectionsNav a {
+  display: block;
+  padding: 11px 13px;
+  color: #616161;
+  font-size: 13px;
+  border-radius: 9px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.page .sectionsNav a:hover {
+  background: #fff;
+  color: #111;
+}
+.page > section {
+  margin: 0 0 24px;
+  padding: 24px;
+  border-color: #e8e8e8;
+  box-shadow: 0 2px 8px #00000003;
+}
+.page section h2 {
+  margin-top: 0;
+  font-size: 17px;
+  font-weight: 550;
+  letter-spacing: -0.3px;
+}
+.page section h3 {
+  font-size: 14px;
+}
+.page label {
+  font-size: 13px;
+  font-weight: 450;
+}
+.page select,
+.page input:not([type="checkbox"]):not([type="range"]) {
+  background: #fafafa;
+  border-color: #e0e0e0;
+  border-radius: 9px;
+  font-size: 13px;
+}
+.page button {
+  font-size: 12px;
+  border-color: #dedede;
+  border-radius: 9px;
+}
+.page input[type="range"] {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.page :global(.model-controls) {
+  margin: 4px 0 12px;
+}
+.page :global([data-model-picker]) {
+  min-width: 220px;
+}
+.page :global([data-model-picker] > div) {
+  z-index: 30;
+}
+.page :global([data-model-picker] section) {
+  margin: 8px 0;
+  padding: 12px 0;
+  border: 0;
+  border-radius: 0;
+}
+@media (max-width: 740px) {
+  .page {
+    display: block;
+    padding: 24px 16px 48px;
+  }
+  .page .sectionsNav {
+    flex-direction: row;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    margin: 20px 0;
+    padding: 5px;
+    top: 8px;
+  }
+  .page .sectionsNav a {
+    white-space: nowrap;
+    padding: 9px 11px;
+  }
+}

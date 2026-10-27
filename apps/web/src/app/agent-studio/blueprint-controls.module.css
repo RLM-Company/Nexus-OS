@@ -11,22 +11,22 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid rgba(179, 168, 255, 0.14);
-  border-radius: 0.65rem;
-  background: rgba(179, 168, 255, 0.035);
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--panel);
 }
 
 .boundary strong {
-  color: #c8c0ff;
-  font-size: 0.64rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .boundary span {
   max-width: 36rem;
-  color: #778195;
-  font-size: 0.62rem;
+  color: var(--muted);
+  font-size: 0.75rem;
   line-height: 1.45;
   text-align: right;
 }
@@ -41,8 +41,8 @@
 .mode span,
 .form label > span,
 .form legend {
-  color: #727c8f;
-  font-size: 0.59rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
 }
 
 .mode select,
@@ -52,13 +52,13 @@
   width: 100%;
   min-width: 0;
   padding: 0.62rem 0.65rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0.58rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
   outline: 0;
-  color: #e9ebf0;
-  background: #0a0e17;
+  color: var(--text);
+  background: var(--bg);
   font: inherit;
-  font-size: 0.63rem;
+  font-size: 0.875rem;
 }
 
 .form textarea {
@@ -69,17 +69,17 @@
 .form input:focus,
 .form textarea:focus,
 .form select:focus {
-  border-color: rgba(179, 168, 255, 0.42);
+  border-color: var(--accent-strong);
 }
 
 .form {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
-  padding: 0.72rem;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 0.7rem;
-  background: rgba(255, 255, 255, 0.018);
+  padding: 0.875rem;
+  border: 0;
+  border-radius: 0.625rem;
+  background: var(--panel);
 }
 
 .row,
@@ -104,8 +104,8 @@
 .form fieldset {
   margin: 0;
   padding: 0.65rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 0.58rem;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
 
 .capabilities {
@@ -125,23 +125,24 @@
 .check input {
   width: auto;
   margin: 0;
+  accent-color: var(--accent-strong);
 }
 
 .check span {
   overflow: hidden;
-  color: #a7adba !important;
-  font-size: 0.57rem !important;
+  color: var(--muted) !important;
+  font-size: 0.75rem !important;
   text-overflow: ellipsis;
 }
 
 .form button {
   padding: 0.65rem 0.75rem;
   border: 0;
-  border-radius: 0.58rem;
-  color: #171421;
-  background: linear-gradient(135deg, #d2cbff, #9686ff);
-  font-size: 0.62rem;
-  font-weight: 740;
+  border-radius: 0.5rem;
+  color: #ffffff;
+  background: var(--accent-strong);
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 
 .form button:disabled,
@@ -159,26 +160,26 @@
   margin: 0;
   padding: 0.62rem 0.7rem;
   border-radius: 0.6rem;
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 
 .notice {
-  border: 1px solid rgba(97, 214, 165, 0.14);
-  color: #91daba;
-  background: rgba(97, 214, 165, 0.035);
+  border: 1px solid var(--success-line);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .warning {
-  border: 1px solid rgba(245, 189, 88, 0.15);
-  color: #dfc27d;
-  background: rgba(245, 189, 88, 0.035);
+  border: 1px solid var(--accent-line);
+  color: var(--warning);
+  background: var(--accent-soft);
 }
 
 .error {
-  border: 1px solid rgba(255, 113, 129, 0.18);
-  color: #ffc0c8;
-  background: rgba(255, 91, 110, 0.05);
+  border: 1px solid var(--danger-line);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 @media (max-width: 900px) {
@@ -204,4 +205,13 @@
   .capabilities {
     grid-template-columns: 1fr;
   }
+}
+
+.form button:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+
+.composer :is(button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
 }
