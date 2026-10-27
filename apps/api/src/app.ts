@@ -695,7 +695,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             }
           }
         },
-        (request, reply) => {
+        async (request, reply) => {
           const identity = identityFor(request);
           if (identity.assurance !== "multi_factor") {
             return reply
