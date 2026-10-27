@@ -32,13 +32,11 @@ test("Studio waits for its project before accepting a file and retains the table
     releaseProject();
   }
   await page.getByRole("button", { name: "Таблицы и диаграммы", exact: true }).click();
-  await page
-    .getByLabel("Открыть таблицу или сохранённый проект")
-    .setInputFiles({
-      name: "retained.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from("id,value\nKEEP,7")
-    });
+  await page.getByLabel("Открыть таблицу или сохранённый проект").setInputFiles({
+    name: "retained.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("id,value\nKEEP,7")
+  });
   await expect(page.getByRole("cell", { name: "KEEP", exact: true })).toBeVisible();
   await page
     .getByRole("region", { name: "Таблицы проекта", exact: true })

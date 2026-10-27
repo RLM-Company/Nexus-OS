@@ -39,16 +39,16 @@ Feature patch: новые серверные/client/UI модули и пров�
 
 ## Реально выполнено
 
-| Проверка | Результат |
-|---|---|
-| API focused + существующий GitHub/Code regression |77/77 PASS, из них14 новых Issues HTTP cases и3 новых Code context cases |
-| Web Code unit regression |10/10 PASS, из них4 новых preparation/client cases |
-| Chromium UI на настоящих локальных API/SQLite/GitHub HTTP fixture |3/3 PASS: literal/no remote resources/no AI before separate Code action; state/search/denied/cancel/project switch; bounded truncation/edit approval/input cap |
-| Typecheck |9/9 пакетов PASS; финальный API повтор PASS; web также проверен финальным Next build |
-| Lint |9/9 пакетов PASS; финальный API/Web повтор PASS |
-| Production build |9/9 пакетов PASS; финальный повтор после UI сверки PASS |
-| Prettier, git diff --check, secret scan |PASS для всех19 исходников |
-| Exact baseline / patches / ZIP |973 blobs и Git tree сверены с GitHub; full/split apply и SHA256 исходников проверены |
+| Проверка                                                          | Результат                                                                                                                                                      |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API focused + существующий GitHub/Code regression                 | 77/77 PASS, из них14 новых Issues HTTP cases и3 новых Code context cases                                                                                       |
+| Web Code unit regression                                          | 10/10 PASS, из них4 новых preparation/client cases                                                                                                             |
+| Chromium UI на настоящих локальных API/SQLite/GitHub HTTP fixture | 3/3 PASS: literal/no remote resources/no AI before separate Code action; state/search/denied/cancel/project switch; bounded truncation/edit approval/input cap |
+| Typecheck                                                         | 9/9 пакетов PASS; финальный API повтор PASS; web также проверен финальным Next build                                                                           |
+| Lint                                                              | 9/9 пакетов PASS; финальный API/Web повтор PASS                                                                                                                |
+| Production build                                                  | 9/9 пакетов PASS; финальный повтор после UI сверки PASS                                                                                                        |
+| Prettier, git diff --check, secret scan                           | PASS для всех19 исходников                                                                                                                                     |
+| Exact baseline / patches / ZIP                                    | 973 blobs и Git tree сверены с GitHub; full/split apply и SHA256 исходников проверены                                                                          |
 
 Итого90 focused/regression checks (77+10+3), не утверждение о полном monorepo test suite. В существующем тесте historical funded registry фиксирован fixture clock в момент его recorded verification: иначе17 октября он падает по истёкшей evidence. Production registry, evidence/capabilities и проверка expiry не изменены/не отключены.
 

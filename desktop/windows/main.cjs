@@ -94,14 +94,22 @@ if (!gotSingleInstanceLock) {
   app.quit();
 }
 // Recovery writes must never run in a second instance or the installer smoke process.
-const downloadCenter = gotSingleInstanceLock && !smokeMode ? createDownloadCenter({
-  BrowserWindow, ipcMain, shell, dialog, profileDirectory, activeDownloads,
-  getOrigin: () => currentOrigin,
-  getIdentityEpoch: () => identityEpoch,
-  verifiedOwner,
-  getMainWindow: () => mainWindow,
-  onChange: createMenu
-}) : null;
+const downloadCenter =
+  gotSingleInstanceLock && !smokeMode
+    ? createDownloadCenter({
+        BrowserWindow,
+        ipcMain,
+        shell,
+        dialog,
+        profileDirectory,
+        activeDownloads,
+        getOrigin: () => currentOrigin,
+        getIdentityEpoch: () => identityEpoch,
+        verifiedOwner,
+        getMainWindow: () => mainWindow,
+        onChange: createMenu
+      })
+    : null;
 
 function connectionPath() {
   return path.join(app.getPath("userData"), CONNECTION_FILE);
@@ -810,7 +818,11 @@ function createMenu() {
     {
       label: "Файлы",
       submenu: [
-        { label: "Центр загрузок…", accelerator: "Ctrl+J", click: () => void downloadCenter.show() },
+        {
+          label: "Центр загрузок…",
+          accelerator: "Ctrl+J",
+          click: () => void downloadCenter.show()
+        },
         { type: "separator" },
         {
           label: "Отменить текущие скачивания",

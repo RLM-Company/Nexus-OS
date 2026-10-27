@@ -23,7 +23,7 @@ The full patch includes **only** `desktop/windows/` files. To isolate wiring, ap
 - Open **Файлы → Центр загрузок…** (`Ctrl+J`). The existing `will-download` trust chain, save-dialog/preset-directory logic, active download map, cancellation menu, and update guards are preserved.
 - Per-download UUID is generated only in Electron main. Download names are sanitized/redacted; public list carries name, actual received bytes, known total (or `null`), state (`active`, `completed`, `interrupted`, `cancelled`) and timestamps. There is **no fabricated percentage** when total is unknown.
 - The local downloads window is sandboxed and context-isolated with its **own preload**. IPC is validated against its exact `webContents` and main-frame `file:` URL, current origin, identity epoch, and freshly checked verified owner. The remote web client never receives shell or filesystem capabilities.
-- Only active records owned by the current scope can be cancelled by ID. `showItemInFolder` is invoked only on the exact existing path of a completed download; no file is opened or executed. Clearing removes *finished* history, not current active transfers.
+- Only active records owned by the current scope can be cancelled by ID. `showItemInFolder` is invoked only on the exact existing path of a completed download; no file is opened or executed. Clearing removes _finished_ history, not current active transfers.
 - History (at most **50 total records**) is atomic, user-data-local `download-history.json` with restrictive file permissions, opaque owner+origin scope hashes, bounded names/byte counters, and a private saved-file path for reveal. It stores no file payloads, source URLs, query, headers or bearer tokens. Any stale `active` records become `interrupted` on restart; no automatic retry/resume.
 - Explicit logout/origin switch closes the center, cancels active transfers and removes known active-owner metadata. Silent owner change/401 blocks previous owner actions, cancels old operations and isolates other scope history. At a cold offline restart, history is intentionally inaccessible until a server-verified owner is known; during the same process an unexpired owner cache may serve offline actions.
 - Package `build.files` includes all six download-center files; Electron client version and server/API versions are **unchanged**.
@@ -31,7 +31,7 @@ The full patch includes **only** `desktop/windows/` files. To isolate wiring, ap
 ## Focused checks on Linux
 
 - `node --test` for new download tests: 13 tests PASS (owner/origin isolation, stale IPC window/frame, live bytes, owned cancellation, exact-file reveal, restart interruption, 50-entry cap, corrupt metadata, filename token redaction, package assets and update OFF).
-- Locally assembled Windows test tree using available v0.11.2 sources and the checked-in base: `npm run check`: **45 PASS, 1 SKIP, 0 FAIL**. This is *not* a compile/test of a full exact-HEAD Git checkout. `npm run verify:unsigned`: PASS with public key `null`, no network fetch.
+- Locally assembled Windows test tree using available v0.11.2 sources and the checked-in base: `npm run check`: **45 PASS, 1 SKIP, 0 FAIL**. This is _not_ a compile/test of a full exact-HEAD Git checkout. `npm run verify:unsigned`: PASS with public key `null`, no network fetch.
 - A synthetic replay of main integration hunks passed `git apply --check` against reconstructed exact hunk contexts, **not** an actual exact-HEAD checkout.
 
 ## Native gates not run

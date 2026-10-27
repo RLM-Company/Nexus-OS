@@ -318,14 +318,12 @@ export function registerResearchRoutes(options: {
           request.headers["x-research-updated-at"] !== run.updated_at) ||
         (request.headers["if-match"] !== undefined && request.headers["if-match"] !== revision)
       )
-        return reply
-          .code(412)
-          .send({
-            error: {
-              code: "RESEARCH_CHANGED",
-              message: "Исследование изменилось. Обновите отчёт перед созданием копии."
-            }
-          });
+        return reply.code(412).send({
+          error: {
+            code: "RESEARCH_CHANGED",
+            message: "Исследование изменилось. Обновите отчёт перед созданием копии."
+          }
+        });
       return reply
         .header("ETag", revision)
         .header(

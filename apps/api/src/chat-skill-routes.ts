@@ -47,19 +47,17 @@ export function registerChatSkillRoutes(
         };
       } catch (e) {
         if (e instanceof ChatSkillError)
-          return reply
-            .code(e.status)
-            .send({
-              error: {
-                code:
-                  e.status === 409
-                    ? "CONFLICT"
-                    : e.status === 404
-                      ? "CHAT_NOT_FOUND"
-                      : "VALIDATION_ERROR",
-                message: e.message
-              }
-            });
+          return reply.code(e.status).send({
+            error: {
+              code:
+                e.status === 409
+                  ? "CONFLICT"
+                  : e.status === 404
+                    ? "CHAT_NOT_FOUND"
+                    : "VALIDATION_ERROR",
+              message: e.message
+            }
+          });
         throw e;
       }
     }
