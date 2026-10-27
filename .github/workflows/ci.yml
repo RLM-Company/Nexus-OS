@@ -84,3 +84,42 @@ jobs:
           name: browser-failure-diagnostics
           path: apps/web/test-results/
           retention-days: 7
+
+  code-sandbox:
+    name: Code sandbox isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Provision only on the disposable CI host. The runtime itself never pulls
+      # images and receives the immutable local image ID, not a mutable tag.
+      - name: Provision official Node test image and pin its local content ID
+        shell: bash
+        run: |
+          docker pull node:24-bookworm-slim
+          image_id=$(docker image inspect --format '{{.Id}}' node:24-bookworm-slim)
+          [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "CODE_AGENT_TEST_IMAGE=$image_id" >> "$GITHUB_ENV"
+
+      - name: Verify real OCI execution, isolation and descendant cleanup
+        env:
+          CODE_AGENT_TEST_RUNTIME: docker
+        run: pnpm --filter @cosmora/tool-runtime exec vitest run test/code-agent-workspace.oci.test.ts --maxWorkers=1
