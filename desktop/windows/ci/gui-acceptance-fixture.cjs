@@ -241,7 +241,11 @@ function runProcess(exePath, args, env, timeoutMs = 90000) {
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error(`Timed out waiting for ${path.basename(exePath)} (${args.join(" ")})`));
+      reject(
+        new Error(
+          `Timed out waiting for ${path.basename(exePath)} (${args.join(" ")}): ${stderr.slice(-4000)} ${stdout.slice(-1000)}`
+        )
+      );
     }, timeoutMs);
     child.stdout?.on("data", (chunk) => {
       stdout = (stdout + chunk.toString("utf8")).slice(-64000);
@@ -372,6 +376,22 @@ async function runPackagedGuiAcceptanceSuite({ appExePath, workRoot }) {
       JSON.stringify({ phase1Report, phase2Report }, null, 2)
     );
     return { phase1Report, phase2Report };
+  } catch (error) {
+    const checkpoints = [output1Path, output2Path].map((filename) => {
+      try {
+        return JSON.parse(fs.readFileSync(filename, "utf8"));
+      } catch {
+        return null;
+      }
+    });
+    const message = error instanceof Error ? error.message : String(error);
+    fs.writeFileSync(
+      path.join(runnerRoot, "cosmora-gui-acceptance-report.json"),
+      JSON.stringify({ ok: false, message, checkpoints }, null, 2)
+    );
+    throw new Error(`${message}; GUI checkpoints: ${JSON.stringify(checkpoints)}`, {
+      cause: error
+    });
   } finally {
     await fixture.close();
     fs.rmSync(configPath, { force: true });

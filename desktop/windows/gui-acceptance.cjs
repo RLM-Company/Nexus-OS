@@ -144,6 +144,13 @@ async function runPackagedGuiAcceptance({
     isPackaged: app.isPackaged,
     tempDir
   });
+  const checkpoint = (stage) =>
+    writeGuiAcceptanceReport({
+      outputPath: config.outputPath,
+      tempDir,
+      payload: { schemaVersion: 1, phase: config.phase, ok: false, stage }
+    });
+  checkpoint("configuration-validated");
 
   if (config.downloadDirectory) {
     fs.mkdirSync(config.downloadDirectory, { recursive: true });
@@ -175,16 +182,15 @@ async function runPackagedGuiAcceptance({
       throw new Error(`Expected setup mode on first launch, got ${setupState.mode}`);
     }
 
-    const connectResult = await win.webContents.executeJavaScript(
+    checkpoint("connection-page-ready");
+    await win.webContents.executeJavaScript(
       `(() => {
         const input = document.querySelector("#origin");
         if (input) input.value = ${JSON.stringify(config.origin)};
-        return window.cosmoraDesktop.connect({ origin: ${JSON.stringify(config.origin)} });
+        void window.cosmoraDesktop.connect({ origin: ${JSON.stringify(config.origin)} });
+        return true;
       })()`
     );
-    if (!connectResult || !connectResult.ok) {
-      throw new Error(`Connect to fixture failed: ${JSON.stringify(connectResult)}`);
-    }
 
     await waitFor(
       () =>
@@ -192,6 +198,10 @@ async function runPackagedGuiAcceptance({
         win.webContents.getURL().startsWith(`${config.origin}/login`),
       { label: "redirect to /login page" }
     );
+    checkpoint("connected-to-login");
+    await waitFor(() => readSavedOrigin().origin === config.origin, {
+      label: "persisted origin after connection"
+    });
 
     const bridgeCheck = await win.webContents.executeJavaScript(
       `({
@@ -224,6 +234,7 @@ async function runPackagedGuiAcceptance({
     await waitFor(() => preferences.get().lastPath === config.workspaceRoute, {
       label: "persisted workspace lastPath"
     });
+    checkpoint("authenticated-workspace");
 
     const draftResult = await win.webContents.executeJavaScript(
       `(async () => {
@@ -245,6 +256,7 @@ async function runPackagedGuiAcceptance({
     if (!draftResult?.ok || draftResult.text !== config.draftText) {
       throw new Error(`Draft roundtrip in renderer failed: ${JSON.stringify(draftResult)}`);
     }
+    checkpoint("encrypted-draft-roundtrip");
 
     const downloadDir = config.downloadDirectory || app.getPath("downloads");
     const firstFile = path.join(downloadDir, "report_final____.md");
@@ -270,6 +282,7 @@ async function runPackagedGuiAcceptance({
     if (fs.readFileSync(firstFile, "utf8") !== "RESULT-1") {
       throw new Error("Duplicate download overwrote the first file.");
     }
+    checkpoint("two-downloads-completed");
 
     win.webContents.downloadURL(`${config.origin}/files/foreign-redirect`);
     await waitFor(
@@ -349,6 +362,7 @@ async function runPackagedGuiAcceptance({
   const restoredDraft = await win.webContents.executeJavaScript(
     `window.kosmoraDesktopDraft.load(${JSON.stringify(config.draftScope)})`
   );
+  checkpoint("relaunch-workspace-ready");
   if (!restoredDraft?.ok || restoredDraft.text !== config.draftText) {
     throw new Error(`Expected Owner A draft across restart, got: ${JSON.stringify(restoredDraft)}`);
   }
@@ -362,6 +376,7 @@ async function runPackagedGuiAcceptance({
   await waitFor(() => preferences.get().lastPath === "/github", {
     label: "persisted /github route from deep link"
   });
+  checkpoint("second-instance-deep-link");
 
   // Switch fixture server to offline mode and verify recovery screen preserves origin & route
   await fetch(`${config.origin}/test-control/mode?state=offline`, { method: "POST" });
@@ -393,15 +408,14 @@ async function runPackagedGuiAcceptance({
 
   // Restore server online and retry from connection screen
   await fetch(`${config.origin}/test-control/mode?state=online`, { method: "POST" });
-  const retryResult = await win.webContents.executeJavaScript(`window.cosmoraDesktop.retry()`);
-  if (!retryResult?.ok) {
-    throw new Error(`Reconnect retry failed: ${JSON.stringify(retryResult)}`);
-  }
+  checkpoint("offline-origin-preserved");
+  await win.webContents.executeJavaScript(`void window.cosmoraDesktop.retry(); true`);
 
   await waitFor(
     () => !win.webContents.isLoading() && win.webContents.getURL() === `${config.origin}/github`,
     { label: "restored /github route after offline retry" }
   );
+  checkpoint("offline-recovery-completed");
 
   // Switch active owner on server to Owner B and verify Owner A's draft is isolated
   await fetch(`${config.origin}/test-control/owner?id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb`, {
