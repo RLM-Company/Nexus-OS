@@ -1,7 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { fetchVerifiedOwner } = require("../owner-session.cjs");
+const { fetchVerifiedOwner, fetchElectronOwner } = require("../owner-session.cjs");
 const origin = "https://kosmora.example";
 const ownerA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ownerB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -86,4 +86,58 @@ test("session redirects, foreign origins, HTML, bad JSON, oversized bodies never
   assert.deepEqual(await fetchVerifiedOwner(async () => response(valid, { status: 401 }), origin), {
     state: "denied"
   });
+});
+
+test("Electron's empty Response.url is adapted only behind pinned, non-following session fetch", async () => {
+  const result = await fetchElectronOwner(
+    {
+      fetch: async (url, init) => {
+        assert.equal(url, `${origin}/api/v1/identity/sessions`);
+        assert.equal(init.redirect, "manual");
+        assert.equal(init.bypassCustomProtocolHandlers, true);
+        assert.equal(init.credentials, "include");
+        // Electron 44 creates this kind of Response, rather than a Node fetch Response.
+        return new Response(JSON.stringify({ items: [row(ownerA)] }), {
+          headers: { "content-type": "application/json" }
+        });
+      }
+    },
+    origin
+  );
+  assert.equal(result.state, "verified");
+  assert.equal(result.owner, ownerA);
+  assert.equal(
+    (await fetchVerifiedOwner(async () => response({ items: [row(ownerA)] }, { url: "" }), origin))
+      .state,
+    "denied"
+  );
+});
+
+test("Electron adapter still rejects redirect responses, foreign URLs, unauthorized and invalid identities", async () => {
+  for (const reply of [
+    response({ items: [row(ownerA)] }, { url: "", status: 302 }),
+    response({ items: [row(ownerA)] }, { url: "", status: 401 }),
+    response({ items: [row(ownerA)] }, { url: "https://evil.example/api/v1/identity/sessions" }),
+    { ...response({ items: [row(ownerA)] }, { url: "" }), redirected: true },
+    response({ items: [row(ownerA), row(ownerB)] }, { url: "" }),
+    response({ items: [row(ownerA)] }, { url: "", type: "text/html" })
+  ])
+    assert.equal((await fetchElectronOwner({ fetch: async () => reply }, origin)).state, "denied");
+});
+
+test("Electron's cancelled native redirect denies authorization; a network outage remains offline", async () => {
+  for (const [message, expected] of [
+    ["Redirect was cancelled", "denied"],
+    ["net::ERR_CONNECTION_REFUSED", "offline"]
+  ]) {
+    const result = await fetchElectronOwner(
+      {
+        fetch: async () => {
+          throw new Error(message);
+        }
+      },
+      origin
+    );
+    assert.equal(result.state, expected);
+  }
 });

@@ -9,6 +9,10 @@ const error = document.querySelector("#error");
 const title = document.querySelector("#title");
 const lead = document.querySelector("#lead");
 
+let activeRequestId = 0;
+let renderVersion = 0;
+let editingReplacementOrigin = false;
+
 function setBusy(value) {
   button.disabled = value;
   retry.disabled = value;
@@ -17,7 +21,12 @@ function setBusy(value) {
 }
 
 async function render() {
+  const version = ++renderVersion;
+  const requestId = activeRequestId;
   const state = await window.cosmoraDesktop.getConnectionState();
+  if (version !== renderVersion || requestId !== activeRequestId) return;
+  setBusy(Boolean(state.connecting));
+  if (editingReplacementOrigin) return;
   origin.value = state.origin;
   error.textContent = state.message || "";
   const offline = state.mode === "offline";
@@ -32,32 +41,41 @@ async function render() {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const requestId = ++activeRequestId;
   error.textContent = "";
   setBusy(true);
   try {
     const result = await window.cosmoraDesktop.connect({ origin: origin.value });
-    if (!result.ok) error.textContent = result.message;
+    if (requestId !== activeRequestId || result?.stale) return;
+    if (result?.ok) editingReplacementOrigin = false;
+    else error.textContent = result?.message || "Не удалось подключиться к серверу.";
   } catch {
+    if (requestId !== activeRequestId) return;
     error.textContent = "Не удалось открыть Kosmora. Проверьте соединение и повторите попытку.";
   } finally {
-    setBusy(false);
+    if (requestId === activeRequestId) setBusy(false);
   }
 });
 
 retry.addEventListener("click", async () => {
+  const requestId = ++activeRequestId;
+  editingReplacementOrigin = false;
   error.textContent = "";
   setBusy(true);
   try {
     const result = await window.cosmoraDesktop.retry();
-    if (!result.ok) error.textContent = result.message;
+    if (requestId !== activeRequestId || result?.stale) return;
+    if (!result?.ok) error.textContent = result?.message || "Повторное подключение не удалось.";
   } catch {
+    if (requestId !== activeRequestId) return;
     error.textContent = "Повторное подключение не удалось.";
   } finally {
-    setBusy(false);
+    if (requestId === activeRequestId) setBusy(false);
   }
 });
 
 change.addEventListener("click", () => {
+  editingReplacementOrigin = true;
   form.hidden = false;
   retry.hidden = true;
   change.hidden = true;
@@ -69,7 +87,7 @@ change.addEventListener("click", () => {
   origin.select();
 });
 
-window.cosmoraDesktop.onConnectionStateChanged(() => void render());
+window.cosmoraDesktop.onConnectionStateChanged(() => void render().catch(() => {}));
 void render().catch(() => {
   origin.value = "https://13.141.51.16";
   error.textContent = "Не удалось прочитать настройки подключения.";

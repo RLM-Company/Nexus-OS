@@ -43,6 +43,9 @@ jobs:
         shell: pwsh
         run: |
           npm run check
+          if ($LASTEXITCODE -ne 0) { throw "Desktop checks failed." }
+          npm run verify:unsigned
+          if ($LASTEXITCODE -ne 0) { throw "Unsigned distribution policy failed." }
           $tokens = $null
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile(
@@ -68,7 +71,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
 
-      - name: Verify fresh installer lifecycle
+      - name: Verify fresh installer lifecycle and packaged GUI
         shell: pwsh
         run: |
           $version = node -p "require('./desktop/windows/package.json').version"
@@ -109,4 +112,13 @@ jobs:
           name: kosmora-windows-x64
           path: desktop/windows/dist/Kosmora-Setup-*.exe
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload packaged GUI acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kosmora-windows-gui-acceptance
+          path: ${{ runner.temp }}/cosmora-gui-acceptance-report.json
+          if-no-files-found: ignore
           retention-days: 14

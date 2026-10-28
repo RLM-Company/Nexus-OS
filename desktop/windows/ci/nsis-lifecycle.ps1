@@ -79,6 +79,12 @@ function Invoke-PackagedSmoke([string]$App, [string]$ExpectedVersion, [string]$I
   return $record
 }
 
+function Invoke-PackagedGuiAcceptance([string]$App, [string]$WorkDir) {
+  $fixtureRunner = Join-Path $PSScriptRoot "gui-acceptance-fixture.cjs"
+  & node $fixtureRunner --app $App --work-root $WorkDir
+  if ($LASTEXITCODE -ne 0) { throw "Packaged GUI acceptance failed with exit code $LASTEXITCODE." }
+}
+
 function Wait-DirectoryRemoved([string]$PathValue) {
   for ($attempt = 0; $attempt -lt 80 -and (Test-Path -LiteralPath $PathValue); $attempt++) {
     Start-Sleep -Milliseconds 250
@@ -162,6 +168,8 @@ try {
   $installed = Invoke-Installer $current $installDir
   $record = Invoke-PackagedSmoke $installed.App $CurrentVersion $installDir $marker
   Assert-InstallMetadata $installed.App $installDir $CurrentVersion
+
+  if ($Mode -eq "Fresh") { Invoke-PackagedGuiAcceptance $installed.App $root }
 
   if ($Mode -eq "Upgrade") {
     $actualUserData = [IO.Path]::GetFullPath([string]$record.userDataPath)
