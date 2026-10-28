@@ -2,6 +2,7 @@ import type { ProjectMemorySnapshot, WorkRuntimeProgress } from "./work-runtime.
 import type { ChatTextAttachment } from "./chat-attachments.js";
 import { Type, type Static } from "typebox";
 import { EntityIdSchema } from "./primitives.js";
+import type { ModelOutputCheckpoint } from "./model-output-checkpoint.js";
 
 export const CreateManagerWorkSchema = Type.Object(
   {
@@ -117,6 +118,8 @@ export interface ManagerWork {
   pause_requested: boolean;
   approved: boolean;
   inflight_run_id: string | null;
+  /** Bounded recovery text, never a validated artifact, plan or publication grant. */
+  output_checkpoint?: ModelOutputCheckpoint;
   model_requests: number;
   reserved_input_tokens: number;
   reserved_output_tokens: number;

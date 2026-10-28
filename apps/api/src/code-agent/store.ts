@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { GithubDraft, GithubFileChange } from "../github-integration.js";
 import type { CodeAgentCheckResult } from "@cosmora/tool-runtime";
+import type { ModelOutputCheckpoint } from "@cosmora/contracts";
 
 export type CodeAgentStatus =
   | "running"
@@ -43,6 +44,7 @@ export interface CodeAgentRun {
   patch_diagnostic?: { code: string; path?: string; line?: number };
   /** Owner-only recovery draft. Never validated, executed or published as a proposal. */
   rejected_proposal_text?: string;
+  output_checkpoint?: ModelOutputCheckpoint;
   auto_check_requested?: "syntax" | "node-test";
   proposal_check?: (CodeAgentCheckResult & { proposal_hash: string }) | undefined;
   draft_id?: string;
@@ -133,21 +135,30 @@ export class CodeAgentStore {
     }
   }
   createModelRun(run: CodeAgentRun): string {
-    const chat = this.sqlite
-      .prepare("SELECT id FROM chats WHERE project_id=? AND kind='main'")
-      .get(run.project_id);
-    if (!chat) throw new CodeAgentError("PROJECT_CHAT_MISSING");
-    const id = randomUUID(),
-      at = new Date().toISOString();
-    this.sqlite
-      .prepare(
-        "INSERT INTO runs (id,project_id,chat_id,status,created_at,updated_at) VALUES (?,?,?,'running',?,?)"
-      )
-      .run(id, run.project_id, String(chat.id), at, at);
-    const current = this.get(run.id, run.owner_id);
-    if (!current) throw new CodeAgentError("RUN_NOT_FOUND");
-    this.save({ ...current, model_run_ids: [...(current.model_run_ids ?? []), id] });
-    return id;
+    this.sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.get(run.id, run.owner_id);
+      if (!current || current.status !== "running") throw new CodeAgentError("EXECUTION_STOPPED");
+      const chat = this.sqlite
+        .prepare("SELECT id FROM chats WHERE project_id=? AND kind='main'")
+        .get(current.project_id);
+      if (!chat) throw new CodeAgentError("PROJECT_CHAT_MISSING");
+      const id = randomUUID(),
+        at = new Date().toISOString();
+      this.sqlite
+        .prepare(
+          "INSERT INTO runs (id,project_id,chat_id,status,created_at,updated_at) VALUES (?,?,?,'running',?,?)"
+        )
+        .run(id, current.project_id, String(chat.id), at, at);
+      const next = { ...current, model_run_ids: [...(current.model_run_ids ?? []), id] };
+      delete next.output_checkpoint;
+      this.save(next);
+      this.sqlite.exec("COMMIT");
+      return id;
+    } catch (error) {
+      this.sqlite.exec("ROLLBACK");
+      throw error;
+    }
   }
   modelRunReferences(): Array<{ owner: string; id: string }> {
     return this.sqlite

@@ -1,7 +1,11 @@
 import { validGithubIssueContext, type GithubIssueContext } from "../github-issue-context.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { CapabilityId, IdentityContext, ModelMessage, ModelRequest } from "@cosmora/contracts";
-import { estimateInputTokensUpperBound, type ManagerService } from "@cosmora/core";
+import {
+  estimateInputTokensUpperBound,
+  ModelOutputCheckpointWriter,
+  type ManagerService
+} from "@cosmora/core";
 import type { EmergencyStopStore, PolicyStore, ProjectStore } from "@cosmora/db";
 import {
   GatewayRunError,
@@ -129,6 +133,7 @@ export class CodeAgentService {
     { epoch: number | null; ids: string[]; drained: boolean }
   >();
   private stopping = false;
+  private readonly outputWriters = new Map<string, ModelOutputCheckpointWriter>();
   constructor(readonly deps: CodeAgentDependencies) {
     this.clock = deps.clock ?? new RuntimeClock();
     this.operationTimeoutMs = deps.operationTimeoutMs ?? 600_000;
@@ -584,6 +589,7 @@ export class CodeAgentService {
     const controller = new AbortController();
     this.taskClocks.set(run.id, this.clock.start());
     const deadline = setTimeout(() => {
+      this.outputWriters.get(run.id)?.flush();
       controller.abort(new CodeAgentError("TASK_TIME_BUDGET"));
       // Retain active ownership until the in-flight request settles; never start a duplicate.
       try {
@@ -599,18 +605,32 @@ export class CodeAgentService {
     }, this.operationTimeoutMs);
     deadline.unref?.();
     const watch = setInterval(() => {
-      const latest = this.current(run.id, run.owner_id);
-      if (
-        this.stopped(latest) ||
-        latest.status === "cancelled" ||
-        (this.authorityChecks.get(run.id) &&
-          [...this.authorityChecks.get(run.id)!].some((check) => !check()))
-      )
+      try {
+        const latest = this.current(run.id, run.owner_id);
+        if (
+          this.stopped(latest) ||
+          latest.status === "cancelled" ||
+          (this.authorityChecks.get(run.id) &&
+            [...this.authorityChecks.get(run.id)!].some((check) => !check()))
+        )
+          controller.abort();
+      } catch {
         controller.abort();
+      }
     }, 100);
     const done = work(controller.signal)
       .catch((error) => {
-        const latest = this.current(run.id, run.owner_id);
+        const latest = this.deps.store.get(run.id, run.owner_id);
+        if (
+          !latest ||
+          this.stoppedOwners.has(run.owner_id) ||
+          this.deps.store.sqlite
+            .prepare(
+              "SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id=? AND state<>'active'"
+            )
+            .get(run.owner_id)
+        )
+          return;
         if (["cancelled", "uncertain", "published"].includes(latest.status)) return;
         if (latest.error === "TASK_TIME_BUDGET") return;
         const code =
@@ -662,9 +682,12 @@ export class CodeAgentService {
     );
   }
   cancel(id: string, owner: string) {
-    const run = this.current(id, owner);
+    let run = this.current(id, owner);
     if (["publishing", "uncertain", "published"].includes(run.status))
       throw new CodeAgentError("RECONCILIATION_REQUIRED");
+    if (["cancelled", "failed"].includes(run.status)) return this.view(run);
+    this.outputWriters.get(id)?.flush();
+    run = this.current(id, owner);
     this.active.get(id)?.controller.abort();
     if (run.status === "checking")
       return this.view(
@@ -717,6 +740,23 @@ export class CodeAgentService {
     this.live(run, signal);
     const id = this.deps.store.createModelRun(run),
       req = this.request(run, id, messages, toolMode);
+    const writer = new ModelOutputCheckpointWriter(id, "code", (checkpoint) => {
+      if (
+        this.stoppedOwners.has(run.owner_id) ||
+        this.deps.store.sqlite
+          .prepare(
+            "SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id=? AND state<>'active'"
+          )
+          .get(run.owner_id)
+      )
+        return false;
+      const latest = this.deps.store.get(run.id, run.owner_id);
+      if (!latest || latest.status !== "running" || latest.model_run_ids?.at(-1) !== id)
+        return false;
+      this.deps.store.save({ ...latest, output_checkpoint: checkpoint });
+      return true;
+    });
+    this.outputWriters.set(run.id, writer);
     let content = "",
       completion: Completion | undefined;
     const calls: Array<Extract<ModelGatewayStreamEvent, { type: "tool.call" }>> = [];
@@ -750,12 +790,15 @@ export class CodeAgentService {
         } else if (event.type === "route.failed")
           this.deps.projects.failModelUsage(id, event.route.attempt, event.errorCode);
         else if (event.type === "text.delta") {
+          this.live(this.current(run.id, run.owner_id), signal);
           content += event.delta;
           if (content.length > 200000) throw new CodeAgentError("INVALID_MODEL_OUTPUT");
+          writer.update(content);
         } else if (event.type === "tool.call") calls.push(event);
         else completion = event;
       }
       if (!completion) throw new CodeAgentError("INVALID_MODEL_OUTPUT");
+      writer.update(content, true);
       this.deps.projects.completeRun(id, completion.provider, completion.model, completion.usage, {
         attempt: completion.route.attempt,
         calculatedCost: completion.calculatedCost
@@ -768,6 +811,8 @@ export class CodeAgentService {
       );
       throw error;
     } finally {
+      writer.flush();
+      if (this.outputWriters.get(run.id) === writer) this.outputWriters.delete(run.id);
       if (ownerReservation && this.deps.ownerBudget) {
         if (!dispatchPossible)
           await this.deps.ownerBudget.releaseBeforeDispatch({

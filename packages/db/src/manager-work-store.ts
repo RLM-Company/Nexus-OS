@@ -343,19 +343,32 @@ export class ManagerWorkStore {
   // Internal child runs start as running and have no chat messages. The existing
   // chat dispatcher cannot claim them; all model usage shares the project ledger.
   createModelRun(state: ManagerWork): string {
-    this.assertWritable(state.owner_id);
-    const chat = this.sqlite
-      .prepare("SELECT id FROM chats WHERE project_id = ? AND kind = 'main'")
-      .get(state.project_id) as { id: string } | undefined;
-    if (!chat) throw new Error("PROJECT_CHAT_MISSING");
-    const id = randomUUID(),
-      at = new Date().toISOString();
-    this.sqlite
-      .prepare(
-        "INSERT INTO runs (id, project_id, chat_id, status, created_at, updated_at) VALUES (?, ?, ?, 'running', ?, ?)"
+    return this.transaction(() => {
+      this.assertWritable(state.owner_id);
+      const latest = this.get(state.id, state.owner_id);
+      if (
+        !latest ||
+        latest.version !== state.version ||
+        latest.status !== "running" ||
+        latest.inflight_run_id
       )
-      .run(id, state.project_id, chat.id, at, at);
-    return id;
+        throw new ManagerWorkConflict("STALE_EXECUTION");
+      const chat = this.sqlite
+        .prepare("SELECT id FROM chats WHERE project_id = ? AND kind = 'main'")
+        .get(state.project_id) as { id: string } | undefined;
+      if (!chat) throw new Error("PROJECT_CHAT_MISSING");
+      const id = randomUUID(),
+        at = new Date().toISOString();
+      this.sqlite
+        .prepare(
+          "INSERT INTO runs (id, project_id, chat_id, status, created_at, updated_at) VALUES (?, ?, ?, 'running', ?, ?)"
+        )
+        .run(id, state.project_id, chat.id, at, at);
+      const next = { ...latest, inflight_run_id: id };
+      delete next.output_checkpoint;
+      this.persist(next);
+      return id;
+    });
   }
 
   publish(id: string, ownerId: string, files: ManagerWorkFiles): string[] {
