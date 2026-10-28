@@ -182,8 +182,9 @@ describe("durable Manager work", () => {
     let observedVersion = 0;
     const f = await fixture({
       chunks: [first, tail, "LATE OUTPUT"],
-      onCall: async () => {
+      onCall: () => {
         observedVersion = f.get().version;
+        return Promise.resolve();
       },
       afterChunk: (_req, _signal, index) => {
         if (index === 1) {
@@ -229,8 +230,9 @@ describe("durable Manager work", () => {
     });
     const f = await fixture({
       chunks: ['{"summary":'],
-      onCall: async () => {
+      onCall: () => {
         observedVersion = f.get().version;
+        return Promise.resolve();
       },
       afterChunk: () => {
         observed();
