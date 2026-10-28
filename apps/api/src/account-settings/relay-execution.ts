@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { ModelRequest } from "@cosmora/contracts";
 import { estimateInputTokensUpperBound } from "@cosmora/core";
-import type { ModelGateway, ModelGatewayStreamEvent } from "@cosmora/model-gateway";
+import {
+  GatewayRunError,
+  type ModelGateway,
+  type ModelGatewayStreamEvent
+} from "@cosmora/model-gateway";
 import { protectRelayText, RelayProtectionError } from "@cosmora/model-gateway/english-relay";
 import { QuotaExceededError } from "./account-store.js";
 import type { AccountStore } from "./account-store.js";
@@ -81,12 +85,31 @@ export class RelayExecution {
         } else if (event.type === "route.failed") {
           const id = reservations.get(event.route.attempt);
           if (id) this.store.uncertainReservation(id, stage);
+          throw new GatewayRunError(
+            event.errorCode,
+            event.route.provider_id,
+            "Relay failed; automatic retry disabled",
+            false
+          );
         } else if (event.type === "text.delta") {
           translation += event.delta;
           if (translation.length > 12000) throw new RelayProtectionError("Translation too long");
         } else if (event.type === "response.completed") completed = event;
         else if (event.type === "tool.call")
           throw new RelayUnavailableError("Tool calls are unsupported in translation");
+      }
+      // Bill verified provider usage even when output validation subsequently fails.
+      if (completed) {
+        const id = reservations.get(completed.route.attempt);
+        if (id) {
+          this.store.completeReservation(
+            id,
+            stage,
+            completed.usage.inputTokens,
+            completed.usage.outputTokens
+          );
+          reservations.delete(completed.route.attempt);
+        }
       }
       if (!completed || !translation.trim())
         throw new RelayUnavailableError("Translation provider did not complete");
@@ -96,14 +119,6 @@ export class RelayExecution {
       if (!restored.trim()) throw new RelayUnavailableError("Empty translation");
       if (stage === "to_en" && /[\u0400-\u04FF]/.test(source) && restored.trim() === source.trim())
         throw new RelayUnavailableError("Translation was not performed");
-      const id = reservations.get(completed.route.attempt);
-      if (id)
-        this.store.completeReservation(
-          id,
-          stage,
-          completed.usage.inputTokens,
-          completed.usage.outputTokens
-        );
       return restored;
     } catch (error) {
       for (const id of reservations.values()) this.store.uncertainReservation(id, stage);

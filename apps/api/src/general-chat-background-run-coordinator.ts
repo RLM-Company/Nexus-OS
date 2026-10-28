@@ -339,6 +339,27 @@ export class GeneralChatBackgroundRunCoordinator {
         );
       }
 
+      // Main billing is independent of the optional back-translation outcome.
+      this.#store.commitModelUsage(
+        queued.run_id,
+        completed.provider,
+        completed.model,
+        completed.usage,
+        {
+          attempt: completed.route.attempt,
+          calculatedCost: completed.calculatedCost
+        }
+      );
+      const hold = mainHolds.get(completed.route.attempt);
+      if (hold) {
+        this.#accountStore?.completeReservation(
+          hold,
+          "main",
+          completed.usage.inputTokens,
+          completed.usage.outputTokens
+        );
+        mainHolds.delete(completed.route.attempt);
+      }
       if (prepared.relay) {
         if (!pendingEnglish.trim()) throw new RelayUnavailableError("No text to translate");
         const translated = await this.#relay!.finish(
@@ -355,14 +376,6 @@ export class GeneralChatBackgroundRunCoordinator {
         attempt: completed.route.attempt,
         calculatedCost: completed.calculatedCost
       });
-      const hold = mainHolds.get(completed.route.attempt);
-      if (hold)
-        this.#accountStore?.completeReservation(
-          hold,
-          "main",
-          completed.usage.inputTokens,
-          completed.usage.outputTokens
-        );
       this.#runtimeMetrics.runCompleted();
       this.#logger?.info(
         {
