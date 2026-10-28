@@ -266,6 +266,30 @@ describe("reviewed Gemini media integration", () => {
     expect(await service.delete(job.id, "bob")).toBe(false);
     expect(await service.delete(job.id, "alice")).toBe(true);
   });
+  it("settles deactivation between polling ticks instead of leaving an orphan running job", async () => {
+    for (const phase of ["provider", "ledger"]) {
+      let active = true;
+      const service = create({
+        ownerActive: () => active,
+        ownerBudget: {
+          ...budget(),
+          uncertain: async () => {
+            if (phase === "ledger") active = false;
+          }
+        },
+        adapter: {
+          ...fixture,
+          generateImage: async () => {
+            if (phase === "provider") active = false;
+            return fixture.generateImage("", "gpt-image-1", new AbortController().signal);
+          }
+        }
+      });
+      const job = service.enqueue("alice", "image", "moon", true);
+      expect((await settle(service, job.id)).status).toBe("cancelled");
+      expect(service.asset(job.id, "alice")).toBeNull();
+    }
+  });
   it("aborts even when the watchdog cannot persist its first transition", async () => {
     let finish!: (value: Awaited<ReturnType<MediaAdapter["generateImage"]>>) => void;
     let signal!: AbortSignal;

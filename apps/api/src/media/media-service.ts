@@ -645,6 +645,7 @@ export class MediaService {
         !isOwnerActive() ||
         store.get(job.id, job.owner_id)?.status !== "running"
       ) {
+        transition(job.id, job.owner_id, "cancelled");
         return;
       }
       const usage = canonicalUsage(output.usage ?? output.binary?.usage);
@@ -672,6 +673,7 @@ export class MediaService {
         !isOwnerActive() ||
         store.get(job.id, job.owner_id)?.status !== "running"
       ) {
+        transition(job.id, job.owner_id, "cancelled");
         return;
       }
       if (job.kind === "transcription" && typeof output.text === "string") {
