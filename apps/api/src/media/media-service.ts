@@ -543,23 +543,45 @@ export class MediaService {
     timeoutMs: number
   ): Promise<void> {
     const store = this.store!;
+    // Persistence/check hooks must not throw from watchdog callbacks or escape settlement.
+    const transition = (...args: Parameters<MediaFileStore["transition"]>): MediaJob | null => {
+      try {
+        return store.transition(...args);
+      } catch {
+        return null;
+      }
+    };
+    const isEmergencyStopped = (): boolean => {
+      try {
+        return this.emergencyStopped();
+      } catch {
+        return true;
+      }
+    };
+    const isOwnerActive = (): boolean => {
+      try {
+        return this.ownerActive(job.owner_id);
+      } catch {
+        return false;
+      }
+    };
     let timedOut = false;
     let emergencyAborted = false;
     const timeout = setTimeout(() => {
       if (controller.signal.aborted) return;
       timedOut = true;
-      store.transition(job.id, job.owner_id, "failed", "timeout");
+      transition(job.id, job.owner_id, "failed", "timeout");
       controller.abort(new Error("TIMEOUT"));
     }, timeoutMs);
     timeout.unref?.();
     const fenceMonitor = setInterval(() => {
       if (controller.signal.aborted) return;
-      if (this.emergencyStopped()) {
+      if (isEmergencyStopped()) {
         emergencyAborted = true;
-        store.transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
+        transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
         controller.abort(new Error("EMERGENCY_STOP"));
-      } else if (this.closedOwners.has(job.owner_id) || !this.ownerActive(job.owner_id)) {
-        store.transition(job.id, job.owner_id, "cancelled");
+      } else if (this.closedOwners.has(job.owner_id) || !isOwnerActive()) {
+        transition(job.id, job.owner_id, "cancelled");
         controller.abort(new Error("OWNER_INACTIVE"));
       }
     }, FENCE_POLL_MS);
@@ -569,16 +591,12 @@ export class MediaService {
     let reserved = false;
     let ledgerSettled = false;
     try {
-      if (this.emergencyStopped()) {
-        store.transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
+      if (isEmergencyStopped()) {
+        transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
         return;
       }
-      if (
-        controller.signal.aborted ||
-        this.closedOwners.has(job.owner_id) ||
-        !this.ownerActive(job.owner_id)
-      ) {
-        store.transition(job.id, job.owner_id, "cancelled");
+      if (controller.signal.aborted || this.closedOwners.has(job.owner_id) || !isOwnerActive()) {
+        transition(job.id, job.owner_id, "cancelled");
         return;
       }
       const capability =
@@ -598,33 +616,33 @@ export class MediaService {
       });
       reserved = true;
       store.budget(job.id, job.owner_id, "reserved");
-      if (this.emergencyStopped()) {
-        store.transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
+      if (isEmergencyStopped()) {
+        transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
         return;
       }
       if (
         controller.signal.aborted ||
         this.closedOwners.has(job.owner_id) ||
-        !this.ownerActive(job.owner_id) ||
-        !store.transition(job.id, job.owner_id, "running")
+        !isOwnerActive() ||
+        !transition(job.id, job.owner_id, "running")
       ) {
-        store.transition(job.id, job.owner_id, "cancelled");
+        transition(job.id, job.owner_id, "cancelled");
         return;
       }
       dispatched = true;
       const output = await work(controller.signal);
-      if (this.emergencyStopped() || emergencyAborted) {
-        store.transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
+      if (isEmergencyStopped() || emergencyAborted) {
+        transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
         return;
       }
       if (timedOut) {
-        store.transition(job.id, job.owner_id, "failed", "timeout");
+        transition(job.id, job.owner_id, "failed", "timeout");
         return;
       }
       if (
         controller.signal.aborted ||
         this.closedOwners.has(job.owner_id) ||
-        !this.ownerActive(job.owner_id) ||
+        !isOwnerActive() ||
         store.get(job.id, job.owner_id)?.status !== "running"
       ) {
         return;
@@ -644,14 +662,14 @@ export class MediaService {
         ledgerSettled = true;
         store.budget(job.id, job.owner_id, "uncertain");
       }
-      if (this.emergencyStopped() || emergencyAborted) {
-        store.transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
+      if (isEmergencyStopped() || emergencyAborted) {
+        transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
         return;
       }
       if (
         controller.signal.aborted ||
         this.closedOwners.has(job.owner_id) ||
-        !this.ownerActive(job.owner_id) ||
+        !isOwnerActive() ||
         store.get(job.id, job.owner_id)?.status !== "running"
       ) {
         return;
@@ -677,30 +695,30 @@ export class MediaService {
         });
       }
     } catch (error) {
-      if (emergencyAborted || this.emergencyStopped()) {
-        store.transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
+      if (emergencyAborted || isEmergencyStopped()) {
+        transition(job.id, job.owner_id, "failed", "EMERGENCY_STOP");
       } else if (
         timedOut ||
         (error instanceof MediaProviderError && error.normalizedCode === "timeout")
       ) {
-        store.transition(job.id, job.owner_id, "failed", "timeout");
+        transition(job.id, job.owner_id, "failed", "timeout");
       } else if (controller.signal.aborted) {
-        store.transition(job.id, job.owner_id, "cancelled", null);
+        transition(job.id, job.owner_id, "cancelled", null);
       } else if (error instanceof MediaCapabilityError) {
-        store.transition(job.id, job.owner_id, "failed", "capability_unavailable");
+        transition(job.id, job.owner_id, "failed", "capability_unavailable");
       } else if (error instanceof MediaProviderError) {
-        store.transition(job.id, job.owner_id, "failed", error.normalizedCode);
+        transition(job.id, job.owner_id, "failed", error.normalizedCode);
       } else if (
         (error as { code?: unknown } | null)?.code === "USAGE_LIMIT_EXCEEDED" ||
         (error instanceof Error && error.message === "MEDIA_LIMIT")
       ) {
-        store.transition(job.id, job.owner_id, "failed", "USAGE_LIMIT_EXCEEDED");
+        transition(job.id, job.owner_id, "failed", "USAGE_LIMIT_EXCEEDED");
       } else if (error instanceof Error && error.message === "CORRUPT_MEDIA_BINARY") {
-        store.transition(job.id, job.owner_id, "failed", "corrupt_response");
+        transition(job.id, job.owner_id, "failed", "corrupt_response");
       } else if (error instanceof Error && error.message === "MEDIA_TYPE_MISMATCH") {
-        store.transition(job.id, job.owner_id, "failed", "invalid_mime");
+        transition(job.id, job.owner_id, "failed", "invalid_mime");
       } else {
-        store.transition(job.id, job.owner_id, "failed", "MEDIA_FAILURE");
+        transition(job.id, job.owner_id, "failed", "MEDIA_FAILURE");
       }
     } finally {
       if (reserved && !ledgerSettled) {

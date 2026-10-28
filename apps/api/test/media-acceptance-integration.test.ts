@@ -12,6 +12,7 @@ import {
   estimateWavDurationSeconds
 } from "@cosmora/model-gateway";
 import { MediaService, type MediaAdapter } from "../src/media/media-service.js";
+import { MediaFileStore } from "../src/media/media-store.js";
 import { registerMediaRoutes } from "../src/media/media-routes.js";
 import { pcmWav } from "./fixtures/media.js";
 
@@ -264,6 +265,43 @@ describe("reviewed Gemini media integration", () => {
     expect(service.asset(job.id, "alice")).toBeNull();
     expect(await service.delete(job.id, "bob")).toBe(false);
     expect(await service.delete(job.id, "alice")).toBe(true);
+  });
+  it("aborts even when the watchdog cannot persist its first transition", async () => {
+    let finish!: (value: Awaited<ReturnType<MediaAdapter["generateImage"]>>) => void;
+    let signal!: AbortSignal;
+    const ownerBudget = budget();
+    const service = create({
+      executionTimeoutMs: 50,
+      ownerBudget,
+      adapter: {
+        ...fixture,
+        generateImage: (_prompt, _model, activeSignal) => {
+          signal = activeSignal;
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        }
+      }
+    });
+    const job = service.enqueue("alice", "image", "moon", true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const transition = vi
+      .spyOn(MediaFileStore.prototype, "transition")
+      .mockImplementationOnce(() => {
+        throw Error("fixture write failure");
+      });
+    try {
+      await vi.waitFor(() => expect(signal.aborted).toBe(true));
+      finish(await fixture.generateImage("", "gpt-image-1", new AbortController().signal));
+      expect(await settle(service, job.id)).toMatchObject({
+        status: "failed",
+        error_code: "timeout"
+      });
+      expect(service.asset(job.id, "alice")).toBeNull();
+      await vi.waitFor(() => expect(ownerBudget.uncertain).toHaveBeenCalled());
+    } finally {
+      transition.mockRestore();
+    }
   });
   it("serves parameters and stable request IDs through the owner HTTP boundary without cached private metadata", async () => {
     const service = create();
