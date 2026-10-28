@@ -34,6 +34,7 @@ function startGuiAcceptanceFixture({ onSpawnSecondInstance = null } = {}) {
   let offline = false;
   let activeOwner = OWNER_A;
   let secondInstanceTriggered = false;
+  let identityRedirect = false;
   let foreignRequests = 0;
   const foreignServer = http.createServer((_req, res) => {
     foreignRequests += 1;
@@ -50,6 +51,12 @@ function startGuiAcceptanceFixture({ onSpawnSecondInstance = null } = {}) {
     if (parsed.pathname === "/test-control/state") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ foreignRequests }));
+      return;
+    }
+    if (parsed.pathname === "/test-control/identity-redirect") {
+      identityRedirect = parsed.searchParams.get("enabled") === "true";
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ identityRedirect }));
       return;
     }
 
@@ -94,6 +101,11 @@ function startGuiAcceptanceFixture({ onSpawnSecondInstance = null } = {}) {
     }
 
     if (parsed.pathname === "/api/v1/identity/sessions") {
+      if (identityRedirect) {
+        res.writeHead(302, { Location: "/login" });
+        res.end();
+        return;
+      }
       if (!hasValidSessionCookie(req)) {
         res.writeHead(401, { "content-type": "application/json" });
         res.end(JSON.stringify({ items: [] }));

@@ -258,6 +258,24 @@ async function runPackagedGuiAcceptance({
     }
     checkpoint("encrypted-draft-roundtrip");
 
+    await fetch(`${config.origin}/test-control/identity-redirect?enabled=true`, { method: "POST" });
+    const redirectedSave = await win.webContents.executeJavaScript(
+      `window.kosmoraDesktopDraft.save(${JSON.stringify(config.draftScope)}, "MUST NOT OVERWRITE")`
+    );
+    if (redirectedSave?.ok)
+      throw new Error("Identity redirect enabled a cached-owner draft write.");
+    await fetch(`${config.origin}/test-control/identity-redirect?enabled=false`, {
+      method: "POST"
+    });
+    const afterRedirect = await win.webContents.executeJavaScript(
+      `window.kosmoraDesktopDraft.load(${JSON.stringify(config.draftScope)})`
+    );
+    if (!afterRedirect?.ok || afterRedirect.text !== config.draftText)
+      throw new Error(
+        "Identity redirect changed the protected draft or prevented fresh login verification."
+      );
+    checkpoint("native-identity-redirect-denied");
+
     const downloadDir = config.downloadDirectory || app.getPath("downloads");
     const firstFile = path.join(downloadDir, "report_final____.md");
     const secondFile = path.join(downloadDir, "report_final____ (1).md");
@@ -336,6 +354,7 @@ async function runPackagedGuiAcceptance({
         savedOrigin: readSavedOrigin().origin,
         lastPath: preferences.get().lastPath,
         draftSaved: true,
+        nativeIdentityRedirectDenied: true,
         downloadsCount: panelList.entries.length,
         foreignRedirectBlocked: true,
         downloadedFiles: [path.basename(firstFile), path.basename(secondFile)]

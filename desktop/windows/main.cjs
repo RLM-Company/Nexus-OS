@@ -20,7 +20,7 @@ const {
 const { createPreferenceStore, deepLinkFromArgv, restoredBounds } = require("./desktop-state.cjs");
 const { createUpdateService } = require("./update-service.cjs");
 const { createDraftStore } = require("./draft-store.cjs");
-const { fetchVerifiedOwner } = require("./owner-session.cjs");
+const { fetchElectronOwner } = require("./owner-session.cjs");
 const { createDraftSessionGate } = require("./draft-session-gate.cjs");
 const { createDownloadCenter } = require("./download-center.cjs");
 const { safeWorkspaceRoute, isLoginOrLogout, isExplicitLogout } = require("./desktop-recovery.cjs");
@@ -468,7 +468,7 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
   const epoch = identityEpoch;
   if (!origin) return null;
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
-  const result = await fetchVerifiedOwner((...args) => browserSession.fetch(...args), origin);
+  const result = await fetchElectronOwner(browserSession, origin);
   if (origin !== currentOrigin || epoch !== identityEpoch) return null;
   if (result.state === "verified") {
     if (ownerCache?.origin === origin && ownerCache.owner !== result.owner) {

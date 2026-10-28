@@ -30,6 +30,15 @@ workspace navigation remains pending through failed loads/authentication until
 successful restoration. Authentication and owner checks are retained.
 No web design, logo, sidebar, server API, databases or provider settings change.
 
+The installed GUI run exposed a pre-existing native verification failure:
+Electron 44's `session.fetch()` returns an empty `Response.url`, while the
+generic owner verifier correctly requires an exact endpoint URL. Added an
+Electron-only adapter with a pinned request URL, manual redirects and bypassed
+custom protocol handlers. It fills only the known empty native URL; status,
+content type, byte limits and active owner checks remain enforced. Generic
+fetchers still reject empty URLs. See the documented
+[Electron limitation](https://www.electronjs.org/docs/latest/api/session#sesfetchinput-init).
+
 ## Acceptance evidence
 
 `pnpm --dir desktop/windows run check` validates syntax and runs the Node suite.

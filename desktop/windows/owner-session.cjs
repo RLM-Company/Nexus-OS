@@ -49,4 +49,33 @@ async function fetchVerifiedOwner(fetcher, origin, { timeoutMs = 5000 } = {}) {
   }
 }
 
-module.exports = { fetchVerifiedOwner };
+async function fetchElectronOwner(browserSession, origin) {
+  return fetchVerifiedOwner(async (url, init) => {
+    // Electron 44's session.fetch constructs a Response with an empty .url:
+    // https://www.electronjs.org/docs/latest/api/session#sesfetchinput-init
+    // Pin the requested endpoint and forbid automatic redirects at transport
+    // level. Only this Electron adapter may fill an empty URL; the generic
+    // verifier still rejects absent/foreign URLs and all non-200 responses.
+    let response;
+    try {
+      response = await browserSession.fetch(url, {
+        ...init,
+        redirect: "manual",
+        bypassCustomProtocolHandlers: true
+      });
+    } catch (error) {
+      // Electron 44 rejects an unfollowed manual redirect with this exact error.
+      // It is an authorization denial, never an offline cached-write fallback.
+      if (error?.message === "Redirect was cancelled") return { status: 302, url };
+      throw error;
+    }
+    return {
+      status: response.status,
+      url: response.url === "" && response.redirected !== true ? url : response.url,
+      headers: response.headers,
+      body: response.body
+    };
+  }, origin);
+}
+
+module.exports = { fetchVerifiedOwner, fetchElectronOwner };
