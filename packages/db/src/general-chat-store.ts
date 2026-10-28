@@ -773,6 +773,89 @@ export class GeneralChatStore {
       .run(errorCode, timestamp(), runId, attempt);
   }
 
+  /** Canonical billing can finish before a downstream translation or message does. */
+  commitModelUsage(
+    runId: string,
+    provider: string,
+    model: string,
+    usage: { inputTokens: number | null; outputTokens: number | null },
+    accounting: { attempt: number; calculatedCost: { amount: number; currency: Currency } | null }
+  ): void {
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      this.persistModelUsage(runId, provider, model, usage, accounting, timestamp());
+      this.#sqlite.exec("COMMIT;");
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  private persistModelUsage(
+    runId: string,
+    provider: string,
+    model: string,
+    usage: { inputTokens: number | null; outputTokens: number | null },
+    accounting: { attempt: number; calculatedCost: { amount: number; currency: Currency } | null },
+    at: string
+  ): void {
+    const counter = (value: number | null) =>
+      value === null || (Number.isSafeInteger(value) && value >= 0);
+    const cost = accounting.calculatedCost;
+    if (
+      !counter(usage.inputTokens) ||
+      !counter(usage.outputTokens) ||
+      (usage.inputTokens !== null &&
+        usage.outputTokens !== null &&
+        !Number.isSafeInteger(usage.inputTokens + usage.outputTokens)) ||
+      (cost !== null &&
+        (!Number.isFinite(cost.amount) ||
+          cost.amount < 0 ||
+          !["USD", "RUB"].includes(cost.currency)))
+    )
+      throw new ModelUsageConflictError();
+    const existing = this.#sqlite
+      .prepare(`SELECT ${USAGE_COLUMNS} FROM general_chat_model_usage WHERE run_id=? AND attempt=?`)
+      .get(runId, accounting.attempt) as unknown as StoredGeneralChatUsage | undefined;
+    if (!existing || existing.provider_id !== provider || !model.trim())
+      throw new ModelUsageConflictError();
+    const currency = cost?.currency ?? existing.currency;
+    if (existing.status === "committed") {
+      if (
+        existing.model_resolved !== model ||
+        existing.actual_input_tokens !== usage.inputTokens ||
+        existing.actual_output_tokens !== usage.outputTokens ||
+        existing.calculated_cost_amount !== (cost?.amount ?? null) ||
+        existing.currency !== currency
+      )
+        throw new ModelUsageConflictError();
+      return;
+    }
+    if (existing.status !== "reserved") throw new ModelUsageConflictError();
+    this.#sqlite
+      .prepare(
+        `UPDATE general_chat_model_usage SET status='committed',model_resolved=?,
+         actual_input_tokens=?,actual_output_tokens=?,calculated_cost_amount=?,currency=?,updated_at=?
+         WHERE run_id=? AND attempt=? AND status='reserved'`
+      )
+      .run(
+        model,
+        usage.inputTokens,
+        usage.outputTokens,
+        cost?.amount ?? null,
+        currency,
+        at,
+        runId,
+        accounting.attempt
+      );
+    this.#sqlite
+      .prepare(
+        `UPDATE general_chat_runs SET provider=?,model_resolved=?,input_tokens=?,output_tokens=?,updated_at=?
+         WHERE id=? AND status IN ('queued','running')`
+      )
+      .run(provider, model, usage.inputTokens, usage.outputTokens, at, runId);
+  }
+
   completeRun(
     runId: string,
     provider: string,
@@ -783,6 +866,7 @@ export class GeneralChatStore {
     const completedAt = timestamp();
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
+      this.persistModelUsage(runId, provider, model, usage, accounting, completedAt);
       const runResult = this.#sqlite
         .prepare(
           `UPDATE general_chat_runs SET status = 'succeeded', provider = ?, model_resolved = ?,
@@ -793,26 +877,6 @@ export class GeneralChatStore {
       if (Number(runResult.changes) === 0) {
         this.#sqlite.exec("COMMIT;");
         return;
-      }
-      const usageResult = this.#sqlite
-        .prepare(
-          `UPDATE general_chat_model_usage SET status = 'committed', model_resolved = ?,
-            actual_input_tokens = ?, actual_output_tokens = ?, calculated_cost_amount = ?,
-            currency = COALESCE(?, currency), updated_at = ?
-           WHERE run_id = ? AND attempt = ? AND status = 'reserved'`
-        )
-        .run(
-          model,
-          usage.inputTokens,
-          usage.outputTokens,
-          accounting.calculatedCost?.amount ?? null,
-          accounting.calculatedCost?.currency ?? null,
-          completedAt,
-          runId,
-          accounting.attempt
-        );
-      if (Number(usageResult.changes) !== 1) {
-        throw new Error(`Missing general chat usage reservation ${runId}:${accounting.attempt}`);
       }
       this.#sqlite
         .prepare(

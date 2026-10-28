@@ -735,12 +735,23 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
               );
               mainHolds.set(event.route.attempt, hold);
             }
-            const reserved = options.store.reserveModelUsage(
-              run.id,
-              event.route,
-              identity.owner_id
-            );
+            let reserved: ReturnType<GeneralChatStore["reserveModelUsage"]>;
+            try {
+              reserved = options.store.reserveModelUsage(run.id, event.route, identity.owner_id);
+            } catch (cause) {
+              const hold = mainHolds.get(event.route.attempt);
+              if (hold) {
+                options.accountStore?.releaseBeforeDispatch(hold);
+                mainHolds.delete(event.route.attempt);
+              }
+              throw cause;
+            }
             if (!reserved) {
+              const hold = mainHolds.get(event.route.attempt);
+              if (hold) {
+                options.accountStore?.releaseBeforeDispatch(hold);
+                mainHolds.delete(event.route.attempt);
+              }
               throw new GatewayRunError(
                 "ROUTE_UNAVAILABLE",
                 event.route.provider_id,
@@ -781,6 +792,26 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
             true
           );
         }
+        options.store.commitModelUsage(
+          run.id,
+          completed.provider,
+          completed.model,
+          completed.usage,
+          {
+            attempt: completed.route.attempt,
+            calculatedCost: completed.calculatedCost
+          }
+        );
+        const mainHold = mainHolds.get(completed.route.attempt);
+        if (mainHold) {
+          options.accountStore?.completeReservation(
+            mainHold,
+            "main",
+            completed.usage.inputTokens,
+            completed.usage.outputTokens
+          );
+          mainHolds.delete(completed.route.attempt);
+        }
         if (prepared.relay) {
           if (!pendingEnglish.trim()) throw new RelayUnavailableError("Empty provider text");
           const translated = await relay!.finish(
@@ -802,14 +833,6 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           attempt: completed.route.attempt,
           calculatedCost: completed.calculatedCost
         });
-        const finalHold = mainHolds.get(completed.route.attempt);
-        if (finalHold)
-          options.accountStore?.completeReservation(
-            finalHold,
-            "main",
-            completed.usage.inputTokens,
-            completed.usage.outputTokens
-          );
         options.runtimeMetrics.runCompleted();
         sendEvent(reply, {
           type: "message.completed",

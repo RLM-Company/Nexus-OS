@@ -50,7 +50,11 @@ const gateway = (
   transform: (request: ModelRequest) => string,
   seen: ModelRequest[],
   finish = "stop",
-  toolCall = false
+  toolCall = false,
+  usage: { inputTokens: number | null; outputTokens: number | null } = {
+    inputTokens: 20,
+    outputTokens: 10
+  }
 ) =>
   ({
     async *stream(request: ModelRequest): AsyncGenerator<ModelGatewayStreamEvent> {
@@ -81,7 +85,7 @@ const gateway = (
         provider: "live",
         model: "model",
         finishReason: finish,
-        usage: { inputTokens: 20, outputTokens: 10 },
+        usage,
         calculatedCost: null
       };
     }
@@ -183,7 +187,7 @@ describe("English Relay integration with canonical account schema", () => {
       )
     ).rejects.toBeInstanceOf(RelayProtectionError);
   });
-  it("fails closed when output is truncated and retains the uncertain charged bound", async () => {
+  it("rejects truncated output while accounting for its verified usage", async () => {
     const { store, request, chatId, runId } = await fixture();
     const relay = new RelayExecution(
       store,
@@ -200,7 +204,8 @@ describe("English Relay integration with canonical account schema", () => {
         new AbortController().signal
       )
     ).rejects.toBeInstanceOf(RelayUnavailableError);
-    expect(store.usage("owner").rows[0]).toMatchObject({ status: "uncertain" });
+    expect(store.usage("owner").rows[0]).toMatchObject({ status: "committed" });
+    expect(store.summary("owner").translation_tokens_or_upper_bound).toBe(30);
   });
   it("rejects secrets before network and quota before the provider resumes after route selection", async () => {
     const { store, request, chatId, runId } = await fixture();
