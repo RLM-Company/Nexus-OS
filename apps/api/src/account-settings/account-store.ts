@@ -37,6 +37,9 @@ const defaults: AccountPreferences = {
   updated_at: null
 };
 export class PreferenceConflictError extends Error {}
+export class CanonicalUsageConflictError extends Error {
+  readonly code = "CANONICAL_USAGE_CONFLICT";
+}
 export class QuotaExceededError extends Error {
   readonly code = "USAGE_LIMIT_EXCEEDED";
 }
@@ -45,6 +48,24 @@ const boundedLimit = (value: number | null): void => {
   if (value !== null && (!Number.isSafeInteger(value) || value < 1 || value > 2_000_000_000))
     throw new Error("Invalid token quota");
 };
+
+// Shared by normal completion and startup recovery. Privacy-retained accounting
+// is canonical evidence too; unknown or malformed historical values never release a hold.
+const CANONICAL_HOLD_EVIDENCE = `SELECT owner_id,run_id,attempt FROM (
+  SELECT c.owner_id,u.run_id,u.attempt,u.status,u.actual_input_tokens input_tokens,
+    u.actual_output_tokens output_tokens,u.calculated_cost_amount cost_amount,u.currency
+    FROM general_chat_model_usage u JOIN general_chats c ON c.id=u.chat_id
+  UNION ALL SELECT p.owner_id,u.run_id,u.attempt,u.status,u.actual_input_tokens,
+    u.actual_output_tokens,u.calculated_cost_amount,u.currency
+    FROM model_usage_ledger u JOIN projects p ON p.id=u.project_id
+  UNION ALL SELECT owner_id,run_id,attempt,'committed',input_tokens,output_tokens,cost_amount,currency
+    FROM kosmora_auxiliary_model_usage
+  UNION ALL SELECT owner_id,run_id,attempt,status,actual_input_tokens,actual_output_tokens,
+    calculated_cost_amount,currency FROM kosmora_retained_accounting
+) WHERE status='committed' AND typeof(input_tokens)='integer' AND typeof(output_tokens)='integer'
+  AND input_tokens>=0 AND output_tokens>=0 AND input_tokens<=9007199254740991-output_tokens
+  AND typeof(cost_amount) IN ('integer','real') AND cost_amount BETWEEN 0 AND 9007199254740991
+  AND currency IN ('USD','RUB')`;
 
 export class AccountStore {
   constructor(readonly sqlite: DatabaseSync) {}
@@ -287,6 +308,8 @@ export class AccountStore {
     model: string
   ): string {
     if (!Number.isSafeInteger(maxTokens) || maxTokens < 1) throw new Error("Invalid reservation");
+    if (!Number.isSafeInteger(attempt) || attempt < 0)
+      throw new Error("Invalid reservation attempt");
     const id = randomUUID();
     this.sqlite.exec("BEGIN IMMEDIATE");
     try {
@@ -307,6 +330,33 @@ export class AccountStore {
             throw Error("RESERVATION_CONFLICT");
           this.sqlite.exec("COMMIT");
           return existing.id;
+        }
+      } else {
+        const prior = this.sqlite
+          .prepare(
+            "SELECT id,owner_id,chat_id,provider_id,model_id,reserved_tokens FROM kosmora_relay_usage WHERE run_id=? AND stage=? AND attempt=?"
+          )
+          .get(runId, kind, attempt) as
+          | {
+              id: string;
+              owner_id: string;
+              chat_id: string | null;
+              provider_id: string;
+              model_id: string;
+              reserved_tokens: number;
+            }
+          | undefined;
+        if (prior) {
+          if (
+            prior.owner_id !== owner ||
+            prior.chat_id !== chatId ||
+            prior.provider_id !== provider ||
+            prior.model_id !== model ||
+            prior.reserved_tokens !== maxTokens
+          )
+            throw Error("RESERVATION_CONFLICT");
+          this.sqlite.exec("COMMIT");
+          return prior.id;
         }
       }
       const row = this.get(owner);
@@ -361,31 +411,57 @@ export class AccountStore {
       if (!hold) return;
       const canonical = this.sqlite
         .prepare(
-          `SELECT 1 FROM general_chat_model_usage u JOIN general_chats c ON c.id=u.chat_id
-         WHERE c.owner_id=? AND u.run_id=? AND u.attempt=? AND u.status='committed' AND u.actual_input_tokens IS NOT NULL AND u.actual_output_tokens IS NOT NULL AND u.calculated_cost_amount IS NOT NULL AND u.currency IS NOT NULL
-         UNION SELECT 1 FROM model_usage_ledger u JOIN projects p ON p.id=u.project_id
-         WHERE p.owner_id=? AND u.run_id=? AND u.attempt=? AND u.status='committed' AND u.actual_input_tokens IS NOT NULL AND u.actual_output_tokens IS NOT NULL AND u.calculated_cost_amount IS NOT NULL AND u.currency IS NOT NULL
-         UNION SELECT 1 FROM kosmora_auxiliary_model_usage a WHERE a.owner_id=? AND a.run_id=? AND a.attempt=?`
+          `SELECT 1 FROM (${CANONICAL_HOLD_EVIDENCE}) WHERE owner_id=? AND run_id=? AND attempt=?`
         )
-        .get(
-          hold.owner_id,
-          hold.run_id,
-          hold.attempt,
-          hold.owner_id,
-          hold.run_id,
-          hold.attempt,
-          hold.owner_id,
-          hold.run_id,
-          hold.attempt
-        );
+        .get(hold.owner_id, hold.run_id, hold.attempt);
       if (canonical) this.sqlite.prepare("DELETE FROM kosmora_usage_holds WHERE id=?").run(id);
       else this.uncertainReservation(id, "main");
     } else {
-      this.sqlite
-        .prepare(
-          `UPDATE kosmora_relay_usage SET status='committed',input_tokens=?,output_tokens=? WHERE id=? AND status='reserved'`
+      if (input === null || output === null) {
+        this.uncertainReservation(id, kind);
+        return;
+      }
+      if (
+        !Number.isSafeInteger(input) ||
+        input < 0 ||
+        !Number.isSafeInteger(output) ||
+        output < 0 ||
+        !Number.isSafeInteger(input + output)
+      )
+        throw Error("CANONICAL_USAGE_INVALID");
+      this.sqlite.exec("BEGIN IMMEDIATE");
+      try {
+        const prior = this.sqlite
+          .prepare(
+            "SELECT stage,status,input_tokens,output_tokens FROM kosmora_relay_usage WHERE id=?"
+          )
+          .get(id) as
+          | {
+              stage: string;
+              status: string;
+              input_tokens: number | null;
+              output_tokens: number | null;
+            }
+          | undefined;
+        if (!prior || prior.stage !== kind) throw Error("RESERVATION_MISSING");
+        if (
+          prior.status === "committed" &&
+          (prior.input_tokens !== input || prior.output_tokens !== output)
         )
-        .run(input, output, id);
+          throw new CanonicalUsageConflictError(
+            "Recorded translation usage differs from the replay"
+          );
+        if (prior.status !== "committed")
+          this.sqlite
+            .prepare(
+              "UPDATE kosmora_relay_usage SET status='committed',input_tokens=?,output_tokens=? WHERE id=?"
+            )
+            .run(input, output, id);
+        this.sqlite.exec("COMMIT");
+      } catch (error) {
+        this.sqlite.exec("ROLLBACK");
+        throw error;
+      }
     }
   }
   /** On restart, settle only holds backed by fully verified canonical usage.
@@ -393,30 +469,26 @@ export class AccountStore {
   reconcileKnownCanonicalHolds(): number {
     const result = this.sqlite
       .prepare(
-        `DELETE FROM kosmora_usage_holds WHERE
-      EXISTS (SELECT 1 FROM general_chat_model_usage u JOIN general_chats c ON c.id=u.chat_id
-        WHERE c.owner_id=kosmora_usage_holds.owner_id AND u.run_id=kosmora_usage_holds.run_id
-        AND u.attempt=kosmora_usage_holds.attempt AND u.status='committed'
-        AND u.actual_input_tokens IS NOT NULL AND u.actual_output_tokens IS NOT NULL
-        AND u.calculated_cost_amount IS NOT NULL AND u.currency IS NOT NULL)
-      OR EXISTS (SELECT 1 FROM model_usage_ledger u JOIN projects p ON p.id=u.project_id
-        WHERE p.owner_id=kosmora_usage_holds.owner_id AND u.run_id=kosmora_usage_holds.run_id
-        AND u.attempt=kosmora_usage_holds.attempt AND u.status='committed'
-        AND u.actual_input_tokens IS NOT NULL AND u.actual_output_tokens IS NOT NULL
-        AND u.calculated_cost_amount IS NOT NULL AND u.currency IS NOT NULL)
-      OR EXISTS (SELECT 1 FROM kosmora_auxiliary_model_usage a
-        WHERE a.owner_id=kosmora_usage_holds.owner_id AND a.run_id=kosmora_usage_holds.run_id
-        AND a.attempt=kosmora_usage_holds.attempt AND a.cost_amount IS NOT NULL AND a.currency IS NOT NULL)
-    `
+        `DELETE FROM kosmora_usage_holds WHERE EXISTS
+          (SELECT 1 FROM (${CANONICAL_HOLD_EVIDENCE}) e WHERE e.owner_id=kosmora_usage_holds.owner_id
+           AND e.run_id=kosmora_usage_holds.run_id AND e.attempt=kosmora_usage_holds.attempt)`
       )
       .run();
     return Number(result.changes);
   }
   uncertainReservation(id: string, kind: "main" | "to_en" | "from_en"): void {
     if (kind === "main")
-      this.sqlite.prepare(`UPDATE kosmora_usage_holds SET status='uncertain' WHERE id=?`).run(id);
+      this.sqlite
+        .prepare(
+          `UPDATE kosmora_usage_holds SET status='uncertain' WHERE id=? AND status='reserved'`
+        )
+        .run(id);
     else
-      this.sqlite.prepare(`UPDATE kosmora_relay_usage SET status='uncertain' WHERE id=?`).run(id);
+      this.sqlite
+        .prepare(
+          `UPDATE kosmora_relay_usage SET status='uncertain' WHERE id=? AND stage=? AND status='reserved'`
+        )
+        .run(id, kind);
   }
   /** Caller proves gateway iterator is still paused at route.selected; only local failures qualify. */
   releaseBeforeDispatch(id: string): void {
@@ -440,10 +512,14 @@ export class AccountStore {
       input < 0 ||
       !Number.isSafeInteger(output) ||
       output < 0 ||
+      !Number.isSafeInteger(input + output) ||
+      !Number.isSafeInteger(attempt) ||
+      attempt < 0 ||
       cost === null ||
       !Number.isFinite(cost) ||
       cost < 0 ||
-      !currency
+      cost > Number.MAX_SAFE_INTEGER ||
+      (currency !== "USD" && currency !== "RUB")
     )
       throw Error("CANONICAL_USAGE_UNAVAILABLE");
     this.sqlite.exec("BEGIN IMMEDIATE");
@@ -453,10 +529,31 @@ export class AccountStore {
         .get(owner, runId, attempt) as { id: string } | undefined;
       const prior = this.sqlite
         .prepare(
-          "SELECT 1 FROM kosmora_auxiliary_model_usage WHERE owner_id=? AND run_id=? AND attempt=?"
+          "SELECT kind,provider_id,model_id,input_tokens,output_tokens,cost_amount,currency FROM kosmora_auxiliary_model_usage WHERE owner_id=? AND run_id=? AND attempt=?"
         )
-        .get(owner, runId, attempt);
+        .get(owner, runId, attempt) as
+        | {
+            kind: string;
+            provider_id: string;
+            model_id: string;
+            input_tokens: number;
+            output_tokens: number;
+            cost_amount: number;
+            currency: string;
+          }
+        | undefined;
       if (!h && !prior) throw Error("RESERVATION_MISSING");
+      if (
+        prior &&
+        (prior.kind !== kind ||
+          prior.provider_id !== provider ||
+          prior.model_id !== model ||
+          prior.input_tokens !== input ||
+          prior.output_tokens !== output ||
+          prior.cost_amount !== cost ||
+          prior.currency !== currency)
+      )
+        throw new CanonicalUsageConflictError("Recorded document usage differs from the replay");
       this.sqlite
         .prepare(
           `INSERT INTO kosmora_auxiliary_model_usage(owner_id,run_id,attempt,kind,provider_id,model_id,input_tokens,output_tokens,cost_amount,currency,created_at)
