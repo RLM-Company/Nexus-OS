@@ -27,6 +27,11 @@ const { safeWorkspaceRoute, isLoginOrLogout, isExplicitLogout } = require("./des
 const updateTrust = require("./update-trust.json");
 const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
 const {
+  isGuiAcceptanceMode,
+  assertGuiAcceptanceEnvironment,
+  runPackagedGuiAcceptance
+} = require("./gui-acceptance.cjs");
+const {
   connectionViewState,
   createLatestAttemptGate,
   isAllowedDownload,
@@ -40,6 +45,8 @@ const DEFAULT_ORIGIN = "https://13.141.51.16";
 const SESSION_PARTITION = "persist:cosmora";
 const CONNECTION_FILE = "connection.json";
 const HEALTH_TIMEOUT_MS = 6000;
+const guiAcceptanceMode = isGuiAcceptanceMode(process.argv);
+if (guiAcceptanceMode) assertGuiAcceptanceEnvironment({ isPackaged: app.isPackaged });
 
 // Keep the existing profile and Chromium partition across the product rename.
 const profileDirectory = path.join(app.getPath("appData"), "cosmora-windows-desktop");
@@ -159,11 +166,17 @@ function deferWindowState() {
 }
 
 function persistRoute(url) {
-  if (restoringInitialPage || !currentOrigin || !isAllowedRemoteNavigation(url, currentOrigin))
+  if (
+    restoringInitialPage ||
+    loginRouteInProgress ||
+    !currentOrigin ||
+    !isAllowedRemoteNavigation(url, currentOrigin)
+  )
     return;
   try {
     const parsed = new URL(url);
     const route = safeWorkspaceRoute(parsed.pathname + parsed.search);
+    if (route === "/" && deferredRoute && deferredRoute !== "/") return;
     if (route && !parsed.hash && route !== preferences.get().lastPath) {
       preferences.update({ lastPath: route });
     }
@@ -410,6 +423,7 @@ async function openOrigin(origin, { persist = false } = {}) {
         : pendingDeepLink ||
           deferredRoute ||
           (preferences.get().restorePage ? preferences.get().lastPath : "/");
+    if (requestedRoute !== "/") deferredRoute = requestedRoute;
     currentOrigin = origin;
     restoringInitialPage = true;
     try {
@@ -436,6 +450,7 @@ async function openOrigin(origin, { persist = false } = {}) {
     } catch {
       if (connectionAttemptGate.isCurrent(generation)) {
         currentOrigin = previousOrigin;
+        if (requestedRoute !== "/") deferredRoute = requestedRoute;
         await showConnection(
           "Сервер доступен, но интерфейс Kosmora не открылся. Повторите попытку."
         );
@@ -498,13 +513,16 @@ async function restoreAfterAuthentication() {
     return;
   if (isLoginOrLogout(mainWindow.webContents.getURL(), currentOrigin)) return;
   loginRouteInProgress = true;
+  const route = deferredRoute;
   try {
     if (!(await verifiedOwner())) return; // never reveal private routes before server-side authorization
-    const route = deferredRoute;
-    if (!route) return;
-    deferredRoute = null;
+    if (!route || deferredRoute !== route) return;
     if (mainWindow.webContents.getURL() !== currentOrigin + route) {
-      await openRoute(route);
+      if (!(await openRoute(route))) return;
+    }
+    if (deferredRoute === route) {
+      deferredRoute = null;
+      if (preferences.get().lastPath !== route) preferences.update({ lastPath: route });
     }
   } catch {
     /* An explicit retry or later login navigation can resume. */
@@ -714,6 +732,15 @@ function installNavigationGuards(window) {
     (_event, errorCode, _description, validatedURL, isMainFrame) => {
       if (!isMainFrame || errorCode === -3 || !currentOrigin) return;
       if (isAllowedRemoteNavigation(validatedURL, currentOrigin)) {
+        try {
+          const parsed = new URL(validatedURL);
+          deferredRoute =
+            safeWorkspaceRoute(parsed.pathname + parsed.search) ||
+            deferredRoute ||
+            (preferences.get().restorePage ? preferences.get().lastPath : "/");
+        } catch {
+          /* keep the last verified route */
+        }
         void showConnection("Соединение с Kosmora потеряно. Сохранённый адрес не изменён.");
       }
     }
@@ -768,7 +795,7 @@ function installSessionPolicy(browserSession) {
       item.once("done", (_event, state) => {
         activeDownloads.delete(downloadId);
         createMenu();
-        if (state === "interrupted")
+        if (state === "interrupted" && !guiAcceptanceMode)
           void dialog.showMessageBox(mainWindow, {
             type: "warning",
             title: "Ошибка скачивания",
@@ -1193,7 +1220,28 @@ if (gotSingleInstanceLock) {
     refreshTray();
     await createMainWindow();
     startConnectivityMonitor();
-    if (preferences.get().checkUpdatesOnStart && currentOrigin) void checkUpdates();
+    if (preferences.get().checkUpdatesOnStart && currentOrigin && !guiAcceptanceMode)
+      void checkUpdates();
+    if (guiAcceptanceMode) {
+      try {
+        await runPackagedGuiAcceptance({
+          app,
+          getMainWindow: () => mainWindow,
+          getDownloadWindow: () =>
+            BrowserWindow.getAllWindows().find(
+              (window) =>
+                window.webContents.getURL() ===
+                pathToFileURL(path.join(__dirname, "downloads.html")).toString()
+            ),
+          preferences,
+          downloadCenter,
+          readSavedOrigin
+        });
+      } catch (cause) {
+        console.error(cause instanceof Error ? cause.stack || cause.message : cause);
+        app.exit(1);
+      }
+    }
   });
 
   app.on("activate", () => {

@@ -12,6 +12,7 @@ const trust = JSON.parse(fs.readFileSync(path.join(root, "update-trust.json"), "
 
 function verify() {
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/, "Expected numbered candidate version");
+  assert.equal(pkg.name, "cosmora-windows-desktop");
   assert.equal(pkg.build.appId, "com.cosmora.desktop");
   assert.equal(pkg.build.productName, "Kosmora");
   assert.equal(pkg.build.electronVersion, "44.5.1");
@@ -25,6 +26,11 @@ function verify() {
   for (const file of [
     "main.cjs",
     "preload.cjs",
+    "downloads-preload.cjs",
+    "download-history.cjs",
+    "download-center.cjs",
+    "smoke-mode.cjs",
+    "gui-acceptance.cjs",
     "connection-policy.cjs",
     "desktop-state.cjs",
     "desktop-recovery.cjs",
@@ -35,6 +41,11 @@ function verify() {
     "update-service.cjs",
     "update-trust.json",
     "connection.html",
+    "connection.css",
+    "connection.js",
+    "downloads.html",
+    "downloads.css",
+    "downloads.js",
     "build/icon.ico"
   ]) {
     assert.ok(pkg.build.files.includes(file), `${file} is missing from NSIS package inputs`);
