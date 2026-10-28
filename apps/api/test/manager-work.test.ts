@@ -179,8 +179,12 @@ describe("durable Manager work", () => {
     });
     const first = '{"summary":',
       tail = '"partial draft"';
+    let observedVersion = 0;
     const f = await fixture({
       chunks: [first, tail, "LATE OUTPUT"],
+      onCall: async () => {
+        observedVersion = f.get().version;
+      },
       afterChunk: (_req, _signal, index) => {
         if (index === 1) {
           observed();
@@ -192,7 +196,8 @@ describe("durable Manager work", () => {
     const running = f.coordinator.execute(f.work.id, "local-owner");
     await paused;
     expect(f.get().output_checkpoint?.text).toBe(first);
-    f.coordinator.control(f.work.id, "local-owner", f.get().version, "cancel");
+    expect(observedVersion).toBeLessThan(f.get().version);
+    f.coordinator.control(f.work.id, "local-owner", observedVersion, "cancel");
     const cancelled = f.get();
     expect(cancelled.output_checkpoint).toMatchObject({
       text: first + tail,
@@ -210,6 +215,48 @@ describe("durable Manager work", () => {
     await f.coordinator.execute(f.work.id, "local-owner");
     expect(f.calls).toHaveLength(1);
     expect(f.accountStore.summary("local-owner").total_counted_tokens).toBeGreaterThan(0);
+  });
+
+  it("does not relax control CAS across logical changes or grant approval across recovery writes", async () => {
+    let release!: () => void,
+      observed!: () => void,
+      observedVersion = 0;
+    const paused = new Promise<void>((done) => {
+      observed = done;
+    });
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    const f = await fixture({
+      chunks: ['{"summary":'],
+      onCall: async () => {
+        observedVersion = f.get().version;
+      },
+      afterChunk: () => {
+        observed();
+        return gate;
+      }
+    });
+    const running = f.coordinator.execute(f.work.id, "local-owner");
+    await paused;
+    try {
+      expect(() =>
+        f.coordinator.control(f.work.id, "local-owner", observedVersion, "approve")
+      ).toThrow("STALE_EXECUTION");
+      f.coordinator.control(f.work.id, "local-owner", observedVersion, "pause");
+      const afterPause = f.get();
+      expect(afterPause.pause_requested).toBe(true);
+      expect(() =>
+        f.coordinator.control(f.work.id, "local-owner", observedVersion, "cancel")
+      ).toThrow("STALE_EXECUTION");
+      expect(f.get()).toEqual(afterPause);
+      f.coordinator.control(f.work.id, "local-owner", afterPause.version, "cancel");
+    } finally {
+      release();
+      await running;
+    }
+    expect(f.get().status).toBe("cancelled");
+    expect(f.calls).toHaveLength(1);
   });
 
   it("times out a stalled Work, preserves its checkpoint and retains the active slot until transport settles", async () => {

@@ -59,8 +59,11 @@ This is partial text recovery, not resumable provider generation. An abrupt cras
 can lose the throttled, unflushed tail. No timer writes during a silent stream.
 The checkpoint stores the latest model text only; partial tool-call arguments
 are not exposed by the current gateway and are not captured here. Checkpoint
-writes increment parent versions, so clients must use current versions for CAS
-controls. The existing single-API-process execution model remains; this change
+writes increment parent versions. While a stream is active, pause/cancel may cross
+only a consecutive range of recovery-only saves; any logical state change breaks
+that range. Approval and resume always require the current CAS version. This
+keeps stopping usable with the existing polling client without granting execution
+authority from stale state. The existing single-API-process execution model remains; this change
 does not introduce cross-worker leases or distributed idempotency.
 
 ## Validation

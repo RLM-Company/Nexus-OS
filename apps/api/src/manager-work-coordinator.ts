@@ -85,6 +85,9 @@ export class ManagerWorkCoordinator {
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopping = false;
   private readonly outputWriters = new Map<string, ModelOutputCheckpointWriter>();
+  // A stop intent may cross only consecutive recovery-metadata saves, never a
+  // plan, approval, transition or another owner control. No authority is restored.
+  private readonly outputVersions = new Map<string, { from: number; to: number }>();
   private readonly operationTimeoutMs: number;
   private readonly tools: GuardedToolRuntime;
 
@@ -203,7 +206,14 @@ export class ManagerWorkCoordinator {
       this.dependencies.store.dag.projectMode(work.project_id, ownerId) !== "active"
     )
       throw new ManagerWorkConflict("PROJECT_PAUSED");
-    if (work.version !== version) throw new ManagerWorkConflict("STALE_EXECUTION");
+    const outputVersions = this.outputVersions.get(id);
+    const onlyRecoveryWrites =
+      (action === "cancel" || action === "pause") &&
+      outputVersions?.to === work.version &&
+      version >= outputVersions.from &&
+      version <= outputVersions.to;
+    if (work.version !== version && !onlyRecoveryWrites)
+      throw new ManagerWorkConflict("STALE_EXECUTION");
     if (["completed", "failed", "cancelled"].includes(work.status))
       throw new ManagerWorkConflict("TERMINAL_EXECUTION");
     if (action === "cancel") {
@@ -381,7 +391,12 @@ export class ManagerWorkCoordinator {
         const latest = store.get(work.id, work.owner_id);
         if (!latest || latest.status !== "running" || latest.inflight_run_id !== runId)
           return false;
-        this.checkpoint({ ...latest, output_checkpoint: checkpoint });
+        const saved = this.checkpoint({ ...latest, output_checkpoint: checkpoint });
+        const previous = this.outputVersions.get(work.id);
+        this.outputVersions.set(work.id, {
+          from: previous?.to === latest.version ? previous.from : latest.version,
+          to: saved.version
+        });
         return true;
       }
     );
@@ -503,7 +518,10 @@ export class ManagerWorkCoordinator {
       throw error;
     } finally {
       writer.flush();
-      if (this.outputWriters.get(work.id) === writer) this.outputWriters.delete(work.id);
+      if (this.outputWriters.get(work.id) === writer) {
+        this.outputWriters.delete(work.id);
+        this.outputVersions.delete(work.id);
+      }
       clearInterval(watch);
       signal.removeEventListener("abort", abort);
     }
