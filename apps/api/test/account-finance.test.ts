@@ -321,6 +321,15 @@ describe("canonical usage replay integrity", () => {
     const parent = realpathSync(tmpdir());
     const directory = realpathSync(mkdtempSync(path.join(parent, "kosmora-finance-restart-")));
     const filename = path.join(directory, "finance.sqlite");
+    const cleanup = () => {
+      const checked = realpathSync(directory);
+      if (
+        path.dirname(checked) !== parent ||
+        !path.basename(checked).startsWith("kosmora-finance-restart-")
+      )
+        throw Error("Refusing to clean an unexpected test directory");
+      rmSync(checked, { recursive: true, force: true });
+    };
     let db: ReturnType<typeof openDatabase> | undefined;
     try {
       db = openDatabase(filename);
@@ -346,13 +355,7 @@ describe("canonical usage replay integrity", () => {
       expect(restored.summary("owner").total_counted_tokens).toBe(115);
     } finally {
       db?.close();
-      const checked = realpathSync(directory);
-      if (
-        path.dirname(checked) !== parent ||
-        !path.basename(checked).startsWith("kosmora-finance-restart-")
-      )
-        throw Error("Refusing to clean an unexpected test directory");
-      rmSync(checked, { recursive: true, force: true });
+      cleanup();
     }
   });
   it("releases only valid owner-matched retained canonical holds, once, without erasing uncertain accounting", async () => {
