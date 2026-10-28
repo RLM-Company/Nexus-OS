@@ -130,6 +130,7 @@ export class MediaService {
   private closed = false;
   private readonly paidEnabled: boolean;
   private readonly imageEditingEnabled: boolean;
+  private readonly providerId: string;
   private readonly emergencyStopped: () => boolean;
   private readonly ownerActive: (ownerId: string) => boolean;
   private readonly executionTimeoutMs: number;
@@ -138,6 +139,9 @@ export class MediaService {
     this.store = options.directory ? new MediaFileStore(options.directory) : null;
     this.paidEnabled = options.paidEnabled === true;
     this.imageEditingEnabled = options.imageEditingEnabled === true;
+    this.providerId = options.baseUrl?.startsWith("https://ru.cheapvibecode.ru/")
+      ? "cheapvibecode"
+      : "openai";
     this.registry =
       options.registry ??
       new MediaCapabilityRegistry(
@@ -212,7 +216,7 @@ export class MediaService {
       result[capability] = {
         ready: reason === null,
         model: route?.model ?? null,
-        provider: route?.provider ?? null,
+        provider: route ? this.providerId : null,
         reason,
         constraints:
           route?.imageConstraints ??
@@ -301,7 +305,7 @@ export class MediaService {
     const job = this.store!.create(ownerId, kind, {
       ...metadata,
       model: route.model,
-      provider: route.provider
+      provider: this.providerId
     });
     const controller = new AbortController();
     const task = new Promise<void>((resolve) => {
