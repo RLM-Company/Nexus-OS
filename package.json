@@ -28,9 +28,10 @@
     "test:live-acceptance-guards": "node --test scripts/test/live-ai-work-acceptance.test.mjs",
     "test:secrets": "node --test scripts/test/check-secrets.test.mjs",
     "test:privacy": "node --test apps/api/test/privacy-coordinator.node.mjs && node scripts/integration-privacy-e2e-smoke.mjs",
+    "test:media-acceptance": "node --test scripts/test/media-live-acceptance.test.mjs",
     "test:profile": "node scripts/manager-compatible-fixture-smoke.mjs",
     "typecheck": "turbo run typecheck",
-    "check:core": "pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm test:connection && pnpm test:live-acceptance-guards && pnpm test:secrets && pnpm build && pnpm test:privacy && pnpm test:profile",
+    "check:core": "pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm test:connection && pnpm test:live-acceptance-guards && pnpm test:secrets && pnpm test:media-acceptance && pnpm build && pnpm test:privacy && pnpm test:profile",
     "check": "pnpm check:core && pnpm test:e2e"
   },
   "devDependencies": {

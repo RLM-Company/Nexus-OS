@@ -7,6 +7,7 @@ import { MediaService } from "../src/media/media-service.js";
 import { MediaFileStore } from "../src/media/media-store.js";
 import { createMediaPrivacyAdapter } from "../src/media/media-privacy.js";
 import type { OwnerMediaBudget } from "../src/media/media-budget.js";
+import { pcmWav } from "./fixtures/media.js";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/5d8AAAAASUVORK5CYII=",
@@ -60,7 +61,7 @@ const adapter = {
   }),
   transcribe: async () => "Распознанный текст"
 };
-const wav = Buffer.from("RIFFexample");
+const wav = pcmWav();
 
 describe("durable media jobs, ownerBudget, privacy without provider spending", () => {
   it("refuses any provider dispatch without the shared budget", () => {
