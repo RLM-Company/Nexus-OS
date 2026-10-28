@@ -2,11 +2,13 @@
 import { ts } from "./offline-typescript.mjs";
 /** A complete owner export/delete lifecycle on real SQLite plus actual store adapters (workers inert). */
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
+import console from "node:console";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, basename, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 const root = resolve(import.meta.dirname, "..");
 const temp = mkdtempSync(join(tmpdir(), "kosmora-privacy-e2e-"));
@@ -16,7 +18,9 @@ const emit = (source, target) => {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 }
   }).outputText;
   if (source === "packages/db/src/canvas-artifact-store.ts")
-    out = out.replace('"@cosmora/contracts"', '"./canvas-artifacts.js"');
+    out = out
+      .replaceAll('"@cosmora/contracts"', '"./canvas-artifacts.js"')
+      .replaceAll('"@cosmora/contracts/data-workspace"', '"./data-workspace.js"');
   const p = join(temp, target);
   mkdirSync(resolve(p, ".."), { recursive: true });
   writeFileSync(p, out);
@@ -26,9 +30,15 @@ try {
   writeFileSync(join(temp, "package.json"), '{"type":"module"}');
   for (const [src, dst] of [
     ["apps/api/src/account-settings/account-store.ts", "account-store.js"],
+    ["apps/api/src/account-settings/execution-profile.ts", "execution-profile.js"],
     ["apps/api/src/account-settings/migration.ts", "migration.js"],
     ["apps/api/src/account-settings/privacy/archive.ts", "privacy/archive.js"],
     ["apps/api/src/account-settings/privacy/coordinator.ts", "privacy/coordinator.js"],
+    ["apps/api/src/account-settings/privacy/segmented-export.ts", "privacy/segmented-export.js"],
+    ["apps/api/src/presentation-privacy.ts", "presentation-privacy.js"],
+    ["apps/api/src/notification-privacy.ts", "notification-privacy.js"],
+    ["apps/api/src/owner-skill-privacy.ts", "owner-skill-privacy.js"],
+    ["apps/api/src/email-change-privacy.ts", "email-change-privacy.js"],
     [
       "apps/api/src/account-settings/privacy/account-core-adapter.ts",
       "privacy/account-core-adapter.js"
@@ -40,6 +50,7 @@ try {
     ["packages/db/src/document-library-store.ts", "document-library-store.js"],
     ["packages/db/src/canvas-artifact-store.ts", "canvas-artifact-store.js"],
     ["packages/contracts/src/canvas-artifacts.ts", "canvas-artifacts.js"],
+    ["packages/contracts/src/data-workspace.ts", "data-workspace.js"],
     ["apps/api/src/canvas/canvas-privacy.ts", "canvas-privacy.js"],
     ["packages/db/src/document-answer-store.ts", "document-answer-store.js"]
   ])
@@ -50,6 +61,10 @@ try {
   const { canvasPrivacyAdapter } = await load("canvas-privacy.js");
   const { DocumentAnswerStore } = await load("document-answer-store.js");
   const { OwnerPrivacyCoordinator } = await load("privacy/coordinator.js");
+  const { PresentationPrivacyAdapter } = await load("presentation-privacy.js");
+  const { NotificationPrivacyAdapter } = await load("notification-privacy.js");
+  const { OwnerSkillPrivacyAdapter } = await load("owner-skill-privacy.js");
+  const { EmailChangePrivacyAdapter } = await load("email-change-privacy.js");
   const { AccountCorePrivacyAdapter } = await load("privacy/account-core-adapter.js");
   const {
     DocumentsPrivacyAdapter,
@@ -204,10 +219,16 @@ try {
       deleteOwner: async () => ({ deleted_jobs: 0 })
     })
   );
-  privacy.register(new CodeIntegratedPrivacyAdapter(sql, { quiesceOwner: async () => {} }));
+  privacy.register(
+    new CodeIntegratedPrivacyAdapter(sql, { quiesceOwner: async () => {}, resumeOwner: () => {} })
+  );
   privacy.register(new AgentStudioPrivacyAdapter(sql));
   privacy.register(new PolicyProjectsPrivacyAdapter(sql));
   privacy.register(canvasPrivacyAdapter(new CanvasArtifactStore(sql)));
+  privacy.register(new PresentationPrivacyAdapter(sql));
+  privacy.register(new NotificationPrivacyAdapter(sql));
+  privacy.register(new OwnerSkillPrivacyAdapter(sql));
+  privacy.register(new EmailChangePrivacyAdapter(sql));
   assert.equal(privacy.overview("alice").ready, true);
   // A descriptor mismatch MUST abort the entire archive and release owner export fences.
   const canonicalRead = documents.readBinary.bind(documents);
@@ -289,5 +310,7 @@ try {
   );
   sql.close();
 } finally {
+  assert.equal(dirname(resolve(temp)), resolve(tmpdir()));
+  assert.ok(basename(temp).startsWith("kosmora-privacy-e2e-"));
   rmSync(temp, { recursive: true, force: true });
 }
