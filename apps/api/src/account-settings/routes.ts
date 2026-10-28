@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
 import { MODEL_PROFILES, type ExecutionPreferences } from "./execution-profile.js";
-import type { IdentityContext } from "@cosmora/contracts";
+import { AccountFinanceSummarySchema, type IdentityContext } from "@cosmora/contracts";
+import { accountFinanceSummary } from "./finance-summary.js";
 import {
   PreferenceConflictError,
   type AccountStore,
@@ -190,5 +191,15 @@ export function registerAccountRoutes(
   );
   app.get("/api/v1/personal-settings/usage", (request) =>
     Promise.resolve(store.usage(identityFor(request).owner_id))
+  );
+  app.get(
+    "/api/v1/personal-settings/usage/finance",
+    {
+      schema: { response: { 200: AccountFinanceSummarySchema } }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return accountFinanceSummary(store.sqlite, identityFor(request).owner_id);
+    }
   );
 }
