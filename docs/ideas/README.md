@@ -34,6 +34,7 @@
 - [Project checkpoints и Decision Trace](./2026-08-23-project-checkpoints-and-decision-trace.md) — `PARTIALLY_IMPLEMENTED`
 - [Многоуровневая project memory](./2026-08-23-tiered-project-memory.md) — `DISCOVERY`
 - [Обучение моделей на project memory](./2026-08-23-model-training-from-project-memory.md) — `DEFERRED / PRIVACY REVIEW REQUIRED`
+- [Связанный контекст проекта и инициативный Work](./2026-10-28-connected-project-context-and-proactive-work.md) — `IDEA`; кандидат для второго этапа, первая связка: проект → задача → Work → результат
 
 ## Что сюда не складывать
 
