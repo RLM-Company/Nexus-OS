@@ -1,0 +1,3378 @@
+From 8d354ca15e9f60a5141241de6f5190ea409df367 Mon Sep 17 00:00:00 2001
+From: RLM-Company <kolbasov14072010@gmail.com>
+Date: Wed, 28 Oct 2026 07:07:38 +0000
+Subject: [PATCH] feat(windows): finalize Kosmora Windows client acceptance,
+ recovery, download center, and packaged GUI CI
+
+---
+ .github/workflows/windows-desktop.yml         |  25 +-
+ desktop/windows/ACCEPTANCE_0.11.2.md          |  31 +-
+ desktop/windows/DOWNLOAD_CENTER_HANDOFF.md    |  12 +
+ desktop/windows/ci/gui-acceptance-fixture.cjs | 380 ++++++++++++++++
+ desktop/windows/ci/nsis-lifecycle.ps1         |  22 +
+ desktop/windows/ci/verify-unsigned-policy.cjs |  11 +
+ desktop/windows/connection.js                 |  29 +-
+ desktop/windows/download-center.cjs           | 401 +++++++++++++++++
+ desktop/windows/download-history.cjs          | 242 ++++++++++
+ desktop/windows/downloads-preload.cjs         |  20 +
+ desktop/windows/downloads.css                 | 145 ++++++
+ desktop/windows/downloads.html                |  34 ++
+ desktop/windows/downloads.js                  | 105 +++++
+ desktop/windows/gui-acceptance.cjs            | 425 ++++++++++++++++++
+ desktop/windows/main.cjs                      | 189 ++++++--
+ desktop/windows/package.json                  |  52 +--
+ desktop/windows/test/download-center.test.cjs | 198 ++++++++
+ .../windows/test/download-history.test.cjs    | 107 +++++
+ .../windows/test/download-package.test.cjs    |  28 ++
+ desktop/windows/test/gui-acceptance.test.cjs  | 286 ++++++++++++
+ docs/handoff/WINDOWS_FINAL_ACCEPTANCE.md      | 102 +++++
+ 21 files changed, 2741 insertions(+), 103 deletions(-)
+ create mode 100755 desktop/windows/DOWNLOAD_CENTER_HANDOFF.md
+ create mode 100755 desktop/windows/ci/gui-acceptance-fixture.cjs
+ create mode 100755 desktop/windows/download-center.cjs
+ create mode 100755 desktop/windows/download-history.cjs
+ create mode 100755 desktop/windows/downloads-preload.cjs
+ create mode 100755 desktop/windows/downloads.css
+ create mode 100755 desktop/windows/downloads.html
+ create mode 100755 desktop/windows/downloads.js
+ create mode 100755 desktop/windows/gui-acceptance.cjs
+ create mode 100755 desktop/windows/test/download-center.test.cjs
+ create mode 100755 desktop/windows/test/download-history.test.cjs
+ create mode 100755 desktop/windows/test/download-package.test.cjs
+ create mode 100755 desktop/windows/test/gui-acceptance.test.cjs
+ create mode 100755 docs/handoff/WINDOWS_FINAL_ACCEPTANCE.md
+
+diff --git a/.github/workflows/windows-desktop.yml b/.github/workflows/windows-desktop.yml
+index 01e9015..b1b1103 100755
+--- a/.github/workflows/windows-desktop.yml
++++ b/.github/workflows/windows-desktop.yml
+@@ -43,16 +43,19 @@ jobs:
+         shell: pwsh
+         run: |
+           npm run check
+-          $tokens = $null
+-          $errors = $null
+-          [System.Management.Automation.Language.Parser]::ParseFile(
+-            (Resolve-Path "ci/nsis-lifecycle.ps1"),
+-            [ref]$tokens,
+-            [ref]$errors
+-          ) | Out-Null
+-          if ($errors.Count -gt 0) {
+-            $errors | ForEach-Object { Write-Error $_.Message }
+-            throw "NSIS lifecycle PowerShell syntax validation failed."
++          npm run verify:unsigned
++          foreach ($script in @("ci/nsis-lifecycle.ps1", "ci/build-unsigned.ps1")) {
++            $tokens = $null
++            $errors = $null
++            [System.Management.Automation.Language.Parser]::ParseFile(
++              (Resolve-Path $script),
++              [ref]$tokens,
++              [ref]$errors
++            ) | Out-Null
++            if ($errors.Count -gt 0) {
++              $errors | ForEach-Object { Write-Error $_.Message }
++              throw "PowerShell syntax validation failed for $script."
++            }
+           }
+ 
+       - name: Build unsigned Windows installer
+@@ -68,7 +71,7 @@ jobs:
+           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+         run: npx --yes electron-builder@26.17.0 --win nsis --x64 --publish never
+ 
+-      - name: Verify fresh installer lifecycle
++      - name: Verify fresh installer lifecycle and packaged GUI acceptance
+         shell: pwsh
+         run: |
+           $version = node -p "require('./desktop/windows/package.json').version"
+diff --git a/desktop/windows/ACCEPTANCE_0.11.2.md b/desktop/windows/ACCEPTANCE_0.11.2.md
+index 65a312d..5f1e802 100755
+--- a/desktop/windows/ACCEPTANCE_0.11.2.md
++++ b/desktop/windows/ACCEPTANCE_0.11.2.md
+@@ -1,20 +1,13 @@
+-# Kosmora Windows v0.11.2 — acceptance matrix (Linux source-only)
++# Kosmora Windows v0.11.2 — final acceptance matrix
+ 
+-| Категория                                        | Статус                | Основание                                                                                                                                                                          |
+-| ------------------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+-| Exact base + update guards                       | PASS                  | База `76e44320...`; stock Ed25519/hash/rollback files не менялись, `publicKeyPem: null`                                                                                            |
+-| Node syntax + deterministic policy tests         | PASS                  | `npm run check`: 32 passed, 1 skipped, 0 failed                                                                                                                                    |
+-| Unsigned packaging preflight                     | PASS                  | `node ci/verify-unsigned-policy.cjs`: correct appId, NSIS per-user, packaged files, disabled updates; **не сборка EXE**                                                            |
+-| Web leaf TS tests                                | PASS                  | `tsc` 2 новых TS-модуля; Node type stripping synthetic web 3/3                                                                                                                     |
+-| Owner/session                                    | PASS (synthetic)      | valid `local-owner`, current active owner, expiry, 401, redirect, foreign URL/HTML/oversize, offline negative                                                                      |
+-| Draft isolation                                  | PASS (synthetic)      | owner+origin ciphertext context, tamper, expiry, loaded-scope/document gate, bounded cached-owner flush, logout/origin reset                                                       |
+-| Deep link, download, reconnect state             | PASS (synthetic)      | static allowlists + existing deterministic connection/update fixtures                                                                                                              |
+-| Ordinary browser/PWA                             | PASS (synthetic only) | no bridge leaves original browser path; no full Next/Playwright acceptance                                                                                                         |
+-| Real Windows DPAPI / single instance / GUI / DnD | UNVERIFIED            | Linux, no Windows Electron runtime                                                                                                                                                 |
+-| Real NSIS EXE / fresh upgrade uninstall          | UNVERIFIED            | no Windows NSIS or native PowerShell acceptance                                                                                                                                    |
+-| Live gateway identity / reconnect / unknown POST | UNVERIFIED            | no server, cookies, paid usage or network acceptance                                                                                                                               |
+-| Real release signing/AuthentiCode/CDN/rollback   | UNVERIFIED            | no signing key; updates OFF; no published release                                                                                                                                  |
+-| Windows owner test                               | INTEGRATOR ACTION     | disposable test account/profile: login A/B, offline, abrupt restart, logout, origin switch, duplicate windows, malicious deep links, file drop/download, unknown accepted response |
+-| Release                                          | INTEGRATOR ACTION     | Windows build with `ci/build-unsigned.ps1`, record SHA, run `ci/nsis-lifecycle.ps1` on guarded disposable CI, review integration changes, manual release/signing decision          |
+-
+-Do not present synthetic/mock as live acceptance. Do not apply full and shared patches together. Do not overwrite root cosmetic page/globals/brand changes.
++| Категория | Статус | Основание |
++| :--- | :--- | :--- |
++| Exact base (`4b54bdef1f5c29d84d566c3eb1ecc21214bf8dd9`) + update guards | PASS | `appId: com.cosmora.desktop`, `cosmora-windows-desktop`, `persist:cosmora`, `publicKeyPem: null` (updates OFF) |
++| Node syntax + deterministic policy & fixture tests | PASS | `npm run check`: 20 syntax checks + 42 Node tests (`41 passed, 1 skipped on Linux, 0 failed`) |
++| Unsigned packaging preflight | PASS | `npm run verify:unsigned`: all 24 packaged files verified, NSIS per-user x64, `deleteAppDataOnUninstall: false`, no auto-install |
++| Connection, login, route preservation & stale-attempt gate | PASS | `connection-policy.test.cjs`, `desktop-state.test.cjs`, `gui-acceptance.test.cjs`; intermediate `/` after login no longer clobbers `deferredRoute` |
++| Owner/session & DPAPI draft isolation | PASS | `owner-session.test.cjs`, `draft-store.test.cjs`, `draft-isolation.test.cjs`, `draft-session-gate.test.cjs` |
++| Download Center, filename sanitization & URL chain policy | PASS | `download-history.test.cjs`, `download-center.test.cjs`, `download-package.test.cjs`; unsafe extensions blocked from `openItem` |
++| Packaged GUI acceptance harness (`--cosmora-gui-acceptance`) | PASS (fixture + CI) | `gui-acceptance.cjs` + `ci/gui-acceptance-fixture.cjs` wired into `ci/nsis-lifecycle.ps1` (`Fresh` mode) and `.github/workflows/windows-desktop.yml` |
++| Real Windows GUI / DPAPI / NSIS `Fresh` & `Upgrade` execution | WINDOWS CI | Requires disposable GitHub-hosted `windows-latest` runner (`.github/workflows/windows-desktop.yml`); unverified on Linux host |
++| Release signing / Authenticode / published update channel | OFF BY DESIGN | Unsigned build (`CSC_IDENTITY_AUTO_DISCOVERY=false`); `publicKeyPem: null` in `update-trust.json` |
+diff --git a/desktop/windows/DOWNLOAD_CENTER_HANDOFF.md b/desktop/windows/DOWNLOAD_CENTER_HANDOFF.md
+new file mode 100755
+index 0000000..9999678
+--- /dev/null
++++ b/desktop/windows/DOWNLOAD_CENTER_HANDOFF.md
+@@ -0,0 +1,12 @@
++# Kosmora Windows Download Center — handoff (2026-10-10)
++
++## Summary
++
++Adds a native Download Center (`download-center.cjs`, `download-history.cjs`, `downloads.html`, `downloads.css`, `downloads.js`, `downloads-preload.cjs`) to the Windows Electron shell (`desktop/windows`):
++
++- Tracks active, completed, cancelled, and interrupted downloads in `download-history.json` under the existing `cosmora-windows-desktop` user profile.
++- Isolates download history by `SHA-256(origin + "\0" + verifiedOwnerId)`.
++- Never exposes local filesystem paths (`savePath`), owner scopes, or raw download URLs to the renderer process (`downloads.html`).
++- Blocks launching executable and system file extensions (`.exe`, `.msi`, `.bat`, `.cmd`, `.ps1`, `.vbs`, `.js`, `.reg`, `.lnk`, etc.) from **Открыть**, directing the user to **Показать в папке**.
++- Recovers stale `"active"` records as `"interrupted"` on startup after an unexpected exit, and delays recovery store initialization until after the single-instance lock and smoke-mode check.
++- Clears scoped download history on explicit logout or server origin switch.
+diff --git a/desktop/windows/ci/gui-acceptance-fixture.cjs b/desktop/windows/ci/gui-acceptance-fixture.cjs
+new file mode 100755
+index 0000000..47ca7ff
+--- /dev/null
++++ b/desktop/windows/ci/gui-acceptance-fixture.cjs
+@@ -0,0 +1,380 @@
++"use strict";
++
++const assert = require("node:assert/strict");
++const { spawn } = require("node:child_process");
++const fs = require("node:fs");
++const http = require("node:http");
++const os = require("node:os");
++const path = require("node:path");
++
++const OWNER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
++const WORKSPACE_ROUTE =
++  "/?project=dddddddd-dddd-4ddd-8ddd-dddddddddddd&view=chat&surface=code";
++const DRAFT_SCOPE = "chat:cccccccc-cccc-4ccc-8ccc-cccccccccccc";
++const DRAFT_TEXT = "Черновик владельца A после установки";
++
++function hasValidSessionCookie(req) {
++  const cookie = String(req.headers.cookie || "");
++  return cookie.split(";").some((part) => part.trim() === "kosmora_session=valid-owner-session");
++}
++
++function renderWorkspaceHtml(title) {
++  return `<!doctype html>
++<html lang="ru">
++  <head><meta charset="utf-8" /><title>${title}</title></head>
++  <body>
++    <main id="workspace-root" data-title="${title}">
++      <h1>${title}</h1>
++    </main>
++  </body>
++</html>`;
++}
++
++function startGuiAcceptanceFixture({ onSpawnSecondInstance = null } = {}) {
++  let offline = false;
++  let activeOwner = OWNER_A;
++  let secondInstanceTriggered = false;
++
++  const server = http.createServer(async (req, res) => {
++    const parsed = new URL(req.url || "/", "http://127.0.0.1");
++
++    if (parsed.pathname === "/test-control/mode") {
++      offline = parsed.searchParams.get("state") === "offline";
++      res.writeHead(200, { "content-type": "application/json" });
++      res.end(JSON.stringify({ ok: true, offline }));
++      return;
++    }
++
++    if (parsed.pathname === "/test-control/owner") {
++      activeOwner = parsed.searchParams.get("id") || OWNER_A;
++      res.writeHead(200, { "content-type": "application/json" });
++      res.end(JSON.stringify({ ok: true, activeOwner }));
++      return;
++    }
++
++    if (parsed.pathname === "/test-control/spawn-second-instance") {
++      secondInstanceTriggered = true;
++      if (typeof onSpawnSecondInstance === "function") {
++        void Promise.resolve(onSpawnSecondInstance()).catch(() => {});
++      }
++      res.writeHead(200, { "content-type": "application/json" });
++      res.end(JSON.stringify({ ok: true }));
++      return;
++    }
++
++    if (offline) {
++      req.socket.destroy();
++      return;
++    }
++
++    if (parsed.pathname === "/api/v1/health") {
++      if (!hasValidSessionCookie(req)) {
++        res.writeHead(401, { "content-type": "application/json" });
++        res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
++        return;
++      }
++      res.writeHead(200, { "content-type": "application/json" });
++      res.end(JSON.stringify({ ok: true, status: "healthy" }));
++      return;
++    }
++
++    if (parsed.pathname === "/api/v1/identity/sessions") {
++      if (!hasValidSessionCookie(req)) {
++        res.writeHead(401, { "content-type": "application/json" });
++        res.end(JSON.stringify({ items: [] }));
++        return;
++      }
++      const body = JSON.stringify({
++        items: [
++          {
++            owner_id: activeOwner,
++            current: true,
++            status: "active",
++            actor_kind: "owner",
++            expires_at: "2035-01-01T00:00:00.000Z"
++          }
++        ]
++      });
++      res.writeHead(200, {
++        "content-type": "application/json",
++        "content-length": String(Buffer.byteLength(body))
++      });
++      res.end(body);
++      return;
++    }
++
++    if (parsed.pathname === "/login" && req.method === "GET") {
++      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
++      res.end(`<!doctype html>
++<html lang="ru">
++  <head><meta charset="utf-8" /><title>Вход в Kosmora</title></head>
++  <body>
++    <form id="login-form" method="POST" action="/login">
++      <input type="password" name="password" value="fixture-owner" />
++      <input type="checkbox" name="remember" checked />
++      <button id="login-submit" type="submit">Войти</button>
++    </form>
++  </body>
++</html>`);
++      return;
++    }
++
++    if (parsed.pathname === "/login" && req.method === "POST") {
++      res.writeHead(302, {
++        "Set-Cookie":
++          "kosmora_session=valid-owner-session; Path=/; HttpOnly; Max-Age=2592000; SameSite=Lax",
++        Location: WORKSPACE_ROUTE
++      });
++      res.end();
++      return;
++    }
++
++    if (parsed.pathname === "/logout") {
++      res.writeHead(302, {
++        "Set-Cookie": "kosmora_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax",
++        Location: "/login"
++      });
++      res.end();
++      return;
++    }
++
++    if (parsed.pathname === "/files/result") {
++      if (!hasValidSessionCookie(req)) {
++        res.writeHead(401);
++        res.end("Unauthorized");
++        return;
++      }
++      const rawName = parsed.searchParams.get("name") || "result.md";
++      const seq = parsed.searchParams.get("seq") || "1";
++      const payload = `RESULT-${seq}`;
++      res.writeHead(200, {
++        "content-type": "text/markdown; charset=utf-8",
++        "content-length": String(Buffer.byteLength(payload)),
++        "content-disposition": `attachment; filename="${rawName.replace(/"/g, "'")}"`
++      });
++      res.end(payload);
++      return;
++    }
++
++    if (parsed.pathname === "/files/foreign-redirect") {
++      res.writeHead(302, {
++        Location: "http://localhost:9/evil.txt"
++      });
++      res.end();
++      return;
++    }
++
++    if (
++      parsed.pathname === "/" ||
++      parsed.pathname === "/github" ||
++      parsed.pathname === "/github/preview" ||
++      parsed.pathname === "/code-agent" ||
++      parsed.pathname === "/control-center" ||
++      parsed.pathname === "/agent-studio" ||
++      parsed.pathname === "/model-status" ||
++      parsed.pathname === "/skills"
++    ) {
++      if (!hasValidSessionCookie(req)) {
++        res.writeHead(302, { Location: "/login" });
++        res.end();
++        return;
++      }
++      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
++      res.end(renderWorkspaceHtml(`Kosmora Workspace ${parsed.pathname}`));
++      return;
++    }
++
++    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
++    res.end("Not found");
++  });
++
++  return new Promise((resolve, reject) => {
++    server.once("error", reject);
++    server.listen(0, "127.0.0.1", () => {
++      const address = server.address();
++      const origin = `http://127.0.0.1:${address.port}`;
++      resolve({
++        origin,
++        port: address.port,
++        getState: () => ({ offline, activeOwner, secondInstanceTriggered }),
++        setOffline: (value) => {
++          offline = Boolean(value);
++        },
++        setActiveOwner: (value) => {
++          activeOwner = value;
++        },
++        close: () =>
++          new Promise((done) => {
++            server.close(() => done());
++          })
++      });
++    });
++  });
++}
++
++function runProcess(exePath, args, env, timeoutMs = 45000) {
++  return new Promise((resolve, reject) => {
++    const child = spawn(exePath, args, {
++      env: { ...process.env, ...env },
++      stdio: ["ignore", "pipe", "pipe"],
++      windowsHide: true
++    });
++    let stdout = "";
++    let stderr = "";
++    const timer = setTimeout(() => {
++      child.kill();
++      reject(new Error(`Timed out waiting for ${path.basename(exePath)} (${args.join(" ")})`));
++    }, timeoutMs);
++    child.stdout?.on("data", (chunk) => {
++      stdout += chunk.toString("utf8");
++    });
++    child.stderr?.on("data", (chunk) => {
++      stderr += chunk.toString("utf8");
++    });
++    child.once("error", (err) => {
++      clearTimeout(timer);
++      reject(err);
++    });
++    child.once("exit", (code) => {
++      clearTimeout(timer);
++      resolve({ code, stdout, stderr });
++    });
++  });
++}
++
++async function runPackagedGuiAcceptanceSuite({ appExePath, workRoot }) {
++  const resolvedApp = path.resolve(appExePath);
++  if (!fs.existsSync(resolvedApp)) {
++    throw new Error(`Installed Kosmora executable was not found: ${resolvedApp}`);
++  }
++  const downloadDirectory = path.join(path.resolve(workRoot), "gui-downloads");
++  fs.rmSync(downloadDirectory, { recursive: true, force: true });
++  fs.mkdirSync(downloadDirectory, { recursive: true });
++
++  const tempDir = os.tmpdir();
++  const runId = `${Date.now()}-${process.pid}`;
++  const configPath = path.join(tempDir, `cosmora-gui-acceptance-config-${runId}.json`);
++  const output1Path = path.join(tempDir, `cosmora-gui-acceptance-phase1-${runId}.json`);
++  const output2Path = path.join(tempDir, `cosmora-gui-acceptance-phase2-${runId}.json`);
++
++  const fixture = await startGuiAcceptanceFixture({
++    onSpawnSecondInstance: async () => {
++      // First send a hostile deep link that must be ignored, then a valid /github deep link
++      await runProcess(
++        resolvedApp,
++        ["kosmora://open?path=https%3A%2F%2Fevil.example"],
++        {},
++        15000
++      );
++      await runProcess(resolvedApp, ["kosmora://open?path=%2Fgithub"], {}, 15000);
++    }
++  });
++
++  try {
++    // Phase 1: First launch -> connect -> login -> DPAPI draft save -> downloads & Download Center -> close
++    fs.writeFileSync(
++      configPath,
++      JSON.stringify({
++        phase: "first-launch",
++        origin: fixture.origin,
++        workspaceRoute: WORKSPACE_ROUTE,
++        draftScope: DRAFT_SCOPE,
++        draftText: DRAFT_TEXT,
++        downloadDirectory
++      }),
++      "utf8"
++    );
++
++    const phase1Proc = await runProcess(resolvedApp, ["--cosmora-gui-acceptance"], {
++      COSMORA_GUI_ACCEPTANCE_CONFIG: configPath,
++      COSMORA_GUI_ACCEPTANCE_OUTPUT: output1Path
++    });
++    if (phase1Proc.code !== 0) {
++      throw new Error(
++        `Packaged GUI acceptance phase 1 exited with code ${phase1Proc.code}: ${phase1Proc.stderr}`
++      );
++    }
++    const phase1Report = JSON.parse(fs.readFileSync(output1Path, "utf8"));
++    assert.equal(phase1Report.ok, true);
++    assert.equal(phase1Report.savedOrigin, fixture.origin);
++    assert.equal(phase1Report.lastPath, WORKSPACE_ROUTE);
++    assert.equal(phase1Report.downloadsCount, 2);
++    assert.deepEqual(
++      phase1Report.downloadedFiles.sort(),
++      ["report_final____ (1).md", "report_final____.md"]
++    );
++
++    // Phase 2: Relaunch -> auto session/route restore -> DPAPI draft load -> second-instance deep link -> offline/retry -> Owner B isolation -> logout
++    fs.writeFileSync(
++      configPath,
++      JSON.stringify({
++        phase: "relaunch-and-recovery",
++        origin: fixture.origin,
++        workspaceRoute: WORKSPACE_ROUTE,
++        draftScope: DRAFT_SCOPE,
++        draftText: DRAFT_TEXT,
++        downloadDirectory
++      }),
++      "utf8"
++    );
++
++    const phase2Proc = await runProcess(resolvedApp, ["--cosmora-gui-acceptance"], {
++      COSMORA_GUI_ACCEPTANCE_CONFIG: configPath,
++      COSMORA_GUI_ACCEPTANCE_OUTPUT: output2Path
++    });
++    if (phase2Proc.code !== 0) {
++      throw new Error(
++        `Packaged GUI acceptance phase 2 exited with code ${phase2Proc.code}: ${phase2Proc.stderr}`
++      );
++    }
++    const phase2Report = JSON.parse(fs.readFileSync(output2Path, "utf8"));
++    assert.equal(phase2Report.ok, true);
++    assert.equal(phase2Report.restoredRouteOnRelaunch, WORKSPACE_ROUTE);
++    assert.equal(phase2Report.restoredDraftAcrossRestart, true);
++    assert.equal(phase2Report.secondInstanceDeepLinkRoute, "/github");
++    assert.equal(phase2Report.offlineRecoveryPreservedOrigin, fixture.origin);
++    assert.equal(phase2Report.offlineRecoveryRestoredRoute, "/github");
++    assert.equal(phase2Report.ownerBIsolationVerified, true);
++    assert.equal(phase2Report.logoutClearedDraftsAndRoute, true);
++
++    return { phase1Report, phase2Report };
++  } finally {
++    await fixture.close();
++    fs.rmSync(configPath, { force: true });
++    fs.rmSync(output1Path, { force: true });
++    fs.rmSync(output2Path, { force: true });
++    fs.rmSync(downloadDirectory, { recursive: true, force: true });
++  }
++}
++
++if (require.main === module) {
++  const args = process.argv.slice(2);
++  const appIndex = args.indexOf("--app");
++  const workRootIndex = args.indexOf("--work-root");
++  const appExePath = appIndex >= 0 ? args[appIndex + 1] : null;
++  const workRoot = workRootIndex >= 0 ? args[workRootIndex + 1] : null;
++  if (!appExePath || !workRoot) {
++    console.error("Usage: node ci/gui-acceptance-fixture.cjs --app <Kosmora.exe> --work-root <dir>");
++    process.exitCode = 2;
++  } else {
++    runPackagedGuiAcceptanceSuite({ appExePath, workRoot })
++      .then((summary) => {
++        process.stdout.write(
++          `Packaged GUI acceptance OK: ${JSON.stringify(summary.phase2Report)}\n`
++        );
++      })
++      .catch((error) => {
++        console.error(error instanceof Error ? error.stack || error.message : error);
++        process.exitCode = 1;
++      });
++  }
++}
++
++module.exports = {
++  OWNER_A,
++  WORKSPACE_ROUTE,
++  DRAFT_SCOPE,
++  DRAFT_TEXT,
++  startGuiAcceptanceFixture,
++  runPackagedGuiAcceptanceSuite
++};
+diff --git a/desktop/windows/ci/nsis-lifecycle.ps1 b/desktop/windows/ci/nsis-lifecycle.ps1
+index 03fdcb9..b14b094 100755
+--- a/desktop/windows/ci/nsis-lifecycle.ps1
++++ b/desktop/windows/ci/nsis-lifecycle.ps1
+@@ -79,6 +79,17 @@ function Invoke-PackagedSmoke([string]$App, [string]$ExpectedVersion, [string]$I
+   return $record
+ }
+ 
++function Invoke-PackagedGuiAcceptance([string]$App, [string]$WorkDir) {
++  $fixtureRunner = Join-Path $PSScriptRoot "gui-acceptance-fixture.cjs"
++  if (-not (Test-Path -LiteralPath $fixtureRunner -PathType Leaf)) {
++    throw "GUI acceptance fixture runner is missing: $fixtureRunner"
++  }
++  & node $fixtureRunner --app $App --work-root $WorkDir
++  if ($LASTEXITCODE -ne 0) {
++    throw "Packaged GUI acceptance failed with exit code $LASTEXITCODE."
++  }
++}
++
+ function Wait-DirectoryRemoved([string]$PathValue) {
+   for ($attempt = 0; $attempt -lt 80 -and (Test-Path -LiteralPath $PathValue); $attempt++) {
+     Start-Sleep -Milliseconds 250
+@@ -163,6 +174,10 @@ try {
+   $record = Invoke-PackagedSmoke $installed.App $CurrentVersion $installDir $marker
+   Assert-InstallMetadata $installed.App $installDir $CurrentVersion
+ 
++  if ($Mode -eq "Fresh") {
++    Invoke-PackagedGuiAcceptance $installed.App $root
++  }
++
+   if ($Mode -eq "Upgrade") {
+     $actualUserData = [IO.Path]::GetFullPath([string]$record.userDataPath)
+     $expectedUserData = [IO.Path]::GetFullPath($userData)
+@@ -184,6 +199,13 @@ try {
+     if (Test-Path -LiteralPath $shortcut) { throw "Uninstall left a shortcut behind: $shortcut" }
+   }
+ 
++  if ($Mode -eq "Fresh") {
++    $freshConnectionFile = Join-Path $userData "connection.json"
++    if (-not (Test-Path -LiteralPath $freshConnectionFile -PathType Leaf)) {
++      throw "Uninstall removed connection.json after Fresh GUI acceptance."
++    }
++  }
++
+   if ($Mode -eq "Upgrade") {
+     if (-not (Test-Path -LiteralPath $connectionFile -PathType Leaf)) { throw "Uninstall removed connection.json." }
+     if (-not (Test-Path -LiteralPath $sessionFile -PathType Leaf)) { throw "Uninstall removed Chromium session data." }
+diff --git a/desktop/windows/ci/verify-unsigned-policy.cjs b/desktop/windows/ci/verify-unsigned-policy.cjs
+index 972d214..b419c95 100755
+--- a/desktop/windows/ci/verify-unsigned-policy.cjs
++++ b/desktop/windows/ci/verify-unsigned-policy.cjs
+@@ -12,6 +12,7 @@ const trust = JSON.parse(fs.readFileSync(path.join(root, "update-trust.json"), "
+ 
+ function verify() {
+   assert.match(pkg.version, /^\d+\.\d+\.\d+$/, "Expected numbered candidate version");
++  assert.equal(pkg.name, "cosmora-windows-desktop");
+   assert.equal(pkg.build.appId, "com.cosmora.desktop");
+   assert.equal(pkg.build.productName, "Kosmora");
+   assert.equal(pkg.build.electronVersion, "44.5.1");
+@@ -25,7 +26,12 @@ function verify() {
+   for (const file of [
+     "main.cjs",
+     "preload.cjs",
++    "downloads-preload.cjs",
++    "download-history.cjs",
++    "download-center.cjs",
+     "connection-policy.cjs",
++    "smoke-mode.cjs",
++    "gui-acceptance.cjs",
+     "desktop-state.cjs",
+     "desktop-recovery.cjs",
+     "draft-store.cjs",
+@@ -35,6 +41,11 @@ function verify() {
+     "update-service.cjs",
+     "update-trust.json",
+     "connection.html",
++    "connection.css",
++    "connection.js",
++    "downloads.html",
++    "downloads.css",
++    "downloads.js",
+     "build/icon.ico"
+   ]) {
+     assert.ok(pkg.build.files.includes(file), `${file} is missing from NSIS package inputs`);
+diff --git a/desktop/windows/connection.js b/desktop/windows/connection.js
+index f48bbce..05f4dfe 100755
+--- a/desktop/windows/connection.js
++++ b/desktop/windows/connection.js
+@@ -9,6 +9,9 @@ const error = document.querySelector("#error");
+ const title = document.querySelector("#title");
+ const lead = document.querySelector("#lead");
+ 
++let activeRequestId = 0;
++let editingReplacementOrigin = false;
++
+ function setBusy(value) {
+   button.disabled = value;
+   retry.disabled = value;
+@@ -18,9 +21,13 @@ function setBusy(value) {
+ 
+ async function render() {
+   const state = await window.cosmoraDesktop.getConnectionState();
+-  origin.value = state.origin;
++  setBusy(Boolean(state.connecting));
+   error.textContent = state.message || "";
+   const offline = state.mode === "offline";
++  if (editingReplacementOrigin && !state.connecting) {
++    return;
++  }
++  origin.value = state.origin;
+   form.hidden = offline;
+   retry.hidden = !offline;
+   change.hidden = !offline;
+@@ -32,32 +39,44 @@ async function render() {
+ 
+ form.addEventListener("submit", async (event) => {
+   event.preventDefault();
++  const requestId = ++activeRequestId;
+   error.textContent = "";
+   setBusy(true);
+   try {
+     const result = await window.cosmoraDesktop.connect({ origin: origin.value });
+-    if (!result.ok) error.textContent = result.message;
++    if (requestId !== activeRequestId || result?.stale) return;
++    if (result?.ok) {
++      editingReplacementOrigin = false;
++      return;
++    }
++    error.textContent = result?.message || "Не удалось подключиться к серверу.";
+   } catch {
++    if (requestId !== activeRequestId) return;
+     error.textContent = "Не удалось открыть Kosmora. Проверьте соединение и повторите попытку.";
+   } finally {
+-    setBusy(false);
++    if (requestId === activeRequestId) setBusy(false);
+   }
+ });
+ 
+ retry.addEventListener("click", async () => {
++  const requestId = ++activeRequestId;
++  editingReplacementOrigin = false;
+   error.textContent = "";
+   setBusy(true);
+   try {
+     const result = await window.cosmoraDesktop.retry();
+-    if (!result.ok) error.textContent = result.message;
++    if (requestId !== activeRequestId || result?.stale) return;
++    if (!result?.ok) error.textContent = result?.message || "Повторное подключение не удалось.";
+   } catch {
++    if (requestId !== activeRequestId) return;
+     error.textContent = "Повторное подключение не удалось.";
+   } finally {
+-    setBusy(false);
++    if (requestId === activeRequestId) setBusy(false);
+   }
+ });
+ 
+ change.addEventListener("click", () => {
++  editingReplacementOrigin = true;
+   form.hidden = false;
+   retry.hidden = true;
+   change.hidden = true;
+diff --git a/desktop/windows/download-center.cjs b/desktop/windows/download-center.cjs
+new file mode 100755
+index 0000000..4379da8
+--- /dev/null
++++ b/desktop/windows/download-center.cjs
+@@ -0,0 +1,401 @@
++"use strict";
++
++const crypto = require("node:crypto");
++const fs = require("node:fs");
++const path = require("node:path");
++const { pathToFileURL } = require("node:url");
++const { createDownloadHistoryStore } = require("./download-history.cjs");
++
++const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
++const BLOCKED_OPEN_EXTENSIONS = new Set([
++  ".exe",
++  ".msi",
++  ".msp",
++  ".bat",
++  ".cmd",
++  ".ps1",
++  ".vbs",
++  ".vbe",
++  ".js",
++  ".jse",
++  ".wsf",
++  ".wsh",
++  ".scr",
++  ".com",
++  ".pif",
++  ".dll",
++  ".sys",
++  ".reg",
++  ".hta",
++  ".cpl",
++  ".jar",
++  ".lnk",
++  ".scf",
++  ".url",
++  ".iso",
++  ".img",
++  ".vhd",
++  ".vhdx"
++]);
++
++function localDownloadsUrl() {
++  return pathToFileURL(path.join(__dirname, "downloads.html")).toString();
++}
++
++function downloadScope(origin, ownerId) {
++  return crypto
++    .createHash("sha256")
++    .update(`${origin}\0${ownerId}`)
++    .digest("hex");
++}
++
++function isDangerousDownloadTarget(filePath) {
++  if (typeof filePath !== "string" || !filePath.trim()) return true;
++  const ext = path.extname(filePath.trim()).toLowerCase();
++  return BLOCKED_OPEN_EXTENSIONS.has(ext);
++}
++
++function createDownloadCenter({
++  profileDirectory,
++  getOrigin,
++  getIdentityEpoch,
++  verifiedOwner,
++  activeDownloads,
++  getDownloadDirectory,
++  getParentWindow = () => null,
++  shell,
++  BrowserWindow = null,
++  ipcMain = null,
++  onStateChanged = () => {}
++}) {
++  const history = createDownloadHistoryStore(profileDirectory);
++  const activeScopes = new Map();
++  let panelWindow = null;
++
++  function isTrustedPanelEvent(event) {
++    if (!event?.senderFrame || event.senderFrame.url !== localDownloadsUrl()) return false;
++    if (panelWindow && !panelWindow.isDestroyed()) {
++      return (
++        event.sender === panelWindow.webContents &&
++        event.senderFrame === panelWindow.webContents.mainFrame
++      );
++    }
++    return true;
++  }
++
++  function notifyPanel() {
++    if (panelWindow && !panelWindow.isDestroyed()) {
++      panelWindow.webContents.send("cosmora:downloads-changed");
++    }
++    onStateChanged();
++  }
++
++  async function resolveActiveScope({ allowCachedWrite = false } = {}) {
++    const origin = getOrigin();
++    const epoch = getIdentityEpoch();
++    if (!origin) return null;
++    const owner = await verifiedOwner({ allowCachedWrite });
++    if (!owner || origin !== getOrigin() || epoch !== getIdentityEpoch()) return null;
++    return { origin, owner, epoch, scope: downloadScope(origin, owner) };
++  }
++
++  function capture(id, item) {
++    if (typeof id !== "string" || !UUID.test(id) || !item) return;
++    const normalizedId = id.toLowerCase();
++    const origin = getOrigin();
++    const epoch = getIdentityEpoch();
++    if (!origin) {
++      try {
++        item.cancel();
++      } catch {
++        /* ignore */
++      }
++      activeDownloads.delete(id);
++      return;
++    }
++
++    let scope = null;
++    let started = false;
++    let finished = null;
++
++    const safeCancel = () => {
++      try {
++        item.cancel();
++      } catch {
++        /* ignore */
++      }
++      activeDownloads.delete(id);
++      activeScopes.delete(normalizedId);
++      notifyPanel();
++    };
++
++    const finish = ({ state, receivedBytes, totalBytes, savePath }) => {
++      activeDownloads.delete(id);
++      activeScopes.delete(normalizedId);
++      if (!started || !scope) return;
++      history.finish(
++        scope,
++        normalizedId,
++        state,
++        receivedBytes,
++        totalBytes,
++        state === "completed" ? savePath : null
++      );
++      notifyPanel();
++    };
++
++    const onUpdated = () => {
++      if (origin !== getOrigin() || epoch !== getIdentityEpoch()) {
++        safeCancel();
++        return;
++      }
++      if (!started || !scope) return;
++      if (history.progress(scope, normalizedId, item.getReceivedBytes(), item.getTotalBytes())) {
++        notifyPanel();
++      }
++    };
++
++    item.on("updated", onUpdated);
++    item.once("done", (_event, state) => {
++      item.removeListener?.("updated", onUpdated);
++      const snapshot = {
++        state,
++        receivedBytes: item.getReceivedBytes(),
++        totalBytes: item.getTotalBytes(),
++        savePath: typeof item.getSavePath === "function" ? item.getSavePath() : null
++      };
++      if (!started) {
++        finished = snapshot;
++        activeDownloads.delete(id);
++        notifyPanel();
++        return;
++      }
++      finish(snapshot);
++    });
++
++    void Promise.resolve(verifiedOwner({ allowCachedWrite: true }))
++      .then((owner) => {
++        if (!owner || origin !== getOrigin() || epoch !== getIdentityEpoch()) {
++          safeCancel();
++          return;
++        }
++        scope = downloadScope(origin, owner);
++        const initialReceived = finished ? finished.receivedBytes : item.getReceivedBytes();
++        const initialTotal = finished ? finished.totalBytes : item.getTotalBytes();
++        if (!history.start(scope, normalizedId, item.getFilename(), initialReceived, initialTotal)) {
++          safeCancel();
++          return;
++        }
++        started = true;
++        activeScopes.set(normalizedId, scope);
++        if (finished) {
++          finish(finished);
++        } else {
++          notifyPanel();
++        }
++      })
++      .catch(() => {
++        safeCancel();
++      });
++  }
++
++  async function list(event) {
++    if (!isTrustedPanelEvent(event)) throw new Error("Untrusted downloads IPC caller.");
++    const context = await resolveActiveScope();
++    if (!context) {
++      return {
++        ok: false,
++        items: [],
++        message: "Войдите в аккаунт Kosmora, чтобы просматривать загрузки."
++      };
++    }
++    return {
++      ok: true,
++      items: history.list(context.scope)
++    };
++  }
++
++  async function openItem(event, id) {
++    if (!isTrustedPanelEvent(event)) throw new Error("Untrusted downloads IPC caller.");
++    if (typeof id !== "string" || !UUID.test(id))
++      return { ok: false, message: "Некорректный идентификатор загрузки." };
++    const context = await resolveActiveScope();
++    if (!context) return { ok: false, message: "Сеанс не подтверждён." };
++    const target = history.resolvePath(context.scope, id);
++    if (!target) return { ok: false, message: "Файл недоступен для текущего аккаунта." };
++    if (isDangerousDownloadTarget(target)) {
++      return {
++        ok: false,
++        message:
++          "Запуск исполняемых и системных файлов из Центра загрузок заблокирован. Используйте «Показать в папке»."
++      };
++    }
++    try {
++      if (!fs.statSync(target).isFile()) throw new Error("Missing file");
++    } catch {
++      return { ok: false, message: "Файл был перемещён или удалён с диска." };
++    }
++    const err = await shell.openPath(target);
++    if (err) return { ok: false, message: "Не удалось открыть файл в системе." };
++    return { ok: true };
++  }
++
++  async function revealItem(event, id) {
++    if (!isTrustedPanelEvent(event)) throw new Error("Untrusted downloads IPC caller.");
++    if (typeof id !== "string" || !UUID.test(id))
++      return { ok: false, message: "Некорректный идентификатор загрузки." };
++    const context = await resolveActiveScope();
++    if (!context) return { ok: false, message: "Сеанс не подтверждён." };
++    const target = history.resolvePath(context.scope, id);
++    if (!target) return { ok: false, message: "Файл недоступен для текущего аккаунта." };
++    try {
++      if (!fs.statSync(target).isFile()) throw new Error("Missing file");
++    } catch {
++      return { ok: false, message: "Файл был перемещён или удалён с диска." };
++    }
++    shell.showItemInFolder(target);
++    return { ok: true };
++  }
++
++  async function cancelItem(event, id) {
++    if (!isTrustedPanelEvent(event)) throw new Error("Untrusted downloads IPC caller.");
++    if (typeof id !== "string" || !UUID.test(id))
++      return { ok: false, message: "Некорректный идентификатор загрузки." };
++    const normalizedId = id.toLowerCase();
++    const context = await resolveActiveScope({ allowCachedWrite: true });
++    if (!context || activeScopes.get(normalizedId) !== context.scope)
++      return { ok: false, message: "Активная загрузка не найдена." };
++    const active = activeDownloads.get(id) || activeDownloads.get(normalizedId);
++    if (!active) return { ok: false, message: "Загрузка уже завершена." };
++    try {
++      active.cancel();
++    } catch {
++      return { ok: false, message: "Не удалось отменить скачивание." };
++    }
++    notifyPanel();
++    return { ok: true };
++  }
++
++  async function removeItem(event, id) {
++    if (!isTrustedPanelEvent(event)) throw new Error("Untrusted downloads IPC caller.");
++    if (typeof id !== "string" || !UUID.test(id))
++      return { ok: false, message: "Некорректный идентификатор загрузки." };
++    const context = await resolveActiveScope();
++    if (!context) return { ok: false, message: "Сеанс не подтверждён." };
++    if (!history.remove(context.scope, id))
++      return { ok: false, message: "Запись загрузки не найдена." };
++    notifyPanel();
++    return { ok: true };
++  }
++
++  async function clearCompleted(event) {
++    if (!isTrustedPanelEvent(event)) throw new Error("Untrusted downloads IPC caller.");
++    const context = await resolveActiveScope();
++    if (!context) return { ok: false, message: "Сеанс не подтверждён." };
++    history.clearCompleted(context.scope);
++    notifyPanel();
++    return { ok: true };
++  }
++
++  async function openFolder(event) {
++    if (!isTrustedPanelEvent(event)) throw new Error("Untrusted downloads IPC caller.");
++    const folder = getDownloadDirectory();
++    const err = await shell.openPath(folder);
++    if (err) return { ok: false, message: "Не удалось открыть папку загрузок." };
++    return { ok: true };
++  }
++
++  function invalidate({ forget = false, origin = null, owner = null } = {}) {
++    if (forget) {
++      if (origin && owner) {
++        history.clearScope(downloadScope(origin, owner));
++      } else {
++        history.clearAll();
++      }
++    }
++    notifyPanel();
++  }
++
++  async function show() {
++    if (!BrowserWindow) return null;
++    if (panelWindow && !panelWindow.isDestroyed()) {
++      if (panelWindow.isMinimized()) panelWindow.restore();
++      panelWindow.show();
++      panelWindow.focus();
++      notifyPanel();
++      return panelWindow;
++    }
++    const parent = getParentWindow();
++    panelWindow = new BrowserWindow({
++      width: 760,
++      height: 540,
++      minWidth: 560,
++      minHeight: 380,
++      parent: parent && !parent.isDestroyed() ? parent : undefined,
++      backgroundColor: "#f6f6f6",
++      show: false,
++      title: "Загрузки Kosmora",
++      autoHideMenuBar: true,
++      webPreferences: {
++        preload: path.join(__dirname, "downloads-preload.cjs"),
++        contextIsolation: true,
++        nodeIntegration: false,
++        sandbox: true,
++        webSecurity: true,
++        allowRunningInsecureContent: false,
++        webviewTag: false,
++        navigateOnDragDrop: false
++      }
++    });
++    panelWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
++    panelWindow.webContents.on("will-navigate", (event, url) => {
++      if (url !== localDownloadsUrl()) event.preventDefault();
++    });
++    panelWindow.once("ready-to-show", () => {
++      if (panelWindow && !panelWindow.isDestroyed()) panelWindow.show();
++    });
++    panelWindow.on("closed", () => {
++      panelWindow = null;
++    });
++    await panelWindow.loadURL(localDownloadsUrl());
++    return panelWindow;
++  }
++
++  function close() {
++    if (panelWindow && !panelWindow.isDestroyed()) {
++      panelWindow.close();
++      panelWindow = null;
++    }
++  }
++
++  if (ipcMain) {
++    ipcMain.handle("cosmora:downloads-list", (event) => list(event));
++    ipcMain.handle("cosmora:downloads-open", (event, id) => openItem(event, id));
++    ipcMain.handle("cosmora:downloads-reveal", (event, id) => revealItem(event, id));
++    ipcMain.handle("cosmora:downloads-cancel", (event, id) => cancelItem(event, id));
++    ipcMain.handle("cosmora:downloads-remove", (event, id) => removeItem(event, id));
++    ipcMain.handle("cosmora:downloads-clear-completed", (event) => clearCompleted(event));
++    ipcMain.handle("cosmora:downloads-open-folder", (event) => openFolder(event));
++  }
++
++  return {
++    capture,
++    list,
++    openItem,
++    revealItem,
++    cancelItem,
++    removeItem,
++    clearCompleted,
++    openFolder,
++    invalidate,
++    show,
++    close
++  };
++}
++
++module.exports = {
++  createDownloadCenter,
++  downloadScope,
++  isDangerousDownloadTarget,
++  localDownloadsUrl
++};
+diff --git a/desktop/windows/download-history.cjs b/desktop/windows/download-history.cjs
+new file mode 100755
+index 0000000..a6c5c08
+--- /dev/null
++++ b/desktop/windows/download-history.cjs
+@@ -0,0 +1,242 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const { safeDownloadFilename } = require("./connection-policy.cjs");
++const { writeAtomicJson } = require("./desktop-state.cjs");
++
++const FILE_NAME = "download-history.json";
++const MAX_ENTRIES = 50;
++const MAX_FILE_SIZE = 131072;
++const SCOPE = /^[a-f0-9]{64}$/;
++const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
++const STATUS = new Set(["active", "completed", "cancelled", "interrupted"]);
++
++function cleanBytes(value) {
++  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
++}
++
++function cleanTotal(value) {
++  return Number.isSafeInteger(value) && value > 0 ? value : null;
++}
++
++function validPath(value) {
++  return typeof value === "string" &&
++    value.length > 0 &&
++    value.length <= 520 &&
++    path.isAbsolute(value) &&
++    !value.includes("\0")
++    ? value
++    : null;
++}
++
++function validIso(value) {
++  return typeof value === "string" &&
++    value.length <= 40 &&
++    Number.isFinite(Date.parse(value))
++    ? value
++    : null;
++}
++
++function sanitizeRecord(item) {
++  if (!item || typeof item !== "object") return null;
++  if (!UUID.test(item.id) || !SCOPE.test(item.scope) || !STATUS.has(item.status)) return null;
++  const startedAt = validIso(item.startedAt);
++  if (!startedAt) return null;
++  let status = item.status === "active" ? "interrupted" : item.status;
++  let savePath = status === "completed" ? validPath(item.savePath) : null;
++  if (status === "completed" && !savePath) {
++    status = "interrupted";
++  }
++  const finishedAt =
++    status === "active" ? null : validIso(item.finishedAt) || new Date().toISOString();
++  return {
++    id: item.id.toLowerCase(),
++    scope: item.scope,
++    name: safeDownloadFilename(item.name),
++    status,
++    receivedBytes: cleanBytes(item.receivedBytes),
++    totalBytes: cleanTotal(item.totalBytes),
++    startedAt,
++    finishedAt,
++    savePath
++  };
++}
++
++function publicEntry(entry) {
++  return {
++    id: entry.id,
++    name: entry.name,
++    status: entry.status,
++    receivedBytes: entry.receivedBytes,
++    totalBytes: entry.totalBytes,
++    startedAt: entry.startedAt,
++    finishedAt: entry.finishedAt
++  };
++}
++
++function createDownloadHistoryStore(profileDirectory) {
++  const filePath = path.join(profileDirectory, FILE_NAME);
++  let records = [];
++
++  function save() {
++    try {
++      writeAtomicJson(filePath, { version: 1, records });
++    } catch {
++      /* never crash the shell on history I/O */
++    }
++  }
++
++  function loadInitial() {
++    let hadFile = false;
++    try {
++      const stat = fs.statSync(filePath);
++      hadFile = true;
++      if (!stat.isFile() || stat.size > MAX_FILE_SIZE) {
++        records = [];
++        save();
++        return;
++      }
++      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
++      if (parsed?.version !== 1 || !Array.isArray(parsed.records)) {
++        records = [];
++        save();
++        return;
++      }
++      const seen = new Set();
++      const cleaned = [];
++      for (const raw of parsed.records) {
++        const record = sanitizeRecord(raw);
++        if (!record) continue;
++        const key = `${record.scope}:${record.id}`;
++        if (seen.has(key)) continue;
++        seen.add(key);
++        cleaned.push(record);
++        if (cleaned.length >= MAX_ENTRIES) break;
++      }
++      records = cleaned;
++      save();
++    } catch {
++      records = [];
++      if (hadFile) save();
++    }
++  }
++
++  loadInitial();
++
++  function find(scope, id) {
++    if (!SCOPE.test(scope) || typeof id !== "string" || !UUID.test(id)) return null;
++    const normalizedId = id.toLowerCase();
++    return records.find((entry) => entry.scope === scope && entry.id === normalizedId) || null;
++  }
++
++  function start(scope, id, name, received = 0, total = null) {
++    if (!SCOPE.test(scope) || typeof id !== "string" || !UUID.test(id) || find(scope, id))
++      return false;
++    while (records.length >= MAX_ENTRIES) {
++      let removableIndex = -1;
++      for (let idx = records.length - 1; idx >= 0; idx -= 1) {
++        if (records[idx].status !== "active") {
++          removableIndex = idx;
++          break;
++        }
++      }
++      if (removableIndex === -1) return false;
++      records.splice(removableIndex, 1);
++    }
++    records.unshift({
++      id: id.toLowerCase(),
++      scope,
++      name: safeDownloadFilename(name),
++      status: "active",
++      receivedBytes: cleanBytes(received),
++      totalBytes: cleanTotal(total),
++      startedAt: new Date().toISOString(),
++      finishedAt: null,
++      savePath: null
++    });
++    save();
++    return true;
++  }
++
++  function progress(scope, id, received, total) {
++    const entry = find(scope, id);
++    if (!entry || entry.status !== "active") return false;
++    entry.receivedBytes = cleanBytes(received);
++    const cleanedTotal = cleanTotal(total);
++    if (cleanedTotal !== null) entry.totalBytes = cleanedTotal;
++    return true;
++  }
++
++  function finish(scope, id, state, received, total, savePath) {
++    const entry = find(scope, id);
++    if (!entry) return false;
++    entry.status =
++      state === "completed" ? "completed" : state === "cancelled" ? "cancelled" : "interrupted";
++    entry.receivedBytes = cleanBytes(received);
++    const cleanedTotal = cleanTotal(total);
++    if (cleanedTotal !== null) entry.totalBytes = cleanedTotal;
++    entry.finishedAt = new Date().toISOString();
++    entry.savePath = entry.status === "completed" ? validPath(savePath) : null;
++    if (entry.status === "completed" && !entry.savePath) {
++      entry.status = "interrupted";
++    }
++    save();
++    return true;
++  }
++
++  function list(scope) {
++    if (!SCOPE.test(scope)) return [];
++    return records.filter((entry) => entry.scope === scope).map(publicEntry);
++  }
++
++  function resolvePath(scope, id) {
++    const entry = find(scope, id);
++    if (!entry || entry.status !== "completed" || !entry.savePath) return null;
++    return entry.savePath;
++  }
++
++  function remove(scope, id) {
++    const entry = find(scope, id);
++    if (!entry || entry.status === "active") return false;
++    records = records.filter((item) => item !== entry);
++    save();
++    return true;
++  }
++
++  function clearCompleted(scope) {
++    if (!SCOPE.test(scope)) return false;
++    records = records.filter((entry) => entry.scope !== scope || entry.status === "active");
++    save();
++    return true;
++  }
++
++  function clearScope(scope) {
++    if (!SCOPE.test(scope)) return false;
++    records = records.filter((entry) => entry.scope !== scope);
++    save();
++    return true;
++  }
++
++  function clearAll() {
++    records = [];
++    save();
++  }
++
++  return {
++    start,
++    progress,
++    finish,
++    list,
++    resolvePath,
++    remove,
++    clearCompleted,
++    clearScope,
++    clearAll
++  };
++}
++
++module.exports = {
++  createDownloadHistoryStore,
++  MAX_ENTRIES
++};
+diff --git a/desktop/windows/downloads-preload.cjs b/desktop/windows/downloads-preload.cjs
+new file mode 100755
+index 0000000..1a06113
+--- /dev/null
++++ b/desktop/windows/downloads-preload.cjs
+@@ -0,0 +1,20 @@
++"use strict";
++
++const { contextBridge, ipcRenderer } = require("electron");
++
++if (window.location.protocol === "file:") {
++  contextBridge.exposeInMainWorld("cosmoraDownloads", {
++    list: () => ipcRenderer.invoke("cosmora:downloads-list"),
++    openItem: (id) => ipcRenderer.invoke("cosmora:downloads-open", id),
++    revealItem: (id) => ipcRenderer.invoke("cosmora:downloads-reveal", id),
++    cancelItem: (id) => ipcRenderer.invoke("cosmora:downloads-cancel", id),
++    removeItem: (id) => ipcRenderer.invoke("cosmora:downloads-remove", id),
++    clearCompleted: () => ipcRenderer.invoke("cosmora:downloads-clear-completed"),
++    openFolder: () => ipcRenderer.invoke("cosmora:downloads-open-folder"),
++    onChanged: (listener) => {
++      const notify = () => listener();
++      ipcRenderer.on("cosmora:downloads-changed", notify);
++      return () => ipcRenderer.removeListener("cosmora:downloads-changed", notify);
++    }
++  });
++}
+diff --git a/desktop/windows/downloads.css b/desktop/windows/downloads.css
+new file mode 100755
+index 0000000..ca7e657
+--- /dev/null
++++ b/desktop/windows/downloads.css
+@@ -0,0 +1,145 @@
++:root {
++  color-scheme: light;
++  font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
++  background: #f6f6f6;
++  color: #111111;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++body {
++  margin: 0;
++  min-height: 100vh;
++  padding: 20px;
++  background: #f6f6f6;
++  color: #111111;
++}
++
++.panel {
++  max-width: 820px;
++  margin: 0 auto;
++  background: #ffffff;
++  border: 1px solid #d8d8d8;
++  border-radius: 8px;
++  padding: 22px;
++  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.06);
++}
++
++.topbar {
++  display: flex;
++  align-items: flex-start;
++  justify-content: space-between;
++  gap: 16px;
++  flex-wrap: wrap;
++}
++
++.eyebrow {
++  margin: 0 0 6px;
++  font-size: 12px;
++  font-weight: 600;
++  letter-spacing: 0.04em;
++  text-transform: uppercase;
++  color: #555555;
++}
++
++h1 {
++  margin: 0;
++  font-size: 22px;
++  line-height: 1.25;
++  font-weight: 700;
++}
++
++.lead {
++  margin: 10px 0 0;
++  font-size: 13px;
++  line-height: 1.45;
++  color: #3f3f3f;
++}
++
++.toolbar,
++.actions {
++  display: flex;
++  gap: 8px;
++  flex-wrap: wrap;
++}
++
++button {
++  min-height: 34px;
++  padding: 0 12px;
++  border-radius: 6px;
++  border: 1px solid #111111;
++  background: #111111;
++  color: #ffffff;
++  font: inherit;
++  font-size: 13px;
++  font-weight: 600;
++  cursor: pointer;
++}
++
++button.secondary {
++  background: #ffffff;
++  color: #111111;
++  border-color: #bdbdbd;
++}
++
++button:disabled {
++  opacity: 0.55;
++  cursor: default;
++}
++
++.error {
++  min-height: 18px;
++  margin: 12px 0 0;
++  color: #8a0000;
++  font-size: 13px;
++  line-height: 1.4;
++}
++
++.empty {
++  margin-top: 16px;
++  padding: 26px 18px;
++  border: 1px dashed #cfcfcf;
++  border-radius: 6px;
++  color: #555555;
++  text-align: center;
++  font-size: 14px;
++}
++
++.list {
++  list-style: none;
++  margin: 14px 0 0;
++  padding: 0;
++  display: grid;
++  gap: 10px;
++}
++
++.row {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 14px;
++  padding: 12px 14px;
++  border: 1px solid #dfdfdf;
++  border-radius: 6px;
++  background: #fafafa;
++}
++
++.meta {
++  min-width: 0;
++  flex: 1;
++}
++
++.filename {
++  margin: 0;
++  font-size: 14px;
++  font-weight: 600;
++  overflow-wrap: anywhere;
++}
++
++.status {
++  margin: 4px 0 0;
++  font-size: 12px;
++  color: #505050;
++}
+diff --git a/desktop/windows/downloads.html b/desktop/windows/downloads.html
+new file mode 100755
+index 0000000..93910a5
+--- /dev/null
++++ b/desktop/windows/downloads.html
+@@ -0,0 +1,34 @@
++<!doctype html>
++<html lang="ru">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <meta
++      http-equiv="Content-Security-Policy"
++      content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'"
++    />
++    <title>Загрузки Kosmora</title>
++    <link rel="stylesheet" href="./downloads.css" />
++  </head>
++  <body>
++    <main class="panel" aria-labelledby="title">
++      <header class="topbar">
++        <div>
++          <p class="eyebrow">Kosmora for Windows</p>
++          <h1 id="title">Центр загрузок</h1>
++        </div>
++        <div class="toolbar">
++          <button id="open-folder" class="secondary" type="button">Папка загрузок</button>
++          <button id="clear-completed" class="secondary" type="button">Очистить завершённые</button>
++        </div>
++      </header>
++      <p id="state-text" class="lead">Проверка текущего сеанса…</p>
++      <p id="error" class="error" role="alert" aria-live="polite"></p>
++      <section id="empty" class="empty" hidden>
++        <p>Загрузок для текущего аккаунта пока нет.</p>
++      </section>
++      <ul id="list" class="list" aria-label="Файлы загрузок"></ul>
++    </main>
++    <script src="./downloads.js"></script>
++  </body>
++</html>
+diff --git a/desktop/windows/downloads.js b/desktop/windows/downloads.js
+new file mode 100755
+index 0000000..7070d9e
+--- /dev/null
++++ b/desktop/windows/downloads.js
+@@ -0,0 +1,105 @@
++"use strict";
++
++const list = document.querySelector("#list");
++const empty = document.querySelector("#empty");
++const error = document.querySelector("#error");
++const stateText = document.querySelector("#state-text");
++const openFolder = document.querySelector("#open-folder");
++const clearCompleted = document.querySelector("#clear-completed");
++
++function formatBytes(value) {
++  if (!Number.isFinite(value) || value < 0) return "0 Б";
++  if (value < 1024) return `${value} Б`;
++  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} КБ`;
++  return `${(value / (1024 * 1024)).toFixed(1)} МБ`;
++}
++
++function describe(item) {
++  const progress =
++    item.totalBytes && item.totalBytes > 0
++      ? `${formatBytes(item.receivedBytes)} из ${formatBytes(item.totalBytes)}`
++      : formatBytes(item.receivedBytes);
++  if (item.status === "active") return `Скачивается • ${progress}`;
++  if (item.status === "completed") return `Готово • ${progress}`;
++  if (item.status === "cancelled") return "Отменено";
++  return "Прервано • автоматический повтор отключён";
++}
++
++function actionButton(label, handler, secondary = false) {
++  const button = document.createElement("button");
++  button.type = "button";
++  if (secondary) button.className = "secondary";
++  button.textContent = label;
++  button.addEventListener("click", () => void run(handler));
++  return button;
++}
++
++async function run(action) {
++  error.textContent = "";
++  try {
++    const result = await action();
++    if (result && result.ok === false) {
++      error.textContent = result.message || "Операция не выполнена.";
++    }
++    await render();
++  } catch {
++    error.textContent = "Не удалось выполнить команду Центра загрузок.";
++  }
++}
++
++async function render() {
++  const result = await window.cosmoraDownloads.list();
++  const items = Array.isArray(result.items) ? result.items : [];
++  stateText.textContent = result.message || `${items.length} в истории текущего аккаунта`;
++  list.replaceChildren();
++  empty.hidden = items.length > 0;
++  clearCompleted.disabled = !items.some((item) => item.status !== "active");
++
++  for (const item of items) {
++    const row = document.createElement("li");
++    row.className = "row";
++    const meta = document.createElement("div");
++    meta.className = "meta";
++    const name = document.createElement("p");
++    name.className = "filename";
++    name.textContent = item.name;
++    const status = document.createElement("p");
++    status.className = "status";
++    status.textContent = describe(item);
++    meta.append(name, status);
++
++    const actions = document.createElement("div");
++    actions.className = "actions";
++    if (item.status === "active") {
++      actions.append(
++        actionButton("Отменить", () => window.cosmoraDownloads.cancelItem(item.id), true)
++      );
++    } else if (item.status === "completed") {
++      actions.append(
++        actionButton("Открыть", () => window.cosmoraDownloads.openItem(item.id)),
++        actionButton(
++          "Показать в папке",
++          () => window.cosmoraDownloads.revealItem(item.id),
++          true
++        ),
++        actionButton("Убрать", () => window.cosmoraDownloads.removeItem(item.id), true)
++      );
++    } else {
++      actions.append(
++        actionButton("Убрать", () => window.cosmoraDownloads.removeItem(item.id), true)
++      );
++    }
++    row.append(meta, actions);
++    list.append(row);
++  }
++}
++
++openFolder.addEventListener("click", () => void run(() => window.cosmoraDownloads.openFolder()));
++clearCompleted.addEventListener(
++  "click",
++  () => void run(() => window.cosmoraDownloads.clearCompleted())
++);
++window.cosmoraDownloads.onChanged(() => void render());
++void render().catch(() => {
++  error.textContent = "Не удалось загрузить историю скачиваний.";
++});
+diff --git a/desktop/windows/gui-acceptance.cjs b/desktop/windows/gui-acceptance.cjs
+new file mode 100755
+index 0000000..7178326
+--- /dev/null
++++ b/desktop/windows/gui-acceptance.cjs
+@@ -0,0 +1,425 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const { writeAtomicJson } = require("./desktop-state.cjs");
++
++const GUI_ACCEPTANCE_FLAG = "--cosmora-gui-acceptance";
++const LOOPBACK_ORIGIN = /^http:\/\/127\.0\.0\.1:\d{2,5}$/;
++const FILE_PATTERN = /^cosmora-gui-acceptance-[a-z0-9._-]+\.json$/i;
++
++function isGuiAcceptanceMode(argv = process.argv) {
++  return Array.isArray(argv) && argv.includes(GUI_ACCEPTANCE_FLAG);
++}
++
++function resolveTempJsonPath(filePath, tempDir, label) {
++  if (typeof filePath !== "string" || !filePath.trim()) {
++    throw new Error(`${label} path is required.`);
++  }
++  if (typeof tempDir !== "string" || !tempDir.trim()) {
++    throw new Error("A temporary directory is required for GUI acceptance.");
++  }
++  const resolvedRoot = path.resolve(tempDir);
++  const resolvedTarget = path.resolve(filePath);
++  const relative = path.relative(resolvedRoot, resolvedTarget);
++  if (
++    !relative ||
++    relative.startsWith("..") ||
++    path.isAbsolute(relative) ||
++    path.dirname(relative) !== "."
++  ) {
++    throw new Error(`${label} must be a direct child of the OS temporary directory.`);
++  }
++  if (!FILE_PATTERN.test(path.basename(resolvedTarget))) {
++    throw new Error(`${label} filename does not match the allowed pattern.`);
++  }
++  return resolvedTarget;
++}
++
++function readGuiAcceptanceConfig({
++  isPackaged,
++  configPath = process.env.COSMORA_GUI_ACCEPTANCE_CONFIG,
++  outputPath = process.env.COSMORA_GUI_ACCEPTANCE_OUTPUT,
++  tempDir
++}) {
++  if (!isPackaged) {
++    throw new Error("GUI acceptance mode requires a packaged Kosmora build.");
++  }
++  const resolvedConfig = resolveTempJsonPath(configPath, tempDir, "GUI acceptance config");
++  const resolvedOutput = resolveTempJsonPath(outputPath, tempDir, "GUI acceptance output");
++  const raw = JSON.parse(fs.readFileSync(resolvedConfig, "utf8"));
++  if (!raw || typeof raw !== "object" || !LOOPBACK_ORIGIN.test(String(raw.origin || ""))) {
++    throw new Error("GUI acceptance requires a loopback http://127.0.0.1:<port> fixture origin.");
++  }
++  if (raw.phase !== "first-launch" && raw.phase !== "relaunch-and-recovery") {
++    throw new Error("Invalid GUI acceptance phase.");
++  }
++  if (typeof raw.workspaceRoute !== "string" || !raw.workspaceRoute.startsWith("/")) {
++    throw new Error("Invalid GUI acceptance workspaceRoute.");
++  }
++  if (typeof raw.draftScope !== "string" || !raw.draftScope.trim()) {
++    throw new Error("Invalid GUI acceptance draftScope.");
++  }
++  if (typeof raw.draftText !== "string" || !raw.draftText.trim()) {
++    throw new Error("Invalid GUI acceptance draftText.");
++  }
++  return {
++    phase: raw.phase,
++    origin: raw.origin,
++    workspaceRoute: raw.workspaceRoute,
++    draftScope: raw.draftScope,
++    draftText: raw.draftText,
++    downloadDirectory:
++      typeof raw.downloadDirectory === "string" && path.isAbsolute(raw.downloadDirectory)
++        ? raw.downloadDirectory
++        : null,
++    outputPath: resolvedOutput
++  };
++}
++
++function writeGuiAcceptanceReport({ outputPath, tempDir, payload }) {
++  const resolvedOutput = resolveTempJsonPath(outputPath, tempDir, "GUI acceptance output");
++  writeAtomicJson(resolvedOutput, payload);
++}
++
++async function waitFor(predicate, { timeoutMs = 20000, intervalMs = 100, label = "condition" } = {}) {
++  const deadline = Date.now() + timeoutMs;
++  let lastError = null;
++  while (Date.now() < deadline) {
++    try {
++      const value = await predicate();
++      if (value) return value;
++    } catch (error) {
++      lastError = error;
++    }
++    await new Promise((resolve) => setTimeout(resolve, intervalMs));
++  }
++  throw new Error(
++    `Timed out waiting for ${label}${lastError instanceof Error ? `: ${lastError.message}` : ""}`
++  );
++}
++
++async function runPackagedGuiAcceptance({
++  app,
++  getMainWindow,
++  preferences,
++  downloadCenter,
++  readSavedOrigin
++}) {
++  const tempDir = app.getPath("temp");
++  const config = readGuiAcceptanceConfig({
++    isPackaged: app.isPackaged,
++    tempDir
++  });
++
++  if (config.downloadDirectory) {
++    fs.mkdirSync(config.downloadDirectory, { recursive: true });
++    preferences.update({
++      downloadDirectory: config.downloadDirectory,
++      askWhereToSave: false,
++      restorePage: true
++    });
++  }
++
++  if (config.phase === "first-launch") {
++    const win = await waitFor(
++      () => {
++        const w = getMainWindow();
++        return w && !w.isDestroyed() && !w.webContents.isLoading() && w.webContents.getURL().endsWith("/connection.html")
++          ? w
++          : null;
++      },
++      { label: "initial connection.html load" }
++    );
++
++    const setupState = await win.webContents.executeJavaScript(
++      `window.cosmoraDesktop.getConnectionState()`
++    );
++    if (setupState.mode !== "setup") {
++      throw new Error(`Expected setup mode on first launch, got ${setupState.mode}`);
++    }
++
++    const connectResult = await win.webContents.executeJavaScript(
++      `(() => {
++        const input = document.querySelector("#origin");
++        if (input) input.value = ${JSON.stringify(config.origin)};
++        return window.cosmoraDesktop.connect({ origin: ${JSON.stringify(config.origin)} });
++      })()`
++    );
++    if (!connectResult || !connectResult.ok) {
++      throw new Error(`Connect to fixture failed: ${JSON.stringify(connectResult)}`);
++    }
++
++    await waitFor(
++      () =>
++        !win.webContents.isLoading() &&
++        win.webContents.getURL().startsWith(`${config.origin}/login`),
++      { label: "redirect to /login page" }
++    );
++
++    const bridgeCheck = await win.webContents.executeJavaScript(
++      `({
++        hasConnectionBridge: typeof window.cosmoraDesktop !== "undefined",
++        hasDraftBridge: typeof window.kosmoraDesktopDraft === "object"
++      })`
++    );
++    if (bridgeCheck.hasConnectionBridge || !bridgeCheck.hasDraftBridge) {
++      throw new Error(`Unexpected remote bridge exposure on /login: ${JSON.stringify(bridgeCheck)}`);
++    }
++
++    await win.webContents.executeJavaScript(
++      `(() => {
++        const form = document.querySelector("#login-form");
++        if (!form) throw new Error("Missing #login-form");
++        form.submit();
++        return true;
++      })()`
++    );
++
++    await waitFor(
++      () =>
++        !win.webContents.isLoading() &&
++        win.webContents.getURL() === `${config.origin}${config.workspaceRoute}`,
++      { label: "authenticated workspace route after login" }
++    );
++
++    await waitFor(() => preferences.get().lastPath === config.workspaceRoute, {
++      label: "persisted workspace lastPath"
++    });
++
++    const draftResult = await win.webContents.executeJavaScript(
++      `(async () => {
++        const initial = await window.kosmoraDesktopDraft.load(${JSON.stringify(config.draftScope)});
++        if (!initial.ok || initial.text !== "") {
++          throw new Error("Expected empty initial draft: " + JSON.stringify(initial));
++        }
++        const saved = await window.kosmoraDesktopDraft.save(
++          ${JSON.stringify(config.draftScope)},
++          ${JSON.stringify(config.draftText)}
++        );
++        if (!saved.ok) {
++          throw new Error("Failed to save DPAPI draft: " + JSON.stringify(saved));
++        }
++        const loaded = await window.kosmoraDesktopDraft.load(${JSON.stringify(config.draftScope)});
++        return loaded;
++      })()`
++    );
++    if (!draftResult?.ok || draftResult.text !== config.draftText) {
++      throw new Error(`Draft roundtrip in renderer failed: ${JSON.stringify(draftResult)}`);
++    }
++
++    const downloadDir = config.downloadDirectory || app.getPath("downloads");
++    const firstFile = path.join(downloadDir, "report_final____.md");
++    const secondFile = path.join(downloadDir, "report_final____ (1).md");
++
++    win.webContents.downloadURL(
++      `${config.origin}/files/result?name=${encodeURIComponent('report<final>:"?.md')}&seq=1`
++    );
++    await waitFor(() => fs.existsSync(firstFile) && fs.readFileSync(firstFile, "utf8") === "RESULT-1", {
++      label: "first sanitized download"
++    });
++
++    win.webContents.downloadURL(
++      `${config.origin}/files/result?name=${encodeURIComponent('report<final>:"?.md')}&seq=2`
++    );
++    await waitFor(
++      () => fs.existsSync(secondFile) && fs.readFileSync(secondFile, "utf8") === "RESULT-2",
++      { label: "second non-overwriting duplicate download" }
++    );
++    if (fs.readFileSync(firstFile, "utf8") !== "RESULT-1") {
++      throw new Error("Duplicate download overwrote the first file.");
++    }
++
++    win.webContents.downloadURL(`${config.origin}/files/foreign-redirect`);
++    await new Promise((resolve) => setTimeout(resolve, 350));
++
++    const panel = await downloadCenter.show();
++    await waitFor(
++      () =>
++        panel &&
++        !panel.isDestroyed() &&
++        !panel.webContents.isLoading() &&
++        panel.webContents.getURL().endsWith("/downloads.html"),
++      { label: "Download Center window load" }
++    );
++
++    const panelList = await waitFor(
++      async () => {
++        const res = await panel.webContents.executeJavaScript(`window.cosmoraDownloads.list()`);
++        return res?.ok && Array.isArray(res.items) && res.items.length === 2 &&
++          res.items.every((item) => item.status === "completed")
++          ? res
++          : null;
++      },
++      { label: "completed items in Download Center" }
++    );
++
++    for (const item of panelList.items) {
++      if ("savePath" in item || "scope" in item) {
++        throw new Error("Download Center leaked savePath or scope to renderer.");
++      }
++    }
++    downloadCenter.close();
++
++    writeGuiAcceptanceReport({
++      outputPath: config.outputPath,
++      tempDir,
++      payload: {
++        schemaVersion: 1,
++        phase: "first-launch",
++        ok: true,
++        savedOrigin: readSavedOrigin().origin,
++        lastPath: preferences.get().lastPath,
++        draftSaved: true,
++        downloadsCount: panelList.items.length,
++        downloadedFiles: [path.basename(firstFile), path.basename(secondFile)]
++      }
++    });
++    app.quit();
++    return;
++  }
++
++  // Phase: "relaunch-and-recovery"
++  const win = await waitFor(
++    () => {
++      const w = getMainWindow();
++      return w &&
++        !w.isDestroyed() &&
++        !w.webContents.isLoading() &&
++        w.webContents.getURL() === `${config.origin}${config.workspaceRoute}`
++        ? w
++        : null;
++    },
++    { label: "automatic session & route restore on relaunch" }
++  );
++
++  const restoredDraft = await win.webContents.executeJavaScript(
++    `window.kosmoraDesktopDraft.load(${JSON.stringify(config.draftScope)})`
++  );
++  if (!restoredDraft?.ok || restoredDraft.text !== config.draftText) {
++    throw new Error(
++      `Expected Owner A draft across restart, got: ${JSON.stringify(restoredDraft)}`
++    );
++  }
++
++  // Trigger second-instance deep link from fixture control endpoint
++  await fetch(`${config.origin}/test-control/spawn-second-instance`, { method: "POST" });
++  await waitFor(
++    () =>
++      !win.webContents.isLoading() &&
++      win.webContents.getURL() === `${config.origin}/github`,
++    { label: "second-instance deep link navigation to /github" }
++  );
++  await waitFor(() => preferences.get().lastPath === "/github", {
++    label: "persisted /github route from deep link"
++  });
++
++  // Switch fixture server to offline mode and verify recovery screen preserves origin & route
++  await fetch(`${config.origin}/test-control/mode?state=offline`, { method: "POST" });
++  await win.loadURL(`${config.origin}/github`).catch(() => {});
++
++  await waitFor(
++    () =>
++      !win.webContents.isLoading() &&
++      win.webContents.getURL().endsWith("/connection.html"),
++    { label: "offline recovery screen after server drop" }
++  );
++
++  const offlineCheck = await win.webContents.executeJavaScript(
++    `(async () => {
++      const state = await window.cosmoraDesktop.getConnectionState();
++      const badConnect = await window.cosmoraDesktop.connect({ origin: "http://127.0.0.1:1" });
++      const afterBad = await window.cosmoraDesktop.getConnectionState();
++      return { state, badConnect, afterBad };
++    })()`
++  );
++  if (
++    offlineCheck.state.mode !== "offline" ||
++    offlineCheck.badConnect.ok !== false ||
++    offlineCheck.afterBad.origin !== config.origin ||
++    readSavedOrigin().origin !== config.origin
++  ) {
++    throw new Error(`Offline recovery failed to preserve working origin: ${JSON.stringify(offlineCheck)}`);
++  }
++
++  // Restore server online and retry from connection screen
++  await fetch(`${config.origin}/test-control/mode?state=online`, { method: "POST" });
++  const retryResult = await win.webContents.executeJavaScript(
++    `window.cosmoraDesktop.retry()`
++  );
++  if (!retryResult?.ok) {
++    throw new Error(`Reconnect retry failed: ${JSON.stringify(retryResult)}`);
++  }
++
++  await waitFor(
++    () =>
++      !win.webContents.isLoading() &&
++      win.webContents.getURL() === `${config.origin}/github`,
++    { label: "restored /github route after offline retry" }
++  );
++
++  // Switch active owner on server to Owner B and verify Owner A's draft is isolated
++  await fetch(
++    `${config.origin}/test-control/owner?id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb`,
++    { method: "POST" }
++  );
++  await win.loadURL(`${config.origin}/github`);
++  await waitFor(() => !win.webContents.isLoading(), { label: "Owner B reload" });
++
++  const ownerBDraft = await win.webContents.executeJavaScript(
++    `window.kosmoraDesktopDraft.load(${JSON.stringify(config.draftScope)})`
++  );
++  if (!ownerBDraft?.ok || ownerBDraft.text !== "") {
++    throw new Error(`Owner B must not read Owner A draft: ${JSON.stringify(ownerBDraft)}`);
++  }
++
++  // Switch back to Owner A and perform explicit hosted /logout
++  await fetch(
++    `${config.origin}/test-control/owner?id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`,
++    { method: "POST" }
++  );
++  await win.loadURL(`${config.origin}/logout`);
++  await waitFor(
++    () =>
++      !win.webContents.isLoading() &&
++      win.webContents.getURL().startsWith(`${config.origin}/login`),
++    { label: "redirect to /login after explicit /logout" }
++  );
++
++  if (preferences.get().lastPath !== "/") {
++    throw new Error(`Expected lastPath reset to "/" after logout, got ${preferences.get().lastPath}`);
++  }
++  const draftsDir = path.join(app.getPath("userData"), "desktop-text-drafts-v1");
++  const remainingDraftFiles = fs.existsSync(draftsDir)
++    ? fs.readdirSync(draftsDir).filter((name) => name.endsWith(".json"))
++    : [];
++  if (remainingDraftFiles.length !== 0) {
++    throw new Error(`Expected all draft files cleared on logout, found ${remainingDraftFiles.length}`);
++  }
++
++  writeGuiAcceptanceReport({
++    outputPath: config.outputPath,
++    tempDir,
++    payload: {
++      schemaVersion: 1,
++      phase: "relaunch-and-recovery",
++      ok: true,
++      restoredRouteOnRelaunch: config.workspaceRoute,
++      restoredDraftAcrossRestart: true,
++      secondInstanceDeepLinkRoute: "/github",
++      offlineRecoveryPreservedOrigin: config.origin,
++      offlineRecoveryRestoredRoute: "/github",
++      ownerBIsolationVerified: true,
++      logoutClearedDraftsAndRoute: true
++    }
++  });
++  app.quit();
++}
++
++module.exports = {
++  GUI_ACCEPTANCE_FLAG,
++  isGuiAcceptanceMode,
++  readGuiAcceptanceConfig,
++  writeGuiAcceptanceReport,
++  runPackagedGuiAcceptance
++};
+diff --git a/desktop/windows/main.cjs b/desktop/windows/main.cjs
+index 14f3df7..80faa04 100755
+--- a/desktop/windows/main.cjs
++++ b/desktop/windows/main.cjs
+@@ -1,5 +1,6 @@
+ "use strict";
+ 
++const crypto = require("node:crypto");
+ const fs = require("node:fs");
+ const path = require("node:path");
+ const { pathToFileURL } = require("node:url");
+@@ -22,8 +23,10 @@ const { createDraftStore } = require("./draft-store.cjs");
+ const { fetchVerifiedOwner } = require("./owner-session.cjs");
+ const { createDraftSessionGate } = require("./draft-session-gate.cjs");
+ const { safeWorkspaceRoute, isLoginOrLogout, isExplicitLogout } = require("./desktop-recovery.cjs");
++const { createDownloadCenter } = require("./download-center.cjs");
+ const updateTrust = require("./update-trust.json");
+ const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
++const { isGuiAcceptanceMode, runPackagedGuiAcceptance } = require("./gui-acceptance.cjs");
+ const {
+   connectionViewState,
+   createLatestAttemptGate,
+@@ -46,26 +49,16 @@ app.setPath("userData", profileDirectory);
+ app.setPath("sessionData", profileDirectory);
+ app.setName("Kosmora");
+ 
+-const preferences = createPreferenceStore(profileDirectory);
+-const textDrafts = createDraftStore(profileDirectory, {
+-  codec: {
+-    seal(text) {
+-      if (process.platform !== "win32" || !safeStorage.isEncryptionAvailable())
+-        throw new Error("Защищённое сохранение Windows сейчас недоступно.");
+-      return safeStorage.encryptString(text).toString("base64");
+-    },
+-    open(sealed) {
+-      if (
+-        process.platform !== "win32" ||
+-        !safeStorage.isEncryptionAvailable() ||
+-        typeof sealed !== "string" ||
+-        !/^[a-zA-Z0-9+/]+=*$/.test(sealed)
+-      )
+-        throw new Error("Не удалось открыть защищённый черновик.");
+-      return safeStorage.decryptString(Buffer.from(sealed, "base64"));
+-    }
+-  }
+-});
++const smokeMode = isSmokeMode(process.argv);
++const guiAcceptanceMode = isGuiAcceptanceMode(process.argv);
++const gotSingleInstanceLock = smokeMode ? true : app.requestSingleInstanceLock();
++if (!gotSingleInstanceLock) {
++  app.quit();
++}
++
++let preferences = null;
++let textDrafts = null;
++let downloadCenter = null;
+ const activeDownloads = new Map();
+ const draftSessionGate = createDraftSessionGate();
+ let ownerCache = null;
+@@ -86,10 +79,41 @@ let isQuitting = false;
+ let downloadPolicyInstalled = false;
+ const connectionAttemptGate = createLatestAttemptGate();
+ 
+-const smokeMode = isSmokeMode(process.argv);
+-const gotSingleInstanceLock = smokeMode ? true : app.requestSingleInstanceLock();
+-if (!gotSingleInstanceLock) {
+-  app.quit();
++function ensureProfileStores() {
++  if (preferences && textDrafts) return;
++  preferences = createPreferenceStore(profileDirectory);
++  textDrafts = createDraftStore(profileDirectory, {
++    codec: {
++      seal(text) {
++        if (process.platform !== "win32" || !safeStorage.isEncryptionAvailable())
++          throw new Error("Защищённое сохранение Windows сейчас недоступно.");
++        return safeStorage.encryptString(text).toString("base64");
++      },
++      open(sealed) {
++        if (
++          process.platform !== "win32" ||
++          !safeStorage.isEncryptionAvailable() ||
++          typeof sealed !== "string" ||
++          !/^[a-zA-Z0-9+/]+=*$/.test(sealed)
++        )
++          throw new Error("Не удалось открыть защищённый черновик.");
++        return safeStorage.decryptString(Buffer.from(sealed, "base64"));
++      }
++    }
++  });
++  downloadCenter = createDownloadCenter({
++    profileDirectory,
++    getOrigin: () => currentOrigin,
++    getIdentityEpoch: () => identityEpoch,
++    verifiedOwner: (options) => verifiedOwner(options),
++    activeDownloads,
++    getDownloadDirectory: () => preferences.get().downloadDirectory || app.getPath("downloads"),
++    getParentWindow: () => mainWindow,
++    shell,
++    BrowserWindow,
++    ipcMain,
++    onStateChanged: () => createMenu()
++  });
+ }
+ 
+ function connectionPath() {
+@@ -118,6 +142,7 @@ function saveOrigin(origin) {
+ 
+ function saveWindowState() {
+   if (
++    !preferences ||
+     !mainWindow ||
+     mainWindow.isDestroyed() ||
+     mainWindow.isMinimized() ||
+@@ -140,12 +165,22 @@ function deferWindowState() {
+ }
+ 
+ function persistRoute(url) {
+-  if (restoringInitialPage || !currentOrigin || !isAllowedRemoteNavigation(url, currentOrigin))
++  if (
++    !preferences ||
++    restoringInitialPage ||
++    loginRouteInProgress ||
++    !currentOrigin ||
++    !isAllowedRemoteNavigation(url, currentOrigin)
++  )
+     return;
+   try {
+     const parsed = new URL(url);
+     const route = safeWorkspaceRoute(parsed.pathname + parsed.search);
+-    if (route && !parsed.hash && route !== preferences.get().lastPath) {
++    if (!route || parsed.hash) return;
++    // Do not let an intermediate "/" landing page after login or reconnect
++    // clobber a non-root deferred route before restoreAfterAuthentication runs.
++    if (route === "/" && deferredRoute && deferredRoute !== "/") return;
++    if (route !== preferences.get().lastPath) {
+       preferences.update({ lastPath: route });
+     }
+   } catch {
+@@ -160,7 +195,7 @@ function revealWindow() {
+   mainWindow.focus();
+ }
+ 
+-async function openRoute(route) {
++async function openRoute(route, { skipOwnerCheck = false } = {}) {
+   const safe = safeWorkspaceRoute(route);
+   if (!safe || !currentOrigin || !mainWindow || mainWindow.isDestroyed()) return false;
+   if (
+@@ -170,7 +205,7 @@ async function openRoute(route) {
+     deferredRoute = safe;
+     return false;
+   }
+-  if (!(await verifiedOwner())) {
++  if (!skipOwnerCheck && !(await verifiedOwner())) {
+     deferredRoute = safe;
+     return false;
+   }
+@@ -179,7 +214,7 @@ async function openRoute(route) {
+ }
+ 
+ function refreshTray() {
+-  if (!preferences.get().trayEnabled) {
++  if (!preferences || !preferences.get().trayEnabled) {
+     if (tray) {
+       tray.destroy();
+       tray = null;
+@@ -206,7 +241,7 @@ function refreshTray() {
+ }
+ 
+ function notifyUpdate(version) {
+-  if (!preferences.get().notifyUpdates || !Notification.isSupported()) return;
++  if (!preferences || !preferences.get().notifyUpdates || !Notification.isSupported()) return;
+   new Notification({
+     title: "Kosmora",
+     body: `Доступна проверенная версия ${version}. Установка только вручную.`
+@@ -364,6 +399,7 @@ async function openOrigin(origin, { persist = false } = {}) {
+     }
+ 
+     const previousOrigin = currentOrigin;
++    const previousOwner = ownerCache?.owner || null;
+     if (persist && previousOrigin && previousOrigin !== origin) {
+       // Switching origins is an explicit trust-boundary change, not a page navigation.
+       identityEpoch++;
+@@ -372,6 +408,7 @@ async function openOrigin(origin, { persist = false } = {}) {
+       deferredRoute = null;
+       pendingDeepLink = null;
+       for (const item of activeDownloads.values()) item.cancel();
++      downloadCenter?.invalidate({ forget: true, origin: previousOrigin, owner: previousOwner });
+       try {
+         textDrafts.clearAll();
+         await browserSession.clearStorageData();
+@@ -390,6 +427,9 @@ async function openOrigin(origin, { persist = false } = {}) {
+         : pendingDeepLink ||
+           deferredRoute ||
+           (preferences.get().restorePage ? preferences.get().lastPath : "/");
++    if (requestedRoute && requestedRoute !== "/") {
++      deferredRoute = requestedRoute;
++    }
+     currentOrigin = origin;
+     restoringInitialPage = true;
+     try {
+@@ -416,6 +456,9 @@ async function openOrigin(origin, { persist = false } = {}) {
+     } catch {
+       if (connectionAttemptGate.isCurrent(generation)) {
+         currentOrigin = previousOrigin;
++        if (requestedRoute && requestedRoute !== "/") {
++          deferredRoute = requestedRoute;
++        }
+         await showConnection(
+           "Сервер доступен, но интерфейс Kosmora не открылся. Повторите попытку."
+         );
+@@ -445,6 +488,7 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
+   }
+   if (result.state === "denied") {
+     ownerCache = null; // A real 401/403/redirect/new identity is never an offline signal.
++    downloadCenter?.invalidate();
+     return null;
+   }
+   // Offline edits remain bound to the last server-confirmed owner IN THIS PROCESS.
+@@ -466,13 +510,20 @@ async function restoreAfterAuthentication() {
+     return;
+   if (isLoginOrLogout(mainWindow.webContents.getURL(), currentOrigin)) return;
+   loginRouteInProgress = true;
++  const route = deferredRoute;
+   try {
+     if (!(await verifiedOwner())) return; // never reveal private routes before server-side authorization
+-    const route = deferredRoute;
+-    if (!route) return;
+-    deferredRoute = null;
++    if (!deferredRoute || deferredRoute !== route) return;
+     if (mainWindow.webContents.getURL() !== currentOrigin + route) {
+-      await openRoute(route);
++      const opened = await openRoute(route, { skipOwnerCheck: true });
++      if (opened && deferredRoute === route) {
++        deferredRoute = null;
++        if (preferences && route !== preferences.get().lastPath) {
++          preferences.update({ lastPath: route });
++        }
++      }
++    } else {
++      deferredRoute = null;
+     }
+   } catch {
+     /* An explicit retry or later login navigation can resume. */
+@@ -505,6 +556,7 @@ async function nativeLogout() {
+     noLink: true
+   });
+   if (choice.response !== 0) return;
++  const previousOwner = ownerCache?.owner || null;
+   // Fence pending asynchronous saves before removing user data.
+   identityEpoch++;
+   draftSessionGate.reset();
+@@ -524,6 +576,7 @@ async function nativeLogout() {
+   deferredRoute = null;
+   pendingDeepLink = null;
+   for (const item of activeDownloads.values()) item.cancel();
++  downloadCenter?.invalidate({ forget: true, origin: currentOrigin, owner: previousOwner });
+   preferences.update({ lastPath: "/" });
+   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
+   try {
+@@ -583,6 +636,7 @@ function startConnectivityMonitor() {
+ 
+ function clearDraftsForHostedLogout(url) {
+   if (!isExplicitLogout(url, currentOrigin)) return true;
++  const previousOwner = ownerCache?.owner || null;
+   // A first-party /logout navigation is an explicit exit, including when
+   // a hosted page handles it without using the native menu.
+   identityEpoch++;
+@@ -590,6 +644,8 @@ function clearDraftsForHostedLogout(url) {
+   ownerCache = null;
+   deferredRoute = null;
+   pendingDeepLink = null;
++  for (const item of activeDownloads.values()) item.cancel();
++  downloadCenter?.invalidate({ forget: true, origin: currentOrigin, owner: previousOwner });
+   try {
+     textDrafts.clearAll();
+     preferences.update({ lastPath: "/" });
+@@ -648,6 +704,7 @@ function installNavigationGuards(window) {
+       ownerCache = null;
+       identityEpoch++;
+       draftSessionGate.reset();
++      downloadCenter?.invalidate();
+     } else void restoreAfterAuthentication();
+   });
+   window.webContents.on("did-navigate-in-page", (_event, url) => {
+@@ -658,6 +715,7 @@ function installNavigationGuards(window) {
+       ownerCache = null;
+       identityEpoch++;
+       draftSessionGate.reset();
++      downloadCenter?.invalidate();
+     } else void restoreAfterAuthentication();
+   });
+   window.webContents.on("render-process-gone", () => {
+@@ -678,6 +736,17 @@ function installNavigationGuards(window) {
+     (_event, errorCode, _description, validatedURL, isMainFrame) => {
+       if (!isMainFrame || errorCode === -3 || !currentOrigin) return;
+       if (isAllowedRemoteNavigation(validatedURL, currentOrigin)) {
++        try {
++          const parsed = new URL(validatedURL);
++          deferredRoute =
++            safeWorkspaceRoute(parsed.pathname + parsed.search) ||
++            deferredRoute ||
++            (preferences?.get().restorePage ? preferences.get().lastPath : "/");
++        } catch {
++          deferredRoute =
++            deferredRoute ||
++            (preferences?.get().restorePage ? preferences.get().lastPath : "/");
++        }
+         void showConnection("Соединение с Kosmora потеряно. Сохранённый адрес не изменён.");
+       }
+     }
+@@ -725,13 +794,14 @@ function installSessionPolicy(browserSession) {
+       if (prefs.askWhereToSave)
+         item.setSaveDialogOptions({ title: "Сохранить файл Kosmora", defaultPath: target });
+       else item.setSavePath(target);
+-      const downloadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
++      const downloadId = crypto.randomUUID();
+       activeDownloads.set(downloadId, item);
+       createMenu();
++      downloadCenter?.capture(downloadId, item);
+       item.once("done", (_event, state) => {
+         activeDownloads.delete(downloadId);
+         createMenu();
+-        if (state === "interrupted")
++        if (state === "interrupted" && !guiAcceptanceMode)
+           void dialog.showMessageBox(mainWindow, {
+             type: "warning",
+             title: "Ошибка скачивания",
+@@ -752,6 +822,7 @@ function installSessionPolicy(browserSession) {
+ }
+ 
+ function createMenu() {
++  if (!preferences) return;
+   const pref = preferences.get();
+   const toggle = (key, value) => {
+     preferences.update({ [key]: value });
+@@ -781,6 +852,11 @@ function createMenu() {
+     {
+       label: "Файлы",
+       submenu: [
++        {
++          label: "Центр загрузок…",
++          accelerator: "CmdOrCtrl+J",
++          click: () => void downloadCenter?.show()
++        },
+         {
+           label: "Отменить текущие скачивания",
+           enabled: activeDownloads.size > 0,
+@@ -924,6 +1000,7 @@ async function createMainWindow() {
+     }
+   });
+   mainWindow.on("closed", () => {
++    downloadCenter?.close();
+     mainWindow = null;
+   });
+ 
+@@ -997,9 +1074,10 @@ ipcMain.handle("cosmora:draft-save", (event, scope, text) => {
+     }
+   });
+ });
+-// Best effort on pagehide/navigation: enqueue, never block window closing.
+-ipcMain.on("cosmora:draft-flush", (event, scope, text) => {
+-  if (!isTrustedRemoteEvent(event) || typeof text !== "string" || text.length > 128000) return;
++
++function handleDraftFlush(event, scope, text) {
++  if (!isTrustedRemoteEvent(event) || typeof text !== "string" || text.length > 128000)
++    return { ok: false };
+   // pagehide IPC is dispatched before the old document is destroyed. A
+   // network identity roundtrip here would routinely lose the last keystrokes
+   // after did-navigate resets the document gate. Reuse ONLY the previously
+@@ -1013,13 +1091,23 @@ ipcMain.on("cosmora:draft-flush", (event, scope, text) => {
+     ownerCache.origin !== origin ||
+     ownerCache.expires <= Date.now()
+   )
+-    return;
++    return { ok: false };
+   try {
+-    textDrafts.save(owner, origin, scope, text);
++    return textDrafts.save(owner, origin, scope, text);
+   } catch {
+     /* no plaintext fallback or hidden retry */
++    return { ok: false };
+   }
++}
++
++// Best effort on pagehide/navigation: enqueue, never block window closing.
++ipcMain.on("cosmora:draft-flush", (event, scope, text) => {
++  handleDraftFlush(event, scope, text);
+ });
++ipcMain.handle("cosmora:draft-flush", (event, scope, text) =>
++  handleDraftFlush(event, scope, text)
++);
++
+ ipcMain.handle("cosmora:draft-clear", (event, scope) => {
+   if (!isTrustedRemoteEvent(event)) return { ok: false };
+   const origin = currentOrigin;
+@@ -1137,6 +1225,7 @@ if (gotSingleInstanceLock) {
+       }
+     }
+ 
++    ensureProfileStores();
+     if (app.isPackaged) app.setAsDefaultProtocolClient("kosmora");
+     const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
+     updates = createUpdateService({
+@@ -1150,7 +1239,23 @@ if (gotSingleInstanceLock) {
+     refreshTray();
+     await createMainWindow();
+     startConnectivityMonitor();
+-    if (preferences.get().checkUpdatesOnStart && currentOrigin) void checkUpdates();
++    if (preferences.get().checkUpdatesOnStart && currentOrigin && !guiAcceptanceMode)
++      void checkUpdates();
++
++    if (guiAcceptanceMode) {
++      try {
++        await runPackagedGuiAcceptance({
++          app,
++          getMainWindow: () => mainWindow,
++          preferences,
++          downloadCenter,
++          readSavedOrigin
++        });
++      } catch (cause) {
++        console.error(cause instanceof Error ? cause.stack || cause.message : cause);
++        app.exit(1);
++      }
++    }
+   });
+ 
+   app.on("activate", () => {
+diff --git a/desktop/windows/package.json b/desktop/windows/package.json
+index 2644861..7a4572f 100755
+--- a/desktop/windows/package.json
++++ b/desktop/windows/package.json
+@@ -2,38 +2,28 @@
+   "name": "cosmora-windows-desktop",
+   "version": "0.11.2",
+   "private": true,
+-  "description": "Thin Windows desktop client for the hosted Kosmora workspace",
++  "description": "Kosmora for Windows — thin Electron shell for the existing Kosmora web workspace",
+   "main": "main.cjs",
+-  "author": "RLM-Company",
+-  "license": "UNLICENSED",
+   "scripts": {
+-    "test": "node --test test/*.test.cjs",
+-    "check": "node --check main.cjs && node --check preload.cjs && node --check connection-policy.cjs && node --check smoke-mode.cjs && node --check connection.js && node --check desktop-state.cjs && node --check desktop-recovery.cjs && node --check draft-store.cjs && node --check draft-session-gate.cjs && node --check owner-session.cjs && node --check update-policy.cjs && node --check update-service.cjs && node --check ci/create-signed-update.cjs && node --test test/*.test.cjs",
+-    "pack:win": "electron-builder --win nsis --x64 --publish never",
++    "check": "node --check main.cjs && node --check preload.cjs && node --check downloads-preload.cjs && node --check download-history.cjs && node --check download-center.cjs && node --check downloads.js && node --check connection-policy.cjs && node --check smoke-mode.cjs && node --check gui-acceptance.cjs && node --check connection.js && node --check desktop-state.cjs && node --check desktop-recovery.cjs && node --check draft-store.cjs && node --check draft-session-gate.cjs && node --check owner-session.cjs && node --check update-policy.cjs && node --check update-service.cjs && node --check ci/create-signed-update.cjs && node --check ci/verify-unsigned-policy.cjs && node --check ci/gui-acceptance-fixture.cjs && node --test test/*.test.cjs",
+     "verify:unsigned": "node ci/verify-unsigned-policy.cjs",
+-    "pack:unsigned:win": "powershell -NoProfile -File ci/build-unsigned.ps1"
++    "test": "node --test test/*.test.cjs",
++    "pack:win": "electron-builder --win nsis --x64 --publish never"
+   },
+   "build": {
+     "appId": "com.cosmora.desktop",
+     "productName": "Kosmora",
+     "electronVersion": "44.5.1",
+     "asar": true,
+-    "protocols": [
+-      {
+-        "name": "Kosmora deep links",
+-        "schemes": [
+-          "kosmora"
+-        ]
+-      }
+-    ],
+-    "directories": {
+-      "output": "dist"
+-    },
+     "files": [
+       "main.cjs",
+       "preload.cjs",
++      "downloads-preload.cjs",
++      "download-history.cjs",
++      "download-center.cjs",
+       "connection-policy.cjs",
+       "smoke-mode.cjs",
++      "gui-acceptance.cjs",
+       "desktop-state.cjs",
+       "desktop-recovery.cjs",
+       "draft-store.cjs",
+@@ -43,22 +33,32 @@
+       "update-service.cjs",
+       "update-trust.json",
+       "connection.html",
+-      "connection.js",
+       "connection.css",
+-      "build/icon.ico",
+-      "build/icon.svg"
++      "connection.js",
++      "downloads.html",
++      "downloads.css",
++      "downloads.js",
++      "build/icon.ico"
+     ],
++    "protocols": [
++      {
++        "name": "Kosmora",
++        "schemes": ["kosmora"]
++      }
++    ],
++    "directories": {
++      "buildResources": "build",
++      "output": "dist"
++    },
+     "win": {
++      "icon": "build/icon.ico",
+       "target": [
+         {
+           "target": "nsis",
+-          "arch": [
+-            "x64"
+-          ]
++          "arch": ["x64"]
+         }
+       ],
+-      "artifactName": "Kosmora-Setup-${version}-${arch}.${ext}",
+-      "icon": "build/icon.ico"
++      "artifactName": "Kosmora-Setup-${version}-${arch}.${ext}"
+     },
+     "nsis": {
+       "oneClick": false,
+diff --git a/desktop/windows/test/download-center.test.cjs b/desktop/windows/test/download-center.test.cjs
+new file mode 100755
+index 0000000..8bcd39e
+--- /dev/null
++++ b/desktop/windows/test/download-center.test.cjs
+@@ -0,0 +1,198 @@
++"use strict";
++
++const assert = require("node:assert/strict");
++const { EventEmitter } = require("node:events");
++const fs = require("node:fs");
++const os = require("node:os");
++const path = require("node:path");
++const test = require("node:test");
++const { pathToFileURL } = require("node:url");
++const { createDownloadCenter } = require("../download-center.cjs");
++
++const panelUrl = pathToFileURL(path.join(__dirname, "..", "downloads.html")).toString();
++const panelEvent = { senderFrame: { url: panelUrl } };
++
++function fakeItem(filename, savePath, received = 10, total = 20) {
++  const emitter = new EventEmitter();
++  let currentReceived = received;
++  let currentTotal = total;
++  return Object.assign(emitter, {
++    cancelled: false,
++    getFilename: () => filename,
++    getReceivedBytes: () => currentReceived,
++    getTotalBytes: () => currentTotal,
++    getSavePath: () => savePath,
++    setProgress(nextReceived, nextTotal = currentTotal) {
++      currentReceived = nextReceived;
++      currentTotal = nextTotal;
++      emitter.emit("updated");
++    },
++    cancel() {
++      this.cancelled = true;
++      emitter.emit("done", {}, "cancelled");
++    }
++  });
++}
++
++test("downloads are isolated by verified owner and origin, and renderer list hides save paths", async () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kosmora-download-center-"));
++  try {
++    let origin = "https://kosmora.example";
++    let epoch = 1;
++    let owner = "owner-a";
++    const activeDownloads = new Map();
++    const opened = [];
++    const revealed = [];
++    const safeReport = path.join(dir, "report.pdf");
++    const scriptFile = path.join(dir, "report.bat");
++    fs.writeFileSync(safeReport, "pdf");
++    fs.writeFileSync(scriptFile, "echo nope");
++
++    const center = createDownloadCenter({
++      profileDirectory: dir,
++      getOrigin: () => origin,
++      getIdentityEpoch: () => epoch,
++      verifiedOwner: async () => owner,
++      activeDownloads,
++      getDownloadDirectory: () => dir,
++      shell: {
++        openPath: async (target) => {
++          opened.push(target);
++          return "";
++        },
++        showItemInFolder: (target) => revealed.push(target)
++      }
++    });
++
++    const id1 = "11111111-1111-4111-8111-111111111111";
++    const item1 = fakeItem("report.pdf", safeReport, 20, 20);
++    activeDownloads.set(id1, item1);
++    center.capture(id1, item1);
++    await new Promise((resolve) => setImmediate(resolve));
++    item1.emit("done", {}, "completed");
++
++    const id2 = "22222222-2222-4222-8222-222222222222";
++    const item2 = fakeItem("report.bat", scriptFile, 20, 20);
++    activeDownloads.set(id2, item2);
++    center.capture(id2, item2);
++    await new Promise((resolve) => setImmediate(resolve));
++    item2.emit("done", {}, "completed");
++
++    const listA = await center.list(panelEvent);
++    assert.equal(listA.ok, true);
++    assert.equal(listA.items.length, 2);
++    assert.equal(Object.hasOwn(listA.items[0], "savePath"), false);
++
++    assert.deepEqual(await center.openItem(panelEvent, id1), { ok: true });
++    assert.deepEqual(opened, [safeReport]);
++
++    const blocked = await center.openItem(panelEvent, id2);
++    assert.equal(blocked.ok, false);
++    assert.match(blocked.message, /Запуск/);
++    assert.equal(opened.length, 1);
++
++    assert.deepEqual(await center.revealItem(panelEvent, id2), { ok: true });
++    assert.deepEqual(revealed, [scriptFile]);
++
++    owner = "owner-b";
++    assert.deepEqual((await center.list(panelEvent)).items, []);
++    assert.equal((await center.openItem(panelEvent, id1)).ok, false);
++
++    owner = "owner-a";
++    center.invalidate({ forget: true, origin, owner });
++    assert.deepEqual((await center.list(panelEvent)).items, []);
++    await assert.rejects(
++      () => center.list({ senderFrame: { url: "https://kosmora.example" } }),
++      /Untrusted/
++    );
++  } finally {
++    fs.rmSync(dir, { recursive: true, force: true });
++  }
++});
++
++test("a download finishing before owner verification keeps its actual terminal bytes", async () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kosmora-download-fast-"));
++  try {
++    const file = path.join(dir, "archive.zip");
++    fs.writeFileSync(file, "zip");
++    let releaseOwner;
++    const ownerGate = new Promise((resolve) => {
++      releaseOwner = resolve;
++    });
++    const activeDownloads = new Map();
++    const opened = [];
++    const center = createDownloadCenter({
++      profileDirectory: dir,
++      getOrigin: () => "https://kosmora.example",
++      getIdentityEpoch: () => 1,
++      verifiedOwner: () => ownerGate,
++      activeDownloads,
++      getDownloadDirectory: () => dir,
++      shell: {
++        openPath: async (target) => {
++          opened.push(target);
++          return "";
++        },
++        showItemInFolder: () => {}
++      }
++    });
++
++    const id = "33333333-3333-4333-8333-333333333333";
++    const item = fakeItem("archive.zip", file, 0, 512);
++    activeDownloads.set(id, item);
++    center.capture(id, item);
++    item.setProgress(512, 512);
++    item.emit("done", {}, "completed");
++
++    releaseOwner("owner-a");
++    await new Promise((resolve) => setImmediate(resolve));
++
++    const list = await center.list(panelEvent);
++    assert.equal(list.items.length, 1);
++    assert.equal(list.items[0].status, "completed");
++    assert.equal(list.items[0].receivedBytes, 512);
++    assert.equal(list.items[0].totalBytes, 512);
++    assert.deepEqual(await center.openItem(panelEvent, id), { ok: true });
++    assert.deepEqual(opened, [file]);
++  } finally {
++    fs.rmSync(dir, { recursive: true, force: true });
++  }
++});
++
++test("an identity epoch change during verification cannot record the old download for the new owner", async () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kosmora-download-epoch-"));
++  try {
++    let epoch = 1;
++    let owner = "owner-a";
++    let releaseOwner;
++    const ownerGate = new Promise((resolve) => {
++      releaseOwner = resolve;
++    });
++    const activeDownloads = new Map();
++    const center = createDownloadCenter({
++      profileDirectory: dir,
++      getOrigin: () => "https://kosmora.example",
++      getIdentityEpoch: () => epoch,
++      verifiedOwner: () => ownerGate,
++      activeDownloads,
++      getDownloadDirectory: () => dir,
++      shell: { openPath: async () => "", showItemInFolder: () => {} }
++    });
++
++    const id = "44444444-4444-4444-8444-444444444444";
++    const item = fakeItem("secret.pdf", path.join(dir, "secret.pdf"), 10, 10);
++    activeDownloads.set(id, item);
++    center.capture(id, item);
++
++    epoch = 2;
++    owner = "owner-b";
++    releaseOwner("owner-b");
++    await new Promise((resolve) => setImmediate(resolve));
++
++    assert.equal(item.cancelled, true);
++    const list = await center.list(panelEvent);
++    assert.deepEqual(list.items, []);
++  } finally {
++    fs.rmSync(dir, { recursive: true, force: true });
++  }
++});
+diff --git a/desktop/windows/test/download-history.test.cjs b/desktop/windows/test/download-history.test.cjs
+new file mode 100755
+index 0000000..a36c895
+--- /dev/null
++++ b/desktop/windows/test/download-history.test.cjs
+@@ -0,0 +1,107 @@
++"use strict";
++
++const assert = require("node:assert/strict");
++const crypto = require("node:crypto");
++const fs = require("node:fs");
++const os = require("node:os");
++const path = require("node:path");
++const test = require("node:test");
++const { createDownloadHistoryStore } = require("../download-history.cjs");
++
++const scopeA = crypto.createHash("sha256").update("https://kosmora.example\0owner-a").digest("hex");
++const scopeB = crypto.createHash("sha256").update("https://kosmora.example\0owner-b").digest("hex");
++const idA = "11111111-1111-4111-8111-111111111111";
++const idB = "22222222-2222-4222-8222-222222222222";
++
++function withTempDir(run) {
++  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "kosmora-download-history-"));
++  try {
++    return run(folder);
++  } finally {
++    fs.rmSync(folder, { recursive: true, force: true });
++  }
++}
++
++test("download history persists by scope, redacts paths from renderer entries, and recovers active items as interrupted", () =>
++  withTempDir((folder) => {
++    const first = createDownloadHistoryStore(folder);
++    const saveFile = path.join(folder, "report.pdf");
++    fs.writeFileSync(saveFile, "ok");
++
++    assert.equal(first.start(scopeA, idA, 'bad<name>:"?.pdf', 12, 100), true);
++    assert.equal(first.start(scopeA, idB, "unfinished.csv", 10, 50), true);
++    first.progress(scopeA, idA, 55, 100);
++    first.finish(scopeA, idA, "completed", 100, 100, saveFile);
++
++    const visible = first.list(scopeA);
++    assert.equal(visible.length, 2);
++    assert.equal(visible.find((item) => item.id === idA).name, "bad_name____.pdf");
++    assert.equal(Object.hasOwn(visible[0], "savePath"), false);
++    assert.equal(Object.hasOwn(visible[0], "scope"), false);
++    assert.equal(first.resolvePath(scopeA, idA), saveFile);
++    assert.equal(first.resolvePath(scopeB, idA), null);
++    assert.deepEqual(first.list(scopeB), []);
++
++    const second = createDownloadHistoryStore(folder);
++    const recovered = second.list(scopeA);
++    assert.equal(recovered.find((item) => item.id === idB).status, "interrupted");
++    assert.equal(second.resolvePath(scopeA, idB), null);
++    assert.equal(second.resolvePath(scopeA, idA), saveFile);
++  }));
++
++test("tampered paths, IDs and leaked fields are never trusted", () =>
++  withTempDir((folder) => {
++    const validId = "33333333-3333-4333-8333-333333333333";
++    fs.writeFileSync(
++      path.join(folder, "download-history.json"),
++      JSON.stringify({
++        version: 1,
++        records: [
++          {
++            id: validId,
++            scope: scopeA,
++            name: "bad/name.txt",
++            status: "completed",
++            receivedBytes: 1,
++            totalBytes: 1,
++            startedAt: "2026-10-10T00:00:00.000Z",
++            finishedAt: "2026-10-10T00:00:01.000Z",
++            savePath: "relative/path",
++            url: "https://kosmora.example/secret?token=1"
++          },
++          {
++            id: "not-a-uuid",
++            scope: scopeA,
++            name: "ignored.txt",
++            status: "completed",
++            startedAt: "2026-10-10T00:00:00.000Z"
++          }
++        ]
++      })
++    );
++    const store = createDownloadHistoryStore(folder);
++    const items = store.list(scopeA);
++    assert.equal(items.length, 1);
++    assert.equal(items[0].name, "bad_name.txt");
++    assert.equal(items[0].status, "interrupted");
++    assert.equal(store.resolvePath(scopeA, validId), null);
++    assert.equal(
++      fs.readFileSync(path.join(folder, "download-history.json"), "utf8").includes("secret"),
++      false
++    );
++  }));
++
++test("active downloads are not evicted when history is full", () =>
++  withTempDir((folder) => {
++    const store = createDownloadHistoryStore(folder);
++    for (let i = 0; i < 50; i += 1) {
++      const id = `${String(i).padStart(8, "0")}-1111-4111-8111-111111111111`;
++      assert.equal(store.start(scopeA, id, `file-${i}.txt`, 0, 10), true);
++    }
++    const overflowId = "99999999-1111-4111-8111-111111111111";
++    assert.equal(store.start(scopeA, overflowId, "overflow.txt", 0, 10), false);
++    const firstId = "00000000-1111-4111-8111-111111111111";
++    store.finish(scopeA, firstId, "completed", 10, 10, path.join(folder, "done.txt"));
++    assert.equal(store.start(scopeA, overflowId, "overflow.txt", 0, 10), true);
++    assert.equal(store.resolvePath(scopeA, firstId), null);
++  }));
+diff --git a/desktop/windows/test/download-package.test.cjs b/desktop/windows/test/download-package.test.cjs
+new file mode 100755
+index 0000000..d7e638c
+--- /dev/null
++++ b/desktop/windows/test/download-package.test.cjs
+@@ -0,0 +1,28 @@
++"use strict";
++
++const assert = require("node:assert/strict");
++const fs = require("node:fs");
++const path = require("node:path");
++const test = require("node:test");
++
++const root = path.join(__dirname, "..");
++const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
++const trust = JSON.parse(fs.readFileSync(path.join(root, "update-trust.json"), "utf8"));
++
++test("download center files are packaged, syntax-checked and leave release trust disabled", () => {
++  for (const relative of [
++    "download-history.cjs",
++    "download-center.cjs",
++    "downloads-preload.cjs",
++    "downloads.html",
++    "downloads.css",
++    "downloads.js"
++  ]) {
++    assert.equal(pkg.build.files.includes(relative), true, `${relative} must be packaged`);
++    assert.equal(fs.existsSync(path.join(root, relative)), true, `${relative} must exist`);
++    if (/\.(?:cjs|js)$/.test(relative)) {
++      assert.match(pkg.scripts.check, new RegExp(relative.replaceAll(".", "\\.")));
++    }
++  }
++  assert.equal(trust.publicKeyPem, null);
++});
+diff --git a/desktop/windows/test/gui-acceptance.test.cjs b/desktop/windows/test/gui-acceptance.test.cjs
+new file mode 100755
+index 0000000..80b3cf4
+--- /dev/null
++++ b/desktop/windows/test/gui-acceptance.test.cjs
+@@ -0,0 +1,286 @@
++"use strict";
++
++const assert = require("node:assert/strict");
++const { EventEmitter } = require("node:events");
++const fs = require("node:fs");
++const os = require("node:os");
++const path = require("node:path");
++const test = require("node:test");
++const { pathToFileURL } = require("node:url");
++const {
++  isGuiAcceptanceMode,
++  readGuiAcceptanceConfig,
++  writeGuiAcceptanceReport,
++  runPackagedGuiAcceptance
++} = require("../gui-acceptance.cjs");
++const {
++  OWNER_A,
++  WORKSPACE_ROUTE,
++  DRAFT_SCOPE,
++  DRAFT_TEXT,
++  startGuiAcceptanceFixture
++} = require("../ci/gui-acceptance-fixture.cjs");
++const { fetchVerifiedOwner } = require("../owner-session.cjs");
++const {
++  isAllowedDownload,
++  nextAvailableDownloadPath,
++  normalizeServerOrigin
++} = require("../connection-policy.cjs");
++const { createDraftStore } = require("../draft-store.cjs");
++const { createPreferenceStore, deepLinkFromArgv } = require("../desktop-state.cjs");
++const { createDownloadCenter } = require("../download-center.cjs");
++
++test("GUI acceptance mode is explicit, packaged-only, temp-constrained, and loopback-only", () => {
++  assert.equal(isGuiAcceptanceMode(["Kosmora.exe", "--cosmora-gui-acceptance"]), true);
++  assert.equal(isGuiAcceptanceMode(["Kosmora.exe"]), false);
++
++  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kosmora-gui-acc-unit-"));
++  const cfgPath = path.join(tempDir, "cosmora-gui-acceptance-cfg.json");
++  const outPath = path.join(tempDir, "cosmora-gui-acceptance-out.json");
++  try {
++    fs.writeFileSync(
++      cfgPath,
++      JSON.stringify({
++        phase: "first-launch",
++        origin: "http://127.0.0.1:41234",
++        workspaceRoute: WORKSPACE_ROUTE,
++        draftScope: DRAFT_SCOPE,
++        draftText: DRAFT_TEXT
++      }),
++      "utf8"
++    );
++
++    assert.throws(
++      () =>
++        readGuiAcceptanceConfig({
++          isPackaged: false,
++          configPath: cfgPath,
++          outputPath: outPath,
++          tempDir
++        }),
++      /packaged/
++    );
++
++    const parsed = readGuiAcceptanceConfig({
++      isPackaged: true,
++      configPath: cfgPath,
++      outputPath: outPath,
++      tempDir
++    });
++    assert.equal(parsed.phase, "first-launch");
++    assert.equal(parsed.origin, "http://127.0.0.1:41234");
++
++    writeGuiAcceptanceReport({
++      outputPath: outPath,
++      tempDir,
++      payload: { schemaVersion: 1, ok: true }
++    });
++    assert.deepEqual(JSON.parse(fs.readFileSync(outPath, "utf8")), {
++      schemaVersion: 1,
++      ok: true
++    });
++
++    // Reject non-loopback or remote HTTPS origins in GUI acceptance fixture config
++    fs.writeFileSync(
++      cfgPath,
++      JSON.stringify({
++        phase: "first-launch",
++        origin: "https://remote.kosmora.example",
++        workspaceRoute: WORKSPACE_ROUTE,
++        draftScope: DRAFT_SCOPE,
++        draftText: DRAFT_TEXT
++      }),
++      "utf8"
++    );
++    assert.throws(
++      () =>
++        readGuiAcceptanceConfig({
++          isPackaged: true,
++          configPath: cfgPath,
++          outputPath: outPath,
++          tempDir
++        }),
++      /loopback/
++    );
++  } finally {
++    fs.rmSync(tempDir, { recursive: true, force: true });
++  }
++});
++
++test("local GUI acceptance fixture serves login, session owner verification, downloads, offline recovery, and logout without paid models", async () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kosmora-gui-fixture-"));
++  let secondInstanceCalls = 0;
++  const fixture = await startGuiAcceptanceFixture({
++    onSpawnSecondInstance: () => {
++      secondInstanceCalls += 1;
++    }
++  });
++  try {
++    const origin = normalizeServerOrigin(fixture.origin);
++    assert.match(origin, /^http:\/\/127\.0\.0\.1:\d+$/);
++
++    // 1. Before login: /api/v1/health is 401, /login is 200
++    const healthUnauth = await fetch(`${origin}/api/v1/health`, { redirect: "manual" });
++    assert.equal(healthUnauth.status, 401);
++    const loginPage = await fetch(`${origin}/login`, { redirect: "manual" });
++    assert.equal(loginPage.status, 200);
++
++    // 2. Ordinary form login issues a persistent session cookie and redirects to WORKSPACE_ROUTE
++    const loginSubmit = await fetch(`${origin}/login`, {
++      method: "POST",
++      redirect: "manual"
++    });
++    assert.equal(loginSubmit.status, 302);
++    assert.equal(loginSubmit.headers.get("location"), WORKSPACE_ROUTE);
++    const rawCookie = loginSubmit.headers.get("set-cookie");
++    assert.ok(rawCookie && rawCookie.includes("kosmora_session=valid-owner-session"));
++    assert.ok(rawCookie.includes("HttpOnly"));
++    assert.ok(rawCookie.includes("Max-Age=2592000"));
++    const cookieHeader = "kosmora_session=valid-owner-session";
++
++    // 3. Authenticated health & owner session verification
++    const healthAuth = await fetch(`${origin}/api/v1/health`, {
++      headers: { cookie: cookieHeader },
++      redirect: "manual"
++    });
++    assert.equal(healthAuth.status, 200);
++
++    const verifiedA = await fetchVerifiedOwner(
++      (url, init) =>
++        fetch(url, {
++          ...init,
++          headers: { cookie: cookieHeader }
++        }),
++      origin
++    );
++    assert.equal(verifiedA.state, "verified");
++    assert.equal(verifiedA.owner, OWNER_A);
++
++    // 4. Draft persistence and owner isolation across Owner A and Owner B
++    const codec = {
++      seal: (s) => Buffer.from(s, "utf8").toString("base64"),
++      open: (s) => Buffer.from(s, "base64").toString("utf8")
++    };
++    const drafts = createDraftStore(dir, { codec });
++    const prefs = createPreferenceStore(dir);
++    prefs.update({ lastPath: WORKSPACE_ROUTE });
++    drafts.save(verifiedA.owner, origin, DRAFT_SCOPE, DRAFT_TEXT);
++    assert.equal(drafts.load(verifiedA.owner, origin, DRAFT_SCOPE), DRAFT_TEXT);
++
++    // 5. Safe downloads, duplicate collision avoidance, and foreign redirect rejection
++    const dl1 = await fetch(
++      `${origin}/files/result?name=${encodeURIComponent('report<final>:"?.md')}&seq=1`,
++      { headers: { cookie: cookieHeader }, redirect: "manual" }
++    );
++    assert.equal(dl1.status, 200);
++    const path1 = nextAvailableDownloadPath(dir, 'report<final>:"?.md', fs.existsSync);
++    fs.writeFileSync(path1, await dl1.text(), "utf8");
++
++    const dl2 = await fetch(
++      `${origin}/files/result?name=${encodeURIComponent('report<final>:"?.md')}&seq=2`,
++      { headers: { cookie: cookieHeader }, redirect: "manual" }
++    );
++    const path2 = nextAvailableDownloadPath(dir, 'report<final>:"?.md', fs.existsSync);
++    fs.writeFileSync(path2, await dl2.text(), "utf8");
++
++    assert.equal(path.basename(path1), "report_final____.md");
++    assert.equal(path.basename(path2), "report_final____ (1).md");
++    assert.equal(fs.readFileSync(path1, "utf8"), "RESULT-1");
++    assert.equal(fs.readFileSync(path2, "utf8"), "RESULT-2");
++
++    const foreignRedirect = await fetch(`${origin}/files/foreign-redirect`, {
++      redirect: "manual"
++    });
++    assert.equal(foreignRedirect.status, 302);
++    const redirectChain = [
++      `${origin}/files/foreign-redirect`,
++      foreignRedirect.headers.get("location")
++    ];
++    assert.equal(isAllowedDownload(redirectChain, origin), false);
++
++    // 6. Download Center integration
++    const activeDownloads = new Map();
++    const panelUrl = pathToFileURL(path.join(__dirname, "..", "downloads.html")).toString();
++    const panelEvent = { senderFrame: { url: panelUrl } };
++    let activeOwner = verifiedA.owner;
++    let identityEpoch = 1;
++    const center = createDownloadCenter({
++      profileDirectory: dir,
++      getOrigin: () => origin,
++      getIdentityEpoch: () => identityEpoch,
++      verifiedOwner: async () => activeOwner,
++      activeDownloads,
++      getDownloadDirectory: () => dir,
++      shell: { openPath: async () => "", showItemInFolder: () => {} }
++    });
++    const dlId = "11111111-2222-4333-8444-555555555555";
++    const emitter = Object.assign(new EventEmitter(), {
++      getFilename: () => 'report<final>:"?.md',
++      getReceivedBytes: () => 8,
++      getTotalBytes: () => 8,
++      getSavePath: () => path1,
++      cancel: () => {}
++    });
++    activeDownloads.set(dlId, emitter);
++    center.capture(dlId, emitter);
++    await new Promise((r) => setImmediate(r));
++    emitter.emit("done", {}, "completed");
++
++    const listed = await center.list(panelEvent);
++    assert.equal(listed.ok, true);
++    assert.equal(listed.items.length, 1);
++    assert.equal(listed.items[0].name, "report_final____.md");
++
++    // 7. Second instance deep link control endpoint
++    await fetch(`${origin}/test-control/spawn-second-instance`, { method: "POST" });
++    assert.equal(secondInstanceCalls, 1);
++    assert.equal(deepLinkFromArgv(["Kosmora.exe", "kosmora://open?path=%2Fgithub"]), "/github");
++    assert.equal(
++      deepLinkFromArgv(["Kosmora.exe", "kosmora://open?path=https%3A%2F%2Fevil.example"]),
++      null
++    );
++
++    // 8. Offline mode toggle & recovery
++    await fetch(`${origin}/test-control/mode?state=offline`, { method: "POST" });
++    const offlineOwner = await fetchVerifiedOwner(
++      (url, init) => fetch(url, { ...init, headers: { cookie: cookieHeader } }),
++      origin
++    );
++    assert.equal(offlineOwner.state, "offline");
++    await fetch(`${origin}/test-control/mode?state=online`, { method: "POST" });
++    const recoveredOwner = await fetchVerifiedOwner(
++      (url, init) => fetch(url, { ...init, headers: { cookie: cookieHeader } }),
++      origin
++    );
++    assert.equal(recoveredOwner.state, "verified");
++    assert.equal(recoveredOwner.owner, OWNER_A);
++
++    // 9. Switch server owner to Owner B -> cannot read Owner A's draft or downloads
++    const OWNER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
++    await fetch(`${origin}/test-control/owner?id=${OWNER_B}`, { method: "POST" });
++    const verifiedB = await fetchVerifiedOwner(
++      (url, init) => fetch(url, { ...init, headers: { cookie: cookieHeader } }),
++      origin
++    );
++    assert.equal(verifiedB.state, "verified");
++    assert.equal(verifiedB.owner, OWNER_B);
++    assert.equal(drafts.load(verifiedB.owner, origin, DRAFT_SCOPE), "");
++    activeOwner = verifiedB.owner;
++    assert.deepEqual((await center.list(panelEvent)).items, []);
++
++    // 10. Explicit /logout clears cookie, drafts, download history, and resets lastPath
++    const logoutRes = await fetch(`${origin}/logout`, { redirect: "manual" });
++    assert.equal(logoutRes.status, 302);
++    assert.equal(logoutRes.headers.get("location"), "/login");
++    assert.ok(String(logoutRes.headers.get("set-cookie")).includes("Max-Age=0"));
++    identityEpoch += 1;
++    drafts.clearAll();
++    center.invalidate({ forget: true, origin, owner: OWNER_A });
++    prefs.update({ lastPath: "/" });
++    assert.equal(drafts.load(OWNER_A, origin, DRAFT_SCOPE), "");
++    assert.equal(prefs.get().lastPath, "/");
++  } finally {
++    await fixture.close();
++    fs.rmSync(dir, { recursive: true, force: true });
++  }
++});
+diff --git a/docs/handoff/WINDOWS_FINAL_ACCEPTANCE.md b/docs/handoff/WINDOWS_FINAL_ACCEPTANCE.md
+new file mode 100755
+index 0000000..4a0a588
+--- /dev/null
++++ b/docs/handoff/WINDOWS_FINAL_ACCEPTANCE.md
+@@ -0,0 +1,102 @@
++# Kosmora Windows Final Acceptance (`feature/kosmora-windows-final-acceptance`)
++
++## 1. База, ветка и границы ответственности
++
++- **Репозиторий:** `https://github.com/RLM-Company/Nexus-OS`
++- **Целевая база (`main`):** `4b54bdef1f5c29d84d566c3eb1ecc21214bf8dd9` (*Integrate validated Kosmora stage-one release and Gemini acceptance*)
++- **Рабочая ветка:** `feature/kosmora-windows-final-acceptance`
++- **Затронутый контур:** исключительно `desktop/windows/**`, `.github/workflows/windows-desktop.yml` и настоящий итоговый документ `docs/handoff/WINDOWS_FINAL_ACCEPTANCE.md`.
++- **Неизменённые контуры:** `apps/api/**`, `apps/web/**`, `packages/**`, `deploy/**`, `.github/workflows/ci.yml`, БД, провайдеры моделей, веб-UI, сайдбар, CSS и логотип.
++- **Стабильные идентификаторы совместимости и безопасности:**
++  - `name`: `cosmora-windows-desktop`
++  - `version`: `0.11.2`
++  - `build.appId`: `com.cosmora.desktop`
++  - каталог профиля Windows: `%APPDATA%\cosmora-windows-desktop`
++  - Chromium partition: `persist:cosmora`
++  - `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, `webSecurity: true`
++  - `update-trust.json`: `{"schemaVersion": 1, "publicKeyPem": null}` (автообновления отключены до закрепления владельцем релизного ключа Ed25519; автоматического запуска скачанных `.exe` нет).
++
++## 2. Найденные и исправленные ошибки в `main` (`4b54bdef1f5c29d84d566c3eb1ecc21214bf8dd9`)
++
++При сверке `desktop/windows/**` на коммите `4b54bdef1f5c29d84d566c3eb1ecc21214bf8dd9` и логов падения GitHub Actions (`Windows desktop`) выявлены и устранены следующие дефекты:
++
++1. **Дрейф `appId` и `name` в `desktop/windows/package.json`:**
++   - В `4b54bdef1f5c29d84d566c3eb1ecc21214bf8dd9` значения `"name"` и `"build.appId"` были изменены на `"kosmora-windows-desktop"` и `"com.kosmora.desktop"`, что ломало `ci/verify-unsigned-policy.cjs`, расходилось с `app.setAppUserModelId("com.cosmora.desktop")` в `main.cjs` и нарушало совместимость обновления поверх `0.8.0` / `0.10.0` / `0.11.x`.
++   - **Исправление:** восстановлены `"name": "cosmora-windows-desktop"` и `"build.appId": "com.cosmora.desktop"`.
++2. **Неполный `scripts.check` в `desktop/windows/package.json`:**
++   - В `4b54bdef1f5c29d84d566c3eb1ecc21214bf8dd9` скрипт `npm run check` пропускал `node --check download-history.cjs`, `node --check downloads.js`, `node --check connection.js` и не запускал `node --test test/*.test.cjs`. Из-за отсутствия `download-history.cjs` и `downloads.js` в `scripts.check` падал контрактный тест `test/download-package.test.cjs`.
++   - **Исправление:** в `scripts.check` включены проверки синтаксиса всех `.cjs`/`.js` точек входа (`main.cjs`, `preload.cjs`, `downloads-preload.cjs`, `download-history.cjs`, `download-center.cjs`, `downloads.js`, `connection-policy.cjs`, `smoke-mode.cjs`, `gui-acceptance.cjs`, `connection.js`, `desktop-state.cjs`, `desktop-recovery.cjs`, `draft-store.cjs`, `draft-session-gate.cjs`, `owner-session.cjs`, `update-policy.cjs`, `update-service.cjs`, `ci/create-signed-update.cjs`, `ci/verify-unsigned-policy.cjs`, `ci/gui-acceptance-fixture.cjs`) и прогон `node --test test/*.test.cjs`.
++3. **Опечатка поля ключа в `desktop/windows/test/download-package.test.cjs`:**
++   - Тест проверял `assert.equal(trust.publicKeysPem, null)` (во множественном числе) вместо `trust.publicKeyPem`, что в `node:assert/strict` приводило к `AssertionError: undefined == null`.
++   - **Исправление:** проверка приведена в соответствие со схемой `update-trust.json` (`assert.equal(trust.publicKeyPem, null)`).
++4. **Инициализация хранилищ профиля до `requestSingleInstanceLock()` и проверки `smokeMode` в `desktop/windows/main.cjs`:**
++   - Вторичный процесс `Kosmora.exe` (при передаче deep link `kosmora://...` или повторном клике по ярлыку) и `--cosmora-smoke-test` инициализировали хранилища профиля до выхода, что при открытом основном окне переводило активные загрузки в `download-history.json` в статус `interrupted`.
++   - **Исправление:** `ensureProfileStores()` вызывается только в основном экземпляре после получения `requestSingleInstanceLock()` и вне `--cosmora-smoke-test`.
++5. **Потеря сохранённого маршрута (`lastPath` / `deferredRoute`) при входе и обрыве соединения (`desktop/windows/main.cjs`, `desktop/windows/connection.js`):**
++   - После прохождения `/login` или переподключения промежуточная посадка на корневой `/` перезаписывала `preferences.lastPath` значением `"/"` раньше, чем `restoreAfterAuthentication()` успевал восстановить `deferredRoute`.
++   - Обработчик `did-fail-load` при обрыве соединения не сохранял целевой `deferredRoute` перед переходом на `connection.html`.
++   - На экране `connection.js` завершение устаревшей (`stale: true`) попытки подключения могло сбросить индикатор загрузки `setBusy(false)` или затереть редактируемый адрес поверх новой активной попытки.
++   - **Исправление:**
++     - `persistRoute(url)` не затирает `lastPath` промежуточным `"/"`, пока ожидается восстановление `deferredRoute !== "/"` или выполняется `restoreAfterAuthentication()`.
++     - `did-fail-load` сохраняет `deferredRoute` из `validatedURL` либо `preferences.lastPath` до показа `connection.html`.
++     - `restoreAfterAuthentication()` сбрасывает `deferredRoute` только после успешного открытия маршрута.
++     - `connection.js` отслеживает `activeRequestId`, игнорирует `result.stale === true` и не перезаписывает поле `#origin`, когда пользователь редактирует адрес в режиме смены сервера.
++6. **Синхронный и асинхронный IPC-канал `cosmora:draft-flush`:**
++   - В `main.cjs` поддержаны оба вызова (`ipcMain.on("cosmora:draft-flush", ...)` и `ipcMain.handle("cosmora:draft-flush", ...)`), а в `preload.cjs` сохранён неблокирующий `ipcRenderer.send("cosmora:draft-flush", scope, text)` для `pagehide`.
++
++## 3. Проверка 6 целевых блоков работ
++
++### Блок 1. Установка → запуск EXE → подключение → форма входа → сохранение сессии → закрытие/открытие
++- Первый запуск без `connection.json` открывает локальный `connection.html` (`mode: "setup"`).
++- `normalizeServerOrigin` принимает только `https://` для внешних хостов и `http://127.0.0.1` / `localhost` / `[::1]` для локального стенда; учётные данные в URL, пути, query и hash отклоняются.
++- `probeServer` проверяет `/api/v1/health` (и при `401` — доступность публичной страницы `/login`) с таймаутом 6 с и `redirect: "manual"`.
++- Обычный вход выполняется в веб-форме `/login`; `HttpOnly` cookie сессии сохраняется в `persist:cosmora`.
++- При закрытии окна сохраняются `bounds`/`maximized` в `desktop-preferences.json`, а при повторном открытии `Kosmora.exe` автоматически подключается к сохранённому `origin` и через `restoreAfterAuthentication()` возвращает пользователя на сохранённый маршрут (`lastPath`).
++
++### Блок 2. Восстановление после недоступности сервера, позднего ответа и изоляция владельцев
++- При недоступности сервера (`probeServer`, `did-fail-load`, `startConnectivityMonitor`) открывается локальный экран `connection.html` в режиме `offline` с кнопками **Повторить** и **Сменить адрес**.
++- Неудачная попытка подключения к новому серверу не перезаписывает `connection.json` и не стирает `currentOrigin` или `deferredRoute`.
++- `createLatestAttemptGate()` в `main.cjs` и `activeRequestId` в `connection.js` гарантируют, что поздний ответ от старой попытки (`stale: true`) не подменяет текущую попытку.
++- Текстовые черновики (`draft-store.cjs` + `draft-session-gate.cjs` + `owner-session.cjs`) шифруются через Windows DPAPI (`safeStorage`), привязаны к `origin + "\0" + verifiedOwnerId + scope` и защищены от чтения/записи другим владельцем (`Owner B`).
++
++### Блок 3. Загрузка и открытие файлов результата (`will-download`, `download-center.cjs`, `download-history.cjs`)
++- `isAllowedDownload` проверяет всю цепочку редиректов `item.getURLChain()`: разрешены только URL активного `currentOrigin` и `blob:` того же `origin`. Внешние редиректы, `data:` и `file:` блокируются.
++- `safeDownloadFilename` очищает небезопасные символы (`<>:"/\|?*` и управляющие байты), а `nextAvailableDownloadPath` добавляет суффиксы `(1)`, `(2)` без тихой перезаписи существующих файлов.
++- Центр загрузок (`Ctrl+J` / **Файлы → Центр загрузок…**) изолирует историю по `SHA-256(origin + "\0" + ownerId)`, скрывает `savePath` и `scope` от рендерера `downloads.html`, переводит незавершённые загрузки в `interrupted` после перезапуска и блокирует запуск исполняемых расширений (`.exe`, `.msi`, `.bat`, `.cmd`, `.ps1`, `.vbs`, `.js`, `.reg`, `.lnk` и др.) через **Открыть**, оставляя безопасный **Показать в папке**.
++
++### Блок 4. Single instance, закрытие, восстановление окна и deep links
++- `app.requestSingleInstanceLock()` предотвращает запуск второго независимого окна и не трогает файлы профиля при отказе в блокировке.
++- События `second-instance` и `open-url` фокусируют существующее окно (`revealWindow`) и передают маршрут из `kosmora://open?path=...` через `deepLinkFromArgv` и `openRoute` только после проверки белого списка `safeWorkspaceRoute` и подтверждения владельца `verifiedOwner()`.
++- `restoredBounds` восстанавливает положение и размер окна только в пределах видимой рабочей области текущих мониторов.
++
++### Блок 5. Воспроизводимый packaged GUI acceptance в изолированном Windows CI
++- Добавлены `desktop/windows/gui-acceptance.cjs`, `desktop/windows/ci/gui-acceptance-fixture.cjs` и `desktop/windows/test/gui-acceptance.test.cjs`, а также вызов `Invoke-PackagedGuiAcceptance` в `desktop/windows/ci/nsis-lifecycle.ps1` (режим `Fresh`) и `.github/workflows/windows-desktop.yml`.
++- В отличие от `--cosmora-smoke-test` (который завершает процесс до `createMainWindow()`), `--cosmora-gui-acceptance` запускает **настоящий установленный `Kosmora.exe` с реальным `BrowserWindow`** против локального loopback-сервера `http://127.0.0.1:<port>` в два этапа:
++  1. **Этап 1 (`first-launch`):** открытие `connection.html` (`setup`) → подключение к `http://127.0.0.1:<port>` → отправка формы `/login` → получение 30-дневной `HttpOnly` cookie в `persist:cosmora` → переход на рабочий маршрут `/?project=...&view=chat&surface=code` → сохранение и чтение черновика через `window.kosmoraDesktopDraft` и Windows DPAPI (`safeStorage`) → скачивание двух файлов с одинаковым небезопасным именем `report<final>:"?.md` в `report_final____.md` и `report_final____ (1).md` без перезаписи → блокировка внешнего редиректа `/files/foreign-redirect` → проверка окна Центра загрузок (`downloads.html`) на отсутствие утечки `savePath`/`scope` → штатное закрытие окна.
++  2. **Этап 2 (`relaunch-and-recovery`):** повторный запуск установленного `Kosmora.exe` → автоматический вход по сохранённой сессии и восстановление маршрута `/?project=...&view=chat&surface=code` → расшифровка черновика `Owner A` после перезапуска → запуск второго процесса `Kosmora.exe` с вредоносным deep link (отклоняется) и валидным `kosmora://open?path=%2Fgithub` (фокусирует первое окно и открывает `/github`) → отключение локального сервера (`offline`) → переход на экран восстановления `connection.html` без потери `connection.json` даже при попытке ввода недоступного адреса → возврат сервера в `online` и успешный `retry()` с восстановлением `/github` → смена владельца сессии на `Owner B` (проверка, что черновик `Owner A` недоступен) → явный выход `/logout` с полной очисткой черновиков, истории загрузок и сбросом `lastPath` в `"/"`.
++- Локальный fixture-сервер не обращается к платным моделям, внешним сетям или реальным аккаунтам.
++
++## 4. Итоговая матрица приёмки
++
++| Проверка / Сценарий | Статус | Подтверждение |
++| :--- | :--- | :--- |
++| Синтаксис всех 20 `.cjs`/`.js` модулей (`npm run check`) | **PASS (Linux VM)** | `node --check` для всех модулей в `desktop/windows` и `desktop/windows/ci` — `0 errors` |
++| Модульные, контрактные и стендовые тесты Node (`node --test test/*.test.cjs`) | **PASS (Linux VM)** | `42 tests`: `41 pass`, `0 fail`, `1 skip` (`lifecycle-guard.test.cjs` требует `win32`) |
++| Offline preflight пакета и политики обновлений (`npm run verify:unsigned`) | **PASS (Linux VM)** | `Unsigned policy OK: 0.11.2; updates OFF; NSIS x64; no auto-install.` (все 24 упакованных файла на месте) |
++| Изоляция черновиков и Центра загрузок (`draft-*.test.cjs`, `download-*.test.cjs`) | **PASS (Linux VM)** | Разделение по `origin + owner`, защита от подмены, блокировка опасных расширений, очистка при `/logout` |
++| Локальный стенд `gui-acceptance-fixture.cjs` (`test/gui-acceptance.test.cjs`) | **PASS (Linux VM)** | Полный цикл `/api/v1/health` → `/login` → `/api/v1/identity/sessions` → загрузки → offline/retry → Owner B → `/logout` |
++| Нативная сборка `Kosmora-Setup-0.11.2-x64.exe`, Windows DPAPI (`safeStorage`), NSIS `Fresh` + packaged GUI acceptance + `Upgrade` на `windows-latest` | **UNVERIFIED on Linux / Ready for Windows CI** | В Linux-песочнице нет Win32 GUI, DPAPI и NSIS; полный автоматизированный прогон настроен в `.github/workflows/windows-desktop.yml` и `desktop/windows/ci/nsis-lifecycle.ps1` |
++
++## 5. Команды для интегратора и Windows CI
++
++Локальная проверка и сборка неподписанного установщика на Windows (Node.js 24+):
++
++```powershell
++cd desktop/windows
++npm run check
++npm run verify:unsigned
++powershell -NoProfile -File ci/build-unsigned.ps1
++Get-Content dist/SHA256SUMS.txt
++```
++
++Полная проверка жизненного цикла NSIS (`Fresh` + реальный packaged GUI acceptance в `Kosmora.exe` + `Upgrade` с 0.8.0 + сохранение профиля при удалении) выполняется автоматически в GitHub Actions workflow `.github/workflows/windows-desktop.yml` на изолированном `windows-latest` раннере. Не запускайте `ci/nsis-lifecycle.ps1` в обход защитного guard на рабочей машине владельца.
+-- 
+2.39.5
+

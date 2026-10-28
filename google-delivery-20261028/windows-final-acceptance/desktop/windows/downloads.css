@@ -1,0 +1,145 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #f6f6f6;
+  color: #111111;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  padding: 20px;
+  background: #f6f6f6;
+  color: #111111;
+}
+
+.panel {
+  max-width: 820px;
+  margin: 0 auto;
+  background: #ffffff;
+  border: 1px solid #d8d8d8;
+  border-radius: 8px;
+  padding: 22px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.06);
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #555555;
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.lead {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #3f3f3f;
+}
+
+.toolbar,
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid #111111;
+  background: #111111;
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #ffffff;
+  color: #111111;
+  border-color: #bdbdbd;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.error {
+  min-height: 18px;
+  margin: 12px 0 0;
+  color: #8a0000;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.empty {
+  margin-top: 16px;
+  padding: 26px 18px;
+  border: 1px dashed #cfcfcf;
+  border-radius: 6px;
+  color: #555555;
+  text-align: center;
+  font-size: 14px;
+}
+
+.list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid #dfdfdf;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.filename {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #505050;
+}

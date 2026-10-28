@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'"
+    />
+    <title>Загрузки Kosmora</title>
+    <link rel="stylesheet" href="./downloads.css" />
+  </head>
+  <body>
+    <main class="panel" aria-labelledby="title">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Kosmora for Windows</p>
+          <h1 id="title">Центр загрузок</h1>
+        </div>
+        <div class="toolbar">
+          <button id="open-folder" class="secondary" type="button">Папка загрузок</button>
+          <button id="clear-completed" class="secondary" type="button">Очистить завершённые</button>
+        </div>
+      </header>
+      <p id="state-text" class="lead">Проверка текущего сеанса…</p>
+      <p id="error" class="error" role="alert" aria-live="polite"></p>
+      <section id="empty" class="empty" hidden>
+        <p>Загрузок для текущего аккаунта пока нет.</p>
+      </section>
+      <ul id="list" class="list" aria-label="Файлы загрузок"></ul>
+    </main>
+    <script src="./downloads.js"></script>
+  </body>
+</html>
