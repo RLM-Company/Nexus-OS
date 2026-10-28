@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { readFileSync } from "node:fs";
 import Fastify from "fastify";
 import { loadServerConfig } from "@cosmora/config";
@@ -122,6 +123,7 @@ async function fixture(
     operationTimeoutMs?: number;
     providerDelayMs?: number;
     providerStatus?: number;
+    providerResponse?: (signal: AbortSignal | null | undefined) => Response;
     extraTreePaths?: number;
     ownerBudget?: CodeOwnerBudget;
     level?: AutonomyLevel;
@@ -248,6 +250,7 @@ async function fixture(
     fetchImplementation: (_input, init) => {
       if (typeof init?.body !== "string") throw new Error("Missing JSON request");
       providerCalls.push(JSON.parse(init.body) as Record<string, unknown>);
+      if (options.providerResponse) return Promise.resolve(options.providerResponse(init.signal));
       if (options.providerStatus)
         return Promise.resolve(
           new Response(JSON.stringify({ error: { message: "DO_NOT_PERSIST_PROVIDER_BODY" } }), {
@@ -397,6 +400,111 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("saves streamed text on cancel, refuses publication and replays the same creation without a paid retry", async () => {
+    let cancelled = false;
+    const prefix = '{"summary":',
+      tail = '"unfinished"';
+    const f = await fixture({
+      toolCalling: false,
+      providerResponse: () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  sse(
+                    { choices: [{ delta: { content: prefix } }] },
+                    { choices: [{ delta: { content: tail } }] }
+                  )
+                )
+              );
+            },
+            cancel() {
+              cancelled = true;
+            }
+          }),
+          { headers: { "content-type": "text/event-stream" } }
+        )
+    });
+    const payload = {
+      client_request_id: randomUUID(),
+      task: "Fix",
+      base_branch: "main",
+      files: ["src/add.js"]
+    };
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, payload).id;
+    await vi.waitFor(() => expect(f.get(id).output_checkpoint?.text).toBe(prefix));
+    await nextTurn();
+    f.service.cancel(id, owner);
+    const stopped = f.get(id);
+    expect(stopped.output_checkpoint).toMatchObject({
+      text: prefix + tail,
+      kind: "unvalidated_model_output",
+      stream_completed: false
+    });
+    await f.service.whenIdle();
+    expect(cancelled).toBe(true);
+    expect(f.get(id)).toEqual(stopped);
+    expect(f.service.cancel(id, owner).version).toBe(stopped.version);
+    expect(f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, payload).id).toBe(id);
+    expect(f.get(id).proposal).toBeUndefined();
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    expect(f.store.get(id, "other-owner")).toBeNull();
+  });
+
+  it("preserves the partial draft and time-budget error on an aborted Code stream", async () => {
+    let cancelled = false;
+    const text = '{"summary":"still generating';
+    const f = await fixture({
+      toolCalling: false,
+      operationTimeoutMs: 200,
+      providerResponse: () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode(sse({ choices: [{ delta: { content: text } }] }))
+              );
+            },
+            cancel() {
+              cancelled = true;
+            }
+          }),
+          { headers: { "content-type": "text/event-stream" } }
+        )
+    });
+    const id = await f.start();
+    await f.wait(id, "failed");
+    await f.service.whenIdle();
+    expect(f.get(id)).toMatchObject({ error: "TASK_TIME_BUDGET", output_checkpoint: { text } });
+    expect(cancelled).toBe(true);
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.get(id).proposal).toBeUndefined();
+  });
+
+  it("settles an active stream safely when its run was removed instead of throwing from the watchdog", async () => {
+    const f = await fixture({
+      toolCalling: false,
+      providerResponse: () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode(sse({ choices: [{ delta: { content: "partial" } }] }))
+              );
+            }
+          }),
+          { headers: { "content-type": "text/event-stream" } }
+        )
+    });
+    const id = await f.start();
+    await vi.waitFor(() => expect(f.get(id).output_checkpoint?.text).toBe("partial"));
+    f.database.sqlite.prepare("DELETE FROM code_agent_runs WHERE id=?").run(id);
+    await f.service.whenIdle();
+    expect(f.store.get(id, owner)).toBeNull();
+    expect(f.providerCalls).toHaveLength(1);
+  });
   it("joins manual read-only reconciliation before exporting and preserves the acknowledged PR without new writes", async () => {
     let hold = false,
       entered = false,

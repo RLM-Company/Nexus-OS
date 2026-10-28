@@ -67,6 +67,9 @@ async function fixture(
     graph?: WorkIntelligenceGraphAdapter;
     ownerBudget?: WorkOwnerBudget;
     onCall?: (request: ModelRequest, signal: AbortSignal) => Promise<void>;
+    chunks?: string[];
+    afterChunk?: (request: ModelRequest, signal: AbortSignal, index: number) => Promise<void>;
+    operationTimeoutMs?: number;
   } = {}
 ) {
   const database = openDatabase(options.databasePath ?? ":memory:");
@@ -106,7 +109,11 @@ async function fixture(
                 files: [{ name: "result.md", content: "# Useful\nComplete document." }]
               })
             : (options.review ?? { verdict: "PASS", reason: "Complete and consistent" });
-      yield { type: "text.delta", delta: JSON.stringify(result) };
+      const chunks = options.chunks ?? [JSON.stringify(result)];
+      for (const [index, delta] of chunks.entries()) {
+        yield { type: "text.delta", delta };
+        await options.afterChunk?.(req, signal, index);
+      }
       yield {
         type: "response.completed",
         provider: "mock",
@@ -134,6 +141,9 @@ async function fixture(
     emergency,
     gateway,
     manager: runtime.manager,
+    ...(options.operationTimeoutMs === undefined
+      ? {}
+      : { operationTimeoutMs: options.operationTimeoutMs }),
     ...(options.graph ? { graph: options.graph } : {}),
     ownerBudget: options.ownerBudget ?? accountStore
   };
@@ -159,6 +169,121 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("flushes accepted partial text on cancel, ignores late output and never publishes the recovery prefix", async () => {
+    let release!: () => void, observed!: () => void;
+    const paused = new Promise<void>((done) => {
+      observed = done;
+    });
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    const first = '{"summary":',
+      tail = '"partial draft"';
+    const f = await fixture({
+      chunks: [first, tail, "LATE OUTPUT"],
+      afterChunk: (_req, _signal, index) => {
+        if (index === 1) {
+          observed();
+          return gate;
+        }
+        return Promise.resolve();
+      }
+    });
+    const running = f.coordinator.execute(f.work.id, "local-owner");
+    await paused;
+    expect(f.get().output_checkpoint?.text).toBe(first);
+    f.coordinator.control(f.work.id, "local-owner", f.get().version, "cancel");
+    const cancelled = f.get();
+    expect(cancelled.output_checkpoint).toMatchObject({
+      text: first + tail,
+      kind: "unvalidated_model_output",
+      stream_completed: false,
+      stage: "plan"
+    });
+    release();
+    await running;
+    expect(f.get()).toEqual(cancelled);
+    expect(f.get().plan).toBeNull();
+    expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
+    expect(f.store.get(f.work.id, "other-owner")).toBeNull();
+    expect(f.store.create(f.project.id, "local-owner", "local-owner", request)?.id).toBe(f.work.id);
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.calls).toHaveLength(1);
+    expect(f.accountStore.summary("local-owner").total_counted_tokens).toBeGreaterThan(0);
+  });
+
+  it("times out a stalled Work, preserves its checkpoint and retains the active slot until transport settles", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    const f = await fixture({
+      operationTimeoutMs: 100,
+      chunks: ['{"summary":"unfinished'],
+      afterChunk: () => gate
+    });
+    const running = f.coordinator.execute(f.work.id, "local-owner");
+    try {
+      await vi.waitFor(() =>
+        expect(f.get()).toMatchObject({ status: "failed", error_code: "TASK_TIME_BUDGET" })
+      );
+      expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(true);
+      expect(f.get().output_checkpoint?.text).toBe('{"summary":"unfinished');
+      const other = f.store.create(f.project.id, "local-owner", "local-owner", {
+        ...request,
+        client_request_id: "next-task"
+      })!;
+      await f.coordinator.execute(other.id, "local-owner");
+      expect(f.store.get(other.id, "local-owner")?.status).toBe("queued");
+      expect(f.calls).toHaveLength(1);
+    } finally {
+      release();
+      await running;
+    }
+    expect(f.get()).toMatchObject({ status: "failed", error_code: "TASK_TIME_BUDGET" });
+    expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(false);
+  });
+
+  it("does not persist buffered or late output after the owner privacy fence", async () => {
+    let release!: () => void, observed!: () => void;
+    const paused = new Promise<void>((done) => {
+      observed = done;
+    });
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    const f = await fixture({
+      chunks: ["first saved", " buffered", " late"],
+      afterChunk: (_req, _signal, index) => {
+        if (index === 1) {
+          observed();
+          return gate;
+        }
+        return Promise.resolve();
+      }
+    });
+    const running = f.coordinator.execute(f.work.id, "local-owner");
+    await paused;
+    const before = f.get();
+    f.database.sqlite
+      .prepare(
+        "INSERT INTO kosmora_owner_data_lifecycle(owner_id,state,epoch,operation_id,started_at,updated_at) VALUES(?,'quiescing',1,'checkpoint-test',?,?)"
+      )
+      .run("local-owner", new Date().toISOString(), new Date().toISOString());
+    release();
+    await running;
+    expect(f.get()).toEqual(before);
+    expect(f.get().output_checkpoint?.text).toBe("first saved");
+    expect(f.calls).toHaveLength(1);
+  });
+
+  it("rejects invalid operation deadlines before accepting execution", async () => {
+    const f = await fixture();
+    for (const operationTimeoutMs of [0, -1, 1.5, Infinity, 1800001])
+      expect(() => new ManagerWorkCoordinator({ ...f.dependencies, operationTimeoutMs })).toThrow(
+        /time budget/
+      );
+  });
   it("accepts the first Work in a prepared draft project and activates it atomically", async () => {
     const f = await fixture();
     const id = crypto.randomUUID();

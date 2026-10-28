@@ -25,6 +25,7 @@ import {
   readWorkGraphContext,
   workRuntimeProgress,
   assertWorkTaskGraph,
+  ModelOutputCheckpointWriter,
   type ManagerService
 } from "@cosmora/core";
 import {
@@ -55,6 +56,7 @@ type Completion = Extract<ModelGatewayStreamEvent, { type: "response.completed" 
 export type { WorkOwnerBudget } from "@cosmora/contracts";
 
 export interface ManagerWorkDependencies {
+  operationTimeoutMs?: number;
   store: ManagerWorkStore;
   projects: ProjectStore;
   policy: PolicyStore;
@@ -82,9 +84,18 @@ export class ManagerWorkCoordinator {
   private readonly privacySettled = new Set<string>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopping = false;
+  private readonly outputWriters = new Map<string, ModelOutputCheckpointWriter>();
+  private readonly operationTimeoutMs: number;
   private readonly tools: GuardedToolRuntime;
 
   constructor(private readonly dependencies: ManagerWorkDependencies) {
+    this.operationTimeoutMs = dependencies.operationTimeoutMs ?? 600_000;
+    if (
+      !Number.isInteger(this.operationTimeoutMs) ||
+      this.operationTimeoutMs < 1 ||
+      this.operationTimeoutMs > 1_800_000
+    )
+      throw new Error("Invalid Work operation time budget");
     this.dag = new WorkDagCoordinator(dependencies.store, this);
     this.tools = new GuardedToolRuntime(dependencies.policy);
     this.tools.register<{ id: string; ownerId: string }, string[]>({
@@ -182,7 +193,7 @@ export class ManagerWorkCoordinator {
     version: number,
     action: "pause" | "resume" | "approve" | "cancel"
   ): ManagerWork | null {
-    const work = this.dependencies.store.get(id, ownerId);
+    let work = this.dependencies.store.get(id, ownerId);
     if (!work) return null;
     this.dependencies.store.assertWritable(ownerId);
     if (work.dag_binding && !work.dag_binding.bound && action !== "cancel")
@@ -196,6 +207,8 @@ export class ManagerWorkCoordinator {
     if (["completed", "failed", "cancelled"].includes(work.status))
       throw new ManagerWorkConflict("TERMINAL_EXECUTION");
     if (action === "cancel") {
+      this.outputWriters.get(id)?.flush();
+      work = this.current(id, ownerId);
       work.status = "cancelled";
       this.active.get(id)?.controller.abort();
     } else if (action === "pause") {
@@ -345,10 +358,9 @@ export class ManagerWorkCoordinator {
           })
         ]);
         const latest = this.current(work.id, work.owner_id);
-        work =
-          latest.status === "cancelled"
-            ? latest
-            : this.checkpoint({ ...latest, graph_context: work.graph_context });
+        if (signal.aborted || latest.status !== "running" || this.isStopped(latest))
+          throw new Error("EMERGENCY_STOP");
+        work = this.checkpoint({ ...latest, graph_context: work.graph_context });
       } catch {
         throw new Error("GRAPH_UNAVAILABLE");
       } finally {
@@ -359,8 +371,21 @@ export class ManagerWorkCoordinator {
         throw new Error("EMERGENCY_STOP");
     }
     const runId = store.createModelRun(work);
-    work.inflight_run_id = runId;
+    work = this.current(work.id, work.owner_id);
     work = this.checkpoint(work, "Запрос модели: " + work.stage);
+    const writer = new ModelOutputCheckpointWriter(
+      runId,
+      work.stage as "plan" | "draft" | "review",
+      (checkpoint) => {
+        if (this.isOwnerFenced(work.owner_id)) return false;
+        const latest = store.get(work.id, work.owner_id);
+        if (!latest || latest.status !== "running" || latest.inflight_run_id !== runId)
+          return false;
+        this.checkpoint({ ...latest, output_checkpoint: checkpoint });
+        return true;
+      }
+    );
+    this.outputWriters.set(work.id, writer);
     let completion: Completion | undefined;
     let content = "";
     let ownerReservation: string | undefined;
@@ -370,9 +395,13 @@ export class ManagerWorkCoordinator {
     const abort = () => controller.abort();
     signal.addEventListener("abort", abort, { once: true });
     const watch = setInterval(() => {
-      const latest = this.current(work.id, work.owner_id);
-      if (signal.aborted || latest.status === "cancelled" || this.isStopped(latest))
+      try {
+        const latest = this.current(work.id, work.owner_id);
+        if (signal.aborted || latest.status !== "running" || this.isStopped(latest))
+          controller.abort();
+      } catch {
         controller.abort();
+      }
     }, 50);
     try {
       const request = this.request(work, runId);
@@ -429,9 +458,11 @@ export class ManagerWorkCoordinator {
         } else if (event.type === "text.delta") {
           content += event.delta;
           if (content.length > 256000) throw new Error("INVALID_MODEL_OUTPUT");
+          writer.update(content);
         } else if (event.type === "response.completed") completion = event;
       }
       if (!completion || !content.trim()) throw new Error("INVALID_MODEL_OUTPUT");
+      writer.update(content, true);
       projects.completeRun(runId, completion.provider, completion.model, completion.usage, {
         attempt: completion.route.attempt,
         calculatedCost: completion.calculatedCost
@@ -471,6 +502,8 @@ export class ManagerWorkCoordinator {
       }
       throw error;
     } finally {
+      writer.flush();
+      if (this.outputWriters.get(work.id) === writer) this.outputWriters.delete(work.id);
       clearInterval(watch);
       signal.removeEventListener("abort", abort);
     }
@@ -482,9 +515,29 @@ export class ManagerWorkCoordinator {
     this.dependencies.store.assertWritable(ownerId);
     if (this.isOwnerFenced(ownerId)) return;
     const controller = new AbortController();
-    const done = this.run(id, ownerId, AbortSignal.any([controller.signal, signal])).finally(() =>
-      this.active.delete(id)
-    );
+    const deadline = setTimeout(() => {
+      this.outputWriters.get(id)?.flush();
+      controller.abort(new Error("TASK_TIME_BUDGET"));
+      try {
+        const latest = this.dependencies.store.get(id, ownerId);
+        if (latest?.status === "running" && !this.isOwnerFenced(ownerId))
+          this.checkpoint(
+            {
+              ...latest,
+              status: "failed",
+              error_code: "TASK_TIME_BUDGET"
+            },
+            "Достигнут лимит времени; автоматический повтор отключён"
+          );
+      } catch {
+        /* The active request remains fenced until its transport settles. */
+      }
+    }, this.operationTimeoutMs);
+    deadline.unref?.();
+    const done = this.run(id, ownerId, AbortSignal.any([controller.signal, signal])).finally(() => {
+      clearTimeout(deadline);
+      this.active.delete(id);
+    });
     this.active.set(id, { ownerId, controller, done });
     await done;
   }
@@ -676,8 +729,11 @@ export class ManagerWorkCoordinator {
         }
       }
     } catch (error) {
-      work = this.current(id, ownerId);
+      const latest = store.get(id, ownerId);
+      if (!latest || this.isOwnerFenced(ownerId)) return;
+      work = latest;
       if (work.status === "cancelled") return;
+      if (work.status === "failed" && work.error_code === "TASK_TIME_BUDGET") return;
       const known = [
         "EMERGENCY_STOP",
         "EXECUTION_BUDGET_EXCEEDED",
