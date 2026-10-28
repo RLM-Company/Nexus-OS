@@ -460,7 +460,11 @@ async function runPackagedGuiAcceptance({
   await fetch(`${config.origin}/test-control/owner?id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`, {
     method: "POST"
   });
-  await win.loadURL(`${config.origin}/logout`);
+  // Use the hosted user navigation path. BrowserWindow.loadURL bypasses
+  // Electron's will-navigate event and would not exercise the logout guard.
+  await win.webContents.executeJavaScript(
+    `window.location.assign(${JSON.stringify(`${config.origin}/logout`)}); true`
+  );
   await waitFor(
     () =>
       !win.webContents.isLoading() && win.webContents.getURL().startsWith(`${config.origin}/login`),

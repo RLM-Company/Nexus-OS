@@ -344,6 +344,7 @@ async function runPackagedGuiAcceptanceSuite({ appExePath, workRoot }) {
     assert.equal(phase1Report.savedOrigin, fixture.origin);
     assert.equal(phase1Report.lastPath, WORKSPACE_ROUTE);
     assert.equal(phase1Report.downloadsCount, 2);
+    assert.equal(phase1Report.nativeIdentityRedirectDenied, true);
     assert.equal(phase1Report.foreignRedirectBlocked, true);
     assert.deepEqual(phase1Report.downloadedFiles.sort(), [
       "report_final____ (1).md",
