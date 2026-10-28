@@ -1,6 +1,14 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { createArchive, verifiedOriginal } from "./archive.js";
+import {
+  buildSegmentedExport,
+  segmentManifest,
+  segmentLimit,
+  PrivacySegmentLimitError,
+  SEGMENTED_EXPORT_MAX_BYTES,
+  type PrivacySegmentPlan
+} from "./segmented-export.js";
 
 export const REQUIRED_PRIVACY_STORES = [
   "account-core",
@@ -54,6 +62,8 @@ export interface PrivacyAdapter {
   /** Every writer must check durable owner epoch/fence; in-flight tasks must be aborted and joined. */
   quiesce(ownerId: string, epoch: number): Promise<{ drained: true; fence_epoch: number }>;
   export(ownerId: string): Promise<PrivacySection>;
+  /** Optional bounded collector for the larger segmented snapshot, without changing normal export limits. */
+  exportSegmented?(ownerId: string): Promise<PrivacySection>;
   /** Idempotent; deletion after quiesce, never touch authentication, accounting or audit. */
   delete(ownerId: string, epoch: number): Promise<{ deleted_records: number }>;
   /** Independently authorize owner+opaque binary key on each access; no URLs from user data. */
@@ -207,17 +217,41 @@ export class OwnerPrivacyCoordinator {
       read: (store: string, id: string) => Promise<Buffer>
     ) => Promise<Buffer>
   ): Promise<PrivacyExport | Buffer> {
+    return this.withExportSnapshot(ownerId, async (manifest, read) =>
+      collector ? await collector(manifest, read) : manifest
+    );
+  }
+  private async withExportSnapshot<T>(
+    ownerId: string,
+    collector: (
+      manifest: PrivacyExport,
+      read: (store: string, id: string) => Promise<Buffer>
+    ) => Promise<T>,
+    maxBytes = this.maxBytes,
+    segmented = false
+  ): Promise<T> {
     const adapters = this.requireReady(ownerId);
     const snap = this.beginSnapshot(ownerId);
     try {
-      const receipts = await Promise.all(adapters.map((a) => a.quiesce(ownerId, snap.epoch)));
+      // A failed adapter must not release the snapshot fence while another drain is still active.
+      const drained = await Promise.allSettled(
+        adapters.map((a) => Promise.resolve().then(() => a.quiesce(ownerId, snap.epoch)))
+      );
+      const failure = drained.find((receipt) => receipt.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+      const receipts = drained.map((receipt) =>
+        receipt.status === "fulfilled" ? receipt.value : null
+      );
       if (receipts.some((r) => r?.drained !== true || r.fence_epoch !== snap.epoch))
         throw new PrivacyOperationError("Owner quiesce fence not confirmed");
       const sections: PrivacyExport["sections"] = {};
       let originals = 0,
         records = 0;
       for (const adapter of adapters) {
-        const section = await adapter.export(ownerId);
+        const section =
+          segmented && adapter.exportSegmented
+            ? await adapter.exportSegmented(ownerId)
+            : await adapter.export(ownerId);
         if (!section.complete || (section.limitations?.length ?? 0) > 0)
           throw new PrivacyIncompleteError(
             `${adapter.id}: ${section.limitations?.join("; ") || "adapter did not certify completeness"}`
@@ -258,9 +292,9 @@ export class OwnerPrivacyCoordinator {
         };
         originals += section.originals.length;
         records += count;
-        if (Buffer.byteLength(JSON.stringify(sections), "utf8") > this.maxBytes)
+        if (Buffer.byteLength(JSON.stringify(sections), "utf8") > maxBytes)
           throw new PrivacyIncompleteError(
-            `Full export exceeds ${this.maxBytes} bytes; full segmented exporter required`
+            `Full export exceeds ${maxBytes} bytes; segmented export or a larger bounded export is required`
           );
       }
       const result: PrivacyExport = {
@@ -273,9 +307,8 @@ export class OwnerPrivacyCoordinator {
         record_count: records,
         retained
       };
-      if (Buffer.byteLength(JSON.stringify(result), "utf8") > this.maxBytes)
+      if (Buffer.byteLength(JSON.stringify(result), "utf8") > maxBytes)
         throw new PrivacyIncompleteError("Full export exceeds limit; no file produced");
-      if (!collector) return result;
       return await collector(result, async (store, id) => {
         const adapter = this.adapters.get(store);
         const expected = result.sections[store]?.originals.find((item) => item.id === id);
@@ -348,6 +381,76 @@ export class OwnerPrivacyCoordinator {
         );
       }
     });
+  }
+  async exportSegmentedPlan(
+    ownerId: string,
+    options: { maxSegmentBytes?: number } = {}
+  ): Promise<PrivacySegmentPlan> {
+    const limit = segmentLimit(options.maxSegmentBytes);
+    return this.withExportSnapshot(
+      ownerId,
+      async (manifest) => {
+        await Promise.resolve();
+        try {
+          return buildSegmentedExport(manifest, limit).plan;
+        } catch (error) {
+          if (error instanceof PrivacySegmentLimitError)
+            throw new PrivacyIncompleteError(error.message);
+          throw error;
+        }
+      },
+      SEGMENTED_EXPORT_MAX_BYTES,
+      true
+    );
+  }
+  async exportSegmentArchive(
+    ownerId: string,
+    segmentIndex: number,
+    options: { maxSegmentBytes?: number; expectedPlanDigest: string }
+  ): Promise<{ archive: Buffer; plan: PrivacySegmentPlan }> {
+    if (
+      !/^[a-f0-9]{64}$/.test(options.expectedPlanDigest) ||
+      !Number.isSafeInteger(segmentIndex) ||
+      segmentIndex < 0 ||
+      segmentIndex >= 4096
+    )
+      throw new PrivacyOperationError("INVALID_PRIVACY_SEGMENT_REQUEST");
+    const limit = segmentLimit(options.maxSegmentBytes);
+    return this.withExportSnapshot(
+      ownerId,
+      async (manifest, read) => {
+        let partition: ReturnType<typeof buildSegmentedExport>;
+        try {
+          partition = buildSegmentedExport(manifest, limit);
+        } catch (error) {
+          if (error instanceof PrivacySegmentLimitError)
+            throw new PrivacyIncompleteError(error.message);
+          throw error;
+        }
+        const { plan, slices } = partition;
+        if (plan.plan_digest !== options.expectedPlanDigest)
+          throw new PrivacyOperationError("PRIVACY_SEGMENT_PLAN_MISMATCH");
+        const slice = slices[segmentIndex];
+        if (!slice) throw new PrivacyOperationError("PRIVACY_SEGMENT_OUT_OF_RANGE");
+        const entries: { path: string; bytes: Buffer }[] = [
+          {
+            path: "segment-manifest.json",
+            bytes: Buffer.from(JSON.stringify(segmentManifest(plan, slice, segmentIndex)), "utf8")
+          }
+        ];
+        for (const original of slice.originals)
+          entries.push({ path: original.path, bytes: await read(original.store, original.id) });
+        try {
+          return { archive: createArchive(entries, limit), plan };
+        } catch (error) {
+          throw new PrivacyIncompleteError(
+            error instanceof Error ? error.message : "SEGMENT_ARCHIVE_LIMIT"
+          );
+        }
+      },
+      SEGMENTED_EXPORT_MAX_BYTES,
+      true
+    );
   }
   async binary(ownerId: string, adapterId: string, binaryId: string): Promise<BinaryStream | null> {
     this.requireReady(ownerId);

@@ -12,6 +12,11 @@ export interface CanvasPrivacyLifecycleAdapter {
     originals: [];
     complete: true;
   }>;
+  exportSegmented(ownerId: string): Promise<{
+    records: Record<string, unknown[]>;
+    originals: [];
+    complete: true;
+  }>;
   delete(ownerId: string, epoch: number): Promise<{ deleted_records: number }>;
 }
 
@@ -31,6 +36,32 @@ export const canvasPrivacyAdapter = (store: CanvasArtifactStore): CanvasPrivacyL
       .get(ownerId) as { state: string } | undefined;
     if (row?.state !== "quiescing") throw new Error("CANVAS_PRIVACY_EXPORT_NOT_QUIESCED");
   };
+  const collect = (ownerId: string, maxBytes: number, maxRecords: number) => {
+    assertExportFence(ownerId);
+    const versions: unknown[] = [];
+    let cursor: string | null = null,
+      bytes = 0;
+    do {
+      const page = store.privacyExport(ownerId, cursor);
+      for (const item of page.items) {
+        bytes += Buffer.byteLength(JSON.stringify(item), "utf8");
+        if (bytes > maxBytes || versions.length >= maxRecords)
+          throw new Error(
+            maxBytes === 12 * 1024 * 1024
+              ? "CANVAS_PRIVACY_SEGMENTED_EXPORT_REQUIRED"
+              : "CANVAS_PRIVACY_SEGMENTED_EXPORT_LIMIT"
+          );
+        versions.push(item);
+      }
+      cursor = page.next_cursor;
+    } while (cursor);
+    assertExportFence(ownerId);
+    return {
+      records: { canvas_revisions: versions },
+      originals: [] as [],
+      complete: true as const
+    };
+  };
   return {
     id: "canvas",
     async quiesce(ownerId, epoch) {
@@ -42,27 +73,11 @@ export const canvasPrivacyAdapter = (store: CanvasArtifactStore): CanvasPrivacyL
     },
     async export(ownerId) {
       await Promise.resolve();
-      assertExportFence(ownerId);
-      const versions: unknown[] = [];
-      let cursor: string | null = null,
-        bytes = 0;
-      do {
-        const page = store.privacyExport(ownerId, cursor);
-        for (const item of page.items) {
-          const size = Buffer.byteLength(JSON.stringify(item), "utf8");
-          bytes += size;
-          if (bytes > 12 * 1024 * 1024 || versions.length >= 10000)
-            throw new Error("CANVAS_PRIVACY_SEGMENTED_EXPORT_REQUIRED");
-          versions.push(item);
-        }
-        cursor = page.next_cursor;
-      } while (cursor);
-      assertExportFence(ownerId);
-      return {
-        records: { canvas_revisions: versions },
-        originals: [] as [],
-        complete: true as const
-      };
+      return collect(ownerId, 12 * 1024 * 1024, 10000);
+    },
+    async exportSegmented(ownerId) {
+      await Promise.resolve();
+      return collect(ownerId, 160 * 1024 * 1024, 100000);
     },
     async delete(ownerId, epoch) {
       await Promise.resolve();

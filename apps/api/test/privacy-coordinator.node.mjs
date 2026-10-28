@@ -5,12 +5,17 @@ import { Buffer } from "node:buffer";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const project = resolve(import.meta.dirname, "../../..");
-const { OwnerPrivacyCoordinator, PrivacyIncompleteError, PrivacyUnavailableError } = await import(
+const {
+  OwnerPrivacyCoordinator,
+  PrivacyIncompleteError,
+  PrivacyUnavailableError,
+  REQUIRED_PRIVACY_STORES
+} = await import(
   pathToFileURL(resolve(project, "apps/api/dist/account-settings/privacy/coordinator.js"))
 );
 const { AccountCorePrivacyAdapter } = await import(
@@ -20,35 +25,18 @@ const { AccountStore } = await import(
   pathToFileURL(resolve(project, "apps/api/dist/account-settings/account-store.js"))
 );
 const migrations = resolve(project, "packages/db/migrations");
-const needed = [
-  "documents",
-  "work",
-  "research",
-  "media",
-  "code",
-  "agent-studio",
-  "policy-projects",
-  "canvas"
-];
+const needed = REQUIRED_PRIVACY_STORES.filter((id) => id !== "account-core");
 function seeded(options = {}) {
   const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys=ON;");
-  for (const filename of readdirSync(migrations)
-    .filter((n) => /^\d{4}.*\.sql$/.test(n) && Number(n.slice(0, 4)) <= 24)
-    .sort())
+  for (const entry of JSON.parse(readFileSync(resolve(migrations, "meta/_journal.json"), "utf8"))
+    .entries)
     db.exec(
-      readFileSync(resolve(migrations, filename), "utf8").replaceAll(
+      readFileSync(resolve(migrations, `${entry.tag}.sql`), "utf8").replaceAll(
         "--> statement-breakpoint",
         "\n"
       )
     );
-  db.exec(readFileSync(resolve(project, "apps/api/src/account-settings/migration.sql"), "utf8"));
-  db.exec(
-    readFileSync(resolve(migrations, "0030_owner_privacy_lifecycle.sql"), "utf8").replaceAll(
-      "--> statement-breakpoint",
-      "\n"
-    )
-  );
   const t = "2026-10-09T09:00:00Z";
   for (const owner of ["alice", "bob"]) {
     const c = `chat-${owner}`,

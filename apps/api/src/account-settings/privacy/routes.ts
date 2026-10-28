@@ -3,7 +3,12 @@ import { Type } from "typebox";
 import type { IdentityContext } from "@cosmora/contracts";
 import type { AccountStore } from "../account-store.js";
 import type { OwnerPrivacyCoordinator } from "./coordinator.js";
-import { PrivacyIncompleteError, PrivacyUnavailableError } from "./coordinator.js";
+import {
+  PrivacyIncompleteError,
+  PrivacyOperationError,
+  PrivacyUnavailableError
+} from "./coordinator.js";
+import { PrivacySegmentLimitError } from "./segmented-export.js";
 
 const confirm = Type.Object(
   {
@@ -16,6 +21,19 @@ const binaryParams = Type.Object({
   store: Type.String({ maxLength: 64 }),
   id: Type.String({ maxLength: 500 })
 });
+const segmentQuery = Type.Object(
+  {
+    max_segment_bytes: Type.Optional(Type.Integer({ minimum: 4096, maximum: 20 * 1024 * 1024 }))
+  },
+  { additionalProperties: false }
+);
+const segmentDownloadQuery = Type.Object(
+  {
+    max_segment_bytes: Type.Optional(Type.Integer({ minimum: 4096, maximum: 20 * 1024 * 1024 })),
+    plan_digest: Type.String({ pattern: "^[a-f0-9]{64}$" })
+  },
+  { additionalProperties: false }
+);
 const noCache = (reply: { header(name: string, value: string): unknown }) => {
   reply.header("Cache-Control", "private, no-store");
   reply.header("X-Content-Type-Options", "nosniff");
@@ -83,6 +101,87 @@ export function registerPrivacyRoutes(
       });
     }
   });
+  app.get(
+    "/api/v1/personal-settings/export/segments",
+    { schema: { querystring: segmentQuery } },
+    async (request, reply) => {
+      noCache(reply);
+      const query = request.query as { max_segment_bytes?: number };
+      try {
+        return await coordinator.exportSegmentedPlan(
+          identityFor(request).owner_id,
+          query.max_segment_bytes === undefined ? {} : { maxSegmentBytes: query.max_segment_bytes }
+        );
+      } catch (cause) {
+        return reply
+          .code(
+            cause instanceof PrivacyIncompleteError || cause instanceof PrivacySegmentLimitError
+              ? 413
+              : cause instanceof PrivacyOperationError
+                ? 409
+                : 503
+          )
+          .send({
+            error: {
+              code: cause instanceof PrivacyIncompleteError ? cause.code : "PRIVACY_NOT_READY",
+              message: cause instanceof Error ? cause.message : "Unavailable"
+            }
+          });
+      }
+    }
+  );
+  app.get(
+    "/api/v1/personal-settings/export/segments/:segment",
+    {
+      schema: {
+        params: Type.Object(
+          { segment: Type.Integer({ minimum: 0, maximum: 4095 }) },
+          { additionalProperties: false }
+        ),
+        querystring: segmentDownloadQuery
+      }
+    },
+    async (request, reply) => {
+      noCache(reply);
+      const params = request.params as { segment: number };
+      const query = request.query as { plan_digest: string; max_segment_bytes?: number };
+      try {
+        const { archive, plan } = await coordinator.exportSegmentArchive(
+          identityFor(request).owner_id,
+          params.segment,
+          {
+            expectedPlanDigest: query.plan_digest,
+            ...(query.max_segment_bytes === undefined
+              ? {}
+              : { maxSegmentBytes: query.max_segment_bytes })
+          }
+        );
+        return reply
+          .header("Content-Type", "application/zip")
+          .header(
+            "Content-Disposition",
+            `attachment; filename="kosmora-export-${params.segment + 1}-of-${plan.total_segments}.zip"`
+          )
+          .header("Content-Length", String(archive.length))
+          .send(archive);
+      } catch (cause) {
+        return reply
+          .code(
+            cause instanceof PrivacyIncompleteError || cause instanceof PrivacySegmentLimitError
+              ? 413
+              : cause instanceof PrivacyOperationError
+                ? 409
+                : 503
+          )
+          .send({
+            error: {
+              code: cause instanceof PrivacyIncompleteError ? cause.code : "PRIVACY_NOT_READY",
+              message: cause instanceof Error ? cause.message : "Unavailable"
+            }
+          });
+      }
+    }
+  );
   app.get(
     "/api/v1/personal-settings/binaries/:store/:id",
     { schema: { params: binaryParams } },
