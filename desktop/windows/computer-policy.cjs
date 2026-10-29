@@ -31,6 +31,8 @@ const fields = {
   open_url: ["url"],
   open_file: ["path"],
   focus: ["window_id"],
+  hover: ["x", "y"],
+  drag: ["from_x", "from_y", "to_x", "to_y"],
   click: ["x", "y", "button", "count"],
   type_text: ["text"],
   press: ["keys"],
@@ -96,6 +98,11 @@ function validateComputerAction(action) {
           ["left", "right"].includes(action.button) &&
           [1, 2].includes(action.count)
         );
+      case "hover":
+      case "drag":
+        return fields[action.kind].every(
+          (key) => Number.isFinite(action[key]) && action[key] >= 0 && action[key] <= 1
+        );
       case "type_text":
         return string(action.text, 4000);
       case "press":
@@ -108,7 +115,7 @@ function validateComputerAction(action) {
         );
       case "scroll":
         return (
-          ["up", "down"].includes(action.direction) &&
+          ["up", "down", "left", "right"].includes(action.direction) &&
           Number.isInteger(action.amount) &&
           action.amount >= 1 &&
           action.amount <= 10

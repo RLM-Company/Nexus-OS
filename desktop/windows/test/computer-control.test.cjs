@@ -105,6 +105,9 @@ test("computer action validator refuses shell, injected fields, executable files
     { kind: "press", keys: ["WIN"] },
     { kind: "press", keys: ["CTRL", "CTRL"] },
     { kind: "click", x: NaN, y: 0, button: "left", count: 1 },
+    { kind: "hover", x: 1.1, y: 0 },
+    { kind: "drag", from_x: 0, from_y: 0, to_x: -1, to_y: 0 },
+    { kind: "drag", from_x: 0, from_y: 0, to_x: 1, to_y: 1, duration: 10000 },
     { kind: "wait", milliseconds: 3000 },
     { kind: "type_text", text: "x\0y" }
   ])
@@ -114,6 +117,68 @@ test("computer action validator refuses shell, injected fields, executable files
     "open_file"
   );
   assert.equal(validateComputerAction({ kind: "type_text", text: "Привет 🌙" }).text, "Привет 🌙");
+});
+
+test("hover, drag and horizontal wheel retain captured DPI coordinates and window/input guards", async () => {
+  for (const [action, expected] of [
+    [
+      { kind: "hover", x: 0.5, y: 0.5 },
+      { kind: "hover", x: 820, y: 640 }
+    ],
+    [
+      { kind: "drag", from_x: 0, from_y: 0, to_x: 1, to_y: 1 },
+      { kind: "drag", from_x: 20, from_y: 40, to_x: 1618, to_y: 1238 }
+    ],
+    [
+      { kind: "scroll", direction: "left", amount: 2 },
+      { kind: "wheel", amount: -240, horizontal: true }
+    ],
+    [
+      { kind: "scroll", direction: "right", amount: 1 },
+      { kind: "wheel", amount: 120, horizontal: true }
+    ],
+    [
+      { kind: "scroll", direction: "down", amount: 1 },
+      { kind: "wheel", amount: -120, horizontal: false }
+    ]
+  ]) {
+    const requests = [];
+    const driver = createComputerDriver({
+      desktopCapturer: {
+        getSources: async () => [
+          {
+            display_id: "9",
+            thumbnail: {
+              isEmpty: () => false,
+              getSize: () => ({ width: 800, height: 600 }),
+              toJPEG: () => Buffer.from([255, 216, 255, 217])
+            }
+          }
+        ]
+      },
+      screen: {
+        getPrimaryDisplay: () => ({ id: 9, bounds: { x: 10, y: 20, width: 800, height: 600 } }),
+        dipToScreenPoint: (p) => ({ x: p.x * 2, y: p.y * 2 })
+      },
+      shell: {},
+      transport: {
+        request: async (value) => {
+          requests.push(value);
+          return { active_window: "42", input_tick: 10 };
+        },
+        stop() {}
+      }
+    });
+    const signal = new AbortController().signal;
+    const captured = await driver.observe(signal);
+    await driver.execute(action, captured, signal);
+    assert.deepEqual(requests.at(-1), {
+      ...expected,
+      expected_window: "42",
+      expected_input_tick: 10
+    });
+    await assert.rejects(driver.execute(action, captured, signal), /STALE/);
+  }
 });
 
 test("computer cycle observes between actions and completes only on a final proposal", async () => {

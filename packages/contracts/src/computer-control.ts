@@ -14,6 +14,18 @@ export const ComputerActionSchema = Type.Union([
   object({ kind: Type.Literal("open_file"), path: text(1000) }),
   object({ kind: Type.Literal("focus"), window_id: text(32) }),
   object({
+    kind: Type.Literal("hover"),
+    x: Type.Number({ minimum: 0, maximum: 1 }),
+    y: Type.Number({ minimum: 0, maximum: 1 })
+  }),
+  object({
+    kind: Type.Literal("drag"),
+    from_x: Type.Number({ minimum: 0, maximum: 1 }),
+    from_y: Type.Number({ minimum: 0, maximum: 1 }),
+    to_x: Type.Number({ minimum: 0, maximum: 1 }),
+    to_y: Type.Number({ minimum: 0, maximum: 1 })
+  }),
+  object({
     kind: Type.Literal("click"),
     x: Type.Number({ minimum: 0, maximum: 1 }),
     y: Type.Number({ minimum: 0, maximum: 1 }),
@@ -24,7 +36,12 @@ export const ComputerActionSchema = Type.Union([
   object({ kind: Type.Literal("press"), keys: Type.Array(text(16), { minItems: 1, maxItems: 4 }) }),
   object({
     kind: Type.Literal("scroll"),
-    direction: Type.Union([Type.Literal("up"), Type.Literal("down")]),
+    direction: Type.Union([
+      Type.Literal("up"),
+      Type.Literal("down"),
+      Type.Literal("left"),
+      Type.Literal("right")
+    ]),
     amount: Type.Integer({ minimum: 1, maximum: 10 })
   }),
   object({

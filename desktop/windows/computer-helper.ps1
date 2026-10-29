@@ -7,6 +7,7 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Collections.Generic;
 public static class KosworkNative {
   public delegate bool EnumProc(IntPtr h, IntPtr p);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc p, IntPtr l);
@@ -22,6 +23,7 @@ public static class KosworkNative {
   [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
   [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
   [StructLayout(LayoutKind.Sequential)] public struct Point { public int x,y; }
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point p);
   [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, uint flags);
@@ -56,7 +58,34 @@ public static class KosworkNative {
     if(!String.IsNullOrEmpty(tick) && InputTick().ToString()!=tick) throw new Exception("COMPUTER_USER_INPUT_ACTIVE");
     foreach(int k in new int[]{1,2,16,17,18,91,92}) if(GetAsyncKeyState(k)<0) throw new Exception("COMPUTER_USER_INPUT_ACTIVE");
   }
-  static void Send(Input[] a) { if(SendInput((uint)a.Length,a,Marshal.SizeOf(typeof(Input)))!=a.Length) throw new Exception("COMPUTER_INPUT_REJECTED"); }
+  public static Input[] ReleaseInputs(Input[] submitted,uint inserted) {
+    var held=new List<Input>(); bool left=false,right=false;
+    for(int i=0;i<Math.Min(inserted,(uint)submitted.Length);i++) {
+      Input input=submitted[i];
+      if(input.type==1) {
+        for(int j=held.Count-1;j>=0;j--) if(held[j].data.key.vk==input.data.key.vk && held[j].data.key.scan==input.data.key.scan && (held[j].data.key.flags&4)==(input.data.key.flags&4)) held.RemoveAt(j);
+        if((input.data.key.flags&2)==0) held.Add(input);
+      } else if(input.type==0) {
+        uint f=input.data.mouse.flags;
+        if((f&2)!=0) left=true; if((f&4)!=0) left=false;
+        if((f&8)!=0) right=true; if((f&16)!=0) right=false;
+      }
+    }
+    var release=new List<Input>();
+    if(left) release.Add(new Input{data=new Union{mouse=new Mouse{flags=4}}});
+    if(right) release.Add(new Input{data=new Union{mouse=new Mouse{flags=16}}});
+    for(int i=held.Count-1;i>=0;i--) release.Add(Key(held[i].data.key.vk,held[i].data.key.scan,held[i].data.key.flags|2));
+    return release.ToArray();
+  }
+  static void Send(Input[] a) {
+    uint inserted=SendInput((uint)a.Length,a,Marshal.SizeOf(typeof(Input)));
+    if(inserted==a.Length) return;
+    // Best-effort release only inputs that this failed batch actually inserted.
+    // Never retry the original action: its effect can already be partial.
+    Input[] release=ReleaseInputs(a,inserted);
+    if(release.Length>0) SendInput((uint)release.Length,release,Marshal.SizeOf(typeof(Input)));
+    throw new Exception("COMPUTER_INPUT_REJECTED");
+  }
   public static void Focus(IntPtr h) {
     uint p=0;
     uint thread=GetCurrentThreadId();
@@ -119,10 +148,41 @@ public static class KosworkNative {
     for(int i=0;i<count;i++){a[i*2]=new Input{data=new Union{mouse=new Mouse{flags=(uint)(right?8:2)}}};a[i*2+1]=new Input{data=new Union{mouse=new Mouse{flags=(uint)(right?16:4)}}};}
     Send(a);
   }
-  public static void Wheel(int amount) {
+  public static void Hover(int x,int y) {
+    IntPtr target=WindowFromPoint(new Point{x=x,y=y});
+    if(target==IntPtr.Zero || GetAncestor(target,3)!=GetAncestor(GetForegroundWindow(),3)) throw new Exception("COMPUTER_TARGET_OCCLUDED");
+    if(!SetCursorPos(x,y)) throw new Exception("COMPUTER_POINTER_REJECTED");
+  }
+  static Input AbsoluteMove(int x,int y,int left,int top,int width,int height) {
+    return new Input{data=new Union{mouse=new Mouse{x=(int)Math.Round(((double)x-left)*65535/(width-1)),y=(int)Math.Round(((double)y-top)*65535/(height-1)),flags=0xe001}}};
+  }
+  public static Input[] DragInputs(int fromX,int fromY,int toX,int toY,int left,int top,int width,int height) {
+    if(width<=1 || height<=1 || (long)fromX<left || (long)toX<left || (long)fromY<top || (long)toY<top ||
+       (long)fromX>=(long)left+width || (long)toX>=(long)left+width || (long)fromY>=(long)top+height || (long)toY>=(long)top+height)
+      throw new Exception("COMPUTER_COORDS_INVALID");
+    var a=new Input[11];
+    a[0]=AbsoluteMove(fromX,fromY,left,top,width,height);
+    a[1]=new Input{data=new Union{mouse=new Mouse{flags=2}}};
+    for(int i=1;i<=8;i++) a[i+1]=AbsoluteMove((int)Math.Round(fromX+((double)toX-fromX)*i/8),(int)Math.Round(fromY+((double)toY-fromY)*i/8),left,top,width,height);
+    a[10]=new Input{data=new Union{mouse=new Mouse{flags=4}}};
+    return a;
+  }
+  public static void Drag(int fromX,int fromY,int toX,int toY,string expected,string tick) {
+    Input[] inputs=DragInputs(fromX,fromY,toX,toY,GetSystemMetrics(76),GetSystemMetrics(77),GetSystemMetrics(78),GetSystemMetrics(79));
+    IntPtr owner=GetAncestor(GetForegroundWindow(),3);
+    for(int i=0;i<=8;i++) {
+      Point p=new Point{x=(int)Math.Round(fromX+((double)toX-fromX)*i/8),y=(int)Math.Round(fromY+((double)toY-fromY)*i/8)};
+      IntPtr target=WindowFromPoint(p);
+      if(target==IntPtr.Zero || GetAncestor(target,3)!=owner) throw new Exception("COMPUTER_TARGET_OCCLUDED");
+    }
+    Ready(expected,tick);
+    // Down, all moves and Up are queued together. No held button spans requests.
+    Send(inputs);
+  }
+  public static void Wheel(int amount,bool horizontal) {
     Point point;
     if(!GetCursorPos(out point) || GetAncestor(WindowFromPoint(point),3)!=GetAncestor(GetForegroundWindow(),3)) throw new Exception("COMPUTER_TARGET_OCCLUDED");
-    Send(new Input[]{new Input{data=new Union{mouse=new Mouse{flags=0x0800,data=unchecked((uint)amount)}}}});
+    Send(new Input[]{new Input{data=new Union{mouse=new Mouse{flags=(uint)(horizontal?0x1000:0x0800),data=unchecked((uint)amount)}}}});
   }
 }
 '@
@@ -240,9 +300,11 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         $value = @{ requested=$true }
       }
       'click' { [KosworkNative]::Click([bool]$request.right,[int]$request.count,[int]$request.x,[int]$request.y); $value=@{requested=$true} }
+      'hover' { [KosworkNative]::Hover([int]$request.x,[int]$request.y); $value=@{requested=$true} }
+      'drag' { [KosworkNative]::Drag([int]$request.from_x,[int]$request.from_y,[int]$request.to_x,[int]$request.to_y,[string]$request.expected_window,[string]$request.expected_input_tick); $value=@{requested=$true} }
       'text' { $inputMethod=[KosworkNative]::Text([string]$request.text,[string]$request.expected_window,[string]$request.expected_input_tick); $value=@{requested=$true; input_method=$inputMethod} }
       'keys' { [KosworkNative]::Keys([uint16[]]$request.codes); $value=@{requested=$true} }
-      'wheel' { [KosworkNative]::Wheel([int]$request.amount); $value=@{requested=$true} }
+      'wheel' { [KosworkNative]::Wheel([int]$request.amount,[bool]$request.horizontal); $value=@{requested=$true} }
       default { throw 'COMPUTER_REQUEST_INVALID' }
     }
     @{id=$request.id; ok=$true; result=$value} | ConvertTo-Json -Compress -Depth 8 | ForEach-Object { [Console]::WriteLine($_) }

@@ -212,6 +212,11 @@ function createComputerDriver({
     const target = observed;
     observed = null; // A screenshot cannot authorize a second action.
     const expected = { expected_window: target.window, expected_input_tick: target.inputTick };
+    const pointFor = (x, y) =>
+      screen.dipToScreenPoint({
+        x: Math.round(target.bounds.x + x * Math.max(0, target.bounds.width - 1)),
+        y: Math.round(target.bounds.y + y * Math.max(0, target.bounds.height - 1))
+      });
     if (action.kind === "observe") return { requested: true };
     if (action.kind === "list_apps")
       return transport.request({ kind: "apps", ...expected }, signal);
@@ -241,10 +246,7 @@ function createComputerDriver({
       return { requested: true };
     }
     if (action.kind === "click") {
-      const point = screen.dipToScreenPoint({
-        x: Math.round(target.bounds.x + action.x * Math.max(0, target.bounds.width - 1)),
-        y: Math.round(target.bounds.y + action.y * Math.max(0, target.bounds.height - 1))
-      });
+      const point = pointFor(action.x, action.y);
       return transport.request(
         {
           kind: "click",
@@ -254,6 +256,19 @@ function createComputerDriver({
           count: action.count,
           ...expected
         },
+        signal
+      );
+    }
+    if (action.kind === "hover")
+      return transport.request(
+        { kind: "hover", ...pointFor(action.x, action.y), ...expected },
+        signal
+      );
+    if (action.kind === "drag") {
+      const from = pointFor(action.from_x, action.from_y),
+        to = pointFor(action.to_x, action.to_y);
+      return transport.request(
+        { kind: "drag", from_x: from.x, from_y: from.y, to_x: to.x, to_y: to.y, ...expected },
         signal
       );
     }
@@ -268,7 +283,8 @@ function createComputerDriver({
       return transport.request(
         {
           kind: "wheel",
-          amount: action.amount * 120 * (action.direction === "up" ? 1 : -1),
+          amount: action.amount * 120 * (["up", "right"].includes(action.direction) ? 1 : -1),
+          horizontal: ["left", "right"].includes(action.direction),
           ...expected
         },
         signal

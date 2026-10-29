@@ -155,6 +155,19 @@ async function fixture(
 }
 
 describe("owner-bound computer proposals", () => {
+  it.each([
+    { kind: "hover", x: 0.2, y: 0.3 },
+    { kind: "drag", from_x: 0.2, from_y: 0.3, to_x: 0.8, to_y: 0.3 },
+    { kind: "scroll", direction: "left", amount: 2 }
+  ])("validates pointer proposal $kind without executing OS input", async (pointerAction) => {
+    const f = await fixture({ output: { ...action, action: pointerAction } });
+    await f.create();
+    expect(await f.next()).toMatchObject({
+      action: pointerAction,
+      decision_source: { mode: "test" }
+    });
+    expect(f.calls).toHaveLength(1);
+  });
   it("authorizes one exact action once and refuses a project pause before native input", async () => {
     const f = await fixture();
     await f.create();
