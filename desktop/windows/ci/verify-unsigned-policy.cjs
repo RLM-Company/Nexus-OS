@@ -25,6 +25,7 @@ function verify() {
   assert.deepEqual(pkg.build.protocols[0].schemes, ["kosmora"]);
   for (const file of [
     "main.cjs",
+    "computer-history.cjs",
     "preload.cjs",
     "downloads-preload.cjs",
     "download-history.cjs",

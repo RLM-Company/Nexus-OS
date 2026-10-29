@@ -23,6 +23,7 @@ const { createComputerConsole } = require("./computer-console.cjs");
 const { createPreferenceStore, deepLinkFromArgv, restoredBounds } = require("./desktop-state.cjs");
 const { createUpdateService } = require("./update-service.cjs");
 const { createDraftStore } = require("./draft-store.cjs");
+const { createComputerHistory } = require("./computer-history.cjs");
 const { fetchElectronOwner } = require("./owner-session.cjs");
 const { createDraftSessionGate } = require("./draft-session-gate.cjs");
 const { createDownloadCenter } = require("./download-center.cjs");
@@ -59,25 +60,25 @@ app.setPath("sessionData", profileDirectory);
 app.setName("Kosmora");
 
 const preferences = createPreferenceStore(profileDirectory);
-const textDrafts = createDraftStore(profileDirectory, {
-  codec: {
-    seal(text) {
-      if (process.platform !== "win32" || !safeStorage.isEncryptionAvailable())
-        throw new Error("Защищённое сохранение Windows сейчас недоступно.");
-      return safeStorage.encryptString(text).toString("base64");
-    },
-    open(sealed) {
-      if (
-        process.platform !== "win32" ||
-        !safeStorage.isEncryptionAvailable() ||
-        typeof sealed !== "string" ||
-        !/^[a-zA-Z0-9+/]+=*$/.test(sealed)
-      )
-        throw new Error("Не удалось открыть защищённый черновик.");
-      return safeStorage.decryptString(Buffer.from(sealed, "base64"));
-    }
+const localTextCodec = {
+  seal(text) {
+    if (process.platform !== "win32" || !safeStorage.isEncryptionAvailable())
+      throw new Error("Защищённое сохранение Windows сейчас недоступно.");
+    return safeStorage.encryptString(text).toString("base64");
+  },
+  open(sealed) {
+    if (
+      process.platform !== "win32" ||
+      !safeStorage.isEncryptionAvailable() ||
+      typeof sealed !== "string" ||
+      !/^[a-zA-Z0-9+/]+=*$/.test(sealed)
+    )
+      throw new Error("Не удалось открыть защищённый черновик.");
+    return safeStorage.decryptString(Buffer.from(sealed, "base64"));
   }
-});
+};
+const textDrafts = createDraftStore(profileDirectory, { codec: localTextCodec });
+const computerHistory = createComputerHistory(profileDirectory, { codec: localTextCodec });
 const activeDownloads = new Map();
 const draftSessionGate = createDraftSessionGate();
 let ownerCache = null;
@@ -131,6 +132,7 @@ const computerConsole =
         screen,
         shell,
         globalShortcut,
+        history: computerHistory,
         identity: async () => {
           const owner = await verifiedOwner();
           return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
@@ -430,6 +432,7 @@ async function openOrigin(origin, { persist = false } = {}) {
       for (const item of activeDownloads.values()) item.cancel();
       try {
         textDrafts.clearAll();
+        computerHistory.clearAll();
         await browserSession.clearStorageData();
         await browserSession.clearCache();
       } catch {
@@ -571,7 +574,7 @@ async function nativeLogout() {
   const choice = await dialog.showMessageBox(mainWindow, {
     type: "warning",
     title: "Выйти из Kosmora",
-    message: "Выйти из аккаунта и удалить все локальные текстовые черновики?",
+    message: "Выйти из аккаунта и удалить локальные текстовые черновики и историю задач ПК?",
     detail:
       "Серверные чаты и файлы не удаляются. Сеанс браузера на этом компьютере будет завершён.",
     buttons: ["Выйти и очистить", "Отмена"],
@@ -589,6 +592,7 @@ async function nativeLogout() {
   // The user explicitly authorized clearing drafts and locally remembered login.
   try {
     textDrafts.clearAll();
+    computerHistory.clearAll();
   } catch {
     await dialog.showMessageBox(mainWindow, {
       type: "warning",
@@ -671,6 +675,7 @@ function clearDraftsForHostedLogout(url) {
   pendingDeepLink = null;
   try {
     textDrafts.clearAll();
+    computerHistory.clearAll();
     preferences.update({ lastPath: "/" });
     return true;
   } catch {
@@ -678,7 +683,7 @@ function clearDraftsForHostedLogout(url) {
       type: "warning",
       title: "Очистка черновиков не удалась",
       message:
-        "Не удалось удалить локальные черновики при выходе. Проверьте доступ к профилю Windows."
+        "Не удалось удалить локальные черновики или историю задач ПК при выходе. Проверьте доступ к профилю Windows."
     });
     return false;
   }
@@ -860,7 +865,7 @@ function createMenu() {
           accelerator: "Ctrl+Shift+K",
           click: () => void showConnection()
         },
-        { label: "Выйти и удалить локальные черновики…", click: () => void nativeLogout() },
+        { label: "Выйти и удалить локальные данные…", click: () => void nativeLogout() },
         { type: "separator" },
         {
           label: "Выход",

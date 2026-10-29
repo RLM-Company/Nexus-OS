@@ -1,6 +1,6 @@
 {
   "name": "cosmora-windows-desktop",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "description": "Windows client for Kosmora with user-enabled local computer control",
   "main": "main.cjs",
@@ -8,7 +8,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "test": "node --test test/*.test.cjs",
-    "check": "node --check main.cjs && node --check preload.cjs && node --check downloads-preload.cjs && node --check download-history.cjs && node --check download-center.cjs && node --check downloads.js && node --check connection-policy.cjs && node --check smoke-mode.cjs && node --check gui-acceptance.cjs && node --check ci/gui-acceptance-fixture.cjs && node --check ci/verify-unsigned-policy.cjs && node --check connection.js && node --check desktop-state.cjs && node --check desktop-recovery.cjs && node --check draft-store.cjs && node --check draft-session-gate.cjs && node --check owner-session.cjs && node --check update-policy.cjs && node --check update-service.cjs && node --check ci/create-signed-update.cjs && node --check computer-api-client.cjs && node --check computer-console.cjs && node --check computer-policy.cjs && node --check computer-session.cjs && node --check computer-driver.cjs && node --check computer-preload.cjs && node --check computer.js && node --test test/*.test.cjs",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check downloads-preload.cjs && node --check download-history.cjs && node --check download-center.cjs && node --check downloads.js && node --check connection-policy.cjs && node --check smoke-mode.cjs && node --check gui-acceptance.cjs && node --check ci/gui-acceptance-fixture.cjs && node --check ci/verify-unsigned-policy.cjs && node --check connection.js && node --check desktop-state.cjs && node --check desktop-recovery.cjs && node --check draft-store.cjs && node --check draft-session-gate.cjs && node --check owner-session.cjs && node --check update-policy.cjs && node --check update-service.cjs && node --check ci/create-signed-update.cjs && node --check computer-api-client.cjs && node --check computer-console.cjs && node --check computer-policy.cjs && node --check computer-history.cjs && node --check computer-session.cjs && node --check computer-driver.cjs && node --check computer-preload.cjs && node --check computer.js && node --test test/*.test.cjs",
     "pack:win": "electron-builder --win nsis --x64 --publish never",
     "verify:unsigned": "node ci/verify-unsigned-policy.cjs",
     "pack:unsigned:win": "powershell -NoProfile -File ci/build-unsigned.ps1"
@@ -63,7 +63,8 @@
       "connection.js",
       "connection.css",
       "build/icon.ico",
-      "build/icon.svg"
+      "build/icon.svg",
+      "computer-history.cjs"
     ],
     "asarUnpack": [
       "computer-helper.ps1"

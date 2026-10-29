@@ -16,10 +16,14 @@ function createComputerConsole({
   globalShortcut,
   identity,
   getSession,
+  history,
   createRunner = (options) => new ComputerSession(options)
 }) {
+  if (!history) throw Error("COMPUTER_HISTORY_UNAVAILABLE");
   let window = null;
   let prefill = null;
+  let pending = false;
+  let epoch = 0;
   const page = pathToFileURL(path.join(__dirname, "computer.html")).toString();
   const trusted = (event) =>
     !!window &&
@@ -36,6 +40,7 @@ function createComputerConsole({
     driver,
     planner,
     identity,
+    history,
     notify: tell,
     allowHumanResume: true,
     async confirm(value) {
@@ -49,19 +54,119 @@ function createComputerConsole({
         buttons: [isSession ? "Начать управление" : "Выполнить действие", "Отмена"],
         message: isSession
           ? "Разрешить Koswork управлять этим компьютером для задачи?"
-          : "Подтвердить действие?",
+          : value.recoveryReview
+            ? "Проверить результат прошлой попытки и выполнить действие?"
+            : "Подтвердить действие?",
         detail: isSession
           ? `${value.goal}\n\nАгент сможет открывать сайты, приложения и документы, нажимать кнопки и вводить текст. Изображения основного экрана и доступные элементы интерфейса передаются модели через ${value.origin}. Сеанс действует до 30 минут. Мышь и клавиатура могут быть заняты. Остановка: Ctrl+Alt+Shift+K или кнопка «Остановить».`
-          : `${value.message}\n\n${JSON.stringify(value.action).slice(0, 4000)}`
+          : `${value.recoveryReview ? "Прошлая попытка могла уже изменить данные. Сверьте текущий результат: разрешение относится только к указанному действию.\n\n" : ""}${value.message}\n\n${JSON.stringify(value.action).slice(0, 4000)}`
       });
       return answer.response === 0;
+    }
+  });
+  // This check uses the existing privacy lifecycle without sending any saved goal.
+  // The server independently fences every model dispatch/action authorization.
+  async function checkedContext(event) {
+    const initialEpoch = epoch;
+    const current = await identity();
+    if (!current) throw Error("COMPUTER_OWNER_UNVERIFIED");
+    const privacy = await planner.request("/api/v1/personal-settings/privacy", {
+      expected: current
+    });
+    if (!trusted(event) || initialEpoch !== epoch) throw Error("COMPUTER_IDENTITY_CHANGED");
+    const after = await identity();
+    if (
+      !trusted(event) ||
+      initialEpoch !== epoch ||
+      !after ||
+      after.owner !== current.owner ||
+      after.origin !== current.origin
+    )
+      throw Error("COMPUTER_IDENTITY_CHANGED");
+    if (privacy.lifecycle === "deleted") history.clear(current);
+    if (privacy.lifecycle !== "active") throw Error("COMPUTER_PRIVACY_BLOCKED");
+    return current;
+  }
+  const failure = (error) => ({
+    error: /^COMPUTER_[A-Z_]+$/.test(error?.message) ? error.message : "COMPUTER_INTERRUPTED"
+  });
+  async function startTask(event, resolve) {
+    if (!trusted(event)) return { error: "Недоверенный источник." };
+    if (pending || runner.active) return { error: "COMPUTER_BUSY" };
+    pending = true;
+    try {
+      const context = await checkedContext(event);
+      const input = resolve(context);
+      if (!globalShortcut.register("CommandOrControl+Alt+Shift+K", () => runner.stop()))
+        throw Error("COMPUTER_STOP_SHORTCUT_UNAVAILABLE");
+      return await runner.run({ ...input, maxSteps: 30, expectedContext: context });
+    } catch (error) {
+      return failure(error);
+    } finally {
+      pending = false;
+      globalShortcut.unregister("CommandOrControl+Alt+Shift+K");
+    }
+  }
+  ipcMain.handle("koswork:computer-history", async (event) => {
+    if (!trusted(event)) return { error: "Недоверенный источник." };
+    try {
+      return { items: history.list(await checkedContext(event)) };
+    } catch (error) {
+      return failure(error);
+    }
+  });
+  ipcMain.handle("koswork:computer-recover", (event, id) => {
+    if (typeof id !== "string" || !/^[a-f0-9-]{36}$/i.test(id))
+      return { error: "COMPUTER_RECOVERY_UNAVAILABLE" };
+    return startTask(event, (context) => {
+      const recovery = history.recovery(context, id);
+      return { project: recovery.project, goal: recovery.goal, recovery };
+    });
+  });
+  ipcMain.handle("koswork:computer-accept", async (event, id) => {
+    if (!trusted(event) || typeof id !== "string" || id.length !== 36)
+      return { error: "COMPUTER_HISTORY_NOT_FOUND" };
+    if (pending || runner.active) return { error: "COMPUTER_BUSY" };
+    try {
+      return history.accept(await checkedContext(event), id);
+    } catch (error) {
+      return failure(error);
+    }
+  });
+  ipcMain.handle("koswork:computer-clear-history", async (event) => {
+    if (!trusted(event)) return { error: "Недоверенный источник." };
+    if (pending || runner.active) return { error: "COMPUTER_BUSY" };
+    pending = true;
+    try {
+      const context = await checkedContext(event);
+      const answer = await dialog.showMessageBox(window, {
+        type: "question",
+        title: "Koswork — история задач",
+        defaultId: 1,
+        cancelId: 1,
+        buttons: ["Удалить локальную историю", "Отмена"],
+        message: "Удалить локальную историю задач этого аккаунта на этом сервере?",
+        detail:
+          "Файлы, приложения и результаты действий останутся на устройстве. Восстановление этих задач станет недоступно."
+      });
+      if (answer.response !== 0) return { cleared: false };
+      const after = await checkedContext(event);
+      if (after.owner !== context.owner || after.origin !== context.origin)
+        throw Error("COMPUTER_IDENTITY_CHANGED");
+      history.clear(context);
+      return { cleared: true };
+    } catch (error) {
+      return failure(error);
+    } finally {
+      pending = false;
     }
   });
   ipcMain.handle("koswork:computer-projects", async (event) => {
     if (!trusted(event)) return { error: "Недоверенный источник." };
     try {
-      const current = await identity();
-      const result = await planner.request("/api/v1/projects");
+      const current = await checkedContext(event);
+      const result = await planner.request("/api/v1/projects", { expected: current });
+      if (!trusted(event)) throw Error("COMPUTER_IDENTITY_CHANGED");
       return {
         owner: current?.owner,
         origin: current?.origin,
@@ -86,24 +191,11 @@ function createComputerConsole({
       Object.keys(input).some((key) => !["goal", "project"].includes(key))
     )
       return { error: "Некорректная задача." };
-    if (runner.active) return { error: "COMPUTER_BUSY" };
-    try {
-      if (!globalShortcut.register("CommandOrControl+Alt+Shift+K", () => runner.stop()))
-        throw Error("COMPUTER_STOP_SHORTCUT_UNAVAILABLE");
-      return await runner.run({ project: input.project, goal: input.goal.trim(), maxSteps: 30 });
-    } catch (error) {
-      const code = /^COMPUTER_[A-Z_]+$/.test(error?.message)
-        ? error.message
-        : "COMPUTER_INTERRUPTED";
-      return { error: code };
-    } finally {
-      globalShortcut.unregister("CommandOrControl+Alt+Shift+K");
-      driver.stop();
-    }
+    return startTask(event, () => ({ project: input.project, goal: input.goal.trim() }));
   });
   ipcMain.handle("koswork:computer-stop", (event) => {
     if (!trusted(event)) return { stopped: false };
-    runner.stop();
+    stop();
     return { stopped: true };
   });
   ipcMain.handle("koswork:computer-resume", (event) => {
@@ -135,14 +227,20 @@ function createComputerConsole({
     });
     window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     window.webContents.on("will-navigate", (event) => event.preventDefault());
+    window.webContents.on("render-process-gone", () => {
+      stop();
+      if (window && !window.isDestroyed()) window.destroy();
+    });
+    window.on("unresponsive", stop);
     window.on("closed", () => {
-      runner.stop();
+      stop();
       window = null;
       prefill = null;
     });
     await window.loadFile(path.join(__dirname, "computer.html"));
   }
   const stop = () => {
+    epoch++;
     runner.stop();
     globalShortcut.unregister("CommandOrControl+Alt+Shift+K");
   };

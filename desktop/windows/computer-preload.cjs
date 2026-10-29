@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld("kosworkComputer", {
   start: (input) => ipcRenderer.invoke("koswork:computer-start", input),
   stop: () => ipcRenderer.invoke("koswork:computer-stop"),
   resume: () => ipcRenderer.invoke("koswork:computer-resume"),
+  history: () => ipcRenderer.invoke("koswork:computer-history"),
+  recover: (id) => ipcRenderer.invoke("koswork:computer-recover", id),
+  accept: (id) => ipcRenderer.invoke("koswork:computer-accept", id),
+  clearHistory: () => ipcRenderer.invoke("koswork:computer-clear-history"),
   onStatus(listener) {
     const handler = (_event, value) => listener(value);
     ipcRenderer.on("koswork:computer-status", handler);

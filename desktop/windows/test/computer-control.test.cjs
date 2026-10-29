@@ -405,6 +405,24 @@ test("human checkpoint is idle until explicit local resume, then uses a fresh ob
   assert.equal(f.executions.length, 1);
 });
 
+test("manual login checkpoint revokes an earlier per-action approval before replanning", async () => {
+  const action = { kind: "type_text", text: "write once" };
+  const f = fixture([
+    proposal(action, true),
+    proposal({ kind: "ask_user", question: "Unlock locally" }),
+    proposal(action, true),
+    proposal(action, true),
+    proposal({ kind: "done", summary: "done" })
+  ]);
+  f.session.allowHumanResume = true;
+  f.session.notify = (value) => {
+    if (value.phase === "awaiting_user") queueMicrotask(() => f.session.resume());
+  };
+  await f.session.run({ project: context.project, goal: context.goal });
+  assert.equal(f.confirmations.filter((c) => c.kind === "action").length, 2);
+  assert.equal(f.executions.length, 1);
+});
+
 test("stop, changed owner and expired grant fence a paused session before any new capture", async () => {
   for (const reason of ["stop", "owner", "expiry"]) {
     const f = fixture([proposal({ kind: "ask_user", question: "Unlock locally" })]);

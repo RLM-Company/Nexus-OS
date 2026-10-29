@@ -197,4 +197,20 @@ class ComputerSessionGate {
   }
 }
 
-module.exports = { validateComputerAction, ComputerSessionGate, keyNames };
+const computerActionKinds = Object.freeze(Object.keys(fields));
+const recoveryWriteActions = new Set([
+  "open_app",
+  "open_url",
+  "open_file",
+  "click",
+  "drag",
+  "type_text",
+  "press"
+]);
+module.exports = {
+  validateComputerAction,
+  ComputerSessionGate,
+  keyNames,
+  computerActionKinds,
+  recoveryWriteActions
+};
