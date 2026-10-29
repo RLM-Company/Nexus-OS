@@ -227,8 +227,13 @@ function createComputerConsole({
     });
     window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     window.webContents.on("will-navigate", (event) => event.preventDefault());
+    window.webContents.on("render-process-gone", () => {
+      stop();
+      if (window && !window.isDestroyed()) window.destroy();
+    });
+    window.on("unresponsive", stop);
     window.on("closed", () => {
-      runner.stop();
+      stop();
       window = null;
       prefill = null;
     });

@@ -7,6 +7,7 @@ const { createComputerConsole } = require("../computer-console.cjs");
 async function fixture(options = {}) {
   const handlers = new Map(),
     calls = [];
+  const webCallbacks = {};
   let window, runnerOptions;
   const state = {
     context: { owner: "owner", origin: "https://example.test" },
@@ -39,7 +40,14 @@ async function fixture(options = {}) {
       window = this;
       this.destroyed = false;
       this.callbacks = {};
-      this.webContents = { mainFrame: { url: "" }, setWindowOpenHandler() {}, on() {}, send() {} };
+      this.webContents = {
+        mainFrame: { url: "" },
+        setWindowOpenHandler() {},
+        on(name, fn) {
+          webCallbacks[name] = fn;
+        },
+        send() {}
+      };
     }
     on(name, callback) {
       this.callbacks[name] = callback;
@@ -111,6 +119,7 @@ async function fixture(options = {}) {
     runnerOptions,
     history,
     state,
+    webCallbacks,
     trusted: { sender: window.webContents, senderFrame: window.webContents.mainFrame }
   };
 }
@@ -227,4 +236,20 @@ test("an invalidated computer window cannot resume the previous owner task", asy
   assert.deepEqual(f.handlers.get("koswork:computer-resume")(f.trusted), { resumed: false });
   assert.equal(f.calls.length, before);
   assert.ok(f.calls.some((call) => call.kind === "stop"));
+});
+
+test("native console renderer crash revokes control and invalidates its IPC", async () => {
+  const f = await fixture();
+  f.webCallbacks["render-process-gone"]();
+  assert.ok(f.calls.some((c) => c.kind === "stop"));
+  assert.deepEqual(f.handlers.get("koswork:computer-resume")(f.trusted), { resumed: false });
+  assert.ok(
+    (
+      await f.handlers.get("koswork:computer-start")(f.trusted, {
+        project: "project",
+        goal: "goal"
+      })
+    ).error
+  );
+  assert.ok(!f.calls.some((c) => c.kind === "run"));
 });
