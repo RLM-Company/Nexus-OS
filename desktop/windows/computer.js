@@ -6,7 +6,21 @@ const stop = document.getElementById("stop");
 const resume = document.getElementById("resume");
 const connection = document.getElementById("connection");
 const events = document.getElementById("events");
+const historyList = document.getElementById("history");
+const historyStatus = document.getElementById("history-status");
+const clearHistory = document.getElementById("clear-history");
+let historyItems = [];
+let busy = false;
 const errors = {
+  COMPUTER_HISTORY_UNAVAILABLE:
+    "История задач недоступна или повреждена. Действия остановлены. Можно явно удалить локальную историю или перезапустить приложение.",
+  COMPUTER_HISTORY_NOT_FOUND: "Задача больше не доступна в локальной истории.",
+  COMPUTER_RECOVERY_UNAVAILABLE:
+    "Эта задача не подлежит восстановлению. Проверьте результат и создайте новую задачу.",
+  COMPUTER_RECOVERY_RESTART_REQUIRED:
+    "Исполнитель остановлен после ошибки сохранения или ввода. Проверьте результат и перезапустите приложение.",
+  COMPUTER_PRIVACY_BLOCKED:
+    "Данные аккаунта удалены или сейчас обрабатывается запрос приватности. Восстановление недоступно.",
   COMPUTER_CANCELLED: "Запуск отменён.",
   COMPUTER_SESSION_STOPPED:
     "Управление остановлено или разрешение истекло. Проверьте состояние проекта перед новым запуском.",
@@ -75,10 +89,12 @@ window.kosworkComputer.onStatus((value) => {
   if (source?.mode === "provider") {
     connection.textContent = `Команды через модель ${source.model_id} · ${source.provider_id}`;
     add(`${value.step}. ${value.message || value.action} · запрос ${source.run_id}`);
-  } else add(`${value.step}. ${value.message || value.action}`);
+  } else add(`${value.step ? value.step + ". " : ""}${value.message || value.action}`);
 });
-start.addEventListener("click", async () => {
-  if (!goal.value.trim() || !project.value) return;
+async function runTask(invoke) {
+  if (busy) return;
+  busy = true;
+  renderHistory();
   start.disabled = true;
   stop.disabled = false;
   goal.disabled = true;
@@ -87,7 +103,7 @@ start.addEventListener("click", async () => {
   resume.disabled = true;
   connection.textContent = "Ожидаем разрешение и подтверждённую команду модели…";
   try {
-    const result = await window.kosworkComputer.start({ project: project.value, goal: goal.value });
+    const result = await invoke();
     add(
       result.error
         ? errors[result.error] ||
@@ -98,12 +114,18 @@ start.addEventListener("click", async () => {
     add("Соединение с локальным исполнителем прервано.");
   } finally {
     connection.textContent = "Сеанс управления завершён. Новые действия не выполняются.";
-    start.disabled = false;
+    busy = false;
+    start.disabled = !project.value;
     stop.disabled = true;
     goal.disabled = false;
     project.disabled = false;
     resume.disabled = true;
+    await refreshHistory();
   }
+}
+start.addEventListener("click", () => {
+  if (goal.value.trim() && project.value)
+    void runTask(() => window.kosworkComputer.start({ project: project.value, goal: goal.value }));
 });
 stop.addEventListener("click", async () => {
   resume.disabled = true;
@@ -140,3 +162,108 @@ window.kosworkComputer
   .catch(() => {
     connection.textContent = "Не удалось подключиться. Войдите в Kosmora и откройте окно повторно.";
   });
+
+const states = {
+  running: "Выполняется",
+  paused: "Ожидает владельца",
+  interrupted: "Прервана перезапуском",
+  completed: "Модель сообщила о завершении",
+  cancelled: "Остановлена",
+  failed: "Ошибка",
+  step_limit: "Лимит шагов",
+  needs_user: "Нужно ваше действие"
+};
+const phases = {
+  planned: "Предложено; ввод не начинался",
+  not_executed: "Не выполнялось",
+  dispatching: "Передача исполнителю; исход неизвестен",
+  requested: "Исполнитель подтвердил команду; результат не проверен",
+  observed: "Получен снимок после команды; результат не подтверждён"
+};
+function renderHistory() {
+  historyList.replaceChildren();
+  clearHistory.disabled = busy;
+  for (const item of historyItems) {
+    const row = document.createElement("li");
+    const heading = document.createElement("p");
+    heading.textContent =
+      (item.goal || "Цель не сохранена: возможно, содержала секрет") +
+      " · " +
+      (states[item.status] || item.status);
+    const detail = document.createElement("p");
+    detail.className = "hint";
+    detail.textContent =
+      new Date(item.updatedAt).toLocaleString() +
+      " · проект " +
+      item.project +
+      (item.acceptedAt ? " · результат принят вами" : "");
+    row.append(heading, detail);
+    const steps = document.createElement("ol");
+    for (const step of item.steps) {
+      const line = document.createElement("li");
+      line.textContent = step.kind + " · " + phases[step.phase];
+      steps.append(line);
+    }
+    row.append(steps);
+    if (item.requiresReview) {
+      const warning = document.createElement("p");
+      warning.className = "hint";
+      warning.textContent =
+        "Прошлые действия могли изменить данные. При восстановлении открытие приложений и файлов, клики, перетаскивания, ввод текста и клавиш потребуют подтверждения после проверки текущего состояния.";
+      row.append(warning);
+    }
+    if (item.recoverable) {
+      const button = document.createElement("button");
+      button.textContent = "Восстановить с новым разрешением";
+      button.disabled = busy;
+      button.addEventListener("click", () => {
+        void runTask(() => window.kosworkComputer.recover(item.id));
+      });
+      row.append(button);
+    }
+    if (item.status === "completed" && !item.acceptedAt) {
+      const button = document.createElement("button");
+      button.textContent = "Результат проверен мной";
+      button.disabled = busy;
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          const result = await window.kosworkComputer.accept(item.id);
+          if (result.error) add(errors[result.error] || "Не удалось принять результат.");
+        } catch {
+          add("Локальная история недоступна.");
+        }
+        await refreshHistory();
+      });
+      row.append(button);
+    }
+    historyList.append(row);
+  }
+}
+async function refreshHistory() {
+  try {
+    const result = await window.kosworkComputer.history();
+    historyItems = result.items || [];
+    historyStatus.textContent = result.error
+      ? errors[result.error] || "История недоступна. Проверьте подключение и аккаунт."
+      : historyItems.length
+        ? ""
+        : "Сохранённых задач пока нет.";
+    renderHistory();
+  } catch {
+    historyItems = [];
+    historyStatus.textContent = "Не удалось загрузить локальную историю.";
+    renderHistory();
+  }
+}
+clearHistory.addEventListener("click", async () => {
+  clearHistory.disabled = true;
+  try {
+    const result = await window.kosworkComputer.clearHistory();
+    if (result.error) add(errors[result.error] || "Не удалось удалить историю.");
+  } catch {
+    add("Локальная история недоступна.");
+  }
+  await refreshHistory();
+});
+void refreshHistory();
