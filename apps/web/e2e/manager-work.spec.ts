@@ -1,5 +1,38 @@
 import { expect, test } from "@playwright/test";
 
+test("desktop computer entry transfers the goal to native consent without starting Work", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/projects", {
+    data: { initial_message: "Проект для ПК", client_message_id: crypto.randomUUID() }
+  });
+  expect(created.status()).toBe(201);
+  const { project } = (await created.json()) as { project: { id: string } };
+  await request.put(`/api/v1/projects/${project.id}/autonomy-profile`, {
+    data: { base_level: "A2", overrides: [], expected_version: 1 }
+  });
+  await page.addInitScript(() => {
+    (window as Window & { kosmoraDesktopComputer: unknown }).kosmoraDesktopComputer = {
+      open: (input: unknown) => {
+        document.documentElement.dataset.computerRequest = JSON.stringify(input);
+        return Promise.resolve({ ok: true });
+      }
+    };
+  });
+  await page.goto(`/?project=${project.id}&view=plan`);
+  const panel = page.getByRole("region", { name: "Выполнение задачи Manager" });
+  const goal = "Открой Блокнот и напиши план встречи";
+  await panel.getByLabel("Задача для выполнения").fill(goal);
+  await panel.getByRole("button", { name: "Выполнить на компьютере", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-computer-request",
+    JSON.stringify({ project: project.id, goal })
+  );
+  const works = await request.get(`/api/v1/projects/${project.id}/work`);
+  expect(((await works.json()) as { items: unknown[] }).items).toHaveLength(0);
+});
+
 test("creates guarded mock files, survives reload and downloads the result", async ({
   page,
   request

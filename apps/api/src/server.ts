@@ -144,7 +144,12 @@ try {
   const ownerSkillStore = new OwnerSkillStore(database.sqlite);
   const researchStore = new ResearchStore(database.sqlite);
   const ownerPrivacy = new OwnerPrivacyCoordinator(database.sqlite, {
-    required: [...REQUIRED_PRIVACY_STORES, "intelligence-graphs", "project-automation"]
+    required: [
+      ...REQUIRED_PRIVACY_STORES,
+      "intelligence-graphs",
+      "project-automation",
+      "computer-control"
+    ]
   });
   const graphRepository = new SqliteIntelligenceGraphWorkspaceRepository(database.sqlite);
   const graphService = new IntelligenceGraphWorkspaceService(graphRepository);
@@ -256,6 +261,7 @@ try {
   ownerPrivacy.register(intelligenceGraphPrivacyAdapter(graphRepository));
   ownerPrivacy.register(new ProjectAutomationPrivacy(database.sqlite));
   app = buildApp({
+    computerControl: { enabled: true },
     runtimeClock: modelRuntime.clock,
     intelligenceGraphWorkspace: {
       enabled: process.env.KOSMORA_GRAPH_WORKSPACE_ENABLED === "true",

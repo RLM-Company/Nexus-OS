@@ -117,6 +117,14 @@ jobs:
           docker pull node:24-bookworm-slim
           image_id=$(docker image inspect --format '{{.Id}}' node:24-bookworm-slim)
           [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]]
+          # Provision the cold Docker/Node layers before the timed integration
+          # cases. Their 5s runtime limit and all isolation assertions stay intact.
+          warmup_name="kosmora-ci-warmup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker rm -f "$warmup_name" >/dev/null 2>&1 || true' EXIT
+          timeout --signal=TERM --kill-after=5s 30s docker run --rm --pull=never \
+            --name "$warmup_name" --network=none --read-only --cap-drop=ALL \
+            --security-opt=no-new-privileges --user=65534:65534 \
+            "$image_id" node -e "require('node:test')('provisioning warm-up', () => {});"
           echo "CODE_AGENT_TEST_IMAGE=$image_id" >> "$GITHUB_ENV"
 
       - name: Verify real OCI execution, isolation and descendant cleanup

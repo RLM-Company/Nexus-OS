@@ -15,8 +15,11 @@ const {
   session,
   shell,
   Tray,
-  safeStorage
+  safeStorage,
+  desktopCapturer,
+  globalShortcut
 } = require("electron");
+const { createComputerConsole } = require("./computer-console.cjs");
 const { createPreferenceStore, deepLinkFromArgv, restoredBounds } = require("./desktop-state.cjs");
 const { createUpdateService } = require("./update-service.cjs");
 const { createDraftStore } = require("./draft-store.cjs");
@@ -117,6 +120,25 @@ const downloadCenter =
         onChange: createMenu
       })
     : null;
+
+const computerConsole =
+  gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode
+    ? createComputerConsole({
+        BrowserWindow,
+        ipcMain,
+        dialog,
+        desktopCapturer,
+        screen,
+        shell,
+        globalShortcut,
+        identity: async () => {
+          const owner = await verifiedOwner();
+          return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
+        },
+        getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true })
+      })
+    : null;
+app.on("before-quit", () => computerConsole?.stop());
 
 function connectionPath() {
   return path.join(app.getPath("userData"), CONNECTION_FILE);
@@ -399,6 +421,7 @@ async function openOrigin(origin, { persist = false } = {}) {
     if (persist && previousOrigin && previousOrigin !== origin) {
       // Switching origins is an explicit trust-boundary change, not a page navigation.
       identityEpoch++;
+      computerConsole?.invalidate();
       draftSessionGate.reset();
       downloadCenter.invalidate({ forget: true, origin: previousOrigin, owner: ownerCache?.owner });
       ownerCache = null;
@@ -473,6 +496,7 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
   if (result.state === "verified") {
     if (ownerCache?.origin === origin && ownerCache.owner !== result.owner) {
       identityEpoch++;
+      computerConsole?.invalidate();
       draftSessionGate.reset();
       downloadCenter.invalidate();
       for (const item of activeDownloads.values()) item.cancel();
@@ -487,6 +511,7 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
   if (result.state === "denied") {
     if (ownerCache?.origin === origin) {
       identityEpoch++;
+      computerConsole?.invalidate();
       draftSessionGate.reset();
       downloadCenter.invalidate();
       for (const item of activeDownloads.values()) item.cancel();
@@ -557,6 +582,7 @@ async function nativeLogout() {
   if (choice.response !== 0) return;
   // Fence pending asynchronous saves before removing user data.
   identityEpoch++;
+  computerConsole?.invalidate();
   draftSessionGate.reset();
   downloadCenter.invalidate({ forget: true, origin: currentOrigin, owner: ownerCache?.owner });
   ownerCache = null;
@@ -637,6 +663,7 @@ function clearDraftsForHostedLogout(url) {
   // A first-party /logout navigation is an explicit exit, including when
   // a hosted page handles it without using the native menu.
   identityEpoch++;
+  computerConsole?.invalidate();
   draftSessionGate.reset();
   downloadCenter.invalidate({ forget: true, origin: currentOrigin, owner: ownerCache?.owner });
   ownerCache = null;
@@ -700,6 +727,7 @@ function installNavigationGuards(window) {
       downloadCenter.invalidate();
       ownerCache = null;
       identityEpoch++;
+      computerConsole?.invalidate();
       draftSessionGate.reset();
     } else void restoreAfterAuthentication();
   });
@@ -711,6 +739,7 @@ function installNavigationGuards(window) {
       downloadCenter.invalidate();
       ownerCache = null;
       identityEpoch++;
+      computerConsole?.invalidate();
       draftSessionGate.reset();
     } else void restoreAfterAuthentication();
   });
@@ -840,6 +869,17 @@ function createMenu() {
             app.quit();
           }
         }
+      ]
+    },
+    {
+      label: "Koswork",
+      submenu: [
+        {
+          label: "Управление компьютером…",
+          enabled: !!computerConsole,
+          click: () => void computerConsole?.show()
+        },
+        { label: "Остановить управление", click: () => computerConsole?.stop() }
       ]
     },
     {
@@ -1022,6 +1062,26 @@ function queueDraft(scope, task) {
   );
   return result;
 }
+
+ipcMain.handle("koswork:computer-open", async (event, input) => {
+  if (
+    !computerConsole ||
+    !isTrustedRemoteEvent(event) ||
+    !input ||
+    typeof input.project !== "string" ||
+    !/^[a-zA-Z0-9_-]{1,160}$/.test(input.project) ||
+    typeof input.goal !== "string" ||
+    !input.goal.trim() ||
+    input.goal.length > 8000 ||
+    Object.keys(input).length !== 2
+  )
+    return { ok: false };
+  const epoch = identityEpoch;
+  const owner = await verifiedOwner();
+  if (!owner || epoch !== identityEpoch || !isTrustedRemoteEvent(event)) return { ok: false };
+  await computerConsole.show(input);
+  return { ok: true };
+});
 
 ipcMain.handle("cosmora:draft-load", async (event, scope) => {
   if (!isTrustedRemoteEvent(event)) return { ok: false, message: "Недоверенный источник." };
