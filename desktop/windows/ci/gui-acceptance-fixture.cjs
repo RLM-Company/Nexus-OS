@@ -391,6 +391,7 @@ async function runPackagedGuiAcceptanceSuite({ appExePath, workRoot }) {
     assert.equal(phase1Report.foreignRedirectBlocked, true);
     assert.equal(phase1Report.nativeBrowser?.download, true);
     assert.equal(phase1Report.nativeBrowser?.exactlyOneSubmit, true);
+    assert.equal(phase1Report.nativeBrowser?.unifiedWorkCycle, true);
     assert.deepEqual(phase1Report.downloadedFiles.sort(), [
       "report_final____ (1).md",
       "report_final____.md"

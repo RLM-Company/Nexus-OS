@@ -6,6 +6,24 @@ const text = (maximum: number) => Type.String({ minLength: 1, maxLength: maximum
 
 /** Proposals, never executable JavaScript, shell commands or an unbounded RPC. */
 export const ComputerActionSchema = Type.Union([
+  object({
+    kind: Type.Literal("work_plan"),
+    steps: Type.Array(object({ title: text(180), criteria: text(240) }), {
+      minItems: 1,
+      maxItems: 8
+    })
+  }),
+  object({
+    kind: Type.Literal("work_switch"),
+    environment: Type.Union([Type.Literal("browser"), Type.Literal("computer")])
+  }),
+  object({
+    kind: Type.Literal("work_step"),
+    step: Type.Integer({ minimum: 1, maximum: 8 }),
+    state: Type.Union([Type.Literal("running"), Type.Literal("checked")]),
+    evidence: Type.String({ maxLength: 500 }),
+    observation_id: text(128)
+  }),
   object({ kind: Type.Literal("browser_tabs") }),
   object({ kind: Type.Literal("browser_back") }),
   object({ kind: Type.Literal("browser_forward") }),
@@ -140,12 +158,14 @@ export const ComputerDecisionSchema = object({
     model_id: text(240),
     run_id: text(128),
     session_id: text(128),
-    step: Type.Integer({ minimum: 0, maximum: 29 })
+    step: Type.Integer({ minimum: 0, maximum: 89 })
   })
 });
 export type ComputerDecision = Static<typeof ComputerDecisionSchema>;
 export const ComputerSessionAcceptanceSchema = object({
-  execution_mode: Type.Optional(Type.Union([Type.Literal("computer"), Type.Literal("browser")])),
+  execution_mode: Type.Optional(
+    Type.Union([Type.Literal("computer"), Type.Literal("browser"), Type.Literal("work")])
+  ),
   id: text(128),
   expires_at: text(64),
   planner: object({
@@ -155,6 +175,18 @@ export const ComputerSessionAcceptanceSchema = object({
 });
 
 export const ComputerObservationSchema = object({
+  work: Type.Optional(
+    object({
+      environment: Type.Union([
+        Type.Literal("none"),
+        Type.Literal("browser"),
+        Type.Literal("computer")
+      ]),
+      generation: Type.Integer({ minimum: 0 }),
+      plan_steps: Type.Integer({ minimum: 0, maximum: 8 }),
+      plan_complete: Type.Boolean()
+    })
+  ),
   browser: Type.Optional(
     object({
       tab_id: Type.String({ pattern: "^[a-f0-9]{12}$" }),
@@ -174,20 +206,22 @@ export const ComputerObservationSchema = object({
 export type ComputerObservation = Static<typeof ComputerObservationSchema>;
 
 export const CreateComputerSessionSchema = object({
-  execution_mode: Type.Optional(Type.Union([Type.Literal("computer"), Type.Literal("browser")])),
+  execution_mode: Type.Optional(
+    Type.Union([Type.Literal("computer"), Type.Literal("browser"), Type.Literal("work")])
+  ),
   client_request_id: text(128),
   client_secret: Type.String({ minLength: 43, maxLength: 43, pattern: "^[A-Za-z0-9_-]+$" }),
   goal: text(8000),
-  max_steps: Type.Integer({ minimum: 1, maximum: 30 })
+  max_steps: Type.Integer({ minimum: 1, maximum: 90 })
 });
 export type CreateComputerSession = Static<typeof CreateComputerSessionSchema>;
 export const ComputerStepSchema = object({
-  step: Type.Integer({ minimum: 0, maximum: 29 }),
+  step: Type.Integer({ minimum: 0, maximum: 89 }),
   observation: ComputerObservationSchema,
   previous_result: Type.String({ maxLength: 16000 })
 });
 export type ComputerStep = Static<typeof ComputerStepSchema>;
 export const AuthorizeComputerActionSchema = object({
-  step: Type.Integer({ minimum: 0, maximum: 29 }),
+  step: Type.Integer({ minimum: 0, maximum: 89 }),
   action_hash: Type.String({ minLength: 64, maxLength: 64, pattern: "^[a-f0-9]+$" })
 });

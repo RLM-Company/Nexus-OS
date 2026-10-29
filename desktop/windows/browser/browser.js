@@ -28,7 +28,13 @@ const messages = {
   COMPUTER_SESSION_STOPPED: "Задача остановлена. Проверьте результат перед повторным запуском.",
   COMPUTER_OWNER_UNVERIFIED: "Нужен подтверждённый вход в Kosmora.",
   COMPUTER_HISTORY_UNAVAILABLE: "Журнал недоступен. Действия остановлены; проверьте результат.",
-  COMPUTER_RECOVERY_RESTART_REQUIRED: "После ошибки требуется перезапуск приложения."
+  COMPUTER_RECOVERY_RESTART_REQUIRED: "После ошибки требуется перезапуск приложения.",
+  WORK_ENVIRONMENT_DENIED:
+    "Доступ к среде не разрешён. Задача остановлена; её можно продолжить с новым разрешением.",
+  WORK_RESULT_UNCHECKED: "Не все этапы плана проверены. Задача не отмечена как завершённая.",
+  WORK_CONTEXT_TOO_LARGE:
+    "Контекст задачи слишком велик. Уточните цель и продолжите с контрольной точки.",
+  WORK_STEP_INVALID: "Этап плана изменился. Проверьте прогресс перед продолжением."
 };
 const error = (v) =>
   messages[v] || "Действие не выполнено. Проверьте страницу, подключение и результат.";
@@ -54,6 +60,29 @@ async function command(name, input) {
 }
 function render(value) {
   current = { ...current, ...value };
+  $("work-plan").hidden = current.taskMode !== "work";
+  if (current.taskMode === "work") {
+    document.title = "Koswork · Рабочая задача";
+    document.querySelector(".brand small").textContent = "Work";
+    $("work-environment").textContent =
+      "Среда: " +
+      ({ none: "планирование", browser: "браузер", computer: "ваш ПК" }[
+        current.workTask?.environment
+      ] || "планирование");
+    $("work-steps").replaceChildren();
+    for (const step of current.workTask?.steps || []) {
+      const item = document.createElement("li"),
+        title = document.createElement("strong"),
+        criterion = document.createElement("p"),
+        evidence = document.createElement("p");
+      title.textContent =
+        ({ pending: "○ ", running: "◌ ", checked: "✓ " }[step.state] || "") + step.title;
+      criterion.textContent = step.criteria;
+      evidence.textContent = step.evidence || "";
+      item.append(title, criterion, evidence);
+      $("work-steps").append(item);
+    }
+  }
   $("tabs").replaceChildren();
   for (const tab of current.tabs) {
     const row = document.createElement("div");

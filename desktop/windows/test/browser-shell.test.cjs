@@ -20,7 +20,7 @@ async function fixture(options = {}) {
       this.webContents = new EventEmitter();
       this.webContents.mainFrame = { url: "" };
       this.webContents.setWindowOpenHandler = () => {};
-      this.webContents.send = () => {};
+      this.webContents.send = (channel, payload) => calls.push({ channel, payload });
       this.destroyed = false;
     }
     async loadFile(file) {
@@ -31,6 +31,12 @@ async function fixture(options = {}) {
     }
     show() {}
     focus() {}
+    minimize() {
+      calls.push("minimize");
+    }
+    restore() {
+      calls.push("restore");
+    }
     destroy() {
       this.destroyed = true;
       this.emit("closed");
@@ -99,6 +105,14 @@ async function fixture(options = {}) {
       })
     },
     taskGate: options.taskGate,
+    executionMode: options.mode ?? "browser",
+    createComputer: () => ({
+      observe: async () => {
+        calls.push("desktop-capture");
+        return {};
+      },
+      stop() {}
+    }),
     createEngine: () => engine,
     createRunner: (input) => {
       runnerOptions = input;
@@ -123,7 +137,11 @@ async function fixture(options = {}) {
     runnerOptions,
     workspace,
     invoke: (command, input, event = trusted) =>
-      handlers.get("koswork:browser-command")(event, command, input),
+      handlers.get(options.mode === "work" ? "koswork:work-command" : "koswork:browser-command")(
+        event,
+        command,
+        input
+      ),
     trusted
   };
 }
@@ -143,6 +161,28 @@ test("only exact native browser main frame can navigate, launch, recover or read
     false
   );
   assert.ok((await f.invoke("navigate", "file:///C:/secret")).error);
+});
+
+test("work console uses its own IPC, shared-folder scope and extended bounded task without desktop capture", async () => {
+  const f = await fixture({ mode: "work" });
+  assert.equal(f.runnerOptions.executionMode, "work");
+  assert.equal((await f.invoke("state")).taskMode, "work");
+  assert.deepEqual(f.runnerOptions.driver.state().permissions, []);
+  await f.invoke("start", { project: "project", goal: "Read and save a report" });
+  assert.equal(f.calls.find((c) => c.run).run.maxSteps, 90);
+  assert.equal(f.calls.includes("desktop-capture"), false);
+  assert.ok((await f.invoke("start", {}, {})).error);
+  assert.ok((await f.invoke("recover", "browser-task")).error);
+  await f.browser.show({ project: "project", goal: "A new transferred goal" });
+  assert.ok(f.calls.some((c) => c.payload?.prefill?.goal === "A new transferred goal"));
+  await assert.rejects(
+    f.browser.show({ project: "not-owned", goal: "Must not use the wrong project" }),
+    /PROJECT_UNAVAILABLE/
+  );
+  assert.equal(
+    f.calls.some((c) => c.payload?.prefill?.goal === "Must not use the wrong project"),
+    false
+  );
 });
 test("browser recovery accepts only browser records and history never mixes desktop tasks", async () => {
   const f = await fixture();

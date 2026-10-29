@@ -27,4 +27,7 @@ if (window.location.protocol === "https:" || window.location.protocol === "http:
   contextBridge.exposeInMainWorld("kosmoraDesktopComputer", {
     open: (input) => ipcRenderer.invoke("koswork:computer-open", input)
   });
+  contextBridge.exposeInMainWorld("kosmoraDesktopWork", {
+    open: (input) => ipcRenderer.invoke("koswork:work-open", input)
+  });
 }

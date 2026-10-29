@@ -15,9 +15,17 @@ export function DesktopComputerButton({
   disabled: boolean;
 }) {
   const [bridge, setBridge] = useState<ComputerOpener | null>(null);
+  const [work, setWork] = useState(false);
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
+    const workBridge = (window as Window & { kosmoraDesktopWork?: ComputerOpener })
+      .kosmoraDesktopWork;
+    if (workBridge && typeof workBridge.open === "function") {
+      setBridge(workBridge);
+      setWork(true);
+      return;
+    }
     const candidate = (window as Window & { kosmoraDesktopComputer?: ComputerOpener })
       .kosmoraDesktopComputer;
     if (candidate && typeof candidate.open === "function") setBridge(candidate);
@@ -36,13 +44,23 @@ export function DesktopComputerButton({
             .open({ project: projectId, goal })
             .then((result) => {
               if (!result.ok)
-                setError("Не удалось открыть управление компьютером. Проверьте вход в приложение.");
+                setError(
+                  work
+                    ? "Не удалось открыть задачу Koswork. Проверьте вход в приложение."
+                    : "Не удалось открыть управление компьютером. Проверьте вход в приложение."
+                );
             })
-            .catch(() => setError("Локальное приложение недоступно."))
+            .catch(() =>
+              setError(
+                work
+                  ? "Не удалось открыть задачу Koswork. Проверьте вход и остановите текущую задачу, если она ещё выполняется."
+                  : "Локальное приложение недоступно."
+              )
+            )
             .finally(() => setOpening(false));
         }}
       >
-        {opening ? "Открываем…" : "Выполнить на компьютере"}
+        {opening ? "Открываем…" : work ? "Выполнить в Koswork" : "Выполнить на компьютере"}
       </button>
       {error && <p role="alert">{error}</p>}
     </>

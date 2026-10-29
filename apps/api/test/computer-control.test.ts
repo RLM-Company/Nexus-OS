@@ -155,6 +155,101 @@ async function fixture(
 }
 
 describe("owner-bound computer proposals", () => {
+  it("work starts without desktop capture, accepts the bounded plan and routes without vision until needed", async () => {
+    const f = await fixture({
+      vision: false,
+      output: {
+        ...action,
+        action: {
+          kind: "work_plan",
+          steps: [{ title: "Read source", criteria: "Source inspected" }]
+        }
+      }
+    });
+    Object.assign(f.input, { execution_mode: "work", max_steps: 90 });
+    expect(await f.create()).toMatchObject({ execution_mode: "work" });
+    const value = structuredClone(step);
+    delete value.observation.image_jpeg_base64;
+    value.observation.work = {
+      environment: "none",
+      generation: 0,
+      plan_steps: 0,
+      plan_complete: false
+    };
+    expect(await f.next(value)).toMatchObject({ action: { kind: "work_plan" } });
+    expect(f.calls[0]!.messages[0]!.content).toContain("single Koswork task agent");
+    expect(f.calls[0]!.routing.required_features).not.toContain("vision");
+  });
+  it("work browser observations do not permit OS input and ordinary sessions cannot request work actions", async () => {
+    const f = await fixture({
+      vision: false,
+      output: { ...action, action: { kind: "type_text", text: "blocked" } }
+    });
+    Object.assign(f.input, { execution_mode: "work" });
+    await f.create();
+    const value = structuredClone(step);
+    delete value.observation.image_jpeg_base64;
+    value.observation.work = {
+      environment: "browser",
+      generation: 1,
+      plan_steps: 1,
+      plan_complete: false
+    };
+    value.observation.browser = { tab_id: "a".repeat(12), generation: 0 };
+    await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+    const g = await fixture({
+      output: { ...action, action: { kind: "work_switch", environment: "computer" } }
+    });
+    await g.create();
+    await expect(g.next()).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+  });
+  it("work desktop stages require a real image and incomplete plans cannot return done", async () => {
+    const f = await fixture();
+    Object.assign(f.input, { execution_mode: "work" });
+    await f.create();
+    const value = structuredClone(step);
+    delete value.observation.image_jpeg_base64;
+    value.observation.work = {
+      environment: "computer",
+      generation: 1,
+      plan_steps: 1,
+      plan_complete: false
+    };
+    expect(() => f.next(value)).toThrow("COMPUTER_OUTPUT_INVALID");
+    expect(f.calls).toHaveLength(0);
+    const g = await fixture({
+      vision: false,
+      output: { ...action, action: { kind: "done", summary: "unsupported completion" } }
+    });
+    Object.assign(g.input, { execution_mode: "work" });
+    await g.create();
+    value.observation.work = {
+      environment: "none",
+      generation: 1,
+      plan_steps: 1,
+      plan_complete: false
+    };
+    await expect(g.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+  });
+  it("preserves the original 30-step limit for standalone computer/browser sessions", async () => {
+    const f = await fixture();
+    Object.assign(f.input, { max_steps: 90 });
+    await expect(f.create()).rejects.toMatchObject({ code: "COMPUTER_SESSION_INVALID" });
+  });
+  it("work desktop observations select vision only for the separately entered desktop stage", async () => {
+    const f = await fixture({ output: { ...action, action: { kind: "list_apps" } } });
+    Object.assign(f.input, { execution_mode: "work" });
+    await f.create();
+    const value = structuredClone(step);
+    value.observation.work = {
+      environment: "computer",
+      generation: 2,
+      plan_steps: 1,
+      plan_complete: false
+    };
+    expect(await f.next(value)).toMatchObject({ action: { kind: "list_apps" } });
+    expect(f.calls[0]!.routing.required_features).toContain("vision");
+  });
   it("browser search uses its first-party action on a text-only route", async () => {
     const f = await fixture({
       vision: false,
