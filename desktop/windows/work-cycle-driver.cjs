@@ -155,7 +155,15 @@ function createWorkCycleDriver({
     },
     handlesConfirmation: (action) => action.kind === "work_switch",
     get reobserveAfterApproval() {
-      return environment === "browser";
+      return environment !== "computer";
+    },
+    recordResult(action) {
+      if (
+        ["workspace_create", "workspace_update", "workspace_mkdir", "workspace_restore"].includes(
+          action.kind
+        )
+      )
+        effects = true;
     },
     requiresConfirmation(action, obs) {
       current(obs);

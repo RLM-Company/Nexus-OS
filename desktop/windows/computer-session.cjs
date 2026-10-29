@@ -401,6 +401,7 @@ class ComputerSession {
               signal: state.controller.signal
             });
           } else response = await this.driver.execute(action, observation, state.controller.signal);
+          this.driver.recordResult?.(action, response);
           if (this.executionMode === "work") state.journal?.plan(this.driver.checkpoint());
           state.journal?.mark(step + 1, "requested");
           pendingObservation = step + 1;

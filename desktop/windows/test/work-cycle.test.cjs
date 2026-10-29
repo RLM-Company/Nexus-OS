@@ -446,3 +446,65 @@ test("plain text tools cannot masquerade as a Word, spreadsheet or PDF result", 
   assert.deepEqual(fs.readdirSync(f.folder), []);
   f.driver.stop();
 });
+
+test("file-only task needs no screen grant and rechecks file consent locally without an extra planner call", async (t) => {
+  const f = await fixture(t);
+  let index = 0,
+    confirmations = 0;
+  const actions = [
+    () => ({ kind: "work_plan", steps: [{ title: "Save note", criteria: "Actual text matches" }] }),
+    (obs) => ({
+      kind: "work_step",
+      step: 1,
+      state: "running",
+      evidence: "",
+      observation_id: obs.observation_id
+    }),
+    () => ({ kind: "workspace_create", path: "note.md", content: "File-only fixture" }),
+    () => ({ kind: "workspace_read", path: "note.md" }),
+    (obs) => ({
+      kind: "work_step",
+      step: 1,
+      state: "checked",
+      evidence: "Fresh read matches text",
+      observation_id: obs.observation_id
+    }),
+    () => ({ kind: "done", summary: "File checked" })
+  ];
+  const runner = new ComputerSession({
+    executionMode: "work",
+    driver: f.driver,
+    workspace: f.workspace,
+    identity: async () => context,
+    notify() {},
+    confirm: async () => {
+      confirmations++;
+      return true;
+    },
+    planner: {
+      begin: async () => ({ id: "fixture" }),
+      authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+      end: async () => {},
+      next: async ({ observation, previousResult }) => {
+        if (index === 4) assert.ok(previousResult.includes("File-only fixture"));
+        return {
+          action: actions[index++](observation),
+          message: "Fixture",
+          requires_confirmation: false
+        };
+      }
+    }
+  });
+  assert.equal(
+    (await runner.run({ project: "project", goal: "Save and check a note" })).status,
+    "completed"
+  );
+  assert.equal(index, 6);
+  assert.equal(confirmations, 2);
+  assert.deepEqual(f.grants, []);
+  assert.equal(
+    f.calls.some((c) => c.endsWith(":observe")),
+    false
+  );
+  assert.equal(fs.readFileSync(path.join(f.folder, "note.md"), "utf8"), "File-only fixture");
+});
