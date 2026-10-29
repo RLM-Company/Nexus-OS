@@ -25,6 +25,7 @@ const keyNames = new Set([
 ]);
 const fields = {
   browser_open: ["url"],
+  browser_search: ["query"],
   browser_tabs: [],
   browser_switch: ["tab_id"],
   browser_close: ["tab_id"],
@@ -87,6 +88,10 @@ function validateComputerAction(action) {
       try {
         if (action.kind === "browser_open")
           return require("./browser/policy.cjs").safeUrl(action.url) !== null;
+        if (action.kind === "browser_search") {
+          require("./browser/search.cjs").query(action.query);
+          return true;
+        }
         if (action.kind === "browser_click_at")
           return [action.x, action.y].every((n) => Number.isFinite(n) && n >= 0 && n <= 1);
         if (action.kind === "browser_scroll")

@@ -6,6 +6,9 @@ let current = { tabs: [], projects: [], downloads: [] },
   historyBusy = false;
 const messages = {
   BROWSER_DOM_TIMEOUT: "Страница отвечает слишком долго. Перезагрузите или закройте вкладку.",
+  BROWSER_QUERY_INVALID: "Запрос должен содержать от 1 до 240 символов.",
+  BROWSER_SEARCH_UNAVAILABLE:
+    "Поиск сейчас недоступен. Проверьте подключение сервера к поиску и повторите запрос.",
   BROWSER_INPUT_UNCERTAIN:
     "Действие могло выполниться частично. Проверьте результат перед новым запуском.",
   BROWSER_URL_INVALID: "Адрес не поддерживается. Используйте HTTP(S) или поисковый запрос.",
@@ -76,15 +79,16 @@ function render(value) {
   if (protocol)
     protocol.setAttribute(
       "href",
-      active?.url?.startsWith("https://") && !active.error && !active.loading
+      active?.url?.startsWith("https://") && !active.searchQuery && !active.error && !active.loading
         ? "#icon-lock"
         : active?.url && active.url !== "about:blank"
           ? "#icon-info"
           : "#icon-search"
     );
-  $("home").hidden = !!active && active.url !== "about:blank";
+  $("home").hidden = !!active && (active.url !== "about:blank" || !!active.searchQuery);
   if (document.activeElement !== $("address"))
-    $("address").value = active?.url && active.url !== "about:blank" ? active.url : "";
+    $("address").value =
+      active?.searchQuery || (active?.url && active.url !== "about:blank" ? active.url : "");
   $("memory").textContent = (current.liveTabs || 0) + " / 3 вкладки в памяти";
   $("new").disabled = current.tabs.length >= 8;
   const selected = $("project").value;

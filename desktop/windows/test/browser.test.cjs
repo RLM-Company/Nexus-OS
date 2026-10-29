@@ -11,6 +11,7 @@ const { safeUrl, address, profileKey, createTaskGate } = require("../browser/pol
 const { validateComputerAction } = require("../computer-policy.cjs");
 const { ComputerSession } = require("../computer-session.cjs");
 const documentCode = require("../browser/document.cjs");
+const searchCode = require("../browser/search.cjs");
 const context = { owner: "owner", origin: "https://example.test" };
 function fixture(t, options = {}) {
   const calls = [],
@@ -96,6 +97,10 @@ function fixture(t, options = {}) {
                 }
               };
             }
+            if (args.functionDeclaration === searchCode.render) {
+              web.searchData = values[0];
+              return { result: { value: true } };
+            }
             if (args.functionDeclaration === documentCode.locate) {
               const node = nodes.find((n) => n.ref === values[1]);
               return {
@@ -164,6 +169,111 @@ function fixture(t, options = {}) {
     }
   };
 }
+
+test("first-party search keeps the Kosmora page, passes validated live data and opens no external search UI", async (t) => {
+  const requests = [];
+  const f = fixture(t, {
+    searchProvider: async (q) => {
+      requests.push(q);
+      return {
+        query: q,
+        items: [{ title: "Docs", url: "https://example.test/docs", snippet: "Source" }]
+      };
+    }
+  });
+  await f.engine.open();
+  await f.engine.search("Космос и разработка");
+  assert.deepEqual(requests, ["Космос и разработка"]);
+  assert.equal(f.engine.state().tabs[0].searchQuery, requests[0]);
+  assert.equal(f.engine.state().tabs[0].url, "about:blank");
+  assert.ok(f.calls.some((c) => c.method === "loadURL" && c.url === searchCode.SEARCH_PAGE));
+  assert.equal(
+    f.calls.some((c) => c.url?.includes("duckduckgo")),
+    false
+  );
+  const observation = await f.engine.observe(new AbortController().signal);
+  assert.equal(JSON.parse(observation.description).url, "about:blank");
+  assert.equal(JSON.parse(observation.description).search.query, requests[0]);
+  assert.equal(observation.description.includes("file:///"), false);
+});
+
+test("search failure stays on the first-party page and never fabricates results or redirects", async (t) => {
+  const f = fixture(t);
+  await f.engine.open();
+  await assert.rejects(f.engine.search("real query"), /BROWSER_SEARCH_UNAVAILABLE/);
+  assert.equal(f.views[0].webContents.searchData.error, "BROWSER_SEARCH_UNAVAILABLE");
+  assert.deepEqual(f.views[0].webContents.searchData.items, []);
+  assert.equal(
+    f.calls.some((c) => c.url?.startsWith("http")),
+    false
+  );
+});
+
+test("cancelled search response cannot overwrite a subsequent navigation", async (t) => {
+  let finish;
+  const f = fixture(t, {
+    searchProvider: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  });
+  await f.engine.open();
+  const pending = f.engine.search("pending query");
+  while (!finish) await new Promise((resolve) => setImmediate(resolve));
+  await f.engine.navigate("https://example.test/next");
+  finish({ query: "pending query", items: [] });
+  await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+  assert.equal(f.engine.state().tabs[0].url, "https://example.test/next");
+  assert.equal(f.engine.state().tabs[0].searchQuery, undefined);
+});
+
+test("search policy rejects oversized queries and unsafe or mismatched results", () => {
+  assert.deepEqual(address("ordinary search"), { query: "ordinary search" });
+  assert.equal(address("example.org"), "https://example.org/");
+  assert.throws(() => searchCode.query("a".repeat(241)), /QUERY_INVALID/);
+  assert.throws(() => searchCode.query("a\nb"), /QUERY_INVALID/);
+  assert.throws(() => searchCode.results({ query: "other", items: [] }, "expected"));
+  assert.deepEqual(
+    searchCode.results(
+      {
+        query: "q",
+        items: [
+          { title: "<b>Docs</b>", url: "https://example.test/docs", snippet: "<script>x</script>" },
+          { title: "Duplicate", url: "https://example.test/docs" },
+          { title: "Bad", url: "javascript:alert(1)" },
+          { title: "Credential", url: "https://secret:pass@example.test/" }
+        ]
+      },
+      "q"
+    ),
+    [{ title: "Docs", url: "https://example.test/docs", snippet: "x" }]
+  );
+  assert.doesNotThrow(() =>
+    validateComputerAction({ kind: "browser_search", query: "actual question" })
+  );
+  assert.throws(() => validateComputerAction({ kind: "browser_search", query: "" }));
+});
+
+test("agent search observes actual results and cancelled providers cannot hold the local task", async (t) => {
+  const f = fixture(t, { searchProvider: async (q) => ({ query: q, items: [] }) });
+  await f.engine.open();
+  const obs = await f.engine.observe(new AbortController().signal);
+  assert.deepEqual(
+    await f.engine.execute(
+      { kind: "browser_search", query: "explicit search" },
+      obs,
+      new AbortController().signal
+    ),
+    { searched: true, count: 0 }
+  );
+  const g = fixture(t, { searchProvider: () => new Promise(() => {}) });
+  await g.engine.open();
+  const controller = new AbortController();
+  const pending = g.engine.search("stalled", controller.signal);
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.abort();
+  await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+});
 test("URL/action policy refuses executable schemes, credentials, code injection and extra fields", () => {
   for (const url of [
     "file:///C:/secret",
@@ -177,7 +287,7 @@ test("URL/action policy refuses executable schemes, credentials, code injection 
     assert.throws(() => validateComputerAction({ kind: "browser_open", url }), /ACTION_INVALID/);
   }
   assert.equal(address("example.com"), "https://example.com/");
-  assert.ok(address("a useful query").startsWith("https://duckduckgo.com/?q="));
+  assert.deepEqual(address("a useful query"), { query: "a useful query" });
   for (const action of [
     { kind: "browser_evaluate", code: "1" },
     { kind: "browser_click", ref: "e1", script: "x" },

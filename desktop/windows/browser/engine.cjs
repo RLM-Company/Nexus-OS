@@ -3,6 +3,7 @@ const { randomBytes, randomUUID } = require("node:crypto");
 const { setTimeout: delay } = require("node:timers/promises");
 const { safeUrl, agentUrl } = require("./policy.cjs");
 const documentCode = require("./document.cjs");
+const searchCode = require("./search.cjs");
 
 const HOME = "about:blank";
 function createBrowserEngine({
@@ -16,6 +17,9 @@ function createBrowserEngine({
   context,
   notify = () => {},
   takeover = () => {},
+  searchProvider = async () => {
+    throw Error("BROWSER_SEARCH_UNAVAILABLE");
+  },
   commandTimeout = 3000,
   now = Date.now
 }) {
@@ -52,7 +56,8 @@ function createBrowserEngine({
         loaded: !!t.view && !t.view.webContents.isDestroyed(),
         loading: !!t.view && !t.view.webContents.isDestroyed() && t.view.webContents.isLoading(),
         dirty: t.dirty,
-        error: t.error || null
+        error: t.error || null,
+        searchQuery: t.search?.query
       })),
       liveTabs: [...tabs.values()].filter((t) => t.view).length,
       maxLiveTabs: 3,
@@ -158,7 +163,11 @@ function createBrowserEngine({
     for (const event of ["will-navigate", "will-frame-navigate", "will-redirect"])
       web.on(event, (ev, url) => {
         const destination = typeof url === "string" ? url : ev.url;
-        if (destination && !safeUrl(destination)) {
+        if (
+          destination &&
+          !safeUrl(destination) &&
+          !(destination === searchCode.SEARCH_PAGE && (tab.search || tab.savedSearch))
+        ) {
           ev.preventDefault();
           tab.error = "Этот тип адреса не поддерживается.";
           emit();
@@ -167,15 +176,30 @@ function createBrowserEngine({
     web.on("did-start-navigation", (_e, url, _inPlace, mainFrame) => {
       if (mainFrame) {
         invalidate(tab);
-        if (safeUrl(url)) tab.url = url;
+        if (safeUrl(url)) {
+          tab.searchAbort?.abort();
+          tab.savedSearch = tab.search || tab.savedSearch;
+          tab.search = null;
+          tab.url = url;
+        }
       }
     });
     web.on("did-navigate", (_e, url) => {
-      tab.url = url;
+      if (url === searchCode.SEARCH_PAGE && (tab.search || tab.savedSearch)) {
+        tab.search ||= tab.savedSearch;
+        tab.url = HOME;
+      } else {
+        tab.savedSearch = tab.search || tab.savedSearch;
+        tab.search = null;
+        tab.url = url;
+      }
       tab.dirty = false;
       tab.error = null;
       invalidate(tab);
       emit();
+    });
+    web.on("did-finish-load", () => {
+      if (tab.search) void renderSearch(tab).catch(() => {});
     });
     web.on("did-navigate-in-page", (_e, url, main) => {
       if (main) {
@@ -276,7 +300,7 @@ function createBrowserEngine({
       window.contentView.removeChildView(tab.view);
       tab.view = null;
     }
-    if (!tab.view && tab.url !== HOME) {
+    if (!tab.view && (tab.url !== HOME || tab.search)) {
       await room();
       live();
       if (signal?.aborted) throw Error("COMPUTER_SESSION_STOPPED");
@@ -295,14 +319,17 @@ function createBrowserEngine({
       wire(tab);
       window.contentView.addChildView(tab.view);
       tab.view.setVisible(false);
-      if (tab.url !== HOME) void tab.view.webContents.loadURL(tab.url).catch(() => {});
+      if (tab.search) {
+        await tab.view.webContents.loadURL(searchCode.SEARCH_PAGE);
+        await renderSearch(tab);
+      } else if (tab.url !== HOME) void tab.view.webContents.loadURL(tab.url).catch(() => {});
     }
     if (active && tabs.get(active)?.view) tabs.get(active).view.setVisible(false);
     active = id;
     last = null;
     tab.touched = now();
     tab.view?.setBounds(bounds());
-    tab.view?.setVisible(tab.url !== HOME);
+    tab.view?.setVisible(tab.url !== HOME || !!tab.search);
     emit();
     return tab;
   }
@@ -335,6 +362,7 @@ function createBrowserEngine({
     if (!tab) throw Error("BROWSER_STALE");
     if (!force && (tab.dirty || !(await canSleep({ ...tab, id: "not-active" }))))
       throw Error("BROWSER_DIRTY_TAB");
+    tab.searchAbort?.abort();
     detach(tab);
     tabs.delete(id);
     if (active === id) {
@@ -422,15 +450,16 @@ function createBrowserEngine({
     const id = randomUUID(),
       version = tab.version;
     const doc =
-      tab.url === HOME
+      tab.url === HOME && !tab.search
         ? {
             url: HOME,
             title: "Новая вкладка",
-            text: "Пустая вкладка Koswork. Используйте browser_open, чтобы открыть сайт.",
+            text: "Пустая вкладка Koswork. Для поиска используйте browser_search; browser_open открывает известный адрес сайта.",
             nodes: [],
             dirty: false
           }
         : await evaluate(tab, documentCode.capture, [id]);
+    if (tab.search) doc.url = HOME;
     if (signal.aborted || version !== tab.version) throw Error("BROWSER_STALE");
     tab.dirty ||= doc.dirty;
     doc.text = doc.text.slice(0, 6000);
@@ -438,6 +467,15 @@ function createBrowserEngine({
       JSON.stringify({
         url: agentUrl(doc.url),
         title: doc.title,
+        ...(tab.search
+          ? {
+              search: {
+                query: tab.search.query,
+                loading: tab.search.loading,
+                error: !!tab.search.error
+              }
+            }
+          : {}),
         text: doc.text,
         nodes: doc.nodes.map(({ signature, ...node }) => ({
           ...node,
@@ -532,6 +570,9 @@ function createBrowserEngine({
         case "browser_open":
           await open(action.url, signal);
           return { opened: true };
+        case "browser_search":
+          await search(action.query, signal);
+          return { searched: true, count: tabs.get(active)?.search?.items.length ?? 0 };
         case "browser_switch":
           await activate(action.tab_id, signal);
           return { selected: true };
@@ -539,13 +580,14 @@ function createBrowserEngine({
           await close(action.tab_id, true, signal);
           return { closed: true };
         case "browser_back":
-          if (web.navigationHistory.canGoBack()) web.navigationHistory.goBack();
+          if (web?.navigationHistory.canGoBack()) web.navigationHistory.goBack();
           return { requested: true };
         case "browser_forward":
-          if (web.navigationHistory.canGoForward()) web.navigationHistory.goForward();
+          if (web?.navigationHistory.canGoForward()) web.navigationHistory.goForward();
           return { requested: true };
         case "browser_reload":
-          web.reload();
+          if (tab.search) await search(tab.search.query, signal);
+          else web?.reload();
           return { requested: true };
         case "browser_screenshot":
           wantImage = true;
@@ -759,12 +801,87 @@ function createBrowserEngine({
     })().catch(() => {});
   }, 30000);
   timer.unref?.();
+  async function renderSearch(tab) {
+    if (!tab.search || !tab.view) return;
+    const data = tab.search;
+    await evaluate(tab, searchCode.render, [data]);
+  }
+  async function search(value, signal) {
+    live();
+    const q = searchCode.query(value);
+    if (signal?.aborted) throw Error("COMPUTER_SESSION_STOPPED");
+    const tab = tabs.get(active) || (await open());
+    tab.searchAbort?.abort();
+    const controller = new AbortController();
+    tab.searchAbort = controller;
+    const combined = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(15000),
+      ...(signal ? [signal] : [])
+    ]);
+    const data = { query: q, loading: true, items: [], error: null };
+    tab.search = data;
+    tab.savedSearch = data;
+    tab.url = HOME;
+    tab.title = q + " — Kosmora";
+    tab.error = null;
+    tab.dirty = false;
+    invalidate(tab);
+    const current = () => {
+      live();
+      if (combined.aborted || tabs.get(tab.id) !== tab || tab.search !== data)
+        throw Error("COMPUTER_SESSION_STOPPED");
+    };
+    let abortListener;
+    try {
+      if (tab.view) {
+        await tab.view.webContents.loadURL(searchCode.SEARCH_PAGE);
+        current();
+        await renderSearch(tab);
+      }
+      current();
+      await activate(tab.id, combined);
+      current();
+      const body = await Promise.race([
+        Promise.resolve().then(() => searchProvider(q, combined)),
+        new Promise((_, reject) => {
+          abortListener = () => reject(Error("COMPUTER_SESSION_STOPPED"));
+          combined.addEventListener("abort", abortListener, { once: true });
+        })
+      ]);
+      current();
+      data.items = searchCode.results(body, q);
+      data.loading = false;
+      invalidate(tab);
+      await renderSearch(tab);
+    } catch (error) {
+      if (combined.aborted || stopped || !tabs.has(tab.id) || tab.search !== data) {
+        data.loading = false;
+        data.error = "BROWSER_SEARCH_CANCELLED";
+        if (!stopped && tab.search === data && tab.view) {
+          invalidate(tab);
+          await renderSearch(tab).catch(() => {});
+        }
+        throw Error("COMPUTER_SESSION_STOPPED");
+      }
+      data.loading = false;
+      data.error = "BROWSER_SEARCH_UNAVAILABLE";
+      invalidate(tab);
+      await renderSearch(tab);
+      throw Error("BROWSER_SEARCH_UNAVAILABLE");
+    } finally {
+      if (abortListener) combined.removeEventListener("abort", abortListener);
+      if (tab.searchAbort === controller) tab.searchAbort = null;
+      emit();
+    }
+  }
   return {
     reobserveAfterApproval: true,
     state,
     open,
     activate,
     close,
+    search,
     observe,
     execute,
     isCurrent(observation) {
@@ -790,6 +907,7 @@ function createBrowserEngine({
       const tab = tabs.get(active);
       if (!tab?.view) return;
       const web = tab.view.webContents;
+      if (command === "reload" && tab.search) return search(tab.search.query);
       invalidate(tab);
       if (command === "back" && web.navigationHistory.canGoBack()) web.navigationHistory.goBack();
       else if (command === "forward" && web.navigationHistory.canGoForward())
@@ -801,6 +919,9 @@ function createBrowserEngine({
       if (!safeUrl(url)) throw Error("BROWSER_URL_INVALID");
       const tab = tabs.get(active) || (await open());
       const existed = !!tab.view;
+      tab.searchAbort?.abort();
+      tab.savedSearch = tab.search || tab.savedSearch;
+      tab.search = null;
       tab.url = url;
       tab.error = null;
       invalidate(tab);
@@ -810,6 +931,7 @@ function createBrowserEngine({
       emit();
     },
     cancel() {
+      for (const tab of tabs.values()) tab.searchAbort?.abort();
       last = null;
       wantImage = false;
       intents.clear();

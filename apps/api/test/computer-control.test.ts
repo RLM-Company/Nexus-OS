@@ -155,6 +155,22 @@ async function fixture(
 }
 
 describe("owner-bound computer proposals", () => {
+  it("browser search uses its first-party action on a text-only route", async () => {
+    const f = await fixture({
+      vision: false,
+      output: { ...action, action: { kind: "browser_search", query: "Kosmora sources" } }
+    });
+    Object.assign(f.input, { execution_mode: "browser" });
+    await f.create();
+    const value = structuredClone(step);
+    delete value.observation.image_jpeg_base64;
+    value.observation.browser = { tab_id: "a".repeat(12), generation: 1 };
+    expect(await f.next(value)).toMatchObject({
+      action: { kind: "browser_search", query: "Kosmora sources" }
+    });
+    expect(f.calls[0]!.messages[0]!.content).toContain("first-party Kosmora results page");
+    expect(f.calls[0]!.messages[1]!.images).toBeUndefined();
+  });
   it("browser mode starts on a text-only route and does not transmit a screenshot by default", async () => {
     const f = await fixture({
       vision: false,

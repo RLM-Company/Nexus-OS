@@ -13,6 +13,7 @@ export const ComputerActionSchema = Type.Union([
   object({ kind: Type.Literal("browser_read") }),
   object({ kind: Type.Literal("browser_screenshot") }),
   object({ kind: Type.Literal("browser_open"), url: text(4096) }),
+  object({ kind: Type.Literal("browser_search"), query: text(240) }),
   object({
     kind: Type.Literal("browser_switch"),
     tab_id: Type.String({ pattern: "^[a-f0-9]{12}$" })
