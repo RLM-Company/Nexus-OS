@@ -61,6 +61,9 @@ function cleanRecord(r) {
     !validTime(r.createdAt) ||
     !validTime(r.updatedAt) ||
     r.updatedAt < r.createdAt ||
+    (r.workspaceId !== null &&
+      r.workspaceId !== undefined &&
+      (typeof r.workspaceId !== "string" || !/^[a-f0-9]{24}$/.test(r.workspaceId))) ||
     !Array.isArray(r.steps) ||
     r.steps.length > 30 ||
     !(r.goal === null || (typeof r.goal === "string" && safeGoal(r.goal) === r.goal))
@@ -84,6 +87,10 @@ function cleanRecord(r) {
     updatedAt: r.updatedAt,
     steps,
     recoveredFrom: UUID.test(r.recoveredFrom) ? r.recoveredFrom : null,
+    workspaceId:
+      typeof r.workspaceId === "string" && /^[a-f0-9]{24}$/.test(r.workspaceId)
+        ? r.workspaceId
+        : null,
     reviewRequired: r.reviewRequired === true,
     acceptedAt: validTime(r.acceptedAt) && r.status === "completed" ? r.acceptedAt : null
   };
@@ -224,6 +231,7 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
         project: r.project,
         goal: r.goal,
         requiresReview: needsReview(r),
+        workspaceId: r.workspaceId,
         previousResult: JSON.stringify({
           status: "recovery_checkpoint",
           task_id: r.id,
@@ -262,8 +270,13 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
         if (/^[a-f0-9]{64}(?:\.json|\.[a-f0-9-]{36}\.tmp)$/.test(name))
           fs.unlinkSync(path.join(directory, name));
     },
-    start(context, { project, goal, recoveredFrom = null }) {
-      if (!PROJECT.test(project)) fail();
+    start(context, { project, goal, recoveredFrom = null, workspaceId = null }) {
+      if (
+        !PROJECT.test(project) ||
+        (workspaceId !== null &&
+          (typeof workspaceId !== "string" || !/^[a-f0-9]{24}$/.test(workspaceId)))
+      )
+        fail();
       const savedGoal = safeGoal(goal);
       const records = read(context);
       let reviewRequired = false;
@@ -271,6 +284,7 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
         const prior = api.recovery(context, recoveredFrom);
         if (prior.goal !== goal || prior.project !== project)
           throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
+        if (prior.workspaceId !== workspaceId) throw Error("COMPUTER_WORKSPACE_CHANGED");
         reviewRequired = prior.requiresReview;
       }
       while (records.length >= MAX_RECORDS) {
@@ -294,6 +308,7 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
         status: "running",
         steps: [],
         recoveredFrom,
+        workspaceId,
         reviewRequired,
         acceptedAt: null
       };

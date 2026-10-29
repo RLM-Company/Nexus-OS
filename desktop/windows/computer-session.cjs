@@ -12,6 +12,7 @@ class ComputerSession {
     notify,
     allowHumanResume = false,
     history = null,
+    workspace = null,
     now = Date.now
   }) {
     Object.assign(this, {
@@ -22,6 +23,7 @@ class ComputerSession {
       notify,
       allowHumanResume,
       history,
+      workspace,
       now
     });
     this.gate = new ComputerSessionGate({ now });
@@ -34,6 +36,11 @@ class ComputerSession {
     const context = await this.identity();
     if (!context || context.origin !== state.grant.origin || context.owner !== state.grant.owner)
       throw Error("COMPUTER_IDENTITY_CHANGED");
+    if (
+      this.workspace &&
+      (this.workspace.snapshot(context)?.id ?? null) !== (state.workspace?.id ?? null)
+    )
+      throw Error("COMPUTER_WORKSPACE_CHANGED");
     if (this.active !== state || state.controller.signal.aborted)
       throw Error("COMPUTER_SESSION_STOPPED");
     this.gate.assert(state.grant);
@@ -58,6 +65,7 @@ class ComputerSession {
     try {
       const context = await this.identity();
       if (!context) throw Error("COMPUTER_OWNER_UNVERIFIED");
+      state.workspace = this.workspace?.snapshot(context) ?? null;
       if (
         expectedContext &&
         (context.owner !== expectedContext.owner || context.origin !== expectedContext.origin)
@@ -68,6 +76,8 @@ class ComputerSession {
         recovery = this.history.recovery(context, recovery.taskId);
         if (recovery.project !== project || recovery.goal !== goal)
           throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
+        if ((recovery.workspaceId ?? null) !== (state.workspace?.id ?? null))
+          throw Error("COMPUTER_WORKSPACE_CHANGED");
       }
       if (this.active !== state || state.controller.signal.aborted)
         throw Error("COMPUTER_SESSION_STOPPED");
@@ -78,6 +88,7 @@ class ComputerSession {
           project,
           goal,
           recovery,
+          workspace: state.workspace,
           signal: state.controller.signal
         }))
       )
@@ -98,7 +109,8 @@ class ComputerSession {
       state.journal = this.history?.start(context, {
         project,
         goal,
-        recoveredFrom: recovery?.taskId ?? null
+        recoveredFrom: recovery?.taskId ?? null,
+        workspaceId: state.workspace?.id ?? null
       });
       if (state.journal)
         this.notify({
@@ -136,6 +148,7 @@ class ComputerSession {
           }
         }
         await this.assertLive(state);
+        if (state.workspace) observation = { ...observation, workspace: state.workspace };
         if (pendingObservation !== null) {
           state.journal?.mark(pendingObservation, "observed");
           pendingObservation = null;
@@ -221,7 +234,9 @@ class ComputerSession {
           approval.window === observation.active_window &&
           this.now() < approval.expires;
         const recoveryReview = recovery?.requiresReview && recoveryWriteActions.has(action.kind);
-        if ((proposal.requires_confirmation || recoveryReview) && !approved) {
+        const workspaceWrite =
+          action.kind.startsWith("workspace_") && recoveryWriteActions.has(action.kind);
+        if ((proposal.requires_confirmation || recoveryReview || workspaceWrite) && !approved) {
           if (
             !(await this.confirm({
               kind: "action",
@@ -270,12 +285,33 @@ class ComputerSession {
         if (this.now() - authorizationStarted >= 10000)
           throw Error("COMPUTER_ACTION_AUTHORIZATION_EXPIRED");
         try {
-          const response = await this.driver.execute(action, observation, state.controller.signal);
+          let response;
+          if (action.kind.startsWith("workspace_")) {
+            if (!this.workspace) throw Error("COMPUTER_WORKSPACE_UNAVAILABLE");
+            response = await this.workspace.execute(action, {
+              context: state.grant,
+              workspaceId: state.workspace?.id,
+              signal: state.controller.signal
+            });
+          } else response = await this.driver.execute(action, observation, state.controller.signal);
           state.journal?.mark(step + 1, "requested");
           pendingObservation = step + 1;
           previousResult = JSON.stringify(response).slice(0, 16000);
         } catch (error) {
+          const knownWorkspaceRejection = [
+            "WORKSPACE_VERSION_CONFLICT",
+            "WORKSPACE_ALREADY_EXISTS",
+            "WORKSPACE_NOT_FOUND",
+            "WORKSPACE_NOT_A_FILE",
+            "WORKSPACE_NOT_A_DIRECTORY",
+            "WORKSPACE_FILE_TOO_LARGE",
+            "WORKSPACE_BINARY_FILE",
+            "WORKSPACE_PROTECTED_PATH",
+            "WORKSPACE_PATH_TRAVERSAL",
+            "WORKSPACE_SYMLINK_REJECTED"
+          ].includes(error?.code);
           if (
+            !knownWorkspaceRejection &&
             ![
               "COMPUTER_WINDOW_CHANGED",
               "COMPUTER_OBSERVATION_STALE",
@@ -287,7 +323,7 @@ class ComputerSession {
           state.journal?.mark(step + 1, "not_executed");
           previousResult = JSON.stringify({
             not_executed: true,
-            reason: error.message,
+            reason: knownWorkspaceRejection ? error.code : error.message,
             instruction:
               "Inspect a fresh observation and replan; never blindly repeat the prior action."
           });
@@ -344,6 +380,7 @@ class ComputerSession {
   stop() {
     this.gate.stop();
     this.active?.controller.abort();
+    this.workspace?.cancel();
     try {
       this.driver.stop?.();
     } catch {

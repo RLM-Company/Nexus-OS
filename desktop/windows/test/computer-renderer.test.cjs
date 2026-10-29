@@ -47,6 +47,9 @@ function fixture() {
     error: null
   };
   const bridge = {
+    workspaceStatus: async () => ({ folder: null }),
+    selectWorkspace: async () => ({ folder: { id: "folder-id", name: "Project" } }),
+    revokeWorkspace: async () => ({ folder: null }),
     projects: async () => ({
       origin: "https://example.test",
       projects: [{ id: "project", title: "Project" }]

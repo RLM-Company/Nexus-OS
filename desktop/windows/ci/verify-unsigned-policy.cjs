@@ -26,6 +26,12 @@ function verify() {
   for (const file of [
     "main.cjs",
     "computer-history.cjs",
+    "computer-workspace.cjs",
+    "workspace/index.cjs",
+    "workspace/path-guard.cjs",
+    "workspace/version-backup.cjs",
+    "workspace/workspace-service.cjs",
+    "workspace/errors.cjs",
     "preload.cjs",
     "downloads-preload.cjs",
     "download-history.cjs",

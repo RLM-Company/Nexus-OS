@@ -24,6 +24,14 @@ const keyNames = new Set([
   ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`)
 ]);
 const fields = {
+  workspace_list: ["path", "cursor"],
+  workspace_find: ["path", "mode", "query"],
+  workspace_read: ["path"],
+  workspace_mkdir: ["path"],
+  workspace_create: ["path", "content"],
+  workspace_update: ["path", "content", "expected_version"],
+  workspace_backups: ["path"],
+  workspace_restore: ["backup_id", "expected_version"],
   observe: [],
   list_apps: [],
   find_apps: ["query"],
@@ -59,6 +67,44 @@ function validateComputerAction(action) {
   )
     throw Error("COMPUTER_ACTION_INVALID");
   const valid = (() => {
+    if (action.kind.startsWith("workspace_")) {
+      try {
+        if (action.kind !== "workspace_restore")
+          require("./workspace/path-guard.cjs").validateRelativePath(action.path, {
+            allowEmpty: ["workspace_list", "workspace_find"].includes(action.kind)
+          });
+        if (
+          action.kind === "workspace_list" &&
+          (!Number.isInteger(action.cursor) || action.cursor < 0 || action.cursor > 2000)
+        )
+          return false;
+        if (
+          action.kind === "workspace_find" &&
+          (!["name", "text"].includes(action.mode) || !string(action.query, 200))
+        )
+          return false;
+        if (
+          ["workspace_create", "workspace_update"].includes(action.kind) &&
+          (typeof action.content !== "string" ||
+            action.content.length > 10000 ||
+            action.content.includes("\0"))
+        )
+          return false;
+        if (
+          ["workspace_update", "workspace_restore"].includes(action.kind) &&
+          !/^sha256:[a-f0-9]{64}$/.test(action.expected_version)
+        )
+          return false;
+        if (
+          action.kind === "workspace_restore" &&
+          !/^bkp_\d{1,16}_[a-f0-9]{12}$/.test(action.backup_id)
+        )
+          return false;
+        return true;
+      } catch {
+        return false;
+      }
+    }
     switch (action.kind) {
       case "observe":
       case "list_apps":
@@ -199,6 +245,10 @@ class ComputerSessionGate {
 
 const computerActionKinds = Object.freeze(Object.keys(fields));
 const recoveryWriteActions = new Set([
+  "workspace_create",
+  "workspace_update",
+  "workspace_restore",
+  "workspace_mkdir",
   "open_app",
   "open_url",
   "open_file",

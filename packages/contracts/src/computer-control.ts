@@ -6,6 +6,36 @@ const text = (maximum: number) => Type.String({ minLength: 1, maxLength: maximum
 
 /** Proposals, never executable JavaScript, shell commands or an unbounded RPC. */
 export const ComputerActionSchema = Type.Union([
+  object({
+    kind: Type.Literal("workspace_list"),
+    path: Type.String({ maxLength: 512 }),
+    cursor: Type.Integer({ minimum: 0, maximum: 2000 })
+  }),
+  object({
+    kind: Type.Literal("workspace_find"),
+    path: Type.String({ maxLength: 512 }),
+    mode: Type.Union([Type.Literal("name"), Type.Literal("text")]),
+    query: text(200)
+  }),
+  object({ kind: Type.Literal("workspace_read"), path: text(512) }),
+  object({ kind: Type.Literal("workspace_mkdir"), path: text(512) }),
+  object({
+    kind: Type.Literal("workspace_create"),
+    path: text(512),
+    content: Type.String({ maxLength: 10000 })
+  }),
+  object({
+    kind: Type.Literal("workspace_update"),
+    path: text(512),
+    content: Type.String({ maxLength: 10000 }),
+    expected_version: Type.String({ pattern: "^sha256:[a-f0-9]{64}$" })
+  }),
+  object({ kind: Type.Literal("workspace_backups"), path: text(512) }),
+  object({
+    kind: Type.Literal("workspace_restore"),
+    backup_id: Type.String({ pattern: "^bkp_[0-9]{1,16}_[a-f0-9]{12}$" }),
+    expected_version: Type.String({ pattern: "^sha256:[a-f0-9]{64}$" })
+  }),
   object({ kind: Type.Literal("observe") }),
   object({ kind: Type.Literal("list_apps") }),
   object({ kind: Type.Literal("find_apps"), query: text(100) }),
@@ -84,6 +114,9 @@ export const ComputerSessionAcceptanceSchema = object({
 });
 
 export const ComputerObservationSchema = object({
+  workspace: Type.Optional(
+    object({ id: Type.String({ pattern: "^[a-f0-9]{24}$" }), name: text(180) })
+  ),
   observation_id: text(128),
   active_window: Type.String({ maxLength: 32 }),
   description: Type.String({ maxLength: 16000 }),

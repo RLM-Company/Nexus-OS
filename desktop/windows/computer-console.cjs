@@ -17,6 +17,7 @@ function createComputerConsole({
   identity,
   getSession,
   history,
+  workspace = null,
   createRunner = (options) => new ComputerSession(options)
 }) {
   if (!history) throw Error("COMPUTER_HISTORY_UNAVAILABLE");
@@ -24,6 +25,7 @@ function createComputerConsole({
   let prefill = null;
   let pending = false;
   let epoch = 0;
+  let selectionController = null;
   const page = pathToFileURL(path.join(__dirname, "computer.html")).toString();
   const trusted = (event) =>
     !!window &&
@@ -41,6 +43,7 @@ function createComputerConsole({
     planner,
     identity,
     history,
+    workspace,
     notify: tell,
     allowHumanResume: true,
     async confirm(value) {
@@ -58,7 +61,7 @@ function createComputerConsole({
             ? "Проверить результат прошлой попытки и выполнить действие?"
             : "Подтвердить действие?",
         detail: isSession
-          ? `${value.goal}\n\nАгент сможет открывать сайты, приложения и документы, нажимать кнопки и вводить текст. Изображения основного экрана и доступные элементы интерфейса передаются модели через ${value.origin}. Сеанс действует до 30 минут. Мышь и клавиатура могут быть заняты. Остановка: Ctrl+Alt+Shift+K или кнопка «Остановить».`
+          ? `${value.goal}\n\n${value.workspace ? "Рабочая папка: " + value.workspace.name + ". Выбранные текстовые файлы могут передаваться модели. Запись в папку требует отдельного подтверждения.\n\n" : ""}Агент сможет открывать сайты, приложения и документы, нажимать кнопки и вводить текст. Изображения основного экрана и доступные элементы интерфейса передаются модели через ${value.origin}. Сеанс действует до 30 минут. Мышь и клавиатура могут быть заняты. Остановка: Ctrl+Alt+Shift+K или кнопка «Остановить».`
           : `${value.recoveryReview ? "Прошлая попытка могла уже изменить данные. Сверьте текущий результат: разрешение относится только к указанному действию.\n\n" : ""}${value.message}\n\n${JSON.stringify(value.action).slice(0, 4000)}`
       });
       return answer.response === 0;
@@ -83,12 +86,54 @@ function createComputerConsole({
       after.origin !== current.origin
     )
       throw Error("COMPUTER_IDENTITY_CHANGED");
-    if (privacy.lifecycle === "deleted") history.clear(current);
+    if (privacy.lifecycle === "deleted") {
+      history.clear(current);
+      void workspace?.invalidate();
+    }
     if (privacy.lifecycle !== "active") throw Error("COMPUTER_PRIVACY_BLOCKED");
     return current;
   }
   const failure = (error) => ({
     error: /^COMPUTER_[A-Z_]+$/.test(error?.message) ? error.message : "COMPUTER_INTERRUPTED"
+  });
+  ipcMain.handle("koswork:computer-workspace-status", async (event) => {
+    if (!trusted(event)) return { error: "Недоверенный источник." };
+    try {
+      return { folder: workspace?.snapshot(await checkedContext(event)) ?? null };
+    } catch (error) {
+      return failure(error);
+    }
+  });
+  ipcMain.handle("koswork:computer-workspace-select", async (event) => {
+    if (!trusted(event) || !workspace) return { error: "COMPUTER_WORKSPACE_UNAVAILABLE" };
+    if (pending || runner.active) return { error: "COMPUTER_BUSY" };
+    pending = true;
+    selectionController = new AbortController();
+    try {
+      const context = await checkedContext(event);
+      const folder = await workspace.connect(context, selectionController.signal);
+      const after = await checkedContext(event);
+      if (
+        selectionController.signal.aborted ||
+        after.owner !== context.owner ||
+        after.origin !== context.origin
+      )
+        throw Error("COMPUTER_IDENTITY_CHANGED");
+      return { folder };
+    } catch (error) {
+      await workspace.invalidate();
+      return failure(error);
+    } finally {
+      selectionController = null;
+      pending = false;
+    }
+  });
+  ipcMain.handle("koswork:computer-workspace-revoke", async (event) => {
+    if (!trusted(event)) return { error: "Недоверенный источник." };
+    // Revocation needs no network and cannot grant access to any file.
+    stop();
+    await workspace?.invalidate();
+    return { folder: null };
   });
   async function startTask(event, resolve) {
     if (!trusted(event)) return { error: "Недоверенный источник." };
@@ -234,6 +279,7 @@ function createComputerConsole({
     window.on("unresponsive", stop);
     window.on("closed", () => {
       stop();
+      void workspace?.invalidate();
       window = null;
       prefill = null;
     });
@@ -241,11 +287,13 @@ function createComputerConsole({
   }
   const stop = () => {
     epoch++;
+    selectionController?.abort();
     runner.stop();
     globalShortcut.unregister("CommandOrControl+Alt+Shift+K");
   };
   const invalidate = () => {
     stop();
+    void workspace?.invalidate();
     if (window && !window.isDestroyed()) window.destroy();
   };
   return { show, stop, invalidate };
