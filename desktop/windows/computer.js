@@ -3,6 +3,7 @@ const project = document.getElementById("project");
 const goal = document.getElementById("goal");
 const start = document.getElementById("start");
 const stop = document.getElementById("stop");
+const resume = document.getElementById("resume");
 const connection = document.getElementById("connection");
 const events = document.getElementById("events");
 const errors = {
@@ -14,6 +15,12 @@ const errors = {
   COMPUTER_POLICY_BLOCKED:
     "Профиль проекта не разрешает управление ПК. Проверьте разрешения проекта в Koswork.",
   COMPUTER_API_UNAVAILABLE: "На сервере ещё нет этой версии управления ПК.",
+  COMPUTER_ROUTE_UNAVAILABLE:
+    "На сервере не настроен действующий маршрут с поддержкой изображений. Задача не запущена.",
+  COMPUTER_LIVE_MODEL_REQUIRED:
+    "Подключён тестовый планировщик или несовместимый API. Управление ПК не запущено: нужна живая модель.",
+  COMPUTER_DECISION_SOURCE_INVALID:
+    "API не подтвердил источник команды живой модели. Действие не выполнено.",
   COMPUTER_RUNTIME_UNAVAILABLE:
     "Не удалось получить действие модели. Нужен доступный маршрут с поддержкой изображений; автоматического повтора нет.",
   COMPUTER_OUTPUT_INVALID: "Модель вернула неподдерживаемое действие. Оно не выполнено.",
@@ -57,7 +64,19 @@ const add = (text) => {
   events.append(row);
   while (events.children.length > 60) events.firstElementChild.remove();
 };
-window.kosworkComputer.onStatus((value) => add(`${value.step}. ${value.message || value.action}`));
+window.kosworkComputer.onStatus((value) => {
+  if (value.phase) resume.disabled = value.phase !== "awaiting_user";
+  if (value.phase === "awaiting_user")
+    connection.textContent =
+      "Пауза: ждём вашего действия. Снимки и запросы к модели не выполняются.";
+  if (value.phase === "running")
+    connection.textContent = "Ожидаем следующую подтверждённую команду модели…";
+  const source = value.decision_source;
+  if (source?.mode === "provider") {
+    connection.textContent = `Команды через модель ${source.model_id} · ${source.provider_id}`;
+    add(`${value.step}. ${value.message || value.action} · запрос ${source.run_id}`);
+  } else add(`${value.step}. ${value.message || value.action}`);
+});
 start.addEventListener("click", async () => {
   if (!goal.value.trim() || !project.value) return;
   start.disabled = true;
@@ -65,6 +84,8 @@ start.addEventListener("click", async () => {
   goal.disabled = true;
   project.disabled = true;
   events.replaceChildren();
+  resume.disabled = true;
+  connection.textContent = "Ожидаем разрешение и подтверждённую команду модели…";
   try {
     const result = await window.kosworkComputer.start({ project: project.value, goal: goal.value });
     add(
@@ -76,15 +97,23 @@ start.addEventListener("click", async () => {
   } catch {
     add("Соединение с локальным исполнителем прервано.");
   } finally {
+    connection.textContent = "Сеанс управления завершён. Новые действия не выполняются.";
     start.disabled = false;
     stop.disabled = true;
     goal.disabled = false;
     project.disabled = false;
+    resume.disabled = true;
   }
 });
 stop.addEventListener("click", async () => {
+  resume.disabled = true;
   await window.kosworkComputer.stop();
   add("Отправлена команда остановки.");
+});
+resume.addEventListener("click", async () => {
+  resume.disabled = true;
+  const result = await window.kosworkComputer.resume();
+  if (!result.resumed) add("Нет ожидающего продолжения сеанса.");
 });
 window.kosworkComputer
   .projects()
@@ -93,7 +122,7 @@ window.kosworkComputer
       connection.textContent = result.error;
       return;
     }
-    connection.textContent = `${result.origin} · аккаунт подтверждён`;
+    connection.textContent = `${result.origin} · аккаунт подтверждён; модель ещё не запускалась`;
     for (const item of result.projects) {
       const option = document.createElement("option");
       option.value = item.id;

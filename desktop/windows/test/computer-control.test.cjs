@@ -297,6 +297,81 @@ test("computer step limit stops without presenting an unverified task as complet
   assert.equal(result.status, "step_limit");
 });
 
+test("human checkpoint is idle until explicit local resume, then uses a fresh observation", async () => {
+  const f = fixture([
+    proposal({ kind: "ask_user", question: "Unlock locally" }),
+    proposal({ kind: "type_text", text: "continue" }),
+    proposal({ kind: "done", summary: "done" })
+  ]);
+  let paused,
+    observations = 0,
+    begins = 0;
+  const ready = new Promise((resolve) => {
+    paused = resolve;
+  });
+  f.session.allowHumanResume = true;
+  f.session.notify = (event) => {
+    if (event.phase === "awaiting_user") paused();
+  };
+  f.driver.observe = async () => ({ ...observation, observation_id: String(++observations) });
+  f.planner.begin = async () => {
+    begins++;
+    return { id: "same-session" };
+  };
+  const originalNext = f.planner.next;
+  const inputs = [];
+  f.planner.next = async (input) => {
+    inputs.push(input);
+    return originalNext();
+  };
+  const pending = f.session.run({ project: context.project, goal: context.goal });
+  await ready;
+  await new Promise(setImmediate);
+  assert.equal(observations, 1);
+  assert.equal(inputs.length, 1);
+  assert.equal(f.executions.length, 0);
+  assert.equal(f.session.resume(), true);
+  assert.equal(f.session.resume(), false);
+  assert.equal((await pending).status, "completed");
+  assert.equal(begins, 1);
+  assert.equal(observations, 3);
+  assert.equal(inputs[1].observation.observation_id, "2");
+  assert.equal(JSON.parse(inputs[1].previousResult).status, "owner_resumed");
+  assert.equal(f.executions.length, 1);
+});
+
+test("stop, changed owner and expired grant fence a paused session before any new capture", async () => {
+  for (const reason of ["stop", "owner", "expiry"]) {
+    const f = fixture([proposal({ kind: "ask_user", question: "Unlock locally" })]);
+    let paused,
+      observations = 0;
+    const ready = new Promise((resolve) => {
+      paused = resolve;
+    });
+    f.session.allowHumanResume = true;
+    f.session.notify = (event) => {
+      if (event.phase === "awaiting_user") paused();
+    };
+    f.driver.observe = async () => {
+      observations++;
+      return observation;
+    };
+    const pending = f.session.run({ project: context.project, goal: context.goal });
+    await ready;
+    if (reason === "stop") {
+      f.session.stop();
+      assert.equal(f.session.resume(), false);
+    } else {
+      if (reason === "owner") f.setIdentity({ ...context, owner: "other" });
+      else f.session.gate.now = () => f.session.active.grant.expires + 1;
+      assert.equal(f.session.resume(), true);
+    }
+    await assert.rejects(pending, /STOPPED|IDENTITY_CHANGED/);
+    assert.equal(observations, 1);
+    assert.equal(f.executions.length, 0);
+  }
+});
+
 test("server revocation before an action prevents all native input", async () => {
   const f = fixture([proposal({ kind: "type_text", text: "must not type" })]);
   f.planner.authorize = async () => {
@@ -338,13 +413,21 @@ test("screen coordinates use captured display bounds and cannot reuse an observa
     transport: {
       request: async (value) => {
         requests.push(value);
-        return { active_window: "42", input_tick: 100 };
+        return {
+          active_window: "42",
+          input_tick: 100,
+          known_folders: { desktop: "C:\\Users\\fixture\\OneDrive\\Desktop" }
+        };
       },
       stop() {}
     }
   });
   const signal = new AbortController().signal;
   const observed = await driver.observe(signal);
+  assert.equal(
+    JSON.parse(observed.description).known_folders.desktop,
+    "C:\\Users\\fixture\\OneDrive\\Desktop"
+  );
   await driver.execute(
     { kind: "click", x: 0.5, y: 0.5, button: "left", count: 1 },
     observed,

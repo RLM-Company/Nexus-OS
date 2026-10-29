@@ -2,10 +2,11 @@ import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { Value } from "typebox/value";
 import {
   ComputerProposalSchema,
-  type ComputerProposal,
+  type ComputerDecision,
   type ComputerStep,
   type CreateComputerSession,
-  type ModelMessage
+  type ModelMessage,
+  type ModelRequest
 } from "@cosmora/contracts";
 import { estimateInputTokensUpperBound, type ManagerService } from "@cosmora/core";
 import type { EmergencyStopStore, ProjectStore, PolicyStore } from "@cosmora/db";
@@ -33,7 +34,7 @@ type Session = {
   policyVersion: number;
   fingerprint: string;
   history: string[];
-  last?: { step: number; hash: string; proposal: ComputerProposal; authorized?: boolean };
+  last?: { step: number; hash: string; proposal: ComputerDecision; authorized?: boolean };
   active?: { controller: AbortController; done: Promise<unknown> };
 };
 export class ComputerControlError extends Error {
@@ -104,6 +105,45 @@ export class ComputerControlService {
   private now() {
     return this.deps.now?.() ?? Date.now();
   }
+  private requestFor(s: Session, run: string, messages: ModelMessage[]): ModelRequest {
+    const request = this.deps.manager.buildRequest({
+      projectId: s.project,
+      runId: run,
+      messages: []
+    });
+    Object.assign(request, {
+      role: "analyst",
+      agent_id: "koswork-computer",
+      task_type: "manager_work_draft",
+      messages
+    });
+    request.constraints.timeout_ms = Math.min(request.constraints.timeout_ms, 120000);
+    request.constraints.max_output_tokens = Math.min(request.constraints.max_output_tokens, 2000);
+    request.routing.fallback_allowed = false;
+    request.routing.required_features = [
+      ...new Set([...request.routing.required_features, "vision" as const])
+    ];
+    request.routing.estimated_input_tokens = estimateInputTokensUpperBound(messages);
+    return request;
+  }
+  private accepted(s: Session) {
+    const request = this.requestFor(s, randomUUID(), [{ role: "system", content: instruction }]);
+    // A local route check, not a paid call or proof that the provider is online.
+    try {
+      this.deps.gateway.assertRoute(request);
+    } catch {
+      throw new ComputerControlError("COMPUTER_ROUTE_UNAVAILABLE", 503);
+    }
+    return {
+      id: s.id,
+      expires_at: new Date(s.expires).toISOString(),
+      planner: {
+        kind: "model_gateway" as const,
+        mode:
+          request.routing.preferred_provider === "mock" ? ("test" as const) : ("provider" as const)
+      }
+    };
+  }
   private live(s: Session): void {
     const project = this.deps.projects.getProject(s.project, s.owner);
     const projectMode = this.deps.account.sqlite
@@ -141,7 +181,7 @@ export class ComputerControlService {
         throw new ComputerControlError("COMPUTER_SESSION_CONFLICT");
       this.live(previous);
       if (previous.state === "authorizing") throw new ComputerControlError("COMPUTER_BUSY");
-      return { id: previous.id, expires_at: new Date(previous.expires).toISOString() };
+      return this.accepted(previous);
     }
     for (const [id, s] of this.sessions)
       if (s.expires <= this.now() && !s.active) this.sessions.delete(id);
@@ -173,6 +213,7 @@ export class ComputerControlService {
       policyVersion: this.deps.policy.getProfile(project)?.version ?? 0
     };
     this.live(s);
+    const acceptedSession = this.accepted(s);
     this.sessions.set(s.id, s);
     const authorizationController = new AbortController();
     const accepted = (async () => {
@@ -217,7 +258,7 @@ export class ComputerControlService {
     } finally {
       delete s.active;
     }
-    return { id: s.id, expires_at: new Date(s.expires).toISOString() };
+    return acceptedSession;
   }
   private owned(owner: string, project: string, id: string, secret: string): Session {
     const s = this.sessions.get(id);
@@ -236,7 +277,7 @@ export class ComputerControlService {
     id: string,
     secret: string,
     input: ComputerStep
-  ): Promise<ComputerProposal> {
+  ): Promise<ComputerDecision> {
     const s = this.owned(owner, project, id, secret);
     this.live(s);
     const fingerprint = hash(JSON.stringify(input)).toString("hex");
@@ -272,7 +313,7 @@ export class ComputerControlService {
         );
         s.history = s.history.slice(-6);
         s.step++;
-        s.state = ["done", "ask_user"].includes(proposal.action.kind) ? "closed" : "ready";
+        s.state = proposal.action.kind === "done" ? "closed" : "ready";
         return proposal;
       })
       .catch((error: unknown) => {
@@ -317,7 +358,7 @@ export class ComputerControlService {
     s: Session,
     input: ComputerStep,
     signal: AbortSignal
-  ): Promise<ComputerProposal> {
+  ): Promise<ComputerDecision> {
     this.live(s);
     const sql = this.deps.account.sqlite;
     const chat = sql
@@ -344,24 +385,7 @@ export class ComputerControlService {
         images: [{ media_type: "image/jpeg", data_base64: input.observation.image_jpeg_base64 }]
       }
     ];
-    const request = this.deps.manager.buildRequest({
-      projectId: s.project,
-      runId: run,
-      messages: []
-    });
-    Object.assign(request, {
-      role: "analyst",
-      agent_id: "koswork-computer",
-      task_type: "manager_work_draft",
-      messages
-    });
-    request.constraints.timeout_ms = Math.min(request.constraints.timeout_ms, 120000);
-    request.constraints.max_output_tokens = Math.min(request.constraints.max_output_tokens, 2000);
-    request.routing.fallback_allowed = false;
-    request.routing.required_features = [
-      ...new Set([...request.routing.required_features, "vision" as const])
-    ];
-    request.routing.estimated_input_tokens = estimateInputTokensUpperBound(messages);
+    const request = this.requestFor(s, run, messages);
     let reservation: CodeOwnerBudgetKey | undefined,
       dispatched = false,
       committed = false,
@@ -412,7 +436,18 @@ export class ComputerControlService {
       }
       if (!Value.Check(ComputerProposalSchema, proposal))
         throw new ComputerControlError("COMPUTER_OUTPUT_INVALID", 422);
-      return proposal;
+      return {
+        ...proposal,
+        decision_source: {
+          kind: "model_gateway",
+          mode: completion.provider === "mock" ? "test" : "provider",
+          provider_id: completion.provider,
+          model_id: completion.model,
+          run_id: run,
+          session_id: s.id,
+          step: input.step
+        }
+      };
     } catch (error) {
       if (!committed)
         this.deps.projects.failRun(

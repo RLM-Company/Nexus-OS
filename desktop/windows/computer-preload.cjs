@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("kosworkComputer", {
   projects: () => ipcRenderer.invoke("koswork:computer-projects"),
   start: (input) => ipcRenderer.invoke("koswork:computer-start", input),
   stop: () => ipcRenderer.invoke("koswork:computer-stop"),
+  resume: () => ipcRenderer.invoke("koswork:computer-resume"),
   onStatus(listener) {
     const handler = (_event, value) => listener(value);
     ipcRenderer.on("koswork:computer-status", handler);

@@ -43,6 +43,29 @@ export const ComputerProposalSchema = object({
 });
 export type ComputerProposal = Static<typeof ComputerProposalSchema>;
 
+/** Added by the API from a completed Gateway run, never accepted from model output. */
+export const ComputerDecisionSchema = object({
+  ...ComputerProposalSchema.properties,
+  decision_source: object({
+    kind: Type.Literal("model_gateway"),
+    mode: Type.Union([Type.Literal("provider"), Type.Literal("test")]),
+    provider_id: text(160),
+    model_id: text(240),
+    run_id: text(128),
+    session_id: text(128),
+    step: Type.Integer({ minimum: 0, maximum: 29 })
+  })
+});
+export type ComputerDecision = Static<typeof ComputerDecisionSchema>;
+export const ComputerSessionAcceptanceSchema = object({
+  id: text(128),
+  expires_at: text(64),
+  planner: object({
+    kind: Type.Literal("model_gateway"),
+    mode: Type.Union([Type.Literal("provider"), Type.Literal("test")])
+  })
+});
+
 export const ComputerObservationSchema = object({
   observation_id: text(128),
   active_window: Type.String({ maxLength: 32 }),

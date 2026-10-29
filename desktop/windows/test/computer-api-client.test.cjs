@@ -2,6 +2,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { createComputerApiClient } = require("../computer-api-client.cjs");
+const { ComputerSession } = require("../computer-session.cjs");
 const owner = { origin: "https://example.test", owner: "owner" };
 const session = { ...owner, id: "session-id", token: "secret" };
 const response = (body) =>
@@ -126,4 +127,83 @@ test("computer API forwards only bounded known error codes, never arbitrary serv
       code === "COMPUTER_POLICY_BLOCKED" ? /COMPUTER_POLICY_BLOCKED/ : /COMPUTER_REQUEST_FAILED/
     );
   }
+});
+
+test("production computer client refuses missing/test planner before any screen capture", async () => {
+  for (const planner of [undefined, { kind: "model_gateway", mode: "test" }]) {
+    let observations = 0;
+    const methods = [];
+    const client = createComputerApiClient({
+      identity: async () => owner,
+      getSession: () => ({
+        fetch: async (_url, options) => {
+          methods.push(options.method);
+          return options.method === "POST"
+            ? response({ id: JSON.parse(options.body).client_request_id, planner })
+            : response({ stopped: true });
+        }
+      })
+    });
+    const runner = new ComputerSession({
+      planner: client,
+      driver: {
+        observe: async () => {
+          observations++;
+          throw Error("must not observe");
+        },
+        stop() {}
+      },
+      identity: async () => owner,
+      confirm: async () => true,
+      notify() {}
+    });
+    await assert.rejects(
+      runner.run({ project: "project", goal: "user task" }),
+      /LIVE_MODEL_REQUIRED/
+    );
+    assert.equal(observations, 0);
+    assert.deepEqual(methods, ["POST", "DELETE"]);
+  }
+});
+
+test("computer decisions must identify a provider run bound to this session and step", async () => {
+  const source = {
+    kind: "model_gateway",
+    mode: "provider",
+    provider_id: "fixture-external-provider",
+    model_id: "fixture-model",
+    run_id: "00000000-0000-4000-8000-000000000001",
+    session_id: session.id,
+    step: 0
+  };
+  const decision = {
+    action: { kind: "observe" },
+    message: "fixture",
+    requires_confirmation: false,
+    decision_source: source
+  };
+  const next = async (decision_source) => {
+    const client = createComputerApiClient({
+      identity: async () => owner,
+      getSession: () => ({ fetch: async () => response({ ...decision, decision_source }) })
+    });
+    return client.next({
+      session,
+      project: "project",
+      step: 0,
+      observation: {},
+      previousResult: "",
+      signal: new AbortController().signal
+    });
+  };
+  assert.deepEqual(await next(source), decision);
+  for (const changed of [
+    undefined,
+    { ...source, mode: "test" },
+    { ...source, provider_id: "mock" },
+    { ...source, session_id: "foreign" },
+    { ...source, step: 1 },
+    { ...source, run_id: "" }
+  ])
+    await assert.rejects(next(changed), /DECISION_SOURCE_INVALID/);
 });

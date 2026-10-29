@@ -5,6 +5,8 @@ import {
   CreateComputerSessionSchema,
   ComputerStepSchema,
   AuthorizeComputerActionSchema,
+  ComputerDecisionSchema,
+  ComputerSessionAcceptanceSchema,
   type IdentityContext
 } from "@cosmora/contracts";
 import { ComputerControlError, type ComputerControlService } from "./service.js";
@@ -31,11 +33,14 @@ export function registerComputerControlRoutes(
       pattern: "^[A-Za-z0-9_-]+$"
     })
   });
-  const safe = async (reply: FastifyReply, operation: () => unknown) => {
+  const safe = async <T>(
+    reply: FastifyReply,
+    operation: () => T | Promise<T>
+  ): Promise<T | void> => {
     try {
       return await operation();
     } catch (error) {
-      return reply.code(error instanceof ComputerControlError ? error.status : 503).send({
+      reply.code(error instanceof ComputerControlError ? error.status : 503).send({
         error: {
           code: error instanceof ComputerControlError ? error.code : "COMPUTER_RUNTIME_UNAVAILABLE"
         }
@@ -46,7 +51,11 @@ export function registerComputerControlRoutes(
     root,
     {
       validatorCompiler: TypeBoxValidatorCompiler,
-      schema: { params: projectParams, body: CreateComputerSessionSchema }
+      schema: {
+        params: projectParams,
+        body: CreateComputerSessionSchema,
+        response: { 200: ComputerSessionAcceptanceSchema }
+      }
     },
     (r, reply) => {
       reply.header("Cache-Control", "private, no-store");
@@ -60,7 +69,12 @@ export function registerComputerControlRoutes(
     root + "/:id/step",
     {
       validatorCompiler: TypeBoxValidatorCompiler,
-      schema: { params: sessionParams, headers, body: ComputerStepSchema }
+      schema: {
+        params: sessionParams,
+        headers,
+        body: ComputerStepSchema,
+        response: { 200: ComputerDecisionSchema }
+      }
     },
     (r, reply) => {
       reply.header("Cache-Control", "private, no-store");

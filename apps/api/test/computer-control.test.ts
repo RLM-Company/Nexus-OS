@@ -223,8 +223,21 @@ describe("owner-bound computer proposals", () => {
     const f = await fixture();
     const accepted = await f.create();
     expect(await f.create()).toEqual(accepted);
-    expect(await f.next()).toEqual(action);
-    expect(await f.next()).toEqual(action);
+    expect(accepted.planner).toEqual({ kind: "model_gateway", mode: "test" });
+    const decision = await f.next();
+    expect(decision).toMatchObject({
+      ...action,
+      decision_source: {
+        kind: "model_gateway",
+        mode: "test",
+        provider_id: "mock",
+        model_id: "manager-b0.1",
+        session_id: accepted.id,
+        step: 0
+      }
+    });
+    expect(decision.decision_source.run_id).toBe(f.calls[0]!.run_id);
+    expect(await f.next()).toEqual(decision);
     expect(f.calls).toHaveLength(1);
     expect(f.calls[0]!.messages[1]!.images).toHaveLength(1);
     expect(f.calls[0]!.messages[0]!.content).toContain("untrusted evidence");
@@ -297,9 +310,50 @@ describe("owner-bound computer proposals", () => {
   });
   it("does not fall back to a non-vision route", async () => {
     const f = await fixture({ vision: false });
-    await f.create();
-    await expect(f.next()).rejects.toThrow();
+    await expect(f.create()).rejects.toThrow("COMPUTER_ROUTE_UNAVAILABLE");
     expect(f.calls).toHaveLength(0);
+  });
+  it("checks the vision route before activating an empty project or creating a run", async () => {
+    const f = await fixture({ vision: false });
+    const id = randomUUID();
+    f.projects.createEmptyProject(id, "Prepared");
+    f.policy.ensureProfile(id);
+    f.policy.updateProfile({ projectId: id, baseLevel: "A2", overrides: [], expectedVersion: 1 });
+    await expect(f.service.create("local-owner", "local-owner", id, f.input)).rejects.toThrow(
+      "COMPUTER_ROUTE_UNAVAILABLE"
+    );
+    expect(f.projects.getProject(id)?.status).toBe("DRAFT");
+    expect(
+      f.db.sqlite.prepare("SELECT COUNT(*) AS count FROM runs WHERE project_id=?").get(id)?.count
+    ).toBe(0);
+    expect(f.calls).toHaveLength(0);
+  });
+  it("does not accept a decision-source claim supplied by the model", async () => {
+    const f = await fixture({
+      output: { ...action, decision_source: { kind: "model_gateway", mode: "provider" } }
+    });
+    await f.create();
+    await expect(f.next()).rejects.toThrow("COMPUTER_OUTPUT_INVALID");
+    expect(f.calls).toHaveLength(1);
+  });
+  it("keeps a human checkpoint in the same bounded session without another creation", async () => {
+    const f = await fixture({
+      output: {
+        action: { kind: "ask_user", question: "Unlock the app locally" },
+        message: "Waiting",
+        requires_confirmation: false
+      }
+    });
+    await f.create();
+    await f.next();
+    expect(f.calls).toHaveLength(1);
+    const after = await f.next({ ...step, step: 1, previous_result: '{"status":"owner_resumed"}' });
+    expect(after.decision_source.step).toBe(1);
+    expect(after.decision_source.session_id).toBe(f.input.client_request_id);
+    expect(f.calls).toHaveLength(2);
+    expect(f.calls[1]!.messages[1]!.content).toContain("owner_resumed");
+    f.service.end("local-owner", f.project.id, f.input.client_request_id, f.input.client_secret);
+    expect(() => f.next({ ...step, step: 2 })).toThrow("STOPPED");
   });
   it("refuses unrecognized model actions and extra authority fields after accounting for the call", async () => {
     const f = await fixture({
@@ -435,7 +489,15 @@ describe("owner-bound computer proposals", () => {
       payload: step
     });
     expect(response.statusCode, response.body).toBe(200);
-    expect(response.json()).toEqual(action);
+    expect(response.json()).toMatchObject({
+      ...action,
+      decision_source: {
+        mode: "test",
+        kind: "model_gateway",
+        session_id: f.input.client_request_id,
+        step: 0
+      }
+    });
     expect(
       (
         await app.inject({

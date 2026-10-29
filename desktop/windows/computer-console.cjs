@@ -15,7 +15,8 @@ function createComputerConsole({
   shell,
   globalShortcut,
   identity,
-  getSession
+  getSession,
+  createRunner = (options) => new ComputerSession(options)
 }) {
   let window = null;
   let prefill = null;
@@ -31,11 +32,12 @@ function createComputerConsole({
   };
   const driver = createComputerDriver({ desktopCapturer, screen, shell });
   const planner = createComputerApiClient({ identity, getSession });
-  const runner = new ComputerSession({
+  const runner = createRunner({
     driver,
     planner,
     identity,
     notify: tell,
+    allowHumanResume: true,
     async confirm(value) {
       const isSession = value.kind === "session";
       const answer = await dialog.showMessageBox(window, {
@@ -88,7 +90,7 @@ function createComputerConsole({
     try {
       if (!globalShortcut.register("CommandOrControl+Alt+Shift+K", () => runner.stop()))
         throw Error("COMPUTER_STOP_SHORTCUT_UNAVAILABLE");
-      return await runner.run({ project: input.project, goal: input.goal.trim() });
+      return await runner.run({ project: input.project, goal: input.goal.trim(), maxSteps: 30 });
     } catch (error) {
       const code = /^COMPUTER_[A-Z_]+$/.test(error?.message)
         ? error.message
@@ -103,6 +105,10 @@ function createComputerConsole({
     if (!trusted(event)) return { stopped: false };
     runner.stop();
     return { stopped: true };
+  });
+  ipcMain.handle("koswork:computer-resume", (event) => {
+    if (!trusted(event)) return { resumed: false };
+    return { resumed: runner.resume() };
   });
   async function show(initial) {
     if (initial && !runner.active) prefill = { project: initial.project, goal: initial.goal };

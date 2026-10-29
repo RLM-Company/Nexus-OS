@@ -205,7 +205,7 @@ function Get-KosworkState {
       }
     }
   } catch { }
-  return @{ active_window=$foreground.ToInt64().ToString(); input_tick=[KosworkNative]::InputTick(); windows=@($script:windowResults.ToArray()); elements=@($elements.ToArray()) }
+  return @{ active_window=$foreground.ToInt64().ToString(); input_tick=[KosworkNative]::InputTick(); windows=@($script:windowResults.ToArray()); elements=@($elements.ToArray()); known_folders=@{ desktop=[Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory) } }
 }
 
 while ($null -ne ($line = [Console]::ReadLine())) {

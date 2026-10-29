@@ -4,8 +4,16 @@ const { ComputerSessionGate } = require("./computer-policy.cjs");
 const { setTimeout: delay } = require("node:timers/promises");
 
 class ComputerSession {
-  constructor({ driver, planner, identity, confirm, notify, now = Date.now }) {
-    Object.assign(this, { driver, planner, identity, confirm, notify, now });
+  constructor({
+    driver,
+    planner,
+    identity,
+    confirm,
+    notify,
+    allowHumanResume = false,
+    now = Date.now
+  }) {
+    Object.assign(this, { driver, planner, identity, confirm, notify, allowHumanResume, now });
     this.gate = new ComputerSessionGate({ now });
     this.active = null;
   }
@@ -99,11 +107,51 @@ class ComputerSession {
           `${state.session.id}:${step}`,
           proposal.action
         );
-        this.notify({ step: step + 1, message: proposal.message, action: action.kind });
+        this.notify({
+          step: step + 1,
+          message: proposal.message,
+          action: action.kind,
+          decision_source: proposal.decision_source
+        });
         if (action.kind === "done")
           return { status: "completed", summary: action.summary, steps: step + 1 };
-        if (action.kind === "ask_user")
-          return { status: "needs_user", summary: action.question, steps: step + 1 };
+        if (action.kind === "ask_user") {
+          if (!this.allowHumanResume || step + 1 >= maxSteps)
+            return { status: "needs_user", summary: action.question, steps: step + 1 };
+          state.phase = "awaiting_user";
+          // No observations, paid calls or native input while the owner handles
+          // login/unlock. Resume carries no text or credentials back to the model.
+          await new Promise((resolve, reject) => {
+            const cleanup = () => {
+              state.controller.signal.removeEventListener("abort", abort);
+              delete state.resume;
+            };
+            const abort = () => {
+              cleanup();
+              reject(Error("COMPUTER_SESSION_STOPPED"));
+            };
+            state.resume = () => {
+              cleanup();
+              resolve();
+            };
+            state.controller.signal.addEventListener("abort", abort, { once: true });
+            if (state.controller.signal.aborted) return abort();
+            this.notify({ phase: "awaiting_user", message: action.question, step: step + 1 });
+          });
+          await this.assertLive(state);
+          state.phase = "running";
+          previousResult = JSON.stringify({
+            status: "owner_resumed",
+            instruction:
+              "The owner explicitly resumed locally. Inspect a fresh observation to determine what changed. No credential or extra authorization was supplied."
+          });
+          this.notify({
+            phase: "running",
+            message: "Продолжаем после действия владельца",
+            step: step + 1
+          });
+          continue;
+        }
         const approved =
           approval &&
           approval.action === JSON.stringify(action) &&
@@ -193,6 +241,19 @@ class ComputerSession {
     this.gate.stop();
     this.active?.controller.abort();
     this.driver.stop?.();
+  }
+  resume() {
+    const state = this.active;
+    if (
+      !state ||
+      state.phase !== "awaiting_user" ||
+      state.controller.signal.aborted ||
+      !state.resume
+    )
+      return false;
+    state.phase = "resuming";
+    state.resume();
+    return true;
   }
 }
 module.exports = { ComputerSession };

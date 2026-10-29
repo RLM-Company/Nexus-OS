@@ -65,6 +65,7 @@ function createComputerApiClient({ identity, getSession }) {
         "COMPUTER_OUTPUT_INVALID",
         "COMPUTER_OUTPUT_INCOMPLETE",
         "COMPUTER_RUNTIME_UNAVAILABLE",
+        "COMPUTER_ROUTE_UNAVAILABLE",
         "COMPUTER_SESSION_RECOVERY_REQUIRED",
         "OWNER_BUDGET_LIMIT",
         "USAGE_LIMIT"
@@ -94,6 +95,8 @@ function createComputerApiClient({ identity, getSession }) {
           signal
         });
         if (result.id !== id) throw Error("COMPUTER_RESPONSE_INVALID");
+        if (result.planner?.kind !== "model_gateway" || result.planner.mode !== "provider")
+          throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
         return session;
       } catch (error) {
         // Cancellation is safe even when the create response was lost; never recreate or retry.
@@ -106,14 +109,33 @@ function createComputerApiClient({ identity, getSession }) {
         throw error;
       }
     },
-    next({ session, project, step, observation, previousResult, signal }) {
-      return request(`${root(project)}/${encodeURIComponent(session.id)}/step`, {
+    async next({ session, project, step, observation, previousResult, signal }) {
+      const result = await request(`${root(project)}/${encodeURIComponent(session.id)}/step`, {
         method: "POST",
         token: session.token,
         expected: session,
         signal,
         body: { step, observation, previous_result: previousResult }
       });
+      const source = result?.decision_source;
+      if (
+        !source ||
+        source.kind !== "model_gateway" ||
+        source.mode !== "provider" ||
+        source.provider_id === "mock" ||
+        source.session_id !== session.id ||
+        source.step !== step ||
+        typeof source.run_id !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(source.run_id) ||
+        typeof source.provider_id !== "string" ||
+        !source.provider_id ||
+        source.provider_id.length > 160 ||
+        typeof source.model_id !== "string" ||
+        !source.model_id ||
+        source.model_id.length > 240
+      )
+        throw Error("COMPUTER_DECISION_SOURCE_INVALID");
+      return result;
     },
     authorize({ session, project, step, action, signal }) {
       return request(`${root(project)}/${encodeURIComponent(session.id)}/authorize-action`, {

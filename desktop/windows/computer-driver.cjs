@@ -171,6 +171,10 @@ function createComputerDriver({
     const allElements = Array.isArray(state.elements) ? state.elements : [];
     const visible = {
       active_window: state.active_window,
+      known_folders:
+        typeof state.known_folders?.desktop === "string" && state.known_folders.desktop
+          ? { desktop: state.known_folders.desktop.slice(0, 1000) }
+          : {},
       windows: [
         ...allWindows.filter((w) => w.id === state.active_window),
         ...allWindows.filter((w) => w.id !== state.active_window)
