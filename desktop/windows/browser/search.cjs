@@ -3,6 +3,20 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { safeUrl } = require("./policy.cjs");
 const SEARCH_PAGE = pathToFileURL(path.join(__dirname, "search.html")).href;
+function pageUrl(id) {
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id))
+    throw Error("BROWSER_STALE");
+  return SEARCH_PAGE + "?entry=" + id;
+}
+function entryId(value) {
+  try {
+    const url = new URL(value);
+    const id = url.searchParams.get("entry");
+    return id && pageUrl(id) === url.href ? id : null;
+  } catch {
+    return null;
+  }
+}
 function query(value) {
   if (
     typeof value !== "string" ||
@@ -38,6 +52,7 @@ function results(body, requested) {
 }
 // Fixed application function in the isolated world. Never evaluates search-result HTML.
 const render = function (data) {
+  if (new URL(location.href).searchParams.get("entry") !== data.id) return false;
   const heading = document.getElementById("query"),
     status = document.getElementById("search-status"),
     list = document.getElementById("results");
@@ -48,11 +63,13 @@ const render = function (data) {
     ? "Ищем подходящие страницы…"
     : data.error === "BROWSER_SEARCH_CANCELLED"
       ? "Поиск остановлен. Повторите запрос в адресной строке."
-      : data.error
-        ? "Поиск сейчас недоступен. Повторите запрос позже."
-        : data.items.length
-          ? "Найденные источники · " + data.items.length
-          : "Ничего не найдено. Попробуйте уточнить запрос.";
+      : data.error === "BROWSER_SEARCH_EXPIRED"
+        ? "Эта выдача уже выгружена из памяти. Повторите запрос в адресной строке."
+        : data.error
+          ? "Поиск сейчас недоступен. Повторите запрос позже."
+          : data.items.length
+            ? "Найденные источники · " + data.items.length
+            : "Ничего не найдено. Попробуйте уточнить запрос.";
   list.replaceChildren();
   for (const item of data.items) {
     const row = document.createElement("li"),
@@ -70,4 +87,4 @@ const render = function (data) {
   }
   return true;
 };
-module.exports = { SEARCH_PAGE, query, results, render: render.toString() };
+module.exports = { SEARCH_PAGE, pageUrl, entryId, query, results, render: render.toString() };

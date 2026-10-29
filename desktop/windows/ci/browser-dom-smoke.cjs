@@ -52,8 +52,10 @@ async function run() {
           web.page.on("framenavigated", (frame) => {
             if (frame === web.page.mainFrame()) web.emit("did-navigate", {}, frame.url());
           });
+          web.page.on("load", () => web.emit("did-finish-load"));
         })();
         web.isDestroyed = () => web.destroyed;
+        web.getURL = () => web.page?.url() || "about:blank";
         web.isLoading = () => web.loading;
         web.isCurrentlyAudible = () => false;
         web.setWindowOpenHandler = () => {};
@@ -202,10 +204,30 @@ async function run() {
     assert.ok(
       (await searchView.webContents.page.locator("h1").innerText()).includes("Local browser task")
     );
+    await engine.search("Earlier search");
+    await engine.search("Later search");
+    await searchView.webContents.page.goBack({ waitUntil: "load" });
+    await searchView.webContents.page
+      .locator("#query")
+      .filter({ hasText: "Earlier search" })
+      .waitFor();
+    await searchView.webContents.page.goForward({ waitUntil: "load" });
+    await searchView.webContents.page
+      .locator("#query")
+      .filter({ hasText: "Later search" })
+      .waitFor();
     const preview = await browser.newPage({ viewport: { width: 1280, height: 840 } });
     await preview.addInitScript(() => {
       const state = {
-        tabs: [{ id: "a".repeat(12), title: "Новая вкладка", url: "about:blank", loaded: false }],
+        tabs: [
+          {
+            id: "a".repeat(12),
+            title: "Новая вкладка",
+            url: "about:blank",
+            loaded: false,
+            canGoBack: true
+          }
+        ],
         active: "a".repeat(12),
         liveTabs: 0,
         projects: [{ id: "project", title: "Личное пространство" }],
@@ -273,6 +295,7 @@ async function run() {
         verified_form: received,
         first_party_search:
           "actual Chromium DOM rendered a generated source and opened its link; fixture search provider only",
+        search_history: "actual Chromium back/forward restored two distinct cached queries",
         steps: result.steps,
         model_steps: providerCalls,
         page_screenshots: sourceScreenshots,

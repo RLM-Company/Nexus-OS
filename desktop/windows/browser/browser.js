@@ -75,6 +75,8 @@ function render(value) {
     $("tabs").append(row);
   }
   const active = current.tabs.find((t) => t.id === current.active);
+  $("back").disabled = !active?.canGoBack;
+  $("forward").disabled = !active?.canGoForward;
   const protocol = document.querySelector("#protocol-icon use");
   if (protocol)
     protocol.setAttribute(
@@ -128,7 +130,10 @@ function render(value) {
     : "Выберите папку для вложений и результатов.";
   $("folder").textContent = current.folder ? "Изменить" : "Подключить";
   $("revoke-folder").hidden = !current.folder;
-  if (active?.error || current.notice) $("notice").textContent = active?.error || current.notice;
+  $("notice").textContent =
+    active?.error ||
+    current.notice ||
+    "Входы на сайты выполняются вами. Агент начинает работу после отдельного разрешения.";
   $("downloads").replaceChildren();
   $("download-count").textContent = current.downloads.length
     ? "(" + current.downloads.length + ")"

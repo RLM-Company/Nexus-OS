@@ -35,6 +35,7 @@ function verify() {
     "browser/browser.css",
     "browser/browser.js",
     "browser/search.cjs",
+    "browser/native-acceptance.cjs",
     "browser/search.html",
     "browser/search.css",
     "computer-history.cjs",

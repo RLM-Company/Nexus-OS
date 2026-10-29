@@ -40,6 +40,7 @@ function fixture(t, options = {}) {
       web.destroyed = false;
       web.value = "";
       web.isDestroyed = () => web.destroyed;
+      web.getURL = () => web.url || "about:blank";
       web.isLoading = () => false;
       web.isCurrentlyAudible = () => false;
       web.setWindowOpenHandler = (fn) => (web.openHandler = fn);
@@ -186,7 +187,7 @@ test("first-party search keeps the Kosmora page, passes validated live data and 
   assert.deepEqual(requests, ["Космос и разработка"]);
   assert.equal(f.engine.state().tabs[0].searchQuery, requests[0]);
   assert.equal(f.engine.state().tabs[0].url, "about:blank");
-  assert.ok(f.calls.some((c) => c.method === "loadURL" && c.url === searchCode.SEARCH_PAGE));
+  assert.ok(f.calls.some((c) => c.method === "loadURL" && searchCode.entryId(c.url)));
   assert.equal(
     f.calls.some((c) => c.url?.includes("duckduckgo")),
     false
@@ -345,6 +346,72 @@ test("tab cap keeps at most three page renderers and never force-evicts edited t
   await assert.rejects(g.engine.open("https://example.test/new"), /TAB_LIMIT/);
   assert.equal(g.engine.state().tabs.length, 3);
   assert.equal(g.takeovers, 3);
+});
+
+test("empty and sleeping tabs close cleanly, and rapid opens cannot exceed the renderer cap", async (t) => {
+  const f = fixture(t);
+  const home = await f.engine.open();
+  await f.engine.close(home.id);
+  assert.equal(f.engine.state().tabs.length, 1);
+  assert.equal(f.engine.state().liveTabs, 0);
+  const g = fixture(t);
+  await Promise.all(
+    Array.from({ length: 8 }, (_, i) => g.engine.open("https://example.test/" + i))
+  );
+  assert.equal(g.engine.state().liveTabs, 3);
+  const sleeping = g.engine.state().tabs.find((tab) => !tab.loaded);
+  await g.engine.close(sleeping.id);
+  assert.equal(g.engine.state().tabs.length, 7);
+});
+
+test("search history restores each cached query without another provider call", async (t) => {
+  let requests = 0;
+  const f = fixture(t, {
+    searchProvider: async (query) => {
+      requests++;
+      return { query, items: [] };
+    }
+  });
+  await f.engine.open();
+  await f.engine.search("first query");
+  const web = f.views[0].webContents,
+    first = web.url;
+  await f.engine.search("second query");
+  const second = web.url;
+  assert.notEqual(first, second);
+  for (const [url, query] of [
+    [first, "first query"],
+    [second, "second query"]
+  ]) {
+    web.url = url;
+    web.emit("did-navigate", {}, url);
+    web.emit("did-finish-load");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(f.engine.state().tabs[0].searchQuery, query);
+    assert.equal(web.searchData.query, query);
+  }
+  assert.equal(requests, 2);
+});
+
+test("an evicted page cannot update its replacement and manual clicks reclaim control", async (t) => {
+  const f = fixture(t);
+  const first = await f.engine.open("https://example.test/first");
+  const old = f.views[0].webContents;
+  for (let i = 0; i < 3; i++) await f.engine.open("https://example.test/" + i);
+  old.emit("did-navigate", {}, "https://wrong.test");
+  assert.equal(
+    f.engine.state().tabs.find((tab) => tab.id === first.id).url,
+    "https://example.test/first"
+  );
+  const web = f.views.at(-1).webContents;
+  web.emit("before-mouse-event", {}, { type: "mouseDown" });
+  assert.equal(f.takeovers, 1);
+  web.emit(
+    "before-input-event",
+    { preventDefault() {} },
+    { type: "keyDown", control: true, key: "l" }
+  );
+  assert.equal(f.engine.state().tabs.at(-1).dirty, false);
 });
 test("navigation, resize, tab changes and target changes invalidate old refs before input", async (t) => {
   for (const change of [

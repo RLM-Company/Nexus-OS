@@ -24,6 +24,7 @@ function createBrowserEngine({
   now = Date.now
 }) {
   const tabs = new Map();
+  let viewQueue = Promise.resolve();
   let active = null,
     last = null,
     stopped = false,
@@ -57,7 +58,15 @@ function createBrowserEngine({
         loading: !!t.view && !t.view.webContents.isDestroyed() && t.view.webContents.isLoading(),
         dirty: t.dirty,
         error: t.error || null,
-        searchQuery: t.search?.query
+        searchQuery: t.search?.query,
+        canGoBack:
+          !!t.view &&
+          !t.view.webContents.isDestroyed() &&
+          !!t.view.webContents.navigationHistory?.canGoBack(),
+        canGoForward:
+          !!t.view &&
+          !t.view.webContents.isDestroyed() &&
+          !!t.view.webContents.navigationHistory?.canGoForward()
       })),
       liveTabs: [...tabs.values()].filter((t) => t.view).length,
       maxLiveTabs: 3,
@@ -68,7 +77,8 @@ function createBrowserEngine({
   function detach(tab) {
     if (!tab.view) return;
     window.contentView.removeChildView(tab.view);
-    tab.view.webContents.close({ waitForBeforeUnload: false });
+    if (!tab.view.webContents.isDestroyed())
+      tab.view.webContents.close({ waitForBeforeUnload: false });
     tab.view = null;
     invalidate(tab);
   }
@@ -124,21 +134,31 @@ function createBrowserEngine({
     if (result.exceptionDetails) throw Error("BROWSER_ELEMENT_UNAVAILABLE");
     return byValue ? result.result.value : result.result;
   }
-  async function canSleep(tab) {
+  async function canSleep(tab, allowActive = false) {
+    if (tab.view?.webContents.isDestroyed()) return !tab.dirty;
     if (
-      tab.id === active ||
-      !tab.view ||
+      (!allowActive && tab.id === active) ||
       tab.dirty ||
-      tab.view.webContents.isLoading() ||
-      tab.view.webContents.isCurrentlyAudible() ||
+      tab.view?.webContents.isLoading() ||
+      tab.view?.webContents.isCurrentlyAudible() ||
       downloads.some((d) => d.tab === tab.id && d.status === "progressing")
     )
       return false;
+    if (!tab.view) return true;
+    const version = tab.version,
+      view = tab.view;
     try {
-      return await evaluate(
+      const clean = await evaluate(
         tab,
         `function(){const nodes=document.querySelectorAll('input,textarea,select,[contenteditable=true]');if(nodes.length>500)return false;return !Array.from(nodes).some(e=>e.isContentEditable||(e.type==='checkbox'||e.type==='radio'?e.checked!==e.defaultChecked:e.tagName==='SELECT'?Array.from(e.options).some(o=>o.selected!==o.defaultSelected):!!e.value&&e.value!==e.defaultValue));}`,
         []
+      );
+      return (
+        clean &&
+        tab.version === version &&
+        tab.view === view &&
+        !tab.dirty &&
+        (allowActive || tab.id !== active)
       );
     } catch {
       return false;
@@ -146,7 +166,9 @@ function createBrowserEngine({
   }
   async function room() {
     if ([...tabs.values()].filter((t) => t.view).length < 3) return;
-    for (const candidate of [...tabs.values()].sort((a, b) => a.touched - b.touched))
+    for (const candidate of [...tabs.values()]
+      .filter((t) => t.view)
+      .sort((a, b) => a.touched - b.touched))
       if (await canSleep(candidate)) {
         detach(candidate);
         return;
@@ -155,25 +177,25 @@ function createBrowserEngine({
   }
   function wire(tab) {
     const web = tab.view.webContents;
+    const listen = (event, handler) =>
+      web.on(event, (...args) => {
+        if (!stopped && tabs.get(tab.id) === tab && tab.view?.webContents === web) handler(...args);
+      });
     web.setWindowOpenHandler(() => {
       tab.error = "Всплывающее окно заблокировано. Откройте нужную ссылку отдельной вкладкой.";
       emit();
       return { action: "deny" };
     });
     for (const event of ["will-navigate", "will-frame-navigate", "will-redirect"])
-      web.on(event, (ev, url) => {
+      listen(event, (ev, url) => {
         const destination = typeof url === "string" ? url : ev.url;
-        if (
-          destination &&
-          !safeUrl(destination) &&
-          !(destination === searchCode.SEARCH_PAGE && (tab.search || tab.savedSearch))
-        ) {
+        if (destination && !safeUrl(destination) && !searchCode.entryId(destination)) {
           ev.preventDefault();
           tab.error = "Этот тип адреса не поддерживается.";
           emit();
         }
       });
-    web.on("did-start-navigation", (_e, url, _inPlace, mainFrame) => {
+    listen("did-start-navigation", (_e, url, _inPlace, mainFrame) => {
       if (mainFrame) {
         invalidate(tab);
         if (safeUrl(url)) {
@@ -184,9 +206,16 @@ function createBrowserEngine({
         }
       }
     });
-    web.on("did-navigate", (_e, url) => {
-      if (url === searchCode.SEARCH_PAGE && (tab.search || tab.savedSearch)) {
-        tab.search ||= tab.savedSearch;
+    listen("did-navigate", (_e, url) => {
+      const entry = searchCode.entryId(url);
+      if (entry) {
+        tab.search = tab.searches.get(entry) || {
+          id: entry,
+          query: "Предыдущий поиск",
+          loading: false,
+          items: [],
+          error: "BROWSER_SEARCH_EXPIRED"
+        };
         tab.url = HOME;
       } else {
         tab.savedSearch = tab.search || tab.savedSearch;
@@ -198,29 +227,39 @@ function createBrowserEngine({
       invalidate(tab);
       emit();
     });
-    web.on("did-finish-load", () => {
+    listen("did-finish-load", () => {
       if (tab.search) void renderSearch(tab).catch(() => {});
     });
-    web.on("did-navigate-in-page", (_e, url, main) => {
+    listen("did-navigate-in-page", (_e, url, main) => {
       if (main) {
-        tab.url = url;
+        if (searchCode.entryId(url)) {
+          tab.search = tab.searches.get(searchCode.entryId(url)) || tab.search;
+          tab.url = HOME;
+        } else tab.url = url;
         invalidate(tab);
         emit();
       }
     });
-    web.on("page-title-updated", (_e, title) => {
+    listen("page-title-updated", (_e, title) => {
       tab.title = String(title).slice(0, 180);
       emit();
     });
-    for (const event of ["did-start-loading", "did-stop-loading"]) web.on(event, emit);
-    web.on("did-fail-load", (_e, code, _description, _url, main) => {
+    for (const event of ["did-start-loading", "did-stop-loading"]) listen(event, emit);
+    listen("did-fail-load", (_e, code, _description, _url, main) => {
       if (main && code !== -3) {
         tab.error = "Страница не загрузилась. Проверьте адрес и соединение.";
         emit();
       }
     });
-    web.on("before-input-event", (event, input) => {
-      tab.dirty = true;
+    listen("before-input-event", (event, input) => {
+      if (
+        !input ||
+        (!input.control &&
+          !input.meta &&
+          input.type === "keyDown" &&
+          (input.key?.length === 1 || ["Backspace", "Delete"].includes(input.key)))
+      )
+        tab.dirty = true;
       if (!automated) {
         takeover();
         if (
@@ -233,8 +272,11 @@ function createBrowserEngine({
         }
       }
     });
+    listen("before-mouse-event", (_event, mouse) => {
+      if (!automated && ["mouseDown", "mouseWheel"].includes(mouse?.type)) takeover();
+    });
     if (Menu && dialog)
-      web.on("context-menu", (_event, params) => {
+      listen("context-menu", (_event, params) => {
         const url = safeUrl(params.linkURL || "");
         if (!url) return;
         Menu.buildFromTemplate([
@@ -280,18 +322,23 @@ function createBrowserEngine({
           }
         ]).popup({ window });
       });
-    web.on("render-process-gone", () => {
+    listen("render-process-gone", () => {
       tab.error = "Вкладка остановлена. Её можно перезагрузить.";
       tab.dirty = true;
       invalidate(tab);
       takeover();
       emit();
     });
-    web.on("will-prevent-unload", () => {
+    listen("will-prevent-unload", () => {
       tab.dirty = true;
     });
   }
-  async function activate(id, signal) {
+  function activate(id, signal) {
+    const result = viewQueue.catch(() => {}).then(() => activateView(id, signal));
+    viewQueue = result.catch(() => {});
+    return result;
+  }
+  async function activateView(id, signal) {
     if (signal?.aborted) throw Error("COMPUTER_SESSION_STOPPED");
     live();
     const tab = tabs.get(id);
@@ -303,6 +350,7 @@ function createBrowserEngine({
     if (!tab.view && (tab.url !== HOME || tab.search)) {
       await room();
       live();
+      if (tabs.get(id) !== tab) throw Error("BROWSER_STALE");
       if (signal?.aborted) throw Error("COMPUTER_SESSION_STOPPED");
       tab.view = new WebContentsView({
         webPreferences: {
@@ -319,11 +367,20 @@ function createBrowserEngine({
       wire(tab);
       window.contentView.addChildView(tab.view);
       tab.view.setVisible(false);
-      if (tab.search) {
-        await tab.view.webContents.loadURL(searchCode.SEARCH_PAGE);
-        await renderSearch(tab);
-      } else if (tab.url !== HOME) void tab.view.webContents.loadURL(tab.url).catch(() => {});
+      if (!tab.search && tab.url !== HOME)
+        void tab.view.webContents.loadURL(tab.url).catch(() => {});
     }
+    if (tab.search && tab.view) {
+      const data = tab.search,
+        url = searchCode.pageUrl(data.id);
+      if (tab.view.webContents.getURL() !== url) await tab.view.webContents.loadURL(url);
+      live();
+      if (signal?.aborted || tabs.get(id) !== tab || tab.search !== data)
+        throw Error("BROWSER_STALE");
+      await renderSearch(tab);
+    }
+    live();
+    if (signal?.aborted || tabs.get(id) !== tab) throw Error("BROWSER_STALE");
     if (active && tabs.get(active)?.view) tabs.get(active).view.setVisible(false);
     active = id;
     last = null;
@@ -346,7 +403,8 @@ function createBrowserEngine({
       world: null,
       view: null,
       touched: now(),
-      dirty: false
+      dirty: false,
+      searches: new Map()
     };
     tabs.set(tab.id, tab);
     try {
@@ -360,8 +418,7 @@ function createBrowserEngine({
   async function close(id, force = false, signal) {
     const tab = tabs.get(id);
     if (!tab) throw Error("BROWSER_STALE");
-    if (!force && (tab.dirty || !(await canSleep({ ...tab, id: "not-active" }))))
-      throw Error("BROWSER_DIRTY_TAB");
+    if (!force && !(await canSleep(tab, true))) throw Error("BROWSER_DIRTY_TAB");
     tab.searchAbort?.abort();
     detach(tab);
     tabs.delete(id);
@@ -804,7 +861,8 @@ function createBrowserEngine({
   async function renderSearch(tab) {
     if (!tab.search || !tab.view) return;
     const data = tab.search;
-    await evaluate(tab, searchCode.render, [data]);
+    if ((await evaluate(tab, searchCode.render, [data])) !== true || tab.search !== data)
+      throw Error("BROWSER_STALE");
   }
   async function search(value, signal) {
     live();
@@ -819,7 +877,9 @@ function createBrowserEngine({
       AbortSignal.timeout(15000),
       ...(signal ? [signal] : [])
     ]);
-    const data = { query: q, loading: true, items: [], error: null };
+    const data = { id: randomUUID(), query: q, loading: true, items: [], error: null };
+    tab.searches.set(data.id, data);
+    while (tab.searches.size > 20) tab.searches.delete(tab.searches.keys().next().value);
     tab.search = data;
     tab.savedSearch = data;
     tab.url = HOME;
@@ -834,11 +894,6 @@ function createBrowserEngine({
     };
     let abortListener;
     try {
-      if (tab.view) {
-        await tab.view.webContents.loadURL(searchCode.SEARCH_PAGE);
-        current();
-        await renderSearch(tab);
-      }
       current();
       await activate(tab.id, combined);
       current();
@@ -908,6 +963,7 @@ function createBrowserEngine({
       if (!tab?.view) return;
       const web = tab.view.webContents;
       if (command === "reload" && tab.search) return search(tab.search.query);
+      tab.searchAbort?.abort();
       invalidate(tab);
       if (command === "back" && web.navigationHistory.canGoBack()) web.navigationHistory.goBack();
       else if (command === "forward" && web.navigationHistory.canGoForward())
@@ -919,6 +975,7 @@ function createBrowserEngine({
       if (!safeUrl(url)) throw Error("BROWSER_URL_INVALID");
       const tab = tabs.get(active) || (await open());
       const existed = !!tab.view;
+      const ticket = (tab.navigationTicket = (tab.navigationTicket || 0) + 1);
       tab.searchAbort?.abort();
       tab.savedSearch = tab.search || tab.savedSearch;
       tab.search = null;
@@ -926,6 +983,8 @@ function createBrowserEngine({
       tab.error = null;
       invalidate(tab);
       await activate(tab.id);
+      if (tabs.get(tab.id) !== tab || tab.navigationTicket !== ticket || tab.url !== url)
+        throw Error("BROWSER_STALE");
       if (existed) void tab.view.webContents.loadURL(url).catch(() => {});
       tab.view.setVisible(true);
       emit();
