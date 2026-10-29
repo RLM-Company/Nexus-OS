@@ -23,6 +23,7 @@ const { createComputerConsole } = require("./computer-console.cjs");
 const { createPreferenceStore, deepLinkFromArgv, restoredBounds } = require("./desktop-state.cjs");
 const { createUpdateService } = require("./update-service.cjs");
 const { createDraftStore } = require("./draft-store.cjs");
+const { createComputerWorkspace } = require("./computer-workspace.cjs");
 const { createComputerHistory } = require("./computer-history.cjs");
 const { fetchElectronOwner } = require("./owner-session.cjs");
 const { createDraftSessionGate } = require("./draft-session-gate.cjs");
@@ -79,6 +80,17 @@ const localTextCodec = {
 };
 const textDrafts = createDraftStore(profileDirectory, { codec: localTextCodec });
 const computerHistory = createComputerHistory(profileDirectory, { codec: localTextCodec });
+const computerWorkspace = createComputerWorkspace({
+  userDataPath: profileDirectory,
+  codec: localTextCodec,
+  pickDirectory: async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Выберите рабочую папку Koswork",
+      properties: ["openDirectory", "dontAddToRecent"]
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  }
+});
 const activeDownloads = new Map();
 const draftSessionGate = createDraftSessionGate();
 let ownerCache = null;
@@ -133,6 +145,7 @@ const computerConsole =
         shell,
         globalShortcut,
         history: computerHistory,
+        workspace: computerWorkspace,
         identity: async () => {
           const owner = await verifiedOwner();
           return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
@@ -433,6 +446,7 @@ async function openOrigin(origin, { persist = false } = {}) {
       try {
         textDrafts.clearAll();
         computerHistory.clearAll();
+        computerWorkspace.forget();
         await browserSession.clearStorageData();
         await browserSession.clearCache();
       } catch {
@@ -574,7 +588,8 @@ async function nativeLogout() {
   const choice = await dialog.showMessageBox(mainWindow, {
     type: "warning",
     title: "Выйти из Kosmora",
-    message: "Выйти из аккаунта и удалить локальные текстовые черновики и историю задач ПК?",
+    message:
+      "Выйти из аккаунта и удалить локальные текстовые черновики, историю задач ПК и локальные резервные копии Koswork?",
     detail:
       "Серверные чаты и файлы не удаляются. Сеанс браузера на этом компьютере будет завершён.",
     buttons: ["Выйти и очистить", "Отмена"],
@@ -593,6 +608,7 @@ async function nativeLogout() {
   try {
     textDrafts.clearAll();
     computerHistory.clearAll();
+    computerWorkspace.forget();
   } catch {
     await dialog.showMessageBox(mainWindow, {
       type: "warning",
@@ -676,6 +692,7 @@ function clearDraftsForHostedLogout(url) {
   try {
     textDrafts.clearAll();
     computerHistory.clearAll();
+    computerWorkspace.forget();
     preferences.update({ lastPath: "/" });
     return true;
   } catch {

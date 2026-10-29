@@ -75,6 +75,7 @@ async function fixture(options = {}) {
     },
     identity: async () => state.context,
     history,
+    workspace: options.workspace ?? null,
     dialog: {
       showMessageBox: async (parent, input) => {
         calls.push({ kind: "dialog", input });
@@ -252,4 +253,88 @@ test("native console renderer crash revokes control and invalidates its IPC", as
     ).error
   );
   assert.ok(!f.calls.some((c) => c.kind === "run"));
+});
+
+test("only native frame can select/revoke a folder; supplied paths cannot replace the OS picker", async () => {
+  const calls = [];
+  const f = await fixture({
+    workspace: {
+      snapshot: () => ({ id: "a".repeat(24), name: "Project" }),
+      connect: async (context, signal) => {
+        calls.push({ context, signal });
+        return { id: "a".repeat(24), name: "Project" };
+      },
+      invalidate: async () => calls.push({ revoked: true })
+    }
+  });
+  for (const channel of ["status", "select", "revoke"])
+    assert.ok(
+      (
+        await f.handlers.get("koswork:computer-workspace-" + channel)(
+          {},
+          { folderPath: "C:\\Windows" }
+        )
+      ).error
+    );
+  assert.equal(calls.length, 0);
+  const selected = await f.handlers.get("koswork:computer-workspace-select")(f.trusted, {
+    folderPath: "C:\\Windows"
+  });
+  assert.equal(selected.folder.name, "Project");
+  assert.deepEqual(Object.keys(calls[0]), ["context", "signal"]);
+  assert.deepEqual(calls[0].context, f.state.context);
+  f.state.context = null;
+  assert.deepEqual(await f.handlers.get("koswork:computer-workspace-revoke")(f.trusted), {
+    folder: null
+  });
+  assert.equal(
+    calls[1].revoked,
+    true,
+    "revocation remains available without network or current login"
+  );
+});
+test("owner change while folder picker is open revokes the selected folder", async () => {
+  let revoked = 0,
+    f;
+  f = await fixture({
+    workspace: {
+      connect: async () => {
+        f.state.context = { ...f.state.context, owner: "other" };
+        return { id: "a".repeat(24), name: "Private" };
+      },
+      invalidate: async () => {
+        revoked++;
+      }
+    }
+  });
+  assert.equal(
+    (await f.handlers.get("koswork:computer-workspace-select")(f.trusted)).error,
+    "COMPUTER_IDENTITY_CHANGED"
+  );
+  assert.equal(revoked, 1);
+});
+test("stopping during a late directory picker response cannot restore access", async () => {
+  let release,
+    signal,
+    revoked = 0;
+  const f = await fixture({
+    workspace: {
+      connect: async (_context, inputSignal) => {
+        signal = inputSignal;
+        return new Promise((resolve) => {
+          release = resolve;
+        });
+      },
+      invalidate: async () => {
+        revoked++;
+      }
+    }
+  });
+  const request = f.handlers.get("koswork:computer-workspace-select")(f.trusted);
+  await new Promise(setImmediate);
+  f.handlers.get("koswork:computer-stop")(f.trusted);
+  assert.equal(signal.aborted, true);
+  release({ id: "a".repeat(24), name: "Late" });
+  assert.equal((await request).error, "COMPUTER_IDENTITY_CHANGED");
+  assert.equal(revoked, 1);
 });

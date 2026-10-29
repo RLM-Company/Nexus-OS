@@ -21,6 +21,13 @@
       <p id="connection" role="status">Проверка подключения…</p>
       <label for="project">Проект Koswork</label>
       <select id="project" disabled></select>
+      <div class="actions">
+        <button id="select-folder" disabled>Выбрать рабочую папку</button>
+        <button id="revoke-folder" disabled>Отключить папку</button>
+      </div>
+      <p id="folder-status" class="hint" role="status">
+        Рабочая папка не подключена. После закрытия консоли её нужно выбрать заново.
+      </p>
       <label for="goal">Что нужно сделать</label>
       <textarea
         id="goal"

@@ -9,9 +9,17 @@ const events = document.getElementById("events");
 const historyList = document.getElementById("history");
 const historyStatus = document.getElementById("history-status");
 const clearHistory = document.getElementById("clear-history");
+const selectFolder = document.getElementById("select-folder");
+const revokeFolder = document.getElementById("revoke-folder");
+const folderStatus = document.getElementById("folder-status");
+let selectedFolder = null;
+let folderEpoch = 0;
 let historyItems = [];
 let busy = false;
 const errors = {
+  COMPUTER_WORKSPACE_UNAVAILABLE: "Рабочая папка недоступна. Выберите её в нативной консоли.",
+  COMPUTER_WORKSPACE_CHANGED:
+    "Рабочая папка изменилась или отключена. Для восстановления выберите ту же папку, что использовалась в исходной задаче.",
   COMPUTER_HISTORY_UNAVAILABLE:
     "История задач недоступна или повреждена. Действия остановлены. Можно явно удалить локальную историю или перезапустить приложение.",
   COMPUTER_HISTORY_NOT_FOUND: "Задача больше не доступна в локальной истории.",
@@ -158,6 +166,7 @@ window.kosworkComputer
     project.disabled = false;
     start.disabled = false;
     applyPrefill(result.prefill);
+    renderHistory();
   })
   .catch(() => {
     connection.textContent = "Не удалось подключиться. Войдите в Kosmora и откройте окно повторно.";
@@ -183,6 +192,8 @@ const phases = {
 function renderHistory() {
   historyList.replaceChildren();
   clearHistory.disabled = busy;
+  selectFolder.disabled = busy || project.disabled;
+  revokeFolder.disabled = !selectedFolder;
   for (const item of historyItems) {
     const row = document.createElement("li");
     const heading = document.createElement("p");
@@ -267,3 +278,50 @@ clearHistory.addEventListener("click", async () => {
   await refreshHistory();
 });
 void refreshHistory();
+async function refreshFolder() {
+  const ticket = ++folderEpoch;
+  try {
+    const result = await window.kosworkComputer.workspaceStatus();
+    if (ticket !== folderEpoch) return;
+    selectedFolder = result.folder ?? null;
+    folderStatus.textContent = result.error
+      ? errors[result.error] || "Не удалось проверить рабочую папку."
+      : selectedFolder
+        ? "Рабочая папка: " +
+          selectedFolder.name +
+          ". Текстовые файлы могут передаваться модели для задачи; перезапись требует проверки версии и подтверждения."
+        : "Рабочая папка не подключена. Выберите её заново после закрытия консоли.";
+  } catch {
+    selectedFolder = null;
+    folderStatus.textContent = "Рабочая папка не подключена.";
+  }
+  renderHistory();
+}
+selectFolder.addEventListener("click", async () => {
+  if (busy) return;
+  busy = true;
+  start.disabled = true;
+  renderHistory();
+  try {
+    const result = await window.kosworkComputer.selectWorkspace();
+    if (result.error)
+      add(errors[result.error] || "Папка не подключена: выбор отменён или путь недоступен.");
+  } catch {
+    add("Не удалось подключить рабочую папку.");
+  } finally {
+    busy = false;
+    start.disabled = !project.value;
+    await refreshFolder();
+  }
+});
+revokeFolder.addEventListener("click", async () => {
+  folderEpoch++;
+  try {
+    const result = await window.kosworkComputer.revokeWorkspace();
+    if (result.error) add(errors[result.error] || "Не удалось отключить папку.");
+  } catch {
+    add("Не удалось отключить папку. Остановите задачу и закройте консоль.");
+  }
+  await refreshFolder();
+});
+void refreshFolder();

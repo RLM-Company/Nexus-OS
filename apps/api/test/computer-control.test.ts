@@ -156,6 +156,46 @@ async function fixture(
 
 describe("owner-bound computer proposals", () => {
   it.each([
+    { kind: "workspace_list", path: "", cursor: 0 },
+    { kind: "workspace_find", path: "", mode: "text", query: "summary" },
+    { kind: "workspace_read", path: "note.md" },
+    { kind: "workspace_mkdir", path: "reports" },
+    { kind: "workspace_create", path: "empty.md", content: "" },
+    {
+      kind: "workspace_update",
+      path: "note.md",
+      content: "updated",
+      expected_version: "sha256:" + "a".repeat(64)
+    },
+    { kind: "workspace_backups", path: "note.md" },
+    {
+      kind: "workspace_restore",
+      backup_id: "bkp_1000_abcdef123456",
+      expected_version: "sha256:" + "a".repeat(64)
+    }
+  ])(
+    "validates $kind through the real Gateway with advertised selected-folder capability",
+    async (workspaceAction) => {
+      const f = await fixture({ output: { ...action, action: workspaceAction } });
+      await f.create();
+      const value = structuredClone(step);
+      value.observation.workspace = { id: "a".repeat(24), name: "Owner project" };
+      expect(await f.next(value)).toMatchObject({ action: workspaceAction });
+      expect(f.calls).toHaveLength(1);
+      expect(f.calls[0]!.messages[1]!.content).toContain("Owner project");
+      expect(f.calls[0]!.messages[0]!.content).toContain(
+        "Never overwrite a file using guessed or truncated content"
+      );
+    }
+  );
+  it("rejects a file-tool proposal when no selected-folder capability was advertised", async () => {
+    const f = await fixture({
+      output: { ...action, action: { kind: "workspace_read", path: "note.md" } }
+    });
+    await f.create();
+    await expect(f.next()).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+  });
+  it.each([
     { kind: "hover", x: 0.2, y: 0.3 },
     { kind: "drag", from_x: 0.2, from_y: 0.3, to_x: 0.8, to_y: 0.3 },
     { kind: "scroll", direction: "left", amount: 2 }

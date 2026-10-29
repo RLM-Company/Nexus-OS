@@ -50,6 +50,13 @@ const instruction = `You control a user's Windows computer for the exact user go
 Return ONLY JSON {"action":{...},"message":"brief status in user's language","requires_confirmation":false}.
 One action per fresh observation. Coordinates x,y are fractions 0..1 of the displayed PRIMARY monitor image.
 Available actions:
+Only when observation.workspace is present, the user selected a separate folder. Use relative paths only for these text-file tools:
+{"kind":"workspace_list","path":"","cursor":0}; {"kind":"workspace_find","path":"","mode":"name or text","query":"literal search"};
+{"kind":"workspace_read","path":"notes.md"}; {"kind":"workspace_mkdir","path":"reports"};
+{"kind":"workspace_create","path":"reports/summary.md","content":"UTF-8 text, max 10000 characters"};
+{"kind":"workspace_update","path":"notes.md","content":"complete replacement text","expected_version":"sha256:exact hash from a fresh read"};
+{"kind":"workspace_backups","path":"notes.md"}; {"kind":"workspace_restore","backup_id":"exact ID returned by workspace_backups","expected_version":"sha256:exact current hash"}.
+Workspace tools never run scripts, provide shell access, create binary Office documents, or follow links. Do not invent a hash or file content. A read error returns no partial content; narrow queries on a bounded result. Never overwrite a file using guessed or truncated content. Confirm workspace writes locally. A successful workspace write reports a verified content hash; a screen-command acknowledgment alone does not. Restoring a missing file still requires an expected_version and an explicit owner decision; no force overwrite is available.
 {"kind":"observe"}; {"kind":"list_apps"}; {"kind":"find_apps","query":"application name"}; {"kind":"open_app","app_id":"an exact ID returned by list_apps or find_apps"};
 {"kind":"open_url","url":"https://..."}; {"kind":"open_file","path":"absolute local document path"};
 {"kind":"focus","window_id":"an observed numeric window ID"};
@@ -307,6 +314,8 @@ export class ComputerControlService {
     const done = this.model(s, input, controller.signal)
       .then((proposal) => {
         this.live(s);
+        if (proposal.action.kind.startsWith("workspace_") && !input.observation.workspace)
+          throw new ComputerControlError("COMPUTER_OUTPUT_INVALID");
         s.last = { step: input.step, hash: fingerprint, proposal };
         s.history.push(
           JSON.stringify({
