@@ -32,6 +32,15 @@ function createBrowserEngine({
     automated = 0;
   const downloads = [],
     intents = new Map();
+  const activeDownloads = () => downloads.filter((d) => d.status === "progressing").length;
+  function recordDownload(value) {
+    downloads.push(value);
+    while (downloads.length > 20) {
+      const index = downloads.findIndex((d) => d.status !== "progressing");
+      if (index < 0) break;
+      downloads.splice(index, 1);
+    }
+  }
   const bounds = () => {
     const [width, height] = window.getContentSize();
     return { x: 0, y: 100, width: Math.max(1, width - 320), height: Math.max(1, height - 100) };
@@ -308,14 +317,18 @@ function createBrowserEngine({
                 });
                 if (answer.response !== 0) return;
                 live();
+                if (intents.size || activeDownloads() >= 3) throw Error("BROWSER_DOWNLOAD_LIMIT");
                 if (workspace.snapshot(context)?.id !== selected.id)
                   throw Error("COMPUTER_WORKSPACE_CHANGED");
                 intents.set(tab.id, { url, workspaceId: selected.id, expires: now() + 10000 });
                 web.downloadURL(url);
-              } catch {
+              } catch (error) {
                 notify({
                   ...state(),
-                  notice: "Не удалось начать загрузку. Подключите рабочую папку и проверьте ссылку."
+                  notice:
+                    error.message === "BROWSER_DOWNLOAD_LIMIT"
+                      ? "Уже загружаются файлы. Дождитесь завершения текущих загрузок."
+                      : "Не удалось начать загрузку. Подключите рабочую папку и проверьте ссылку."
                 });
               }
             }
@@ -420,6 +433,8 @@ function createBrowserEngine({
     if (!tab) throw Error("BROWSER_STALE");
     if (!force && !(await canSleep(tab, true))) throw Error("BROWSER_DIRTY_TAB");
     tab.searchAbort?.abort();
+    intents.delete(id);
+    for (const d of downloads) if (d.tab === id && d.item) d.item.cancel();
     detach(tab);
     tabs.delete(id);
     if (active === id) {
@@ -734,7 +749,8 @@ function createBrowserEngine({
         }
         case "browser_download": {
           const t = await target(action, observation);
-          if (!safeUrl(t.node.href) || intents.size) throw Error("BROWSER_ELEMENT_UNAVAILABLE");
+          if (!safeUrl(t.node.href) || intents.size || activeDownloads() >= 3)
+            throw Error("BROWSER_ELEMENT_UNAVAILABLE");
           const selected = workspace.snapshot(context);
           if (!selected) throw Error("COMPUTER_WORKSPACE_UNAVAILABLE");
           intents.set(tab.id, {
@@ -767,20 +783,20 @@ function createBrowserEngine({
     if (
       stopped ||
       !intent ||
+      activeDownloads() >= 3 ||
       intent.expires < now() ||
       item.getURLChain()[0] !== intent.url ||
       item.getURLChain().some((url) => !safeUrl(url)) ||
       item.getTotalBytes() > 25 * 1024 * 1024
     ) {
       event.preventDefault();
-      downloads.push({
+      recordDownload({
         id: randomBytes(6).toString("hex"),
         tab: tab?.id ?? null,
         name: String(item.getFilename?.() ?? "Загрузка").slice(0, 150),
         status: "blocked",
         bytes: 0
       });
-      if (downloads.length > 20) downloads.shift();
       notify({
         ...state(),
         notice: "Загрузка не разрешена. Агенту нужна команда скачивания и выбранная рабочая папка."
@@ -793,14 +809,13 @@ function createBrowserEngine({
       item.setSavePath(reservation.path);
     } catch {
       event.preventDefault();
-      downloads.push({
+      recordDownload({
         id: randomBytes(6).toString("hex"),
         tab: tab.id,
         name: "Загрузка",
         status: "blocked",
         bytes: 0
       });
-      if (downloads.length > 20) downloads.shift();
       emit();
       return;
     }
@@ -813,12 +828,7 @@ function createBrowserEngine({
       item,
       path: reservation.path
     };
-    downloads.push(d);
-    while (downloads.length > 20) {
-      const i = downloads.findIndex((x) => x.status !== "progressing");
-      if (i < 0) break;
-      downloads.splice(i, 1);
-    }
+    recordDownload(d);
     let lastProgress = 0;
     item.on("updated", () => {
       d.bytes = item.getReceivedBytes();

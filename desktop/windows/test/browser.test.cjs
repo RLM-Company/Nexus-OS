@@ -563,6 +563,88 @@ test("one local task gate prevents concurrent computer/browser agent runs", asyn
   next();
   assert.equal(gate.busy, false);
 });
+
+test("blocked-download floods cannot evict active transfers from cancellation tracking", async (t) => {
+  const f = fixture(t);
+  await f.engine.open("https://example.test");
+  const web = f.views[0].webContents;
+  const obs = await f.engine.observe(new AbortController().signal);
+  await f.engine.execute(
+    { kind: "browser_download", ref: "e1" },
+    obs,
+    new AbortController().signal
+  );
+  const item = new EventEmitter();
+  Object.assign(item, {
+    getURLChain: () => ["https://example.test/next"],
+    getTotalBytes: () => 10,
+    getFilename: () => "result.txt",
+    getReceivedBytes: () => 0,
+    setSavePath() {},
+    cancel() {
+      this.cancelled = true;
+    }
+  });
+  f.session.emit(
+    "will-download",
+    {
+      preventDefault() {
+        throw Error("expected permitted download");
+      }
+    },
+    item,
+    web
+  );
+  for (let i = 0; i < 40; i++) f.session.emit("will-download", { preventDefault() {} }, {}, web);
+  assert.equal(f.engine.state().downloads.length, 20);
+  assert.ok(f.engine.state().downloads.some((d) => d.status === "progressing"));
+  f.engine.cancel();
+  assert.equal(item.cancelled, true);
+});
+
+test("browser limits parallel transfers and closing their tab cancels them", async (t) => {
+  const f = fixture(t);
+  await f.engine.open("https://example.test");
+  const web = f.views[0].webContents,
+    items = [];
+  for (let i = 0; i < 3; i++) {
+    const obs = await f.engine.observe(new AbortController().signal);
+    await f.engine.execute(
+      { kind: "browser_download", ref: "e1" },
+      obs,
+      new AbortController().signal
+    );
+    const item = new EventEmitter();
+    Object.assign(item, {
+      getURLChain: () => ["https://example.test/next"],
+      getTotalBytes: () => 10,
+      getFilename: () => "result" + i + ".txt",
+      getReceivedBytes: () => 0,
+      setSavePath() {},
+      cancel() {
+        this.cancelled = true;
+      }
+    });
+    f.session.emit(
+      "will-download",
+      {
+        preventDefault() {
+          throw Error("expected permitted download");
+        }
+      },
+      item,
+      web
+    );
+    items.push(item);
+  }
+  const obs = await f.engine.observe(new AbortController().signal);
+  await assert.rejects(
+    f.engine.execute({ kind: "browser_download", ref: "e1" }, obs, new AbortController().signal),
+    /ELEMENT_UNAVAILABLE/
+  );
+  await f.engine.close(f.engine.state().active, true);
+  assert.ok(items.every((item) => item.cancelled));
+});
 test("stable browser approval rechecks locally without a second model proposal", async (t) => {
   const f = fixture(t);
   await f.engine.open("https://example.test");
