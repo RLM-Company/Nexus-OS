@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Koswork · Browser</title>
+    <link rel="stylesheet" href="browser.css" />
+    <script defer src="browser.js"></script>
+  </head>
+  <body>
+    <svg class="symbols" aria-hidden="true">
+      <defs>
+        <symbol id="icon-orbit" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="5" />
+          <ellipse cx="12" cy="12" rx="11" ry="3.6" transform="rotate(-30 12 12)" />
+        </symbol>
+        <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+        <symbol id="icon-back" viewBox="0 0 24 24"><path d="m14 5-7 7 7 7" /></symbol>
+        <symbol id="icon-forward" viewBox="0 0 24 24"><path d="m10 5 7 7-7 7" /></symbol>
+        <symbol id="icon-reload" viewBox="0 0 24 24">
+          <path d="M20 10a8 8 0 1 0-1 8M20 4v6h-6" />
+        </symbol>
+        <symbol id="icon-info" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 10v7M12 6v1" />
+        </symbol>
+        <symbol id="icon-lock" viewBox="0 0 24 24">
+          <rect x="5" y="10" width="14" height="11" rx="3" />
+          <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+        </symbol>
+        <symbol id="icon-search" viewBox="0 0 24 24">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="m16 16 5 5" />
+        </symbol>
+        <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" /></symbol>
+        <symbol id="icon-folder" viewBox="0 0 24 24">
+          <path
+            d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"
+          />
+        </symbol>
+        <symbol id="icon-spark" viewBox="0 0 24 24">
+          <path d="m12 2 2.7 7.3L22 12l-7.3 2.7L12 22l-2.7-7.3L2 12l7.3-2.7L12 2Z" />
+        </symbol>
+        <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6" /></symbol>
+      </defs>
+    </svg>
+    <header class="chrome">
+      <div class="tab-row">
+        <a class="brand" href="#" id="brand" title="Новая вкладка"
+          ><svg><use href="#icon-orbit" /></svg><span>Koswork</span><small>Browser</small></a
+        >
+        <nav id="tabs" aria-label="Вкладки"></nav>
+        <button id="new" class="icon" title="Новая вкладка" aria-label="Новая вкладка">
+          <svg><use href="#icon-plus" /></svg></button
+        ><span class="local-badge">На вашем устройстве</span>
+      </div>
+      <div class="address-row">
+        <div class="nav-buttons">
+          <button class="icon" id="back" aria-label="Назад" title="Назад">
+            <svg><use href="#icon-back" /></svg></button
+          ><button class="icon" id="forward" aria-label="Вперёд" title="Вперёд">
+            <svg><use href="#icon-forward" /></svg></button
+          ><button class="icon" id="reload" aria-label="Обновить страницу" title="Обновить">
+            <svg><use href="#icon-reload" /></svg>
+          </button>
+        </div>
+        <form id="address-form" class="address">
+          <svg id="protocol-icon" aria-label="Тип соединения"><use href="#icon-search" /></svg
+          ><input
+            id="address"
+            aria-label="Адрес или поисковый запрос"
+            placeholder="Введите адрес или поисковый запрос"
+            autocomplete="off"
+            spellcheck="false"
+          /><button class="icon" aria-label="Перейти" title="Перейти">
+            <svg><use href="#icon-arrow" /></svg>
+          </button>
+        </form>
+        <span class="memory" id="memory">0 / 3 вкладки в памяти</span>
+      </div>
+    </header>
+    <main class="viewport" id="home">
+      <div class="starfield" aria-hidden="true"></div>
+      <svg class="planet" viewBox="0 0 900 700" aria-hidden="true">
+        <defs>
+          <radialGradient id="surface" cx="35%" cy="20%">
+            <stop offset="0" stop-color="#727881" />
+            <stop offset=".45" stop-color="#262b32" />
+            <stop offset="1" stop-color="#080b10" />
+          </radialGradient>
+          <radialGradient id="halo">
+            <stop offset="0" stop-color="#aeb7c5" stop-opacity=".12" />
+            <stop offset="1" stop-color="#aeb7c5" stop-opacity="0" />
+          </radialGradient>
+          <clipPath id="sphere"><circle cx="450" cy="340" r="186" /></clipPath>
+        </defs>
+        <circle cx="450" cy="340" r="320" fill="url(#halo)" />
+        <ellipse
+          cx="450"
+          cy="340"
+          rx="362"
+          ry="86"
+          transform="rotate(-25 450 340)"
+          fill="none"
+          stroke="#c6cbd1"
+          stroke-opacity=".17"
+        />
+        <circle
+          cx="450"
+          cy="340"
+          r="186"
+          fill="url(#surface)"
+          stroke="#7f8792"
+          stroke-opacity=".4"
+        />
+        <g clip-path="url(#sphere)" fill="none" stroke="#c6cbd1" stroke-opacity=".08">
+          <ellipse cx="450" cy="340" rx="85" ry="186" />
+          <ellipse cx="450" cy="340" rx="150" ry="186" />
+          <ellipse cx="450" cy="340" rx="186" ry="65" />
+          <ellipse cx="450" cy="340" rx="186" ry="130" />
+          <path d="M264 340h372" />
+        </g>
+        <path
+          d="M122 403c-14 43 129 43 325-12s357-137 329-154"
+          transform="rotate(-12 450 340)"
+          fill="none"
+          stroke="#dce1e7"
+          stroke-opacity=".37"
+          stroke-width="2"
+        />
+      </svg>
+      <section class="welcome">
+        <p class="eyebrow"><span></span> ВАШЕ ПРОСТРАНСТВО В СЕТИ</p>
+        <h1>Новая орбита<br /><em>для ваших идей.</em></h1>
+        <p class="subtitle">Исследуйте сами. Или доверьте маршрут Koswork.</p>
+        <form id="search-form" class="home-search">
+          <svg><use href="#icon-search" /></svg
+          ><input
+            id="search"
+            placeholder="Что будем исследовать?"
+            aria-label="Поиск в интернете"
+            autocomplete="off"
+          /><button class="round" aria-label="Искать">
+            <svg><use href="#icon-arrow" /></svg>
+          </button>
+        </form>
+        <div class="quick-actions">
+          <button data-goal="Изучи открытую страницу и выдели главное.">
+            <svg><use href="#icon-search" /></svg><span>Изучить страницу</span></button
+          ><button data-goal="Сравни варианты по моим критериям и объясни выбор.">
+            <svg><use href="#icon-orbit" /></svg><span>Найти и сравнить</span></button
+          ><button data-goal="Собери проверенные данные в файл в выбранной рабочей папке.">
+            <svg><use href="#icon-folder" /></svg><span>Собрать результат</span>
+          </button>
+        </div>
+      </section>
+      <footer><span id="date"></span><span>Меньше шума. Больше открытий.</span></footer>
+    </main>
+    <aside class="agent-panel">
+      <div class="agent-title">
+        <div>
+          <svg><use href="#icon-spark" /></svg>
+          <h2>Koswork</h2>
+        </div>
+        <span id="status" class="pill">Готов</span>
+      </div>
+      <p class="panel-intro">От первого вопроса<br />до готового результата.</p>
+      <label for="project">Проект</label
+      ><select id="project" aria-label="Проект Koswork">
+        <option value="">Выберите проект</option>
+      </select>
+      <label for="goal">Задача браузеру</label
+      ><textarea
+        id="goal"
+        rows="5"
+        maxlength="8000"
+        placeholder="Открой сайт, найди нужные данные и собери результат…"
+      ></textarea>
+      <button id="start" class="primary">
+        <svg><use href="#icon-spark" /></svg> Начать задачу</button
+      ><button id="takeover" class="secondary" disabled>Забрать управление</button
+      ><button id="resume" class="secondary" hidden>Продолжить после моего действия</button>
+      <div class="folder-card">
+        <div>
+          <svg><use href="#icon-folder" /></svg><span id="folder-name">Рабочая папка</span>
+        </div>
+        <p id="folder-description">Выберите папку для вложений и результатов.</p>
+        <div>
+          <button id="folder">Подключить</button
+          ><button id="revoke-folder" hidden>Отключить</button>
+        </div>
+      </div>
+      <p id="notice" role="status" class="notice">
+        Входы на сайты выполняются вами. Агент начинает работу после отдельного разрешения.
+      </p>
+      <ol id="events" class="events" aria-live="polite"></ol>
+      <details id="history-details">
+        <summary>Задачи и восстановление</summary>
+        <div id="history"></div>
+      </details>
+      <details id="download-details">
+        <summary>Загрузки <span id="download-count"></span></summary>
+        <div id="downloads"></div>
+      </details>
+      <div class="panel-foot">
+        <span class="status-dot"></span> Текст страниц в приоритете · снимки по запросу
+      </div>
+    </aside>
+  </body>
+</html>

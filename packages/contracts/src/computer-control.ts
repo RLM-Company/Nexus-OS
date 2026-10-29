@@ -6,6 +6,45 @@ const text = (maximum: number) => Type.String({ minLength: 1, maxLength: maximum
 
 /** Proposals, never executable JavaScript, shell commands or an unbounded RPC. */
 export const ComputerActionSchema = Type.Union([
+  object({ kind: Type.Literal("browser_tabs") }),
+  object({ kind: Type.Literal("browser_back") }),
+  object({ kind: Type.Literal("browser_forward") }),
+  object({ kind: Type.Literal("browser_reload") }),
+  object({ kind: Type.Literal("browser_read") }),
+  object({ kind: Type.Literal("browser_screenshot") }),
+  object({ kind: Type.Literal("browser_open"), url: text(4096) }),
+  object({
+    kind: Type.Literal("browser_switch"),
+    tab_id: Type.String({ pattern: "^[a-f0-9]{12}$" })
+  }),
+  object({
+    kind: Type.Literal("browser_close"),
+    tab_id: Type.String({ pattern: "^[a-f0-9]{12}$" })
+  }),
+  object({ kind: Type.Literal("browser_click"), ref: text(16) }),
+  object({
+    kind: Type.Literal("browser_fill"),
+    ref: text(16),
+    text: Type.String({ maxLength: 4000 })
+  }),
+  object({
+    kind: Type.Literal("browser_key"),
+    ref: text(16),
+    key: Type.Union([Type.Literal("ENTER"), Type.Literal("TAB"), Type.Literal("ESCAPE")])
+  }),
+  object({
+    kind: Type.Literal("browser_scroll"),
+    direction: Type.Union([Type.Literal("up"), Type.Literal("down")]),
+    amount: Type.Integer({ minimum: 1, maximum: 5 })
+  }),
+  object({
+    kind: Type.Literal("browser_click_at"),
+    x: Type.Number({ minimum: 0, maximum: 1 }),
+    y: Type.Number({ minimum: 0, maximum: 1 })
+  }),
+  object({ kind: Type.Literal("browser_upload"), ref: text(16), path: text(512) }),
+  object({ kind: Type.Literal("browser_download"), ref: text(16) }),
+
   object({
     kind: Type.Literal("workspace_list"),
     path: Type.String({ maxLength: 512 }),
@@ -105,6 +144,7 @@ export const ComputerDecisionSchema = object({
 });
 export type ComputerDecision = Static<typeof ComputerDecisionSchema>;
 export const ComputerSessionAcceptanceSchema = object({
+  execution_mode: Type.Optional(Type.Union([Type.Literal("computer"), Type.Literal("browser")])),
   id: text(128),
   expires_at: text(64),
   planner: object({
@@ -114,6 +154,12 @@ export const ComputerSessionAcceptanceSchema = object({
 });
 
 export const ComputerObservationSchema = object({
+  browser: Type.Optional(
+    object({
+      tab_id: Type.String({ pattern: "^[a-f0-9]{12}$" }),
+      generation: Type.Integer({ minimum: 0 })
+    })
+  ),
   workspace: Type.Optional(
     object({ id: Type.String({ pattern: "^[a-f0-9]{24}$" }), name: text(180) })
   ),
@@ -122,11 +168,12 @@ export const ComputerObservationSchema = object({
   description: Type.String({ maxLength: 16000 }),
   width: Type.Integer({ minimum: 1, maximum: 8192 }),
   height: Type.Integer({ minimum: 1, maximum: 8192 }),
-  image_jpeg_base64: text(1_333_336)
+  image_jpeg_base64: Type.Optional(text(1_333_336))
 });
 export type ComputerObservation = Static<typeof ComputerObservationSchema>;
 
 export const CreateComputerSessionSchema = object({
+  execution_mode: Type.Optional(Type.Union([Type.Literal("computer"), Type.Literal("browser")])),
   client_request_id: text(128),
   client_secret: Type.String({ minLength: 43, maxLength: 43, pattern: "^[A-Za-z0-9_-]+$" }),
   goal: text(8000),

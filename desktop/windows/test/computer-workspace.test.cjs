@@ -330,3 +330,25 @@ test("replacing the selected directory with a new ordinary directory revokes the
   const selected = await f.workspace.connect(context, new AbortController().signal);
   assert.notEqual(selected.id, original.id);
 });
+
+test("binary browser transfers stay in the selected folder without overwriting an existing file", async (t) => {
+  const f = fixture(t),
+    selected = await f.workspace.connect(context, new AbortController().signal);
+  fs.writeFileSync(path.join(f.root, "report.pdf"), "keep original");
+  const reserved = f.workspace.reserveDownload(context, selected.id, "../report.pdf");
+  assert.notEqual(reserved.name, "report.pdf");
+  fs.writeFileSync(reserved.path, Buffer.from([0, 1, 255]));
+  f.workspace.verifyDownload(context, selected.id, reserved.path, 3);
+  assert.equal(f.workspace.uploadFile(context, selected.id, reserved.name), reserved.path);
+  assert.equal(fs.readFileSync(path.join(f.root, "report.pdf"), "utf8"), "keep original");
+  assert.throws(() => f.workspace.reserveDownload(context, selected.id, ".env"));
+  assert.throws(
+    () => f.workspace.uploadFile({ ...context, owner: "other" }, selected.id, reserved.name),
+    /IDENTITY_CHANGED/
+  );
+  await f.workspace.invalidate();
+  assert.throws(
+    () => f.workspace.verifyDownload(context, selected.id, reserved.path, 3),
+    /WORKSPACE_CHANGED/
+  );
+});

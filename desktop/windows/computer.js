@@ -325,3 +325,8 @@ revokeFolder.addEventListener("click", async () => {
   await refreshFolder();
 });
 void refreshFolder();
+
+document.getElementById("browser").addEventListener("click", async () => {
+  const result = await window.kosworkComputer.openBrowser();
+  if (result.error) add(errors[result.error] || "Не удалось открыть браузер.");
+});

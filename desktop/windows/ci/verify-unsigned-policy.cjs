@@ -25,6 +25,15 @@ function verify() {
   assert.deepEqual(pkg.build.protocols[0].schemes, ["kosmora"]);
   for (const file of [
     "main.cjs",
+    "browser/policy.cjs",
+    "browser/document.cjs",
+    "browser/profiles.cjs",
+    "browser/engine.cjs",
+    "browser/shell.cjs",
+    "browser/preload.cjs",
+    "browser/browser.html",
+    "browser/browser.css",
+    "browser/browser.js",
     "computer-history.cjs",
     "computer-workspace.cjs",
     "workspace/index.cjs",

@@ -95,7 +95,7 @@ async function fixture(options = {}) {
         }
       };
     },
-    globalShortcut: { register: () => true, unregister() {} },
+    globalShortcut: options.globalShortcut ?? { register: () => true, unregister() {} },
     createRunner(options) {
       runnerOptions = options;
       return {

@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("kosworkComputer", {
   workspaceStatus: () => ipcRenderer.invoke("koswork:computer-workspace-status"),
   selectWorkspace: () => ipcRenderer.invoke("koswork:computer-workspace-select"),
   revokeWorkspace: () => ipcRenderer.invoke("koswork:computer-workspace-revoke"),
+  openBrowser: () => ipcRenderer.invoke("koswork:computer-browser"),
   projects: () => ipcRenderer.invoke("koswork:computer-projects"),
   start: (input) => ipcRenderer.invoke("koswork:computer-start", input),
   stop: () => ipcRenderer.invoke("koswork:computer-stop"),

@@ -7,6 +7,7 @@ const { pathToFileURL } = require("node:url");
 const {
   app,
   BrowserWindow,
+  WebContentsView,
   dialog,
   ipcMain,
   Menu,
@@ -19,6 +20,9 @@ const {
   desktopCapturer,
   globalShortcut
 } = require("electron");
+const { createKosworkBrowser } = require("./browser/shell.cjs");
+const { createBrowserProfiles } = require("./browser/profiles.cjs");
+const { createTaskGate } = require("./browser/policy.cjs");
 const { createComputerConsole } = require("./computer-console.cjs");
 const { createPreferenceStore, deepLinkFromArgv, restoredBounds } = require("./desktop-state.cjs");
 const { createUpdateService } = require("./update-service.cjs");
@@ -134,6 +138,39 @@ const downloadCenter =
       })
     : null;
 
+const taskGate = createTaskGate();
+const browserWorkspace = createComputerWorkspace({
+  userDataPath: profileDirectory,
+  codec: localTextCodec,
+  scopeNamespace: "browser",
+  pickDirectory: async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Рабочая папка браузера Koswork",
+      properties: ["openDirectory", "dontAddToRecent"]
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  }
+});
+const kosworkBrowser =
+  gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode
+    ? createKosworkBrowser({
+        BrowserWindow,
+        WebContentsView,
+        Menu,
+        ipcMain,
+        dialog,
+        globalShortcut,
+        taskGate,
+        history: computerHistory,
+        workspace: browserWorkspace,
+        profiles: createBrowserProfiles({ userData: profileDirectory, session }),
+        identity: async () => {
+          const owner = await verifiedOwner();
+          return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
+        },
+        getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true })
+      })
+    : null;
 const computerConsole =
   gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode
     ? createComputerConsole({
@@ -146,6 +183,8 @@ const computerConsole =
         globalShortcut,
         history: computerHistory,
         workspace: computerWorkspace,
+        taskGate,
+        openBrowser: () => kosworkBrowser?.show(),
         identity: async () => {
           const owner = await verifiedOwner();
           return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
@@ -153,7 +192,10 @@ const computerConsole =
         getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true })
       })
     : null;
-app.on("before-quit", () => computerConsole?.stop());
+app.on("before-quit", () => {
+  computerConsole?.stop();
+  kosworkBrowser?.stop();
+});
 
 function connectionPath() {
   return path.join(app.getPath("userData"), CONNECTION_FILE);
@@ -437,6 +479,7 @@ async function openOrigin(origin, { persist = false } = {}) {
       // Switching origins is an explicit trust-boundary change, not a page navigation.
       identityEpoch++;
       computerConsole?.invalidate();
+      kosworkBrowser?.invalidate();
       draftSessionGate.reset();
       downloadCenter.invalidate({ forget: true, origin: previousOrigin, owner: ownerCache?.owner });
       ownerCache = null;
@@ -447,6 +490,7 @@ async function openOrigin(origin, { persist = false } = {}) {
         textDrafts.clearAll();
         computerHistory.clearAll();
         computerWorkspace.forget();
+        await kosworkBrowser?.forget();
         await browserSession.clearStorageData();
         await browserSession.clearCache();
       } catch {
@@ -514,6 +558,7 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
     if (ownerCache?.origin === origin && ownerCache.owner !== result.owner) {
       identityEpoch++;
       computerConsole?.invalidate();
+      kosworkBrowser?.invalidate();
       draftSessionGate.reset();
       downloadCenter.invalidate();
       for (const item of activeDownloads.values()) item.cancel();
@@ -529,6 +574,7 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
     if (ownerCache?.origin === origin) {
       identityEpoch++;
       computerConsole?.invalidate();
+      kosworkBrowser?.invalidate();
       draftSessionGate.reset();
       downloadCenter.invalidate();
       for (const item of activeDownloads.values()) item.cancel();
@@ -591,7 +637,7 @@ async function nativeLogout() {
     message:
       "Выйти из аккаунта и удалить локальные текстовые черновики, историю задач ПК и локальные резервные копии Koswork?",
     detail:
-      "Серверные чаты и файлы не удаляются. Сеанс браузера на этом компьютере будет завершён.",
+      "Серверные чаты и файлы не удаляются. Сеанс приложения и входы на сайты в браузере Koswork на этом компьютере будут завершены.",
     buttons: ["Выйти и очистить", "Отмена"],
     defaultId: 1,
     cancelId: 1,
@@ -601,6 +647,7 @@ async function nativeLogout() {
   // Fence pending asynchronous saves before removing user data.
   identityEpoch++;
   computerConsole?.invalidate();
+  kosworkBrowser?.invalidate();
   draftSessionGate.reset();
   downloadCenter.invalidate({ forget: true, origin: currentOrigin, owner: ownerCache?.owner });
   ownerCache = null;
@@ -609,6 +656,7 @@ async function nativeLogout() {
     textDrafts.clearAll();
     computerHistory.clearAll();
     computerWorkspace.forget();
+    await kosworkBrowser?.forget();
   } catch {
     await dialog.showMessageBox(mainWindow, {
       type: "warning",
@@ -684,6 +732,7 @@ function clearDraftsForHostedLogout(url) {
   // a hosted page handles it without using the native menu.
   identityEpoch++;
   computerConsole?.invalidate();
+  kosworkBrowser?.invalidate();
   draftSessionGate.reset();
   downloadCenter.invalidate({ forget: true, origin: currentOrigin, owner: ownerCache?.owner });
   ownerCache = null;
@@ -693,6 +742,7 @@ function clearDraftsForHostedLogout(url) {
     textDrafts.clearAll();
     computerHistory.clearAll();
     computerWorkspace.forget();
+    void kosworkBrowser?.forget().catch(() => {});
     preferences.update({ lastPath: "/" });
     return true;
   } catch {
@@ -750,6 +800,7 @@ function installNavigationGuards(window) {
       ownerCache = null;
       identityEpoch++;
       computerConsole?.invalidate();
+      kosworkBrowser?.invalidate();
       draftSessionGate.reset();
     } else void restoreAfterAuthentication();
   });
@@ -762,6 +813,7 @@ function installNavigationGuards(window) {
       ownerCache = null;
       identityEpoch++;
       computerConsole?.invalidate();
+      kosworkBrowser?.invalidate();
       draftSessionGate.reset();
     } else void restoreAfterAuthentication();
   });
@@ -901,6 +953,19 @@ function createMenu() {
           enabled: !!computerConsole,
           click: () => void computerConsole?.show()
         },
+        {
+          label: "Браузер Koswork…",
+          enabled: !!kosworkBrowser,
+          click: () => {
+            void kosworkBrowser?.show().catch(() =>
+              dialog.showMessageBox(mainWindow, {
+                type: "info",
+                message: "Для браузера Koswork нужен подтверждённый вход в приложение."
+              })
+            );
+          }
+        },
+        { label: "Остановить браузер", click: () => kosworkBrowser?.stop() },
         { label: "Остановить управление", click: () => computerConsole?.stop() }
       ]
     },
