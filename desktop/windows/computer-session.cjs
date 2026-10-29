@@ -13,6 +13,8 @@ class ComputerSession {
     allowHumanResume = false,
     history = null,
     workspace = null,
+    executionMode = "computer",
+    taskGate = null,
     now = Date.now
   }) {
     Object.assign(this, {
@@ -24,6 +26,8 @@ class ComputerSession {
       allowHumanResume,
       history,
       workspace,
+      executionMode,
+      taskGate,
       now
     });
     this.gate = new ComputerSessionGate({ now });
@@ -50,6 +54,7 @@ class ComputerSession {
     if (this.active) throw Error("COMPUTER_BUSY");
     if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 30)
       throw Error("COMPUTER_STEPS_INVALID");
+    const release = this.taskGate?.claim();
     const state = {
       controller: new AbortController(),
       grant: null,
@@ -74,6 +79,8 @@ class ComputerSession {
       if (recovery) {
         if (!this.history) throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
         recovery = this.history.recovery(context, recovery.taskId);
+        if ((recovery.executionMode ?? "computer") !== this.executionMode)
+          throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
         if (recovery.project !== project || recovery.goal !== goal)
           throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
         if ((recovery.workspaceId ?? null) !== (state.workspace?.id ?? null))
@@ -110,7 +117,8 @@ class ComputerSession {
         project,
         goal,
         recoveredFrom: recovery?.taskId ?? null,
-        workspaceId: state.workspace?.id ?? null
+        workspaceId: state.workspace?.id ?? null,
+        executionMode: this.executionMode
       });
       if (state.journal)
         this.notify({
@@ -122,6 +130,7 @@ class ComputerSession {
         project,
         goal,
         maxSteps,
+        executionMode: this.executionMode,
         context: state.grant,
         signal: state.controller.signal
       });
@@ -138,7 +147,9 @@ class ComputerSession {
           } catch (error) {
             if (
               capture >= 3 ||
-              !["COMPUTER_WINDOW_CHANGED", "COMPUTER_USER_INPUT_ACTIVE"].includes(error?.message)
+              !["COMPUTER_WINDOW_CHANGED", "COMPUTER_USER_INPUT_ACTIVE", "BROWSER_STALE"].includes(
+                error?.message
+              )
             )
               throw error;
             // App launch/activation may still be settling. Never dispatch a model
@@ -173,6 +184,14 @@ class ComputerSession {
           `${state.session.id}:${step}`,
           proposal.action
         );
+        if (
+          (this.executionMode === "browser" &&
+            !action.kind.startsWith("browser_") &&
+            !action.kind.startsWith("workspace_") &&
+            !["observe", "wait", "done", "ask_user"].includes(action.kind)) ||
+          (this.executionMode !== "browser" && action.kind.startsWith("browser_"))
+        )
+          throw Error("COMPUTER_ACTION_INVALID");
         state.journal?.proposal(step + 1, action, proposal.decision_source);
         this.notify({
           step: step + 1,
@@ -180,6 +199,15 @@ class ComputerSession {
           action: action.kind,
           decision_source: proposal.decision_source
         });
+        if (this.driver.isCurrent && !this.driver.isCurrent(observation)) {
+          state.journal?.mark(step + 1, "not_executed");
+          previousResult = JSON.stringify({
+            not_executed: true,
+            reason: "BROWSER_STALE",
+            instruction: "Inspect the fresh page; the old action was not executed."
+          });
+          continue;
+        }
         if (action.kind === "done") {
           state.journal?.mark(step + 1, "not_executed");
           outcome = "completed";
@@ -232,36 +260,80 @@ class ComputerSession {
           approval &&
           approval.action === JSON.stringify(action) &&
           approval.window === observation.active_window &&
-          this.now() < approval.expires;
+          this.now() < approval.expires &&
+          approval.evidence === (this.driver.approvalKey?.(action, observation) ?? "");
+        const approvalEvidence = this.driver.approvalKey?.(action, observation) ?? "";
         const recoveryReview = recovery?.requiresReview && recoveryWriteActions.has(action.kind);
         const workspaceWrite =
           action.kind.startsWith("workspace_") && recoveryWriteActions.has(action.kind);
-        if ((proposal.requires_confirmation || recoveryReview || workspaceWrite) && !approved) {
+        const nativeReview = this.driver.requiresConfirmation?.(action, observation) === true;
+        if (
+          (proposal.requires_confirmation || recoveryReview || workspaceWrite || nativeReview) &&
+          !approved
+        ) {
           if (
             !(await this.confirm({
               kind: "action",
               action,
               message: proposal.message,
               recoveryReview: !!recoveryReview,
+              evidence: this.driver.describe?.(action, observation),
               signal: state.controller.signal
             }))
           )
             throw Error("COMPUTER_CANCELLED");
           await this.assertLive(state);
-          approval = {
-            action: JSON.stringify(action),
-            window: observation.active_window,
-            expires: this.now() + 60000
-          };
-          state.journal?.mark(step + 1, "not_executed");
-          previousResult = JSON.stringify({
-            status: "approved_for_replanning",
-            action,
-            window_id: observation.active_window,
-            instruction:
-              "Confirmation changed focus. Restore the target window and inspect a fresh observation before proposing the approved action again."
-          });
-          continue;
+          if (this.executionMode === "browser" && this.driver.reobserveAfterApproval) {
+            let fresh;
+            try {
+              fresh = await this.driver.observe(state.controller.signal);
+            } catch (error) {
+              if (error.message !== "BROWSER_STALE") throw error;
+              state.journal?.mark(step + 1, "not_executed");
+              previousResult = JSON.stringify({
+                not_executed: true,
+                reason: "approval_invalidated",
+                instruction:
+                  "The page navigated during confirmation. No action was executed; inspect a fresh page."
+              });
+              approval = null;
+              continue;
+            }
+            await this.assertLive(state);
+            let unchanged = false;
+            try {
+              unchanged = this.driver.approvalKey(action, fresh) === approvalEvidence;
+            } catch {}
+            if (!unchanged) {
+              state.journal?.mark(step + 1, "not_executed");
+              previousResult = JSON.stringify({
+                not_executed: true,
+                reason: "approval_invalidated",
+                instruction:
+                  "The browser target changed after confirmation. Inspect the fresh page and request a new decision; no action was executed."
+              });
+              approval = null;
+              continue;
+            }
+            observation = state.workspace ? { ...fresh, workspace: state.workspace } : fresh;
+            approval = null;
+          } else {
+            approval = {
+              action: JSON.stringify(action),
+              window: observation.active_window,
+              evidence: approvalEvidence,
+              expires: this.now() + 60000
+            };
+            state.journal?.mark(step + 1, "not_executed");
+            previousResult = JSON.stringify({
+              status: "approved_for_replanning",
+              action,
+              window_id: observation.active_window,
+              instruction:
+                "Confirmation changed focus. Restore the target window and inspect a fresh observation before proposing the approved action again."
+            });
+            continue;
+          }
         }
         if (approved) approval = null;
         // Recheck server-side revocation immediately before the native action.
@@ -316,7 +388,10 @@ class ComputerSession {
               "COMPUTER_WINDOW_CHANGED",
               "COMPUTER_OBSERVATION_STALE",
               "COMPUTER_USER_INPUT_ACTIVE",
-              "COMPUTER_TARGET_OCCLUDED"
+              "COMPUTER_TARGET_OCCLUDED",
+              "BROWSER_STALE",
+              "BROWSER_ELEMENT_UNAVAILABLE",
+              "BROWSER_TAB_LIMIT"
             ].includes(error?.message)
           )
             throw error;
@@ -369,6 +444,7 @@ class ComputerSession {
           .catch(() => {});
       } finally {
         if (this.active === state) this.active = null;
+        release?.();
       }
       if (checkpointFailed) {
         this.poisoned = true;

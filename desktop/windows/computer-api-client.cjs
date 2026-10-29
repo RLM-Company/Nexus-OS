@@ -83,19 +83,27 @@ function createComputerApiClient({ identity, getSession }) {
   const root = (project) => `/api/v1/projects/${encodeURIComponent(project)}/computer-sessions`;
   return {
     request,
-    async begin({ project, goal, maxSteps, context, signal }) {
+    async begin({ project, goal, maxSteps, context, signal, executionMode = "computer" }) {
       const token = randomBytes(32).toString("base64url"),
         id = randomUUID();
       const session = { id, token, origin: context.origin, owner: context.owner };
       try {
         const result = await request(root(project), {
           method: "POST",
-          body: { client_request_id: id, client_secret: token, goal, max_steps: maxSteps },
+          body: {
+            client_request_id: id,
+            client_secret: token,
+            goal,
+            max_steps: maxSteps,
+            ...(executionMode === "browser" ? { execution_mode: "browser" } : {})
+          },
           expected: session,
           signal
         });
         if (result.id !== id) throw Error("COMPUTER_RESPONSE_INVALID");
         if (result.planner?.kind !== "model_gateway" || result.planner.mode !== "provider")
+          throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
+        if (executionMode === "browser" && result.execution_mode !== "browser")
           throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
         return session;
       } catch (error) {

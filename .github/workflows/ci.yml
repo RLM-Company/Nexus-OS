@@ -77,6 +77,19 @@ jobs:
           TURBO_TELEMETRY_DISABLED: "1"
         run: pnpm test:e2e
 
+      - name: Verify Koswork browser CDP engine and native-window UI assets
+        env:
+          KOSWORK_BROWSER_SCREENSHOT: ${{ runner.temp }}/koswork-browser-home.png
+        run: node desktop/windows/ci/browser-dom-smoke.cjs
+
+      - name: Preserve Koswork browser preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: koswork-browser-preview
+          path: ${{ runner.temp }}/koswork-browser-home.png
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Preserve failed browser diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

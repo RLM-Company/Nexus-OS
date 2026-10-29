@@ -1,15 +1,20 @@
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
-const { createKosworkWorkspaceService, createBackupStore } = require("./workspace/index.cjs");
+const {
+  createKosworkWorkspaceService,
+  createBackupStore,
+  resolveSafeWorkspaceTarget
+} = require("./workspace/index.cjs");
 
-function createComputerWorkspace({ userDataPath, codec, pickDirectory }) {
+function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeNamespace = "" }) {
   if (!codec?.seal || !codec?.open) throw Error("COMPUTER_WORKSPACE_UNAVAILABLE");
   const service = createKosworkWorkspaceService({
     userDataPath,
     codec,
     requireOwnerScope: true,
-    pickDirectory
+    pickDirectory,
+    scopeNamespace
   });
   let scope = null;
   const owner = (context) => ({ ownerId: context.owner, origin: context.origin });
@@ -27,6 +32,55 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory }) {
     return prior ? service.revokeAccess(owner(prior)) : Promise.resolve();
   }
   return {
+    uploadFile(context, workspaceId, relativePath) {
+      if (snapshot(context)?.id !== workspaceId || !workspaceId)
+        throw Error("COMPUTER_WORKSPACE_CHANGED");
+      const status = service.getStatus(owner(context));
+      const file = resolveSafeWorkspaceTarget(status.rootPath, relativePath, { mustExist: true });
+      if (!file.stat.isFile() || file.stat.size > 25 * 1024 * 1024)
+        throw Error("BROWSER_FILE_TOO_LARGE");
+      return file.absolutePath;
+    },
+    reserveDownload(context, workspaceId, filename) {
+      if (snapshot(context)?.id !== workspaceId || !workspaceId)
+        throw Error("COMPUTER_WORKSPACE_CHANGED");
+      const status = service.getStatus(owner(context));
+      const name =
+        path.win32
+          .basename(String(filename))
+          .replace(/[<>:"|?*\u0000-\u001f\u007f]/gu, "_")
+          .replace(/[ .]+$/u, "")
+          .slice(0, 150) || "download.bin";
+      const extension = path.extname(name),
+        stem = name.slice(0, name.length - extension.length);
+      for (let i = 0; i < 100; i++) {
+        const candidate = i ? stem + " (" + i + ")" + extension : name;
+        const target = resolveSafeWorkspaceTarget(status.rootPath, candidate, {
+          allowMissingLeaf: true
+        });
+        if (target.exists) continue;
+        try {
+          const fd = fs.openSync(target.absolutePath, "wx", 0o600);
+          fs.closeSync(fd);
+          return { name: candidate, path: target.absolutePath };
+        } catch (error) {
+          if (error.code !== "EEXIST") throw error;
+        }
+      }
+      throw Error("BROWSER_DOWNLOAD_UNAVAILABLE");
+    },
+    verifyDownload(context, workspaceId, file, size) {
+      if (snapshot(context)?.id !== workspaceId || !workspaceId)
+        throw Error("COMPUTER_WORKSPACE_CHANGED");
+      const status = service.getStatus(owner(context));
+      const target = resolveSafeWorkspaceTarget(
+        status.rootPath,
+        path.relative(status.rootPath, file),
+        { mustExist: true }
+      );
+      if (!target.stat.isFile() || target.stat.size !== size || size > 25 * 1024 * 1024)
+        throw Error("BROWSER_DOWNLOAD_UNAVAILABLE");
+    },
     snapshot,
     async connect(context, signal) {
       await invalidate();

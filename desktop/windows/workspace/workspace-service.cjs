@@ -130,6 +130,7 @@ function createKosworkWorkspaceService({
   limits: customLimits = {},
   now = () => Date.now(),
   codec = null,
+  scopeNamespace = "",
   pickDirectory = null
 } = {}) {
   const limits = sanitizeLimits(customLimits);
@@ -295,7 +296,7 @@ function createKosworkWorkspaceService({
     const workspaceId = crypto
       .createHash("sha256")
       .update(
-        `${ownerScope.origin}\0${ownerScope.ownerId}\0${canonicalRoot}\0${rootIdentity.dev}:${rootIdentity.ino}`
+        `${scopeNamespace}${scopeNamespace ? "\0" : ""}${ownerScope.origin}\0${ownerScope.ownerId}\0${canonicalRoot}\0${rootIdentity.dev}:${rootIdentity.ino}`
       )
       .digest("hex")
       .slice(0, 24);

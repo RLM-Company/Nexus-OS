@@ -24,6 +24,22 @@ const keyNames = new Set([
   ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`)
 ]);
 const fields = {
+  browser_open: ["url"],
+  browser_tabs: [],
+  browser_switch: ["tab_id"],
+  browser_close: ["tab_id"],
+  browser_back: [],
+  browser_forward: [],
+  browser_reload: [],
+  browser_read: [],
+  browser_screenshot: [],
+  browser_click: ["ref"],
+  browser_fill: ["ref", "text"],
+  browser_key: ["ref", "key"],
+  browser_scroll: ["direction", "amount"],
+  browser_click_at: ["x", "y"],
+  browser_upload: ["ref", "path"],
+  browser_download: ["ref"],
   workspace_list: ["path", "cursor"],
   workspace_find: ["path", "mode", "query"],
   workspace_read: ["path"],
@@ -67,6 +83,37 @@ function validateComputerAction(action) {
   )
     throw Error("COMPUTER_ACTION_INVALID");
   const valid = (() => {
+    if (action.kind.startsWith("browser_")) {
+      try {
+        if (action.kind === "browser_open")
+          return require("./browser/policy.cjs").safeUrl(action.url) !== null;
+        if (action.kind === "browser_click_at")
+          return [action.x, action.y].every((n) => Number.isFinite(n) && n >= 0 && n <= 1);
+        if (action.kind === "browser_scroll")
+          return (
+            ["up", "down"].includes(action.direction) &&
+            Number.isInteger(action.amount) &&
+            action.amount >= 1 &&
+            action.amount <= 5
+          );
+        if (Object.hasOwn(action, "tab_id") && !/^[a-f0-9]{12}$/.test(action.tab_id)) return false;
+        if (Object.hasOwn(action, "ref") && !/^e[1-9][0-9]{0,6}$/.test(action.ref)) return false;
+        if (
+          action.kind === "browser_fill" &&
+          (typeof action.text !== "string" ||
+            action.text.length > 4000 ||
+            /[\u0000]/.test(action.text))
+        )
+          return false;
+        if (action.kind === "browser_key" && !["ENTER", "TAB", "ESCAPE"].includes(action.key))
+          return false;
+        if (action.kind === "browser_upload")
+          require("./workspace/path-guard.cjs").validateRelativePath(action.path);
+        return true;
+      } catch {
+        return false;
+      }
+    }
     if (action.kind.startsWith("workspace_")) {
       try {
         if (action.kind !== "workspace_restore")
@@ -245,6 +292,17 @@ class ComputerSessionGate {
 
 const computerActionKinds = Object.freeze(Object.keys(fields));
 const recoveryWriteActions = new Set([
+  "browser_open",
+  "browser_close",
+  "browser_click",
+  "browser_fill",
+  "browser_key",
+  "browser_upload",
+  "browser_download",
+  "browser_click_at",
+  "browser_back",
+  "browser_forward",
+  "browser_reload",
   "workspace_create",
   "workspace_update",
   "workspace_restore",

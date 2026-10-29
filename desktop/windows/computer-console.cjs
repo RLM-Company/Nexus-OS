@@ -18,6 +18,8 @@ function createComputerConsole({
   getSession,
   history,
   workspace = null,
+  taskGate = null,
+  openBrowser = null,
   createRunner = (options) => new ComputerSession(options)
 }) {
   if (!history) throw Error("COMPUTER_HISTORY_UNAVAILABLE");
@@ -25,6 +27,13 @@ function createComputerConsole({
   let prefill = null;
   let pending = false;
   let epoch = 0;
+  let shortcutHeld = false;
+  function releaseShortcut() {
+    if (shortcutHeld) {
+      shortcutHeld = false;
+      globalShortcut.unregister("CommandOrControl+Alt+Shift+K");
+    }
+  }
   let selectionController = null;
   const page = pathToFileURL(path.join(__dirname, "computer.html")).toString();
   const trusted = (event) =>
@@ -44,6 +53,7 @@ function createComputerConsole({
     identity,
     history,
     workspace,
+    taskGate,
     notify: tell,
     allowHumanResume: true,
     async confirm(value) {
@@ -142,20 +152,26 @@ function createComputerConsole({
     try {
       const context = await checkedContext(event);
       const input = resolve(context);
+      if (taskGate?.busy) throw Error("COMPUTER_BUSY");
       if (!globalShortcut.register("CommandOrControl+Alt+Shift+K", () => runner.stop()))
         throw Error("COMPUTER_STOP_SHORTCUT_UNAVAILABLE");
+      shortcutHeld = true;
       return await runner.run({ ...input, maxSteps: 30, expectedContext: context });
     } catch (error) {
       return failure(error);
     } finally {
       pending = false;
-      globalShortcut.unregister("CommandOrControl+Alt+Shift+K");
+      releaseShortcut();
     }
   }
   ipcMain.handle("koswork:computer-history", async (event) => {
     if (!trusted(event)) return { error: "Недоверенный источник." };
     try {
-      return { items: history.list(await checkedContext(event)) };
+      return {
+        items: history
+          .list(await checkedContext(event))
+          .filter((item) => item.executionMode === "computer")
+      };
     } catch (error) {
       return failure(error);
     }
@@ -204,6 +220,16 @@ function createComputerConsole({
       return failure(error);
     } finally {
       pending = false;
+    }
+  });
+  ipcMain.handle("koswork:computer-browser", async (event) => {
+    if (!trusted(event) || !openBrowser) return { error: "COMPUTER_OWNER_UNVERIFIED" };
+    try {
+      await checkedContext(event);
+      await openBrowser();
+      return { opened: true };
+    } catch (error) {
+      return failure(error);
     }
   });
   ipcMain.handle("koswork:computer-projects", async (event) => {
@@ -289,7 +315,7 @@ function createComputerConsole({
     epoch++;
     selectionController?.abort();
     runner.stop();
-    globalShortcut.unregister("CommandOrControl+Alt+Shift+K");
+    releaseShortcut();
   };
   const invalidate = () => {
     stop();

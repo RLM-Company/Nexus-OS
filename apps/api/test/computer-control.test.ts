@@ -155,6 +155,42 @@ async function fixture(
 }
 
 describe("owner-bound computer proposals", () => {
+  it("browser mode starts on a text-only route and does not transmit a screenshot by default", async () => {
+    const f = await fixture({
+      vision: false,
+      output: { ...action, action: { kind: "browser_open", url: "https://example.test" } }
+    });
+    Object.assign(f.input, { execution_mode: "browser" });
+    expect(await f.create()).toMatchObject({ execution_mode: "browser" });
+    const value = structuredClone(step);
+    delete value.observation.image_jpeg_base64;
+    value.observation.browser = { tab_id: "a".repeat(12), generation: 1 };
+    expect(await f.next(value)).toMatchObject({ action: { kind: "browser_open" } });
+    expect(f.calls[0]!.messages[1]!.images).toBeUndefined();
+    expect(f.calls[0]!.routing.required_features).not.toContain("vision");
+    expect(f.calls[0]!.messages[0]!.content).toContain("no desktop, shell");
+  });
+  it("browser image requests require a vision route before dispatch, with no automatic fallback", async () => {
+    const f = await fixture({ vision: false });
+    Object.assign(f.input, { execution_mode: "browser" });
+    await f.create();
+    const value = structuredClone(step);
+    value.observation.browser = { tab_id: "a".repeat(12), generation: 1 };
+    await expect(f.next(value)).rejects.toThrow();
+    expect(f.calls).toHaveLength(0);
+  });
+  it("browser sessions reject native OS commands and computer sessions reject browser commands", async () => {
+    const a = await fixture();
+    Object.assign(a.input, { execution_mode: "browser" });
+    await a.create();
+    const value = structuredClone(step);
+    delete value.observation.image_jpeg_base64;
+    value.observation.browser = { tab_id: "a".repeat(12), generation: 1 };
+    await expect(a.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+    const b = await fixture({ output: { ...action, action: { kind: "browser_read" } } });
+    await b.create();
+    await expect(b.next()).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+  });
   it.each([
     { kind: "workspace_list", path: "", cursor: 0 },
     { kind: "workspace_find", path: "", mode: "text", query: "summary" },

@@ -58,6 +58,7 @@ function cleanRecord(r) {
     !UUID.test(r.writer) ||
     !PROJECT.test(r.project) ||
     !STATES.has(r.status) ||
+    (r.executionMode !== undefined && !["computer", "browser"].includes(r.executionMode)) ||
     !validTime(r.createdAt) ||
     !validTime(r.updatedAt) ||
     r.updatedAt < r.createdAt ||
@@ -83,6 +84,7 @@ function cleanRecord(r) {
     project: r.project,
     goal: r.goal,
     status: r.status,
+    executionMode: r.executionMode ?? "computer",
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     steps,
@@ -228,6 +230,7 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
         throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
       return {
         taskId: r.id,
+        executionMode: r.executionMode,
         project: r.project,
         goal: r.goal,
         requiresReview: needsReview(r),
@@ -270,13 +273,17 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
         if (/^[a-f0-9]{64}(?:\.json|\.[a-f0-9-]{36}\.tmp)$/.test(name))
           fs.unlinkSync(path.join(directory, name));
     },
-    start(context, { project, goal, recoveredFrom = null, workspaceId = null }) {
+    start(
+      context,
+      { project, goal, recoveredFrom = null, workspaceId = null, executionMode = "computer" }
+    ) {
       if (
         !PROJECT.test(project) ||
         (workspaceId !== null &&
           (typeof workspaceId !== "string" || !/^[a-f0-9]{24}$/.test(workspaceId)))
       )
         fail();
+      if (!["computer", "browser"].includes(executionMode)) fail();
       const savedGoal = safeGoal(goal);
       const records = read(context);
       let reviewRequired = false;
@@ -284,6 +291,7 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
         const prior = api.recovery(context, recoveredFrom);
         if (prior.goal !== goal || prior.project !== project)
           throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
+        if (prior.executionMode !== executionMode) throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
         if (prior.workspaceId !== workspaceId) throw Error("COMPUTER_WORKSPACE_CHANGED");
         reviewRequired = prior.requiresReview;
       }
@@ -306,6 +314,7 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
         createdAt: timestamp,
         updatedAt: timestamp,
         status: "running",
+        executionMode,
         steps: [],
         recoveredFrom,
         workspaceId,
