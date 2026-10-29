@@ -49,3 +49,4 @@ export * from "./work-plan-package.js";
 export * from "./intelligence-graph-package.js";
 export type { IntelligenceGraphEvidenceAudit } from "./intelligence-graph-audit.js";
 export * from "./project-automation.js";
+export * from "./computer-control.js";

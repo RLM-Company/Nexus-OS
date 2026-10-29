@@ -1,5 +1,7 @@
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
+import { ComputerControlService } from "./computer-control/service.js";
+import { registerComputerControlRoutes } from "./computer-control/routes.js";
 import { registerApexRoutes } from "./apex-routes.js";
 import { registerProjectKnowledgeRoutes } from "./project-knowledge-routes.js";
 import { registerProjectAutomationRoutes } from "./project-automation-routes.js";
@@ -212,6 +214,7 @@ import type { CanvasArtifactStore } from "@cosmora/db";
 import type { MediaService } from "./media/media-service.js";
 
 export interface AppDependencies {
+  computerControl?: { enabled: boolean };
   runtimeClock?: RuntimeClock;
   config: ServerConfig;
   accountStore?: AccountStore;
@@ -642,7 +645,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             redact: [
               "req.headers.authorization",
               "req.headers.cookie",
-              "req.headers.x-step-up-token"
+              "req.headers.x-step-up-token",
+              "req.headers.x-kosmora-computer-token"
             ]
           }
   }).withTypeProvider<TypeBoxTypeProvider>();
@@ -1390,6 +1394,33 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       projects: dependencies.projectStore,
       identityFor
     });
+  }
+
+  if (dependencies.computerControl?.enabled) {
+    if (
+      !dependencies.accountStore ||
+      !dependencies.projectStore ||
+      !dependencies.emergencyStopStore ||
+      !dependencies.policyStore ||
+      !dependencies.modelGateway ||
+      !dependencies.manager ||
+      !dependencies.ownerBudget
+    )
+      throw new Error(
+        "Computer control requires verified identity, accounting, projects and model runtime"
+      );
+    const computer = new ComputerControlService({
+      account: dependencies.accountStore,
+      projects: dependencies.projectStore,
+      emergency: dependencies.emergencyStopStore,
+      gateway: dependencies.modelGateway,
+      manager: dependencies.manager,
+      budget: dependencies.ownerBudget,
+      policy: dependencies.policyStore
+    });
+    registerComputerControlRoutes(app, computer, identityFor);
+    dependencies.ownerPrivacy?.register(computer.privacyAdapter());
+    app.addHook("preClose", () => computer.stop());
   }
 
   if (dependencies.accountStore && dependencies.accountModel)

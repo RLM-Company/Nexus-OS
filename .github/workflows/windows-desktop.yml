@@ -46,6 +46,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Desktop checks failed." }
           npm run verify:unsigned
           if ($LASTEXITCODE -ne 0) { throw "Unsigned distribution policy failed." }
+          # Compile the actual helper under Windows PowerShell 5, with closed stdin.
+          # This neither inspects the desktop nor performs input/app launch.
+          node -e "require('node:child_process').execFileSync(process.env.SystemRoot + '/System32/WindowsPowerShell/v1.0/powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', 'computer-helper.ps1'], { input: '', stdio: ['pipe', 'inherit', 'inherit'], timeout: 30000 })"
+          if ($LASTEXITCODE -ne 0) { throw "Computer helper compilation failed." }
           $tokens = $null
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile(

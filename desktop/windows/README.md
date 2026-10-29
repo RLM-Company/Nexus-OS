@@ -1,6 +1,30 @@
 # Kosmora for Windows
 
-Kosmora for Windows is a thin Electron shell around the existing hosted Kosmora web application. It does not implement a second UI or duplicate the API, authentication, project storage, Manager runtime or AI provider.
+Kosmora for Windows uses the existing hosted Kosmora web application and adds narrowly scoped native features. It does not duplicate the API, authentication, project storage, Manager runtime or AI provider. The 0.12.0 candidate adds an explicitly enabled local computer executor described below.
+
+## Computer control (0.12.0 candidate)
+
+Open **Koswork → Управление компьютером…** in the native menu, or **Выполнить на компьютере** in the existing web Work panel when running inside this Windows client. Choose a prepared/active project and enter the task. A native dialog explains screen disclosure and asks for per-task permission. The web button only prefills this dialog; it does not start a model request or an OS action. An authorized task activates a draft project without making an initial paid call.
+
+The executor can discover installed apps, open a catalogued app, open an HTTP(S) page in the default browser, open an existing document, focus a visible window, click, scroll and type Unicode text or common keyboard shortcuts. The API decides one structured action from a fresh primary-monitor image and bounded accessibility metadata. The next observation verifies the result; a requested action alone is not evidence of success. A model with a valid **vision** route is required; the client never substitutes a text-only route. Existing owner/project usage accounting applies.
+
+- **Stop:** native **Остановить**, **Ctrl+Alt+Shift+K**, closing the control window or exiting the application. Changing server/account or logging out invalidates the grant. No auto-resume after restart or uncertain outcomes.
+- **Bounds:** 30-minute grant, 20 steps per console task (protocol cap 30), one task per client and per owner. The mouse and keyboard belong to the agent during execution. Changed foreground/input after observation causes a fresh observation or interruption instead of typing into a stale target.
+- **Authority:** owner session, project policy, emergency stop and privacy fence are checked by the API; the client obtains a one-use authorization for the exact proposed action before native input. A separate packaged-file renderer owns the start/stop IPC. Hosted HTML has no native input RPC. Dialogs can be cancelled by the stop signal.
+- **Consequences:** the planner is instructed to request confirmation for consequential actions; native confirmation requires a fresh observation/replan. This semantic classification is model-dependent, not a guarantee that every dangerous GUI action is identified. Screen contents are untrusted evidence. Login, MFA, CAPTCHA, UAC and locked/elevated desktops require user participation.
+- **Data:** primary-screen images and accessibility text go through the selected Kosmora API to its model provider after consent. This service holds images only for processing and does not persist them; provider retention is a separate policy. Session text history is ephemeral and participates in owner privacy export/deletion. The feature is not a private cloud computer or an isolated browser profile.
+
+Source and three deterministic Windows fixtures are implemented: Unicode input in an owned window, form submission in the default browser, and exact text saved to a generated temporary document in Notepad. Native edit controls that explicitly support `WM_UNICHAR` receive UTF-32 text through that message; other controls use Unicode keyboard input. Neither path reads or modifies the clipboard. **Installer acceptance, live-model end-to-end acceptance and deployment are outstanding.** Three fixtures do not prove arbitrary application compatibility. See [the handoff](../../docs/handoff/KOSWORK_COMPUTER_CONTROL_2026-10-29_RU.md).
+
+Explicit development checks (pinned, already available Electron 44.5.1 executable; no installer or paid model):
+
+```powershell
+node scripts/run-computer-control-live.mjs --run --electron <absolute-electron.exe>
+node scripts/run-computer-control-live.mjs --run --browser --electron <absolute-electron.exe>
+node scripts/run-computer-control-live.mjs --run --document --electron <absolute-electron.exe>
+```
+
+Run these from the repository root on an idle, unlocked desktop. They create temporary synthetic data only. The browser test opens one generated localhost tab; the document test opens a newly generated temporary `.txt` in its default application. They never select unrelated documents or close existing user tabs. No test control window or grant becomes a production session.
 
 ## Runtime and security model
 
@@ -8,7 +32,7 @@ Kosmora for Windows is a thin Electron shell around the existing hosted Kosmora 
 - The selected origin is stored in Electron `userData/connection.json`. A replacement origin is saved only after a successful health check, so a failed edit does not destroy the last working choice.
 - After the server is reachable, the shell loads the existing Kosmora web UI. Owner authentication happens in Kosmora's ordinary web login. The desktop shell does not collect, store or inject HTTP Basic credentials, passwords or tokens.
 - TLS verification is Electron/Chromium's normal verification. There is no certificate-error bypass.
-- Remote content runs with `nodeIntegration: false`, `contextIsolation: true` and `sandbox: true`. The preload bridge exposes connection controls only to the local `file:` connection screen.
+- Remote content runs with `nodeIntegration: false`, `contextIsolation: true` and `sandbox: true`. Connection controls are available only to the local `file:` connection screen. Hosted content receives bounded text-draft methods and an opener for the separate native computer-consent window; it cannot invoke screen, keyboard, mouse, shell or filesystem operations.
 - Navigation remains on the selected Kosmora origin. External `https:`/`mailto:` new-window links require explicit confirmation before opening in the OS; automatic redirects, `file:`, `data:` and custom protocols are blocked.
 - Permission requests from hosted content are denied by the shell. Add a narrowly scoped policy only if a future feature genuinely requires one.
 - Downloads are accepted only when the complete redirect chain remains on the active Kosmora origin. Filenames are sanitized and existing files are not overwritten.

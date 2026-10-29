@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Koswork — управление компьютером</title>
+    <link rel="stylesheet" href="computer.css" />
+    <script defer src="computer.js"></script>
+  </head>
+  <body>
+    <main>
+      <h1>Управление компьютером</h1>
+      <p>
+        Браузер, приложения и документы на этом устройстве. Во время работы агент использует
+        основной экран, мышь и клавиатуру.
+      </p>
+      <p id="connection" role="status">Проверка подключения…</p>
+      <label for="project">Проект Koswork</label>
+      <select id="project" disabled></select>
+      <label for="goal">Что нужно сделать</label>
+      <textarea
+        id="goal"
+        rows="5"
+        maxlength="8000"
+        placeholder="Например: открой Блокнот и напиши краткий план встречи"
+      ></textarea>
+      <div class="actions">
+        <button id="start" disabled>Начать</button><button id="stop" disabled>Остановить</button>
+      </div>
+      <p class="hint">
+        Экстренная остановка: Ctrl + Alt + Shift + K. Закрытие этого окна также останавливает
+        управление.
+      </p>
+      <ol id="events" aria-live="polite"></ol>
+    </main>
+  </body>
+</html>

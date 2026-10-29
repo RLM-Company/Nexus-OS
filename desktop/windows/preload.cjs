@@ -15,13 +15,16 @@ if (window.location.protocol === "file:") {
   });
 }
 
-// The remote renderer receives only the bounded text-draft API. Every request is
-// independently origin- and owner-checked by the Electron main process.
+// Hosted content receives bounded drafts and an opener for the separate native
+// consent window. No screen, keyboard, mouse, shell or filesystem RPC is exposed.
 if (window.location.protocol === "https:" || window.location.protocol === "http:") {
   contextBridge.exposeInMainWorld("kosmoraDesktopDraft", {
     load: (scope) => ipcRenderer.invoke("cosmora:draft-load", scope),
     save: (scope, text) => ipcRenderer.invoke("cosmora:draft-save", scope, text),
     clear: (scope) => ipcRenderer.invoke("cosmora:draft-clear", scope),
     flush: (scope, text) => ipcRenderer.send("cosmora:draft-flush", scope, text)
+  });
+  contextBridge.exposeInMainWorld("kosmoraDesktopComputer", {
+    open: (input) => ipcRenderer.invoke("koswork:computer-open", input)
   });
 }

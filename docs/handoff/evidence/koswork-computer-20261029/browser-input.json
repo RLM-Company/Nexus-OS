@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "actual_value": "KosworkBrowser_5415bef7-043c-41d7-808b-88f704819c80",
+  "status": "completed",
+  "steps": 5,
+  "model": "synthetic deterministic planner; no paid model",
+  "actions": ["open_url", "click", "type_text", "press", "done"],
+  "observations": [
+    {
+      "owned_active": false,
+      "owned_window_seen": false
+    },
+    {
+      "owned_active": true,
+      "owned_window_seen": true
+    },
+    {
+      "owned_active": true,
+      "owned_window_seen": true
+    },
+    {
+      "owned_active": true,
+      "owned_window_seen": true
+    },
+    {
+      "owned_active": true,
+      "owned_window_seen": true
+    }
+  ],
+  "at": "2026-10-29T08:51:41.309Z"
+}

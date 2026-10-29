@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "actual_text": "﻿Koswork temporary document\r\nKoswork: Привет 🌙",
+  "status": "completed",
+  "steps": 5,
+  "model": "synthetic deterministic planner; no paid model",
+  "actions": ["open_file", "press", "type_text", "press", "done"],
+  "input_methods": ["unicode_message"],
+  "at": "2026-10-29T08:53:12.892Z"
+}

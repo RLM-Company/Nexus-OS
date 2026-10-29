@@ -7,6 +7,7 @@ import Link from "next/link";
 import { WorkManagerDag } from "./work-manager-dag";
 import { WorkManagerProgress } from "./work-manager-progress";
 import { WorkManagerMemory } from "./work-manager-memory";
+import { DesktopComputerButton } from "./desktop-computer-button";
 import { useEffect, useRef, useState } from "react";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
@@ -289,6 +290,11 @@ export function ManagerWorkPanel({
       >
         Создать файлы
       </button>
+      <DesktopComputerButton
+        projectId={projectId}
+        goal={goal}
+        disabled={busy || executionGate !== "clear"}
+      />
       {!historyLoaded && <p className="manager-work-usage">Загружаем задачи проекта…</p>}
       {error && <p role="alert">{error}</p>}
       {works.length > 0 && (
