@@ -1,5 +1,52 @@
 import { expect, test } from "@playwright/test";
 
+test("desktop Work entry prefers the unified native task and only transfers its goal", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/projects", {
+    data: { initial_message: "Единая задача Koswork", client_message_id: crypto.randomUUID() }
+  });
+  expect(created.status()).toBe(201);
+  const { project } = (await created.json()) as { project: { id: string } };
+  await request.put(`/api/v1/projects/${project.id}/autonomy-profile`, {
+    data: { base_level: "A2", overrides: [], expected_version: 1 }
+  });
+  await page.addInitScript(() => {
+    const target = window as Window & {
+      kosmoraDesktopWork: unknown;
+      kosmoraDesktopComputer: unknown;
+    };
+    target.kosmoraDesktopWork = {
+      open: (input: unknown) => {
+        document.documentElement.dataset.workRequest = JSON.stringify(input);
+        return Promise.resolve({ ok: true });
+      }
+    };
+    target.kosmoraDesktopComputer = {
+      open: () => {
+        throw new Error("Standalone computer opener must not replace unified Work");
+      }
+    };
+  });
+  await page.goto(`/?project=${project.id}&view=plan`);
+  const panel = page.getByRole("region", { name: "Выполнение задачи Manager" }),
+    goal = "Найди сведения и сохрани отчёт с источниками";
+  await panel.getByLabel("Задача для выполнения").fill(goal);
+  await panel.getByRole("button", { name: "Выполнить в Koswork", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-work-request",
+    JSON.stringify({ project: project.id, goal })
+  );
+  expect(
+    (
+      (await (await request.get(`/api/v1/projects/${project.id}/work`)).json()) as {
+        items: unknown[];
+      }
+    ).items
+  ).toHaveLength(0);
+});
+
 test("desktop computer entry transfers the goal to native consent without starting Work", async ({
   page,
   request

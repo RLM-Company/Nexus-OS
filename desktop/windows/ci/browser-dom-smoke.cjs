@@ -287,6 +287,48 @@ async function run() {
     }
     await preview.setViewportSize({ width: 1000, height: 640 });
     assert.equal(await preview.locator("body").evaluate((e) => e.scrollWidth > innerWidth), false);
+    const workPreview = await browser.newPage({ viewport: { width: 1000, height: 640 } });
+    await workPreview.addInitScript(() => {
+      window.kosworkBrowser = {
+        onState() {},
+        onEvent() {},
+        command: async () => ({
+          tabs: [],
+          projects: [],
+          downloads: [],
+          taskMode: "work",
+          workTask: {
+            environment: "browser",
+            steps: [
+              {
+                title: "<script>untrusted label</script>",
+                criteria: "Inspect a source",
+                state: "running",
+                evidence: ""
+              },
+              {
+                title: "Save report",
+                criteria: "Verify actual file",
+                state: "pending",
+                evidence: ""
+              }
+            ]
+          }
+        })
+      };
+    });
+    await workPreview.goto(pathToFileURL(path.join(__dirname, "../browser/browser.html")).href);
+    assert.ok(await workPreview.locator("#work-plan").isVisible());
+    assert.equal(await workPreview.locator("#work-steps script").count(), 0);
+    assert.ok(
+      (await workPreview.locator("#work-steps").innerText()).includes(
+        "<script>untrusted label</script>"
+      )
+    );
+    assert.equal(
+      await workPreview.locator("body").evaluate((e) => e.scrollWidth > innerWidth),
+      false
+    );
     process.stdout.write(
       JSON.stringify({
         status: "passed",

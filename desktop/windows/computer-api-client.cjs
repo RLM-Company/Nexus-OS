@@ -95,7 +95,7 @@ function createComputerApiClient({ identity, getSession }) {
             client_secret: token,
             goal,
             max_steps: maxSteps,
-            ...(executionMode === "browser" ? { execution_mode: "browser" } : {})
+            ...(executionMode !== "computer" ? { execution_mode: executionMode } : {})
           },
           expected: session,
           signal
@@ -103,7 +103,7 @@ function createComputerApiClient({ identity, getSession }) {
         if (result.id !== id) throw Error("COMPUTER_RESPONSE_INVALID");
         if (result.planner?.kind !== "model_gateway" || result.planner.mode !== "provider")
           throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
-        if (executionMode === "browser" && result.execution_mode !== "browser")
+        if (executionMode !== "computer" && result.execution_mode !== executionMode)
           throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
         return session;
       } catch (error) {

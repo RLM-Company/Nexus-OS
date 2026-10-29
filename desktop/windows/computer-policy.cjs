@@ -24,6 +24,9 @@ const keyNames = new Set([
   ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`)
 ]);
 const fields = {
+  work_plan: ["steps"],
+  work_switch: ["environment"],
+  work_step: ["step", "state", "evidence", "observation_id"],
   browser_open: ["url"],
   browser_search: ["query"],
   browser_tabs: [],
@@ -84,6 +87,26 @@ function validateComputerAction(action) {
   )
     throw Error("COMPUTER_ACTION_INVALID");
   const valid = (() => {
+    if (action.kind === "work_plan") {
+      try {
+        require("./work-cycle-policy.cjs").plan(action.steps);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    if (action.kind === "work_switch") return ["browser", "computer"].includes(action.environment);
+    if (action.kind === "work_step")
+      return (
+        Number.isInteger(action.step) &&
+        action.step >= 1 &&
+        action.step <= 8 &&
+        ["running", "checked"].includes(action.state) &&
+        typeof action.evidence === "string" &&
+        action.evidence.length <= 500 &&
+        !action.evidence.includes("\0") &&
+        string(action.observation_id, 128)
+      );
     if (action.kind.startsWith("browser_")) {
       try {
         if (action.kind === "browser_open")

@@ -143,6 +143,115 @@ async function runNativeBrowserAcceptance({ app, origin }) {
     assert.equal(receipt.submissions, 1);
     assert.ok(receipt.unicode);
     assert.ok(receipt.attachment);
+    const { createWorkCycleDriver } = require("../work-cycle-driver.cjs");
+    let openedResult = false,
+      workStep = 0;
+    const environmentGrants = [];
+    const workDriver = createWorkCycleDriver({
+      browser: engine,
+      identity: async () => context,
+      confirmEnvironment: async (value) => {
+        environmentGrants.push(value.environment);
+        return true;
+      },
+      computer: {
+        observe: async () => ({
+          observation_id: randomUUID(),
+          active_window: "1",
+          width: 960,
+          height: 740,
+          image_jpeg_base64: Buffer.from([255, 216, 255, 217]).toString("base64"),
+          description: openedResult
+            ? "Generated download opened in fixture app"
+            : "Fixture app awaits downloaded result"
+        }),
+        execute: async (action) => {
+          assert.equal(action.kind, "open_file");
+          assert.equal(action.path, download);
+          assert.equal(fs.readFileSync(download, "utf8"), "NATIVE-DOWNLOAD-OK");
+          openedResult = true;
+          return { requested: true };
+        },
+        stop() {}
+      }
+    });
+    const workActions = [
+      () => ({
+        kind: "work_plan",
+        steps: [
+          { title: "Find source", criteria: "Source visible" },
+          { title: "Open result", criteria: "Downloaded file inspected" }
+        ]
+      }),
+      (obs) => ({
+        kind: "work_step",
+        step: 1,
+        state: "running",
+        evidence: "",
+        observation_id: obs.observation_id
+      }),
+      () => ({ kind: "work_switch", environment: "browser" }),
+      () => ({ kind: "browser_search", query: "Native unified work fixture" }),
+      (obs) => {
+        assert.ok(JSON.parse(obs.description).view.text.includes("Native browser fixture"));
+        return {
+          kind: "work_step",
+          step: 1,
+          state: "checked",
+          evidence: "Real browser source inspected",
+          observation_id: obs.observation_id
+        };
+      },
+      (obs) => ({
+        kind: "work_step",
+        step: 2,
+        state: "running",
+        evidence: "",
+        observation_id: obs.observation_id
+      }),
+      () => ({ kind: "work_switch", environment: "computer" }),
+      () => ({ kind: "open_file", path: download }),
+      (obs) => {
+        assert.ok(JSON.parse(obs.description).view.includes("Generated download opened"));
+        return {
+          kind: "work_step",
+          step: 2,
+          state: "checked",
+          evidence: "Fixture app checked actual downloaded bytes",
+          observation_id: obs.observation_id
+        };
+      },
+      () => ({ kind: "done", summary: "Unified fixture completed" })
+    ];
+    const workRunner = new ComputerSession({
+      executionMode: "work",
+      driver: workDriver,
+      identity: async () => context,
+      confirm: async () => true,
+      notify() {},
+      planner: {
+        begin: async () => ({ id: "work-native-fixture" }),
+        authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+        end: async () => {},
+        next: async ({ observation }) => ({
+          action: workActions[workStep++](observation),
+          message: "Work fixture only",
+          requires_confirmation: false
+        })
+      }
+    });
+    assert.equal(
+      (
+        await workRunner.run({
+          project: "fixture",
+          goal: "Find source and inspect downloaded fixture",
+          maxSteps: 20
+        })
+      ).status,
+      "completed"
+    );
+    assert.deepEqual(environmentGrants, ["browser", "computer"]);
+    assert.deepEqual(workDriver.state().permissions, []);
     await engine.close(engine.state().active, true);
     assert.equal(engine.state().liveTabs, 0);
     return {
@@ -154,7 +263,10 @@ async function runNativeBrowserAcceptance({ app, origin }) {
       exactlyOneSubmit: true,
       noPageScreenshots: true,
       noPaidModel: true,
-      fixturePlanner: true
+      fixturePlanner: true,
+      unifiedWorkCycle: true,
+      computerTransport: "fixture only; no OS capture/input",
+      separateEnvironmentGrants: true
     };
   } catch (error) {
     throw new Error("Native browser fixture failed at " + stage + ": " + error.message, {

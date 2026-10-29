@@ -19,8 +19,14 @@ function createKosworkBrowser({
   history,
   taskGate,
   createEngine = createBrowserEngine,
+  executionMode = "browser",
+  createComputer = null,
   createRunner = (options) => new ComputerSession(options)
 }) {
+  if (!["browser", "work"].includes(executionMode) || (executionMode === "work" && !createComputer))
+    throw Error("COMPUTER_ACTION_INVALID");
+  const channel = executionMode === "work" ? "koswork:work" : "koswork:browser";
+  const stepLimit = executionMode === "work" ? 90 : 30;
   let shortcutHeld = false;
   function releaseShortcut() {
     if (shortcutHeld) {
@@ -32,6 +38,7 @@ function createKosworkBrowser({
   const planner = createComputerApiClient({ identity, getSession });
   let window = null,
     engine = null,
+    workDriver = null,
     runner = null,
     bound = null,
     epoch = 0,
@@ -66,11 +73,13 @@ function createKosworkBrowser({
     folder: bound ? folderState() : null,
     running: !!runner?.active,
     paused: runner?.active?.phase === "awaiting_user",
-    notice
+    notice,
+    taskMode: executionMode,
+    workTask: workDriver?.state() ?? null
   });
   const tell = (value) => {
     if (window && !window.isDestroyed())
-      window.webContents.send("koswork:browser-state", { ...state(), ...value });
+      window.webContents.send(channel + "-state", { ...state(), ...value });
   };
   const same = (a, b) => !!a && !!b && a.origin === b.origin && a.owner === b.owner;
   async function authorize(e) {
@@ -88,7 +97,7 @@ function createKosworkBrowser({
     return context;
   }
   const failure = (error) => ({
-    error: /^(?:BROWSER|COMPUTER)_[A-Z_]+$/.test(error?.message)
+    error: /^(?:BROWSER|COMPUTER|WORK)_[A-Z_]+$/.test(error?.message)
       ? error.message
       : "BROWSER_INTERRUPTED"
   });
@@ -104,6 +113,7 @@ function createKosworkBrowser({
     window = null;
     engine?.dispose();
     engine = null;
+    workDriver = null;
     bound = null;
     projects = [];
     void workspace.invalidate();
@@ -111,6 +121,22 @@ function createKosworkBrowser({
   }
   async function show(initial) {
     if (window && !window.isDestroyed()) {
+      if (initial && (pending || runner?.active)) throw Error("COMPUTER_BUSY");
+      if (initial) {
+        const ownedWindow = window,
+          revision = epoch,
+          context = bound;
+        const result = await planner.request("/api/v1/projects", { expected: context });
+        if (window !== ownedWindow || revision !== epoch || !same(context, await identity()))
+          throw Error("COMPUTER_IDENTITY_CHANGED");
+        if (pending || runner?.active) throw Error("COMPUTER_BUSY");
+        projects = (result.items ?? [])
+          .filter((p) => ["DRAFT", "ACTIVE"].includes(p.status))
+          .map((p) => ({ id: p.id, title: p.title }));
+        if (!projects.some((p) => p.id === initial.project))
+          throw Error("COMPUTER_PROJECT_UNAVAILABLE");
+        tell({ prefill: initial });
+      }
       window.show();
       window.focus();
       return true;
@@ -136,10 +162,13 @@ function createKosworkBrowser({
       height: 840,
       minWidth: 1000,
       minHeight: 640,
-      title: "Koswork · Browser",
+      title: executionMode === "work" ? "Koswork · Рабочая задача" : "Koswork · Browser",
       backgroundColor: "#090b0e",
       webPreferences: {
-        preload: path.join(__dirname, "preload.cjs"),
+        preload: path.join(
+          __dirname,
+          executionMode === "work" ? "../work-cycle-preload.cjs" : "preload.cjs"
+        ),
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
@@ -151,7 +180,7 @@ function createKosworkBrowser({
       Menu,
       dialog,
       shortcut: (key) => {
-        if (window === ownedWindow) ownedWindow.webContents.send("koswork:browser-shortcut", key);
+        if (window === ownedWindow) ownedWindow.webContents.send(channel + "-shortcut", key);
       },
       window: ownedWindow,
       browserSession: session,
@@ -184,18 +213,61 @@ function createKosworkBrowser({
         if (window === ownedWindow && same(bound, context)) tell(value);
       }
     }));
+    const ownedDriver =
+      executionMode === "work"
+        ? (workDriver = require("../work-cycle-driver.cjs").createWorkCycleDriver({
+            browser: ownedEngine,
+            computer: createComputer(),
+            identity,
+            notify: () => {
+              if (window === ownedWindow) tell();
+            },
+            onEnvironment: (environment) => {
+              if (window !== ownedWindow) throw Error("COMPUTER_SESSION_STOPPED");
+              if (environment === "computer") ownedWindow.minimize();
+              else {
+                ownedWindow.restore();
+                ownedWindow.show();
+                ownedWindow.focus();
+              }
+            },
+            confirmEnvironment: async (value) => {
+              if (window !== ownedWindow || !same(bound, value.context)) return false;
+              const answer = await dialog.showMessageBox(ownedWindow, {
+                type: "question",
+                title: "Koswork · Доступ к среде",
+                defaultId: 1,
+                cancelId: 1,
+                signal: value.signal,
+                buttons: ["Разрешить для задачи", "Отмена"],
+                message:
+                  value.environment === "computer"
+                    ? "Разрешить управление вашим ПК?"
+                    : "Разрешить работу в браузере Koswork?",
+                detail:
+                  value.goal +
+                  "\n\n" +
+                  (value.environment === "computer"
+                    ? "Модель получит снимки основного монитора и сможет открывать приложения, работать с окнами, мышью и клавиатурой в пределах цели. На экране могут быть личные данные. Это отдельное разрешение, доступ к браузеру его не заменяет."
+                    : "Модель получит текст и элементы страниц отдельного браузера; снимки страниц — по запросу. Это не разрешает управление рабочим столом.") +
+                  "\nРазрешение действует только до остановки текущей задачи. Важные действия подтверждаются отдельно. Остановка: Ctrl+Alt+Shift+K."
+              });
+              return answer.response === 0;
+            }
+          }))
+        : ownedEngine;
     const ownedRunner = (runner = createRunner({
-      driver: ownedEngine,
+      driver: ownedDriver,
       planner,
       identity,
       workspace,
       history,
       taskGate,
-      executionMode: "browser",
+      executionMode,
       allowHumanResume: true,
       notify: (value) => {
         if (window === ownedWindow && same(bound, context))
-          ownedWindow.webContents.send("koswork:browser-event", value);
+          ownedWindow.webContents.send(channel + "-event", value);
       },
       confirm: async (value) => {
         if (window !== ownedWindow || !same(bound, context)) return false;
@@ -208,11 +280,13 @@ function createKosworkBrowser({
           buttons: [value.kind === "session" ? "Разрешить задачу" : "Выполнить действие", "Отмена"],
           message:
             value.kind === "session"
-              ? "Разрешить агенту работать в браузере Koswork?"
+              ? executionMode === "work"
+                ? "Начать общую задачу Koswork?"
+                : "Разрешить агенту работать в браузере Koswork?"
               : "Подтвердить действие на сайте?",
           detail:
             value.kind === "session"
-              ? `${value.goal}\n\nАгент получит текст и элементы активной страницы; по запросу — снимок только страницы. Входы и CAPTCHA выполняются вами на паузе. ${value.workspace ? "Выбрана папка: " + value.workspace.name + ". Разрешённые файлы могут передаваться сайту или модели для задачи." : "Рабочая папка не подключена."} Сеанс — до 30 минут и 30 шагов. Остановка: Ctrl+Alt+Shift+K или «Забрать управление».`
+              ? `${value.goal}\n\n${executionMode === "work" ? "Сначала агент составит план. Доступ к браузеру и управление ПК запрашиваются отдельно; разрешения не восстанавливаются после перезапуска." : "Агент получит текст и элементы активной страницы; по запросу — снимок только страницы."} Входы и CAPTCHA выполняются вами на паузе. ${value.workspace ? "Выбрана папка: " + value.workspace.name + ". Разрешённые файлы могут передаваться сайту или модели для задачи." : "Рабочая папка не подключена."} Сеанс — до 30 минут и ${stepLimit} шагов. Остановка: Ctrl+Alt+Shift+K или «Забрать управление».`
               : `${value.message}\n\n${JSON.stringify(value.evidence ?? {})}\n\n${JSON.stringify(value.action)}${value.recoveryReview ? "\nПрошлая попытка могла уже изменить данные. Сначала проверьте результат." : ""}`
         });
         return answer.response === 0;
@@ -227,7 +301,7 @@ function createKosworkBrowser({
       ) {
         event.preventDefault();
         ownedRunner.stop();
-        ownedWindow.webContents.send("koswork:browser-shortcut", input.key.toLowerCase());
+        ownedWindow.webContents.send(channel + "-shortcut", input.key.toLowerCase());
       }
     });
     ownedWindow.webContents.on("will-navigate", (e) => e.preventDefault());
@@ -258,10 +332,12 @@ function createKosworkBrowser({
       notice =
         "Проекты недоступны. Можно просматривать сайты вручную; для агента требуется подключение.";
     }
+    if (initial && !projects.some((p) => p.id === initial.project))
+      throw Error("COMPUTER_PROJECT_UNAVAILABLE");
     if (window === ownedWindow) tell({ prefill: initial });
     return true;
   }
-  ipcMain.handle("koswork:browser-command", async (e, command, input) => {
+  ipcMain.handle(channel + "-command", async (e, command, input) => {
     if (!trusted(e) || typeof command !== "string") return { error: "BROWSER_UNTRUSTED" };
     if (command === "state") {
       try {
@@ -304,7 +380,7 @@ function createKosworkBrowser({
     if (command === "history") {
       try {
         return {
-          items: history.list(await authorize(e)).filter((x) => x.executionMode === "browser")
+          items: history.list(await authorize(e)).filter((x) => x.executionMode === executionMode)
         };
       } catch (error) {
         return failure(error);
@@ -326,7 +402,8 @@ function createKosworkBrowser({
         let value;
         if (command === "recover") {
           const recovery = history.recovery(context, input);
-          if (recovery.executionMode !== "browser") throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
+          if (recovery.executionMode !== executionMode)
+            throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
           value = { project: recovery.project, goal: recovery.goal, recovery };
         } else {
           if (
@@ -346,7 +423,11 @@ function createKosworkBrowser({
         if (!globalShortcut.register("CommandOrControl+Alt+Shift+K", () => ownedRunner.stop()))
           throw Error("COMPUTER_STOP_SHORTCUT_UNAVAILABLE");
         shortcutHeld = true;
-        const result = await ownedRunner.run({ ...value, maxSteps: 30, expectedContext: context });
+        const result = await ownedRunner.run({
+          ...value,
+          maxSteps: stepLimit,
+          expectedContext: context
+        });
         tell();
         return result;
       } catch (error) {

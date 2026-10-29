@@ -17,6 +17,8 @@ class ComputerSession {
     taskGate = null,
     now = Date.now
   }) {
+    if (!["computer", "browser", "work"].includes(executionMode))
+      throw Error("COMPUTER_ACTION_INVALID");
     Object.assign(this, {
       driver,
       planner,
@@ -52,7 +54,11 @@ class ComputerSession {
   async run({ project, goal, maxSteps = 20, recovery = null, expectedContext = null }) {
     if (this.poisoned) throw Error("COMPUTER_RECOVERY_RESTART_REQUIRED");
     if (this.active) throw Error("COMPUTER_BUSY");
-    if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 30)
+    if (
+      !Number.isInteger(maxSteps) ||
+      maxSteps < 1 ||
+      maxSteps > (this.executionMode === "work" ? 90 : 30)
+    )
       throw Error("COMPUTER_STEPS_INVALID");
     const release = this.taskGate?.claim();
     const state = {
@@ -104,6 +110,7 @@ class ComputerSession {
         throw Error("COMPUTER_SESSION_STOPPED");
       state.grant = this.gate.enable({ ...context, project, goal });
       await this.assertLive(state);
+      if (this.executionMode === "work") this.driver.begin({ context, goal, recovery });
       if (
         recovery &&
         (recovery.project !== project ||
@@ -126,6 +133,7 @@ class ComputerSession {
           task_id: state.journal.id,
           message: "Локальная контрольная точка сохранена"
         });
+      if (this.executionMode === "work") state.journal?.plan(this.driver.checkpoint());
       state.session = await this.planner.begin({
         project,
         goal,
@@ -189,7 +197,8 @@ class ComputerSession {
             !action.kind.startsWith("browser_") &&
             !action.kind.startsWith("workspace_") &&
             !["observe", "wait", "done", "ask_user"].includes(action.kind)) ||
-          (this.executionMode !== "browser" && action.kind.startsWith("browser_"))
+          (this.executionMode === "computer" && action.kind.startsWith("browser_")) ||
+          (this.executionMode !== "work" && action.kind.startsWith("work_"))
         )
           throw Error("COMPUTER_ACTION_INVALID");
         state.journal?.proposal(step + 1, action, proposal.decision_source);
@@ -209,9 +218,34 @@ class ComputerSession {
           continue;
         }
         if (action.kind === "done") {
+          if (this.driver.validateCompletion && !this.driver.validateCompletion(observation))
+            throw Error("WORK_RESULT_UNCHECKED");
           state.journal?.mark(step + 1, "not_executed");
           outcome = "completed";
           return result({ status: "completed", summary: action.summary, steps: step + 1 });
+        }
+        if (this.driver.validateAction) {
+          try {
+            this.driver.validateAction(action, observation);
+          } catch (error) {
+            if (
+              ![
+                "WORK_PLAN_REQUIRED",
+                "WORK_ENVIRONMENT_REQUIRED",
+                "WORK_STEP_REQUIRED",
+                "WORK_FORMAT_UNSUPPORTED"
+              ].includes(error.message)
+            )
+              throw error;
+            state.journal?.mark(step + 1, "not_executed");
+            previousResult = JSON.stringify({
+              not_executed: true,
+              reason: error.message,
+              instruction:
+                "Create the plan, select its running step and authorize the required environment. Text-file tools cannot create Office/PDF documents: use a real authorized application, never rename plain text to an Office extension."
+            });
+            continue;
+          }
         }
         if (action.kind === "ask_user") {
           approval = null;
@@ -268,6 +302,7 @@ class ComputerSession {
           action.kind.startsWith("workspace_") && recoveryWriteActions.has(action.kind);
         const nativeReview = this.driver.requiresConfirmation?.(action, observation) === true;
         if (
+          !this.driver.handlesConfirmation?.(action) &&
           (proposal.requires_confirmation || recoveryReview || workspaceWrite || nativeReview) &&
           !approved
         ) {
@@ -283,7 +318,7 @@ class ComputerSession {
           )
             throw Error("COMPUTER_CANCELLED");
           await this.assertLive(state);
-          if (this.executionMode === "browser" && this.driver.reobserveAfterApproval) {
+          if (this.executionMode !== "computer" && this.driver.reobserveAfterApproval) {
             let fresh;
             try {
               fresh = await this.driver.observe(state.controller.signal);
@@ -366,6 +401,8 @@ class ComputerSession {
               signal: state.controller.signal
             });
           } else response = await this.driver.execute(action, observation, state.controller.signal);
+          this.driver.recordResult?.(action, response);
+          if (this.executionMode === "work") state.journal?.plan(this.driver.checkpoint());
           state.journal?.mark(step + 1, "requested");
           pendingObservation = step + 1;
           previousResult = JSON.stringify(response).slice(0, 16000);

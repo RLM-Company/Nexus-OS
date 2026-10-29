@@ -58,7 +58,7 @@ function cleanRecord(r) {
     !UUID.test(r.writer) ||
     !PROJECT.test(r.project) ||
     !STATES.has(r.status) ||
-    (r.executionMode !== undefined && !["computer", "browser"].includes(r.executionMode)) ||
+    (r.executionMode !== undefined && !["computer", "browser", "work"].includes(r.executionMode)) ||
     !validTime(r.createdAt) ||
     !validTime(r.updatedAt) ||
     r.updatedAt < r.createdAt ||
@@ -66,7 +66,7 @@ function cleanRecord(r) {
       r.workspaceId !== undefined &&
       (typeof r.workspaceId !== "string" || !/^[a-f0-9]{24}$/.test(r.workspaceId))) ||
     !Array.isArray(r.steps) ||
-    r.steps.length > 30 ||
+    r.steps.length > (r.executionMode === "work" ? 90 : 30) ||
     !(r.goal === null || (typeof r.goal === "string" && safeGoal(r.goal) === r.goal))
   )
     fail();
@@ -85,6 +85,9 @@ function cleanRecord(r) {
     goal: r.goal,
     status: r.status,
     executionMode: r.executionMode ?? "computer",
+    ...(r.executionMode === "work"
+      ? { workPlan: r.workPlan ? require("./work-cycle-policy.cjs").plan(r.workPlan, true) : null }
+      : {}),
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     steps,
@@ -109,10 +112,11 @@ function needsReview(record) {
 }
 
 /** Single desktop-process store. Encrypted text/metadata only; never an OS grant or action payload. */
-function createComputerHistory(userData, { codec, now = Date.now } = {}) {
+function createComputerHistory(userData, { codec, now = Date.now, namespace = "computer" } = {}) {
+  if (!["computer", "work"].includes(namespace)) fail();
   if (!codec?.seal || !codec?.open) fail();
   const writer = randomUUID(),
-    directory = path.join(userData, "computer-tasks-v1");
+    directory = path.join(userData, namespace === "work" ? "work-tasks-v1" : "computer-tasks-v1");
   const target = (context) => path.join(directory, scopeFor(context) + ".json");
   function checkDirectory() {
     try {
@@ -231,6 +235,7 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
       return {
         taskId: r.id,
         executionMode: r.executionMode,
+        ...(r.executionMode === "work" ? { workPlan: r.workPlan } : {}),
         project: r.project,
         goal: r.goal,
         requiresReview: needsReview(r),
@@ -283,7 +288,7 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
           (typeof workspaceId !== "string" || !/^[a-f0-9]{24}$/.test(workspaceId)))
       )
         fail();
-      if (!["computer", "browser"].includes(executionMode)) fail();
+      if (!["computer", "browser", "work"].includes(executionMode)) fail();
       const savedGoal = safeGoal(goal);
       const records = read(context);
       let reviewRequired = false;
@@ -325,6 +330,20 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
       write(context, records);
       return {
         id: r.id,
+        plan(value) {
+          if (executionMode !== "work") fail();
+          const metadata =
+            value === null ? null : require("./work-cycle-policy.cjs").plan(value, true);
+          mutate(
+            context,
+            r.id,
+            (task) => {
+              if (!["running", "paused"].includes(task.status)) fail();
+              task.workPlan = metadata;
+            },
+            true
+          );
+        },
         proposal(index, action, source) {
           mutate(
             context,
@@ -333,7 +352,7 @@ function createComputerHistory(userData, { codec, now = Date.now } = {}) {
               if (!["running", "paused"].includes(task.status)) fail();
               if (
                 index !== task.steps.length + 1 ||
-                index > 30 ||
+                index > (executionMode === "work" ? 90 : 30) ||
                 !computerActionKinds.includes(action.kind)
               )
                 fail();
