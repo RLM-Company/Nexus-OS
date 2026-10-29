@@ -54,6 +54,9 @@ async function fixture(options = {}) {
     navigate: async (url) => {
       calls.push({ navigate: url });
     },
+    search: async (query) => {
+      calls.push({ search: query });
+    },
     manual: () => {},
     dispose: () => calls.push("dispose"),
     resize() {}
@@ -133,6 +136,12 @@ test("only exact native browser main frame can navigate, launch, recover or read
   assert.equal(f.runnerOptions.executionMode, "browser");
   await f.invoke("navigate", "example.com");
   assert.ok(f.calls.some((c) => c.navigate === "https://example.com/"));
+  await f.invoke("navigate", "Космические разработки");
+  assert.ok(f.calls.some((c) => c.search === "Космические разработки"));
+  assert.equal(
+    f.calls.some((c) => c.navigate?.includes("duckduckgo")),
+    false
+  );
   assert.ok((await f.invoke("navigate", "file:///C:/secret")).error);
 });
 test("browser recovery accepts only browser records and history never mixes desktop tasks", async () => {

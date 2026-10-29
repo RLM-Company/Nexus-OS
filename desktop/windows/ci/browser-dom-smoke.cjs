@@ -52,8 +52,10 @@ async function run() {
           web.page.on("framenavigated", (frame) => {
             if (frame === web.page.mainFrame()) web.emit("did-navigate", {}, frame.url());
           });
+          web.page.on("load", () => web.emit("did-finish-load"));
         })();
         web.isDestroyed = () => web.destroyed;
+        web.getURL = () => web.page?.url() || "about:blank";
         web.isLoading = () => web.loading;
         web.isCurrentlyAudible = () => false;
         web.setWindowOpenHandler = () => {};
@@ -102,7 +104,13 @@ async function run() {
       window,
       browserSession: session,
       workspace,
-      context: { owner: "fixture", origin: "https://example.test" }
+      context: { owner: "fixture", origin: "https://example.test" },
+      searchProvider: async (query) => ({
+        query,
+        items: [
+          { title: "Koswork local fixture", url, snippet: "Generated local source — fixture only." }
+        ]
+      })
     });
     await engine.open();
     const trace = [];
@@ -169,10 +177,57 @@ async function run() {
     assert.equal(result.status, "completed");
     assert.equal(received, "Koswork Привет 🌙");
     assert.equal(sourceScreenshots, 0);
+    await engine.search("Koswork browser test");
+    const searchObservation = await engine.observe(new AbortController().signal);
+    const searchDocument = JSON.parse(searchObservation.description);
+    assert.equal(searchDocument.search.query, "Koswork browser test");
+    assert.equal(searchDocument.url, "about:blank");
+    assert.equal(searchObservation.description.includes("file:///"), false);
+    const searchLink = searchDocument.nodes.find((n) => n.role === "a" && n.href === url);
+    assert.ok(searchLink, "first-party search exposes the actual source link to agents");
+    const searchView = views.findLast((v) => !v.webContents.isDestroyed());
+    assert.equal(
+      await searchView.webContents.page.locator("#query").innerText(),
+      "Koswork browser test"
+    );
+    if (process.env.KOSWORK_SEARCH_SCREENSHOT) {
+      const target = path.resolve(process.env.KOSWORK_SEARCH_SCREENSHOT);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      await searchView.webContents.page.screenshot({ path: target });
+    }
+    await engine.execute(
+      { kind: "browser_click", ref: searchLink.ref },
+      searchObservation,
+      new AbortController().signal
+    );
+    await searchView.webContents.page.waitForURL(url);
+    assert.ok(
+      (await searchView.webContents.page.locator("h1").innerText()).includes("Local browser task")
+    );
+    await engine.search("Earlier search");
+    await engine.search("Later search");
+    await searchView.webContents.page.goBack({ waitUntil: "load" });
+    await searchView.webContents.page
+      .locator("#query")
+      .filter({ hasText: "Earlier search" })
+      .waitFor();
+    await searchView.webContents.page.goForward({ waitUntil: "load" });
+    await searchView.webContents.page
+      .locator("#query")
+      .filter({ hasText: "Later search" })
+      .waitFor();
     const preview = await browser.newPage({ viewport: { width: 1280, height: 840 } });
     await preview.addInitScript(() => {
       const state = {
-        tabs: [{ id: "a".repeat(12), title: "Новая вкладка", url: "about:blank", loaded: false }],
+        tabs: [
+          {
+            id: "a".repeat(12),
+            title: "Новая вкладка",
+            url: "about:blank",
+            loaded: false,
+            canGoBack: true
+          }
+        ],
         active: "a".repeat(12),
         liveTabs: 0,
         projects: [{ id: "project", title: "Личное пространство" }],
@@ -238,6 +293,9 @@ async function run() {
         engine: "real headless Chromium CDP via fixture adapter",
         model: "fixture only, no paid calls",
         verified_form: received,
+        first_party_search:
+          "actual Chromium DOM rendered a generated source and opened its link; fixture search provider only",
+        search_history: "actual Chromium back/forward restored two distinct cached queries",
         steps: result.steps,
         model_steps: providerCalls,
         page_screenshots: sourceScreenshots,

@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "engine": "real headless Chromium CDP via fixture adapter",
+  "model": "fixture only, no paid calls",
+  "verified_form": "Koswork Привет 🌙",
+  "first_party_search": "actual Chromium DOM rendered a generated source and opened its link; fixture search provider only",
+  "steps": 7,
+  "model_steps": 7,
+  "page_screenshots": 0,
+  "ui_viewport": "1280x840",
+  "owner_desktop_input": false
+}

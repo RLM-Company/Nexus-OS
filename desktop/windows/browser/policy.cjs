@@ -24,7 +24,7 @@ function address(value) {
   if (/^[a-z][a-z0-9+.-]*:/i.test(value)) throw Error("BROWSER_URL_INVALID");
   if (!/\s/u.test(value) && /^(?:localhost|[\w-]+(?:\.[\w-]+)+)(?::\d+)?(?:\/|$)/u.test(value))
     return safeUrl("https://" + value);
-  return "https://duckduckgo.com/?q=" + encodeURIComponent(value);
+  return { query: require("./search.cjs").query(value) };
 }
 function profileKey(context) {
   if (

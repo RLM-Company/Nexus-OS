@@ -11,6 +11,7 @@ const { safeUrl, address, profileKey, createTaskGate } = require("../browser/pol
 const { validateComputerAction } = require("../computer-policy.cjs");
 const { ComputerSession } = require("../computer-session.cjs");
 const documentCode = require("../browser/document.cjs");
+const searchCode = require("../browser/search.cjs");
 const context = { owner: "owner", origin: "https://example.test" };
 function fixture(t, options = {}) {
   const calls = [],
@@ -39,6 +40,7 @@ function fixture(t, options = {}) {
       web.destroyed = false;
       web.value = "";
       web.isDestroyed = () => web.destroyed;
+      web.getURL = () => web.url || "about:blank";
       web.isLoading = () => false;
       web.isCurrentlyAudible = () => false;
       web.setWindowOpenHandler = (fn) => (web.openHandler = fn);
@@ -95,6 +97,10 @@ function fixture(t, options = {}) {
                   }
                 }
               };
+            }
+            if (args.functionDeclaration === searchCode.render) {
+              web.searchData = values[0];
+              return { result: { value: true } };
             }
             if (args.functionDeclaration === documentCode.locate) {
               const node = nodes.find((n) => n.ref === values[1]);
@@ -164,6 +170,111 @@ function fixture(t, options = {}) {
     }
   };
 }
+
+test("first-party search keeps the Kosmora page, passes validated live data and opens no external search UI", async (t) => {
+  const requests = [];
+  const f = fixture(t, {
+    searchProvider: async (q) => {
+      requests.push(q);
+      return {
+        query: q,
+        items: [{ title: "Docs", url: "https://example.test/docs", snippet: "Source" }]
+      };
+    }
+  });
+  await f.engine.open();
+  await f.engine.search("Космос и разработка");
+  assert.deepEqual(requests, ["Космос и разработка"]);
+  assert.equal(f.engine.state().tabs[0].searchQuery, requests[0]);
+  assert.equal(f.engine.state().tabs[0].url, "about:blank");
+  assert.ok(f.calls.some((c) => c.method === "loadURL" && searchCode.entryId(c.url)));
+  assert.equal(
+    f.calls.some((c) => c.url?.includes("duckduckgo")),
+    false
+  );
+  const observation = await f.engine.observe(new AbortController().signal);
+  assert.equal(JSON.parse(observation.description).url, "about:blank");
+  assert.equal(JSON.parse(observation.description).search.query, requests[0]);
+  assert.equal(observation.description.includes("file:///"), false);
+});
+
+test("search failure stays on the first-party page and never fabricates results or redirects", async (t) => {
+  const f = fixture(t);
+  await f.engine.open();
+  await assert.rejects(f.engine.search("real query"), /BROWSER_SEARCH_UNAVAILABLE/);
+  assert.equal(f.views[0].webContents.searchData.error, "BROWSER_SEARCH_UNAVAILABLE");
+  assert.deepEqual(f.views[0].webContents.searchData.items, []);
+  assert.equal(
+    f.calls.some((c) => c.url?.startsWith("http")),
+    false
+  );
+});
+
+test("cancelled search response cannot overwrite a subsequent navigation", async (t) => {
+  let finish;
+  const f = fixture(t, {
+    searchProvider: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  });
+  await f.engine.open();
+  const pending = f.engine.search("pending query");
+  while (!finish) await new Promise((resolve) => setImmediate(resolve));
+  await f.engine.navigate("https://example.test/next");
+  finish({ query: "pending query", items: [] });
+  await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+  assert.equal(f.engine.state().tabs[0].url, "https://example.test/next");
+  assert.equal(f.engine.state().tabs[0].searchQuery, undefined);
+});
+
+test("search policy rejects oversized queries and unsafe or mismatched results", () => {
+  assert.deepEqual(address("ordinary search"), { query: "ordinary search" });
+  assert.equal(address("example.org"), "https://example.org/");
+  assert.throws(() => searchCode.query("a".repeat(241)), /QUERY_INVALID/);
+  assert.throws(() => searchCode.query("a\nb"), /QUERY_INVALID/);
+  assert.throws(() => searchCode.results({ query: "other", items: [] }, "expected"));
+  assert.deepEqual(
+    searchCode.results(
+      {
+        query: "q",
+        items: [
+          { title: "<b>Docs</b>", url: "https://example.test/docs", snippet: "<script>x</script>" },
+          { title: "Duplicate", url: "https://example.test/docs" },
+          { title: "Bad", url: "javascript:alert(1)" },
+          { title: "Credential", url: "https://secret:pass@example.test/" }
+        ]
+      },
+      "q"
+    ),
+    [{ title: "Docs", url: "https://example.test/docs", snippet: "x" }]
+  );
+  assert.doesNotThrow(() =>
+    validateComputerAction({ kind: "browser_search", query: "actual question" })
+  );
+  assert.throws(() => validateComputerAction({ kind: "browser_search", query: "" }));
+});
+
+test("agent search observes actual results and cancelled providers cannot hold the local task", async (t) => {
+  const f = fixture(t, { searchProvider: async (q) => ({ query: q, items: [] }) });
+  await f.engine.open();
+  const obs = await f.engine.observe(new AbortController().signal);
+  assert.deepEqual(
+    await f.engine.execute(
+      { kind: "browser_search", query: "explicit search" },
+      obs,
+      new AbortController().signal
+    ),
+    { searched: true, count: 0 }
+  );
+  const g = fixture(t, { searchProvider: () => new Promise(() => {}) });
+  await g.engine.open();
+  const controller = new AbortController();
+  const pending = g.engine.search("stalled", controller.signal);
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.abort();
+  await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+});
 test("URL/action policy refuses executable schemes, credentials, code injection and extra fields", () => {
   for (const url of [
     "file:///C:/secret",
@@ -177,7 +288,7 @@ test("URL/action policy refuses executable schemes, credentials, code injection 
     assert.throws(() => validateComputerAction({ kind: "browser_open", url }), /ACTION_INVALID/);
   }
   assert.equal(address("example.com"), "https://example.com/");
-  assert.ok(address("a useful query").startsWith("https://duckduckgo.com/?q="));
+  assert.deepEqual(address("a useful query"), { query: "a useful query" });
   for (const action of [
     { kind: "browser_evaluate", code: "1" },
     { kind: "browser_click", ref: "e1", script: "x" },
@@ -235,6 +346,72 @@ test("tab cap keeps at most three page renderers and never force-evicts edited t
   await assert.rejects(g.engine.open("https://example.test/new"), /TAB_LIMIT/);
   assert.equal(g.engine.state().tabs.length, 3);
   assert.equal(g.takeovers, 3);
+});
+
+test("empty and sleeping tabs close cleanly, and rapid opens cannot exceed the renderer cap", async (t) => {
+  const f = fixture(t);
+  const home = await f.engine.open();
+  await f.engine.close(home.id);
+  assert.equal(f.engine.state().tabs.length, 1);
+  assert.equal(f.engine.state().liveTabs, 0);
+  const g = fixture(t);
+  await Promise.all(
+    Array.from({ length: 8 }, (_, i) => g.engine.open("https://example.test/" + i))
+  );
+  assert.equal(g.engine.state().liveTabs, 3);
+  const sleeping = g.engine.state().tabs.find((tab) => !tab.loaded);
+  await g.engine.close(sleeping.id);
+  assert.equal(g.engine.state().tabs.length, 7);
+});
+
+test("search history restores each cached query without another provider call", async (t) => {
+  let requests = 0;
+  const f = fixture(t, {
+    searchProvider: async (query) => {
+      requests++;
+      return { query, items: [] };
+    }
+  });
+  await f.engine.open();
+  await f.engine.search("first query");
+  const web = f.views[0].webContents,
+    first = web.url;
+  await f.engine.search("second query");
+  const second = web.url;
+  assert.notEqual(first, second);
+  for (const [url, query] of [
+    [first, "first query"],
+    [second, "second query"]
+  ]) {
+    web.url = url;
+    web.emit("did-navigate", {}, url);
+    web.emit("did-finish-load");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(f.engine.state().tabs[0].searchQuery, query);
+    assert.equal(web.searchData.query, query);
+  }
+  assert.equal(requests, 2);
+});
+
+test("an evicted page cannot update its replacement and manual clicks reclaim control", async (t) => {
+  const f = fixture(t);
+  const first = await f.engine.open("https://example.test/first");
+  const old = f.views[0].webContents;
+  for (let i = 0; i < 3; i++) await f.engine.open("https://example.test/" + i);
+  old.emit("did-navigate", {}, "https://wrong.test");
+  assert.equal(
+    f.engine.state().tabs.find((tab) => tab.id === first.id).url,
+    "https://example.test/first"
+  );
+  const web = f.views.at(-1).webContents;
+  web.emit("before-mouse-event", {}, { type: "mouseDown" });
+  assert.equal(f.takeovers, 1);
+  web.emit(
+    "before-input-event",
+    { preventDefault() {} },
+    { type: "keyDown", control: true, key: "l" }
+  );
+  assert.equal(f.engine.state().tabs.at(-1).dirty, false);
 });
 test("navigation, resize, tab changes and target changes invalidate old refs before input", async (t) => {
   for (const change of [
@@ -385,6 +562,88 @@ test("one local task gate prevents concurrent computer/browser agent runs", asyn
   const next = gate.claim();
   next();
   assert.equal(gate.busy, false);
+});
+
+test("blocked-download floods cannot evict active transfers from cancellation tracking", async (t) => {
+  const f = fixture(t);
+  await f.engine.open("https://example.test");
+  const web = f.views[0].webContents;
+  const obs = await f.engine.observe(new AbortController().signal);
+  await f.engine.execute(
+    { kind: "browser_download", ref: "e1" },
+    obs,
+    new AbortController().signal
+  );
+  const item = new EventEmitter();
+  Object.assign(item, {
+    getURLChain: () => ["https://example.test/next"],
+    getTotalBytes: () => 10,
+    getFilename: () => "result.txt",
+    getReceivedBytes: () => 0,
+    setSavePath() {},
+    cancel() {
+      this.cancelled = true;
+    }
+  });
+  f.session.emit(
+    "will-download",
+    {
+      preventDefault() {
+        throw Error("expected permitted download");
+      }
+    },
+    item,
+    web
+  );
+  for (let i = 0; i < 40; i++) f.session.emit("will-download", { preventDefault() {} }, {}, web);
+  assert.equal(f.engine.state().downloads.length, 20);
+  assert.ok(f.engine.state().downloads.some((d) => d.status === "progressing"));
+  f.engine.cancel();
+  assert.equal(item.cancelled, true);
+});
+
+test("browser limits parallel transfers and closing their tab cancels them", async (t) => {
+  const f = fixture(t);
+  await f.engine.open("https://example.test");
+  const web = f.views[0].webContents,
+    items = [];
+  for (let i = 0; i < 3; i++) {
+    const obs = await f.engine.observe(new AbortController().signal);
+    await f.engine.execute(
+      { kind: "browser_download", ref: "e1" },
+      obs,
+      new AbortController().signal
+    );
+    const item = new EventEmitter();
+    Object.assign(item, {
+      getURLChain: () => ["https://example.test/next"],
+      getTotalBytes: () => 10,
+      getFilename: () => "result" + i + ".txt",
+      getReceivedBytes: () => 0,
+      setSavePath() {},
+      cancel() {
+        this.cancelled = true;
+      }
+    });
+    f.session.emit(
+      "will-download",
+      {
+        preventDefault() {
+          throw Error("expected permitted download");
+        }
+      },
+      item,
+      web
+    );
+    items.push(item);
+  }
+  const obs = await f.engine.observe(new AbortController().signal);
+  await assert.rejects(
+    f.engine.execute({ kind: "browser_download", ref: "e1" }, obs, new AbortController().signal),
+    /ELEMENT_UNAVAILABLE/
+  );
+  await f.engine.close(f.engine.state().active, true);
+  assert.ok(items.every((item) => item.cancelled));
 });
 test("stable browser approval rechecks locally without a second model proposal", async (t) => {
   const f = fixture(t);

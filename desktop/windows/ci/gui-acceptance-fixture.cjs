@@ -36,6 +36,7 @@ function startGuiAcceptanceFixture({ onSpawnSecondInstance = null } = {}) {
   let secondInstanceTriggered = false;
   let identityRedirect = false;
   let foreignRequests = 0;
+  const browserReceipt = { submissions: 0, unicode: false, attachment: false };
   const foreignServer = http.createServer((_req, res) => {
     foreignRequests += 1;
     res.writeHead(200, {
@@ -47,6 +48,48 @@ function startGuiAcceptanceFixture({ onSpawnSecondInstance = null } = {}) {
 
   const server = http.createServer(async (req, res) => {
     const parsed = new URL(req.url || "/", "http://127.0.0.1");
+    if (parsed.pathname === "/browser/page") {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(
+        '<!doctype html><html><meta charset="utf-8"><body style="font:18px system-ui;padding:30px"><h1>Native browser fixture</h1><form method="post" enctype="multipart/form-data" action="/browser/result"><label>Query <input name="query"></label><label>Attachment <input type="file" name="attachment"></label><button>Submit fixture</button></form></body></html>'
+      );
+      return;
+    }
+    if (parsed.pathname === "/browser/result" && req.method === "POST") {
+      const chunks = [];
+      let bytes = 0;
+      for await (const chunk of req) {
+        bytes += chunk.length;
+        if (bytes > 50000) {
+          res.writeHead(413);
+          res.end();
+          return;
+        }
+        chunks.push(chunk);
+      }
+      const body = Buffer.concat(chunks).toString("utf8");
+      browserReceipt.submissions++;
+      browserReceipt.unicode = body.includes("Koswork Привет 🌙");
+      browserReceipt.attachment = body.includes("Generated browser fixture attachment");
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end('<h1>NATIVE FORM RECEIVED</h1><a href="/browser/download">Download fixture</a>');
+      return;
+    }
+    if (parsed.pathname === "/browser/download") {
+      const body = "NATIVE-DOWNLOAD-OK";
+      res.writeHead(200, {
+        "content-type": "application/octet-stream",
+        "content-disposition": 'attachment; filename="result.txt"',
+        "content-length": String(Buffer.byteLength(body))
+      });
+      res.end(body);
+      return;
+    }
+    if (parsed.pathname === "/browser/receipt") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(browserReceipt));
+      return;
+    }
 
     if (parsed.pathname === "/test-control/state") {
       res.writeHead(200, { "content-type": "application/json" });
@@ -346,6 +389,8 @@ async function runPackagedGuiAcceptanceSuite({ appExePath, workRoot }) {
     assert.equal(phase1Report.downloadsCount, 2);
     assert.equal(phase1Report.nativeIdentityRedirectDenied, true);
     assert.equal(phase1Report.foreignRedirectBlocked, true);
+    assert.equal(phase1Report.nativeBrowser?.download, true);
+    assert.equal(phase1Report.nativeBrowser?.exactlyOneSubmit, true);
     assert.deepEqual(phase1Report.downloadedFiles.sort(), [
       "report_final____ (1).md",
       "report_final____.md"

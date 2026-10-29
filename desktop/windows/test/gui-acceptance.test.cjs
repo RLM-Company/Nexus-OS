@@ -27,6 +27,49 @@ const {
 } = require("../connection-policy.cjs");
 const { createDraftStore } = require("../draft-store.cjs");
 const { createPreferenceStore, deepLinkFromArgv } = require("../desktop-state.cjs");
+const { runNativeBrowserAcceptance } = require("../browser/native-acceptance.cjs");
+
+test("native browser acceptance refuses an owner machine before Electron import or filesystem access", async () => {
+  await assert.rejects(
+    runNativeBrowserAcceptance({ app: { isPackaged: false }, origin: "http://127.0.0.1:12345" }),
+    /packaged/
+  );
+  if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted") {
+    await assert.rejects(
+      runNativeBrowserAcceptance({ app: { isPackaged: true }, origin: "http://127.0.0.1:12345" }),
+      /disposable/
+    );
+  }
+});
+
+test("native browser CI fixture verifies Unicode, a multipart attachment and exact download bytes", async () => {
+  const fixture = await startGuiAcceptanceFixture();
+  try {
+    const page = await (await fetch(fixture.origin + "/browser/page")).text();
+    assert.ok(page.includes('type="file"'));
+    const form = new FormData();
+    form.set("query", "Koswork Привет 🌙");
+    form.set("attachment", new Blob(["Generated browser fixture attachment"]), "fixture.txt");
+    assert.ok(
+      (
+        await (
+          await fetch(fixture.origin + "/browser/result", { method: "POST", body: form })
+        ).text()
+      ).includes("NATIVE FORM RECEIVED")
+    );
+    assert.deepEqual(await (await fetch(fixture.origin + "/browser/receipt")).json(), {
+      submissions: 1,
+      unicode: true,
+      attachment: true
+    });
+    assert.equal(
+      await (await fetch(fixture.origin + "/browser/download")).text(),
+      "NATIVE-DOWNLOAD-OK"
+    );
+  } finally {
+    await fixture.close();
+  }
+});
 
 test("GUI acceptance mode is explicit, packaged-only, temp-constrained, and loopback-only", () => {
   assert.equal(isGuiAcceptanceMode(["Kosmora.exe", "--cosmora-gui-acceptance"]), true);

@@ -164,6 +164,22 @@ function createKosworkBrowser({
           tell();
         }
       },
+      searchProvider: async (query, signal) => {
+        const current = await identity();
+        if (window !== ownedWindow || !same(current, context))
+          throw Error("COMPUTER_IDENTITY_CHANGED");
+        const privacy = await planner.request("/api/v1/personal-settings/privacy", {
+          expected: context,
+          signal
+        });
+        if (privacy.lifecycle !== "active") throw Error("COMPUTER_PRIVACY_BLOCKED");
+        return planner.request("/api/v1/web-search", {
+          method: "POST",
+          body: { q: query, engine: "duckduckgo" },
+          expected: context,
+          signal
+        });
+      },
       notify: (value) => {
         if (window === ownedWindow && same(bound, context)) tell(value);
       }
@@ -350,8 +366,11 @@ function createKosworkBrowser({
       if (command === "new") await engine.open();
       else if (command === "navigate") {
         const url = address(input);
-        if (!safeUrl(url)) throw Error("BROWSER_URL_INVALID");
-        await engine.navigate(url);
+        if (typeof url === "object") await engine.search(url.query);
+        else {
+          if (!safeUrl(url)) throw Error("BROWSER_URL_INVALID");
+          await engine.navigate(url);
+        }
       } else if (["switch", "close"].includes(command)) {
         if (typeof input !== "string" || !/^[a-f0-9]{12}$/.test(input))
           throw Error("BROWSER_STALE");
@@ -371,7 +390,7 @@ function createKosworkBrowser({
             if (result.response === 0 && trusted(e)) await engine.close(input, true);
           }
         }
-      } else engine.manual(command);
+      } else await engine.manual(command);
       return state();
     } catch (error) {
       return failure(error);
