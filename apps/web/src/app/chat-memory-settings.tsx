@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { CHAT_MEMORY_MAX_LENGTH, type ChatMemory } from "@cosmora/contracts/chat-memory";
+import { ContextMemorySettings } from "./context-memory-settings";
 
 const readMemory = async (response: Response): Promise<ChatMemory> => {
   if (!response.ok) throw new Error("Не удалось загрузить память чата.");
@@ -130,53 +131,56 @@ export function ChatMemorySettings({ chatId, disabled }: { chatId: string; disab
   };
 
   return (
-    <fieldset>
-      <legend>Память чата</legend>
-      <p>
-        Сохраните важные факты и пожелания. Они будут учитываться в следующих ответах только этого
-        чата.
-      </p>
-      <label htmlFor={fieldId}>Заметки для следующих ответов</label>
-      <textarea
-        id={fieldId}
-        rows={5}
-        maxLength={CHAT_MEMORY_MAX_LENGTH}
-        value={text}
-        disabled={busy || disabled || !stored}
-        onChange={(event) => {
-          setText(event.target.value);
-          setNotice("");
-        }}
-        placeholder="Например: проект на TypeScript, отвечать кратко и по-русски"
-      />
-      <p>
-        {text.length} / {CHAT_MEMORY_MAX_LENGTH}
-        {stored && text !== stored.memory_notes ? " · Не сохранено" : ""}
-      </p>
-      <button
-        type="button"
-        disabled={busy || disabled || !stored || text === stored.memory_notes}
-        onClick={() => void save(text)}
-      >
-        Сохранить память
-      </button>
-      <button
-        type="button"
-        disabled={busy || disabled || !stored?.memory_notes}
-        onClick={() => void save("")}
-      >
-        Очистить память
-      </button>
-      {busy && <p role="status">Обновление памяти…</p>}
-      {notice && <p role="status">{notice}</p>}
-      {error && (
-        <>
-          <p role="alert">{error}</p>
-          <button type="button" disabled={busy} onClick={() => void reload()}>
-            Загрузить сохранённую версию
-          </button>
-        </>
-      )}
-    </fieldset>
+    <>
+      <fieldset>
+        <legend>Память чата</legend>
+        <p>
+          Сохраните важные факты и пожелания. Они будут учитываться в следующих ответах только этого
+          чата.
+        </p>
+        <label htmlFor={fieldId}>Заметки для следующих ответов</label>
+        <textarea
+          id={fieldId}
+          rows={5}
+          maxLength={CHAT_MEMORY_MAX_LENGTH}
+          value={text}
+          disabled={busy || disabled || !stored}
+          onChange={(event) => {
+            setText(event.target.value);
+            setNotice("");
+          }}
+          placeholder="Например: проект на TypeScript, отвечать кратко и по-русски"
+        />
+        <p>
+          {text.length} / {CHAT_MEMORY_MAX_LENGTH}
+          {stored && text !== stored.memory_notes ? " · Не сохранено" : ""}
+        </p>
+        <button
+          type="button"
+          disabled={busy || disabled || !stored || text === stored.memory_notes}
+          onClick={() => void save(text)}
+        >
+          Сохранить память
+        </button>
+        <button
+          type="button"
+          disabled={busy || disabled || !stored?.memory_notes}
+          onClick={() => void save("")}
+        >
+          Очистить память
+        </button>
+        {busy && <p role="status">Обновление памяти…</p>}
+        {notice && <p role="status">{notice}</p>}
+        {error && (
+          <>
+            <p role="alert">{error}</p>
+            <button type="button" disabled={busy} onClick={() => void reload()}>
+              Загрузить сохранённую версию
+            </button>
+          </>
+        )}
+      </fieldset>
+      <ContextMemorySettings target={{ kind: "chat", id: chatId }} disabled={disabled} />
+    </>
   );
 }

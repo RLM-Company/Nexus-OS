@@ -94,6 +94,11 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
       this.sqlite.prepare(query).all(ownerId) as Record<string, unknown>[];
     const records: Record<string, unknown[]> = {
       preferences: select("SELECT * FROM kosmora_account_preferences WHERE owner_id=?"),
+      context_memory: select("SELECT * FROM context_memory_entries WHERE owner_id=?"),
+      context_memory_versions: select(
+        "SELECT v.* FROM context_memory_versions v JOIN context_memory_entries e ON e.id=v.entry_id WHERE e.owner_id=?"
+      ),
+      context_memory_settings: select("SELECT * FROM context_memory_settings WHERE owner_id=?"),
       chat_preferences: select(
         "SELECT p.* FROM kosmora_chat_preferences p JOIN general_chats c ON c.id=p.chat_id AND c.owner_id=p.owner_id WHERE c.owner_id=?"
       ),
@@ -226,6 +231,8 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
     try {
       const n = (sql: string) => Number(this.sqlite.prepare(sql).run(ownerId).changes);
       let deleted = 0;
+      deleted += n("DELETE FROM context_memory_settings WHERE owner_id=?");
+      deleted += n("DELETE FROM context_memory_entries WHERE owner_id=?");
       deleted += n("DELETE FROM general_chat_messages WHERE owner_id=?");
       deleted += n(
         "DELETE FROM general_chat_runs WHERE chat_id IN (SELECT id FROM general_chats WHERE owner_id=?)"

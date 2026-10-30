@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./context-memory": {
+      "development": "./src/context-memory.ts",
+      "types": "./src/context-memory.ts",
+      "default": "./dist/context-memory.js"
+    },
     "./apex": {
       "development": "./src/apex.ts",
       "types": "./src/apex.ts",

@@ -1,5 +1,6 @@
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
+import { registerContextMemoryRoutes } from "./context-memory-routes.js";
 import { ComputerControlService } from "./computer-control/service.js";
 import { registerComputerControlRoutes } from "./computer-control/routes.js";
 import { registerApexRoutes } from "./apex-routes.js";
@@ -1428,6 +1429,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   if (dependencies.accountStore && dependencies.ownerPrivacy)
     registerPrivacyRoutes(app, dependencies.ownerPrivacy, dependencies.accountStore, identityFor);
 
+  if (dependencies.generalChatStore)
+    registerContextMemoryRoutes(app, dependencies.generalChatStore.contextMemory, identityFor);
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerGeneralChatRoutes({
       app,
