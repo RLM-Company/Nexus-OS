@@ -221,6 +221,7 @@ export class GeneralChatBackgroundRunCoordinator {
         chatId: queued.chat_id,
         runId: queued.run_id,
         messages: conversation,
+        historyCompaction: this.#store.historyCompactionForRun(queued.run_id, queued.owner_id),
         recalledMemory: this.#store.recallForRun(
           queued.run_id,
           queued.owner_id,

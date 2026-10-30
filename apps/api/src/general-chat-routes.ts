@@ -684,6 +684,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           chatId: run.chat_id,
           runId: run.id,
           messages: conversation,
+          historyCompaction: options.store.historyCompactionForRun(run.id, identity.owner_id),
           recalledMemory: options.store.recallForRun(
             run.id,
             identity.owner_id,

@@ -8,6 +8,7 @@ import {
   CHAT_MEMORY_MAX_LENGTH,
   type ChatMemory,
   type ContextMemoryBundle,
+  type HistoryCompactionOptions,
   type ChatBranchList,
   type CreateChatBranch,
   sameChatAttachments,
@@ -682,6 +683,49 @@ export class GeneralChatStore {
           message.content,
           recentMessageIds
         )
+      : undefined;
+  }
+  historyCompactionOptions(
+    chatId: string,
+    ownerId: string,
+    query: string
+  ): HistoryCompactionOptions {
+    const chat = this.getChat(chatId, ownerId);
+    const settings = this.contextMemory.settings({ kind: "chat", id: chatId }, ownerId);
+    return {
+      enabled: Boolean(
+        chat && chat.mode !== "coscode" && settings.enabled && settings.compact_history
+      ),
+      query,
+      manual_summary: Boolean(this.workspace.context(chatId, ownerId).summary)
+    };
+  }
+  historyCompactionPreviewMessages(
+    chatId: string,
+    ownerId: string,
+    question: StoredGeneralChatMessage
+  ): StoredGeneralChatMessage[] {
+    if (!this.getChat(chatId, ownerId)) return [];
+    const messages = this.#sqlite
+      .prepare(
+        "SELECT " +
+          MESSAGE_COLUMNS +
+          " FROM general_chat_messages WHERE chat_id=? ORDER BY rowid ASC"
+      )
+      .all(chatId)
+      .map((row) => asMessage(row as SqlRow));
+    return this.workspace.applyContext(chatId, ownerId, [...messages, question]);
+  }
+  historyCompactionForRun(runId: string, ownerId: string): HistoryCompactionOptions | undefined {
+    const run = this.getRun(runId, ownerId);
+    if (!run) return undefined;
+    const message = this.#sqlite
+      .prepare(
+        "SELECT content FROM general_chat_messages WHERE run_id=? AND chat_id=? AND owner_id=? AND role='user'"
+      )
+      .get(runId, run.chat_id, ownerId) as { content: string } | undefined;
+    return message
+      ? this.historyCompactionOptions(run.chat_id, ownerId, message.content)
       : undefined;
   }
 

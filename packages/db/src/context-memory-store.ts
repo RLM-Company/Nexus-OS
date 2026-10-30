@@ -91,6 +91,7 @@ const STOP = new Set([
   "будет"
 ]);
 const EMPTY_SETTINGS: ContextMemorySettings = {
+  compact_history: false,
   enabled: false,
   use_personal: false,
   source_chat_ids: [],
@@ -437,11 +438,12 @@ export class ContextMemoryStore {
     this.owned(target, owner);
     const row = this.db
       .prepare(
-        "SELECT enabled,use_personal,source_chat_ids_json,project_ids_json,version FROM context_memory_settings WHERE owner_id=? AND target_kind=? AND target_id=?"
+        "SELECT enabled,use_personal,compact_history,source_chat_ids_json,project_ids_json,version FROM context_memory_settings WHERE owner_id=? AND target_kind=? AND target_id=?"
       )
       .get(owner, target.kind, target.id) as
       | {
           enabled: number;
+          compact_history: number;
           use_personal: number;
           source_chat_ids_json: string;
           project_ids_json: string;
@@ -451,6 +453,7 @@ export class ContextMemoryStore {
     return row
       ? {
           enabled: Boolean(row.enabled),
+          compact_history: Boolean(row.compact_history),
           use_personal: Boolean(row.use_personal),
           source_chat_ids: JSON.parse(row.source_chat_ids_json) as string[],
           project_ids: JSON.parse(row.project_ids_json) as string[],
@@ -464,15 +467,17 @@ export class ContextMemoryStore {
         throw new ContextMemoryError(400, "INVALID_MEMORY_SETTINGS");
       this.owned(target, owner, true);
       const current = this.settings(target, owner);
+      if (target.kind !== "chat" && input.compact_history)
+        throw new ContextMemoryError(400, "COMPACTION_CHAT_ONLY");
       if (current.version !== input.expected_version || input.expected_version >= 1_000_000)
         throw new ContextMemoryError(409, "STALE_MEMORY_SETTINGS");
       for (const id of input.source_chat_ids) this.owned({ kind: "chat", id }, owner, true);
       for (const id of input.project_ids) this.owned({ kind: "project", id }, owner, true);
       this.db
         .prepare(
-          "INSERT INTO context_memory_settings(owner_id,target_kind,target_id,chat_id,project_id,enabled,use_personal,source_chat_ids_json,project_ids_json,version) " +
-            "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,target_kind,target_id) DO UPDATE SET enabled=excluded.enabled,use_personal=excluded.use_personal," +
-            "source_chat_ids_json=excluded.source_chat_ids_json,project_ids_json=excluded.project_ids_json,version=excluded.version"
+          "INSERT INTO context_memory_settings(owner_id,target_kind,target_id,chat_id,project_id,enabled,use_personal,source_chat_ids_json,project_ids_json,version,compact_history) " +
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,target_kind,target_id) DO UPDATE SET enabled=excluded.enabled,use_personal=excluded.use_personal," +
+            "source_chat_ids_json=excluded.source_chat_ids_json,project_ids_json=excluded.project_ids_json,version=excluded.version,compact_history=excluded.compact_history"
         )
         .run(
           owner,
@@ -484,7 +489,8 @@ export class ContextMemoryStore {
           Number(input.use_personal),
           JSON.stringify(input.source_chat_ids),
           JSON.stringify(input.project_ids),
-          current.version + 1
+          current.version + 1,
+          Number(input.compact_history ?? current.compact_history)
         );
       return this.settings(target, owner);
     });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { HistoryCompactionPreview } from "@cosmora/contracts";
 import type {
   ContextMemoryBundle,
   ContextMemoryEntry,
@@ -10,7 +11,7 @@ import type {
 } from "@cosmora/contracts/context-memory";
 
 type Page = { items: ContextMemoryEntry[]; next_offset: number | null };
-type Choice = { id: string; title: string; status?: string };
+type Choice = { id: string; title: string; status?: string; mode?: string };
 const kinds: Record<ContextMemoryInput["kind"], string> = {
   fact: "Факт",
   preference: "Предпочтение",
@@ -81,6 +82,8 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
     [notice, setNotice] = useState("");
   const [query, setQuery] = useState(""),
     [preview, setPreview] = useState<ContextMemoryBundle | null>(null);
+  const [compression, setCompression] = useState<HistoryCompactionPreview | null>(null);
+  const [canCompact, setCanCompact] = useState(false);
   const [editing, setEditing] = useState<ContextMemoryEntry | null>(null);
   const [draft, setDraft] = useState<ContextMemoryInput>(() => draftFor(target));
   const [sourceId, setSourceId] = useState(""),
@@ -127,6 +130,9 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
     ]);
     if (life.current?.signal.aborted) return;
     setSettings(s);
+    setCanCompact(
+      target.kind === "chat" && c.items.some((c) => c.id === target.id && c.mode !== "coscode")
+    );
     setItems(list.items);
     setNextOffset(list.next_offset);
     setChats(c.items.filter((c) => target.kind !== "chat" || c.id !== target.id));
@@ -136,6 +142,7 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
       )
     );
     setPreview(null);
+    setCompression(null);
     setOpenedSource(null);
     setVersions(null);
   }
@@ -165,6 +172,7 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
     setError("");
     setNotice("");
     setPreview(null);
+    setCompression(null);
     setOpenedSource(null);
     try {
       await action();
@@ -262,6 +270,16 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
       </p>
       {settings && (
         <>
+          {canCompact && (
+            <label>
+              <input
+                type="checkbox"
+                checked={Boolean(settings.compact_history)}
+                onChange={(e) => setSettings({ ...settings, compact_history: e.target.checked })}
+              />
+              Автоматически сжимать старую историю
+            </label>
+          )}
           <label>
             <input
               type="checkbox"
@@ -594,6 +612,91 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
           Локальный поиск по словам; модель не вызывается. Используются сохранённые настройки
           доступа.
         </p>
+        {canCompact && (
+          <button
+            type="button"
+            onClick={() =>
+              void operation(async () => {
+                const value = await json<HistoryCompactionPreview>(
+                  "/api/v1/chats/" + encodeURIComponent(target.id) + "/history-compaction/preview",
+                  body({ query: query.trim() || "Продолжить работу" }, "POST")
+                );
+                if (!life.current?.signal.aborted) setCompression(value);
+              })
+            }
+          >
+            Проверить сжатие истории
+          </button>
+        )}
+        {compression && (
+          <section aria-label="Проверка сжатия истории">
+            <p>
+              Метод: точные цитаты с источниками. Оригинальная переписка сохраняется. Отдельного
+              вызова ИИ нет.
+            </p>
+            <p>
+              {
+                {
+                  off: "Сжатие выключено. Включите память и сжатие, затем сохраните настройки.",
+                  short_history: "История пока короткая — сжатие не требуется.",
+                  manual_summary:
+                    "Используется ваша ручная сводка. Автоматическое сжатие её не заменяет.",
+                  unsupported_material:
+                    "В старой истории есть файлы, код или незавершённые ответы. Они требуют отдельной обработки.",
+                  input_limit:
+                    "История превышает предел одного прохода. Автоматическое сжатие пропущено.",
+                  protected_budget:
+                    "Важные фрагменты не поместились. Ответ будет остановлен до отправки модели.",
+                  no_saving: "Сжатие не уменьшает объём — сохранена обычная обработка.",
+                  ready: "История сокращена. Выделенные важные фрагменты проверены по оригиналам."
+                }[compression.report.reason]
+              }
+            </p>
+            <p>
+              Сообщений в сокращённой части: {compression.report.compacted_messages}. Важных
+              фрагментов: {compression.report.protected_kept} / {compression.report.protected_spans}
+              . Повторов найдено: {compression.report.duplicate_spans}.
+            </p>
+            {compression.before_input_upper_bound !== null &&
+              compression.after_input_upper_bound !== null && (
+                <p>
+                  Оценка входного контекста: {compression.before_input_upper_bound} →{" "}
+                  {compression.after_input_upper_bound}. Это верхняя оценка, а не фактические токены
+                  провайдера. Новые вложения и Skills в этой проверке не учитываются.
+                </p>
+              )}
+            {compression.report.sensitive_messages > 0 && (
+              <p>
+                Из пакета исключены сообщения с распознанными учётными данными:{" "}
+                {compression.report.sensitive_messages}.
+              </p>
+            )}
+            {compression.dispatch_blocked && (
+              <p role="alert">
+                Важные условия не поместились вместе с запросом. Уменьшите вложения или измените
+                настройки сжатия.
+              </p>
+            )}
+            <p>
+              Проверяется сохранность распознанных условий и точных цитат. Это не гарантия
+              сохранения всех смысловых связей.
+            </p>
+            {compression.memory?.items.map((item, index) => (
+              <article key={item.reference + ":" + index}>
+                <strong>
+                  {item.source?.role === "assistant" ? "Ответ ИИ" : "Сообщение пользователя"}
+                </strong>
+                <p>{item.text}</p>
+                <button
+                  type="button"
+                  onClick={() => void operation(() => openSource(item.reference))}
+                >
+                  Открыть исходное сообщение
+                </button>
+              </article>
+            ))}
+          </section>
+        )}
         {preview && (
           <section aria-label="Подобранный контекст">
             <p>

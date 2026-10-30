@@ -13,6 +13,7 @@ import { GeneralChatRuntimeStore } from "../src/general-chat-runtime-store.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
 import { RuntimeMetrics } from "../src/operations.js";
 import { AccountStore } from "../src/account-settings/account-store.js";
+import { seedCompactionHistory } from "./fixtures/compaction-history.js";
 
 describe("GeneralChatBackgroundRunCoordinator", () => {
   const config = loadServerConfig({
@@ -54,6 +55,49 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
   afterEach(async () => {
     await coordinator.stop();
     database.close();
+  });
+  it("uses verified history compaction in detached execution with one model call", async () => {
+    await coordinator.stop();
+    const seeded = seedCompactionHistory(database);
+    store.contextMemory.updateSettings(
+      { kind: "chat", id: seeded.chatId },
+      {
+        enabled: true,
+        compact_history: true,
+        use_personal: false,
+        source_chat_ids: [],
+        project_ids: [],
+        expected_version: 0
+      },
+      "local-owner"
+    );
+    const fast = await buildModelRuntime(
+      loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" })
+    );
+    const stream = vi.spyOn(fast.gateway, "stream");
+    coordinator = new GeneralChatBackgroundRunCoordinator({
+      store,
+      modelGateway: fast.gateway,
+      chat: fast.chat,
+      runtimeMetrics: metrics,
+      emergencyStopStore: stopStore,
+      accountStore,
+      pollIntervalMs: 10
+    });
+    const accepted = store.createMessage(
+      seeded.chatId,
+      "Напомни бюджет и следующий шаг.",
+      "compacted-background"
+    )!;
+    coordinator.start();
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("succeeded"), {
+      timeout: 5000
+    });
+    expect(stream).toHaveBeenCalledTimes(1);
+    const request = stream.mock.calls[0]![0];
+    expect(request.messages[0]?.content).toContain("ранней истории сокращена");
+    expect(JSON.stringify(request.messages)).toContain("17 350.25");
+    expect(request.routing.estimated_input_tokens).toBeLessThanOrEqual(28000);
   });
   it("uses explicitly selected memory in detached chat execution without a second planner call", async () => {
     await coordinator.stop();
