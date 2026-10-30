@@ -55,6 +55,38 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
     await coordinator.stop();
     database.close();
   });
+  it("uses explicitly selected memory in detached chat execution without a second planner call", async () => {
+    await coordinator.stop();
+    const first = store.createChat("Джалиль согласовал бюджет 17350.25", "memory-source");
+    store.cancelRun(first.run.id);
+    const target = store.createChat("Рабочая беседа", "memory-target");
+    store.cancelRun(target.run.id);
+    store.contextMemory.updateSettings(
+      { kind: "chat", id: target.chat.id },
+      {
+        enabled: true,
+        use_personal: false,
+        source_chat_ids: [first.chat.id],
+        project_ids: [],
+        expected_version: 0
+      },
+      "local-owner"
+    );
+    const stream = vi.spyOn(runtime.gateway, "stream");
+    const accepted = store.createMessage(
+      target.chat.id,
+      "Какой бюджет согласовал Джалиль?",
+      "memory-question"
+    )!;
+    coordinator.start();
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("succeeded"), {
+      timeout: 5000
+    });
+    expect(stream).toHaveBeenCalledTimes(1);
+    const request = stream.mock.calls[0]![0];
+    expect(request.messages.findLast((m) => m.role === "user")?.content).toContain("17350.25");
+    expect(request.messages[0]?.content).not.toContain("17350.25");
+  });
 
   it("dispatches one explicit image request without also calling the text model", async () => {
     await coordinator.stop();

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { CreateManagerWork, ManagerWork, ManagerWorkFiles } from "@cosmora/contracts";
 import { ProjectMemoryStore } from "./project-memory-store.js";
+import { ContextMemoryStore } from "./context-memory-store.js";
 import { WorkRuntimeStore } from "./work-runtime-store.js";
 import { ProjectStore } from "./project-store.js";
 
@@ -20,11 +21,13 @@ export class ManagerWorkStore {
   readonly dag: WorkDagStore;
   readonly skills: WorkSkillStore;
   readonly memory: ProjectMemoryStore;
+  readonly contextMemory: ContextMemoryStore;
   readonly runtime: WorkRuntimeStore;
   constructor(private readonly sqlite: DatabaseSync) {
     this.dag = new WorkDagStore(sqlite);
     this.skills = new WorkSkillStore(sqlite);
     this.memory = new ProjectMemoryStore(sqlite);
+    this.contextMemory = new ContextMemoryStore(sqlite);
     this.runtime = new WorkRuntimeStore(sqlite);
   }
 

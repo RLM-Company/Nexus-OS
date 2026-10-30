@@ -2,6 +2,7 @@
 import type { ProjectMemoryEntry, ProjectMemoryInput } from "@cosmora/contracts";
 import { useEffect, useRef, useState } from "react";
 import styles from "./work-manager.module.css";
+import { ContextMemorySettings } from "./context-memory-settings";
 
 const empty: ProjectMemoryInput = {
   title: "",
@@ -265,6 +266,7 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
         «Забыть» удаляет запись из памяти и следующих обращений. История уже принятых задач и
         созданные файлы сохраняются.
       </small>
+      <ContextMemorySettings target={{ kind: "project", id: projectId }} disabled={busy} />
     </section>
   );
 }

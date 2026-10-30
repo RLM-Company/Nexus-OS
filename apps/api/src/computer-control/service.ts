@@ -8,8 +8,17 @@ import {
   type ModelMessage,
   type ModelRequest
 } from "@cosmora/contracts";
-import { estimateInputTokensUpperBound, type ManagerService } from "@cosmora/core";
-import type { EmergencyStopStore, ProjectStore, PolicyStore } from "@cosmora/db";
+import {
+  CONTEXT_MEMORY_RULES,
+  estimateInputTokensUpperBound,
+  type ManagerService
+} from "@cosmora/core";
+import {
+  ContextMemoryStore,
+  type EmergencyStopStore,
+  type ProjectStore,
+  type PolicyStore
+} from "@cosmora/db";
 import { GuardedToolRuntime } from "@cosmora/tool-runtime";
 import {
   GatewayRunError,
@@ -465,6 +474,16 @@ export class ComputerControlService {
       .prepare("SELECT id FROM chats WHERE project_id=? AND kind='main'")
       .get(s.project);
     if (!chat) throw new ComputerControlError("PROJECT_CHAT_MISSING");
+    const recalled =
+      s.executionMode === "work"
+        ? new ContextMemoryStore(sql, () => this.now()).resolve(
+            { kind: "project", id: s.project },
+            s.owner,
+            s.goal
+          )
+        : undefined;
+    if (recalled?.priority_omitted)
+      throw new ComputerControlError("COMPUTER_MEMORY_CONTEXT_INCOMPLETE");
     const run = randomUUID(),
       at = new Date(this.now()).toISOString();
     sql
@@ -473,11 +492,17 @@ export class ComputerControlService {
       )
       .run(run, s.project, String(chat.id), at, at);
     const messages: ModelMessage[] = [
-      { role: "system", content: instructionFor(s.executionMode) },
+      {
+        role: "system",
+        content:
+          instructionFor(s.executionMode) +
+          (recalled?.items.length ? "\n" + CONTEXT_MEMORY_RULES : "")
+      },
       {
         role: "user",
         content: JSON.stringify({
           goal: s.goal,
+          recalled_memory: recalled?.items.length ? recalled : undefined,
           history: s.history,
           previous_result: input.previous_result,
           observation: { ...input.observation, image_jpeg_base64: undefined }

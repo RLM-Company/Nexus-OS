@@ -11,11 +11,12 @@ export const estimateMessageTokens = (message: ModelMessage): number =>
   new TextEncoder().encode(message.content).length + 8 + (message.images?.length ?? 0) * 16384;
 export const estimateInputTokensUpperBound = (messages: ModelMessage[]): number =>
   messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
+export const DEFAULT_CONTEXT_BUDGET = 28000;
 
 export function conversationWindow(
   prefix: ModelMessage[],
   conversation: ModelMessage[],
-  budget = 28000
+  budget = DEFAULT_CONTEXT_BUDGET
 ): ModelMessage[] {
   const groups: ModelMessage[][] = [];
   for (const message of conversation) {

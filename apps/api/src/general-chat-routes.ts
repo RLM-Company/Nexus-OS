@@ -1,6 +1,6 @@
 import { registerChatSkillRoutes } from "./chat-skill-routes.js";
 import { registerChatWorkspaceRoutes } from "./chat-workspace-routes.js";
-import { ContextTooLargeError } from "@cosmora/core";
+import { ContextTooLargeError, MemoryContextIncompleteError } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
   ApiErrorSchema,
@@ -684,6 +684,11 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           chatId: run.chat_id,
           runId: run.id,
           messages: conversation,
+          recalledMemory: options.store.recallForRun(
+            run.id,
+            identity.owner_id,
+            conversation.slice(-8).map((m) => m.id)
+          ),
           memoryNotes:
             options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? "",
           skills: options.store.skills.forRun(run.id, identity.owner_id)?.items ?? []
@@ -882,6 +887,13 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
             sendEvent(reply, {
               type: "run.failed",
               data: { run_id: run.id, error_code: code, retryable: false }
+            });
+          } else if (cause instanceof MemoryContextIncompleteError) {
+            options.store.failRun(run.id, "MEMORY_CONTEXT_INCOMPLETE");
+            options.runtimeMetrics.runFailed("CONTEXT_TOO_LARGE");
+            sendEvent(reply, {
+              type: "run.failed",
+              data: { run_id: run.id, error_code: "MEMORY_CONTEXT_INCOMPLETE", retryable: false }
             });
           } else {
             const gatewayError =

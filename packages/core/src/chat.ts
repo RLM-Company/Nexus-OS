@@ -1,5 +1,6 @@
 import type {
   ChatSkillSnapshot,
+  ContextMemoryBundle,
   Currency,
   GeneralChatMessage,
   ModelFeature,
@@ -9,7 +10,12 @@ import type {
 import { estimateInputTokensUpperBound } from "./manager.js";
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
 import { messageWithMaterials } from "./message-materials.js";
-import { conversationWindow } from "./conversation-window.js";
+import { conversationWindow, DEFAULT_CONTEXT_BUDGET } from "./conversation-window.js";
+import {
+  CONTEXT_MEMORY_RULES,
+  assertContextMemoryComplete,
+  fitContextMemory
+} from "./context-memory.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
@@ -42,6 +48,7 @@ export interface ChatRunContext {
   runId: string;
   messages: GeneralChatMessage[];
   memoryNotes?: string;
+  recalledMemory?: ContextMemoryBundle | undefined;
   skills?: ChatSkillSnapshot[];
 }
 
@@ -79,6 +86,7 @@ export class ChatService {
   buildRequest(context: ChatRunContext): ModelRequest {
     assertEntityId(context.chatId, "chatId");
     assertEntityId(context.runId, "runId");
+    assertContextMemoryComplete(context.recalledMemory);
 
     const conversation: ModelMessage[] = context.messages
       .filter((message) => message.content.trim().length > 0)
@@ -105,10 +113,37 @@ export class ChatService {
         };
       }
     }
-    const messages = conversationWindow(
-      [{ role: "system", content: this.#options.systemPrompt }],
-      conversation
-    );
+    const prefix: ModelMessage[] = [{ role: "system", content: this.#options.systemPrompt }];
+    if (context.recalledMemory?.items.length) {
+      const index = conversation.findLastIndex((message) => message.role === "user");
+      if (index >= 0) {
+        const original = conversation[index]!;
+        const available =
+          DEFAULT_CONTEXT_BUDGET -
+          256 -
+          estimateInputTokensUpperBound(prefix) -
+          estimateInputTokensUpperBound(conversation.slice(index));
+        // If the question itself is too large, keep the existing ordinary input error.
+        if (available >= 0) {
+          const framing = CONTEXT_MEMORY_RULES + "\n\n\nТекущее сообщение:\n";
+          const fitted = fitContextMemory(
+            context.recalledMemory,
+            available - new TextEncoder().encode(framing).length
+          );
+          if (fitted)
+            conversation[index] = {
+              ...original,
+              content:
+                CONTEXT_MEMORY_RULES +
+                "\n" +
+                JSON.stringify(fitted) +
+                "\n\nТекущее сообщение:\n" +
+                original.content
+            };
+        }
+      }
+    }
+    const messages = conversationWindow(prefix, conversation);
 
     return {
       request_id: context.runId,

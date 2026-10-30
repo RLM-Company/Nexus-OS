@@ -1,4 +1,4 @@
-import { ContextTooLargeError } from "@cosmora/core";
+import { ContextTooLargeError, MemoryContextIncompleteError } from "@cosmora/core";
 import type { ChatService } from "@cosmora/core";
 import type { ChatImageAttachment } from "@cosmora/contracts";
 import type { EmergencyStopStore, StoredGeneralChatMessage } from "@cosmora/db";
@@ -221,6 +221,11 @@ export class GeneralChatBackgroundRunCoordinator {
         chatId: queued.chat_id,
         runId: queued.run_id,
         messages: conversation,
+        recalledMemory: this.#store.recallForRun(
+          queued.run_id,
+          queued.owner_id,
+          conversation.slice(-8).map((m) => m.id)
+        ),
         memoryNotes: this.#store.getChatMemory(queued.chat_id, queued.owner_id)?.memory_notes ?? "",
         skills: this.#store.skills.forRun(queued.run_id, queued.owner_id)?.items ?? []
       });
@@ -434,6 +439,11 @@ export class GeneralChatBackgroundRunCoordinator {
           { runId: queued.run_id, chatId: queued.chat_id, code },
           "Chat preflight or relay failed closed"
         );
+        return;
+      }
+      if (error instanceof MemoryContextIncompleteError) {
+        this.#store.failRun(queued.run_id, "MEMORY_CONTEXT_INCOMPLETE");
+        this.#runtimeMetrics.runFailed("CONTEXT_TOO_LARGE");
         return;
       }
       const gatewayError =

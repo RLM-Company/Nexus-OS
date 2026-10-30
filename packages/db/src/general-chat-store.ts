@@ -1,4 +1,5 @@
 import { ChatSkillStore } from "./chat-skill-store.js";
+import { ContextMemoryStore } from "./context-memory-store.js";
 import { ChatWorkspaceStore } from "./chat-workspace-store.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
@@ -6,6 +7,7 @@ import {
   isValidChatAttachments,
   CHAT_MEMORY_MAX_LENGTH,
   type ChatMemory,
+  type ContextMemoryBundle,
   type ChatBranchList,
   type CreateChatBranch,
   sameChatAttachments,
@@ -131,11 +133,13 @@ export class GeneralChatStore {
   readonly #sqlite: DatabaseSync;
   readonly workspace: ChatWorkspaceStore;
   readonly skills: ChatSkillStore;
+  readonly contextMemory: ContextMemoryStore;
 
   constructor(sqlite: DatabaseSync) {
     this.#sqlite = sqlite;
     this.workspace = new ChatWorkspaceStore(sqlite);
     this.skills = new ChatSkillStore(sqlite);
+    this.contextMemory = new ContextMemoryStore(sqlite);
   }
 
   listChats(
@@ -657,6 +661,28 @@ export class GeneralChatStore {
       .all(run.chat_id, runId)
       .map((row) => asMessage(row as SqlRow));
     return this.workspace.applyContext(run.chat_id, ownerId, messages);
+  }
+
+  /** Search by the actual user question, not a summary prepended to the projected conversation. */
+  recallForRun(
+    runId: string,
+    ownerId: string,
+    recentMessageIds: readonly string[]
+  ): ContextMemoryBundle | undefined {
+    const message = this.#sqlite
+      .prepare(
+        "SELECT m.chat_id,m.content FROM general_chat_messages m JOIN general_chats c ON c.id=m.chat_id AND c.owner_id=m.owner_id " +
+          "JOIN general_chat_runs r ON r.id=m.run_id AND r.chat_id=c.id WHERE m.run_id=? AND m.role='user' AND c.owner_id=?"
+      )
+      .get(runId, ownerId) as { chat_id: string; content: string } | undefined;
+    return message
+      ? this.contextMemory.resolve(
+          { kind: "chat", id: message.chat_id },
+          ownerId,
+          message.content,
+          recentMessageIds
+        )
+      : undefined;
   }
 
   getAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage | null {

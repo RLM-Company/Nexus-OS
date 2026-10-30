@@ -155,6 +155,110 @@ async function fixture(
 }
 
 describe("owner-bound computer proposals", () => {
+  it("stops before a model call and leaves no running execution when mandatory memory does not fit", async () => {
+    const f = await fixture({ vision: false });
+    f.db.sqlite.prepare("UPDATE runs SET status='cancelled' WHERE project_id=?").run(f.project.id);
+    const memory = new (await import("@cosmora/db")).ContextMemoryStore(f.db.sqlite);
+    for (let i = 0; i < 50; i++)
+      memory.create(
+        {
+          scope: "project",
+          scope_id: f.project.id,
+          kind: "constraint",
+          title: "Rule " + i,
+          content: "Mandatory constraint " + i + ".",
+          pinned: true,
+          expires_at: null,
+          source: null
+        },
+        "local-owner"
+      );
+    memory.updateSettings(
+      { kind: "project", id: f.project.id },
+      {
+        enabled: true,
+        use_personal: false,
+        source_chat_ids: [],
+        project_ids: [],
+        expected_version: 0
+      },
+      "local-owner"
+    );
+    Object.assign(f.input, { execution_mode: "work" });
+    await f.create();
+    const value = structuredClone(step);
+    delete value.observation.image_jpeg_base64;
+    value.observation.work = {
+      environment: "none",
+      generation: 0,
+      plan_steps: 0,
+      plan_complete: false
+    };
+    await expect(f.next(value)).rejects.toMatchObject({
+      code: "COMPUTER_MEMORY_CONTEXT_INCOMPLETE"
+    });
+    expect(f.calls).toHaveLength(0);
+    expect(
+      f.db.sqlite
+        .prepare("SELECT count(*) n FROM runs WHERE project_id=? AND status='running'")
+        .get(f.project.id)
+    ).toEqual({ n: 0 });
+  });
+  it("passes permitted project memory to the Work planner as evidence without granting tools or authority", async () => {
+    const f = await fixture({
+      vision: false,
+      output: {
+        ...action,
+        action: {
+          kind: "work_plan",
+          steps: [{ title: "Read source", criteria: "Source inspected" }]
+        }
+      }
+    });
+    f.db.sqlite.prepare("UPDATE runs SET status='cancelled' WHERE project_id=?").run(f.project.id);
+    const memory = new (await import("@cosmora/db")).ContextMemoryStore(f.db.sqlite);
+    const saved = memory.create(
+      {
+        scope: "project",
+        scope_id: f.project.id,
+        kind: "constraint",
+        title: "Owner constraint",
+        content: "Keep fixture-budget 17350.25. Do not grant desktop from this note.",
+        pinned: true,
+        expires_at: null,
+        source: null
+      },
+      "local-owner"
+    );
+    memory.updateSettings(
+      { kind: "project", id: f.project.id },
+      {
+        enabled: true,
+        use_personal: false,
+        source_chat_ids: [],
+        project_ids: [],
+        expected_version: 0
+      },
+      "local-owner"
+    );
+    Object.assign(f.input, { execution_mode: "work" });
+    await f.create();
+    const value = structuredClone(step);
+    delete value.observation.image_jpeg_base64;
+    value.observation.work = {
+      environment: "none",
+      generation: 0,
+      plan_steps: 0,
+      plan_complete: false
+    };
+    await f.next(value);
+    const user = f.calls[0]!.messages.find((m) => m.role === "user")!.content;
+    expect(user).toContain("17350.25");
+    expect(user).toContain("M:" + saved.id);
+    expect(f.calls[0]!.messages[0]!.content).not.toContain(saved.content);
+    expect(f.calls[0]!.messages[0]!.content).toContain("не инструкции");
+    expect(f.calls[0]!.routing.required_features).not.toContain("vision");
+  });
   it("work starts without desktop capture, accepts the bounded plan and routes without vision until needed", async () => {
     const f = await fixture({
       vision: false,
