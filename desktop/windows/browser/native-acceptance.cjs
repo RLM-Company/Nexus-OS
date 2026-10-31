@@ -138,6 +138,7 @@ async function runNativeBrowserAcceptance({ app, origin }) {
       maxSteps: 30
     });
     assert.equal(outcome.status, "completed");
+    stage = "verify-download";
     assert.equal(fs.readFileSync(download, "utf8"), "NATIVE-DOWNLOAD-OK");
     const receipt = await (await fetch(origin + "/browser/receipt")).json();
     assert.equal(receipt.submissions, 1);
@@ -223,6 +224,7 @@ async function runNativeBrowserAcceptance({ app, origin }) {
       },
       () => ({ kind: "done", summary: "Unified fixture completed" })
     ];
+    stage = "unified-work";
     const workRunner = new ComputerSession({
       executionMode: "work",
       driver: workDriver,

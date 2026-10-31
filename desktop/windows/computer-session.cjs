@@ -471,6 +471,12 @@ class ComputerSession {
       }
       let checkpointFailed = false;
       try {
+        this.workspace?.endSession?.();
+      } catch {
+        cleanupFailed = true;
+        this.poisoned = true;
+      }
+      try {
         state.journal?.state(cleanupFailed ? "failed" : outcome);
       } catch (error) {
         checkpointFailed = !(wasAborted && error.message === "COMPUTER_HISTORY_NOT_FOUND");

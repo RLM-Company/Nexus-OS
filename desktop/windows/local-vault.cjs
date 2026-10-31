@@ -25,7 +25,9 @@ function createLocalVault({ userDataPath, codec }) {
   function safe(root, relative) {
     return guard.resolveSafeWorkspaceTarget(root, relative, {
       mustExist: false,
-      allowMissingLeaf: true
+      allowMissingLeaf: true,
+      allowProtected: /^Kosmora-vault-[a-f0-9]{24}$/.test(relative),
+      blockSensitiveFiles: !/^Kosmora-vault-[a-f0-9]{24}$/.test(relative)
     }).absolutePath;
   }
   function atomic(root, name, bytes) {
@@ -73,7 +75,7 @@ function createLocalVault({ userDataPath, codec }) {
   function rootFor(c) {
     const record = JSON.parse(fs.readFileSync(binding(c), "utf8"));
     const root = codec.open(record.sealed);
-    guard.inspectRootDirectory(root, { userDataPath });
+    guard.inspectRootDirectory(root, { userDataPath, allowManagedVault: true });
     return root;
   }
   function state(c) {
@@ -125,7 +127,7 @@ function createLocalVault({ userDataPath, codec }) {
     const name = "Kosmora-vault-" + scope(c).slice(0, 24),
       dir = safe(root, name);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { mode: 0o700 });
-    guard.inspectRootDirectory(dir, { userDataPath });
+    guard.inspectRootDirectory(dir, { userDataPath, allowManagedVault: true });
     if (!fs.existsSync(safe(dir, "index.json")))
       atomic(
         dir,
@@ -133,7 +135,7 @@ function createLocalVault({ userDataPath, codec }) {
         JSON.stringify({ format: "kosmora.local-vault.v1", scope: scope(c), items: [] })
       );
     // Validate an existing vault BEFORE changing the remembered binding.
-    const config = { sealed: codec.seal(dir) };
+    const config = { sealed: codec.seal(dir), revision: randomUUID() };
     const previous = fs.existsSync(binding(c)) ? fs.readFileSync(binding(c)) : null;
     atomic(userDataPath, path.basename(binding(c)), JSON.stringify(config));
     try {
@@ -189,6 +191,10 @@ function createLocalVault({ userDataPath, codec }) {
   }
   return {
     choose,
+    revision(c) {
+      rootFor(c);
+      return sha(fs.readFileSync(binding(c)));
+    },
     list,
     put,
     get,
@@ -234,7 +240,8 @@ function createLocalVault({ userDataPath, codec }) {
           const pos = content.toLocaleLowerCase().indexOf(terms[0]);
           results.push({
             ...item,
-            snippet: content.slice(Math.max(0, pos - 80), Math.max(0, pos - 80) + 500)
+            snippet: content.slice(Math.max(0, pos - 80), Math.max(0, pos - 80) + 500),
+            offset: Math.max(0, pos - 80)
           });
         }
       }
@@ -250,6 +257,46 @@ function createLocalVault({ userDataPath, codec }) {
         JSON.stringify({ name: item.name, sha256: item.id, content });
       if (framed.length > 20000) throw Error("VAULT_CONTEXT_LIMIT");
       return framed;
+    },
+    fragment(c, id, start = 0) {
+      const { item, bytes } = get(c, id);
+      if (item.kind !== "memory" && !textType(item.name)) throw Error("VAULT_TEXT_ONLY");
+      const text = bytes.toString("utf8");
+      if (text.includes("\0") || !Buffer.from(text, "utf8").equals(bytes))
+        throw Error("VAULT_TEXT_ONLY");
+      if (!Number.isSafeInteger(start) || start < 0 || start > text.length)
+        throw Error("VAULT_QUERY");
+      if (
+        start > 0 &&
+        /[\uDC00-\uDFFF]/.test(text[start] || "") &&
+        /[\uD800-\uDBFF]/.test(text[start - 1] || "")
+      )
+        start--;
+      let end = Math.min(start + 6000, text.length),
+        result;
+      do {
+        if (
+          end < text.length &&
+          /[\uDC00-\uDFFF]/.test(text[end] || "") &&
+          /[\uD800-\uDBFF]/.test(text[end - 1] || "")
+        )
+          end--;
+        result = {
+          kind: "untrusted_local_excerpt",
+          name: item.name,
+          sha256: item.id,
+          source_kind: item.kind,
+          offset_utf16: start,
+          end_utf16: end,
+          total_characters: text.length,
+          excerpt_only: start > 0 || end < text.length,
+          content: text.slice(start, end),
+          next_offset: end < text.length ? end : null
+        };
+        if (JSON.stringify(result).length <= 12000) break;
+        end = start + Math.floor((end - start) / 2);
+      } while (end > start);
+      return result;
     },
     remove(c, id) {
       const { root, data } = state(c);

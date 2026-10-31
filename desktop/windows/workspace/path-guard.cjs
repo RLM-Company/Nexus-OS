@@ -220,7 +220,10 @@ function validateRelativePath(
 }
 
 function isSensitiveFilename(name) {
-  return SENSITIVE_FILENAME_PATTERNS.some((pattern) => pattern.test(name));
+  return (
+    /^Kosmora-vault-[a-f0-9]{24}$/i.test(name) ||
+    SENSITIVE_FILENAME_PATTERNS.some((pattern) => pattern.test(name))
+  );
 }
 
 function assertNotReparseOrSymlink(targetPath, lstatResult) {
@@ -265,7 +268,10 @@ function assertNotReparseOrSymlink(targetPath, lstatResult) {
   return realTarget;
 }
 
-function inspectRootDirectory(rawRootPath, { userDataPath = null } = {}) {
+function inspectRootDirectory(
+  rawRootPath,
+  { userDataPath = null, allowManagedVault = false } = {}
+) {
   if (typeof rawRootPath !== "string" || rawRootPath.trim() === "") {
     throw new KosworkWorkspaceError(
       ERROR_CODES.WORKSPACE_UNSAFE_ROOT,
@@ -294,6 +300,14 @@ function inspectRootDirectory(rawRootPath, { userDataPath = null } = {}) {
   }
 
   const resolved = path.resolve(rawRootPath);
+  if (
+    !allowManagedVault &&
+    resolved.split(/[\\/]/).some((segment) => /^Kosmora-vault-[a-f0-9]{24}$/i.test(segment))
+  )
+    throw new KosworkWorkspaceError(
+      ERROR_CODES.WORKSPACE_PROTECTED_PATH,
+      "Служебная папка локального хранилища доступна только через отдельное разрешение Koswork."
+    );
   const initialForbidden = isForbiddenSystemRoot(resolved, { userDataPath });
   if (initialForbidden) {
     throw new KosworkWorkspaceError(ERROR_CODES.WORKSPACE_UNSAFE_ROOT, initialForbidden);
@@ -316,6 +330,14 @@ function inspectRootDirectory(rawRootPath, { userDataPath = null } = {}) {
   }
 
   const realRoot = assertNotReparseOrSymlink(resolved, lstat);
+  if (
+    !allowManagedVault &&
+    realRoot.split(/[\\/]/).some((segment) => /^Kosmora-vault-[a-f0-9]{24}$/i.test(segment))
+  )
+    throw new KosworkWorkspaceError(
+      ERROR_CODES.WORKSPACE_PROTECTED_PATH,
+      "Служебная папка локального хранилища доступна только через отдельное разрешение Koswork."
+    );
   if (!lstat.isDirectory()) {
     throw new KosworkWorkspaceError(
       ERROR_CODES.WORKSPACE_NOT_A_DIRECTORY,
@@ -460,6 +482,13 @@ function resolveSafeWorkspaceTarget(
     }
 
     const realSegPath = assertNotReparseOrSymlink(currentAbs, segStat);
+    // Windows 8.3 aliases can conceal a protected long directory name.
+    if (!allowProtected && isSensitiveFilename(path.basename(realSegPath))) {
+      throw new KosworkWorkspaceError(
+        ERROR_CODES.WORKSPACE_PROTECTED_PATH,
+        "Канонический путь относится к защищённому каталогу или файлу."
+      );
+    }
     if (!isPathStrictlyInside(canonicalRoot, realSegPath)) {
       throw new KosworkWorkspaceError(
         ERROR_CODES.WORKSPACE_SYMLINK_REJECTED,
