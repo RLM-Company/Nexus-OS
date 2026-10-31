@@ -42,6 +42,7 @@ export function registerContextMemoryRoutes(
       throw error;
     });
     const owner = (r: FastifyRequest) => identityFor(r).owner_id;
+    routes.get("/api/v1/memory/local-snapshot", (r) => store.localSnapshot(owner(r)));
     routes.get<{ Querystring: { q?: string; offset?: number } }>(
       "/api/v1/memory",
       {

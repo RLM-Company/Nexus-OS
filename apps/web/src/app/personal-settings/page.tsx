@@ -7,6 +7,7 @@ import PrivacyPanel from "./privacy-panel";
 import { Switch, SystemMessage } from "../ui/kosmora-controls";
 import { ModelPicker } from "../ui/model-picker";
 import { InterfaceSettings } from "./interface-settings";
+import { LocalVaultSettings } from "./local-vault-settings";
 
 type Preferences = {
   version: number;
@@ -226,6 +227,7 @@ export default function PersonalSettings() {
             <UsageActivity rows={usage?.rows ?? []} />
           </section>
           <InterfaceSettings />
+          <LocalVaultSettings />
           <div id="account-data">
             <PrivacyPanel />
           </div>

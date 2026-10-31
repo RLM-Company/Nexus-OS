@@ -1,0 +1,58 @@
+:root {
+  color-scheme: light dark;
+  font: 14px system-ui;
+  background: light-dark(#fff, #111);
+  color: light-dark(#171717, #eee);
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 900px;
+  margin: auto;
+  padding: 24px;
+}
+h1 {
+  font-size: 24px;
+}
+p {
+  line-height: 1.5;
+}
+button,
+input {
+  font: inherit;
+  border: 1px solid #8886;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  padding: 8px 11px;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+#controls,
+article div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+article {
+  border-bottom: 1px solid #8885;
+  padding: 14px 0;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+}
+#status {
+  min-height: 22px;
+}
+input {
+  margin: 8px;
+}

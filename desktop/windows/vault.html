@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'none'"
+    />
+    <title>Локальное хранилище Kosmora</title>
+    <link rel="stylesheet" href="vault.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Локальное хранилище</h1>
+      <p>
+        Оригиналы и снимки памяти остаются в выбранной папке на этом ПК. Файлы в папке не
+        зашифрованы. Снимок — дополнительная локальная копия; память на сервере сохраняется.
+      </p>
+      <div id="controls">
+        <button data-command="choose">Выбрать папку</button
+        ><button data-command="import">Добавить оригинал</button
+        ><button data-command="snapshot">Сохранить снимок памяти</button
+        ><button data-command="status">Обновить</button
+        ><button data-command="disconnect">Отключить папку</button>
+      </div>
+      <p id="status" role="status"></p>
+      <form id="search">
+        <label>Поиск по имени и тексту <input id="query" maxlength="160" required /></label
+        ><button>Найти</button>
+      </form>
+      <p>
+        До 500 файлов, 100 МБ суммарно, 10 МБ на оригинал. Содержимое PDF, Word и изображений пока
+        не индексируется. В чат передаются только выбранные текстовые материалы.
+      </p>
+      <div id="items"></div>
+      <h2>Выбранный текст</h2>
+      <pre id="preview"></pre>
+    </main>
+    <script src="vault.js"></script>
+  </body>
+</html>
