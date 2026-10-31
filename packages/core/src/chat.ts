@@ -11,7 +11,7 @@ import type {
 import { estimateInputTokensUpperBound } from "./manager.js";
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
 import { messageWithMaterials } from "./message-materials.js";
-import { conversationWindow, DEFAULT_CONTEXT_BUDGET } from "./conversation-window.js";
+import { conversationWindow, modelInputContextBudget } from "./conversation-window.js";
 import {
   CONTEXT_MEMORY_RULES,
   assertContextMemoryComplete,
@@ -43,6 +43,7 @@ export interface ChatServiceOptions {
   optimizeFor?: "balanced" | "quality" | "latency" | "cost";
   timeoutMs?: number;
   maxOutputTokens?: number;
+  contextWindowTokens?: number;
   systemPrompt?: string;
 }
 
@@ -71,6 +72,7 @@ interface NormalizedChatOptions {
 
 export class ChatService {
   readonly #options: NormalizedChatOptions;
+  readonly #contextBudget: number;
 
   constructor(options: ChatServiceOptions) {
     this.#options = normalizeCommonModelServiceOptions({
@@ -85,6 +87,10 @@ export class ChatService {
       maxOutputTokens: options.maxOutputTokens ?? 1_200,
       systemPrompt: options.systemPrompt ?? DEFAULT_CHAT_SYSTEM_PROMPT
     });
+    this.#contextBudget = modelInputContextBudget(
+      options.contextWindowTokens,
+      this.#options.maxOutputTokens
+    );
   }
 
   buildRequest(context: ChatRunContext): ModelRequest {
@@ -136,7 +142,7 @@ export class ChatService {
       if (index >= 0) {
         const original = conversation[index]!;
         const available =
-          DEFAULT_CONTEXT_BUDGET -
+          this.#contextBudget -
           256 -
           estimateInputTokensUpperBound(prefix) -
           estimateInputTokensUpperBound(conversation.slice(index));
@@ -160,7 +166,7 @@ export class ChatService {
         }
       }
     }
-    const messages = conversationWindow(prefix, conversation);
+    const messages = conversationWindow(prefix, conversation, this.#contextBudget);
 
     return {
       request_id: context.runId,

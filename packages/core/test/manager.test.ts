@@ -19,6 +19,23 @@ const message = (overrides: Partial<Message>): Message => ({
 });
 
 describe("ManagerService", () => {
+  it("uses the declared model window for project conversation history", () => {
+    const manager = new ManagerService({
+      preferredProvider: "external",
+      preferredModelAlias: "gpt-6.1-sol",
+      fallbackAllowed: false,
+      contextWindowTokens: 1050000
+    });
+    const old = "a".repeat(50000),
+      current = "b".repeat(50000);
+    const result = manager.buildRequest({
+      projectId: "project-1",
+      runId: "large",
+      messages: [message({ content: old }), message({ id: "new", content: current })]
+    });
+    expect(result.messages.slice(1).map((m) => m.content)).toEqual([old, current]);
+    expect(result.routing.estimated_input_tokens).toBeGreaterThan(32000);
+  });
   it("builds a provider-neutral request with durable conversation history", () => {
     const manager = new ManagerService({
       preferredProvider: "primary",
