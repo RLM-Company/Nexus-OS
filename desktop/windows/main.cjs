@@ -32,6 +32,7 @@ const { createComputerHistory } = require("./computer-history.cjs");
 const { fetchElectronOwner } = require("./owner-session.cjs");
 const { createDraftSessionGate } = require("./draft-session-gate.cjs");
 const { createDownloadCenter } = require("./download-center.cjs");
+const { createVaultConsole } = require("./vault-console.cjs");
 const { safeWorkspaceRoute, isLoginOrLogout, isExplicitLogout } = require("./desktop-recovery.cjs");
 const updateTrust = require("./update-trust.json");
 const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
@@ -142,6 +143,23 @@ const downloadCenter =
       })
     : null;
 
+const vaultConsole =
+  gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode
+    ? createVaultConsole({
+        BrowserWindow,
+        ipcMain,
+        dialog,
+        profileDirectory,
+        codec: localTextCodec,
+        getEpoch: () => identityEpoch,
+        getMainWindow: () => mainWindow,
+        getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true }),
+        identity: async () => {
+          const owner = await verifiedOwner({ allowCachedWrite: true });
+          return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
+        }
+      })
+    : null;
 const taskGate = createTaskGate();
 const browserWorkspace = createComputerWorkspace({
   userDataPath: profileDirectory,
@@ -523,6 +541,7 @@ async function openOrigin(origin, { persist = false } = {}) {
       kosworkWorkCycle?.invalidate();
       kosworkBrowser?.invalidate();
       draftSessionGate.reset();
+      vaultConsole?.invalidate();
       downloadCenter.invalidate({ forget: true, origin: previousOrigin, owner: ownerCache?.owner });
       ownerCache = null;
       deferredRoute = null;
@@ -605,6 +624,7 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
       kosworkWorkCycle?.invalidate();
       kosworkBrowser?.invalidate();
       draftSessionGate.reset();
+      vaultConsole?.invalidate();
       downloadCenter.invalidate();
       for (const item of activeDownloads.values()) item.cancel();
     }
@@ -622,6 +642,7 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
       kosworkWorkCycle?.invalidate();
       kosworkBrowser?.invalidate();
       draftSessionGate.reset();
+      vaultConsole?.invalidate();
       downloadCenter.invalidate();
       for (const item of activeDownloads.values()) item.cancel();
     }
@@ -683,7 +704,7 @@ async function nativeLogout() {
     message:
       "Выйти из аккаунта и удалить локальные текстовые черновики, историю задач ПК и локальные резервные копии Koswork?",
     detail:
-      "Серверные чаты и файлы не удаляются. Сеанс приложения и входы на сайты в браузере Koswork на этом компьютере будут завершены.",
+      "Серверные чаты и файлы не удаляются. Выбранная папка локального хранилища и её копии сохранятся. Сеанс приложения и входы на сайты в браузере Koswork на этом компьютере будут завершены.",
     buttons: ["Выйти и очистить", "Отмена"],
     defaultId: 1,
     cancelId: 1,
@@ -696,6 +717,7 @@ async function nativeLogout() {
   kosworkWorkCycle?.invalidate();
   kosworkBrowser?.invalidate();
   draftSessionGate.reset();
+  vaultConsole?.invalidate();
   downloadCenter.invalidate({ forget: true, origin: currentOrigin, owner: ownerCache?.owner });
   ownerCache = null;
   // The user explicitly authorized clearing drafts and locally remembered login.
@@ -784,6 +806,7 @@ function clearDraftsForHostedLogout(url) {
   kosworkWorkCycle?.invalidate();
   kosworkBrowser?.invalidate();
   draftSessionGate.reset();
+  vaultConsole?.invalidate();
   downloadCenter.invalidate({ forget: true, origin: currentOrigin, owner: ownerCache?.owner });
   ownerCache = null;
   deferredRoute = null;
@@ -848,6 +871,7 @@ function installNavigationGuards(window) {
     draftSessionGate.reset(); // Full document navigation, not SPA history changes.
     persistRoute(url);
     if (isLoginOrLogout(url, currentOrigin)) {
+      vaultConsole?.invalidate();
       downloadCenter.invalidate();
       ownerCache = null;
       identityEpoch++;
@@ -862,6 +886,7 @@ function installNavigationGuards(window) {
     if (isExplicitLogout(url, currentOrigin)) void clearDraftsForHostedLogout(url);
     persistRoute(url);
     if (isLoginOrLogout(url, currentOrigin)) {
+      vaultConsole?.invalidate();
       downloadCenter.invalidate();
       ownerCache = null;
       identityEpoch++;
@@ -1002,6 +1027,17 @@ function createMenu() {
     {
       label: "Koswork",
       submenu: [
+        {
+          label: "Локальное хранилище…",
+          enabled: !!vaultConsole,
+          click: () =>
+            void vaultConsole?.show().catch(() =>
+              dialog.showMessageBox(mainWindow, {
+                type: "info",
+                message: "Для хранилища нужен подтверждённый вход в Kosmora."
+              })
+            )
+        },
         {
           label: "Рабочая задача…",
           enabled: !!kosworkWorkCycle,
@@ -1223,6 +1259,24 @@ function queueDraft(scope, task) {
   return result;
 }
 
+ipcMain.handle("kosmora:vault-open", async (event) => {
+  if (!isTrustedRemoteEvent(event) || !vaultConsole) return { ok: false };
+  try {
+    await vaultConsole.show();
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+ipcMain.handle("kosmora:vault-read-context", async (event) => {
+  if (!isTrustedRemoteEvent(event)) return null;
+  const data = await vaultConsole?.readContext();
+  return isTrustedRemoteEvent(event) ? data : null;
+});
+ipcMain.handle("kosmora:vault-ack-context", async (event, id) => {
+  if (isTrustedRemoteEvent(event) && typeof id === "string" && id.length <= 64)
+    await vaultConsole?.ackContext(id);
+});
 ipcMain.handle("koswork:computer-open", async (event, input) => {
   if (
     !computerConsole ||

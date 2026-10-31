@@ -39,6 +39,7 @@ import { ProjectContextPanel } from "./project-context-panel";
 import { ProjectContextPreview } from "./project-context-preview";
 import { ManagerWorkPanel } from "./manager-work-panel";
 import { useExecutionGate } from "./use-execution-gate";
+import { useLocalVaultContext } from "./use-local-vault";
 import { WorkspaceIcon } from "./workspace-icons";
 import { AccountMenu, MobileNavigation, WorkspaceModeMenu } from "./workspace-navigation";
 import {
@@ -699,6 +700,14 @@ export default function Home() {
     }
     setDraftStorageReadyKey(attachmentScope);
   }, [attachmentScope]);
+  useLocalVaultContext(
+    initialRouteReady &&
+      !loading &&
+      surface === "manager" &&
+      draftStorageReadyKey === attachmentScope,
+    draft,
+    setDraft
+  );
 
   useEffect(() => {
     const pending = pendingComposeRef.current;

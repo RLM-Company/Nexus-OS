@@ -625,6 +625,27 @@ export class ContextMemoryStore {
     }
     return result;
   }
+  localSnapshot(owner: string) {
+    this.active(owner);
+    const entries = this.db
+      .prepare("SELECT * FROM context_memory_entries WHERE owner_id=? ORDER BY id LIMIT 1001")
+      .all(owner) as Row[];
+    if (entries.length > 1000) throw new ContextMemoryError(409, "MEMORY_LIMIT");
+    const settings = this.db
+      .prepare("SELECT * FROM context_memory_settings WHERE owner_id=? LIMIT 1001")
+      .all(owner);
+    if (settings.length > 1000) throw new ContextMemoryError(409, "MEMORY_LIMIT");
+    const cache = new Map<string, SourceMessage | null>();
+    const snapshot = {
+      format: "kosmora.memory-snapshot.v1",
+      created_at: new Date(this.now()).toISOString(),
+      entries: entries.map((r) => this.decode(r, cache)),
+      settings
+    };
+    if (Buffer.byteLength(JSON.stringify(snapshot), "utf8") > 4 * 1024 * 1024)
+      throw new ContextMemoryError(409, "MEMORY_LIMIT");
+    return snapshot;
+  }
   confirmProfileCandidate(
     target: MemoryTarget,
     owner: string,

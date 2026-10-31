@@ -218,6 +218,25 @@ describe("reviewed profile extraction", () => {
       n: 0
     });
   });
+  it("exports current memory only for the current owner and fences the snapshot", async () => {
+    enable([chatId]);
+    const c = (await scan()).items[0]!;
+    await confirm(c.id);
+    const response = await app.inject({ url: "/api/v1/memory/local-snapshot" });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    const data = response.json<{ format: string; entries: ContextMemoryEntry[] }>();
+    expect(data.format).toBe("kosmora.memory-snapshot.v1");
+    expect(data.entries).toHaveLength(1);
+    expect(store.contextMemory.localSnapshot("other").entries).toEqual([]);
+    const at = new Date().toISOString();
+    db.sqlite
+      .prepare(
+        "INSERT INTO kosmora_owner_data_lifecycle(owner_id,epoch,state,operation_id,started_at,updated_at) VALUES(?,1,'deleting','test',?,?)"
+      )
+      .run(LOCAL_OWNER_ID, at, at);
+    expect((await app.inject({ url: "/api/v1/memory/local-snapshot" })).statusCode).toBe(409);
+  });
   it("rejects client-invented text and bounds the scan", async () => {
     enable([chatId]);
     const c = (await scan()).items[0]!;
