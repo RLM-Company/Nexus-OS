@@ -33,6 +33,8 @@ const { fetchElectronOwner } = require("./owner-session.cjs");
 const { createDraftSessionGate } = require("./draft-session-gate.cjs");
 const { createDownloadCenter } = require("./download-center.cjs");
 const { createVaultConsole } = require("./vault-console.cjs");
+const { createLocalVault } = require("./local-vault.cjs");
+const { createVaultWorkspace } = require("./vault-workspace.cjs");
 const { safeWorkspaceRoute, isLoginOrLogout, isExplicitLogout } = require("./desktop-recovery.cjs");
 const updateTrust = require("./update-trust.json");
 const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
@@ -194,7 +196,7 @@ const kosworkBrowser =
         getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true })
       })
     : null;
-const workCycleWorkspace = createComputerWorkspace({
+const workCycleBaseWorkspace = createComputerWorkspace({
   userDataPath: profileDirectory,
   codec: localTextCodec,
   scopeNamespace: "work-cycle",
@@ -205,6 +207,10 @@ const workCycleWorkspace = createComputerWorkspace({
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   }
+});
+const workCycleWorkspace = createVaultWorkspace({
+  base: workCycleBaseWorkspace,
+  vault: createLocalVault({ userDataPath: profileDirectory, codec: localTextCodec })
 });
 const kosworkWorkCycle =
   gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode

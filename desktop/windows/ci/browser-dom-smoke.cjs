@@ -289,35 +289,46 @@ async function run() {
     assert.equal(await preview.locator("body").evaluate((e) => e.scrollWidth > innerWidth), false);
     const workPreview = await browser.newPage({ viewport: { width: 1000, height: 640 } });
     await workPreview.addInitScript(() => {
+      let vaultAccess = false;
       window.kosworkBrowser = {
         onState() {},
         onEvent() {},
-        command: async () => ({
-          tabs: [],
-          projects: [],
-          downloads: [],
-          taskMode: "work",
-          workTask: {
-            environment: "browser",
-            steps: [
-              {
-                title: "<script>untrusted label</script>",
-                criteria: "Inspect a source",
-                state: "running",
-                evidence: ""
-              },
-              {
-                title: "Save report",
-                criteria: "Verify actual file",
-                state: "pending",
-                evidence: ""
-              }
-            ]
-          }
-        })
+        command: async (name) => {
+          if (name === "vault") vaultAccess = true;
+          if (name === "revoke-vault") vaultAccess = false;
+          return {
+            tabs: [],
+            projects: [],
+            downloads: [],
+            taskMode: "work",
+            vaultAvailable: true,
+            vaultAccess,
+            workTask: {
+              environment: "browser",
+              steps: [
+                {
+                  title: "<script>untrusted label</script>",
+                  criteria: "Inspect a source",
+                  state: "running",
+                  evidence: ""
+                },
+                {
+                  title: "Save report",
+                  criteria: "Verify actual file",
+                  state: "pending",
+                  evidence: ""
+                }
+              ]
+            }
+          };
+        }
       };
     });
     await workPreview.goto(pathToFileURL(path.join(__dirname, "../browser/browser.html")).href);
+    await workPreview.locator("#vault").click();
+    await workPreview.locator("#revoke-vault").waitFor({ state: "visible" });
+    await workPreview.locator("#revoke-vault").click();
+    await workPreview.locator("#vault").waitFor({ state: "visible" });
     assert.ok(await workPreview.locator("#work-plan").isVisible());
     assert.equal(await workPreview.locator("#work-steps script").count(), 0);
     assert.ok(

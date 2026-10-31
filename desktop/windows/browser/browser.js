@@ -19,6 +19,8 @@ const messages = {
     "Элемент недоступен. Возможно, нужен ручной вход или действие владельца.",
   COMPUTER_BUSY: "Уже выполняется другая задача. Сначала остановите её.",
   COMPUTER_CANCELLED: "Запуск отменён.",
+  COMPUTER_VAULT_NOT_CONNECTED:
+    "Сначала подключите папку в окне «Локальное хранилище» через меню Koswork.",
   COMPUTER_WORKSPACE_CHANGED:
     "Рабочая папка изменилась. Выберите исходную папку для восстановления задачи.",
   COMPUTER_LIVE_MODEL_REQUIRED: "Для запуска нужен подключённый сервер с живой моделью.",
@@ -159,6 +161,9 @@ function render(value) {
     : "Выберите папку для вложений и результатов.";
   $("folder").textContent = current.folder ? "Изменить" : "Подключить";
   $("revoke-folder").hidden = !current.folder;
+  $("vault").hidden = !current.vaultAvailable || current.vaultAccess;
+  $("vault").disabled = busy || current.running;
+  $("revoke-vault").hidden = !current.vaultAccess;
   $("notice").textContent =
     active?.error ||
     current.notice ||
@@ -307,6 +312,20 @@ async function refreshHistory() {
     historyBusy = false;
   }
 }
+$("vault").addEventListener("click", async () => {
+  busy = true;
+  render({});
+  await command("vault");
+  busy = false;
+  update(await command("state"));
+});
+$("revoke-vault").addEventListener(
+  "click",
+  () =>
+    void command("revoke-vault")
+      .then(() => command("state"))
+      .then(update)
+);
 $("history-details").addEventListener("toggle", () => {
   if ($("history-details").open) void refreshHistory();
 });

@@ -75,6 +75,8 @@ function createKosworkBrowser({
     paused: runner?.active?.phase === "awaiting_user",
     notice,
     taskMode: executionMode,
+    vaultAvailable: executionMode === "work" && typeof workspace.connectVault === "function",
+    vaultAccess: Boolean(bound && workspace.vaultState?.(bound)),
     workTask: workDriver?.state() ?? null
   });
   const tell = (value) => {
@@ -371,6 +373,47 @@ function createKosworkBrowser({
         return { folder };
       } catch (error) {
         await workspace.invalidate();
+        return failure(error);
+      } finally {
+        selection = null;
+        pending = false;
+      }
+    }
+    if (command === "vault" || command === "revoke-vault") {
+      if (executionMode !== "work" || typeof workspace.connectVault !== "function")
+        return { error: "COMPUTER_ACTION_INVALID" };
+      if (command === "revoke-vault") {
+        stop();
+        workspace.revokeVault();
+        tell();
+        return { revoked: true };
+      }
+      if (pending || runner?.active) return { error: "COMPUTER_BUSY" };
+      pending = true;
+      selection = new AbortController();
+      try {
+        const context = await authorize(e);
+        const folder = await workspace.connectVault(
+          context,
+          selection.signal,
+          async ({ files }) => {
+            const answer = await dialog.showMessageBox(window, {
+              type: "question",
+              buttons: ["Отмена", "Разрешить чтение для задачи"],
+              defaultId: 0,
+              cancelId: 0,
+              message: "Разрешить Koswork поиск в локальном хранилище?",
+              detail: `В хранилище ${files} файлов. Агент сможет искать и читать текстовые фрагменты; эти данные передаются серверу и модели для задачи. Изменение файлов хранилища и загрузка из него на сайты запрещены. Доступ прекратится после завершения или остановки задачи. Для записи результата подключите отдельную рабочую папку до выдачи этого разрешения.`
+            });
+            return answer.response === 1;
+          }
+        );
+        await authorize(e);
+        if (selection.signal.aborted) throw Error("COMPUTER_SESSION_STOPPED");
+        tell();
+        return { folder };
+      } catch (error) {
+        workspace.revokeVault();
         return failure(error);
       } finally {
         selection = null;

@@ -145,6 +145,34 @@ async function fixture(options = {}) {
     trusted
   };
 }
+test("only the native Work window can grant and revoke read-only vault access", async () => {
+  const f = await fixture({ mode: "work" });
+  let allowed = false,
+    calls = 0;
+  f.workspace.connectVault = async (context, signal, confirm) => {
+    calls++;
+    assert.equal(context.owner, "owner");
+    assert.equal(signal.aborted, false);
+    assert.equal(await confirm({ files: 2 }), true);
+    allowed = true;
+    return { id: "a".repeat(24), name: "Local sources" };
+  };
+  f.workspace.vaultState = () => allowed;
+  f.workspace.revokeVault = () => {
+    allowed = false;
+  };
+  assert.equal((await f.invoke("vault", undefined, { sender: {} })).error, "BROWSER_UNTRUSTED");
+  assert.equal(calls, 0);
+  assert.equal((await f.invoke("vault")).folder.name, "Local sources");
+  assert.equal((await f.invoke("state")).vaultAccess, true);
+  assert.equal((await f.invoke("revoke-vault")).revoked, true);
+  assert.equal(allowed, false);
+  const browser = await fixture();
+  browser.workspace.connectVault = () => {
+    throw Error("must not be reached");
+  };
+  assert.equal((await browser.invoke("vault")).error, "COMPUTER_ACTION_INVALID");
+});
 test("only exact native browser main frame can navigate, launch, recover or read history", async () => {
   const f = await fixture();
   f.calls.length = 0;
