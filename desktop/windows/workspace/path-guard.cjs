@@ -482,6 +482,13 @@ function resolveSafeWorkspaceTarget(
     }
 
     const realSegPath = assertNotReparseOrSymlink(currentAbs, segStat);
+    // Windows 8.3 aliases can conceal a protected long directory name.
+    if (!allowProtected && isSensitiveFilename(path.basename(realSegPath))) {
+      throw new KosworkWorkspaceError(
+        ERROR_CODES.WORKSPACE_PROTECTED_PATH,
+        "Канонический путь относится к защищённому каталогу или файлу."
+      );
+    }
     if (!isPathStrictlyInside(canonicalRoot, realSegPath)) {
       throw new KosworkWorkspaceError(
         ERROR_CODES.WORKSPACE_SYMLINK_REJECTED,

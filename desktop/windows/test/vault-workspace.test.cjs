@@ -179,6 +179,39 @@ test("ordinary workspace tools cannot bypass the grant via a storage parent or t
   await assert.rejects(direct.connect(c, f.signal), (e) => e.code === "WORKSPACE_PROTECTED_PATH");
   assert.match(f.vault.get(c, f.source.id).bytes.toString(), /17 350.25/);
 });
+test("Windows short-name expansion cannot hide a managed vault directory", (t) => {
+  const f = fixture(t);
+  const { resolveSafeWorkspaceTarget } = require("../workspace/path-guard.cjs");
+  const managed = path.join(f.storage, fs.readdirSync(f.storage)[0]);
+  const alias = path.join(f.storage, "KOSMOR~1");
+  const realpath = fs.realpathSync.native;
+  const root = realpath(f.storage);
+  // Exercise a real 8.3 alias when the Windows volume has short names enabled.
+  // Other volumes/platforms exercise the same canonical-path check with a mock.
+  if (fs.existsSync(alias)) {
+    assert.equal(realpath(alias), realpath(managed));
+    assert.throws(
+      () => resolveSafeWorkspaceTarget(root, "KOSMOR~1/" + f.source.id),
+      (e) => e.code === "WORKSPACE_PROTECTED_PATH"
+    );
+    return;
+  }
+  fs.mkdirSync(alias);
+  const replacement = t.mock.method(fs.realpathSync, "native", (value, ...args) =>
+    path.resolve(String(value)) === path.join(root, "KOSMOR~1")
+      ? realpath(managed)
+      : realpath(value, ...args)
+  );
+  try {
+    assert.throws(
+      () => resolveSafeWorkspaceTarget(root, "KOSMOR~1/" + f.source.id),
+      (e) => e.code === "WORKSPACE_PROTECTED_PATH"
+    );
+  } finally {
+    replacement.mock.restore();
+  }
+});
+
 test("an expired grant cannot read local sources or be silently renewed", async (t) => {
   let now = 1000;
   const f = fixture(t, { now: () => now });
