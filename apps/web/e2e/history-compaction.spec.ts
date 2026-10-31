@@ -1,0 +1,71 @@
+import { expect, test, type Page } from "@playwright/test";
+const api = "http://127.0.0.1:3225";
+async function settings(page: Page, id: string, title: string) {
+  await page.goto("/?chat=" + id);
+  await expect(page.locator(".topbar h1")).toHaveText(title);
+  await page.getByLabel("Настройки чата", { exact: true }).click();
+  const memory = page.getByRole("group", { name: "Общая память и источники", exact: true });
+  await expect(memory.getByLabel("Использовать общую память", { exact: true })).toBeEnabled();
+  await memory.getByLabel("Использовать общую память", { exact: true }).check();
+  await memory.getByLabel("Автоматически сжимать старую историю", { exact: true }).check();
+  await memory.getByRole("button", { name: "Сохранить доступ к памяти", exact: true }).click();
+  await expect(memory.getByRole("status")).toHaveText("Доступ к памяти сохранён.");
+  await memory.getByText("Проверить, что вспомнит ИИ", { exact: true }).click();
+  await memory
+    .getByRole("textbox", { name: "Запрос для проверки памяти", exact: true })
+    .fill("цель бюджет следующий шаг");
+  await memory.getByRole("button", { name: "Проверить сжатие истории", exact: true }).click();
+  return memory;
+}
+test("saves automatic compaction, shows real quote coverage and opens its original without a model call", async ({
+  page,
+  request
+}) => {
+  const info = (await (await request.get(api + "/fixture/compaction")).json()) as {
+    chatId: string;
+    title: string;
+  };
+  const memory = await settings(page, info.chatId, info.title);
+  const report = memory.getByRole("region", { name: "Проверка сжатия истории", exact: true });
+  await expect(report).toContainText("История сокращена");
+  await expect(report).toContainText("17 350.25");
+  await expect(report).toContainText("02.11.2026");
+  const state = await request.get(api + "/api/v1/memory/targets/chat/" + info.chatId + "/settings");
+  expect((await state.json()).compact_history).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("verified-compaction.png") });
+  await report
+    .getByRole("button", { name: "Открыть исходное сообщение", exact: true })
+    .first()
+    .click();
+  await expect(
+    memory.getByRole("region", { name: "Исходное сообщение", exact: true })
+  ).toContainText("Цель:");
+  expect((await (await request.get(api + "/fixture/compaction")).json()).modelCalls).toBe(0);
+});
+test("blocks the actual send when protected conditions do not fit and retains every original", async ({
+  page,
+  request
+}) => {
+  const info = (await (await request.get(api + "/fixture/compaction")).json()) as {
+    blockedChatId: string;
+    blockedTitle: string;
+  };
+  const before = (await (
+    await request.get(api + "/api/v1/chats/" + info.blockedChatId)
+  ).json()) as { messages: unknown[] };
+  const memory = await settings(page, info.blockedChatId, info.blockedTitle);
+  await expect(memory.getByRole("region", { name: "Проверка сжатия истории" })).toContainText(
+    "Важные фрагменты не поместились"
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("textbox", { name: "Сообщение Kosmora", exact: true }).fill("Продолжай");
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  await expect(
+    page.getByText("Обязательные записи памяти не поместились.", { exact: false })
+  ).toBeVisible();
+  const after = (await (await request.get(api + "/api/v1/chats/" + info.blockedChatId)).json()) as {
+    messages: unknown[];
+  };
+  expect(after.messages.length).toBeGreaterThanOrEqual(before.messages.length);
+  expect((await (await request.get(api + "/fixture/compaction")).json()).modelCalls).toBe(0);
+});

@@ -5,7 +5,7 @@ const production = ["1", "true"].includes(process.env.KOSMORA_E2E_PRODUCTION ?? 
 export default defineConfig({
   testDir: "./e2e",
   // Issues use their dedicated real HTTP/SQLite fixture on 3219, run by test:e2e:issues.
-  testIgnore: "**/github-issues.spec.ts",
+  testIgnore: ["**/github-issues.spec.ts", "**/history-compaction.spec.ts"],
   timeout: 30_000,
   expect: { timeout: 15_000 },
   retries: process.env.CI ? 1 : 0,

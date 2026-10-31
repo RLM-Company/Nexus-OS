@@ -109,6 +109,26 @@ describe("source-backed context memory", () => {
     ).toThrow("MEMORY_TARGET_NOT_FOUND");
     expect(memory.settings(target, "a").version).toBe(2);
   });
+  it("keeps compaction off by default, preserves it for older clients and rejects project activation", () => {
+    expect(memory.settings(target, "a").compact_history).toBe(false);
+    expect(enable({ compact_history: true }).compact_history).toBe(true);
+    const legacy = {
+      enabled: true,
+      use_personal: false,
+      source_chat_ids: [],
+      project_ids: [],
+      expected_version: 1
+    };
+    expect(memory.updateSettings(target, legacy, "a").compact_history).toBe(true);
+    expect(() =>
+      memory.updateSettings(
+        { kind: "project", id: "p1" },
+        { ...legacy, expected_version: 0, compact_history: true },
+        "a"
+      )
+    ).toThrow("COMPACTION_CHAT_ONLY");
+    expect(memory.settings({ kind: "project", id: "p1" }, "a").version).toBe(0);
+  });
   it("never shares a chat or project memory without its target grant", () => {
     memory.create(input({ scope: "chat", scope_id: "old", content: "Chat-only style." }), "a");
     memory.create(input({ scope: "project", scope_id: "p2", content: "Project-only style." }), "a");

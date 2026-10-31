@@ -10,6 +10,7 @@ export * from "./intelligence-graph-context.js";
 export * from "./manager.js";
 export * from "./chat.js";
 export * from "./context-memory.js";
+export * from "./history-compaction.js";
 export * from "./model-output-checkpoint.js";
 export { ContextTooLargeError } from "./conversation-window.js";
 export * from "./demo-manager-plan.js";

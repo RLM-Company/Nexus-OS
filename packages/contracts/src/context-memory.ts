@@ -50,6 +50,7 @@ export const ContextMemoryUpdateSchema = Type.Object(
 export const ContextMemorySettingsInputSchema = Type.Object(
   {
     enabled: Type.Boolean(),
+    compact_history: Type.Optional(Type.Boolean()),
     use_personal: Type.Boolean(),
     source_chat_ids: Type.Array(id, { maxItems: 32, uniqueItems: true }),
     project_ids: Type.Array(id, { maxItems: 8, uniqueItems: true }),
@@ -62,6 +63,7 @@ export interface ContextMemorySettings extends Omit<
   ContextMemorySettingsInput,
   "expected_version"
 > {
+  compact_history: boolean;
   version: number;
 }
 export interface ContextMemorySource {
@@ -91,6 +93,7 @@ export interface ContextMemoryEvidence {
   version?: number;
   excerpt_only: boolean;
   priority?: boolean;
+  sequence?: number;
 }
 export interface ContextMemoryBundle {
   format: "kosmora.context-memory.v1";
