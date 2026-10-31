@@ -110,6 +110,51 @@ export function registerContextMemoryRoutes(
     );
     const base = "/api/v1/memory/targets/:kind/:targetId";
     routes.get<{ Params: TargetParams }>(
+      base + "/profile-candidates",
+      { schema: { params: targetParams } },
+      (r) => store.profileCandidates(target(r.params), owner(r))
+    );
+    routes.post<{
+      Params: TargetParams;
+      Body: { candidate_id: string; replace_id?: string; expected_version?: number };
+    }>(
+      base + "/profile-candidates/confirm",
+      {
+        schema: {
+          params: targetParams,
+          body: Type.Object(
+            {
+              candidate_id: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+              replace_id: Type.Optional(id),
+              expected_version: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000000 }))
+            },
+            { additionalProperties: false }
+          )
+        }
+      },
+      (r) =>
+        store.confirmProfileCandidate(
+          target(r.params),
+          owner(r),
+          r.body.candidate_id,
+          r.body.replace_id,
+          r.body.expected_version
+        )
+    );
+    routes.post<{ Params: TargetParams; Body: { candidate_id: string } }>(
+      base + "/profile-candidates/dismiss",
+      {
+        schema: {
+          params: targetParams,
+          body: Type.Object(
+            { candidate_id: Type.String({ pattern: "^[a-f0-9]{64}$" }) },
+            { additionalProperties: false }
+          )
+        }
+      },
+      (r) => store.dismissProfileCandidate(target(r.params), owner(r), r.body.candidate_id)
+    );
+    routes.get<{ Params: TargetParams }>(
       base + "/settings",
       {
         schema: { params: targetParams }

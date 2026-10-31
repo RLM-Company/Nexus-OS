@@ -3,6 +3,8 @@ import type { DatabaseSync } from "node:sqlite";
 import { Value } from "typebox/value";
 import { memoryContainsCredential } from "./context-memory-sensitive.js";
 import {
+  explicitProfileStatements,
+  type ProfileCandidatePage,
   ContextMemoryInputSchema,
   ContextMemorySettingsInputSchema,
   MemoryTargetSchema,
@@ -146,15 +148,15 @@ export class ContextMemoryStore {
     if (!row) throw new ContextMemoryError(404, "MEMORY_TARGET_NOT_FOUND");
   }
   private transaction<T>(owner: string, operation: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE");
+    this.db.exec("SAVEPOINT context_memory_write");
     try {
       this.active(owner);
       this.idle(owner);
       const result = operation();
-      this.db.exec("COMMIT");
+      this.db.exec("RELEASE context_memory_write");
       return result;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      this.db.exec("ROLLBACK TO context_memory_write; RELEASE context_memory_write");
       throw error;
     }
   }
@@ -513,6 +515,178 @@ export class ContextMemoryStore {
         ...new Set([...(target.kind === "project" ? [target.id] : []), ...settings.project_ids])
       ].filter((id) => isActive("project", id))
     };
+  }
+  profileCandidates(target: MemoryTarget, owner: string): ProfileCandidatePage {
+    const settings = this.settings(target, owner);
+    const result: ProfileCandidatePage = {
+      method: "explicit-owner-quotes-v1",
+      items: [],
+      scanned: 0,
+      limited: false,
+      enabled: settings.enabled
+    };
+    if (!settings.enabled) return result;
+    this.owned(target, owner, true);
+    const grants = this.grants(target, settings, owner);
+    const rows = this.db
+      .prepare(
+        "SELECT m.id,'chat_message' kind,m.created_at FROM general_chat_messages m JOIN general_chats c ON c.id=m.chat_id AND c.owner_id=m.owner_id WHERE c.owner_id=? AND c.archived=0 AND c.id IN (SELECT value FROM json_each(?)) AND m.role='user' AND m.status='completed' AND length(m.content)<=16000 " +
+          "UNION ALL SELECT m.id,'project_message' kind,m.created_at FROM messages m JOIN projects p ON p.id=m.project_id WHERE p.owner_id=? AND p.status='ACTIVE' AND p.id IN (SELECT value FROM json_each(?)) AND m.role='user' AND m.status='completed' AND length(m.content)<=16000 ORDER BY 3 DESC,1 DESC LIMIT 201"
+      )
+      .all(owner, JSON.stringify(grants.chats), owner, JSON.stringify(grants.projects)) as {
+      id: string;
+      kind: ContextMemorySource["kind"];
+      created_at: string;
+    }[];
+    const existing = this.db
+      .prepare("SELECT * FROM context_memory_entries WHERE owner_id=? LIMIT 1000")
+      .all(owner) as Row[];
+    const rejected = new Set(
+      (
+        this.db
+          .prepare("SELECT candidate_id FROM profile_candidate_dismissals WHERE owner_id=?")
+          .all(owner) as { candidate_id: string }[]
+      ).map((r) => r.candidate_id)
+    );
+    const seen = new Set<string>();
+    const sourceCache = new Map<string, SourceMessage | null>();
+    result.limited = rows.length > 200;
+    for (const row of rows.slice(0, 200)) {
+      result.scanned++;
+      const message = this.message(row.kind, row.id, owner);
+      if (!message || message.role !== "user") continue;
+      for (const fact of explicitProfileStatements(message.content)) {
+        const scope = fact.personal ? "personal" : message.project_id ? "project" : "chat";
+        const scopeId = scope === "personal" ? null : (message.project_id ?? message.chat_id);
+        const sameScope = existing
+          .filter(
+            (e) =>
+              e.scope === scope &&
+              (e.chat_id ?? e.project_id) === scopeId &&
+              (!e.expires_at || Date.parse(e.expires_at) > this.now())
+          )
+          .map((e) => this.decode(e, sourceCache));
+        const normalized = fact.text.normalize("NFKC").toLocaleLowerCase();
+        const duplicateKey = JSON.stringify([scope, scopeId, normalized]);
+        if (seen.has(duplicateKey)) continue;
+        seen.add(duplicateKey);
+        if (
+          sameScope.some(
+            (e) =>
+              (e.source_status === "current" || e.source_status === "manual") &&
+              e.content.normalize("NFKC").toLocaleLowerCase() === normalized
+          )
+        )
+          continue;
+        const id = hash(
+          JSON.stringify([row.kind, row.id, hash(message.content), fact.slot, fact.text])
+        );
+        if (rejected.has(id)) continue;
+        const source: ContextMemorySource = {
+          kind: row.kind,
+          message_id: row.id,
+          chat_id: message.chat_id,
+          project_id: message.project_id,
+          role: "user",
+          quote: fact.text,
+          sha256: hash(message.content)
+        };
+        const replacements = sameScope.filter(
+          (e) =>
+            e.title === fact.title &&
+            e.kind === fact.kind &&
+            (e.source_status === "current" || e.source_status === "manual")
+        );
+        result.items.push({
+          id,
+          slot: fact.slot,
+          observed_at: message.created_at,
+          source,
+          input: {
+            scope,
+            scope_id: scopeId,
+            kind: fact.kind,
+            title: fact.title,
+            content: fact.text,
+            pinned: false,
+            expires_at: null,
+            source: { kind: row.kind, message_id: row.id, quote: fact.text }
+          },
+          conflicts_limited: replacements.length > 5,
+          replaces: replacements
+            .slice(0, 5)
+            .map(({ id, version, title, content }) => ({ id, version, title, content }))
+        });
+        if (result.items.length >= 30) {
+          result.limited = true;
+          return result;
+        }
+      }
+    }
+    return result;
+  }
+  confirmProfileCandidate(
+    target: MemoryTarget,
+    owner: string,
+    id: string,
+    replaceId?: string,
+    version?: number
+  ) {
+    return this.transaction(owner, () => {
+      const page = this.profileCandidates(target, owner);
+      if (!page.enabled) throw new ContextMemoryError(409, "MEMORY_DISABLED");
+      const candidate = page.items.find((c) => c.id === id);
+      if (!candidate) {
+        const prior = this.db
+          .prepare("SELECT id FROM context_memory_entries WHERE owner_id=? AND creation_key=?")
+          .get(owner, "profile:" + id) as { id: string } | undefined;
+        if (prior && !replaceId) return this.get(prior.id, owner)!;
+        throw new ContextMemoryError(409, "STALE_PROFILE_CANDIDATE");
+      }
+      if (replaceId) {
+        if (!candidate.replaces.some((e) => e.id === replaceId && e.version === version))
+          throw new ContextMemoryError(409, "STALE_PROFILE_CANDIDATE");
+        const old = this.get(replaceId, owner)!;
+        const updated = this.update(
+          replaceId,
+          version!,
+          { ...candidate.input, pinned: old.pinned, expires_at: old.expires_at },
+          owner
+        );
+        this.suppressProfileCandidate(candidate, owner);
+        return updated;
+      }
+      if (version !== undefined) throw new ContextMemoryError(400, "INVALID_MEMORY");
+      const saved = this.create(candidate.input, owner, "profile:" + id);
+      this.suppressProfileCandidate(candidate, owner);
+      return saved;
+    });
+  }
+  dismissProfileCandidate(target: MemoryTarget, owner: string, id: string) {
+    return this.transaction(owner, () => {
+      const candidate = this.profileCandidates(target, owner).items.find((c) => c.id === id);
+      if (!candidate) throw new ContextMemoryError(409, "STALE_PROFILE_CANDIDATE");
+      this.suppressProfileCandidate(candidate, owner);
+      return { dismissed: true };
+    });
+  }
+  private suppressProfileCandidate(
+    candidate: ProfileCandidatePage["items"][number],
+    owner: string
+  ) {
+    const count = this.db
+      .prepare("SELECT count(*) n FROM profile_candidate_dismissals WHERE owner_id=?")
+      .get(owner) as { n: number };
+    if (count.n >= 5000) throw new ContextMemoryError(409, "MEMORY_LIMIT");
+    this.db
+      .prepare("INSERT INTO profile_candidate_dismissals VALUES(?,?,?,?,?)")
+      .run(
+        owner,
+        candidate.id,
+        candidate.source.kind === "chat_message" ? candidate.source.message_id : null,
+        candidate.source.kind === "project_message" ? candidate.source.message_id : null,
+        new Date(this.now()).toISOString()
+      );
   }
   private allowed(
     entry: ContextMemoryEntry,

@@ -99,6 +99,9 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
         "SELECT v.* FROM context_memory_versions v JOIN context_memory_entries e ON e.id=v.entry_id WHERE e.owner_id=?"
       ),
       context_memory_settings: select("SELECT * FROM context_memory_settings WHERE owner_id=?"),
+      profile_candidate_dismissals: select(
+        "SELECT * FROM profile_candidate_dismissals WHERE owner_id=?"
+      ),
       chat_preferences: select(
         "SELECT p.* FROM kosmora_chat_preferences p JOIN general_chats c ON c.id=p.chat_id AND c.owner_id=p.owner_id WHERE c.owner_id=?"
       ),
@@ -232,6 +235,7 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
       const n = (sql: string) => Number(this.sqlite.prepare(sql).run(ownerId).changes);
       let deleted = 0;
       deleted += n("DELETE FROM context_memory_settings WHERE owner_id=?");
+      deleted += n("DELETE FROM profile_candidate_dismissals WHERE owner_id=?");
       deleted += n("DELETE FROM context_memory_entries WHERE owner_id=?");
       deleted += n("DELETE FROM general_chat_messages WHERE owner_id=?");
       deleted += n(

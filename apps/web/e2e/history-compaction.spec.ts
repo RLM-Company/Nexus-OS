@@ -1,5 +1,55 @@
 import { expect, test, type Page } from "@playwright/test";
 const api = "http://127.0.0.1:3225";
+test("reviews profile candidates, opens their source and persists confirmation and dismissal", async ({
+  page,
+  request
+}) => {
+  const info = (await (await request.get(api + "/fixture/compaction")).json()) as {
+    profileId: string;
+    profileTitle: string;
+  };
+  async function open() {
+    await page.goto("/?chat=" + info.profileId);
+    await expect(page.locator(".topbar h1")).toHaveText(info.profileTitle);
+    await page.getByLabel("Настройки чата", { exact: true }).click();
+    return page.getByRole("group", { name: "Общая память и источники", exact: true });
+  }
+  const memory = await open();
+  await memory.getByLabel("Использовать общую память", { exact: true }).check();
+  await memory.getByLabel("Использовать мой общий профиль", { exact: true }).check();
+  await memory.getByRole("button", { name: "Сохранить доступ к памяти", exact: true }).click();
+  await expect(memory.getByRole("status")).toHaveText("Доступ к памяти сохранён.");
+  await memory.getByText("Кандидаты на запоминание", { exact: true }).click();
+  const candidates = memory.getByRole("group", { name: "Кандидаты профиля", exact: true });
+  const name = candidates.getByRole("article").filter({ hasText: "Меня зовут Александр." });
+  await name.getByRole("button", { name: "Открыть источник кандидата", exact: true }).click();
+  await expect(
+    memory.getByRole("region", { name: "Исходное сообщение", exact: true })
+  ).toContainText("Меня зовут Александр.");
+  await name.getByRole("button", { name: "Подтвердить и сохранить", exact: true }).click();
+  await expect(candidates.getByRole("status")).toHaveText("Запись памяти сохранена.");
+  await candidates
+    .getByRole("article")
+    .filter({ hasText: "Я предпочитаю краткие ответы" })
+    .getByRole("button", { name: "Не запоминать", exact: true })
+    .click();
+  await expect(candidates).toContainText("Новых явных сведений не найдено.");
+  const saved = (await (await request.get(api + "/api/v1/memory")).json()) as {
+    items: { scope: string; content: string }[];
+  };
+  expect(
+    saved.items.some((e) => e.scope === "personal" && e.content === "Меня зовут Александр.")
+  ).toBe(true);
+  const reopened = await open();
+  await reopened.getByText("Кандидаты на запоминание", { exact: true }).click();
+  await expect(
+    reopened.getByRole("group", { name: "Кандидаты профиля", exact: true })
+  ).toContainText("Новых явных сведений не найдено.");
+  expect(
+    ((await (await request.get(api + "/fixture/compaction")).json()) as { modelCalls: number })
+      .modelCalls
+  ).toBe(0);
+});
 async function settings(page: Page, id: string, title: string) {
   await page.goto("/?chat=" + id);
   await expect(page.locator(".topbar h1")).toHaveText(title);
