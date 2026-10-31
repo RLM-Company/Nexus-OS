@@ -105,6 +105,8 @@ test("keeps memory snapshots searchable without model calls and bounds context",
   assert.equal(f.vault.search(alice, "Александр").items.length, 1);
   const large = f.vault.put(alice, "long.txt", Buffer.from("x".repeat(12001)));
   assert.throws(() => f.vault.context(alice, large.id), /VAULT_CONTEXT_LIMIT/);
+  const escaped = f.vault.put(alice, "escaped.txt", Buffer.from("\t".repeat(11000)));
+  assert.throws(() => f.vault.context(alice, escaped.id), /VAULT_CONTEXT_LIMIT/);
 });
 class FakeWindow extends EventEmitter {
   constructor(options) {
