@@ -129,6 +129,41 @@ describe("source-backed context memory", () => {
     ).toThrow("COMPACTION_CHAT_ONLY");
     expect(memory.settings({ kind: "project", id: "p1" }, "a").version).toBe(0);
   });
+  it("extracts project decisions and goals only after a project grant, keeping their source scope", () => {
+    db.sqlite
+      .prepare(
+        "INSERT INTO messages(id,project_id,chat_id,role,content_type,content,status,created_at,updated_at) VALUES('profile-pm','p1','c-p1','user','text',?,'completed',?,?)"
+      )
+      .run(
+        "Наша цель: выпустить демку.\nМы решили оставить бюджет 17350.25 ₽.\nНе меняй боковое меню.",
+        at,
+        at
+      );
+    enable();
+    expect(memory.profileCandidates(target, "a").items).toEqual([]);
+    memory.updateSettings(
+      target,
+      {
+        enabled: true,
+        use_personal: false,
+        source_chat_ids: [],
+        project_ids: ["p1"],
+        expected_version: 1
+      },
+      "a"
+    );
+    const candidates = memory.profileCandidates(target, "a").items;
+    expect(candidates.map((c) => c.input.kind)).toEqual(["fact", "decision", "constraint"]);
+    expect(
+      candidates.every(
+        (c) => c.input.scope === "project" && c.input.scope_id === "p1" && c.source.role === "user"
+      )
+    ).toBe(true);
+    const saved = memory.confirmProfileCandidate(target, "a", candidates[1]!.id);
+    expect(saved.source_status).toBe("current");
+    expect(saved.content).toContain("17350.25");
+    expect(() => memory.profileCandidates(target, "b")).toThrow("MEMORY_TARGET_NOT_FOUND");
+  });
   it("never shares a chat or project memory without its target grant", () => {
     memory.create(input({ scope: "chat", scope_id: "old", content: "Chat-only style." }), "a");
     memory.create(input({ scope: "project", scope_id: "p2", content: "Project-only style." }), "a");

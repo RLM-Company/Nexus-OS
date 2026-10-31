@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ProfileCandidates } from "./profile-candidates";
 import type { HistoryCompactionPreview } from "@cosmora/contracts";
 import type {
   ContextMemoryBundle,
@@ -369,6 +370,7 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
       <button type="button" onClick={() => void operation(load)}>
         Обновить общую память
       </button>
+      <ProfileCandidates target={target} onSaved={() => refreshEntries()} openSource={openSource} />
       <details>
         <summary>Записи памяти</summary>
         <p>
@@ -734,35 +736,33 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
             ))}
           </section>
         )}
-        {openedSource && (
-          <section aria-label="Исходное сообщение">
-            <a
-              href={
-                openedSource.source.kind === "chat_message"
-                  ? "/?chat=" + encodeURIComponent(openedSource.source.chat_id)
-                  : "/?project=" + encodeURIComponent(openedSource.source.project_id!)
+      </details>
+      {openedSource && (
+        <section aria-label="Исходное сообщение">
+          <a
+            href={
+              openedSource.source.kind === "chat_message"
+                ? "/?chat=" + encodeURIComponent(openedSource.source.chat_id)
+                : "/?project=" + encodeURIComponent(openedSource.source.project_id!)
+            }
+          >
+            Открыть чат-источник
+          </a>
+          <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {openedSource.content}
+          </pre>
+          {openedSource.next_offset !== null && (
+            <button
+              type="button"
+              onClick={() =>
+                void operation(() => openSource(openedSource.reference, openedSource.next_offset!))
               }
             >
-              Открыть чат-источник
-            </a>
-            <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {openedSource.content}
-            </pre>
-            {openedSource.next_offset !== null && (
-              <button
-                type="button"
-                onClick={() =>
-                  void operation(() =>
-                    openSource(openedSource.reference, openedSource.next_offset!)
-                  )
-                }
-              >
-                Следующая часть источника
-              </button>
-            )}
-          </section>
-        )}
-      </details>
+              Следующая часть источника
+            </button>
+          )}
+        </section>
+      )}
       {busy && <p role="status">Обновление общей памяти…</p>}
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}

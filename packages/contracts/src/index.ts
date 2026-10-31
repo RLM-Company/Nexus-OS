@@ -42,6 +42,7 @@ export * from "./work-schedule.js";
 export * from "./chat-memory.js";
 export * from "./context-memory.js";
 export * from "./history-compaction.js";
+export * from "./profile-candidates.js";
 export * from "./memory-sensitive.js";
 export * from "./chat-skills.js";
 export * from "./chat-branches.js";

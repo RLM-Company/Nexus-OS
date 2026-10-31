@@ -11,6 +11,11 @@ const db = openDatabase(":memory:");
 await runMigrations(db);
 const seed = seedCompactionHistory(db);
 const blocked = seedCompactionHistory(db, "local-owner", true);
+const profile = seed.store.createChat(
+  "Меня зовут Александр.\nЯ предпочитаю краткие ответы на русском.",
+  crypto.randomUUID()
+);
+seed.store.cancelRun(profile.run.id);
 const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
 const runtime = await buildModelRuntime(config);
 let modelCalls = 0;
@@ -34,6 +39,8 @@ app.get("/fixture/compaction", () => ({
   blockedChatId: blocked.chatId,
   title: seed.store.getChat(seed.chatId)!.title,
   blockedTitle: blocked.store.getChat(blocked.chatId)!.title,
+  profileId: profile.chat.id,
+  profileTitle: profile.chat.title,
   modelCalls
 }));
 await app.listen({ host: "127.0.0.1", port: 3225 });
