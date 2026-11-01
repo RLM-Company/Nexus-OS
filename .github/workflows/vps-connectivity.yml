@@ -1,0 +1,17 @@
+name: VPS external connectivity
+on:
+  push:
+    branches: [codex/vps-runtime-20261101]
+    paths: [".github/workflows/vps-connectivity.yml"]
+permissions:
+  contents: read
+jobs:
+  connectivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check public HTTP without credentials
+        run: curl --head --show-error --connect-timeout 10 --max-time 15 http://169.40.37.32/login
+      - name: Check public HTTPS with certificate verification
+        if: always()
+        run: curl --head --show-error --connect-timeout 10 --max-time 15 https://169.40.37.32/login
