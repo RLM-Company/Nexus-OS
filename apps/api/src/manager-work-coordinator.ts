@@ -23,6 +23,8 @@ import {
 import {
   estimateInputTokensUpperBound,
   CONTEXT_MEMORY_RULES,
+  tagContextMemoryRequest,
+  contextMemoryUsage,
   assertContextMemoryComplete,
   readWorkGraphContext,
   workRuntimeProgress,
@@ -349,7 +351,7 @@ export class ManagerWorkCoordinator {
     if (request.constraints.max_output_tokens < 1) throw new Error("EXECUTION_BUDGET_EXCEEDED");
     if (work.request.output_contract?.kind === "game_project" && stage === "draft")
       request.constraints.timeout_ms = Math.max(request.constraints.timeout_ms, 180_000);
-    return request;
+    return tagContextMemoryRequest(request, recalled);
   }
 
   private async model(work: ManagerWork, signal: AbortSignal): Promise<string> {
@@ -430,6 +432,16 @@ export class ManagerWorkCoordinator {
     }, 50);
     try {
       const request = this.request(work, runId);
+      const snapshot = contextMemoryUsage(request);
+      const memoryUsage = (attempt: number, phase: "dispatch_boundary" | "provider_completed") =>
+        store.contextMemory.recordUsage({ kind: "project", id: work.project_id }, work.owner_id, {
+          run_id: runId,
+          request_id: request.request_id,
+          attempt,
+          phase,
+          channel: "manager_work",
+          snapshot
+        });
       for await (const event of gateway.stream(request, controller.signal)) {
         work = this.current(work.id, work.owner_id);
         if (signal.aborted || work.status === "cancelled" || this.isStopped(work))
@@ -468,6 +480,7 @@ export class ManagerWorkCoordinator {
           if (!projects.reserveModelUsage(runId, event.route, work.owner_id))
             throw new Error("PROJECT_USAGE_RESERVATION_FAILED");
           // Once this iteration resumes, provider dispatch can happen. Failures are uncertain.
+          memoryUsage(event.route.attempt, "dispatch_boundary");
           dispatchAllowed = true;
         } else if (event.type === "route.failed") {
           projects.failModelUsage(runId, event.route.attempt, event.errorCode);
@@ -493,6 +506,7 @@ export class ManagerWorkCoordinator {
         calculatedCost: completion.calculatedCost
       });
       runCommitted = true;
+      memoryUsage(completion.route.attempt, "provider_completed");
       if (ownerReservation)
         this.dependencies.ownerBudget?.completeReservation(
           ownerReservation,

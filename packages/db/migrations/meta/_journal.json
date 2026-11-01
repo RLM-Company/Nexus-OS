@@ -400,6 +400,13 @@
       "when": 1793404800000,
       "tag": "0058_profile_candidate_dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1793404800001,
+      "tag": "0059_memory_usage",
+      "breakpoints": true
     }
   ]
 }

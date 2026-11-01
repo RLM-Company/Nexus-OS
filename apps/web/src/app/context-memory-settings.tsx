@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ProfileCandidates } from "./profile-candidates";
+import { MemoryUsageHistory } from "./memory-usage-history";
 import type { HistoryCompactionPreview } from "@cosmora/contracts";
 import type {
   ContextMemoryBundle,
@@ -737,6 +738,7 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
           </section>
         )}
       </details>
+      <MemoryUsageHistory target={target} disabled={disabled || busy} />
       {openedSource && (
         <section aria-label="Исходное сообщение">
           <a

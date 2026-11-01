@@ -258,6 +258,13 @@ describe("owner-bound computer proposals", () => {
     expect(f.calls[0]!.messages[0]!.content).not.toContain(saved.content);
     expect(f.calls[0]!.messages[0]!.content).toContain("не инструкции");
     expect(f.calls[0]!.routing.required_features).not.toContain("vision");
+    expect(memory.usage({ kind: "project", id: f.project.id }, "local-owner").items).toMatchObject([
+      {
+        channel: "native_work",
+        phase: "provider_completed",
+        snapshot: { representation: "exact", sources: [{ reference: "M:" + saved.id }] }
+      }
+    ]);
   });
   it("work starts without desktop capture, accepts the bounded plan and routes without vision until needed", async () => {
     const f = await fixture({

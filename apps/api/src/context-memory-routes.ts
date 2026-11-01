@@ -110,6 +110,24 @@ export function registerContextMemoryRoutes(
       (r) => ({ items: store.versions(r.params.id, owner(r)) })
     );
     const base = "/api/v1/memory/targets/:kind/:targetId";
+    routes.get<{ Params: TargetParams; Querystring: { offset?: number } }>(
+      base + "/usage",
+      {
+        schema: {
+          params: targetParams,
+          querystring: Type.Object(
+            { offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 500 })) },
+            { additionalProperties: false }
+          )
+        }
+      },
+      (r) => store.usage(target(r.params), owner(r), r.query.offset)
+    );
+    routes.delete<{ Params: TargetParams }>(
+      base + "/usage",
+      { schema: { params: targetParams } },
+      (r) => store.clearUsage(target(r.params), owner(r))
+    );
     routes.get<{ Params: TargetParams }>(
       base + "/profile-candidates",
       { schema: { params: targetParams } },

@@ -10,6 +10,8 @@ import {
 } from "@cosmora/contracts";
 import {
   CONTEXT_MEMORY_RULES,
+  tagContextMemoryRequest,
+  contextMemoryUsage,
   estimateInputTokensUpperBound,
   type ManagerService
 } from "@cosmora/core";
@@ -525,7 +527,23 @@ export class ComputerControlService {
           : {})
       }
     ];
-    const request = this.requestFor(s, run, messages);
+    const request = tagContextMemoryRequest(this.requestFor(s, run, messages), recalled);
+    const snapshot = contextMemoryUsage(request);
+    const memoryUsage = (attempt: number, phase: "dispatch_boundary" | "provider_completed") => {
+      if (s.executionMode === "work")
+        new ContextMemoryStore(sql, () => this.now()).recordUsage(
+          { kind: "project", id: s.project },
+          s.owner,
+          {
+            run_id: run,
+            request_id: request.request_id,
+            attempt,
+            phase,
+            channel: "native_work",
+            snapshot
+          }
+        );
+    };
     let reservation: CodeOwnerBudgetKey | undefined,
       dispatched = false,
       committed = false,
@@ -549,6 +567,7 @@ export class ComputerControlService {
           if (!this.deps.projects.reserveModelUsage(run, event.route, s.owner))
             throw new ComputerControlError("USAGE_LIMIT");
           check();
+          memoryUsage(event.route.attempt, "dispatch_boundary");
           dispatched = true;
         } else if (event.type === "route.failed")
           this.deps.projects.failModelUsage(run, event.route.attempt, event.errorCode);
@@ -566,6 +585,7 @@ export class ComputerControlService {
         calculatedCost: completion.calculatedCost
       });
       committed = true;
+      memoryUsage(completion.route.attempt, "provider_completed");
       if (!["stop", "end_turn"].includes(completion.finishReason))
         throw new ComputerControlError("COMPUTER_OUTPUT_INCOMPLETE", 422);
       let proposal: unknown;

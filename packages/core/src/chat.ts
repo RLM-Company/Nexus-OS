@@ -19,6 +19,7 @@ import {
 } from "./context-memory.js";
 import { mergeContextMemory } from "./context-memory.js";
 import { compactChatHistory } from "./history-compaction.js";
+import { tagContextMemoryRequest } from "./memory-usage.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
@@ -131,6 +132,7 @@ export class ChatService {
             : "")
       }
     ];
+    let includedMemory: ContextMemoryBundle | undefined;
     if (recalledMemory?.items.length) {
       const index = conversation.findLastIndex((message) => message.role === "user");
       if (index >= 0) {
@@ -147,7 +149,8 @@ export class ChatService {
             recalledMemory,
             available - new TextEncoder().encode(framing).length
           );
-          if (fitted)
+          if (fitted) {
+            includedMemory = fitted;
             conversation[index] = {
               ...original,
               content:
@@ -157,39 +160,43 @@ export class ChatService {
                 "\n\nТекущее сообщение:\n" +
                 original.content
             };
+          }
         }
       }
     }
     const messages = conversationWindow(prefix, conversation);
 
-    return {
-      request_id: context.runId,
-      project_id: context.chatId,
-      run_id: context.runId,
-      agent_id: CHAT_ASSISTANT_ID,
-      role: "assistant",
-      task_type: "chat_response",
-      messages,
-      constraints: {
-        timeout_ms: this.#options.timeoutMs,
-        max_output_tokens: this.#options.maxOutputTokens
+    return tagContextMemoryRequest(
+      {
+        request_id: context.runId,
+        project_id: context.chatId,
+        run_id: context.runId,
+        agent_id: CHAT_ASSISTANT_ID,
+        role: "assistant",
+        task_type: "chat_response",
+        messages,
+        constraints: {
+          timeout_ms: this.#options.timeoutMs,
+          max_output_tokens: this.#options.maxOutputTokens
+        },
+        routing: {
+          preferred_provider: this.#options.preferredProvider,
+          preferred_model_alias: this.#options.preferredModelAlias,
+          fallback_allowed: this.#options.fallbackAllowed,
+          required_features: [
+            ...new Set([
+              ...this.#options.requiredFeatures,
+              ...(messages.some((message) => message.images?.length) ? ["vision" as const] : [])
+            ])
+          ],
+          confidential: this.#options.confidential,
+          estimated_input_tokens: estimateInputTokensUpperBound(messages),
+          max_cost: this.#options.maxCost ?? null,
+          optimize_for: this.#options.optimizeFor
+        },
+        idempotency_key: `chat-run:${context.runId}`
       },
-      routing: {
-        preferred_provider: this.#options.preferredProvider,
-        preferred_model_alias: this.#options.preferredModelAlias,
-        fallback_allowed: this.#options.fallbackAllowed,
-        required_features: [
-          ...new Set([
-            ...this.#options.requiredFeatures,
-            ...(messages.some((message) => message.images?.length) ? ["vision" as const] : [])
-          ])
-        ],
-        confidential: this.#options.confidential,
-        estimated_input_tokens: estimateInputTokensUpperBound(messages),
-        max_cost: this.#options.maxCost ?? null,
-        optimize_for: this.#options.optimizeFor
-      },
-      idempotency_key: `chat-run:${context.runId}`
-    };
+      includedMemory
+    );
   }
 }

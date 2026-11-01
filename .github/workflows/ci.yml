@@ -90,6 +90,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Preserve synthetic memory receipt preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-receipt-preview
+          path: apps/web/test-results/**/memory-usage.png
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Preserve failed browser diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

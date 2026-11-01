@@ -3,6 +3,48 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 
 const api = "http://127.0.0.1:3100";
 test.use({ timezoneId: "Europe/Moscow" });
+test("shows a source receipt for a real fixture dispatch and clears the journal without forgetting sources", async ({
+  page,
+  request
+}) => {
+  const source = await chat(request, "Согласован бюджет 17350.25 на демку. " + randomUUID());
+  const target = await chat(request, "Журнал памяти " + randomUUID());
+  const base = api + "/api/v1/memory/targets/chat/" + target.id;
+  expect(
+    (
+      await request.put(base + "/settings", {
+        data: {
+          enabled: true,
+          use_personal: false,
+          source_chat_ids: [source.id],
+          project_ids: [],
+          expected_version: 0
+        }
+      })
+    ).ok()
+  ).toBe(true);
+  const accepted = await request.post(api + "/api/v1/chats/" + target.id + "/messages", {
+    data: { content: "Какой согласован бюджет демки?", client_message_id: randomUUID() }
+  });
+  const value = (await accepted.json()) as { stream_url: string };
+  await request.get(api + value.stream_url);
+  const memory = await open(page, target.id, target.title);
+  const summary = memory.getByText("Использование памяти в запросах", { exact: true });
+  await summary.click();
+  const audit = summary.locator("..");
+  await audit.getByRole("button", { name: "Обновить журнал", exact: true }).click();
+  await expect(audit).toContainText("Точный пакет присутствовал в запросе");
+  await expect(audit).toContainText("Провайдер завершил ответ");
+  await audit.getByText("Источники в пакете: 1", { exact: true }).click();
+  await expect(audit.locator("code")).toContainText([/./, /H:g:/]);
+  await expect(audit).not.toContainText("17350.25");
+  await audit.screenshot({ path: test.info().outputPath("memory-usage.png") });
+  page.once("dialog", (dialog) => void dialog.accept());
+  await audit.getByRole("button", { name: "Очистить журнал", exact: true }).click();
+  await expect(audit).toContainText("Записей нет.");
+  expect((await request.get(base + "/settings")).ok()).toBe(true);
+  expect((await request.get(api + "/api/v1/chats/" + source.id)).ok()).toBe(true);
+});
 async function chat(request: APIRequestContext, content: string) {
   const response = await request.post(api + "/api/v1/chats", {
     data: { initial_message: content, client_message_id: randomUUID() }

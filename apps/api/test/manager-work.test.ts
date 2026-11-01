@@ -169,6 +169,80 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("records each Work memory dispatch before the provider and upgrades it only on completion", async () => {
+    const phases: string[] = [];
+    const f = await fixture({
+      onCall: (req) => {
+        const row = f.store.contextMemory
+          .usage({ kind: "project", id: f.project.id }, "local-owner")
+          .items.find((item) => item.request_id === req.request_id);
+        phases.push(row?.phase ?? "missing");
+        return Promise.resolve();
+      }
+    });
+    // Configure memory before admitting the task: queued work correctly fences
+    // changes to the sources it may use.
+    f.coordinator.control(f.work.id, "local-owner", f.work.version, "cancel");
+    const memory = f.store.contextMemory.create(
+      {
+        scope: "personal",
+        scope_id: null,
+        kind: "constraint",
+        title: "Writing rule",
+        content: "Use plain language in the document.",
+        pinned: true,
+        expires_at: null,
+        source: null
+      },
+      "local-owner"
+    );
+    const target = { kind: "project" as const, id: f.project.id };
+    f.store.contextMemory.updateSettings(
+      target,
+      {
+        enabled: true,
+        use_personal: true,
+        source_chat_ids: [],
+        project_ids: [],
+        expected_version: 0
+      },
+      "local-owner"
+    );
+    const work = f.store.create(f.project.id, "local-owner", "local-owner", {
+      ...request,
+      client_request_id: "memory-receipt-work"
+    })!;
+    await f.coordinator.execute(work.id, "local-owner");
+    expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft"]);
+    expect(phases).toEqual(["dispatch_boundary", "dispatch_boundary"]);
+    const rows = f.store.contextMemory.usage(target, "local-owner").items;
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        channel: "manager_work",
+        phase: "provider_completed",
+        attempt: 0,
+        snapshot: {
+          representation: "exact",
+          sources: [expect.objectContaining({ reference: "M:" + memory.id })]
+        }
+      });
+    }
+    expect(JSON.stringify(rows)).not.toContain("Use plain language");
+  });
+
+  it("does not create a memory dispatch receipt when the project budget rejects Work", async () => {
+    const f = await fixture();
+    const usage = new UsageStore(f.database.sqlite);
+    usage.ensureLimit(f.project.id);
+    usage.updateLimit(f.project.id, { expected_version: 1, max_total_tokens: 1, max_cost: null });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.calls).toHaveLength(0);
+    expect(
+      f.store.contextMemory.usage({ kind: "project", id: f.project.id }, "local-owner").items
+    ).toEqual([]);
+  });
+
   it("flushes accepted partial text on cancel, ignores late output and never publishes the recovery prefix", async () => {
     let release!: () => void, observed!: () => void;
     const paused = new Promise<void>((done) => {

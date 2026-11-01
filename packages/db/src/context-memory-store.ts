@@ -8,6 +8,10 @@ import {
   ContextMemoryInputSchema,
   ContextMemorySettingsInputSchema,
   MemoryTargetSchema,
+  MemoryUsageSnapshotSchema,
+  type MemoryUsageSnapshot,
+  type MemoryUsageRecord,
+  type MemoryUsagePage,
   type ContextMemoryBundle,
   type ContextMemoryEntry,
   type ContextMemoryEvidence,
@@ -115,6 +119,132 @@ export class ContextMemoryStore {
         .get(owner)
     )
       throw new ContextMemoryError(409, "OWNER_DATA_FENCED");
+  }
+  recordUsage(
+    target: MemoryTarget,
+    owner: string,
+    input: {
+      run_id: string;
+      request_id: string;
+      attempt: number;
+      channel: MemoryUsageRecord["channel"];
+      phase: MemoryUsageRecord["phase"];
+      snapshot: MemoryUsageSnapshot;
+    }
+  ): void {
+    this.active(owner);
+    this.owned(target, owner);
+    if (
+      !Value.Check(MemoryUsageSnapshotSchema, input.snapshot) ||
+      !Number.isInteger(input.attempt) ||
+      input.attempt < 0 ||
+      input.attempt > 1000 ||
+      typeof input.request_id !== "string" ||
+      !input.request_id ||
+      input.request_id.length > 128 ||
+      !["dispatch_boundary", "provider_completed"].includes(input.phase) ||
+      !(target.kind === "chat"
+        ? input.channel === "chat"
+        : ["manager_work", "native_work"].includes(input.channel))
+    )
+      throw new ContextMemoryError(400, "INVALID_MEMORY_USAGE");
+    const run =
+      target.kind === "chat"
+        ? this.db
+            .prepare(
+              "SELECT 1 FROM general_chat_runs r JOIN general_chats c ON c.id=r.chat_id WHERE r.id=? AND c.id=? AND c.owner_id=?"
+            )
+            .get(input.run_id, target.id, owner)
+        : this.db
+            .prepare(
+              "SELECT 1 FROM runs r JOIN projects p ON p.id=r.project_id WHERE r.id=? AND p.id=? AND p.owner_id=?"
+            )
+            .get(input.run_id, target.id, owner);
+    if (!run) throw new ContextMemoryError(404, "MEMORY_USAGE_RUN_NOT_FOUND");
+    const json = JSON.stringify(input.snapshot);
+    const key = [owner, input.channel, input.run_id, input.request_id, input.attempt];
+    const prior = this.db
+      .prepare(
+        "SELECT id,snapshot_json FROM context_memory_usage WHERE owner_id=? AND channel=? AND run_id=? AND request_id=? AND attempt=?"
+      )
+      .get(...key) as { id: string; snapshot_json: string } | undefined;
+    if (prior) {
+      if (prior.snapshot_json !== json) throw new ContextMemoryError(409, "MEMORY_USAGE_CONFLICT");
+      if (input.phase === "provider_completed")
+        this.db
+          .prepare(
+            "UPDATE context_memory_usage SET phase='provider_completed' WHERE id=? AND owner_id=?"
+          )
+          .run(prior.id, owner);
+      return;
+    }
+    // A completion cannot create a receipt without an observed dispatch boundary.
+    if (input.phase !== "dispatch_boundary")
+      throw new ContextMemoryError(409, "MEMORY_USAGE_DISPATCH_MISSING");
+    this.db.exec("SAVEPOINT memory_usage_write");
+    try {
+      this.db
+        .prepare(
+          "INSERT INTO context_memory_usage(id,owner_id,target_kind,target_id,chat_id,project_id,run_id,general_run_id,project_run_id,request_id,attempt,channel,phase,snapshot_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        )
+        .run(
+          randomUUID(),
+          owner,
+          target.kind,
+          target.id,
+          target.kind === "chat" ? target.id : null,
+          target.kind === "project" ? target.id : null,
+          input.run_id,
+          target.kind === "chat" ? input.run_id : null,
+          target.kind === "project" ? input.run_id : null,
+          input.request_id,
+          input.attempt,
+          input.channel,
+          input.phase,
+          json,
+          new Date(this.now()).toISOString()
+        );
+      this.db
+        .prepare(
+          "DELETE FROM context_memory_usage WHERE owner_id=? AND id NOT IN (SELECT id FROM context_memory_usage WHERE owner_id=? ORDER BY created_at DESC,rowid DESC LIMIT 500)"
+        )
+        .run(owner, owner);
+      this.db.exec("RELEASE memory_usage_write");
+    } catch (error) {
+      this.db.exec("ROLLBACK TO memory_usage_write; RELEASE memory_usage_write");
+      throw error;
+    }
+  }
+  usage(target: MemoryTarget, owner: string, offset = 0): MemoryUsagePage {
+    this.active(owner);
+    this.owned(target, owner);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 500)
+      throw new ContextMemoryError(400, "INVALID_MEMORY_QUERY");
+    const rows = this.db
+      .prepare(
+        "SELECT id,run_id,request_id,attempt,channel,phase,created_at,snapshot_json FROM context_memory_usage WHERE owner_id=? AND target_kind=? AND target_id=? ORDER BY created_at DESC,rowid DESC LIMIT 21 OFFSET ?"
+      )
+      .all(owner, target.kind, target.id, offset) as (Omit<MemoryUsageRecord, "snapshot"> & {
+      snapshot_json: string;
+    })[];
+    return {
+      items: rows.slice(0, 20).map(({ snapshot_json, ...row }) => ({
+        ...row,
+        snapshot: JSON.parse(snapshot_json) as MemoryUsageSnapshot
+      })),
+      next_offset: rows.length > 20 ? offset + 20 : null
+    };
+  }
+  clearUsage(target: MemoryTarget, owner: string) {
+    return this.transaction(owner, () => {
+      this.owned(target, owner);
+      this.db
+        .prepare(
+          "DELETE FROM context_memory_usage WHERE owner_id=? AND target_kind=? AND target_id=?"
+        )
+        .run(owner, target.kind, target.id);
+      return { cleared: true };
+    });
   }
   private idle(owner: string) {
     if (

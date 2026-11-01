@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadServerConfig } from "@cosmora/config";
-import type { ContextMemoryEntry, ContextMemoryBundle, ModelRequest } from "@cosmora/contracts";
+import type {
+  ContextMemoryEntry,
+  ContextMemoryBundle,
+  ModelRequest,
+  MemoryUsagePage
+} from "@cosmora/contracts";
 import {
   GeneralChatStore,
   IdentityStore,
@@ -200,6 +205,35 @@ describe("context memory API and model dispatch", () => {
       ).statusCode
     ).toBe(400);
     expect(requests).toHaveLength(0);
+    expect(
+      store.contextMemory.usage({ kind: "chat", id: targetChat }, LOCAL_OWNER_ID).items
+    ).toEqual([]);
+  });
+  it("journals the final dispatch, excludes previews, and clears only usage metadata", async () => {
+    await enable();
+    await send();
+    const url = "/api/v1/memory/targets/chat/" + targetChat + "/usage";
+    const response = await app.inject({ url });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    const page = response.json<MemoryUsagePage>();
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({
+      run_id: requests[0]!.run_id,
+      phase: "provider_completed",
+      channel: "chat",
+      snapshot: { representation: "exact", sources: [{ source_message_id: sourceMessage }] }
+    });
+    expect(response.body).not.toContain("17350.25");
+    expect((await app.inject({ method: "DELETE", url })).statusCode).toBe(200);
+    expect((await app.inject({ url })).json<MemoryUsagePage>().items).toEqual([]);
+    expect(
+      store.contextMemory.settings({ kind: "chat", id: targetChat }, LOCAL_OWNER_ID).enabled
+    ).toBe(true);
+    expect((await app.inject({ url: url + "?offset=501" })).statusCode).toBe(400);
+    expect(
+      (await app.inject({ url: "/api/v1/memory/targets/chat/unknown/usage" })).statusCode
+    ).toBe(404);
   });
   it("retrieves by the real question even when an unrelated manual summary is prepended", async () => {
     const cutoff = store.listMessages(targetChat)[0]!.id;
@@ -302,6 +336,7 @@ describe("context memory API and model dispatch", () => {
   });
   it("exports and deletes every owned memory row/version/settings through the existing privacy adapter", async () => {
     await enable();
+    await send();
     store.contextMemory.create(
       entry as Parameters<typeof store.contextMemory.create>[0],
       LOCAL_OWNER_ID
@@ -315,6 +350,7 @@ describe("context memory API and model dispatch", () => {
     expect(exported.records.context_memory).toHaveLength(1);
     expect(exported.records.context_memory_versions).toHaveLength(1);
     expect(exported.records.context_memory_settings).toHaveLength(1);
+    expect(exported.records.context_memory_usage).toHaveLength(1);
     const at = new Date().toISOString();
     db.sqlite
       .prepare(
@@ -322,6 +358,11 @@ describe("context memory API and model dispatch", () => {
       )
       .run(LOCAL_OWNER_ID, at, at);
     await adapter.delete(LOCAL_OWNER_ID, 1);
+    expect(
+      db.sqlite
+        .prepare("SELECT count(*) n FROM context_memory_usage WHERE owner_id=?")
+        .get(LOCAL_OWNER_ID)
+    ).toEqual({ n: 0 });
     expect(store.contextMemory.list("foreign").items.map((e) => e.id)).toEqual([foreign.id]);
     expect(db.sqlite.prepare("SELECT count(*) n FROM context_memory_settings").get()).toEqual({
       n: 0

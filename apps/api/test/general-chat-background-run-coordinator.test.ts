@@ -98,6 +98,15 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
     expect(request.messages[0]?.content).toContain("ранней истории сокращена");
     expect(JSON.stringify(request.messages)).toContain("17 350.25");
     expect(request.routing.estimated_input_tokens).toBeLessThanOrEqual(28000);
+    expect(
+      store.contextMemory.usage({ kind: "chat", id: seeded.chatId }, "local-owner").items
+    ).toMatchObject([
+      {
+        run_id: accepted.run.id,
+        phase: "provider_completed",
+        snapshot: { representation: "exact" }
+      }
+    ]);
   });
   it("uses explicitly selected memory in detached chat execution without a second planner call", async () => {
     await coordinator.stop();
