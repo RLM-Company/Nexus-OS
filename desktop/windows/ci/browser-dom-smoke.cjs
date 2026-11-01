@@ -17,7 +17,8 @@ async function run() {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "koswork-browser-dom-"));
   const browser = await chromium.launch({ headless: true });
   let engine,
-    received = "";
+    received = "",
+    submissions = 0;
   const server = http.createServer((request, response) => {
     response.setHeader("content-type", "text/html; charset=utf-8");
     if (request.url === "/send") {
@@ -26,8 +27,13 @@ async function run() {
         body += chunk;
       });
       request.on("end", () => {
+        submissions++;
         received = new URLSearchParams(body).get("query") || "";
-        response.end("<h1>RESULT RECEIVED</h1><p>Local fixture completed.</p>");
+        // Make navigation latency explicit: a requested click is not a committed response.
+        setTimeout(
+          () => response.end("<h1>RESULT RECEIVED</h1><p>Local fixture completed.</p>"),
+          250
+        );
       });
       return;
     }
@@ -142,20 +148,25 @@ async function run() {
           } else {
             if (previous.input_verified) stage = "upload";
             if (previous.attached) stage = "submit";
-            const node = doc.nodes.find((n) =>
-              stage === "upload"
-                ? n.upload
+            if (stage === "await-submit") {
+              action = { kind: "wait", milliseconds: 100 };
+            } else {
+              const node = doc.nodes.find((n) =>
+                stage === "upload"
+                  ? n.upload
+                  : stage === "fill"
+                    ? n.name === "Query"
+                    : n.name === "Submit fixture"
+              );
+              action = !node
+                ? { kind: "wait", milliseconds: 100 }
                 : stage === "fill"
-                  ? n.name === "Query"
-                  : n.name === "Submit fixture"
-            );
-            action = !node
-              ? { kind: "wait", milliseconds: 100 }
-              : stage === "fill"
-                ? { kind: "browser_fill", ref: node.ref, text: "Koswork Привет 🌙" }
-                : stage === "upload"
-                  ? { kind: "browser_upload", ref: node.ref, path: "fixture.txt" }
-                  : { kind: "browser_click", ref: node.ref };
+                  ? { kind: "browser_fill", ref: node.ref, text: "Koswork Привет 🌙" }
+                  : stage === "upload"
+                    ? { kind: "browser_upload", ref: node.ref, path: "fixture.txt" }
+                    : { kind: "browser_click", ref: node.ref };
+              if (action.kind === "browser_click") stage = "await-submit";
+            }
           }
           trace.push({
             stage,
@@ -176,6 +187,7 @@ async function run() {
     if (result.status !== "completed") process.stderr.write(JSON.stringify(trace) + "\n");
     assert.equal(result.status, "completed");
     assert.equal(received, "Koswork Привет 🌙");
+    assert.equal(submissions, 1, "a delayed navigation must never cause duplicate form submission");
     assert.equal(sourceScreenshots, 0);
     await engine.search("Koswork browser test");
     const searchObservation = await engine.observe(new AbortController().signal);
@@ -346,6 +358,7 @@ async function run() {
         engine: "real headless Chromium CDP via fixture adapter",
         model: "fixture only, no paid calls",
         verified_form: received,
+        form_submissions: submissions,
         first_party_search:
           "actual Chromium DOM rendered a generated source and opened its link; fixture search provider only",
         search_history: "actual Chromium back/forward restored two distinct cached queries",
