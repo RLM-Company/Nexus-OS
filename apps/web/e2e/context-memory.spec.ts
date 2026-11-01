@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import type { MemoryUsagePage } from "@cosmora/contracts";
 
 const api = "http://127.0.0.1:3100";
 test.use({ timezoneId: "Europe/Moscow" });
@@ -28,6 +29,15 @@ test("shows a source receipt for a real fixture dispatch and clears the journal 
   });
   const value = (await accepted.json()) as { stream_url: string };
   await request.get(api + value.stream_url);
+  const receiptsResponse = await request.get(base + "/usage");
+  expect(receiptsResponse.ok()).toBe(true);
+  const receipts = (await receiptsResponse.json()) as MemoryUsagePage;
+  const receipt = receipts.items.find((item) =>
+    item.snapshot.sources.some((source) => source.reference.startsWith("H:g:"))
+  );
+  expect(receipt).toBeDefined();
+  expect(receipt!.phase).toBe("provider_completed");
+  expect(receipt!.snapshot.representation).toBe("exact");
   const memory = await open(page, target.id, target.title);
   const summary = memory.getByText("Использование памяти в запросах", { exact: true });
   await summary.click();
@@ -35,8 +45,15 @@ test("shows a source receipt for a real fixture dispatch and clears the journal 
   await audit.getByRole("button", { name: "Обновить журнал", exact: true }).click();
   await expect(audit).toContainText("Точный пакет присутствовал в запросе");
   await expect(audit).toContainText("Провайдер завершил ответ");
-  await audit.getByText("Источники в пакете: 1", { exact: true }).click();
-  await expect(audit.locator("code")).toContainText([/./, /H:g:/]);
+  const card = audit.getByRole("article").filter({ hasText: receipt!.run_id });
+  await expect(card).toHaveCount(1);
+  await card
+    .getByText(`Источники в пакете: ${receipt!.snapshot.sources.length}`, { exact: true })
+    .click();
+  await expect(card.locator("code")).toContainText([
+    receipt!.run_id,
+    ...receipt!.snapshot.sources.map((source) => source.reference)
+  ]);
   await expect(audit).not.toContainText("17350.25");
   await audit.screenshot({ path: test.info().outputPath("memory-usage.png") });
   page.once("dialog", (dialog) => void dialog.accept());
