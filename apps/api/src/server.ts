@@ -73,6 +73,7 @@ import { CodeAgentStore } from "./code-agent/store.js";
 import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
 import { RegistrationStore } from "./registration-store.js";
 import { GoogleIdentity } from "./google-identity.js";
+import { googleDrivePrivacyAdapter } from "./cloud-storage/google-drive-privacy.js";
 import { sendWithLocalMta } from "./registration-routes.js";
 import { PresentationPrivacyAdapter } from "./presentation-privacy.js";
 import { NotificationPrivacyAdapter } from "./notification-privacy.js";
@@ -148,7 +149,8 @@ try {
       ...REQUIRED_PRIVACY_STORES,
       "intelligence-graphs",
       "project-automation",
-      "computer-control"
+      "computer-control",
+      "cloud-storage"
     ]
   });
   const graphRepository = new SqliteIntelligenceGraphWorkspaceRepository(database.sqlite);
@@ -260,6 +262,7 @@ try {
   ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
   ownerPrivacy.register(intelligenceGraphPrivacyAdapter(graphRepository));
   ownerPrivacy.register(new ProjectAutomationPrivacy(database.sqlite));
+  ownerPrivacy.register(googleDrivePrivacyAdapter(database.sqlite));
   app = buildApp({
     computerControl: { enabled: true },
     runtimeClock: modelRuntime.clock,
