@@ -63,6 +63,14 @@ export const buildModelRuntime = async (
   const router = new ModelRouter(registry);
   const adapters: ModelProviderAdapter[] = [new MockProviderAdapter(config.mockProviderMode)];
   const preferredProvider = config.modelProviderId;
+  const configuredModel = registry
+    .list()
+    .find(
+      (entry) =>
+        entry.status === "active" &&
+        entry.provider_id === preferredProvider &&
+        [entry.model_id, ...entry.aliases].includes(config.modelName)
+    );
 
   if (config.modelProvider !== "mock") {
     const apiKey = await (options.secretResolver ?? new EnvironmentSecretResolver()).resolve(
@@ -123,14 +131,16 @@ export const buildModelRuntime = async (
       preferredModelAlias: config.modelName,
       fallbackAllowed: config.modelFallbackToMock,
       timeoutMs: config.managerTimeoutMs,
-      maxOutputTokens: config.managerMaxOutputTokens
+      maxOutputTokens: config.managerMaxOutputTokens,
+      ...(configuredModel ? { contextWindowTokens: configuredModel.context_window_tokens } : {})
     }),
     manager: new ManagerService({
       preferredProvider,
       preferredModelAlias: config.modelName,
       fallbackAllowed: config.modelFallbackToMock,
       timeoutMs: config.managerTimeoutMs,
-      maxOutputTokens: config.managerMaxOutputTokens
+      maxOutputTokens: config.managerMaxOutputTokens,
+      ...(configuredModel ? { contextWindowTokens: configuredModel.context_window_tokens } : {})
     }),
     registryVersion: registry.version
   };

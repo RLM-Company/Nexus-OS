@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   conversationWindow,
   estimateInputTokensUpperBound,
-  ContextTooLargeError
+  ContextTooLargeError,
+  modelInputContextBudget
 } from "../src/conversation-window.js";
 
 describe("bounded conversation context", () => {
+  it("derives the input budget from the model window and reserves output/transport space", () => {
+    expect(modelInputContextBudget(1050000, 1200)).toBe(1044704);
+    expect(modelInputContextBudget(undefined, 1200)).toBe(28000);
+    expect(() => modelInputContextBudget(1000, 900)).toThrow();
+    expect(() => modelInputContextBudget(Infinity, 1200)).toThrow();
+    expect(() => modelInputContextBudget(1050000, NaN)).toThrow();
+  });
   it("keeps complete recent turns and pinned project materials, and makes removed history explicit", () => {
     const prefix = [
       { role: "system" as const, content: "System" },

@@ -42,6 +42,24 @@ const bundle = (required = false): ContextMemoryBundle => ({
   ]
 });
 describe("adaptive context packing", () => {
+  it("uses the same expanded budget for mandatory memory and a large current question", () => {
+    const expanded = new ChatService({
+      preferredProvider: "external",
+      preferredModelAlias: "sol",
+      fallbackAllowed: false,
+      contextWindowTokens: 1050000
+    });
+    const current = "q".repeat(50000);
+    const request = expanded.buildRequest({
+      chatId: "chat",
+      runId: "large-memory",
+      messages: [message(current)],
+      recalledMemory: bundle(true)
+    });
+    expect(request.messages.at(-1)!.content).toContain(current);
+    expect(request.messages.at(-1)!.content).toContain("Archived detail");
+    expect(request.routing.estimated_input_tokens).toBeGreaterThan(32000);
+  });
   it("keeps a large valid current question intact instead of rejecting it because of optional memory", () => {
     const content = "q".repeat(27000);
     const request = service.buildRequest({

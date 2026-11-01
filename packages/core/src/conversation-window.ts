@@ -13,6 +13,27 @@ export const estimateInputTokensUpperBound = (messages: ModelMessage[]): number 
   messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
 export const DEFAULT_CONTEXT_BUDGET = 28000;
 
+/** Legacy standalone callers keep their old budget; production uses its selected route. */
+export function modelInputContextBudget(
+  contextWindowTokens: number | undefined,
+  maxOutputTokens: number
+): number {
+  if (contextWindowTokens === undefined) return DEFAULT_CONTEXT_BUDGET;
+  if (
+    !Number.isSafeInteger(contextWindowTokens) ||
+    contextWindowTokens < 1 ||
+    !Number.isSafeInteger(maxOutputTokens) ||
+    maxOutputTokens < 1
+  )
+    throw new Error("Invalid model context window");
+  // Leave room for the live clock and owner profile/Relay framing added after packing.
+  const reserve = Math.min(4096, Math.floor(contextWindowTokens / 10));
+  const available = contextWindowTokens - maxOutputTokens - reserve;
+  if (available < 512)
+    throw new Error("Model context window cannot fit the configured output reservation");
+  return available;
+}
+
 export function conversationWindow(
   prefix: ModelMessage[],
   conversation: ModelMessage[],
