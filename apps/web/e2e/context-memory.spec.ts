@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import type { MemoryUsagePage } from "@cosmora/contracts";
 
-const api = "http://127.0.0.1:3100";
+const api = "http://127.0.0.1:3226";
 test.use({ timezoneId: "Europe/Moscow" });
 test("shows a source receipt for a real fixture dispatch and clears the journal without forgetting sources", async ({
   page,
