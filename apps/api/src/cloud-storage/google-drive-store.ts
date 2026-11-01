@@ -141,6 +141,19 @@ export class GoogleDriveStore {
       return { ownerId, epoch, revision: this.connection(ownerId)!.revision };
     });
   }
+  assertConnectTicket(ticket: DriveConnectTicket): void {
+    this.epoch(ticket.ownerId, ticket.epoch);
+    if (this.connection(ticket.ownerId)?.revision !== ticket.revision)
+      throw new DriveStorageError("DRIVE_CONNECTION_CHANGED");
+  }
+  archiveCounts(ownerId: string): { total: number; pending: number } {
+    const row = this.db
+      .prepare(
+        "SELECT count(*) AS total,coalesce(sum(CASE WHEN state<>'verified' THEN 1 ELSE 0 END),0) AS pending FROM kosmora_drive_archives WHERE owner_id=?"
+      )
+      .get(ownerId) as { total: number; pending: number };
+    return row;
+  }
   connect(ticket: DriveConnectTicket, grant: DriveGrant, folderId: string): DriveContext {
     remoteId(folderId);
     if (!this.cipher) throw new DriveStorageError("DRIVE_KEY_CONFIGURATION_REQUIRED");

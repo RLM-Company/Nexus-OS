@@ -136,6 +136,12 @@ export class GoogleDriveAuthorization {
     if (!validDriveGrant(grant)) throw new DriveStorageError("DRIVE_AUTH_REQUIRED");
     return this.exchange({ grant_type: "refresh_token", refresh_token: grant.refreshToken }, grant);
   }
+  cancel(ownerId: string, sessionId: string, state: string): void {
+    const key = hash(state),
+      pending = this.#pending.get(key);
+    if (pending?.ownerId === ownerId && pending.sessionHash === hash(sessionId))
+      this.#pending.delete(key);
+  }
 
   private async exchange(
     fields: Record<string, string>,

@@ -196,6 +196,8 @@ import { registerPresentationRoutes } from "./presentation-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
 import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
+import { registerGoogleDriveRoutes, safeDriveLogUrl } from "./cloud-storage/google-drive-routes.js";
+import type { GoogleDriveRuntime } from "./cloud-storage/google-drive-runtime.js";
 import type { ResearchOwnerBudget } from "./research/research-synthesis.js";
 import type { CodeOwnerBudget } from "./code-agent/owner-budget.js";
 import type { AccountStore } from "./account-settings/account-store.js";
@@ -216,6 +218,7 @@ import type { CanvasArtifactStore } from "@cosmora/db";
 import type { MediaService } from "./media/media-service.js";
 
 export interface AppDependencies {
+  googleDrive?: GoogleDriveRuntime;
   computerControl?: { enabled: boolean };
   runtimeClock?: RuntimeClock;
   config: ServerConfig;
@@ -644,6 +647,18 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         ? false
         : {
             level: dependencies.config.logLevel,
+            serializers: {
+              req: (request: FastifyRequest) => {
+                const port = request.raw?.socket?.remotePort;
+                return {
+                  method: request.method,
+                  url: safeDriveLogUrl(request.url),
+                  hostname: request.hostname,
+                  remoteAddress: request.ip,
+                  ...(port === undefined ? {} : { remotePort: port })
+                };
+              }
+            },
             redact: [
               "req.headers.authorization",
               "req.headers.cookie",
@@ -790,6 +805,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     );
   }
   if (dependencies.registration) registerRegistrationRoutes(app, dependencies.registration);
+  registerGoogleDriveRoutes(
+    app,
+    dependencies.googleDrive,
+    dependencies.config.webOrigin,
+    identityFor
+  );
   registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
