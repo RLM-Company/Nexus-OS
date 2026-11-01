@@ -178,9 +178,9 @@ export class ContextMemoryStore {
           .run(prior.id, owner);
       return;
     }
-    // A completion cannot create a receipt without an observed dispatch boundary.
-    if (input.phase !== "dispatch_boundary")
-      throw new ContextMemoryError(409, "MEMORY_USAGE_DISPATCH_MISSING");
+    // Completion must never recreate a receipt removed by bounded retention or
+    // source deletion. Missing optional metadata must not fail a paid result.
+    if (input.phase !== "dispatch_boundary") return;
     this.db.exec("SAVEPOINT memory_usage_write");
     try {
       this.db

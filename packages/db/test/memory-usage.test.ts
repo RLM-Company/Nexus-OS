@@ -59,9 +59,8 @@ describe("bounded owner-scoped memory usage journal", () => {
     expect(() => store.recordUsage({ kind: "chat", id: "b-chat" }, "b", input())).toThrow(
       "MEMORY_USAGE_RUN_NOT_FOUND"
     );
-    expect(() =>
-      store.recordUsage(target, "a", { ...input(), phase: "provider_completed" })
-    ).toThrow("MEMORY_USAGE_DISPATCH_MISSING");
+    store.recordUsage(target, "a", { ...input(), phase: "provider_completed" });
+    expect(store.usage(target, "a").items).toEqual([]);
     store.recordUsage(target, "a", input());
     store.recordUsage(target, "a", input());
     store.recordUsage(target, "a", { ...input(), phase: "provider_completed" });
@@ -80,6 +79,13 @@ describe("bounded owner-scoped memory usage journal", () => {
     expect(page.next_offset).toBe(20);
     expect(store.usage(target, "a", 480).items.at(-1)!.attempt).toBe(6);
     expect(store.usage(target, "a", 500).items).toEqual([]);
+    // A slow first request may finish after 500 later dispatches. Its paid
+    // completion must succeed without resurrecting the evicted receipt.
+    store.recordUsage(target, "a", { ...input(1), phase: "provider_completed" });
+    expect(store.usage(target, "a").items.map((i) => i.attempt)).toEqual(
+      Array.from({ length: 20 }, (_, i) => 505 - i)
+    );
+    expect(store.usage(target, "a", 480).items.at(-1)!.attempt).toBe(6);
   });
   it("deletes exact and transformed receipts with their original source", () => {
     store.recordUsage(target, "a", input());
