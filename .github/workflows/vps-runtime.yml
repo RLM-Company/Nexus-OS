@@ -1,0 +1,68 @@
+name: VPS runtime image
+
+on:
+  push:
+    branches: [codex/vps-runtime-20261101]
+    paths: [".github/workflows/vps-runtime.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kosmora-vps-runtime-20261101
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_REVISION: 17330ccb86a40afff0a677fbb61ebd9cc4ac3968
+      IMAGE: kosmora-alpha-app:17330ccb86a4
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 17330ccb86a40afff0a677fbb61ebd9cc4ac3968
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Verify clean source and secret boundaries
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_REVISION"
+          test -z "$(git status --porcelain)"
+          node scripts/check-secrets.mjs
+      - name: Build the existing production image away from the small VPS
+        run: |
+          docker build --label "org.opencontainers.image.revision=$SOURCE_REVISION" -t "$IMAGE" -f deploy/alpha/Dockerfile .
+      - name: Smoke-test isolated API startup with a disposable database
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker rm -f kosmora-runtime-smoke >/dev/null 2>&1 || true' EXIT
+          docker run -d --name kosmora-runtime-smoke --network none \
+            -e API_HOST=127.0.0.1 -e MODEL_PROVIDER=mock -e NODE_ENV=production \
+            -e DATABASE_URL=file:/tmp/runtime-smoke.db \
+            "$IMAGE" pnpm --filter @cosmora/api start
+          passed=0
+          for attempt in $(seq 1 45); do
+            if docker exec kosmora-runtime-smoke node deploy/alpha/healthcheck.mjs api; then passed=1; break; fi
+            if test "$(docker inspect --format '{{.State.Running}}' kosmora-runtime-smoke)" != true; then break; fi
+            sleep 2
+          done
+          if test "$passed" != 1; then docker logs kosmora-runtime-smoke; exit 1; fi
+      - name: Export immutable runtime archive and provenance
+        run: |
+          mkdir runtime
+          docker save "$IMAGE" | gzip -1 > runtime/kosmora-runtime.tar.gz
+          docker image inspect "$IMAGE" --format '{{.Id}}' > runtime/image-id.txt
+          printf '%s\n' "$SOURCE_REVISION" > runtime/source-revision.txt
+          sha256sum runtime/kosmora-runtime.tar.gz > runtime/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kosmora-runtime-17330ccb86a4
+          path: runtime/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
