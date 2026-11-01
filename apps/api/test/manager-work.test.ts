@@ -85,7 +85,8 @@ async function fixture(
     policy = new PolicyStore(database.sqlite);
   const store = new ManagerWorkStore(database.sqlite),
     emergency = new EmergencyStopStore(database.sqlite);
-  const project = projects.createProject("test", "source").project;
+  const initial = projects.createProject("test", "source");
+  const project = initial.project;
   policy.ensureProfile(project.id);
   policy.updateProfile({
     projectId: project.id,
@@ -159,6 +160,7 @@ async function fixture(
     store,
     emergency,
     project,
+    initialRun: initial.run,
     calls,
     coordinator,
     work,
@@ -183,6 +185,7 @@ describe("durable Manager work", () => {
     // Configure memory before admitting the task: queued work correctly fences
     // changes to the sources it may use.
     f.coordinator.control(f.work.id, "local-owner", f.work.version, "cancel");
+    f.projects.cancelRun(f.initialRun.id, "local-owner");
     const memory = f.store.contextMemory.create(
       {
         scope: "personal",
