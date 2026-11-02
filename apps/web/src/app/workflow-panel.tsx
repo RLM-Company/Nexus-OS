@@ -322,6 +322,9 @@ export function WorkflowPanel({ projectId }: { projectId: string }) {
           )}
           {notice && <p role="status">{notice}</p>}
           <div className={styles.actions}>
+            <button disabled={busy} onClick={() => setRefresh((value) => value + 1)}>
+              Обновить сценарии
+            </button>
             <button
               disabled={busy}
               onClick={() => {
