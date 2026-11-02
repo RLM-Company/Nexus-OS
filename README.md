@@ -4,7 +4,6 @@
 
 **[Разбор для Kosmora и приоритеты адаптации](KOSMORA_REVIEW/ANALYSIS_RU.md)** · [Каталог всех разделов](KOSMORA_REVIEW/PROJECT_CATALOG.md) · [Ячейки 49 notebooks](KOSMORA_REVIEW/NOTEBOOKS_INDEX.md) · [Методика и границы проверки](KOSMORA_REVIEW/REVIEW_COVERAGE.md)
 
-**[Разбор для Kosmora и приоритеты адаптации](KOSMORA_REVIEW/ANALYSIS_RU.md)** · [Каталог всех разделов](KOSMORA_REVIEW/PROJECT_CATALOG.md) · [Ячейки 49 notebooks](KOSMORA_REVIEW/NOTEBOOKS_INDEX.md) · [Методика и границы проверки](KOSMORA_REVIEW/REVIEW_COVERAGE.md)
 
 - Зафиксирован upstream commit `042aeb5067384981eeba6a07fa882f436bb1660d` (30 октября 2026).
 - [Оригинальные файлы](upstream/ai-engineering-hub/): 1519 файлов, 377349830 байт; все исходные Git blob SHA и режимы сохранены.
