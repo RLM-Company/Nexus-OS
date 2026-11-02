@@ -311,6 +311,60 @@ describe("ModelGateway", () => {
     ).rejects.toMatchObject({ code: "PROVIDER_ERROR", provider: "primary" });
   });
 
+  it("never repeats a real adapter read failure after a text delta, even when retries and fallback are allowed", async () => {
+    let calls = 0;
+    let upstream: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const source = new ReadableStream<Uint8Array>({
+      start(c) {
+        upstream = c;
+        c.enqueue(
+          new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n')
+        );
+      }
+    });
+    const adapter = new OpenAICompatibleAdapter({
+      id: "primary",
+      model: "primary-model",
+      baseUrl: "https://unused.invalid",
+      apiKey: "fixture",
+      fetchImplementation: () => {
+        calls++;
+        return Promise.resolve(new Response(source));
+      }
+    });
+    const gateway = new ModelGateway(
+      [adapter, new MockProviderAdapter()],
+      router([
+        entry({ provider_id: "primary", model_id: "primary-model", protocol: "openai-compatible" }),
+        entry()
+      ]),
+      ["mock"],
+      { maxAttemptsPerRoute: 3, retryBaseDelayMs: 0, retryMaxDelayMs: 0 }
+    );
+    const seen: ModelGatewayStreamEvent[] = [];
+    await expect(
+      (async () => {
+        for await (const event of gateway.stream(
+          request({
+            routing: {
+              ...request().routing,
+              preferred_provider: "primary",
+              preferred_model_alias: "primary-model"
+            }
+          })
+        )) {
+          seen.push(event);
+          if (event.type === "text.delta") upstream!.error(Error("private transport failure"));
+        }
+      })()
+    ).rejects.toMatchObject({ code: "PROVIDER_ERROR", diagnostic: "STREAM_READ_FAILED" });
+    expect(calls).toBe(1);
+    expect(seen.filter((e) => e.type === "route.selected")).toHaveLength(1);
+    expect(seen.some((e) => e.type === "response.completed")).toBe(false);
+    expect(JSON.stringify(seen)).not.toContain("private transport failure");
+    expect(source.locked).toBe(false);
+  });
+
   it("does not retry a non-retryable provider failure", async () => {
     let calls = 0;
     const rejected: ModelProviderAdapter = {

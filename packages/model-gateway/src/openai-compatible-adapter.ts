@@ -1,3 +1,4 @@
+import { readSseData } from "./sse-stream.js";
 import type { ModelRequest } from "@cosmora/contracts";
 import {
   assertToolCall,
@@ -55,6 +56,8 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncGenerator<ProviderStreamEvent> {
+    if (signal.aborted)
+      throw new GatewayRunError("INTERRUPTED", this.id, "Model run was interrupted", false);
     const allowedNames = assertToolTranscript(request, this.id);
     const previousCallIds = new Set(
       request.messages.flatMap((message) => message.tool_calls?.map((call) => call.id) ?? [])
@@ -112,7 +115,7 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
     let hasText = false;
     let usage = { inputTokens: null as number | null, outputTokens: null as number | null };
 
-    for await (const payload of this.#readDataPayloads(response.body, signal)) {
+    for await (const payload of readSseData(response.body, signal, this.id)) {
       if (payload === "[DONE]") {
         ended = true;
         break;
@@ -272,6 +275,8 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
         throw new GatewayRunError("INTERRUPTED", this.id, "Model run was interrupted", false);
       yield { type: "tool.call", ...call };
     }
+    if (signal.aborted)
+      throw new GatewayRunError("INTERRUPTED", this.id, "Model run was interrupted", false);
     yield {
       type: "response.completed",
       provider: this.id,
@@ -279,47 +284,5 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       finishReason: finishReason!,
       usage
     };
-  }
-
-  async *#readDataPayloads(
-    stream: ReadableStream<Uint8Array>,
-    signal: AbortSignal
-  ): AsyncGenerator<string> {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    const onAbort = (): void => {
-      void reader.cancel().catch(() => undefined);
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    try {
-      while (true) {
-        if (signal.aborted)
-          throw new GatewayRunError("INTERRUPTED", this.id, "Model run was interrupted", false);
-        const { done, value } = await reader.read();
-        if (signal.aborted)
-          throw new GatewayRunError("INTERRUPTED", this.id, "Model run was interrupted", false);
-        buffer += decoder.decode(value, { stream: !done });
-        if (buffer.length > 262_144)
-          throw new GatewayRunError(
-            "PROVIDER_ERROR",
-            this.id,
-            "Invalid provider stream event",
-            false
-          );
-        const lines = buffer.split(/\r?\n/);
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (line.startsWith("data:")) yield line.slice(5).trim();
-        }
-        if (done) break;
-      }
-      if (buffer.startsWith("data:")) yield buffer.slice(5).trim();
-    } finally {
-      signal.removeEventListener("abort", onAbort);
-      await reader.cancel().catch(() => undefined);
-      reader.releaseLock();
-    }
   }
 }
