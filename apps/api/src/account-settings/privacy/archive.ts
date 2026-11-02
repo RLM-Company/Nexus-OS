@@ -1,17 +1,10 @@
 import { createHash } from "node:crypto";
+import { crc32 } from "node:zlib";
 import type { Readable } from "node:stream";
 import type { OriginalBinary } from "./coordinator.js";
 
 /** Standard ZIP32 STORE (no compression); materialize fully before replying, no partial exports. */
 type Entry = { path: string; bytes: Buffer };
-const crc32 = (bytes: Buffer): number => {
-  let crc = 0xffffffff;
-  for (const value of bytes) {
-    crc ^= value;
-    for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-};
 export async function verifiedOriginal(
   stream: NodeJS.ReadableStream,
   descriptor: OriginalBinary,

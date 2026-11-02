@@ -265,7 +265,11 @@ try {
   ownerPrivacy.register(new ProjectAutomationPrivacy(database.sqlite));
   const googleDrive = configuredGoogleDrive(database.sqlite, config.webOrigin);
   ownerPrivacy.register(
-    googleDrivePrivacyAdapter(database.sqlite, googleDrive.connection ?? undefined)
+    googleDrivePrivacyAdapter(
+      database.sqlite,
+      googleDrive.worker ?? undefined,
+      googleDrive.bundleStore
+    )
   );
   app = buildApp({
     googleDrive,

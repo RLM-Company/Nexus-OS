@@ -1,8 +1,10 @@
 # Google Drive connection activation
 
-The connection flow is implemented; archive assembly and restore-to-chat are a
-separate pending block. Enabling this connector does not migrate or automatically
-upload existing user data. Do not present the folder connection as a complete backup.
+The connection, bounded multi-part chat/result backups and restore-to-new-objects
+are implemented. Enabling the connector does not migrate or automatically upload
+existing user data. A folder connection alone is not a saved backup. See
+`docs/handoff/KOSMORA_DRIVE_BACKUP_RESTORE_2026-11-02_RU.md` for the exact scope,
+limits and recovery boundaries; this is not a complete server disaster image.
 
 ## Prerequisites
 
@@ -47,7 +49,7 @@ Deleting local data does not delete the user's copies on Drive.
 
 ## Flow and acceptance
 
-1. Apply migration 0060 using the existing backup/migration runbook; deploy API and
+1. Apply migrations 0060 and 0061 using the existing backup/migration runbook; deploy API and
    web together. Preserve the secret key across restarts. Do not clear emergency
    stops or bypass the deferred VPS acceptance procedure.
 2. Open settings, connect Google Drive, and complete consent in that same tab.
@@ -60,6 +62,14 @@ Deleting local data does not delete the user's copies on Drive.
    during exchange, and reconnect. Never treat a copied link in another tab as consent.
 5. Confirm token ciphertext persists, no Google token/Client Secret appears in
    HTTP responses or privacy exports, and disconnect clears local credentials.
+6. Save selected Kosmora/Koswork chats and Work results, then preview and restore.
+   Confirm original records and job/usage ledgers are unchanged and new chat/file
+   IDs are returned. Include a multi-part copy, a lost ACK, same-ID resume, corrupt
+   or missing parts, duplicate confirmation and an expired preview.
+7. Verify privacy drains all snapshot, binary-copy and consent work. Local staging
+   payloads are encrypted, included in privacy exports as bounded original chunks,
+   and removed on data deletion. Local cache can be cleared without Google access.
+   Remote copies remain in the user's Drive; no background deletion is performed.
 
 The API scrubs Drive query parameters from request logging. If additional proxy
 access logging is enabled, redact the callback query there too. The callback has

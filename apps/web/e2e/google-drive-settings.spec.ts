@@ -19,7 +19,9 @@ async function fixture(page: Page, configured = true) {
   await page.route("**/api/v1/storage/drive**", async (route) => {
     const request = route.request(),
       path = new URL(request.url()).pathname;
-    let result: object = view(connected, configured);
+    let result: object = ["/backups", "/sources", "/restored-files"].some((s) => path.endsWith(s))
+      ? { items: [] }
+      : view(connected, configured);
     if (path.endsWith("/connect"))
       result = {
         state,
@@ -100,4 +102,88 @@ test("unconfigured Drive is shown honestly without an active connect action", as
   await expect(
     panel.getByRole("button", { name: "Подключить Google Drive", exact: true })
   ).toHaveCount(0);
+});
+
+test("saves a complete copy, previews and restores into new chat/file links", async ({
+  page
+}, testInfo) => {
+  const id = "11111111-1111-4111-8111-111111111111",
+    chat = "22222222-2222-4222-8222-222222222222",
+    file = "33333333-3333-4333-8333-333333333333";
+  let saved = false,
+    restored = false;
+  const requests: { path: string; body: unknown }[] = [];
+  const summary = {
+    chats: 1,
+    files: 1,
+    messages: 10,
+    exported_at: new Date().toISOString(),
+    unfinished_messages: 1,
+    extracted_documents: 0,
+    titles: ["Исходный чат"],
+    filenames: ["report.md"]
+  };
+  const item = {
+    id,
+    state: "verified",
+    bytes: 2500000,
+    parts: 2,
+    saved_parts: 2,
+    created_at: new Date().toISOString(),
+    can_retry: false,
+    preview: summary
+  };
+  await page.route("**/api/v1/storage/drive**", async (route) => {
+    const r = route.request(),
+      path = new URL(r.url()).pathname;
+    let result: object = view(true);
+    if (r.method() === "POST") requests.push({ path, body: r.postDataJSON() });
+    if (path.endsWith("/sources"))
+      result = { items: [{ id: chat, title: "Исходный чат", mode: "work" }] };
+    if (path.endsWith("/backups")) {
+      if (r.method() === "POST") {
+        saved = true;
+        result = item;
+      } else result = { items: saved ? [item] : [] };
+    }
+    if (path.endsWith("/preview"))
+      result = { ...summary, token: "t".repeat(43), expires_at: Date.now() + 600000 };
+    if (path.endsWith("/restore")) {
+      restored = true;
+      result = {
+        id,
+        chats: [{ id: chat, title: "Исходный чат · копия" }],
+        files: [{ id: file, name: "report.md" }]
+      };
+    }
+    if (path.endsWith("/restored-files"))
+      result = {
+        items: restored
+          ? [{ id: file, name: "report.md", source_project: "Проект", source_version: 2 }]
+          : []
+      };
+    await route.fulfill({ json: result });
+  });
+  await page.goto("/personal-settings#drive-storage");
+  const panel = page.locator("#drive-storage");
+  await panel.getByRole("button", { name: "Сохранить копию на Drive" }).click();
+  await expect(panel.getByText("Все части копии сохранены и проверены.")).toBeVisible();
+  await panel.getByRole("button", { name: "Проверить и восстановить" }).click();
+  const preview = panel.getByRole("region", { name: "Предпросмотр восстановления" });
+  await expect(preview).toContainText("Существующие данные не перезаписываются");
+  await expect(preview).toContainText("Прерванных сообщений: 1");
+  await preview.screenshot({ path: testInfo.outputPath("restore-preview.png") });
+  await preview.getByRole("button", { name: "Восстановить копии" }).click();
+  await expect(panel.getByRole("link", { name: "Исходный чат · копия" })).toHaveAttribute(
+    "href",
+    `/?chat=${chat}`
+  );
+  await expect(panel.getByRole("link", { name: "report.md · Проект · v2" })).toHaveAttribute(
+    "href",
+    `/api/v1/storage/drive/restored-files/${file}`
+  );
+  expect(requests.filter((x) => x.path.endsWith("/restore"))).toHaveLength(1);
+  expect(requests.find((x) => x.path.endsWith("/restore"))?.body).toMatchObject({
+    token: "t".repeat(43)
+  });
 });

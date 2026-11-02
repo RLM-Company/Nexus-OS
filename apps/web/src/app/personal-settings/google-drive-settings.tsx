@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GoogleDriveConnectionView, GoogleDriveConnectStart } from "@cosmora/contracts";
 import { consumeDriveFlow, rememberDriveFlow } from "./google-drive-flow";
+import { GoogleDriveBackupControls } from "./google-drive-backup-controls";
 
 const endpoint = "/api/v1/storage/drive";
 async function request<T>(path = "", body?: object): Promise<T> {
@@ -193,6 +194,9 @@ export function GoogleDriveSettings() {
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
       <p>При отключении или удалении данных Kosmora копии на вашем Drive остаются.</p>
+      {status && (
+        <GoogleDriveBackupControls connected={status.state === "connected"} onChange={reload} />
+      )}
     </section>
   );
 }

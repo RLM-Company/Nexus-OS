@@ -1,13 +1,17 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { PrivacyAdapter, PrivacySection } from "../account-settings/privacy/coordinator.js";
 import { DriveStorageError } from "./google-drive.js";
+import { Readable } from "node:stream";
+import { createHash } from "node:crypto";
+import type { GoogleDriveBundleStore } from "./google-drive-bundle-store.js";
 
 /** Local journal and credentials only. Never enumerates or deletes the user's
  * remote Drive. Token ciphertext and deployment keys are excluded from exports.
  */
 export function googleDrivePrivacyAdapter(
   db: DatabaseSync,
-  worker?: { quiesce(ownerId: string): Promise<void>; resume(ownerId: string): void }
+  worker?: { quiesce(ownerId: string): Promise<void>; resume(ownerId: string): void },
+  bundles?: GoogleDriveBundleStore
 ): PrivacyAdapter {
   return {
     id: "cloud-storage",
@@ -24,6 +28,12 @@ export function googleDrivePrivacyAdapter(
       worker?.resume(ownerId);
     },
     export(ownerId): Promise<PrivacySection> {
+      const extra = bundles?.privacySection(ownerId);
+      if (
+        !extra &&
+        db.prepare("SELECT 1 FROM drive_snapshots WHERE owner_id=? LIMIT 1").get(ownerId)
+      )
+        throw new DriveStorageError("BACKUP_PRIVACY_UNAVAILABLE");
       const connections = db
         .prepare(
           "SELECT owner_id,revision,connection_id,folder_id,folder_state,updated_at FROM kosmora_drive_connections WHERE owner_id=?"
@@ -41,10 +51,25 @@ export function googleDrivePrivacyAdapter(
             remote_copies: "retained_on_user_drive",
             credential_export: "excluded"
           })),
-          archives
+          archives,
+          ...extra?.records
         },
-        originals: [],
+        originals: extra?.originals ?? [],
         complete: true
+      });
+    },
+    readBinary(ownerId, opaque) {
+      const bytes = bundles?.privacyChunk(ownerId, opaque);
+      if (!bytes) return Promise.resolve(null);
+      return Promise.resolve({
+        stream: Readable.from([bytes]),
+        original: {
+          id: opaque,
+          filename: `snapshot-${opaque.replace(":", "-")}.bin`,
+          content_type: "application/octet-stream",
+          size_bytes: bytes.length,
+          sha256: createHash("sha256").update(bytes).digest("hex")
+        }
       });
     },
     delete(ownerId, epoch) {
@@ -58,6 +83,16 @@ export function googleDrivePrivacyAdapter(
             .get(ownerId, epoch)
         )
           throw new DriveStorageError("OWNER_DATA_FENCED");
+        const descendants = (
+          db
+            .prepare(
+              "SELECT (SELECT count(*) FROM drive_restores WHERE owner_id=?)+(SELECT count(*) FROM drive_restored_files WHERE owner_id=?) AS n"
+            )
+            .get(ownerId, ownerId) as { n: number }
+        ).n;
+        const snapshots = Number(
+          db.prepare("DELETE FROM drive_snapshots WHERE owner_id=?").run(ownerId).changes
+        );
         const archives = Number(
           db.prepare("DELETE FROM kosmora_drive_archives WHERE owner_id=?").run(ownerId).changes
         );
@@ -65,7 +100,9 @@ export function googleDrivePrivacyAdapter(
           db.prepare("DELETE FROM kosmora_drive_connections WHERE owner_id=?").run(ownerId).changes
         );
         db.exec("COMMIT");
-        return Promise.resolve({ deleted_records: archives + connections });
+        return Promise.resolve({
+          deleted_records: archives + connections + snapshots + descendants
+        });
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;

@@ -6,6 +6,9 @@ import { GoogleDriveAuthorization } from "./google-drive-authorization.js";
 import { GoogleDriveStore } from "./google-drive-store.js";
 import { GoogleDriveBackups } from "./google-drive-backups.js";
 import { GoogleDriveConnection } from "./google-drive-connection.js";
+import { DrivePayloadCipher } from "./google-drive-payload-cipher.js";
+import { GoogleDriveBundleStore } from "./google-drive-bundle-store.js";
+import { GoogleDriveBundles } from "./google-drive-bundles.js";
 
 export function configuredGoogleDrive(
   db: DatabaseSync,
@@ -14,7 +17,14 @@ export function configuredGoogleDrive(
   request: typeof fetch = fetch
 ) {
   if (env.KOSMORA_DRIVE_ENABLED !== "1")
-    return { store: new GoogleDriveStore(db), connection: null, origin };
+    return {
+      store: new GoogleDriveStore(db),
+      connection: null,
+      origin,
+      bundleStore: new GoogleDriveBundleStore(db),
+      bundles: null,
+      worker: null
+    };
   let url: URL;
   try {
     url = new URL(origin);
@@ -48,6 +58,17 @@ export function configuredGoogleDrive(
   );
   const backups = new GoogleDriveBackups(store, authorization, request);
   const connection = new GoogleDriveConnection(store, authorization, backups, url.origin, request);
-  return { store, connection, origin: url.origin };
+  const bundleStore = new GoogleDriveBundleStore(db, new DrivePayloadCipher(decoded));
+  const bundles = new GoogleDriveBundles(bundleStore, store, backups);
+  const worker = {
+    async quiesce(owner: string) {
+      await Promise.all([bundles.quiesce(owner), connection.quiesce(owner)]);
+    },
+    resume(owner: string) {
+      connection.resume(owner);
+      bundles.resume(owner);
+    }
+  };
+  return { store, connection, origin: url.origin, bundleStore, bundles, worker };
 }
 export type GoogleDriveRuntime = ReturnType<typeof configuredGoogleDrive>;

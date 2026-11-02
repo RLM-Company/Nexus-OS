@@ -312,7 +312,7 @@ export class GoogleDriveStore {
           "SELECT count(*) AS n,sum(CASE WHEN connection_id=? AND state<>'verified' THEN 1 ELSE 0 END) AS pending FROM kosmora_drive_archives WHERE owner_id=?"
         )
         .get(context.connectionId, context.ownerId) as { n: number; pending: number | null };
-      if (count.n >= 1000 || (count.pending ?? 0) >= 10)
+      if (count.n >= 20000 || (count.pending ?? 0) >= 10)
         throw new DriveStorageError("DRIVE_JOURNAL_FULL");
       const id = randomUUID(),
         at = this.now();
