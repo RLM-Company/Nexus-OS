@@ -1,0 +1,11 @@
+{
+  "branch": "reference/ai-engineering-hub-20261102",
+  "commit": "8e1526b64b72eac7e61e2a27c0655e0f5a540b8a",
+  "upstream_commit": "042aeb5067384981eeba6a07fa882f436bb1660d",
+  "upstream_tree": "2e2fe660b0f70042af15cb38f55cc7b471e091ab",
+  "copied_tree": "2e2fe660b0f70042af15cb38f55cc7b471e091ab",
+  "files": 1519,
+  "unique_blobs": 1425,
+  "bytes": 377349830,
+  "exact_tree_match": true
+}
