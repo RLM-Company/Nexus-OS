@@ -13,35 +13,63 @@ export function assertContextMemoryComplete(bundle: ContextMemoryBundle | undefi
   if (bundle?.priority_omitted) throw new MemoryContextIncompleteError();
 }
 
+const utf8 = new TextEncoder();
+const checkedSize = (value: number): number => {
+  if (!Number.isSafeInteger(value) || value < 0) throw new RangeError("Unsafe memory size");
+  return value;
+};
+
+/** Replace numeric/array lengths, not text markers: property order and user text
+ * cannot affect the accounting. The bytes field counts its own decimal digits.
+ */
+function bundleSizer(bundle: ContextMemoryBundle): (arrayBytes: number, omitted: number) => number {
+  const base =
+    utf8.encode(JSON.stringify({ ...bundle, items: [], omitted: 0, bytes: 0 })).length - 4;
+  return (arrayBytes, omitted) => {
+    const fixed = checkedSize(base + arrayBytes + String(checkedSize(omitted)).length);
+    let bytes = checkedSize(fixed + 1);
+    for (;;) {
+      const next = checkedSize(fixed + String(bytes).length);
+      if (next === bytes) return bytes;
+      bytes = next;
+    }
+  };
+}
+
 /** Fit memory to space left by the current question/files; never shorten the owner's input. */
 export function fitContextMemory(
   bundle: ContextMemoryBundle,
   availableBytes: number
 ): ContextMemoryBundle | undefined {
   assertContextMemoryComplete(bundle);
-  const measure = (items: ContextMemoryBundle["items"]) => {
-    const value = {
-      ...bundle,
-      items,
-      omitted: bundle.omitted + bundle.items.length - items.length,
-      bytes: 0
-    };
-    for (let i = 0; i < 4; i++)
-      value.bytes = new TextEncoder().encode(JSON.stringify(value)).length;
-    return value;
-  };
+  // ChatService may leave a negative remainder after reserving memory framing.
+  // It means no optional memory fits, not a malformed owner request.
+  if (!Number.isSafeInteger(availableBytes)) throw new RangeError("Invalid memory byte budget");
+  const totalOmitted = checkedSize(checkedSize(bundle.omitted) + bundle.items.length);
+  const measure = bundleSizer(bundle);
   const priority = (item: ContextMemoryBundle["items"][number]) =>
     item.priority || item.memory_kind === "constraint";
-  const ordered = [...bundle.items].sort(
-    (a, b) => Number(Boolean(priority(b))) - Number(Boolean(priority(a)))
-  );
-  let selected: ContextMemoryBundle["items"] = [];
+  const ordered = [
+    ...bundle.items.filter(priority),
+    ...bundle.items.filter((item) => !priority(item))
+  ];
+  const selected: ContextMemoryBundle["items"] = [];
+  let arrayBytes = 2;
+  let bytes = 0;
   for (const item of ordered) {
-    const candidate = [...selected, item];
-    if (measure(candidate).bytes <= availableBytes) selected = candidate;
-    else if (priority(item)) throw new MemoryContextIncompleteError();
+    const candidateArrayBytes = checkedSize(
+      arrayBytes + (selected.length ? 1 : 0) + utf8.encode(JSON.stringify(item)).length
+    );
+    const candidateBytes = measure(candidateArrayBytes, totalOmitted - selected.length - 1);
+    if (candidateBytes <= availableBytes) {
+      selected.push(item);
+      arrayBytes = candidateArrayBytes;
+      bytes = candidateBytes;
+    } else if (priority(item)) throw new MemoryContextIncompleteError();
   }
-  return selected.length ? measure(selected) : undefined;
+  return selected.length
+    ? { ...bundle, items: selected, omitted: totalOmitted - selected.length, bytes }
+    : undefined;
 }
 
 export function mergeContextMemory(
@@ -73,12 +101,16 @@ export function mergeContextMemory(
     ...first,
     items: [...items.values()],
     bytes: 0,
-    budget_bytes: present.reduce((n, b) => n + b.budget_bytes, 0),
-    omitted: present.reduce((n, b) => n + b.omitted, 0),
-    priority_omitted: present.reduce((n, b) => n + b.priority_omitted, 0)
+    budget_bytes: present.reduce((n, b) => checkedSize(n + checkedSize(b.budget_bytes)), 0),
+    omitted: present.reduce((n, b) => checkedSize(n + checkedSize(b.omitted)), 0),
+    priority_omitted: present.reduce((n, b) => checkedSize(n + checkedSize(b.priority_omitted)), 0)
   };
-  for (let i = 0; i < 4; i++)
-    result.bytes = new TextEncoder().encode(JSON.stringify(result)).length;
+  const arrayBytes = result.items.reduce(
+    (size, item, index) =>
+      checkedSize(size + (index ? 1 : 0) + utf8.encode(JSON.stringify(item)).length),
+    2
+  );
+  result.bytes = bundleSizer(result)(arrayBytes, result.omitted);
   return result;
 }
 

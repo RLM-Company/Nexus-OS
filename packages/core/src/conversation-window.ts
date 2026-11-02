@@ -12,6 +12,9 @@ export const estimateMessageTokens = (message: ModelMessage): number =>
 export const estimateInputTokensUpperBound = (messages: ModelMessage[]): number =>
   messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
 export const DEFAULT_CONTEXT_BUDGET = 28000;
+const HISTORY_WARNING =
+  "\nРанние сообщения не вошли в текущий контекст. Не утверждай, что помнишь их содержание; при необходимости попроси уточнение.";
+const HISTORY_WARNING_BYTES = new TextEncoder().encode(HISTORY_WARNING).length;
 
 /** Legacy standalone callers keep their old budget; production uses its selected route. */
 export function modelInputContextBudget(
@@ -39,13 +42,17 @@ export function conversationWindow(
   conversation: ModelMessage[],
   budget = DEFAULT_CONTEXT_BUDGET
 ): ModelMessage[] {
+  if (!Number.isSafeInteger(budget) || budget < 0) throw new RangeError("Invalid context budget");
+  const prefixSize = estimateInputTokensUpperBound(prefix);
+  if (prefixSize > budget) throw new ContextTooLargeError();
   const groups: ModelMessage[][] = [];
   for (const message of conversation) {
     if (message.role === "user" || groups.length === 0) groups.push([]);
     groups.at(-1)!.push(message);
   }
-  let remaining = budget - estimateInputTokensUpperBound(prefix) - 256;
-  const selected: ModelMessage[][] = [];
+  let remaining = budget - prefixSize - 256;
+  let selectedSize = 0;
+  const selected: { messages: ModelMessage[]; size: number }[] = [];
   for (let index = groups.length - 1; index >= 0; index--) {
     const group = groups[index]!;
     const size = estimateInputTokensUpperBound(group);
@@ -53,7 +60,8 @@ export function conversationWindow(
       if (selected.length === 0) throw new ContextTooLargeError();
       break;
     }
-    selected.unshift(group);
+    selected.push({ messages: group, size });
+    selectedSize += size;
     remaining -= size;
   }
   if (groups.length > selected.length && prefix[0]?.role === "system") {
@@ -61,12 +69,16 @@ export function conversationWindow(
       index === 0
         ? {
             ...message,
-            content:
-              message.content +
-              "\nРанние сообщения не вошли в текущий контекст. Не утверждай, что помнишь их содержание; при необходимости попроси уточнение."
+            content: message.content + HISTORY_WARNING
           }
         : message
     );
+    // Existing headroom covers today's warning. Keep the output bound explicit
+    // if that text grows later, removing only complete oldest selected groups.
+    while (prefixSize + selectedSize + HISTORY_WARNING_BYTES > budget) {
+      if (selected.length <= 1) throw new ContextTooLargeError();
+      selectedSize -= selected.pop()!.size;
+    }
   }
-  return [...prefix, ...selected.flat()];
+  return [...prefix, ...selected.reverse().flatMap((group) => group.messages)];
 }
