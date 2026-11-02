@@ -1,0 +1,30 @@
+{
+  "files": 1519,
+  "available": 1519,
+  "text_files": 1335,
+  "text_characters": 43616747,
+  "root_directories": 117,
+  "notebooks": 49,
+  "notebook_cells": 841,
+  "python_files": 335,
+  "markdown_files": 170,
+  "review_packets": 15,
+  "secret_candidates": 0,
+  "test_named_files": [
+    "agentic_rag_deepseek/src/agentic_rag/tools/test.ipynb",
+    "build-code-harness/workspace/tests/test_account.py",
+    "eval-and-observability/data/test.csv",
+    "gpt-oss-vs-qwen3/test_system.py",
+    "hugging-face-skills/skills/hugging-face-evaluation/scripts/test_extraction.py",
+    "llama-4_vs_deepseek-r1/eval-data/test.csv",
+    "o3-vs-claude-code/data/test.csv",
+    "paralegal-agent-crew/examples/test.py",
+    "pixeltable-mcp/audio-index/test.py",
+    "pixeltable-mcp/doc-index/test.py",
+    "pixeltable-mcp/image-index/test.py",
+    "pixeltable-mcp/video-index/test.py",
+    "qwen3_vs_deepseek-r1/eval-data/test.csv",
+    "simple-rag-workflow/eval-data/test.csv",
+    "video-rag-gemini/test_setup.py"
+  ]
+}
