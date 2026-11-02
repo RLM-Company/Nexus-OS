@@ -153,7 +153,8 @@ export class ChatService {
           const framing = CONTEXT_MEMORY_RULES + "\n\n\nТекущее сообщение:\n";
           const fitted = fitContextMemory(
             recalledMemory,
-            available - new TextEncoder().encode(framing).length
+            available - new TextEncoder().encode(framing).length,
+            context.messages.findLast((message) => message.role === "user")?.content
           );
           if (fitted) {
             includedMemory = fitted;

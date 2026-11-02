@@ -103,7 +103,7 @@ describe("production memory packing", () => {
   });
   it("preserves merge provenance, deduplication and mandatory evidence", () => {
     const a = bundle([item("same"), item("distinct")]);
-    const b = bundle([{ ...item("same", true), reference: "M:second" }], 9);
+    const b = bundle([item("same", true)], 9);
     const merged = mergeContextMemory(a, b)!;
     expect(merged.items).toEqual([{ ...a.items[0], priority: true }, a.items[1]]);
     expect(merged.bytes).toBe(byteLength(merged));

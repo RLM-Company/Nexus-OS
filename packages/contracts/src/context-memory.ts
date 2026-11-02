@@ -72,6 +72,8 @@ export interface ContextMemorySource {
   chat_id: string;
   project_id: string | null;
   role: "user" | "assistant";
+  /** Runtime evidence may leave this empty when its literal text is already in item.text.
+   * Persisted source inputs still require a nonempty, verified original quote. */
   quote: string;
   sha256: string;
 }

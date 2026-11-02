@@ -12,6 +12,7 @@ import {
   CONTEXT_MEMORY_RULES,
   tagContextMemoryRequest,
   contextMemoryUsage,
+  fitContextMemory,
   estimateInputTokensUpperBound,
   type ManagerService
 } from "@cosmora/core";
@@ -482,7 +483,7 @@ export class ComputerControlService {
       .prepare("SELECT id FROM chats WHERE project_id=? AND kind='main'")
       .get(s.project);
     if (!chat) throw new ComputerControlError("PROJECT_CHAT_MISSING");
-    const recalled =
+    const resolved =
       s.executionMode === "work"
         ? new ContextMemoryStore(sql, () => this.now()).resolve(
             { kind: "project", id: s.project },
@@ -490,8 +491,11 @@ export class ComputerControlService {
             s.goal
           )
         : undefined;
-    if (recalled?.priority_omitted)
+    if (resolved?.priority_omitted)
       throw new ComputerControlError("COMPUTER_MEMORY_CONTEXT_INCOMPLETE");
+    const recalled = resolved
+      ? fitContextMemory(resolved, resolved.budget_bytes, s.goal)
+      : undefined;
     const run = randomUUID(),
       at = new Date(this.now()).toISOString();
     sql

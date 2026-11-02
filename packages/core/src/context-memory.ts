@@ -1,5 +1,6 @@
 import type { ContextMemoryBundle } from "@cosmora/contracts";
 import { ContextTooLargeError } from "./conversation-window.js";
+import { compactContextEvidence, rankContextEvidence } from "./context-evidence-selection.js";
 
 export class MemoryContextIncompleteError extends ContextTooLargeError {
   constructor() {
@@ -39,20 +40,19 @@ function bundleSizer(bundle: ContextMemoryBundle): (arrayBytes: number, omitted:
 /** Fit memory to space left by the current question/files; never shorten the owner's input. */
 export function fitContextMemory(
   bundle: ContextMemoryBundle,
-  availableBytes: number
+  availableBytes: number,
+  query?: string
 ): ContextMemoryBundle | undefined {
   assertContextMemoryComplete(bundle);
   // ChatService may leave a negative remainder after reserving memory framing.
   // It means no optional memory fits, not a malformed owner request.
   if (!Number.isSafeInteger(availableBytes)) throw new RangeError("Invalid memory byte budget");
-  const totalOmitted = checkedSize(checkedSize(bundle.omitted) + bundle.items.length);
+  const compacted = compactContextEvidence(bundle.items);
+  const totalOmitted = checkedSize(checkedSize(bundle.omitted) + compacted.length);
   const measure = bundleSizer(bundle);
   const priority = (item: ContextMemoryBundle["items"][number]) =>
     item.priority || item.memory_kind === "constraint";
-  const ordered = [
-    ...bundle.items.filter(priority),
-    ...bundle.items.filter((item) => !priority(item))
-  ];
+  const ordered = rankContextEvidence(compacted, query);
   const selected: ContextMemoryBundle["items"] = [];
   let arrayBytes = 2;
   let bytes = 0;
@@ -78,28 +78,13 @@ export function mergeContextMemory(
   const present = bundles.filter((b): b is ContextMemoryBundle => Boolean(b));
   if (!present.length) return undefined;
   const first = present[0]!;
-  const items = new Map<string, ContextMemoryBundle["items"][number]>();
   for (const b of present) {
     if (b.target.kind !== first.target.kind || b.target.id !== first.target.id)
       throw new Error("MEMORY_TARGET_MISMATCH");
-    for (const e of b.items) {
-      const key = JSON.stringify([
-        e.kind,
-        e.memory_kind,
-        e.source?.role,
-        e.source?.message_id,
-        e.text
-      ]);
-      const previous = items.get(key);
-      items.set(
-        key,
-        previous ? { ...previous, priority: Boolean(previous.priority || e.priority) } : e
-      );
-    }
   }
   const result: ContextMemoryBundle = {
     ...first,
-    items: [...items.values()],
+    items: compactContextEvidence(present.flatMap((b) => b.items)),
     bytes: 0,
     budget_bytes: present.reduce((n, b) => checkedSize(n + checkedSize(b.budget_bytes)), 0),
     omitted: present.reduce((n, b) => checkedSize(n + checkedSize(b.omitted)), 0),

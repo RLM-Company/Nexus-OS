@@ -315,6 +315,29 @@ describe("source-backed context memory", () => {
     expect(Buffer.byteLength(JSON.stringify(bundle))).toBe(bundle.bytes);
     expect(bundle.bytes).toBeLessThanOrEqual(1000);
   });
+  it("keeps identical wording from a user and assistant as separate evidence", () => {
+    message("said-user", "old", "Договор подписан вчера.", "a", "user");
+    message("said-assistant", "old", "Договор подписан вчера.", "a", "assistant");
+    enable({ source_chat_ids: ["old"] });
+    const found = memory.resolve(target, "a", "Договор");
+    expect(found.items.map((e) => e.source?.role).sort()).toEqual(["assistant", "user"]);
+    expect(new Set(found.items.map((e) => e.reference)).size).toBe(2);
+  });
+  it("does not collapse hypotheses into facts or normalize different numeric notation", () => {
+    for (const kind of ["fact", "hypothesis"] as const)
+      memory.create(input({ kind, content: "Джалиль согласен." }), "a");
+    for (const content of ["Бюджет 20² рублей.", "Бюджет 202 рублей."])
+      memory.create(input({ kind: "fact", content }), "a");
+    enable({ use_personal: true });
+    const found = memory.resolve(target, "a", "Джалиль бюджет");
+    expect(
+      found.items
+        .filter((e) => e.text === "Джалиль согласен.")
+        .map((e) => e.memory_kind)
+        .sort()
+    ).toEqual(["fact", "hypothesis"]);
+    expect(found.items.filter((e) => e.text.startsWith("Бюджет"))).toHaveLength(2);
+  });
   it("retrieves an old fact from long history, preserving numbers and originals with a small context", () => {
     for (let i = 0; i < 140; i++)
       message(

@@ -27,6 +27,7 @@ import {
   tagContextMemoryRequest,
   contextMemoryUsage,
   assertContextMemoryComplete,
+  fitContextMemory,
   readWorkGraphContext,
   workRuntimeProgress,
   assertWorkTaskGraph,
@@ -284,18 +285,19 @@ export class ManagerWorkCoordinator {
       stage === "plan" ? "manager" : stage === "review" ? "critic" : work.request.worker_role;
     request.agent_id = "cosmora-work-" + request.role;
     request.task_type = "manager_work_" + stage;
-    const recalled = this.dependencies.store.contextMemory.resolve(
+    const resolved = this.dependencies.store.contextMemory.resolve(
       { kind: "project", id: work.project_id },
       work.owner_id,
       work.request.goal
     );
-    assertContextMemoryComplete(recalled);
+    assertContextMemoryComplete(resolved);
+    const recalled = fitContextMemory(resolved, resolved.budget_bytes, work.request.goal);
     request.messages = [
       {
         role: "system",
         content:
           prompts[stage] +
-          (recalled.items.length ? "\n" + CONTEXT_MEMORY_RULES : "") +
+          (recalled?.items.length ? "\n" + CONTEXT_MEMORY_RULES : "") +
           (work.request.output_contract?.kind === "website"
             ? "\n" +
               (stage === "draft"
@@ -319,7 +321,7 @@ export class ManagerWorkCoordinator {
         role: "user",
         content: JSON.stringify({
           goal: work.request.goal,
-          recalled_memory: recalled.items.length ? recalled : undefined,
+          recalled_memory: recalled?.items.length ? recalled : undefined,
           personal_skills:
             this.dependencies.store.skills.forWork(work.id, work.owner_id)?.items ?? [],
           materials: work.materials,

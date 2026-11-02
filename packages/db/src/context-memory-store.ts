@@ -985,7 +985,16 @@ export class ContextMemoryStore {
     for (const { evidence, required } of candidates.sort(
       (a, b) => Number(Boolean(b.required)) - Number(Boolean(a.required)) || b.score - a.score
     )) {
-      const key = evidence.text.normalize("NFKC").replace(/\s+/g, " ").trim();
+      // Identical wording does not make a hypothesis a fact or an assistant a user.
+      // Preserve independent source links, and never normalize literal numbers.
+      const key = JSON.stringify([
+        evidence.kind,
+        evidence.memory_kind,
+        evidence.version,
+        evidence.title,
+        evidence.source,
+        evidence.text
+      ]);
       if (seen.has(key)) continue;
       seen.add(key);
       const next = { ...bundle, items: [...bundle.items, evidence] };

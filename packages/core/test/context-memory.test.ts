@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ContextMemoryBundle, GeneralChatMessage } from "@cosmora/contracts";
-import { ChatService, MemoryContextIncompleteError } from "../src/index.js";
+import { ChatService, MemoryContextIncompleteError, contextMemoryUsage } from "../src/index.js";
 
 const service = new ChatService({
   preferredProvider: "mock",
@@ -42,6 +42,30 @@ const bundle = (required = false): ContextMemoryBundle => ({
   ]
 });
 describe("adaptive context packing", () => {
+  it("uses the current question to choose optional evidence in a real chat request", () => {
+    const limited = new ChatService({
+      preferredProvider: "mock",
+      preferredModelAlias: "chat",
+      fallbackAllowed: false,
+      systemPrompt: "Safe system.",
+      contextWindowTokens: 6000
+    });
+    const source = bundle().items[0]!;
+    const request = limited.buildRequest({
+      chatId: "chat",
+      runId: "selection",
+      messages: [message("Найди договор")],
+      recalledMemory: {
+        ...bundle(),
+        items: [
+          { ...source, reference: "M:old", text: "x".repeat(1400) },
+          { ...source, reference: "M:relevant", text: "Договор " + "x".repeat(1390) }
+        ]
+      }
+    });
+    expect(contextMemoryUsage(request).sources.map((e) => e.reference)).toEqual(["M:relevant"]);
+    expect(request.messages.at(-1)!.content).toContain("Найди договор");
+  });
   it("uses the same expanded budget for mandatory memory and a large current question", () => {
     const expanded = new ChatService({
       preferredProvider: "external",
