@@ -375,6 +375,9 @@ try {
     chat: modelRuntime.chat,
     manager: modelRuntime.manager,
     modelRegistryVersion: modelRuntime.registryVersion,
+    ...(modelRuntime.contextWindowTokens
+      ? { modelContextWindowTokens: modelRuntime.contextWindowTokens }
+      : {}),
     identityResolver,
     stepUpProofConsumer: new StoredStepUpProofConsumer(stepUpProofStore),
     runtimeMetrics,

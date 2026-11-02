@@ -27,6 +27,7 @@ export interface ModelRuntime {
   chat: ChatService;
   manager: ManagerService;
   registryVersion: string;
+  contextWindowTokens?: number;
 }
 
 export interface ModelRuntimeOptions {
@@ -142,6 +143,7 @@ export const buildModelRuntime = async (
       maxOutputTokens: config.managerMaxOutputTokens,
       ...(configuredModel ? { contextWindowTokens: configuredModel.context_window_tokens } : {})
     }),
-    registryVersion: registry.version
+    registryVersion: registry.version,
+    ...(configuredModel ? { contextWindowTokens: configuredModel.context_window_tokens } : {})
   };
 };

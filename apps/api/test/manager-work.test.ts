@@ -68,6 +68,7 @@ async function fixture(
     ownerBudget?: WorkOwnerBudget;
     onCall?: (request: ModelRequest, signal: AbortSignal) => Promise<void>;
     chunks?: string[];
+    wrapOutput?: boolean;
     afterChunk?: (request: ModelRequest, signal: AbortSignal, index: number) => Promise<void>;
     operationTimeoutMs?: number;
   } = {}
@@ -110,7 +111,10 @@ async function fixture(
                 files: [{ name: "result.md", content: "# Useful\nComplete document." }]
               })
             : (options.review ?? { verdict: "PASS", reason: "Complete and consistent" });
-      const chunks = options.chunks ?? [JSON.stringify(result)];
+      const serialized = JSON.stringify(result);
+      const chunks = options.chunks ?? [
+        options.wrapOutput ? `<escape>${serialized}</escape>` : serialized
+      ];
       for (const [index, delta] of chunks.entries()) {
         yield { type: "text.delta", delta };
         await options.afterChunk?.(req, signal, index);
@@ -171,6 +175,31 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("validates a relay-wrapped plan without granting its requested external actions", async () => {
+    const f = await fixture({
+      chunks: [
+        `<escape>${JSON.stringify({ ...defaultPlan, requires_external_actions: true })}</escape>`
+      ]
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({ status: "failed", error_code: "UNSUPPORTED_ACTION" });
+    expect(f.calls).toEqual(["manager_work_plan"]);
+    expect(f.get().draft).toBeNull();
+  });
+  it("keeps a wrapped Critic FAIL as a rejection and never publishes its draft", async () => {
+    const f = await fixture({
+      request: { ...request, require_critic: true },
+      wrapOutput: true,
+      review: { verdict: "FAIL", reason: "The implementation misses required validation" }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({
+      status: "failed",
+      error_code: "CRITIC_REJECTED",
+      review: { verdict: "FAIL", reason: "The implementation misses required validation" }
+    });
+    expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft", "manager_work_review"]);
+  });
   it("records each Work memory dispatch before the provider and upgrades it only on completion", async () => {
     const phases: string[] = [];
     const f = await fixture({

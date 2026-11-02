@@ -107,6 +107,25 @@ describe("buildModelRuntime", () => {
       document.entries.find((e) => e.provider_id === "cheapvibecode")!.context_window_tokens
     ).toBe(1050000);
   });
+  it("constructs the owner-selected Fable route without dispatch or mock fallback", async () => {
+    const config = loadServerConfig({
+      NODE_ENV: "test",
+      MODEL_PROVIDER: "openai-compatible",
+      MODEL_PROVIDER_ID: "tokenshop",
+      MODEL_BASE_URL: "https://token-shop.online/v1",
+      MODEL_API_KEY: "fixture-only",
+      MODEL_NAME: "claude-fable-5",
+      MODEL_FALLBACK_TO_MOCK: "false",
+      MANAGER_MAX_OUTPUT_TOKENS: "100000",
+      MODEL_REGISTRY_PATH: "config/model-registry.tokenshop.fable.v1.json"
+    });
+    const runtime = await buildModelRuntime(config, {
+      secretResolver: { resolve: () => Promise.resolve("fixture-only") }
+    });
+    expect(runtime.contextWindowTokens).toBe(1_000_000);
+    expect(runtime.registryVersion).toBe("tokenshop-fable-live-2026-11-02");
+    expect(config.modelFallbackToMock).toBe(false);
+  });
   it("loads a repository-relative registry path independently of process cwd", () => {
     const document = loadModelRegistryDocument("config/model-registry.v1.json");
 

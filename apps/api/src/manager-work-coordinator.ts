@@ -1,4 +1,5 @@
 import { validateGeneratedPresentation } from "@cosmora/contracts/presentation-package";
+import { parseModelJson } from "./model-json.js";
 import { parseGamePackage, gameOutputInstruction } from "@cosmora/contracts/game-package";
 import {
   validateGameProjectFiles,
@@ -688,7 +689,7 @@ export class ManagerWorkCoordinator {
         if (work.status === "cancelled") return;
         let value: unknown;
         try {
-          value = JSON.parse(raw) as unknown;
+          value = parseModelJson(raw);
         } catch {
           throw new Error("INVALID_MODEL_OUTPUT");
         }

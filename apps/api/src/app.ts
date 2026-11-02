@@ -259,6 +259,7 @@ export interface AppDependencies {
   chat?: ChatService;
   manager?: ManagerService;
   modelRegistryVersion?: string;
+  modelContextWindowTokens?: number;
   identityResolver?: RequestIdentityResolver;
   stepUpProofConsumer?: StepUpProofConsumer;
   closeDatabase?: () => void;
@@ -1399,6 +1400,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           dependencies.config.modelProvider !== "mock" && dependencies.config.modelApiKeyConfigured,
         fallback_to_mock: dependencies.config.modelFallbackToMock,
         max_attempts_per_route: dependencies.config.modelMaxAttemptsPerRoute,
+        ...(dependencies.modelContextWindowTokens
+          ? { context_window_tokens: dependencies.modelContextWindowTokens }
+          : {}),
         max_output_tokens: dependencies.config.managerMaxOutputTokens
       };
       return response;

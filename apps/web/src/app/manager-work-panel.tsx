@@ -92,7 +92,12 @@ export function ManagerWorkPanel({
   const [works, setWorks] = useState<Work[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  const [runtime, setRuntime] = useState<{ mode: string; model: string } | null>(null);
+  const [runtime, setRuntime] = useState<{
+    mode: string;
+    model: string;
+    context_window_tokens?: number;
+    max_output_tokens?: number;
+  } | null>(null);
   const executionGate = useExecutionGate(projectId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -100,6 +105,12 @@ export function ManagerWorkPanel({
   const mutationEpoch = useRef(0);
   const pending = useRef<{ goal: string; role: string; critic: boolean; id: string } | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
+  const taskInputBudget = runtime?.context_window_tokens
+    ? Math.min(3_000_000, runtime.context_window_tokens * 3)
+    : 32000;
+  const taskOutputBudget = runtime?.max_output_tokens
+    ? Math.max(256, Math.min(300_000, runtime.max_output_tokens * 3))
+    : 6000;
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -173,8 +184,8 @@ export function ManagerWorkPanel({
           worker_role: role,
           require_critic: critic,
           max_model_requests: 3,
-          max_input_tokens: 32000,
-          max_output_tokens: 6000
+          max_input_tokens: taskInputBudget,
+          max_output_tokens: taskOutputBudget
         };
       }
       const updated = await json<Work>(url, {
@@ -270,8 +281,10 @@ export function ManagerWorkPanel({
         </select>
       </label>
       <p className="manager-work-limits">
-        Предел на задачу: 3 обращения к модели, 32 000 входных и 6 000 выходных токенов.
-        Автоматических платных повторов нет. Автономность наследуется от проекта.
+        Бюджет всех этапов задачи: до 3 обращений к модели,{" "}
+        {taskInputBudget.toLocaleString("ru-RU")} входных и{" "}
+        {taskOutputBudget.toLocaleString("ru-RU")} выходных токенов. Автоматических платных повторов
+        нет. Автономность наследуется от проекта.
       </p>
       <label className="manager-work-field">
         <input
