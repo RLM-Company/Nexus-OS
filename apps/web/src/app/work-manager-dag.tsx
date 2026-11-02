@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { WorkflowPanel } from "./workflow-panel";
 import Link from "next/link";
 import { AcceptedSkillView } from "./accepted-skill-view";
 import {
@@ -167,6 +168,17 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       )
   );
   const graph = visibleGraphs.find((g) => g.id === selected) ?? visibleGraphs[0] ?? null;
+  useEffect(() => {
+    const openPlan = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId: string; id: string }>).detail;
+      if (detail?.projectId !== projectId || browsingLocked) return;
+      setCollection("active");
+      setSearch("");
+      setSelected(detail.id);
+    };
+    window.addEventListener("kosmora:open-work-plan", openPlan);
+    return () => window.removeEventListener("kosmora:open-work-plan", openPlan);
+  });
   useEffect(() => {
     setStepStatus("all");
     setStepDue("all");
@@ -502,10 +514,10 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   return (
     <section className={styles.panel} aria-label="План с зависимостями">
       <h3>План проекта</h3>
+      <WorkflowPanel key={projectId} projectId={projectId} />
       <p>
         Создайте шаги и зависимости, затем выполните план целиком или запускайте шаги отдельно.
-        Каждый шаг создаёт файлы через Manager: до 3 запросов, 32 000 входных и 6 000 выходных
-        токенов. Повторы запускаются вручную.
+        Бюджеты и разрешения проверяются перед выполнением. Повторы запускаются вручную.
       </p>
       <div className={styles.actions}>
         {graph && (

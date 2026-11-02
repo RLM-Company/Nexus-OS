@@ -1,4 +1,5 @@
 import { WorkSkillStore } from "./work-skill-store.js";
+import { WorkflowStore } from "./workflow-store.js";
 import { WorkDagStore } from "./work-dag-store.js";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
@@ -19,12 +20,14 @@ type WorkPrivacySnapshot = Readonly<{
 export class ManagerWorkStore {
   private readonly privacySnapshots = new Map<string, WorkPrivacySnapshot>();
   readonly dag: WorkDagStore;
+  readonly workflows: WorkflowStore;
   readonly skills: WorkSkillStore;
   readonly memory: ProjectMemoryStore;
   readonly contextMemory: ContextMemoryStore;
   readonly runtime: WorkRuntimeStore;
   constructor(private readonly sqlite: DatabaseSync) {
     this.dag = new WorkDagStore(sqlite);
+    this.workflows = new WorkflowStore(sqlite);
     this.skills = new WorkSkillStore(sqlite);
     this.memory = new ProjectMemoryStore(sqlite);
     this.contextMemory = new ContextMemoryStore(sqlite);

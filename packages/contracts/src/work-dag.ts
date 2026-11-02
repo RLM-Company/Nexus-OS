@@ -1,5 +1,6 @@
 import { Type, type Static } from "typebox";
 import type { WorkArtifactVersion } from "./work-runtime.js";
+import type { ManagerWork } from "./manager-work.js";
 import { isWorkDeadline, isWorkPriority } from "@cosmora/contracts/work-schedule";
 export const WorkDagNodeInputSchema = Type.Object(
   {
@@ -121,6 +122,11 @@ export interface WorkDag {
   mode: "active" | "paused" | "cancelled";
   archived_at?: string;
   copied_from?: { graph_id: string; version: number; skills: "source" | "project" };
+  /** Server-captured workflow inputs. Not a permission grant or a portable plan field. */
+  workflow_context?: {
+    materials: NonNullable<ManagerWork["materials"]>;
+    node_budget: { max_input_tokens: number; max_output_tokens: number };
+  };
   execution?: {
     status: "running" | "waiting" | "paused" | "stopped" | "completed" | "failed";
     max_model_requests: number;

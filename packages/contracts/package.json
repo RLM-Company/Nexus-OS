@@ -93,6 +93,11 @@
       "development": "./src/presentation-package.ts",
       "types": "./src/presentation-package.ts",
       "default": "./dist/presentation-package.js"
+    },
+    "./workflows": {
+      "development": "./src/workflows.ts",
+      "types": "./src/workflows.ts",
+      "default": "./dist/workflows.js"
     }
   },
   "files": [

@@ -149,6 +149,7 @@ export * from "./usage-store.js";
 export * from "./project-memory-store.js";
 export * from "./work-runtime-store.js";
 export * from "./work-dag-store.js";
+export * from "./workflow-store.js";
 export * from "./document-library-store.js";
 export * from "./canvas-artifact-store.js";
 export * from "./document-answer-store.js";
