@@ -96,6 +96,8 @@ export interface ContextMemoryEvidence {
   excerpt_only: boolean;
   priority?: boolean;
   sequence?: number;
+  /** Trusted hybrid retrieval order, not model confidence or source authority. */
+  retrieval_rank?: number;
 }
 export interface ContextMemoryBundle {
   format: "kosmora.context-memory.v1";
@@ -106,5 +108,19 @@ export interface ContextMemoryBundle {
   /** UTF-8 size of this entire JSON bundle; conservative bound, NOT actual model tokens. */
   bytes: number;
   budget_bytes: number;
-  retrieval: "lexical";
+  retrieval: "lexical" | "hybrid";
+  semantic_retrieval?: {
+    encoder: string;
+    candidates: number;
+    limited: boolean;
+  };
+}
+
+/** Local, transient inference only. Implementations must bound time and concurrency. */
+export interface ContextMemoryRanker {
+  rank(
+    query: string,
+    passages: readonly string[],
+    signal?: AbortSignal
+  ): Promise<{ encoder: string; scores: number[] }>;
 }

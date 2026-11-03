@@ -13,6 +13,7 @@ import {
   type MemoryUsageRecord,
   type MemoryUsagePage,
   type ContextMemoryBundle,
+  type ContextMemoryRanker,
   type ContextMemoryEntry,
   type ContextMemoryEvidence,
   type ContextMemoryInput,
@@ -54,6 +55,7 @@ type SourceMessage = {
   content: string;
   created_at: string;
 };
+type RecallCandidate = { evidence: ContextMemoryEvidence; score: number; required?: boolean };
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const bytes = (s: string) => Buffer.byteLength(s, "utf8");
 const words = (s: string) =>
@@ -105,8 +107,9 @@ const EMPTY_SETTINGS: ContextMemorySettings = {
   version: 0
 };
 
-/** Explicit, source-backed memory. No automatic extraction, embedding service or provider calls. */
+/** Explicit source-backed memory. Optional local ranking never grants source access. */
 export class ContextMemoryStore {
+  semanticRanker: ContextMemoryRanker | undefined;
   constructor(
     private readonly db: DatabaseSync,
     private readonly now = () => Date.now()
@@ -884,7 +887,7 @@ export class ContextMemoryStore {
         "SELECT * FROM context_memory_entries WHERE owner_id=? ORDER BY pinned DESC,updated_at DESC,id LIMIT 1000"
       )
       .all(owner) as Row[];
-    const candidates: { evidence: ContextMemoryEvidence; score: number; required?: boolean }[] = [];
+    const candidates: RecallCandidate[] = [];
     const sourceCache = new Map<string, SourceMessage | null>();
     for (const row of rows) {
       // Filter scope and relevance before reading source bodies, especially other projects.
@@ -981,6 +984,9 @@ export class ContextMemoryStore {
         });
       }
     }
+    return this.pack(bundle, candidates);
+  }
+  private pack(bundle: ContextMemoryBundle, candidates: RecallCandidate[]) {
     const seen = new Set<string>();
     for (const { evidence, required } of candidates.sort(
       (a, b) => Number(Boolean(b.required)) - Number(Boolean(a.required)) || b.score - a.score
@@ -999,7 +1005,7 @@ export class ContextMemoryStore {
       seen.add(key);
       const next = { ...bundle, items: [...bundle.items, evidence] };
       // Reserve space for the final omitted count/byte length. Never cut a saved fact in half.
-      if (bundle.items.length >= 32 || bytes(JSON.stringify(next)) + 64 > budget) {
+      if (bundle.items.length >= 32 || bytes(JSON.stringify(next)) + 64 > bundle.budget_bytes) {
         bundle.omitted++;
         if (required) bundle.priority_omitted++;
         continue;
@@ -1007,6 +1013,223 @@ export class ContextMemoryStore {
       bundle.items.push(evidence);
     }
     return this.measure(bundle);
+  }
+
+  /** A bounded semantic supplement to full lexical retrieval. All authority is
+   * re-read after inference; vectors and passage text are never persisted here. */
+  async resolveAsync(
+    target: MemoryTarget,
+    owner: string,
+    query: string,
+    excludeMessageIds: readonly string[] = [],
+    budget = 6000,
+    signal?: AbortSignal
+  ): Promise<ContextMemoryBundle> {
+    signal?.throwIfAborted();
+    const initial = this.resolve(target, owner, query, excludeMessageIds, budget);
+    const ranker = this.semanticRanker;
+    const settings = this.settings(target, owner);
+    if (!ranker || !settings.enabled || !query.trim()) return initial;
+    const grants = this.grants(target, settings, owner);
+    const excluded = new Set(excludeMessageIds);
+    const pool: ContextMemoryEvidence[] = [];
+    const texts: string[] = [];
+    let limited = false;
+    type Source = { evidence: ContextMemoryEvidence; text: string };
+    const memorySources: Source[] = [],
+      historySources: Source[] = [];
+    const add = (sources: Source[], limit: number) => {
+      // Small overlapping literal chunks limit encoder truncation. Surrogate
+      // pairs are never split; source quotes retain their original UTF-16 bytes.
+      // Round-robin prevents one long message from consuming every source slot.
+      const cursors = sources.map((s) => ({ ...s, start: 0 }));
+      while (pool.length < limit && cursors.some((s) => s.start < s.text.length)) {
+        for (const cursor of cursors) {
+          const { evidence, text, start } = cursor;
+          if (start >= text.length || pool.length >= limit) continue;
+          let end = Math.min(start + 600, text.length);
+          if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1]!)) end--;
+          const part = text.slice(start, end);
+          pool.push(
+            evidence.kind === "history"
+              ? {
+                  ...evidence,
+                  text: part,
+                  source: { ...evidence.source!, quote: part },
+                  excerpt_only: start > 0 || end < text.length
+                }
+              : evidence
+          );
+          texts.push(part);
+          cursor.start = end === text.length ? end : end - 60;
+          if (/[\uDC00-\uDFFF]/.test(text[cursor.start] ?? "")) cursor.start++;
+        }
+      }
+      if (cursors.some((s) => s.start < s.text.length)) limited = true;
+    };
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM context_memory_entries WHERE owner_id=? ORDER BY pinned DESC,updated_at DESC,id LIMIT 1000"
+      )
+      .all(owner) as Row[];
+    for (const row of rows) {
+      // Scope is checked before source bodies are fetched, just as in lexical recall.
+      if (
+        !(row.scope === "personal"
+          ? settings.use_personal
+          : row.scope === "chat"
+            ? grants.chats.includes(row.chat_id!)
+            : grants.projects.includes(row.project_id!)) ||
+        (row.expires_at && Date.parse(row.expires_at) <= this.now())
+      )
+        continue;
+      const entry = this.decode(row);
+      if (
+        !this.allowed(entry, settings, grants) ||
+        (entry.source && excluded.has(entry.source.message_id))
+      )
+        continue;
+      if (memorySources.length >= 48) {
+        limited = true;
+        break;
+      }
+      memorySources.push({
+        evidence: {
+          reference: "M:" + entry.id,
+          kind: "memory",
+          text: entry.content,
+          title: entry.title,
+          source: entry.source,
+          memory_kind: entry.kind,
+          priority: entry.pinned || entry.kind === "constraint",
+          version: entry.version,
+          excerpt_only: false
+        },
+        text: entry.title + "\n" + entry.content
+      });
+    }
+    const history = this.db
+      .prepare(
+        "SELECT m.id,'chat_message' kind,m.created_at FROM general_chat_messages m JOIN general_chats c ON c.id=m.chat_id AND c.owner_id=m.owner_id WHERE c.owner_id=? AND c.archived=0 AND c.id IN (SELECT value FROM json_each(?)) AND m.status='completed' AND m.role IN ('user','assistant') " +
+          "UNION ALL SELECT m.id,'project_message' kind,m.created_at FROM messages m JOIN projects p ON p.id=m.project_id WHERE p.owner_id=? AND p.status='ACTIVE' AND p.id IN (SELECT value FROM json_each(?)) AND m.status='completed' AND m.role IN ('user','assistant') ORDER BY 3 DESC,1 DESC LIMIT 49"
+      )
+      .all(owner, JSON.stringify(grants.chats), owner, JSON.stringify(grants.projects)) as {
+      id: string;
+      kind: ContextMemorySource["kind"];
+      created_at: string;
+    }[];
+    if (history.length > 48) limited = true;
+    for (const row of history.slice(0, 48)) {
+      if (excluded.has(row.id)) continue;
+      const message = this.message(row.kind, row.id, owner);
+      if (!message) continue;
+      historySources.push({
+        text: message.content,
+        evidence: {
+          reference: (row.kind === "chat_message" ? "H:g:" : "H:p:") + row.id,
+          kind: "history",
+          title: message.created_at,
+          text: message.content,
+          source: {
+            kind: row.kind,
+            message_id: row.id,
+            chat_id: message.chat_id,
+            project_id: message.project_id,
+            role: message.role,
+            quote: message.content,
+            sha256: hash(message.content)
+          },
+          excerpt_only: false
+        }
+      });
+    }
+    add(memorySources, 48);
+    add(historySources, 96);
+    memorySources.length = historySources.length = 0;
+    if (!pool.length) return initial;
+    let ranked: Awaited<ReturnType<ContextMemoryRanker["rank"]>>;
+    try {
+      ranked = await ranker.rank(query, texts, signal);
+      if (
+        typeof ranked.encoder !== "string" ||
+        !ranked.encoder ||
+        ranked.encoder.length > 160 ||
+        ranked.scores.length !== pool.length ||
+        ranked.scores.some((s) => !Number.isFinite(s) || s < -1 || s > 1)
+      )
+        throw new Error("INVALID_SEMANTIC_RANKING");
+    } catch {
+      signal?.throwIfAborted();
+      // Do not return the pre-inference snapshot after a failed/slow encoder.
+      return this.resolve(target, owner, query, excludeMessageIds, budget);
+    }
+    signal?.throwIfAborted();
+    const current = this.resolve(target, owner, query, excludeMessageIds, budget);
+    if (this.settings(target, owner).version !== settings.version) return current;
+    const candidates: RecallCandidate[] = current.items.map((evidence, rank) => ({
+      evidence,
+      required: evidence.priority || evidence.memory_kind === "constraint",
+      score: 1 / (60 + rank + 1)
+    }));
+    const seen = new Set<string>();
+    const ordered = ranked.scores
+      .map((score, index) => ({ score, index }))
+      .sort((a, b) => b.score - a.score || a.index - b.index);
+    for (const { score, index } of ordered) {
+      // E5 cosine is not calibrated probability. Fixed retrieval gate, not a
+      // claim that a recalled statement is true. Keep no more than eight sources.
+      if (score < 0.72 || score < ordered[0]!.score - 0.06 || seen.size >= 8) break;
+      const evidence = pool[index]!;
+      if (seen.has(evidence.reference)) continue;
+      if (evidence.kind === "memory") {
+        const entry = this.get(evidence.reference.slice(2), owner);
+        if (
+          !entry ||
+          !this.allowed(entry, settings, grants) ||
+          entry.version !== evidence.version ||
+          entry.content !== evidence.text ||
+          entry.title !== evidence.title ||
+          JSON.stringify(entry.source) !== JSON.stringify(evidence.source)
+        )
+          continue;
+      } else {
+        const source = evidence.source!;
+        const message = this.message(source.kind, source.message_id, owner);
+        if (
+          !message ||
+          !this.matches(source, message) ||
+          !message.content.includes(evidence.text) ||
+          !(source.kind === "chat_message"
+            ? grants.chats.includes(message.chat_id)
+            : grants.projects.includes(message.project_id!))
+        )
+          continue;
+      }
+      seen.add(evidence.reference);
+      const existing = candidates.find((c) => c.evidence.reference === evidence.reference);
+      const semanticScore = 1 / (60 + seen.size);
+      if (existing && existing.evidence.text === evidence.text) existing.score += semanticScore;
+      else
+        candidates.push({
+          evidence,
+          score: semanticScore,
+          required: evidence.priority || evidence.memory_kind === "constraint"
+        });
+    }
+    candidates.sort((a, b) => b.score - a.score);
+    candidates.forEach((c, i) => {
+      c.evidence = { ...c.evidence, retrieval_rank: i + 1 };
+    });
+    return this.pack(
+      {
+        ...current,
+        items: [],
+        bytes: 0,
+        retrieval: "hybrid",
+        semantic_retrieval: { encoder: ranked.encoder, candidates: pool.length, limited }
+      },
+      candidates
+    );
   }
   private measure(bundle: ContextMemoryBundle) {
     // bytes itself changes the serialized size; converge to an exact fixed point.

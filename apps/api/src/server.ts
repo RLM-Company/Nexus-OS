@@ -83,11 +83,13 @@ import { EmailChangePrivacyAdapter } from "./email-change-privacy.js";
 import { canvasPrivacyAdapter } from "./canvas/canvas-privacy.js";
 import { ProjectAutomationStore } from "@cosmora/db";
 import { PayStore } from "@cosmora/db";
+import { LocalMemoryRanker } from "./semantic-memory/local-ranker.js";
 import { ProjectAutomationPrivacy } from "./project-automation-privacy.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
 let app: ReturnType<typeof buildApp> | undefined;
+let semanticRanker: LocalMemoryRanker | undefined;
 let managerBackgroundCoordinator: ManagerBackgroundRunCoordinator | undefined;
 let generalChatBackgroundCoordinator: GeneralChatBackgroundRunCoordinator | undefined;
 let managerWorkCoordinator: ManagerWorkCoordinator | undefined;
@@ -100,6 +102,7 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   shuttingDown = true;
 
   if (!app) {
+    await semanticRanker?.close();
     database.close();
     process.exitCode = 0;
     return;
@@ -128,6 +131,10 @@ try {
   });
   const projectStore = new ManagerRuntimeProjectStore(database.sqlite);
   const generalChatStore = new GeneralChatRuntimeStore(database.sqlite);
+  semanticRanker = process.env.KOSMORA_SEMANTIC_MODEL_DIR
+    ? new LocalMemoryRanker(process.env.KOSMORA_SEMANTIC_MODEL_DIR)
+    : undefined;
+  generalChatStore.contextMemory.semanticRanker = semanticRanker;
   const sharedBudget = new SharedOwnerBudget(accountStore, projectStore);
   const documentLibrary = new DocumentLibraryStore(database.sqlite);
   const canvasStore = new CanvasArtifactStore(database.sqlite);
@@ -178,6 +185,7 @@ try {
   const recoveredRuns = projectStore.recoverInterruptedRuns();
   const recoveredChatRuns = generalChatStore.recoverInterruptedRuns();
   const managerWorkStore = new ManagerWorkStore(database.sqlite);
+  managerWorkStore.contextMemory.semanticRanker = semanticRanker;
   const policyStore = new PolicyStore(database.sqlite);
   managerWorkCoordinator = new ManagerWorkCoordinator({
     ownerBudget: accountStore,
@@ -272,6 +280,7 @@ try {
     )
   );
   app = buildApp({
+    semanticRanker,
     googleDrive,
     computerControl: { enabled: true },
     runtimeClock: modelRuntime.clock,
@@ -385,6 +394,13 @@ try {
     generalChatRunExecutionMode: "background",
     closeDatabase: () => database.close()
   });
+  app.addHook("onClose", async () => {
+    await semanticRanker?.close();
+  });
+  if (semanticRanker)
+    void semanticRanker.warmup().then((ready) => {
+      app?.log.info({ semantic_memory_ready: ready }, "Local memory encoder readiness");
+    });
   managerBackgroundCoordinator = new ManagerBackgroundRunCoordinator({
     accountStore,
     store: projectStore,
@@ -426,6 +442,7 @@ try {
     app.log.error(error, "Failed to start Kosmora API");
     await app.close();
   } else {
+    await semanticRanker?.close();
     database.close();
     process.stderr.write("Failed to start Kosmora API\n");
   }

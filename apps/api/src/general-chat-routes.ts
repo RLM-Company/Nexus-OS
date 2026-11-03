@@ -689,10 +689,11 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           runId: run.id,
           messages: conversation,
           historyCompaction: options.store.historyCompactionForRun(run.id, identity.owner_id),
-          recalledMemory: options.store.recallForRun(
+          recalledMemory: await options.store.recallForRunAsync(
             run.id,
             identity.owner_id,
-            conversation.slice(-8).map((m) => m.id)
+            conversation.slice(-8).map((m) => m.id),
+            controller.signal
           ),
           memoryNotes:
             options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? "",

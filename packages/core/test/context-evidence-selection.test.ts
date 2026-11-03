@@ -39,6 +39,47 @@ const bundle = (items: ContextMemoryEvidence[]): ContextMemoryBundle => ({
 });
 
 describe("lossless runtime evidence selection", () => {
+  it("preserves hybrid ordering through tight final packing while required evidence remains first", () => {
+    const semantic = evidence("Лимит расходов 19700 ₽.", {
+      reference: "H:g:budget",
+      retrieval_rank: 1
+    });
+    const lexical = evidence("spending spending", {
+      reference: "H:g:distractor",
+      retrieval_rank: 2
+    });
+    const required = evidence("Не платить без одобрения.", {
+      reference: "M:rule",
+      priority: true,
+      retrieval_rank: 3
+    });
+    expect(
+      rankContextEvidence([lexical, semantic, required], "spending").map((e) => e.reference)
+    ).toEqual(["M:rule", "H:g:budget", "H:g:distractor"]);
+    const input = {
+      ...bundle([lexical, semantic, required]),
+      retrieval: "hybrid" as const,
+      semantic_retrieval: { encoder: "fixture", candidates: 3, limited: false }
+    };
+    const result = fitContextMemory(input, 1600, "spending")!;
+    expect(result.items[0]?.priority).toBe(true);
+    expect(result.items[1]?.reference).toBe("H:g:budget");
+    expect(result.bytes).toBe(Buffer.byteLength(JSON.stringify(result)));
+  });
+  it("keeps hybrid metadata and the best rank when merging identical lexical evidence", () => {
+    const item = evidence("Согласованный бюджет.");
+    const hybrid = {
+      ...bundle([{ ...item, retrieval_rank: 1 }]),
+      retrieval: "hybrid" as const,
+      semantic_retrieval: { encoder: "fixture", candidates: 1, limited: false }
+    };
+    const result = mergeContextMemory(bundle([item]), hybrid)!;
+    expect(result.retrieval).toBe("hybrid");
+    expect(result.semantic_retrieval).toEqual(hybrid.semantic_retrieval);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.retrieval_rank).toBe(1);
+    expect(result.bytes).toBe(Buffer.byteLength(JSON.stringify(result)));
+  });
   it("transmits an identical source quote once, without modifying the original", () => {
     const input = evidence("Точная ставка 17.5%, срок 02.11.2026. 😀");
     Object.freeze(input.source);
