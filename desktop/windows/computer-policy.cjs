@@ -47,6 +47,7 @@ const fields = {
   workspace_list: ["path", "cursor"],
   workspace_find: ["path", "mode", "query"],
   workspace_read: ["path"],
+  workspace_read_document: ["path", "offset_utf16", "expected_version"],
   workspace_read_lines: ["path", "start_line", "end_line", "expected_version"],
   workspace_mkdir: ["path"],
   workspace_create: ["path", "content"],
@@ -148,6 +149,17 @@ function validateComputerAction(action) {
     }
     if (action.kind.startsWith("workspace_")) {
       try {
+        if (
+          action.kind === "workspace_read_document" &&
+          (!Number.isSafeInteger(action.offset_utf16) ||
+            action.offset_utf16 < 0 ||
+            action.offset_utf16 > 256000 ||
+            !/\.(?:docx|xlsx|pptx)$/i.test(action.path) ||
+            (action.offset_utf16 > 0 && action.expected_version === null) ||
+            (action.expected_version !== null &&
+              !/^sha256:[a-f0-9]{64}$/.test(action.expected_version)))
+        )
+          return false;
         if (
           ["workspace_create_docx", "workspace_create_xlsx", "workspace_create_pptx"].includes(
             action.kind

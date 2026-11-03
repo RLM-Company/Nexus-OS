@@ -7,6 +7,7 @@ const { normalizeServerOrigin } = require("../connection-policy.cjs");
 const { ERROR_CODES, KosworkWorkspaceError, throwIfAborted } = require("./errors.cjs");
 const { selectTextRange } = require("./text-range.cjs");
 const { buildOfficeDocument } = require("./office-document.cjs");
+const { extractOfficeText } = require("./office-text.cjs");
 const {
   DEFAULT_IGNORED_DIRS,
   assertNotReparseOrSymlink,
@@ -1007,6 +1008,124 @@ function createKosworkWorkspaceService({
     }
   }
 
+  async function readDocumentFile({
+    relativePath,
+    offset = 0,
+    expectedVersion = null,
+    ownerId = null,
+    origin = null,
+    signal = null,
+    ipcEvent = null
+  } = {}) {
+    const session = verifyCallerOwner({ ownerId, origin, ipcEvent }),
+      op = beginOperation(signal);
+    try {
+      if (
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        offset > 256000 ||
+        (offset > 0 && expectedVersion === null) ||
+        (expectedVersion !== null && !/^sha256:[a-f0-9]{64}$/.test(expectedVersion)) ||
+        !/\.(?:docx|xlsx|pptx)$/i.test(relativePath)
+      )
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_RANGE_INVALID,
+          "Укажите Office-файл, позицию и точную версию для продолжения чтения."
+        );
+      const target = resolveSafeWorkspaceTarget(session.canonicalRoot, relativePath, {
+        allowEmpty: false,
+        mustExist: true,
+        signal,
+        activeController: op.controller
+      });
+      const snapshot = readBoundedFileSnapshot(target.absolutePath, {
+        relativePath: target.relativePath,
+        maxBytes: limits.maxReadBytes,
+        signal,
+        activeController: op.controller
+      });
+      if (expectedVersion !== null && !versionsMatch(snapshot.sha256, expectedVersion))
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_VERSION_CONFLICT,
+          "Документ изменился. Не объединяйте выдержки разных версий."
+        );
+      let parsed;
+      try {
+        parsed = extractOfficeText(target.relativePath, snapshot.buffer);
+      } catch {
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_BINARY_FILE,
+          "Не удалось извлечь текст Office-документа в пределах поддерживаемых форматов и размера."
+        );
+      }
+      verifyCallerOwner({ ownerId, origin, ipcEvent });
+      assertRootIdentity(session);
+      throwIfAborted(signal, op.controller);
+      const final = resolveSafeWorkspaceTarget(session.canonicalRoot, target.relativePath, {
+        mustExist: true,
+        signal,
+        activeController: op.controller
+      });
+      if (
+        final.stat.size !== snapshot.size ||
+        final.stat.mtimeMs !== snapshot.mtimeMs ||
+        (snapshot.ino && final.stat.ino && snapshot.ino !== final.stat.ino) ||
+        (snapshot.dev && final.stat.dev && snapshot.dev !== final.stat.dev)
+      )
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_VERSION_CONFLICT,
+          "Документ изменился во время чтения."
+        );
+      const text = parsed.text;
+      if (
+        offset > text.length ||
+        (offset > 0 &&
+          /[\uDC00-\uDFFF]/.test(text[offset] || "") &&
+          /[\uD800-\uDBFF]/.test(text[offset - 1] || ""))
+      )
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_RANGE_INVALID,
+          "Позиция вне извлечённого текста или внутри символа Unicode."
+        );
+      let end = Math.min(text.length, offset + 6000),
+        result;
+      do {
+        if (
+          end < text.length &&
+          /[\uDC00-\uDFFF]/.test(text[end] || "") &&
+          /[\uD800-\uDBFF]/.test(text[end - 1] || "")
+        )
+          end--;
+        result = {
+          kind: "untrusted_office_excerpt",
+          path: target.relativePath,
+          sha256: snapshot.sha256,
+          version: snapshot.version,
+          size: snapshot.size,
+          representation: parsed.representation,
+          offset_utf16: offset,
+          end_utf16: end,
+          total_characters: text.length,
+          excerpt_only: offset > 0 || end < text.length,
+          content: text.slice(offset, end),
+          next_offset: end < text.length ? end : null
+        };
+        if (Buffer.byteLength(JSON.stringify(result), "utf8") <= 10000) break;
+        end = offset + Math.floor((end - offset) / 2);
+      } while (end > offset);
+      if (
+        Buffer.byteLength(JSON.stringify(result), "utf8") > 10000 ||
+        (end === offset && offset < text.length)
+      )
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_FILE_TOO_LARGE,
+          "Не удалось вместить выдержку документа."
+        );
+      return result;
+    } finally {
+      op.end();
+    }
+  }
   async function createDirectory({
     relativePath,
     recursive = true,
@@ -1503,6 +1622,7 @@ function createKosworkWorkspaceService({
     searchByName,
     searchByText,
     readTextFile,
+    readDocumentFile,
     createDirectory,
     createFile,
     createDocument,

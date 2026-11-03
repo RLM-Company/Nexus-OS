@@ -36,6 +36,7 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
   return {
     supportsLineReads: (context) => Boolean(snapshot(context)),
     supportsDocuments: (context) => Boolean(snapshot(context)),
+    supportsDocumentReads: (context) => Boolean(snapshot(context)),
     uploadFile(context, workspaceId, relativePath) {
       if (snapshot(context)?.id !== workspaceId || !workspaceId)
         throw Error("COMPUTER_WORKSPACE_CHANGED");
@@ -149,6 +150,13 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
           break;
         case "workspace_read":
           result = await service.readTextFile({ ...args, maxBytes: 10000 });
+          break;
+        case "workspace_read_document":
+          result = await service.readDocumentFile({
+            ...args,
+            offset: action.offset_utf16,
+            expectedVersion: action.expected_version
+          });
           break;
         case "workspace_read_lines":
           result = await service.readTextFile({

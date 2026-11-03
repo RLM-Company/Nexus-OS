@@ -449,6 +449,12 @@ describe("owner-bound computer proposals", () => {
     { kind: "workspace_find", path: "", mode: "text", query: "summary" },
     { kind: "workspace_read", path: "note.md" },
     {
+      kind: "workspace_read_document",
+      path: "report.docx",
+      offset_utf16: 0,
+      expected_version: null
+    },
+    {
       kind: "workspace_create_docx",
       path: "report.docx",
       title: "Summary",
@@ -504,7 +510,8 @@ describe("owner-bound computer proposals", () => {
         id: "a".repeat(24),
         name: "Owner project",
         read_lines: true,
-        create_documents: true
+        create_documents: true,
+        read_documents: true
       };
       expect(await f.next(value)).toMatchObject({ action: workspaceAction });
       expect(f.calls).toHaveLength(1);
@@ -556,6 +563,40 @@ describe("owner-bound computer proposals", () => {
     await f.create();
     const value = structuredClone(step);
     value.observation.workspace = { id: "a".repeat(24), name: "Legacy client folder" };
+    await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+  });
+  it("only offers document readback to negotiated clients and never sends it to a legacy client", async () => {
+    for (const capable of [false, true]) {
+      const a = {
+        kind: "workspace_read_document",
+        path: "report.docx",
+        offset_utf16: 0,
+        expected_version: null
+      };
+      const f = await fixture({ output: { ...action, action: a } });
+      await f.create();
+      const value = structuredClone(step);
+      value.observation.workspace = {
+        id: "a".repeat(24),
+        name: "Folder",
+        ...(capable ? { read_documents: true as const } : {})
+      };
+      if (capable) expect(await f.next(value)).toMatchObject({ action: a });
+      else await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+      expect(f.calls[0]!.messages[0]!.content.includes("workspace_read_document")).toBe(capable);
+    }
+  });
+  it.each([
+    { path: "report.docx", offset_utf16: 10, expected_version: null },
+    { path: "report.exe", offset_utf16: 0, expected_version: null },
+    { path: "report.docx", offset_utf16: -1, expected_version: null }
+  ])("rejects invalid readback range or format: $path / $offset_utf16", async (invalid) => {
+    const f = await fixture({
+      output: { ...action, action: { kind: "workspace_read_document", ...invalid } }
+    });
+    await f.create();
+    const value = structuredClone(step);
+    value.observation.workspace = { id: "a".repeat(24), name: "Folder", read_documents: true };
     await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
   });
   it("negotiates Office tools and a bounded document output allowance only for capable clients", async () => {

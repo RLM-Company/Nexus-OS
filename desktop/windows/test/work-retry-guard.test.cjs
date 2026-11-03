@@ -111,6 +111,7 @@ function cycle({
   workspace,
   serverReadLines = false,
   serverDocuments = false,
+  serverDocumentReads = false,
   observations = [],
   actions = [{ kind: "type_text", text: "example" }],
   feedback = []
@@ -142,7 +143,8 @@ function cycle({
       begin: async () => ({
         id: "fixture",
         ...(serverReadLines ? { supports_workspace_read_lines: true } : {}),
-        ...(serverDocuments ? { supports_workspace_documents: true } : {})
+        ...(serverDocuments ? { supports_workspace_documents: true } : {}),
+        ...(serverDocumentReads ? { supports_workspace_document_reads: true } : {})
       }),
       authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
       end: async () => {
@@ -209,6 +211,31 @@ test("old servers and read-only sources never receive a document capability in o
       id: "folder-a",
       name: "Owner folder",
       ...(server && local ? { create_documents: true } : {})
+    });
+  }
+});
+test("Office readback capability is sent only when server and selected-folder executor agree", async () => {
+  for (const [server, local] of [
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true]
+  ]) {
+    const observations = [],
+      f = cycle({
+        serverDocumentReads: server,
+        observations,
+        workspace: {
+          snapshot: () => ({ id: "folder-a", name: "Owner folder" }),
+          supportsDocumentReads: () => local
+        },
+        actions: [{ kind: "done", summary: "Fixture" }]
+      });
+    assert.equal((await f.run()).status, "completed");
+    assert.deepEqual(observations[0].workspace, {
+      id: "folder-a",
+      name: "Owner folder",
+      ...(server && local ? { read_documents: true } : {})
     });
   }
 });

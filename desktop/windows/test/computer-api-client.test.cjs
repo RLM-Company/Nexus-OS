@@ -25,7 +25,8 @@ test("native source and document tools require explicit server capability flags"
               ? {}
               : {
                   supports_workspace_read_lines: capability,
-                  supports_workspace_documents: capability
+                  supports_workspace_documents: capability,
+                  supports_workspace_document_reads: capability
                 })
           })
       })
@@ -40,6 +41,7 @@ test("native source and document tools require explicit server capability flags"
     });
     assert.equal(result.supports_workspace_read_lines, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_documents, capability === true ? true : undefined);
+    assert.equal(result.supports_workspace_document_reads, capability === true ? true : undefined);
   }
 });
 

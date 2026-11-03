@@ -109,6 +109,8 @@ function createComputerApiClient({ identity, getSession }) {
           session.supports_workspace_read_lines = true;
         if (result.supports_workspace_documents === true)
           session.supports_workspace_documents = true;
+        if (result.supports_workspace_document_reads === true)
+          session.supports_workspace_document_reads = true;
         return session;
       } catch (error) {
         // Cancellation is safe even when the create response was lost; never recreate or retry.

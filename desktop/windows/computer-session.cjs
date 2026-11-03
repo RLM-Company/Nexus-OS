@@ -182,6 +182,10 @@ class ComputerSession {
               ...(state.session?.supports_workspace_documents === true &&
               this.workspace.supportsDocuments?.(state.grant) === true
                 ? { create_documents: true }
+                : {}),
+              ...(state.session?.supports_workspace_document_reads === true &&
+              this.workspace.supportsDocumentReads?.(state.grant) === true
+                ? { read_documents: true }
                 : {})
             }
           };
