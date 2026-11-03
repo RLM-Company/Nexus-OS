@@ -859,6 +859,9 @@ function createBrowserEngine({
       path: reservation.path
     };
     recordDownload(d);
+    // The observation includes download state. A request prepared before the
+    // transfer started must not issue the same external effect again.
+    if (tabs.get(tab.id) === tab) invalidate(tab);
     let lastProgress = 0;
     item.on("updated", () => {
       d.bytes = item.getReceivedBytes();
@@ -889,6 +892,7 @@ function createBrowserEngine({
       }
       delete d.item;
       delete d.path;
+      if (tabs.get(tab.id) === tab) invalidate(tab);
       emit();
     });
     emit();

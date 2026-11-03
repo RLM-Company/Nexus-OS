@@ -36,7 +36,7 @@ function startGuiAcceptanceFixture({ onSpawnSecondInstance = null } = {}) {
   let secondInstanceTriggered = false;
   let identityRedirect = false;
   let foreignRequests = 0;
-  const browserReceipt = { submissions: 0, unicode: false, attachment: false };
+  const browserReceipt = { submissions: 0, downloadRequests: 0, unicode: false, attachment: false };
   const foreignServer = http.createServer((_req, res) => {
     foreignRequests += 1;
     res.writeHead(200, {
@@ -76,6 +76,7 @@ function startGuiAcceptanceFixture({ onSpawnSecondInstance = null } = {}) {
       return;
     }
     if (parsed.pathname === "/browser/download") {
+      browserReceipt.downloadRequests++;
       const body = "NATIVE-DOWNLOAD-OK";
       res.writeHead(200, {
         "content-type": "application/octet-stream",

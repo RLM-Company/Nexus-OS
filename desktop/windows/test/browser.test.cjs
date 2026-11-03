@@ -559,7 +559,22 @@ test("download binds the approved link and workspace, enforces size and verifies
     web
   );
   assert.equal(item.path, "C:\\fixture\\download.txt");
+  await assert.rejects(
+    f.engine.execute({ kind: "browser_download", ref: "e1" }, o, new AbortController().signal),
+    /BROWSER_STALE/
+  );
+  assert.equal(f.calls.filter((c) => c.method === "downloadURL").length, 1);
+  const progressing = await f.engine.observe(new AbortController().signal);
   item.emit("done", {}, "completed");
+  await assert.rejects(
+    f.engine.execute(
+      { kind: "browser_download", ref: "e1" },
+      progressing,
+      new AbortController().signal
+    ),
+    /BROWSER_STALE/
+  );
+  assert.equal(f.calls.filter((c) => c.method === "downloadURL").length, 1);
   assert.equal(f.engine.state().downloads[0].status, "completed");
   assert.equal(f.engine.state().downloads[0].sha256, "a".repeat(64));
   assert.equal(f.engine.state().downloads[0].version, "sha256:" + "a".repeat(64));

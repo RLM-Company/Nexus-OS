@@ -28,7 +28,9 @@ async function runNativeBrowserAcceptance({ app, origin }) {
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false }
   });
   let engine,
-    stage = "setup";
+    stage = "setup",
+    submitRequested = false,
+    downloadRequested = false;
   try {
     await window.loadFile(path.join(__dirname, "browser.html"));
     engine = createBrowserEngine({
@@ -57,6 +59,7 @@ async function runNativeBrowserAcceptance({ app, origin }) {
         reserveDownload: (_context, id) => {
           assert.equal(id, "a".repeat(24));
           assert.equal(fs.existsSync(download), false);
+          fs.closeSync(fs.openSync(download, "wx", 0o600));
           return { path: download, name: "result.txt" };
         },
         verifyDownload: (_context, id, actual, bytes) => {
@@ -84,6 +87,8 @@ async function runNativeBrowserAcceptance({ app, origin }) {
           const doc = JSON.parse(observation.description),
             previous = previousResult ? JSON.parse(previousResult) : {};
           let action;
+          if (stage === "submit" && previous.requested === true) submitRequested = true;
+          if (stage === "download" && previous.requested === true) downloadRequested = true;
           if (stage === "search") {
             stage = "link";
             action = { kind: "browser_search", query: "Native browser fixture" };
@@ -99,9 +104,16 @@ async function runNativeBrowserAcceptance({ app, origin }) {
             if (previous.input_verified) stage = "upload";
             if (previous.attached) stage = "submit";
             if (doc.text.includes("NATIVE FORM RECEIVED")) stage = "download";
-            if (stage === "download" && doc.downloads.some((d) => d.status === "completed"))
+            if (
+              stage === "download" &&
+              doc.downloads.length === 1 &&
+              doc.downloads[0].status === "completed"
+            )
               action = { kind: "done", summary: "Native fixture completed" };
-            else if (stage === "download" && doc.downloads.length)
+            else if (
+              (stage === "download" && (downloadRequested || doc.downloads.length)) ||
+              (stage === "submit" && submitRequested)
+            )
               action = { kind: "wait", milliseconds: 100 };
             else {
               const node = doc.nodes.find((n) =>
@@ -142,6 +154,11 @@ async function runNativeBrowserAcceptance({ app, origin }) {
     assert.equal(fs.readFileSync(download, "utf8"), "NATIVE-DOWNLOAD-OK");
     const receipt = await (await fetch(origin + "/browser/receipt")).json();
     assert.equal(receipt.submissions, 1);
+    assert.equal(
+      receipt.downloadRequests,
+      1,
+      "an acknowledged download must never be requested again"
+    );
     assert.ok(receipt.unicode);
     assert.ok(receipt.attachment);
     const { createWorkCycleDriver } = require("../work-cycle-driver.cjs");
@@ -271,9 +288,17 @@ async function runNativeBrowserAcceptance({ app, origin }) {
       separateEnvironmentGrants: true
     };
   } catch (error) {
-    throw new Error("Native browser fixture failed at " + stage + ": " + error.message, {
-      cause: error
-    });
+    throw new Error(
+      "Native browser fixture failed at " +
+        stage +
+        ": " +
+        error.message +
+        "; transfers=" +
+        JSON.stringify(engine?.state().downloads),
+      {
+        cause: error
+      }
+    );
   } finally {
     engine?.dispose();
     if (!window.isDestroyed()) window.destroy();

@@ -59,12 +59,17 @@ test("native browser CI fixture verifies Unicode, a multipart attachment and exa
     );
     assert.deepEqual(await (await fetch(fixture.origin + "/browser/receipt")).json(), {
       submissions: 1,
+      downloadRequests: 0,
       unicode: true,
       attachment: true
     });
     assert.equal(
       await (await fetch(fixture.origin + "/browser/download")).text(),
       "NATIVE-DOWNLOAD-OK"
+    );
+    assert.equal(
+      (await (await fetch(fixture.origin + "/browser/receipt")).json()).downloadRequests,
+      1
     );
   } finally {
     await fixture.close();
