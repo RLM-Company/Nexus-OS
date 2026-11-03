@@ -727,6 +727,7 @@ function createBrowserEngine({
             throw Error("BROWSER_FOCUS_CHANGED");
           guard();
           await pressKey(t.web, "a", 65, 2, inputGuard);
+          guard();
           if ((await evaluate(tab, documentCode.focused, [last.id, action.ref])) !== true)
             throw Error("BROWSER_FOCUS_CHANGED");
           inputGuard();

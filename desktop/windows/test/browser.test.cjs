@@ -459,16 +459,23 @@ test("native approval binds current target evidence; passwords cannot be filled"
   );
   assert.ok(!f.calls.some((x) => x.method === "Input.insertText"));
 });
-test("stop during click or Ctrl+A releases inserted inputs and never types later text", async (t) => {
-  for (const trigger of ["mousePressed", "keyDown"]) {
+test("stop during click or Ctrl+A releases inputs and prevents later text or DOM reads", async (t) => {
+  for (const [trigger, stopEngine] of [
+    ["mousePressed", true],
+    ["keyDown", true],
+    ["mousePressed", false],
+    ["keyDown", false]
+  ]) {
     const f = fixture(t);
     await f.engine.open("https://example.test");
     const o = await f.engine.observe(new AbortController().signal),
       controller = new AbortController();
     f.setHook((method, args) => {
+      if (method === "Runtime.callFunctionOn" && controller.signal.aborted)
+        assert.fail("A cancelled action must not issue a new DOM read");
       if (method.startsWith("Input.") && args.type === trigger) {
         controller.abort();
-        f.engine.stop();
+        if (stopEngine) f.engine.stop();
       }
     });
     await assert.rejects(
