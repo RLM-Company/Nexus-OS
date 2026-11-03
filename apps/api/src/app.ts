@@ -1,5 +1,9 @@
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
+import { registerContextMemoryRoutes } from "./context-memory-routes.js";
+import { registerHistoryCompactionRoutes } from "./history-compaction-routes.js";
+import { ComputerControlService } from "./computer-control/service.js";
+import { registerComputerControlRoutes } from "./computer-control/routes.js";
 import { registerApexRoutes } from "./apex-routes.js";
 import { registerProjectKnowledgeRoutes } from "./project-knowledge-routes.js";
 import { registerProjectAutomationRoutes } from "./project-automation-routes.js";
@@ -192,6 +196,8 @@ import { registerPresentationRoutes } from "./presentation-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
 import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
+import { registerGoogleDriveRoutes, safeDriveLogUrl } from "./cloud-storage/google-drive-routes.js";
+import type { GoogleDriveRuntime } from "./cloud-storage/google-drive-runtime.js";
 import type { ResearchOwnerBudget } from "./research/research-synthesis.js";
 import type { CodeOwnerBudget } from "./code-agent/owner-budget.js";
 import type { AccountStore } from "./account-settings/account-store.js";
@@ -212,6 +218,8 @@ import type { CanvasArtifactStore } from "@cosmora/db";
 import type { MediaService } from "./media/media-service.js";
 
 export interface AppDependencies {
+  googleDrive?: GoogleDriveRuntime;
+  computerControl?: { enabled: boolean };
   runtimeClock?: RuntimeClock;
   config: ServerConfig;
   accountStore?: AccountStore;
@@ -251,6 +259,7 @@ export interface AppDependencies {
   chat?: ChatService;
   manager?: ManagerService;
   modelRegistryVersion?: string;
+  modelContextWindowTokens?: number;
   identityResolver?: RequestIdentityResolver;
   stepUpProofConsumer?: StepUpProofConsumer;
   closeDatabase?: () => void;
@@ -639,10 +648,23 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         ? false
         : {
             level: dependencies.config.logLevel,
+            serializers: {
+              req: (request: FastifyRequest) => {
+                const port = request.raw?.socket?.remotePort;
+                return {
+                  method: request.method,
+                  url: safeDriveLogUrl(request.url),
+                  hostname: request.hostname,
+                  remoteAddress: request.ip,
+                  ...(port === undefined ? {} : { remotePort: port })
+                };
+              }
+            },
             redact: [
               "req.headers.authorization",
               "req.headers.cookie",
-              "req.headers.x-step-up-token"
+              "req.headers.x-step-up-token",
+              "req.headers.x-kosmora-computer-token"
             ]
           }
   }).withTypeProvider<TypeBoxTypeProvider>();
@@ -784,6 +806,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     );
   }
   if (dependencies.registration) registerRegistrationRoutes(app, dependencies.registration);
+  registerGoogleDriveRoutes(
+    app,
+    dependencies.googleDrive,
+    dependencies.config.webOrigin,
+    identityFor
+  );
   registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
@@ -1372,6 +1400,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           dependencies.config.modelProvider !== "mock" && dependencies.config.modelApiKeyConfigured,
         fallback_to_mock: dependencies.config.modelFallbackToMock,
         max_attempts_per_route: dependencies.config.modelMaxAttemptsPerRoute,
+        ...(dependencies.modelContextWindowTokens
+          ? { context_window_tokens: dependencies.modelContextWindowTokens }
+          : {}),
         max_output_tokens: dependencies.config.managerMaxOutputTokens
       };
       return response;
@@ -1388,8 +1419,39 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       store: dependencies.managerWorkStore,
       coordinator: dependencies.managerWorkCoordinator,
       projects: dependencies.projectStore,
+      nodeBudget: {
+        max_input_tokens: Math.min(3_000_000, (dependencies.modelContextWindowTokens ?? 32000) * 3),
+        max_output_tokens: Math.min(300_000, dependencies.config.managerMaxOutputTokens * 3)
+      },
       identityFor
     });
+  }
+
+  if (dependencies.computerControl?.enabled) {
+    if (
+      !dependencies.accountStore ||
+      !dependencies.projectStore ||
+      !dependencies.emergencyStopStore ||
+      !dependencies.policyStore ||
+      !dependencies.modelGateway ||
+      !dependencies.manager ||
+      !dependencies.ownerBudget
+    )
+      throw new Error(
+        "Computer control requires verified identity, accounting, projects and model runtime"
+      );
+    const computer = new ComputerControlService({
+      account: dependencies.accountStore,
+      projects: dependencies.projectStore,
+      emergency: dependencies.emergencyStopStore,
+      gateway: dependencies.modelGateway,
+      manager: dependencies.manager,
+      budget: dependencies.ownerBudget,
+      policy: dependencies.policyStore
+    });
+    registerComputerControlRoutes(app, computer, identityFor);
+    dependencies.ownerPrivacy?.register(computer.privacyAdapter());
+    app.addHook("preClose", () => computer.stop());
   }
 
   if (dependencies.accountStore && dependencies.accountModel)
@@ -1397,7 +1459,15 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   if (dependencies.accountStore && dependencies.ownerPrivacy)
     registerPrivacyRoutes(app, dependencies.ownerPrivacy, dependencies.accountStore, identityFor);
 
+  if (dependencies.generalChatStore)
+    registerContextMemoryRoutes(app, dependencies.generalChatStore.contextMemory, identityFor);
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
+    registerHistoryCompactionRoutes(
+      app,
+      dependencies.generalChatStore,
+      dependencies.chat,
+      identityFor
+    );
     registerGeneralChatRoutes({
       app,
       store: dependencies.generalChatStore,

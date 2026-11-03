@@ -77,6 +77,28 @@ jobs:
           TURBO_TELEMETRY_DISABLED: "1"
         run: pnpm test:e2e
 
+      - name: Verify Koswork browser CDP engine and native-window UI assets
+        env:
+          KOSWORK_BROWSER_SCREENSHOT: ${{ runner.temp }}/koswork-browser-home.png
+        run: node desktop/windows/ci/browser-dom-smoke.cjs
+
+      - name: Preserve Koswork browser preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: koswork-browser-preview
+          path: ${{ runner.temp }}/koswork-browser-home.png
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve synthetic memory receipt preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-receipt-preview
+          path: apps/web/test-results/**/memory-usage.png
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Preserve failed browser diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -117,6 +139,14 @@ jobs:
           docker pull node:24-bookworm-slim
           image_id=$(docker image inspect --format '{{.Id}}' node:24-bookworm-slim)
           [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]]
+          # Provision the cold Docker/Node layers before the timed integration
+          # cases. Their 5s runtime limit and all isolation assertions stay intact.
+          warmup_name="kosmora-ci-warmup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker rm -f "$warmup_name" >/dev/null 2>&1 || true' EXIT
+          timeout --signal=TERM --kill-after=5s 30s docker run --rm --pull=never \
+            --name "$warmup_name" --network=none --read-only --cap-drop=ALL \
+            --security-opt=no-new-privileges --user=65534:65534 \
+            "$image_id" node -e "require('node:test')('provisioning warm-up', () => {});"
           echo "CODE_AGENT_TEST_IMAGE=$image_id" >> "$GITHUB_ENV"
 
       - name: Verify real OCI execution, isolation and descendant cleanup

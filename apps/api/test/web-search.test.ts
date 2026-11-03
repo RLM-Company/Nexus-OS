@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
 import { WebSearch } from "../src/web-search.js";
+import { registerWebSearchRoutes } from "../src/web-search.js";
+import Fastify from "fastify";
 
 it("bounds search results and never follows provider links or redirects", async () => {
   const calls: string[] = [];
@@ -27,4 +29,56 @@ it("bounds search results and never follows provider links or redirects", async 
   expect(new URL(calls[0]!).searchParams.get("q")).toBe("TypeScript docs");
   expect(() => new WebSearch("https://example.org")).toThrow();
   await expect(new WebSearch().search("query")).rejects.toThrow();
+});
+
+it("allows a fixed DuckDuckGo engine for the first-party browser without changing default search", async () => {
+  const calls: string[] = [];
+  const search = new WebSearch("http://search:8080", (url) => {
+    calls.push(typeof url === "string" ? url : url instanceof URL ? url.href : url.url);
+    return Promise.resolve(new Response(JSON.stringify({ results: [] })));
+  });
+  await search.search("Kosmora", undefined, "duckduckgo");
+  await search.search("Kosmora");
+  expect(new URL(calls[0]!).searchParams.get("engines")).toBe("duckduckgo");
+  expect(new URL(calls[1]!).searchParams.has("engines")).toBe(false);
+});
+
+it("HTTP search accepts only the supported fixed engine and returns unavailable instead of fake results", async () => {
+  const app = Fastify();
+  registerWebSearchRoutes(app, new WebSearch());
+  try {
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/web-search",
+          payload: { q: "test", engine: "duckduckgo" }
+        })
+      ).statusCode
+    ).toBe(503);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/web-search",
+          payload: { q: "test", engine: "https://untrusted.example/" }
+        })
+      ).statusCode
+    ).toBe(400);
+  } finally {
+    await app.close();
+  }
+});
+
+it("does not present a blocked upstream engine as a successful empty search", async () => {
+  const search = new WebSearch("http://search:8080", () =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({ results: [], unresponsive_engines: [["duckduckgo", "blocked"]] })
+      )
+    )
+  );
+  await expect(search.search("query", undefined, "duckduckgo")).rejects.toThrow(
+    "Search unavailable"
+  );
 });

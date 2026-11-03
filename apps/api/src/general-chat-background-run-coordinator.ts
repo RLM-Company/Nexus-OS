@@ -1,4 +1,8 @@
-import { ContextTooLargeError } from "@cosmora/core";
+import {
+  ContextTooLargeError,
+  MemoryContextIncompleteError,
+  contextMemoryUsage
+} from "@cosmora/core";
 import type { ChatService } from "@cosmora/core";
 import type { ChatImageAttachment } from "@cosmora/contracts";
 import type { EmergencyStopStore, StoredGeneralChatMessage } from "@cosmora/db";
@@ -221,9 +225,16 @@ export class GeneralChatBackgroundRunCoordinator {
         chatId: queued.chat_id,
         runId: queued.run_id,
         messages: conversation,
+        historyCompaction: this.#store.historyCompactionForRun(queued.run_id, queued.owner_id),
+        recalledMemory: this.#store.recallForRun(
+          queued.run_id,
+          queued.owner_id,
+          conversation.slice(-8).map((m) => m.id)
+        ),
         memoryNotes: this.#store.getChatMemory(queued.chat_id, queued.owner_id)?.memory_notes ?? "",
         skills: this.#store.skills.forRun(queued.run_id, queued.owner_id)?.items ?? []
       });
+      const originalMemoryRequest = modelRequest;
       if (
         this.#accountStore?.getRelay(queued.owner_id, queued.chat_id) &&
         !this.#accountStore.getExecution(queued.owner_id).turbo &&
@@ -242,6 +253,20 @@ export class GeneralChatBackgroundRunCoordinator {
           )
         : { request: modelRequest, relay: false };
       modelRequest = prepared.request;
+      const usageSnapshot = contextMemoryUsage(modelRequest, originalMemoryRequest);
+      const memoryUsage = (attempt: number, phase: "dispatch_boundary" | "provider_completed") =>
+        this.#store.contextMemory.recordUsage(
+          { kind: "chat", id: queued.chat_id },
+          queued.owner_id,
+          {
+            run_id: queued.run_id,
+            request_id: modelRequest.request_id,
+            attempt,
+            phase,
+            channel: "chat",
+            snapshot: usageSnapshot
+          }
+        );
       let pendingEnglish = "";
       let completed: Extract<ModelGatewayStreamEvent, { type: "response.completed" }> | undefined;
 
@@ -305,6 +330,7 @@ export class GeneralChatBackgroundRunCoordinator {
               false
             );
           }
+          memoryUsage(event.route.attempt, "dispatch_boundary");
         } else if (event.type === "route.failed") {
           this.#runtimeMetrics.routeFailed(event.errorCode);
           this.#store.failModelUsage(queued.run_id, event.route.attempt, event.errorCode);
@@ -350,6 +376,7 @@ export class GeneralChatBackgroundRunCoordinator {
           calculatedCost: completed.calculatedCost
         }
       );
+      memoryUsage(completed.route.attempt, "provider_completed");
       const hold = mainHolds.get(completed.route.attempt);
       if (hold) {
         this.#accountStore?.completeReservation(
@@ -434,6 +461,11 @@ export class GeneralChatBackgroundRunCoordinator {
           { runId: queued.run_id, chatId: queued.chat_id, code },
           "Chat preflight or relay failed closed"
         );
+        return;
+      }
+      if (error instanceof MemoryContextIncompleteError) {
+        this.#store.failRun(queued.run_id, "MEMORY_CONTEXT_INCOMPLETE");
+        this.#runtimeMetrics.runFailed("CONTEXT_TOO_LARGE");
         return;
       }
       const gatewayError =

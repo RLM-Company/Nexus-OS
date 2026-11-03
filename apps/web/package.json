@@ -12,9 +12,11 @@
     "test": "vitest run && node scripts/studio-data-regression.cjs",
     "test:e2e:main": "playwright test",
     "test:e2e:issues": "playwright test -c playwright.github-issues.config.ts",
-    "test:e2e": "pnpm test:e2e:main && pnpm test:e2e:issues",
+    "test:e2e:compaction": "playwright test -c playwright.history-compaction.config.ts",
+    "test:e2e": "pnpm test:e2e:main && pnpm test:e2e:issues && pnpm test:e2e:compaction && pnpm test:e2e:memory",
     "test:acceptance": "playwright test -c playwright.acceptance.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e:memory": "playwright test --config=playwright.context-memory.config.ts"
   },
   "dependencies": {
     "@cosmora/contracts": "workspace:*",

@@ -27,6 +27,7 @@ import {
   type ProviderStreamEvent
 } from "@cosmora/model-gateway";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ManagerService } from "@cosmora/core";
 import { buildApp } from "../src/app.js";
 import { ManagerWorkCoordinator, type WorkOwnerBudget } from "../src/manager-work-coordinator.js";
 import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runtime.js";
@@ -68,8 +69,11 @@ async function fixture(
     ownerBudget?: WorkOwnerBudget;
     onCall?: (request: ModelRequest, signal: AbortSignal) => Promise<void>;
     chunks?: string[];
+    wrapOutput?: boolean;
     afterChunk?: (request: ModelRequest, signal: AbortSignal, index: number) => Promise<void>;
     operationTimeoutMs?: number;
+    managerContextWindow?: number;
+    prepareMemory?: (store: ManagerWorkStore, projectId: string) => void;
   } = {}
 ) {
   const database = openDatabase(options.databasePath ?? ":memory:");
@@ -85,7 +89,8 @@ async function fixture(
     policy = new PolicyStore(database.sqlite);
   const store = new ManagerWorkStore(database.sqlite),
     emergency = new EmergencyStopStore(database.sqlite);
-  const project = projects.createProject("test", "source").project;
+  const initial = projects.createProject("test", "source");
+  const project = initial.project;
   policy.ensureProfile(project.id);
   policy.updateProfile({
     projectId: project.id,
@@ -109,7 +114,10 @@ async function fixture(
                 files: [{ name: "result.md", content: "# Useful\nComplete document." }]
               })
             : (options.review ?? { verdict: "PASS", reason: "Complete and consistent" });
-      const chunks = options.chunks ?? [JSON.stringify(result)];
+      const serialized = JSON.stringify(result);
+      const chunks = options.chunks ?? [
+        options.wrapOutput ? `<escape>${serialized}</escape>` : serialized
+      ];
       for (const [index, delta] of chunks.entries()) {
         yield { type: "text.delta", delta };
         await options.afterChunk?.(req, signal, index);
@@ -140,7 +148,15 @@ async function fixture(
     policy,
     emergency,
     gateway,
-    manager: runtime.manager,
+    manager:
+      options.managerContextWindow === undefined
+        ? runtime.manager
+        : new ManagerService({
+            preferredProvider: "mock",
+            preferredModelAlias: "manager",
+            fallbackAllowed: false,
+            contextWindowTokens: options.managerContextWindow
+          }),
     ...(options.operationTimeoutMs === undefined
       ? {}
       : { operationTimeoutMs: options.operationTimeoutMs }),
@@ -148,6 +164,10 @@ async function fixture(
     ownerBudget: options.ownerBudget ?? accountStore
   };
   const coordinator = new ManagerWorkCoordinator(dependencies);
+  if (options.prepareMemory) {
+    projects.failRun(initial.run.id, "FIXTURE_IDLE");
+    options.prepareMemory(store, project.id);
+  }
   const work = store.create(project.id, "local-owner", "local-owner", options.request ?? request)!;
   const get = () => store.get(work.id, "local-owner")!;
   return {
@@ -159,6 +179,7 @@ async function fixture(
     store,
     emergency,
     project,
+    initialRun: initial.run,
     calls,
     coordinator,
     work,
@@ -169,6 +190,221 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  const recalled =
+    (required = false) =>
+    (store: ManagerWorkStore, projectId: string) => {
+      for (let index = 0; index < (required ? 1 : 3); index++)
+        store.contextMemory.create(
+          {
+            scope: "project",
+            scope_id: projectId,
+            kind: required ? "constraint" : "fact",
+            title: `document ${index}`,
+            content: `document ${index}: ` + "x".repeat(1400),
+            pinned: required,
+            expires_at: null,
+            source: null
+          },
+          "local-owner"
+        );
+      store.contextMemory.updateSettings(
+        { kind: "project", id: projectId },
+        {
+          enabled: true,
+          use_personal: false,
+          source_chat_ids: [],
+          project_ids: [],
+          expected_version: 0
+        },
+        "local-owner"
+      );
+    };
+  it("drops only optional recall to finish within the remaining task input budget", async () => {
+    const requests: ModelRequest[] = [];
+    const f = await fixture({
+      request: { ...request, max_input_tokens: 3000 },
+      prepareMemory: recalled(),
+      onCall: (req) => {
+        requests.push(req);
+        return Promise.resolve();
+      }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get().status).toBe("completed");
+    expect(requests).toHaveLength(2);
+    for (const req of requests) {
+      const data = JSON.parse(req.messages.find((m) => m.role === "user")!.content) as {
+        goal: string;
+        recalled_memory?: unknown;
+      };
+      expect(data.goal).toBe(request.goal);
+      expect(data.recalled_memory).toBeUndefined();
+      expect(req.routing.estimated_input_tokens).toBeLessThanOrEqual(3000);
+    }
+    const receipts = f.store.contextMemory.usage(
+      { kind: "project", id: f.project.id },
+      "local-owner"
+    ).items;
+    expect(receipts).toHaveLength(2);
+    for (const receipt of receipts)
+      expect(receipt.snapshot).toMatchObject({
+        representation: "none",
+        bundle_bytes: 0,
+        sources: []
+      });
+    expect(f.accountStore.summary("local-owner").in_flight_or_uncertain_holds).toBe(0);
+  });
+  it("fails before dispatch when a mandatory recalled fact cannot fit with the task envelope", async () => {
+    const f = await fixture({
+      request: { ...request, max_input_tokens: 3000 },
+      prepareMemory: recalled(true)
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({
+      status: "failed",
+      error_code: "WORK_MEMORY_CONTEXT_INCOMPLETE",
+      model_requests: 0
+    });
+    expect(f.calls).toEqual([]);
+    expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(0);
+  });
+  it("rejects mandatory materials beyond the model window without charging or cutting them", async () => {
+    const f = await fixture({ managerContextWindow: 6000 });
+    const materials = { instructions: "Owner material " + "x".repeat(9000), attachments: [] };
+    f.store.save({ ...f.get(), materials });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({
+      status: "failed",
+      error_code: "WORK_CONTEXT_TOO_LARGE",
+      model_requests: 0
+    });
+    expect(f.get().materials).toEqual(materials);
+    expect(f.get().events.at(-1)?.message).toContain("Запрос этого этапа не отправлен");
+    expect(f.calls).toEqual([]);
+    expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(0);
+    const running = f.database.sqlite
+      .prepare("SELECT count(*) AS n FROM runs WHERE project_id=? AND id!=? AND status='running'")
+      .get(f.project.id, f.initialRun.id);
+    expect(running?.n).toBe(0);
+  });
+  it("keeps a complete draft and refuses an oversized Critic request before dispatch", async () => {
+    const content = "A".repeat(16000);
+    const f = await fixture({
+      managerContextWindow: 12000,
+      request: { ...request, max_input_tokens: 300000, require_critic: true },
+      plan: { ...defaultPlan, needs_critic: true },
+      draft: { files: [{ name: "result.md", content }] }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({
+      status: "failed",
+      error_code: "WORK_CONTEXT_TOO_LARGE",
+      model_requests: 2
+    });
+    expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft"]);
+    expect(f.get().draft?.files[0]?.content).toBe(content);
+    expect(f.get().review).toBeNull();
+  });
+  it("validates a relay-wrapped plan without granting its requested external actions", async () => {
+    const f = await fixture({
+      chunks: [
+        `<escape>${JSON.stringify({ ...defaultPlan, requires_external_actions: true })}</escape>`
+      ]
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({ status: "failed", error_code: "UNSUPPORTED_ACTION" });
+    expect(f.calls).toEqual(["manager_work_plan"]);
+    expect(f.get().draft).toBeNull();
+  });
+  it("keeps a wrapped Critic FAIL as a rejection and never publishes its draft", async () => {
+    const f = await fixture({
+      request: { ...request, require_critic: true },
+      wrapOutput: true,
+      review: { verdict: "FAIL", reason: "The implementation misses required validation" }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({
+      status: "failed",
+      error_code: "CRITIC_REJECTED",
+      review: { verdict: "FAIL", reason: "The implementation misses required validation" }
+    });
+    expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft", "manager_work_review"]);
+  });
+  it("records each Work memory dispatch before the provider and upgrades it only on completion", async () => {
+    const phases: string[] = [];
+    const f = await fixture({
+      onCall: (req) => {
+        const row = f.store.contextMemory
+          .usage({ kind: "project", id: f.project.id }, "local-owner")
+          .items.find((item) => item.request_id === req.request_id);
+        phases.push(row?.phase ?? "missing");
+        return Promise.resolve();
+      }
+    });
+    // Configure memory before admitting the task: queued work correctly fences
+    // changes to the sources it may use.
+    f.coordinator.control(f.work.id, "local-owner", f.work.version, "cancel");
+    f.projects.cancelRun(f.initialRun.id, "local-owner");
+    const memory = f.store.contextMemory.create(
+      {
+        scope: "personal",
+        scope_id: null,
+        kind: "constraint",
+        title: "Writing rule",
+        content: "Use plain language in the document.",
+        pinned: true,
+        expires_at: null,
+        source: null
+      },
+      "local-owner"
+    );
+    const target = { kind: "project" as const, id: f.project.id };
+    f.store.contextMemory.updateSettings(
+      target,
+      {
+        enabled: true,
+        use_personal: true,
+        source_chat_ids: [],
+        project_ids: [],
+        expected_version: 0
+      },
+      "local-owner"
+    );
+    const work = f.store.create(f.project.id, "local-owner", "local-owner", {
+      ...request,
+      client_request_id: "memory-receipt-work"
+    })!;
+    await f.coordinator.execute(work.id, "local-owner");
+    expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft"]);
+    expect(phases).toEqual(["dispatch_boundary", "dispatch_boundary"]);
+    const rows = f.store.contextMemory.usage(target, "local-owner").items;
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        channel: "manager_work",
+        phase: "provider_completed",
+        attempt: 0,
+        snapshot: {
+          representation: "exact",
+          sources: [expect.objectContaining({ reference: "M:" + memory.id })]
+        }
+      });
+    }
+    expect(JSON.stringify(rows)).not.toContain("Use plain language");
+  });
+
+  it("does not create a memory dispatch receipt when the project budget rejects Work", async () => {
+    const f = await fixture();
+    const usage = new UsageStore(f.database.sqlite);
+    usage.ensureLimit(f.project.id);
+    usage.updateLimit(f.project.id, { expected_version: 1, max_total_tokens: 1, max_cost: null });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.calls).toHaveLength(0);
+    expect(
+      f.store.contextMemory.usage({ kind: "project", id: f.project.id }, "local-owner").items
+    ).toEqual([]);
+  });
+
   it("flushes accepted partial text on cancel, ignores late output and never publishes the recovery prefix", async () => {
     let release!: () => void, observed!: () => void;
     const paused = new Promise<void>((done) => {

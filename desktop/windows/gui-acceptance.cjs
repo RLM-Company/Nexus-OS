@@ -235,6 +235,12 @@ async function runPackagedGuiAcceptance({
       label: "persisted workspace lastPath"
     });
     checkpoint("authenticated-workspace");
+    const nativeBrowser =
+      await require("./browser/native-acceptance.cjs").runNativeBrowserAcceptance({
+        app,
+        origin: config.origin
+      });
+    checkpoint("native-browser-fixture-completed");
 
     const draftResult = await win.webContents.executeJavaScript(
       `(async () => {
@@ -354,6 +360,7 @@ async function runPackagedGuiAcceptance({
         savedOrigin: readSavedOrigin().origin,
         lastPath: preferences.get().lastPath,
         draftSaved: true,
+        nativeBrowser,
         nativeIdentityRedirectDenied: true,
         downloadsCount: panelList.entries.length,
         foreignRedirectBlocked: true,

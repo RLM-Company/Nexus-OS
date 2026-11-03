@@ -16,6 +16,47 @@ const message = (role: "user" | "assistant", content: string): GeneralChatMessag
 });
 
 describe("ChatService", () => {
+  it("retains history and the current question above the old 32K limit on a larger selected model", () => {
+    const service = new ChatService({
+      preferredProvider: "external",
+      preferredModelAlias: "gpt-6.1-sol",
+      fallbackAllowed: false,
+      contextWindowTokens: 1050000,
+      maxOutputTokens: 1200
+    });
+    const old = "Early fact: budget 17350.25. " + "a".repeat(70000);
+    const current = "Текущий вопрос " + "б".repeat(40000);
+    const result = service.buildRequest({
+      chatId: "chat-1",
+      runId: "large",
+      messages: [
+        message("user", old),
+        message("assistant", "acknowledged"),
+        message("user", current)
+      ]
+    });
+    expect(result.messages.slice(1).map((m) => m.content)).toEqual([old, "acknowledged", current]);
+    expect(result.routing.estimated_input_tokens).toBeGreaterThan(32000);
+    expect(
+      result.routing.estimated_input_tokens + result.constraints.max_output_tokens
+    ).toBeLessThan(1050000);
+  });
+  it("still rejects a current question that exceeds the actual selected model window", () => {
+    const service = new ChatService({
+      preferredProvider: "external",
+      preferredModelAlias: "small",
+      fallbackAllowed: false,
+      contextWindowTokens: 32000,
+      maxOutputTokens: 1200
+    });
+    expect(() =>
+      service.buildRequest({
+        chatId: "chat-1",
+        runId: "large",
+        messages: [message("user", "a".repeat(32000))]
+      })
+    ).toThrow();
+  });
   it("keeps saved notes in the latest user turn after old history falls out of context", () => {
     const service = new ChatService({
       preferredProvider: "mock",

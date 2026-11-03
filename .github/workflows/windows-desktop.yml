@@ -46,6 +46,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Desktop checks failed." }
           npm run verify:unsigned
           if ($LASTEXITCODE -ne 0) { throw "Unsigned distribution policy failed." }
+          # Compile the helper and test pure INPUT builders under PowerShell 5.
+          # Closed stdin: no desktop inspection, input or application launch.
+          node -e "require('node:child_process').execFileSync(process.env.SystemRoot + '/System32/WindowsPowerShell/v1.0/powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', 'ci/check-computer-helper.ps1'], { input: '', stdio: ['pipe', 'inherit', 'inherit'], timeout: 30000 })"
+          if ($LASTEXITCODE -ne 0) { throw "Computer helper offline checks failed." }
           $tokens = $null
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile(

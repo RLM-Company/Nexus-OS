@@ -1,0 +1,12 @@
+{
+  "format": "koswork-computer-fixture-source-v1",
+  "base_commit": "8938ed4cae46ce96f79d85f2eb4e7794bb123c12",
+  "planner": "synthetic deterministic planner; no paid model",
+  "files": {
+    "desktop/windows/computer-helper.ps1": "adf7949c1f2f7fa4ebe3537c3270ad2fb2e828308400c1e0804f4f379221bd00",
+    "desktop/windows/computer-driver.cjs": "b6f7b12baff0795d3f5c2bd14e3488f90f57be28ee8c61af25c1a265e426c25e",
+    "desktop/windows/computer-session.cjs": "4ead78129b48fff97ae19e16474ccb231cf1247dc25b028d9511660988d7e562",
+    "desktop/windows/computer-policy.cjs": "0190beb4a45ea6ea70a323e356a5aa56c285cc38eb974572c654af1b31dda576",
+    "desktop/windows/computer-api-client.cjs": "478054dd7a6f340507c0bac935b2af7a141f61114b2adf8a6cb4e48baf42c040"
+  }
+}

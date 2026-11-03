@@ -154,6 +154,21 @@ export class WorkPrivacyAdapter implements PrivacyAdapter {
           owner
         ),
         artifacts: owned(this.sql, "work_artifact_versions", owner),
+        workflows: recordSet(
+          this.sql,
+          "SELECT * FROM kosmora_workflow_definitions WHERE owner_id=?",
+          owner
+        ),
+        workflow_versions: recordSet(
+          this.sql,
+          "SELECT v.* FROM kosmora_workflow_versions v JOIN kosmora_workflow_definitions d ON d.id=v.workflow_id WHERE d.owner_id=?",
+          owner
+        ),
+        workflow_runs: recordSet(
+          this.sql,
+          "SELECT * FROM kosmora_workflow_runs WHERE owner_id=?",
+          owner
+        ),
         dags: recordSet(this.sql, "SELECT * FROM work_dags WHERE owner_id=?", owner),
         dag_checkpoints: recordSet(
           this.sql,
@@ -190,6 +205,10 @@ export class WorkPrivacyAdapter implements PrivacyAdapter {
     const memory = Number(
       this.sql.prepare("DELETE FROM project_memory WHERE owner_id=?").run(owner).changes
     );
+    const workflows = Number(
+      this.sql.prepare("DELETE FROM kosmora_workflow_definitions WHERE owner_id=?").run(owner)
+        .changes
+    );
     const works = Number(
       this.sql.prepare("DELETE FROM manager_work WHERE owner_id=?").run(owner).changes
     );
@@ -200,7 +219,9 @@ export class WorkPrivacyAdapter implements PrivacyAdapter {
       this.sql.prepare("DELETE FROM work_project_controls WHERE owner_id=?").run(owner).changes
     );
     // FK cascade removes checkpoints, drafts and artifact versions, including old Work v1.
-    return { deleted_records: memory + works + dags + controls + selectionRows + settingsRows };
+    return {
+      deleted_records: memory + works + dags + workflows + controls + selectionRows + settingsRows
+    };
   }
 }
 

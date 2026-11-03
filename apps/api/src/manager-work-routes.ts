@@ -1,4 +1,5 @@
 import { registerWorkSkillRoutes } from "./work-skill-routes.js";
+import { registerWorkflowRoutes } from "./workflow-routes.js";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import { registerWorkDagRoutes } from "./work-dag-routes.js";
 import { registerProjectMemoryRoutes } from "./project-memory-routes.js";
@@ -19,8 +20,10 @@ export function registerManagerWorkRoutes(options: {
   projects: ProjectStore;
   coordinator: ManagerWorkCoordinator;
   identityFor: (request: FastifyRequest) => IdentityContext;
+  nodeBudget?: { max_input_tokens: number; max_output_tokens: number };
 }): void {
   const { app, store, projects, coordinator, identityFor } = options;
+  registerWorkflowRoutes(options);
   registerWorkDagRoutes({ app, projects, coordinator: coordinator.dag, identityFor });
   registerWorkSkillRoutes(app, store.skills, identityFor);
   registerProjectMemoryRoutes({ app, memory: store.memory, projects, identityFor });

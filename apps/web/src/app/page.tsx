@@ -39,6 +39,7 @@ import { ProjectContextPanel } from "./project-context-panel";
 import { ProjectContextPreview } from "./project-context-preview";
 import { ManagerWorkPanel } from "./manager-work-panel";
 import { useExecutionGate } from "./use-execution-gate";
+import { useLocalVaultContext } from "./use-local-vault";
 import { WorkspaceIcon } from "./workspace-icons";
 import { AccountMenu, MobileNavigation, WorkspaceModeMenu } from "./workspace-navigation";
 import {
@@ -393,6 +394,8 @@ const greetingSeed = (): number => {
 };
 
 const displayedContent = (message: Message): string | null => {
+  if (message.status === "failed" && message.error_code === "MEMORY_CONTEXT_INCOMPLETE")
+    return "Обязательные записи памяти не поместились. Сократите закреплённые записи или измените выбранные источники в настройках памяти.";
   if (message.status === "cancelled") return "Запуск остановлен владельцем.";
   if (message.status === "failed")
     return message.error_code === "CONTEXT_TOO_LARGE"
@@ -405,6 +408,8 @@ const displayedContent = (message: Message): string | null => {
 };
 
 const displayedGeneralContent = (message: LocalChatMessage): string | null => {
+  if (message.status === "failed" && message.error_code === "MEMORY_CONTEXT_INCOMPLETE")
+    return "Обязательные записи памяти не поместились. Сократите закреплённые записи или измените выбранные источники в настройках памяти.";
   if (message.status === "failed" && message.error_code?.startsWith("IMAGE_"))
     return message.error_code === "IMAGE_REFERENCES_UNSUPPORTED"
       ? "Этот режим пока создаёт изображения по текстовому описанию. Уберите вложения и повторите запрос."
@@ -695,6 +700,14 @@ export default function Home() {
     }
     setDraftStorageReadyKey(attachmentScope);
   }, [attachmentScope]);
+  useLocalVaultContext(
+    initialRouteReady &&
+      !loading &&
+      surface === "manager" &&
+      draftStorageReadyKey === attachmentScope,
+    draft,
+    setDraft
+  );
 
   useEffect(() => {
     const pending = pendingComposeRef.current;

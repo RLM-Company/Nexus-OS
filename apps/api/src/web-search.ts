@@ -20,7 +20,8 @@ export class WebSearch {
   }
   async search(
     query: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    engine?: "duckduckgo"
   ): Promise<{ query: string; searched_at: string; items: SearchResult[] }> {
     if (!this.configured || !query.trim() || query.length > 240)
       throw new Error("Search unavailable");
@@ -30,6 +31,7 @@ export class WebSearch {
       categories: "general",
       safesearch: "1"
     });
+    if (engine) params.set("engines", engine);
     const response = await this.#fetch(`${this.#origin}/search?${params}`, {
       redirect: "error",
       signal: signal
@@ -56,8 +58,18 @@ export class WebSearch {
     }
     const body = JSON.parse(Buffer.concat(parts).toString("utf8")) as {
       results?: Array<{ title?: unknown; url?: unknown; content?: unknown }>;
+      unresponsive_engines?: unknown;
     };
     if (!Array.isArray(body.results)) throw new Error("Invalid search response");
+    if (
+      engine &&
+      body.results.length === 0 &&
+      Array.isArray(body.unresponsive_engines) &&
+      body.unresponsive_engines.some(
+        (entry: unknown) => Array.isArray(entry) && entry[0] === engine
+      )
+    )
+      throw new Error("Search unavailable");
     const items: SearchResult[] = [];
     const seen = new Set<string>();
     for (const item of body.results) {
@@ -97,19 +109,22 @@ export class WebSearch {
 }
 export function registerWebSearchRoutes(app: FastifyInstance, search: WebSearch) {
   app.get("/api/v1/web-search/status", () => ({ configured: search.configured }));
-  app.post<{ Body: { q: string } }>(
+  app.post<{ Body: { q: string; engine?: "duckduckgo" } }>(
     "/api/v1/web-search",
     {
       schema: {
         body: Type.Object(
-          { q: Type.String({ minLength: 1, maxLength: 240 }) },
+          {
+            q: Type.String({ minLength: 1, maxLength: 240 }),
+            engine: Type.Optional(Type.Literal("duckduckgo"))
+          },
           { additionalProperties: false }
         )
       }
     },
     async (request, reply) => {
       try {
-        return await search.search(request.body.q);
+        return await search.search(request.body.q, undefined, request.body.engine);
       } catch {
         return reply.code(503).send({
           error: {

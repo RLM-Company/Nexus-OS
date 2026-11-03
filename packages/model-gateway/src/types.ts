@@ -104,6 +104,8 @@ export class GatewayRunError extends Error {
       "Provider returned an empty body": "EMPTY_BODY",
       "Provider returned invalid streaming JSON": "INVALID_STREAM_JSON",
       "Invalid provider stream event": "INVALID_STREAM_EVENT",
+      "Provider stream exceeded its event size limit": "STREAM_EVENT_TOO_LARGE",
+      "Provider stream read failed": "STREAM_READ_FAILED",
       "Invalid text delta": "INVALID_TEXT_DELTA",
       "Text after finish reason": "TEXT_AFTER_FINISH",
       "Provider stream did not finish a non-empty text response": "INCOMPLETE_TEXT_RESPONSE",

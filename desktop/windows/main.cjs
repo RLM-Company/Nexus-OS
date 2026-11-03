@@ -7,6 +7,7 @@ const { pathToFileURL } = require("node:url");
 const {
   app,
   BrowserWindow,
+  WebContentsView,
   dialog,
   ipcMain,
   Menu,
@@ -15,14 +16,25 @@ const {
   session,
   shell,
   Tray,
-  safeStorage
+  safeStorage,
+  desktopCapturer,
+  globalShortcut
 } = require("electron");
+const { createKosworkBrowser } = require("./browser/shell.cjs");
+const { createBrowserProfiles } = require("./browser/profiles.cjs");
+const { createTaskGate } = require("./browser/policy.cjs");
+const { createComputerConsole } = require("./computer-console.cjs");
 const { createPreferenceStore, deepLinkFromArgv, restoredBounds } = require("./desktop-state.cjs");
 const { createUpdateService } = require("./update-service.cjs");
 const { createDraftStore } = require("./draft-store.cjs");
+const { createComputerWorkspace } = require("./computer-workspace.cjs");
+const { createComputerHistory } = require("./computer-history.cjs");
 const { fetchElectronOwner } = require("./owner-session.cjs");
 const { createDraftSessionGate } = require("./draft-session-gate.cjs");
 const { createDownloadCenter } = require("./download-center.cjs");
+const { createVaultConsole } = require("./vault-console.cjs");
+const { createLocalVault } = require("./local-vault.cjs");
+const { createVaultWorkspace } = require("./vault-workspace.cjs");
 const { safeWorkspaceRoute, isLoginOrLogout, isExplicitLogout } = require("./desktop-recovery.cjs");
 const updateTrust = require("./update-trust.json");
 const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
@@ -56,23 +68,38 @@ app.setPath("sessionData", profileDirectory);
 app.setName("Kosmora");
 
 const preferences = createPreferenceStore(profileDirectory);
-const textDrafts = createDraftStore(profileDirectory, {
-  codec: {
-    seal(text) {
-      if (process.platform !== "win32" || !safeStorage.isEncryptionAvailable())
-        throw new Error("Защищённое сохранение Windows сейчас недоступно.");
-      return safeStorage.encryptString(text).toString("base64");
-    },
-    open(sealed) {
-      if (
-        process.platform !== "win32" ||
-        !safeStorage.isEncryptionAvailable() ||
-        typeof sealed !== "string" ||
-        !/^[a-zA-Z0-9+/]+=*$/.test(sealed)
-      )
-        throw new Error("Не удалось открыть защищённый черновик.");
-      return safeStorage.decryptString(Buffer.from(sealed, "base64"));
-    }
+const localTextCodec = {
+  seal(text) {
+    if (process.platform !== "win32" || !safeStorage.isEncryptionAvailable())
+      throw new Error("Защищённое сохранение Windows сейчас недоступно.");
+    return safeStorage.encryptString(text).toString("base64");
+  },
+  open(sealed) {
+    if (
+      process.platform !== "win32" ||
+      !safeStorage.isEncryptionAvailable() ||
+      typeof sealed !== "string" ||
+      !/^[a-zA-Z0-9+/]+=*$/.test(sealed)
+    )
+      throw new Error("Не удалось открыть защищённый черновик.");
+    return safeStorage.decryptString(Buffer.from(sealed, "base64"));
+  }
+};
+const textDrafts = createDraftStore(profileDirectory, { codec: localTextCodec });
+const computerHistory = createComputerHistory(profileDirectory, { codec: localTextCodec });
+const workCycleHistory = createComputerHistory(profileDirectory, {
+  codec: localTextCodec,
+  namespace: "work"
+});
+const computerWorkspace = createComputerWorkspace({
+  userDataPath: profileDirectory,
+  codec: localTextCodec,
+  pickDirectory: async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Выберите рабочую папку Koswork",
+      properties: ["openDirectory", "dontAddToRecent"]
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
   }
 });
 const activeDownloads = new Map();
@@ -117,6 +144,123 @@ const downloadCenter =
         onChange: createMenu
       })
     : null;
+
+const vaultConsole =
+  gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode
+    ? createVaultConsole({
+        BrowserWindow,
+        ipcMain,
+        dialog,
+        profileDirectory,
+        codec: localTextCodec,
+        getEpoch: () => identityEpoch,
+        getMainWindow: () => mainWindow,
+        getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true }),
+        identity: async () => {
+          const owner = await verifiedOwner({ allowCachedWrite: true });
+          return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
+        }
+      })
+    : null;
+const taskGate = createTaskGate();
+const browserWorkspace = createComputerWorkspace({
+  userDataPath: profileDirectory,
+  codec: localTextCodec,
+  scopeNamespace: "browser",
+  pickDirectory: async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Рабочая папка браузера Koswork",
+      properties: ["openDirectory", "dontAddToRecent"]
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  }
+});
+const managedBrowserProfiles = createBrowserProfiles({ userData: profileDirectory, session });
+const kosworkBrowser =
+  gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode
+    ? createKosworkBrowser({
+        BrowserWindow,
+        WebContentsView,
+        Menu,
+        ipcMain,
+        dialog,
+        globalShortcut,
+        taskGate,
+        history: computerHistory,
+        workspace: browserWorkspace,
+        profiles: managedBrowserProfiles,
+        identity: async () => {
+          const owner = await verifiedOwner();
+          return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
+        },
+        getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true })
+      })
+    : null;
+const workCycleBaseWorkspace = createComputerWorkspace({
+  userDataPath: profileDirectory,
+  codec: localTextCodec,
+  scopeNamespace: "work-cycle",
+  pickDirectory: async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Рабочая папка задачи Koswork",
+      properties: ["openDirectory", "dontAddToRecent"]
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  }
+});
+const workCycleWorkspace = createVaultWorkspace({
+  base: workCycleBaseWorkspace,
+  vault: createLocalVault({ userDataPath: profileDirectory, codec: localTextCodec })
+});
+const kosworkWorkCycle =
+  gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode
+    ? createKosworkBrowser({
+        BrowserWindow,
+        WebContentsView,
+        Menu,
+        ipcMain,
+        dialog,
+        globalShortcut,
+        taskGate,
+        executionMode: "work",
+        history: workCycleHistory,
+        workspace: workCycleWorkspace,
+        profiles: managedBrowserProfiles,
+        createComputer: () =>
+          require("./computer-driver.cjs").createComputerDriver({ desktopCapturer, screen, shell }),
+        identity: async () => {
+          const owner = await verifiedOwner();
+          return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
+        },
+        getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true })
+      })
+    : null;
+const computerConsole =
+  gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode
+    ? createComputerConsole({
+        BrowserWindow,
+        ipcMain,
+        dialog,
+        desktopCapturer,
+        screen,
+        shell,
+        globalShortcut,
+        history: computerHistory,
+        workspace: computerWorkspace,
+        taskGate,
+        openBrowser: () => kosworkBrowser?.show(),
+        identity: async () => {
+          const owner = await verifiedOwner();
+          return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
+        },
+        getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true })
+      })
+    : null;
+app.on("before-quit", () => {
+  computerConsole?.stop();
+  kosworkBrowser?.stop();
+  kosworkWorkCycle?.stop();
+});
 
 function connectionPath() {
   return path.join(app.getPath("userData"), CONNECTION_FILE);
@@ -399,7 +543,11 @@ async function openOrigin(origin, { persist = false } = {}) {
     if (persist && previousOrigin && previousOrigin !== origin) {
       // Switching origins is an explicit trust-boundary change, not a page navigation.
       identityEpoch++;
+      computerConsole?.invalidate();
+      kosworkWorkCycle?.invalidate();
+      kosworkBrowser?.invalidate();
       draftSessionGate.reset();
+      vaultConsole?.invalidate();
       downloadCenter.invalidate({ forget: true, origin: previousOrigin, owner: ownerCache?.owner });
       ownerCache = null;
       deferredRoute = null;
@@ -407,6 +555,11 @@ async function openOrigin(origin, { persist = false } = {}) {
       for (const item of activeDownloads.values()) item.cancel();
       try {
         textDrafts.clearAll();
+        workCycleHistory.clearAll();
+        computerHistory.clearAll();
+        computerWorkspace.forget();
+        await kosworkWorkCycle?.forget();
+        await kosworkBrowser?.forget();
         await browserSession.clearStorageData();
         await browserSession.clearCache();
       } catch {
@@ -473,7 +626,11 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
   if (result.state === "verified") {
     if (ownerCache?.origin === origin && ownerCache.owner !== result.owner) {
       identityEpoch++;
+      computerConsole?.invalidate();
+      kosworkWorkCycle?.invalidate();
+      kosworkBrowser?.invalidate();
       draftSessionGate.reset();
+      vaultConsole?.invalidate();
       downloadCenter.invalidate();
       for (const item of activeDownloads.values()) item.cancel();
     }
@@ -487,7 +644,11 @@ async function verifiedOwner({ allowCachedWrite = false } = {}) {
   if (result.state === "denied") {
     if (ownerCache?.origin === origin) {
       identityEpoch++;
+      computerConsole?.invalidate();
+      kosworkWorkCycle?.invalidate();
+      kosworkBrowser?.invalidate();
       draftSessionGate.reset();
+      vaultConsole?.invalidate();
       downloadCenter.invalidate();
       for (const item of activeDownloads.values()) item.cancel();
     }
@@ -546,9 +707,10 @@ async function nativeLogout() {
   const choice = await dialog.showMessageBox(mainWindow, {
     type: "warning",
     title: "Выйти из Kosmora",
-    message: "Выйти из аккаунта и удалить все локальные текстовые черновики?",
+    message:
+      "Выйти из аккаунта и удалить локальные текстовые черновики, историю задач ПК и локальные резервные копии Koswork?",
     detail:
-      "Серверные чаты и файлы не удаляются. Сеанс браузера на этом компьютере будет завершён.",
+      "Серверные чаты и файлы не удаляются. Выбранная папка локального хранилища и её копии сохранятся. Сеанс приложения и входы на сайты в браузере Koswork на этом компьютере будут завершены.",
     buttons: ["Выйти и очистить", "Отмена"],
     defaultId: 1,
     cancelId: 1,
@@ -557,12 +719,21 @@ async function nativeLogout() {
   if (choice.response !== 0) return;
   // Fence pending asynchronous saves before removing user data.
   identityEpoch++;
+  computerConsole?.invalidate();
+  kosworkWorkCycle?.invalidate();
+  kosworkBrowser?.invalidate();
   draftSessionGate.reset();
+  vaultConsole?.invalidate();
   downloadCenter.invalidate({ forget: true, origin: currentOrigin, owner: ownerCache?.owner });
   ownerCache = null;
   // The user explicitly authorized clearing drafts and locally remembered login.
   try {
     textDrafts.clearAll();
+    workCycleHistory.clearAll();
+    computerHistory.clearAll();
+    computerWorkspace.forget();
+    await kosworkWorkCycle?.forget();
+    await kosworkBrowser?.forget();
   } catch {
     await dialog.showMessageBox(mainWindow, {
       type: "warning",
@@ -637,13 +808,22 @@ function clearDraftsForHostedLogout(url) {
   // A first-party /logout navigation is an explicit exit, including when
   // a hosted page handles it without using the native menu.
   identityEpoch++;
+  computerConsole?.invalidate();
+  kosworkWorkCycle?.invalidate();
+  kosworkBrowser?.invalidate();
   draftSessionGate.reset();
+  vaultConsole?.invalidate();
   downloadCenter.invalidate({ forget: true, origin: currentOrigin, owner: ownerCache?.owner });
   ownerCache = null;
   deferredRoute = null;
   pendingDeepLink = null;
   try {
     textDrafts.clearAll();
+    workCycleHistory.clearAll();
+    computerHistory.clearAll();
+    computerWorkspace.forget();
+    void kosworkWorkCycle?.forget().catch(() => {});
+    void kosworkBrowser?.forget().catch(() => {});
     preferences.update({ lastPath: "/" });
     return true;
   } catch {
@@ -651,7 +831,7 @@ function clearDraftsForHostedLogout(url) {
       type: "warning",
       title: "Очистка черновиков не удалась",
       message:
-        "Не удалось удалить локальные черновики при выходе. Проверьте доступ к профилю Windows."
+        "Не удалось удалить локальные черновики или историю задач ПК при выходе. Проверьте доступ к профилю Windows."
     });
     return false;
   }
@@ -697,9 +877,13 @@ function installNavigationGuards(window) {
     draftSessionGate.reset(); // Full document navigation, not SPA history changes.
     persistRoute(url);
     if (isLoginOrLogout(url, currentOrigin)) {
+      vaultConsole?.invalidate();
       downloadCenter.invalidate();
       ownerCache = null;
       identityEpoch++;
+      computerConsole?.invalidate();
+      kosworkWorkCycle?.invalidate();
+      kosworkBrowser?.invalidate();
       draftSessionGate.reset();
     } else void restoreAfterAuthentication();
   });
@@ -708,9 +892,13 @@ function installNavigationGuards(window) {
     if (isExplicitLogout(url, currentOrigin)) void clearDraftsForHostedLogout(url);
     persistRoute(url);
     if (isLoginOrLogout(url, currentOrigin)) {
+      vaultConsole?.invalidate();
       downloadCenter.invalidate();
       ownerCache = null;
       identityEpoch++;
+      computerConsole?.invalidate();
+      kosworkWorkCycle?.invalidate();
+      kosworkBrowser?.invalidate();
       draftSessionGate.reset();
     } else void restoreAfterAuthentication();
   });
@@ -831,13 +1019,67 @@ function createMenu() {
           accelerator: "Ctrl+Shift+K",
           click: () => void showConnection()
         },
-        { label: "Выйти и удалить локальные черновики…", click: () => void nativeLogout() },
+        { label: "Выйти и удалить локальные данные…", click: () => void nativeLogout() },
         { type: "separator" },
         {
           label: "Выход",
           click: () => {
             isQuitting = true;
             app.quit();
+          }
+        }
+      ]
+    },
+    {
+      label: "Koswork",
+      submenu: [
+        {
+          label: "Локальное хранилище…",
+          enabled: !!vaultConsole,
+          click: () =>
+            void vaultConsole?.show().catch(() =>
+              dialog.showMessageBox(mainWindow, {
+                type: "info",
+                message: "Для хранилища нужен подтверждённый вход в Kosmora."
+              })
+            )
+        },
+        {
+          label: "Рабочая задача…",
+          enabled: !!kosworkWorkCycle,
+          click: () => {
+            void kosworkWorkCycle?.show().catch(() =>
+              dialog.showMessageBox(mainWindow, {
+                type: "info",
+                message: "Для задачи Koswork нужен подтверждённый вход в приложение."
+              })
+            );
+          }
+        },
+        { label: "Остановить задачу", click: () => kosworkWorkCycle?.stop() },
+        {
+          label: "Управление компьютером…",
+          enabled: !!computerConsole,
+          click: () => void computerConsole?.show()
+        },
+        {
+          label: "Браузер Koswork…",
+          enabled: !!kosworkBrowser,
+          click: () => {
+            void kosworkBrowser?.show().catch(() =>
+              dialog.showMessageBox(mainWindow, {
+                type: "info",
+                message: "Для браузера Koswork нужен подтверждённый вход в приложение."
+              })
+            );
+          }
+        },
+        { label: "Остановить браузер", click: () => kosworkBrowser?.stop() },
+        {
+          label: "Остановить управление",
+          click: () => {
+            kosworkWorkCycle?.stop();
+            computerConsole?.stop();
           }
         }
       ]
@@ -1022,6 +1264,64 @@ function queueDraft(scope, task) {
   );
   return result;
 }
+
+ipcMain.handle("kosmora:vault-open", async (event) => {
+  if (!isTrustedRemoteEvent(event) || !vaultConsole) return { ok: false };
+  try {
+    await vaultConsole.show();
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+ipcMain.handle("kosmora:vault-read-context", async (event) => {
+  if (!isTrustedRemoteEvent(event)) return null;
+  const data = await vaultConsole?.readContext();
+  return isTrustedRemoteEvent(event) ? data : null;
+});
+ipcMain.handle("kosmora:vault-ack-context", async (event, id) => {
+  if (isTrustedRemoteEvent(event) && typeof id === "string" && id.length <= 64)
+    await vaultConsole?.ackContext(id);
+});
+ipcMain.handle("koswork:computer-open", async (event, input) => {
+  if (
+    !computerConsole ||
+    !isTrustedRemoteEvent(event) ||
+    !input ||
+    typeof input.project !== "string" ||
+    !/^[a-zA-Z0-9_-]{1,160}$/.test(input.project) ||
+    typeof input.goal !== "string" ||
+    !input.goal.trim() ||
+    input.goal.length > 8000 ||
+    Object.keys(input).length !== 2
+  )
+    return { ok: false };
+  const epoch = identityEpoch;
+  const owner = await verifiedOwner();
+  if (!owner || epoch !== identityEpoch || !isTrustedRemoteEvent(event)) return { ok: false };
+  await computerConsole.show(input);
+  return { ok: true };
+});
+
+ipcMain.handle("koswork:work-open", async (event, input) => {
+  if (
+    !kosworkWorkCycle ||
+    !isTrustedRemoteEvent(event) ||
+    !input ||
+    typeof input.project !== "string" ||
+    !/^[a-zA-Z0-9_-]{1,160}$/.test(input.project) ||
+    typeof input.goal !== "string" ||
+    !input.goal.trim() ||
+    input.goal.length > 8000 ||
+    Object.keys(input).length !== 2
+  )
+    return { ok: false };
+  const epoch = identityEpoch,
+    owner = await verifiedOwner();
+  if (!owner || epoch !== identityEpoch || !isTrustedRemoteEvent(event)) return { ok: false };
+  await kosworkWorkCycle.show(input);
+  return { ok: true };
+});
 
 ipcMain.handle("cosmora:draft-load", async (event, scope) => {
   if (!isTrustedRemoteEvent(event)) return { ok: false, message: "Недоверенный источник." };

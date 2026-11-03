@@ -1,0 +1,80 @@
+﻿Руководство по эпизодической рефлексии, верификатору цитирования и детектору DOM-мутаций Kosmora / Nexus-OS (Волна 18)
+Дата: 2 ноября 2026 г.
+Ветка: feature/kosmora-self-healing-and-knowledge-graph-20261102
+Репозиторий: RLM-Company/Nexus-OS (PR #411 .. #428 + Waves 16-18)
+Статус верификации: 17 из 17 тестовых сьютов PASS (100%).
+Инварианты границ: 0 изменений в файлах Codex (apps/api/src/account-settings/**, packages/db/src/usage-store.ts, packages/contracts/src/usage.ts). 0 утечек секретов.
+
+
+________________
+
+
+1. Архитектурный контекст и цели Волны 18
+Волна 18 внедряет три фундаментальных блока мета-когнитивного обучения и контроля достоверности автономной ОС:
+
+
+1. Движок эпизодической рефлексии (packages/db/src/episodic-reflexion-engine.ts):
+
+
+   * Превращает каждый случай самовосстановления воркфлоу (Self-Healing DAG retry) в переиспользуемое процедурное правило в таблице SQLite kosmora_episodic_reflexions.
+   * Нормализует сигнатуры ошибок (с очисткой временных UUID и таймстампов), генерирует 64-мерный плотный вектор и рассчитывает байесовскую оценку достоверности с поправкой Лапласа ((success + 1) / (success + failure + 2)).
+   * Перед запуском любого шага метод recallRelevantGuardrails извлекает релевантные правила по косинусной близости и имени инструмента, предотвращая ошибку уже на первой попытке (attempt === 1).
+
+
+2. Верификатор анти-галлюцинаций и привязки к источникам (packages/core/src/claim-grounding-verifier.ts):
+
+
+   * Проводит автоматический аудит черновиков ответов и отчетов перед отправкой пользователю или экспортом в .docx:
+      * Блокирует ссылки на главные страницы доменов (https://domain.com/), требуя глубоких ссылок на конкретные сущности.
+      * Блокирует номерные сноски в квадратных скобках ([1], [2]), требуя встроенных именованных гиперссылок [Entity](URL).
+      * Сверяет каждую числовую метрику, сумму бюджета, процент и дату в черновике с первичным корпусом текстов инструментов (ungrounded_metric, ungrounded_date).
+
+
+3. Верификатор визуальных и структурных DOM-мутаций браузера (desktop/windows/browser/visual-dom-diff-verifier.cjs):
+
+
+   * Сравнивает снимки дерева доступности и DOM (WebContentsView) до и после действия в браузере (клик, ввод текста, отправка формы).
+   * Детектирует появление новых модальных окон (role="dialog", role="alert", role="menu"), изменение значений полей и смену фокуса.
+   * При обнаружении «холостого клика» (isDeadAction === true, когда totalDomDeltas === 0) автоматически вычисляет геометрический центр целевого элемента (centerX, centerY) по bbox и формирует директиву самовосстановления со скроллом и клавиатурным триггером.
+
+
+________________
+
+
+2. Спецификация компонентов
+2.1. Эпизодическая память рефлексии (packages/db/src/episodic-reflexion-engine.ts)
+* Класс: EpisodicReflexionEngine
+* Таблица SQLite: kosmora_episodic_reflexions
+* Ключевые методы:
+   * recordRecoveryEpisode({ ownerId, toolName, errorMessage, taskContext, remedialResolution })
+   * recallRelevantGuardrails({ ownerId, toolName, taskContext, topK, minConfidence })
+   * recordRuleApplicationOutcome(ruleId, ownerId, succeeded)
+2.2. Аудитор достоверности фактов и ссылок (packages/core/src/claim-grounding-verifier.ts)
+* Класс: ClaimGroundingVerifier
+* Функция проверки корневых доменов: isBareDomainHomepage(rawUrl)
+* Коды нарушений: bare_domain_url, bracketed_citation, ungrounded_metric, ungrounded_date, fabricated_url.
+2.3. Детектор DOM-мутаций (desktop/windows/browser/visual-dom-diff-verifier.cjs)
+* Функции: normalizeDomSnapshot(rawSnapshot), verifyBrowserActionMutation(preRaw, postRaw, intendedAction)
+* Выходные метрики: actionVerified, isDeadAction, totalDomDeltas, modalOrAlertNodes, remedialSuggestion.
+
+
+________________
+
+
+3. Инструкция по верификации
+1. Запуск полной матрицы (17 сьютов):
+
+
+node scripts/stage2-master-verification-matrix-runner.mjs
+
+2. Запуск изолированного смоук-теста Волны 18:
+
+
+node scripts/integration-reflexion-grounding-and-dom-diff-smoke.mjs
+
+3. Проверка секретов и границ параллельной разработки:
+
+
+node scripts/check-secrets.mjs
+git diff --name-only apps/api/src/account-settings packages/db/src/usage-store.ts packages/contracts/src/usage.ts
+

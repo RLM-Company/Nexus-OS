@@ -1,0 +1,75 @@
+﻿Руководство по адаптивному бюджету контекста и криптографическому аудит-логгеру Kosmora / Nexus-OS (Волна 17)
+Дата: 2 ноября 2026 г.
+Ветка: feature/kosmora-self-healing-and-knowledge-graph-20261102
+Репозиторий: RLM-Company/Nexus-OS (PR #411 .. #428 + Waves 16-17)
+Статус верификации: 16 из 16 тестовых сьютов PASS (100%).
+Инварианты границ: 0 изменений в файлах Codex (apps/api/src/account-settings/**, packages/db/src/usage-store.ts, packages/contracts/src/usage.ts). 0 утечек секретов.
+
+
+________________
+
+
+1. Архитектурный контекст и цели Волны 17
+Волна 17 внедряет два критических корпоративных компонента для надежной автономной операционной системы:
+
+
+1. Адаптивный аллокатор бюджета контекста (packages/core/src/dynamic-context-budget-allocator.ts):
+
+
+   * При работе с огромными контекстными окнами (1.05M Sol / Fable 5 / Claude 3.5) ключевой проблемой является деградация стоимости и внимания из-за перенасыщения контекста.
+   * Аллокатор распределяет токенный бюджет между 6 конкурирующими потоками:
+      1. system_tools (системные инструкции и контракты инструментов — обязательные, неизменяемые).
+      2. pinned_constraints (закрепленные проектные ограничения и бюджеты — гарантия 0% потерь).
+      3. retrieved_memory (семантические воспоминания, ранжируемые жадным рюкзачным алгоритмом по плотности utility / tokens).
+      4. cross_citations (узлы графа перекрестного цитирования).
+      5. conversation_history (сжатая история диалога с цепочками изменений параметров).
+      6. active_turn_scratchpad (динамический черновик и рабочая область активного шага).
+   * Поддерживает выравнивание по блокам кэширования Anthropic (1024 токена), устраняя срывы кэша промптов между последовательными вызовами.
+
+
+2. Криптографический «чёрный ящик» аудита (packages/db/src/cryptographic-audit-blackbox.ts):
+
+
+   * Для всех действий автономной ОС (спекулятивный запуск инструментов, мутации Google Drive, шаги самовосстановления воркфлоу, голосование мульти-агентного консилиума) формируется криптографическая цепочка хэшей (append-only hash chain / blockchain-style log).
+   * Каждая запись ссылается на prev_hash предыдущей записи с фиксацией SHA-256 хэша полезной нагрузки.
+   * Метод verifyAuditChain мгновенно выявляет любое ретроактивное изменение данных, удаление записи или нарушение порядка последовательности.
+   * Формирует переносимый сертификат соответствия (exportComplianceCertificate) с корневым Merkle-хэшем.
+
+
+________________
+
+
+2. Спецификация компонентов
+2.1. Аллокатор бюджета контекста (packages/core/src/dynamic-context-budget-allocator.ts)
+* Класс: DynamicContextBudgetAllocator
+* Гарантии:
+   * Гарантированное сохранение 100% обязательных системных ограничений (mandatoryConstraintLossPercent === 0.0).
+   * Жадная оптимизация рюкзака (knapsack) по удельной информационной плотности utilityScore / tokenCount.
+   * Привязка границы к блокам кэширования (snapToCacheBlocks: true, шаг 1024 токена).
+2.2. Криптографический аудит-логгер (packages/db/src/cryptographic-audit-blackbox.ts)
+* Класс: CryptographicAuditBlackbox
+* Таблица SQLite: kosmora_session_audit_blackbox
+* Поля: seq, session_id, owner_id, event_type, payload_json, payload_sha256, prev_hash, record_hash, created_at.
+* Защита от подделок: при любой попытке модификации payload_json или record_hash верификатор сообщает PAYLOAD_TAMPERING_DETECTED с точным указанием скомпрометированного номера шага seq.
+
+
+________________
+
+
+3. Инструкция по верификации
+1. Запуск полного набора проверок (16 сьютов):
+
+
+node scripts/stage2-master-verification-matrix-runner.mjs
+
+2. Запуск изолированного смоук-теста Волны 17:
+
+
+node scripts/integration-dynamic-budget-and-blackbox-smoke.mjs
+
+3. Проверка секретов и границ Codex:
+
+
+node scripts/check-secrets.mjs
+git diff --name-only apps/api/src/account-settings packages/db/src/usage-store.ts packages/contracts/src/usage.ts
+

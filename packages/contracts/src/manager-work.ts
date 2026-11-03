@@ -35,8 +35,10 @@ export const CreateManagerWorkSchema = Type.Object(
       ])
     ),
     max_model_requests: Type.Integer({ minimum: 2, maximum: 3 }),
-    max_input_tokens: Type.Integer({ minimum: 1000, maximum: 32000 }),
-    max_output_tokens: Type.Integer({ minimum: 256, maximum: 8000 })
+    // Cumulative budget for up to three stages; each route still enforces the
+    // configured model's context/output limits and the owner's spending policy.
+    max_input_tokens: Type.Integer({ minimum: 1000, maximum: 3_000_000 }),
+    max_output_tokens: Type.Integer({ minimum: 256, maximum: 300_000 })
   },
   { additionalProperties: false }
 );

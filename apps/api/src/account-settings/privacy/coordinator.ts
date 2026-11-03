@@ -102,7 +102,8 @@ const retained = [
   "provider credentials",
   "system security audit",
   "canonical and retained usage accounting",
-  "uncertain budget holds"
+  "uncertain budget holds",
+  "user-managed Google Drive archive copies"
 ];
 const phrase = "УДАЛИТЬ МОИ ДАННЫЕ";
 const iso = () => new Date().toISOString();

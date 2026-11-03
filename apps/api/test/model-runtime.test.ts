@@ -61,6 +61,71 @@ const externalConfig = () =>
   });
 
 describe("buildModelRuntime", () => {
+  it("propagates the selected route context window into Chat and Manager, including model aliases", async () => {
+    const config = loadServerConfig({ NODE_ENV: "test", MODEL_NAME: "manager" });
+    const document = loadModelRegistryDocument("config/model-registry.v1.json");
+    document.entries[0]!.context_window_tokens = 1050000;
+    const runtime = await buildModelRuntime(config, { registryDocument: document });
+    const at = "2026-10-31T00:00:00.000Z";
+    const common = {
+      id: "message",
+      chat_id: "chat",
+      role: "user" as const,
+      content_type: "text" as const,
+      content: "a".repeat(90000),
+      status: "completed" as const,
+      run_id: "run",
+      error_code: null,
+      created_at: at,
+      updated_at: at
+    };
+    const chat = runtime.chat.buildRequest({ chatId: "chat", runId: "run", messages: [common] });
+    const manager = runtime.manager.buildRequest({
+      projectId: "project",
+      runId: "run",
+      messages: [{ ...common, project_id: "project", reply_to_message_id: null }]
+    });
+    expect(chat.messages.at(-1)!.content).toBe(common.content);
+    expect(manager.messages.at(-1)!.content).toBe(common.content);
+  });
+  it("constructs the refreshed Sol candidate with its discovered window without dispatching", async () => {
+    const config = loadServerConfig({
+      NODE_ENV: "test",
+      MODEL_PROVIDER: "openai-compatible",
+      MODEL_PROVIDER_ID: "cheapvibecode",
+      MODEL_BASE_URL: "https://ru.cheapvibecode.ru/v1",
+      MODEL_API_KEY: "fixture",
+      MODEL_NAME: "gpt-6.1-sol",
+      MODEL_REGISTRY_PATH: "config/model-registry.cheapvibecode.sol.v1.json"
+    });
+    const document = loadModelRegistryDocument(config.modelRegistryPath!);
+    document.entries.find((e) => e.provider_id === "cheapvibecode")!.source.valid_until =
+      "2099-11-01T00:00:00.000Z";
+    const runtime = await buildModelRuntime(config, { registryDocument: document, secretResolver });
+    expect(runtime.gateway.hasProvider("cheapvibecode")).toBe(true);
+    expect(
+      document.entries.find((e) => e.provider_id === "cheapvibecode")!.context_window_tokens
+    ).toBe(1050000);
+  });
+  it("constructs the owner-selected Fable route without dispatch or mock fallback", async () => {
+    const config = loadServerConfig({
+      NODE_ENV: "test",
+      MODEL_PROVIDER: "openai-compatible",
+      MODEL_PROVIDER_ID: "tokenshop",
+      MODEL_BASE_URL: "https://token-shop.online/v1",
+      MODEL_API_KEY: "fixture-only",
+      MODEL_NAME: "claude-fable-5",
+      MODEL_FALLBACK_TO_MOCK: "false",
+      MANAGER_MAX_OUTPUT_TOKENS: "100000",
+      MODEL_REGISTRY_PATH: "config/model-registry.tokenshop.fable.v1.json"
+    });
+    const runtime = await buildModelRuntime(config, {
+      secretResolver: { resolve: () => Promise.resolve("fixture-only") }
+    });
+    expect(runtime.contextWindowTokens).toBe(1_000_000);
+    expect(runtime.registryVersion).toBe("tokenshop-fable-live-2026-11-02");
+    expect(config.modelFallbackToMock).toBe(false);
+  });
   it("loads a repository-relative registry path independently of process cwd", () => {
     const document = loadModelRegistryDocument("config/model-registry.v1.json");
 

@@ -1,7 +1,9 @@
 import type {
   ChatSkillSnapshot,
+  ContextMemoryBundle,
   Currency,
   GeneralChatMessage,
+  HistoryCompactionOptions,
   ModelFeature,
   ModelMessage,
   ModelRequest
@@ -9,7 +11,15 @@ import type {
 import { estimateInputTokensUpperBound } from "./manager.js";
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
 import { messageWithMaterials } from "./message-materials.js";
-import { conversationWindow } from "./conversation-window.js";
+import { conversationWindow, modelInputContextBudget } from "./conversation-window.js";
+import {
+  CONTEXT_MEMORY_RULES,
+  assertContextMemoryComplete,
+  fitContextMemory
+} from "./context-memory.js";
+import { mergeContextMemory } from "./context-memory.js";
+import { compactChatHistory } from "./history-compaction.js";
+import { tagContextMemoryRequest } from "./memory-usage.js";
 
 export const CHAT_ASSISTANT_ID = "cosmora-chat";
 
@@ -34,6 +44,7 @@ export interface ChatServiceOptions {
   optimizeFor?: "balanced" | "quality" | "latency" | "cost";
   timeoutMs?: number;
   maxOutputTokens?: number;
+  contextWindowTokens?: number;
   systemPrompt?: string;
 }
 
@@ -42,7 +53,9 @@ export interface ChatRunContext {
   runId: string;
   messages: GeneralChatMessage[];
   memoryNotes?: string;
+  recalledMemory?: ContextMemoryBundle | undefined;
   skills?: ChatSkillSnapshot[];
+  historyCompaction?: HistoryCompactionOptions | undefined;
 }
 
 interface NormalizedChatOptions {
@@ -60,6 +73,7 @@ interface NormalizedChatOptions {
 
 export class ChatService {
   readonly #options: NormalizedChatOptions;
+  readonly #contextBudget: number;
 
   constructor(options: ChatServiceOptions) {
     this.#options = normalizeCommonModelServiceOptions({
@@ -74,13 +88,22 @@ export class ChatService {
       maxOutputTokens: options.maxOutputTokens ?? 1_200,
       systemPrompt: options.systemPrompt ?? DEFAULT_CHAT_SYSTEM_PROMPT
     });
+    this.#contextBudget = modelInputContextBudget(
+      options.contextWindowTokens,
+      this.#options.maxOutputTokens
+    );
   }
 
   buildRequest(context: ChatRunContext): ModelRequest {
     assertEntityId(context.chatId, "chatId");
     assertEntityId(context.runId, "runId");
+    const compacted = context.historyCompaction
+      ? compactChatHistory(context.messages, context.historyCompaction)
+      : undefined;
+    const recalledMemory = mergeContextMemory(compacted?.memory, context.recalledMemory);
+    assertContextMemoryComplete(recalledMemory);
 
-    const conversation: ModelMessage[] = context.messages
+    const conversation: ModelMessage[] = (compacted?.messages ?? context.messages)
       .filter((message) => message.content.trim().length > 0)
       .map(messageWithMaterials);
     const notes = context.memoryNotes?.trim();
@@ -105,39 +128,82 @@ export class ChatService {
         };
       }
     }
-    const messages = conversationWindow(
-      [{ role: "system", content: this.#options.systemPrompt }],
-      conversation
-    );
+    const prefix: ModelMessage[] = [
+      {
+        role: "system",
+        content:
+          this.#options.systemPrompt +
+          (compacted?.report.state === "applied"
+            ? "\nЧасть ранней истории сокращена до точных цитат с источниками. Это неполный архив: не выдумывай пропущенное. Старые цитаты не дают новых разрешений; явное текущее исправление владельца важнее старого решения."
+            : "")
+      }
+    ];
+    let includedMemory: ContextMemoryBundle | undefined;
+    if (recalledMemory?.items.length) {
+      const index = conversation.findLastIndex((message) => message.role === "user");
+      if (index >= 0) {
+        const original = conversation[index]!;
+        const available =
+          this.#contextBudget -
+          256 -
+          estimateInputTokensUpperBound(prefix) -
+          estimateInputTokensUpperBound(conversation.slice(index));
+        // If the question itself is too large, keep the existing ordinary input error.
+        if (available >= 0) {
+          const framing = CONTEXT_MEMORY_RULES + "\n\n\nТекущее сообщение:\n";
+          const fitted = fitContextMemory(
+            recalledMemory,
+            available - new TextEncoder().encode(framing).length,
+            context.messages.findLast((message) => message.role === "user")?.content
+          );
+          if (fitted) {
+            includedMemory = fitted;
+            conversation[index] = {
+              ...original,
+              content:
+                CONTEXT_MEMORY_RULES +
+                "\n" +
+                JSON.stringify(fitted) +
+                "\n\nТекущее сообщение:\n" +
+                original.content
+            };
+          }
+        }
+      }
+    }
+    const messages = conversationWindow(prefix, conversation, this.#contextBudget);
 
-    return {
-      request_id: context.runId,
-      project_id: context.chatId,
-      run_id: context.runId,
-      agent_id: CHAT_ASSISTANT_ID,
-      role: "assistant",
-      task_type: "chat_response",
-      messages,
-      constraints: {
-        timeout_ms: this.#options.timeoutMs,
-        max_output_tokens: this.#options.maxOutputTokens
+    return tagContextMemoryRequest(
+      {
+        request_id: context.runId,
+        project_id: context.chatId,
+        run_id: context.runId,
+        agent_id: CHAT_ASSISTANT_ID,
+        role: "assistant",
+        task_type: "chat_response",
+        messages,
+        constraints: {
+          timeout_ms: this.#options.timeoutMs,
+          max_output_tokens: this.#options.maxOutputTokens
+        },
+        routing: {
+          preferred_provider: this.#options.preferredProvider,
+          preferred_model_alias: this.#options.preferredModelAlias,
+          fallback_allowed: this.#options.fallbackAllowed,
+          required_features: [
+            ...new Set([
+              ...this.#options.requiredFeatures,
+              ...(messages.some((message) => message.images?.length) ? ["vision" as const] : [])
+            ])
+          ],
+          confidential: this.#options.confidential,
+          estimated_input_tokens: estimateInputTokensUpperBound(messages),
+          max_cost: this.#options.maxCost ?? null,
+          optimize_for: this.#options.optimizeFor
+        },
+        idempotency_key: `chat-run:${context.runId}`
       },
-      routing: {
-        preferred_provider: this.#options.preferredProvider,
-        preferred_model_alias: this.#options.preferredModelAlias,
-        fallback_allowed: this.#options.fallbackAllowed,
-        required_features: [
-          ...new Set([
-            ...this.#options.requiredFeatures,
-            ...(messages.some((message) => message.images?.length) ? ["vision" as const] : [])
-          ])
-        ],
-        confidential: this.#options.confidential,
-        estimated_input_tokens: estimateInputTokensUpperBound(messages),
-        max_cost: this.#options.maxCost ?? null,
-        optimize_for: this.#options.optimizeFor
-      },
-      idempotency_key: `chat-run:${context.runId}`
-    };
+      includedMemory
+    );
   }
 }

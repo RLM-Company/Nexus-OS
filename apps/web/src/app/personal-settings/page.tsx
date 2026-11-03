@@ -7,6 +7,8 @@ import PrivacyPanel from "./privacy-panel";
 import { Switch, SystemMessage } from "../ui/kosmora-controls";
 import { ModelPicker } from "../ui/model-picker";
 import { InterfaceSettings } from "./interface-settings";
+import { LocalVaultSettings } from "./local-vault-settings";
+import { GoogleDriveSettings } from "./google-drive-settings";
 
 type Preferences = {
   version: number;
@@ -107,6 +109,7 @@ export default function PersonalSettings() {
         <a href="#relay-settings">English Relay</a>
         <a href="#account-usage">Использование</a>
         <a href="#account-data">Данные</a>
+        <a href="#drive-storage">Google Drive</a>
       </nav>
       {!prefs ? (
         <p>Загрузка настроек…</p>
@@ -226,6 +229,8 @@ export default function PersonalSettings() {
             <UsageActivity rows={usage?.rows ?? []} />
           </section>
           <InterfaceSettings />
+          <LocalVaultSettings />
+          <GoogleDriveSettings />
           <div id="account-data">
             <PrivacyPanel />
           </div>

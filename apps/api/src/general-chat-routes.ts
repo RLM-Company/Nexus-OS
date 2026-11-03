@@ -1,6 +1,10 @@
 import { registerChatSkillRoutes } from "./chat-skill-routes.js";
 import { registerChatWorkspaceRoutes } from "./chat-workspace-routes.js";
-import { ContextTooLargeError } from "@cosmora/core";
+import {
+  ContextTooLargeError,
+  MemoryContextIncompleteError,
+  contextMemoryUsage
+} from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
   ApiErrorSchema,
@@ -684,10 +688,17 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           chatId: run.chat_id,
           runId: run.id,
           messages: conversation,
+          historyCompaction: options.store.historyCompactionForRun(run.id, identity.owner_id),
+          recalledMemory: options.store.recallForRun(
+            run.id,
+            identity.owner_id,
+            conversation.slice(-8).map((m) => m.id)
+          ),
           memoryNotes:
             options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? "",
           skills: options.store.skills.forRun(run.id, identity.owner_id)?.items ?? []
         });
+        const originalMemoryRequest = modelRequest;
         const mode = options.store.getChat(run.chat_id, identity.owner_id)?.mode;
         if (mode === "work" || mode === "coscode")
           modelRequest.messages.splice(1, 0, {
@@ -718,6 +729,20 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
             )
           : { request: modelRequest, relay: false };
         modelRequest = prepared.request;
+        const usageSnapshot = contextMemoryUsage(modelRequest, originalMemoryRequest);
+        const memoryUsage = (attempt: number, phase: "dispatch_boundary" | "provider_completed") =>
+          options.store.contextMemory.recordUsage(
+            { kind: "chat", id: run.chat_id },
+            identity.owner_id,
+            {
+              run_id: run.id,
+              request_id: modelRequest.request_id,
+              attempt,
+              phase,
+              channel: "chat",
+              snapshot: usageSnapshot
+            }
+          );
         let pendingEnglish = "";
         for await (const event of options.modelGateway.stream(modelRequest, controller.signal)) {
           if (event.type === "route.selected") {
@@ -759,6 +784,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
                 false
               );
             }
+            memoryUsage(event.route.attempt, "dispatch_boundary");
           } else if (event.type === "route.failed") {
             options.runtimeMetrics.routeFailed(event.errorCode);
             options.store.failModelUsage(run.id, event.route.attempt, event.errorCode);
@@ -802,6 +828,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
             calculatedCost: completed.calculatedCost
           }
         );
+        memoryUsage(completed.route.attempt, "provider_completed");
         const mainHold = mainHolds.get(completed.route.attempt);
         if (mainHold) {
           options.accountStore?.completeReservation(
@@ -882,6 +909,13 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
             sendEvent(reply, {
               type: "run.failed",
               data: { run_id: run.id, error_code: code, retryable: false }
+            });
+          } else if (cause instanceof MemoryContextIncompleteError) {
+            options.store.failRun(run.id, "MEMORY_CONTEXT_INCOMPLETE");
+            options.runtimeMetrics.runFailed("CONTEXT_TOO_LARGE");
+            sendEvent(reply, {
+              type: "run.failed",
+              data: { run_id: run.id, error_code: "MEMORY_CONTEXT_INCOMPLETE", retryable: false }
             });
           } else {
             const gatewayError =

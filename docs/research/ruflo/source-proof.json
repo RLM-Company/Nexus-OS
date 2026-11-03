@@ -1,0 +1,22 @@
+{
+  "upstream": "ruvnet/ruflo",
+  "review_date": "2026-11-03",
+  "version": "3.71.0",
+  "commit": "5f3dacc54b7279e39b172d6027d7989791448e2e",
+  "tree": "a6cef799aa3dc6586c5796b5af9ef1a0cd741887",
+  "snapshot_files": 8446,
+  "verified_git_blobs": 8446,
+  "uncompressed_file_bytes": 150989332,
+  "archive_bytes": 71720169,
+  "archive_sha256": "09e51344035d95508e7b200c5b4a2ef5d386eef8f30ecdcf7427e1eff500d792",
+  "package_manifests": 55,
+  "license": "MIT",
+  "upstream_copyright": "2024-2026 ruvnet",
+  "verification": "Each tar file or symlink payload matched the Git blob SHA and size from the complete recursive tree",
+  "lfs_pointers": 0,
+  "gitlinks": 0,
+  "installed": false,
+  "upstream_code_executed": false,
+  "full_runtime_tests_performed": false,
+  "review_scope": "Selected implementation files and fragments plus metadata. Not a manual line-by-line audit of all files."
+}

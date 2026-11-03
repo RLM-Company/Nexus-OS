@@ -1,3 +1,4 @@
+import { readSseData } from "./sse-stream.js";
 import type { ModelMessage, ModelRequest } from "@cosmora/contracts";
 import { usesTools } from "./tool-transcript.js";
 import { GatewayRunError, type ModelProviderAdapter, type ProviderStreamEvent } from "./types.js";
@@ -56,6 +57,8 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncGenerator<ProviderStreamEvent> {
+    if (signal.aborted)
+      throw new GatewayRunError("INTERRUPTED", this.id, "Model run was interrupted", false);
     if (usesTools(request)) {
       throw new GatewayRunError(
         "PROVIDER_ERROR",
@@ -109,7 +112,7 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
     let hasText = false;
     let usage = { inputTokens: null as number | null, outputTokens: null as number | null };
 
-    for await (const payload of this.#readDataPayloads(response.body)) {
+    for await (const payload of readSseData(response.body, signal, this.id)) {
       let event: MessageStreamEvent;
       try {
         event = JSON.parse(payload) as MessageStreamEvent;
@@ -185,6 +188,8 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
         false
       );
     }
+    if (signal.aborted)
+      throw new GatewayRunError("INTERRUPTED", this.id, "Model run was interrupted", false);
     yield {
       type: "response.completed",
       provider: this.id,
@@ -242,28 +247,5 @@ export class AnthropicCompatibleAdapter implements ModelProviderAdapter {
     }
 
     return { system: system.join("\n\n"), messages: translated };
-  }
-
-  async *#readDataPayloads(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        buffer += decoder.decode(value, { stream: !done });
-        const lines = buffer.split(/\r?\n/);
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (line.startsWith("data:")) yield line.slice(5).trim();
-        }
-        if (done) break;
-      }
-      if (buffer.startsWith("data:")) yield buffer.slice(5).trim();
-    } finally {
-      await reader.cancel().catch(() => undefined);
-      reader.releaseLock();
-    }
   }
 }

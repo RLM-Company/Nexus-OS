@@ -1,0 +1,189 @@
+import { test, expect, type Page } from "@playwright/test";
+
+const state = "s".repeat(43),
+  proof = "p".repeat(43),
+  key = "kosmora.drive.connection.v1";
+const endpoint = "/api/v1/storage/drive";
+const view = (connected = false, configured = true) => ({
+  configured,
+  state: configured ? (connected ? "connected" : "disconnected") : "unavailable",
+  can_disconnect: connected,
+  can_retry: false,
+  archive_count: 0,
+  pending_count: 0
+});
+async function fixture(page: Page, configured = true) {
+  let connected = false,
+    finishes = 0;
+  const bodies: unknown[] = [];
+  await page.route("**/api/v1/storage/drive**", async (route) => {
+    const request = route.request(),
+      path = new URL(request.url()).pathname;
+    let result: object = ["/backups", "/sources", "/restored-files"].some((s) => path.endsWith(s))
+      ? { items: [] }
+      : view(connected, configured);
+    if (path.endsWith("/connect"))
+      result = {
+        state,
+        proof,
+        authorization_url: `https://accounts.google.com/o/oauth2/v2/auth?state=${state}`,
+        expires_at: Date.now() + 600000
+      };
+    if (path.endsWith("/finish")) {
+      finishes++;
+      const body = request.postDataJSON() as { denied?: boolean };
+      bodies.push(body);
+      connected = !body.denied;
+      result = { ...view(connected), result: body.denied ? "cancelled" : "connected" };
+    }
+    if (path.endsWith("/disconnect")) {
+      connected = false;
+      result = view();
+    }
+    await route.fulfill({ json: result });
+  });
+  return { finishes: () => finishes, bodies };
+}
+
+test("Drive consent returns to the same tab, completes once, and disconnects", async ({
+  page
+}, testInfo) => {
+  const api = await fixture(page);
+  await page.route("https://accounts.google.com/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>Google consent fixture</h1>" })
+  );
+  await page.goto("/personal-settings#drive-storage");
+  await page.getByRole("button", { name: "Подключить Google Drive", exact: true }).click();
+  await page.waitForURL("https://accounts.google.com/**");
+  await page.goto(`/personal-settings#drive_state=${state}&drive_code=fixture-code`);
+  const panel = page.locator("#drive-storage");
+  await expect(panel.getByText("Google Drive подключён.", { exact: true })).toBeVisible();
+  expect(api.finishes()).toBe(1);
+  expect(api.bodies).toEqual([{ state, proof, code: "fixture-code" }]);
+  await expect(page).toHaveURL(/#drive-storage$/);
+  expect(await page.evaluate((k) => sessionStorage.getItem(k), key)).toBeNull();
+  await panel.screenshot({ path: testInfo.outputPath("drive-settings.png") });
+  await panel.getByRole("button", { name: "Отключить Google Drive" }).click();
+  await expect(
+    panel.getByText("Подключение отключено. Копии на вашем Drive сохранены.")
+  ).toBeVisible();
+});
+
+test("a copied callback in another tab cannot finish without that tab's proof", async ({
+  context
+}) => {
+  const page = await context.newPage(),
+    api = await fixture(page);
+  await page.goto(`/personal-settings#drive_state=${state}&drive_code=fixture-code`);
+  await expect(page.locator("#drive-storage").getByRole("alert")).toContainText(
+    "Начните вход в Google заново в этой вкладке"
+  );
+  expect(api.finishes()).toBe(0);
+  await expect(page).toHaveURL(/#drive-storage$/);
+});
+
+test("Google denial is shown without connecting and consumes the proof", async ({ page }) => {
+  const api = await fixture(page);
+  await page.addInitScript(
+    ({ key, state, proof }) => sessionStorage.setItem(key, JSON.stringify({ state, proof })),
+    { key, state, proof }
+  );
+  await page.goto(`/personal-settings#drive_state=${state}&drive_error=denied`);
+  await expect(page.locator("#drive-storage").getByText("Подключение отменено.")).toBeVisible();
+  expect(api.finishes()).toBe(1);
+  expect(api.bodies).toEqual([{ state, proof, denied: true }]);
+});
+
+test("unconfigured Drive is shown honestly without an active connect action", async ({ page }) => {
+  await fixture(page, false);
+  await page.goto("/personal-settings#drive-storage");
+  const panel = page.locator("#drive-storage");
+  await expect(panel.getByText("Подключение пока недоступно", { exact: true })).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Подключить Google Drive", exact: true })
+  ).toHaveCount(0);
+});
+
+test("saves a complete copy, previews and restores into new chat/file links", async ({
+  page
+}, testInfo) => {
+  const id = "11111111-1111-4111-8111-111111111111",
+    chat = "22222222-2222-4222-8222-222222222222",
+    file = "33333333-3333-4333-8333-333333333333";
+  let saved = false,
+    restored = false;
+  const requests: { path: string; body: unknown }[] = [];
+  const summary = {
+    chats: 1,
+    files: 1,
+    messages: 10,
+    exported_at: new Date().toISOString(),
+    unfinished_messages: 1,
+    extracted_documents: 0,
+    titles: ["Исходный чат"],
+    filenames: ["report.md"]
+  };
+  const item = {
+    id,
+    state: "verified",
+    bytes: 2500000,
+    parts: 2,
+    saved_parts: 2,
+    created_at: new Date().toISOString(),
+    can_retry: false,
+    preview: summary
+  };
+  await page.route("**/api/v1/storage/drive**", async (route) => {
+    const r = route.request(),
+      path = new URL(r.url()).pathname;
+    let result: object = view(true);
+    if (r.method() === "POST") requests.push({ path, body: r.postDataJSON() });
+    if (path.endsWith("/sources"))
+      result = { items: [{ id: chat, title: "Исходный чат", mode: "work" }] };
+    if (path.endsWith("/backups")) {
+      if (r.method() === "POST") {
+        saved = true;
+        result = item;
+      } else result = { items: saved ? [item] : [] };
+    }
+    if (path.endsWith("/preview"))
+      result = { ...summary, token: "t".repeat(43), expires_at: Date.now() + 600000 };
+    if (path.endsWith("/restore")) {
+      restored = true;
+      result = {
+        id,
+        chats: [{ id: chat, title: "Исходный чат · копия" }],
+        files: [{ id: file, name: "report.md" }]
+      };
+    }
+    if (path.endsWith("/restored-files"))
+      result = {
+        items: restored
+          ? [{ id: file, name: "report.md", source_project: "Проект", source_version: 2 }]
+          : []
+      };
+    await route.fulfill({ json: result });
+  });
+  await page.goto("/personal-settings#drive-storage");
+  const panel = page.locator("#drive-storage");
+  await panel.getByRole("button", { name: "Сохранить копию на Drive" }).click();
+  await expect(panel.getByText("Все части копии сохранены и проверены.")).toBeVisible();
+  await panel.getByRole("button", { name: "Проверить и восстановить" }).click();
+  const preview = panel.getByRole("region", { name: "Предпросмотр восстановления" });
+  await expect(preview).toContainText("Существующие данные не перезаписываются");
+  await expect(preview).toContainText("Прерванных сообщений: 1");
+  await preview.screenshot({ path: testInfo.outputPath("restore-preview.png") });
+  await preview.getByRole("button", { name: "Восстановить копии" }).click();
+  await expect(panel.getByRole("link", { name: "Исходный чат · копия" })).toHaveAttribute(
+    "href",
+    `/?chat=${chat}`
+  );
+  await expect(panel.getByRole("link", { name: "report.md · Проект · v2" })).toHaveAttribute(
+    "href",
+    `/api/v1/storage/drive/restored-files/${file}`
+  );
+  expect(requests.filter((x) => x.path.endsWith("/restore"))).toHaveLength(1);
+  expect(requests.find((x) => x.path.endsWith("/restore"))?.body).toMatchObject({
+    token: "t".repeat(43)
+  });
+});

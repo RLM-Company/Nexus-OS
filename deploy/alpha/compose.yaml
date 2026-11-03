@@ -15,6 +15,9 @@ services:
     env_file:
       - path: ./private/model.env
         format: raw
+      - path: ./private/drive.env
+        required: false
+        format: raw
     environment:
       NODE_ENV: production
       API_HOST: 0.0.0.0

@@ -9,7 +9,11 @@ import type {
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
 
 import { messageWithMaterials } from "./message-materials.js";
-import { conversationWindow, estimateInputTokensUpperBound } from "./conversation-window.js";
+import {
+  conversationWindow,
+  estimateInputTokensUpperBound,
+  modelInputContextBudget
+} from "./conversation-window.js";
 export { estimateInputTokensUpperBound } from "./conversation-window.js";
 
 export const MANAGER_AGENT_ID = "cosmora-manager";
@@ -37,6 +41,7 @@ export interface ManagerServiceOptions {
   optimizeFor?: "balanced" | "quality" | "latency" | "cost";
   timeoutMs?: number;
   maxOutputTokens?: number;
+  contextWindowTokens?: number;
   systemPrompt?: string;
 }
 
@@ -70,6 +75,7 @@ interface NormalizedManagerOptions {
 
 export class ManagerService {
   readonly #options: NormalizedManagerOptions;
+  readonly #contextBudget: number;
 
   constructor(options: ManagerServiceOptions) {
     this.#options = normalizeCommonModelServiceOptions({
@@ -84,6 +90,15 @@ export class ManagerService {
       maxOutputTokens: options.maxOutputTokens ?? 1_200,
       systemPrompt: options.systemPrompt ?? DEFAULT_MANAGER_SYSTEM_PROMPT
     });
+    this.#contextBudget = modelInputContextBudget(
+      options.contextWindowTokens,
+      this.#options.maxOutputTokens
+    );
+  }
+
+  /** Conservative input allowance for the configured route, including its output reserve. */
+  get inputContextBudget(): number {
+    return this.#contextBudget;
   }
 
   buildRequest(context: ManagerRunContext): ModelRequest {
@@ -108,7 +123,8 @@ export class ManagerService {
             ]
           : [])
       ],
-      conversation
+      conversation,
+      this.#contextBudget
     );
 
     return {

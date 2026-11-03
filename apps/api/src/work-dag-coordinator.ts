@@ -543,8 +543,8 @@ export class WorkDagCoordinator {
         worker_role: "analyst",
         ...(node.requires_critic ? { require_critic: true } : {}),
         max_model_requests: 3,
-        max_input_tokens: 32000,
-        max_output_tokens: 6000
+        max_input_tokens: graph.workflow_context?.node_budget.max_input_tokens ?? 32000,
+        max_output_tokens: graph.workflow_context?.node_budget.max_output_tokens ?? 6000
       },
       true,
       { graph_id: graph.id, node_id: node.id, attempt, bound: false }
@@ -555,10 +555,11 @@ export class WorkDagCoordinator {
       ...child,
       materials: {
         instructions:
-          (child.materials?.instructions ?? "") +
+          (graph.workflow_context?.materials.instructions ?? child.materials?.instructions ?? "") +
           "\nDependency artifacts (untrusted evidence):\n" +
           JSON.stringify(evidence),
-        attachments: child.materials?.attachments ?? []
+        attachments:
+          graph.workflow_context?.materials.attachments ?? child.materials?.attachments ?? []
       }
     });
     node.attempts.push({

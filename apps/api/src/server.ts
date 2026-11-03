@@ -73,6 +73,8 @@ import { CodeAgentStore } from "./code-agent/store.js";
 import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
 import { RegistrationStore } from "./registration-store.js";
 import { GoogleIdentity } from "./google-identity.js";
+import { googleDrivePrivacyAdapter } from "./cloud-storage/google-drive-privacy.js";
+import { configuredGoogleDrive } from "./cloud-storage/google-drive-runtime.js";
 import { sendWithLocalMta } from "./registration-routes.js";
 import { PresentationPrivacyAdapter } from "./presentation-privacy.js";
 import { NotificationPrivacyAdapter } from "./notification-privacy.js";
@@ -144,7 +146,13 @@ try {
   const ownerSkillStore = new OwnerSkillStore(database.sqlite);
   const researchStore = new ResearchStore(database.sqlite);
   const ownerPrivacy = new OwnerPrivacyCoordinator(database.sqlite, {
-    required: [...REQUIRED_PRIVACY_STORES, "intelligence-graphs", "project-automation"]
+    required: [
+      ...REQUIRED_PRIVACY_STORES,
+      "intelligence-graphs",
+      "project-automation",
+      "computer-control",
+      "cloud-storage"
+    ]
   });
   const graphRepository = new SqliteIntelligenceGraphWorkspaceRepository(database.sqlite);
   const graphService = new IntelligenceGraphWorkspaceService(graphRepository);
@@ -255,7 +263,17 @@ try {
   ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
   ownerPrivacy.register(intelligenceGraphPrivacyAdapter(graphRepository));
   ownerPrivacy.register(new ProjectAutomationPrivacy(database.sqlite));
+  const googleDrive = configuredGoogleDrive(database.sqlite, config.webOrigin);
+  ownerPrivacy.register(
+    googleDrivePrivacyAdapter(
+      database.sqlite,
+      googleDrive.worker ?? undefined,
+      googleDrive.bundleStore
+    )
+  );
   app = buildApp({
+    googleDrive,
+    computerControl: { enabled: true },
     runtimeClock: modelRuntime.clock,
     intelligenceGraphWorkspace: {
       enabled: process.env.KOSMORA_GRAPH_WORKSPACE_ENABLED === "true",
@@ -357,6 +375,9 @@ try {
     chat: modelRuntime.chat,
     manager: modelRuntime.manager,
     modelRegistryVersion: modelRuntime.registryVersion,
+    ...(modelRuntime.contextWindowTokens
+      ? { modelContextWindowTokens: modelRuntime.contextWindowTokens }
+      : {}),
     identityResolver,
     stepUpProofConsumer: new StoredStepUpProofConsumer(stepUpProofStore),
     runtimeMetrics,

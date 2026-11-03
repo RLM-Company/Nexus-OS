@@ -1,4 +1,5 @@
 import { validateGeneratedPresentation } from "@cosmora/contracts/presentation-package";
+import { parseModelJson } from "./model-json.js";
 import { parseGamePackage, gameOutputInstruction } from "@cosmora/contracts/game-package";
 import {
   validateGameProjectFiles,
@@ -18,10 +19,18 @@ import {
   type WorkIntelligenceGraphAdapter,
   type WorkOwnerBudget,
   type WorkQuiescence,
-  type ModelRequest
+  type ModelRequest,
+  type ContextMemoryBundle,
+  type ModelMessage
 } from "@cosmora/contracts";
 import {
   estimateInputTokensUpperBound,
+  CONTEXT_MEMORY_RULES,
+  tagContextMemoryRequest,
+  contextMemoryUsage,
+  fitContextMessages,
+  ContextTooLargeError,
+  MemoryContextIncompleteError,
   readWorkGraphContext,
   workRuntimeProgress,
   assertWorkTaskGraph,
@@ -279,11 +288,24 @@ export class ManagerWorkCoordinator {
       stage === "plan" ? "manager" : stage === "review" ? "critic" : work.request.worker_role;
     request.agent_id = "cosmora-work-" + request.role;
     request.task_type = "manager_work_" + stage;
-    request.messages = [
+    const resolved = this.dependencies.store.contextMemory.resolve(
+      { kind: "project", id: work.project_id },
+      work.owner_id,
+      work.request.goal
+    );
+    const personalSkills =
+      this.dependencies.store.skills.forWork(work.id, work.owner_id)?.items ?? [];
+    const projectMemory = this.dependencies.store.memory.visibleSnapshot(
+      work.project_id,
+      work.owner_id,
+      work.memory_snapshot
+    );
+    const render = (recalled: ContextMemoryBundle | undefined): ModelMessage[] => [
       {
         role: "system",
         content:
           prompts[stage] +
+          (recalled?.items.length ? "\n" + CONTEXT_MEMORY_RULES : "") +
           (work.request.output_contract?.kind === "website"
             ? "\n" +
               (stage === "draft"
@@ -307,20 +329,40 @@ export class ManagerWorkCoordinator {
         role: "user",
         content: JSON.stringify({
           goal: work.request.goal,
-          personal_skills:
-            this.dependencies.store.skills.forWork(work.id, work.owner_id)?.items ?? [],
+          recalled_memory: recalled?.items.length ? recalled : undefined,
+          personal_skills: personalSkills,
           materials: work.materials,
           optional_graph_context: work.graph_context,
-          project_memory: this.dependencies.store.memory.visibleSnapshot(
-            work.project_id,
-            work.owner_id,
-            work.memory_snapshot
-          ),
+          project_memory: projectMemory,
           plan: stage !== "plan" ? work.plan : undefined,
           draft: stage === "review" ? work.draft : undefined
         })
       }
     ];
+    const remainingInput = work.request.max_input_tokens - work.reserved_input_tokens;
+    if (remainingInput < 0) throw new Error("EXECUTION_BUDGET_EXCEEDED");
+    let recalled: ContextMemoryBundle | undefined;
+    try {
+      const packed = fitContextMessages({
+        render,
+        memory: resolved,
+        query: work.request.goal,
+        inputBudget: Math.min(this.dependencies.manager.inputContextBudget, remainingInput)
+      });
+      request.messages = packed.messages;
+      recalled = packed.memory;
+    } catch (error) {
+      if (error instanceof MemoryContextIncompleteError)
+        throw new Error("WORK_MEMORY_CONTEXT_INCOMPLETE", { cause: error });
+      if (error instanceof ContextTooLargeError)
+        throw new Error(
+          remainingInput < this.dependencies.manager.inputContextBudget
+            ? "EXECUTION_BUDGET_EXCEEDED"
+            : "WORK_CONTEXT_TOO_LARGE",
+          { cause: error }
+        );
+      throw error;
+    }
     request.routing.fallback_allowed = false;
     request.routing.estimated_input_tokens = estimateInputTokensUpperBound(request.messages);
     const remainingOutput = work.request.max_output_tokens - work.reserved_output_tokens;
@@ -339,7 +381,7 @@ export class ManagerWorkCoordinator {
     if (request.constraints.max_output_tokens < 1) throw new Error("EXECUTION_BUDGET_EXCEEDED");
     if (work.request.output_contract?.kind === "game_project" && stage === "draft")
       request.constraints.timeout_ms = Math.max(request.constraints.timeout_ms, 180_000);
-    return request;
+    return tagContextMemoryRequest(request, recalled);
   }
 
   private async model(work: ManagerWork, signal: AbortSignal): Promise<string> {
@@ -420,6 +462,16 @@ export class ManagerWorkCoordinator {
     }, 50);
     try {
       const request = this.request(work, runId);
+      const snapshot = contextMemoryUsage(request);
+      const memoryUsage = (attempt: number, phase: "dispatch_boundary" | "provider_completed") =>
+        store.contextMemory.recordUsage({ kind: "project", id: work.project_id }, work.owner_id, {
+          run_id: runId,
+          request_id: request.request_id,
+          attempt,
+          phase,
+          channel: "manager_work",
+          snapshot
+        });
       for await (const event of gateway.stream(request, controller.signal)) {
         work = this.current(work.id, work.owner_id);
         if (signal.aborted || work.status === "cancelled" || this.isStopped(work))
@@ -458,6 +510,7 @@ export class ManagerWorkCoordinator {
           if (!projects.reserveModelUsage(runId, event.route, work.owner_id))
             throw new Error("PROJECT_USAGE_RESERVATION_FAILED");
           // Once this iteration resumes, provider dispatch can happen. Failures are uncertain.
+          memoryUsage(event.route.attempt, "dispatch_boundary");
           dispatchAllowed = true;
         } else if (event.type === "route.failed") {
           projects.failModelUsage(runId, event.route.attempt, event.errorCode);
@@ -483,6 +536,7 @@ export class ManagerWorkCoordinator {
         calculatedCost: completion.calculatedCost
       });
       runCommitted = true;
+      memoryUsage(completion.route.attempt, "provider_completed");
       if (ownerReservation)
         this.dependencies.ownerBudget?.completeReservation(
           ownerReservation,
@@ -509,7 +563,19 @@ export class ManagerWorkCoordinator {
       return content;
     } catch (error) {
       if (!runCommitted)
-        projects.failRun(runId, error instanceof GatewayRunError ? error.code : "WORK_INTERRUPTED");
+        projects.failRun(
+          runId,
+          error instanceof GatewayRunError
+            ? error.code
+            : error instanceof Error &&
+                [
+                  "WORK_CONTEXT_TOO_LARGE",
+                  "WORK_MEMORY_CONTEXT_INCOMPLETE",
+                  "EXECUTION_BUDGET_EXCEEDED"
+                ].includes(error.message)
+              ? error.message
+              : "WORK_INTERRUPTED"
+        );
       if (ownerReservation) {
         if (dispatchAllowed)
           this.dependencies.ownerBudget?.uncertainReservation(ownerReservation, "main");
@@ -664,7 +730,7 @@ export class ManagerWorkCoordinator {
         if (work.status === "cancelled") return;
         let value: unknown;
         try {
-          value = JSON.parse(raw) as unknown;
+          value = parseModelJson(raw);
         } catch {
           throw new Error("INVALID_MODEL_OUTPUT");
         }
@@ -755,6 +821,8 @@ export class ManagerWorkCoordinator {
       const known = [
         "EMERGENCY_STOP",
         "EXECUTION_BUDGET_EXCEEDED",
+        "WORK_CONTEXT_TOO_LARGE",
+        "WORK_MEMORY_CONTEXT_INCOMPLETE",
         "INVALID_MODEL_OUTPUT",
         "INVALID_PRESENTATION_RESULT",
         "INVALID_WEBSITE_RESULT",
@@ -776,7 +844,13 @@ export class ManagerWorkCoordinator {
                 (known.includes(error.message) || /^OWNER_[A-Z_]+$/.test(error.message))
               ? error.message
               : "WORK_FAILED";
-      this.checkpoint(work, "Работа остановлена: " + work.error_code);
+      const contextMessage =
+        work.error_code === "WORK_CONTEXT_TOO_LARGE"
+          ? "Материалы и результаты этапа не помещаются в контекст выбранной модели. Запрос этого этапа не отправлен; содержимое сохранено без обрезки."
+          : work.error_code === "WORK_MEMORY_CONTEXT_INCOMPLETE"
+            ? "Обязательные записи памяти не помещаются вместе с материалами этапа. Запрос этого этапа не отправлен; проверьте обязательные записи и объём материалов."
+            : "Работа остановлена: " + work.error_code;
+      this.checkpoint(work, contextMessage);
     }
   }
 }
