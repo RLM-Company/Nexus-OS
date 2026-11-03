@@ -103,6 +103,100 @@ async function fixture(t, options = {}) {
   };
 }
 
+test("real Work driver locates versioned lines in a large file without desktop or browser access", async (t) => {
+  const f = await fixture(t),
+    messages = [];
+  const source = Array.from({ length: 900 }, (_, i) =>
+    i === 699
+      ? "Цена 19 700 ₽, кроме срочной доставки."
+      : `Исходная строка ${i + 1}: не изменять числа и исключения.`
+  ).join("\r\n");
+  fs.writeFileSync(path.join(f.folder, "условия.txt"), source, "utf8");
+  let stage = 0,
+    match;
+  const runner = new ComputerSession({
+    driver: f.driver,
+    executionMode: "work",
+    workspace: f.workspace,
+    history: f.history,
+    identity: async () => context,
+    confirm: async () => true,
+    notify() {},
+    planner: {
+      begin: async () => ({ id: "fixture", supports_workspace_read_lines: true }),
+      authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+      end: async () => {},
+      next: async ({ observation, previousResult }) => {
+        assert.equal(observation.workspace.read_lines, true);
+        messages.push(previousResult);
+        let action;
+        switch (stage++) {
+          case 0:
+            action = {
+              kind: "work_plan",
+              steps: [{ title: "Проверить цену", criteria: "Цена и исключение прочитаны" }]
+            };
+            break;
+          case 1:
+            action = {
+              kind: "work_step",
+              step: 1,
+              state: "running",
+              evidence: "",
+              observation_id: observation.observation_id
+            };
+            break;
+          case 2:
+            action = { kind: "workspace_find", path: "", mode: "text", query: "Цена 19 700" };
+            break;
+          case 3:
+            match = JSON.parse(previousResult).matches[0];
+            assert.equal(match.line, 700);
+            action = {
+              kind: "workspace_read_lines",
+              path: match.path,
+              start_line: 699,
+              end_line: 701,
+              expected_version: match.version
+            };
+            break;
+          case 4:
+            const read = JSON.parse(previousResult);
+            assert.equal(read.version, match.version);
+            assert.equal(read.excerpt_only, true);
+            assert.ok(source.includes(read.content));
+            assert.ok(read.content.includes("19 700 ₽, кроме срочной доставки"));
+            action = {
+              kind: "work_step",
+              step: 1,
+              state: "checked",
+              evidence: "Цена 19 700 ₽, кроме срочной доставки.",
+              observation_id: observation.observation_id
+            };
+            break;
+          default:
+            action = { kind: "done", summary: "Цена и исключение проверены по строкам 699–701" };
+        }
+        return { action, message: "fixture", requires_confirmation: false };
+      }
+    }
+  });
+  assert.equal(
+    (
+      await runner.run({
+        project: "project",
+        goal: "Уточнить цену из выбранной папки",
+        maxSteps: 8
+      })
+    ).status,
+    "completed"
+  );
+  assert.equal(stage, 6);
+  assert.equal(f.calls.filter((c) => c.endsWith(":observe")).length, 0);
+  assert.equal(f.grants.length, 0);
+  assert.equal(fs.readFileSync(path.join(f.folder, "условия.txt"), "utf8"), source);
+});
+
 test("one work task plans, searches, writes a real scoped file, switches to an app and checks all criteria", async (t) => {
   const f = await fixture(t),
     gate = createTaskGate();

@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { normalizeServerOrigin } = require("../connection-policy.cjs");
 const { ERROR_CODES, KosworkWorkspaceError, throwIfAborted } = require("./errors.cjs");
+const { selectTextRange } = require("./text-range.cjs");
 const {
   DEFAULT_IGNORED_DIRS,
   assertNotReparseOrSymlink,
@@ -832,7 +833,7 @@ function createKosworkWorkspaceService({
           return;
         }
 
-        const lines = text.split(/\r?\n/);
+        const lines = text.split(/\r\n|\r|\n/);
         for (let lineIdx = 0; lineIdx < lines.length; lineIdx += 1) {
           op.check();
           const lineText = lines[lineIdx];
@@ -940,6 +941,7 @@ function createKosworkWorkspaceService({
   async function readTextFile({
     relativePath,
     maxBytes = limits.maxReadBytes,
+    range = null,
     ownerId = null,
     origin = null,
     signal = null,
@@ -975,10 +977,24 @@ function createKosworkWorkspaceService({
         activeController: op.controller
       });
       const content = decodeStrictUtf8Text(snapshot.buffer, target.relativePath);
+      if (range?.expectedVersion !== undefined) {
+        if (!/^sha256:[a-f0-9]{64}$/.test(range.expectedVersion))
+          throw new KosworkWorkspaceError(
+            ERROR_CODES.WORKSPACE_INVALID_ARGUMENT,
+            "Ожидался точный SHA256 версии файла."
+          );
+        if (!versionsMatch(snapshot.sha256, range.expectedVersion))
+          throw new KosworkWorkspaceError(
+            ERROR_CODES.WORKSPACE_VERSION_CONFLICT,
+            "Файл изменился после предыдущего чтения. Обновите источники.",
+            { actualVersion: snapshot.version }
+          );
+      }
 
       return {
         path: target.relativePath,
         content,
+        ...(range ? selectTextRange(content, range) : {}),
         encoding: "utf-8",
         size: snapshot.size,
         mtimeMs: snapshot.mtimeMs,

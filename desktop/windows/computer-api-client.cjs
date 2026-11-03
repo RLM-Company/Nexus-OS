@@ -105,6 +105,8 @@ function createComputerApiClient({ identity, getSession }) {
           throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
         if (executionMode !== "computer" && result.execution_mode !== executionMode)
           throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
+        if (result.supports_workspace_read_lines === true)
+          session.supports_workspace_read_lines = true;
         return session;
       } catch (error) {
         // Cancellation is safe even when the create response was lost; never recreate or retry.

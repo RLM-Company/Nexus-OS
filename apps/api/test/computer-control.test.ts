@@ -448,6 +448,13 @@ describe("owner-bound computer proposals", () => {
     { kind: "workspace_list", path: "", cursor: 0 },
     { kind: "workspace_find", path: "", mode: "text", query: "summary" },
     { kind: "workspace_read", path: "note.md" },
+    {
+      kind: "workspace_read_lines",
+      path: "note.md",
+      start_line: 2,
+      end_line: 8,
+      expected_version: "sha256:" + "a".repeat(64)
+    },
     { kind: "workspace_mkdir", path: "reports" },
     { kind: "workspace_create", path: "empty.md", content: "" },
     {
@@ -468,7 +475,7 @@ describe("owner-bound computer proposals", () => {
       const f = await fixture({ output: { ...action, action: workspaceAction } });
       await f.create();
       const value = structuredClone(step);
-      value.observation.workspace = { id: "a".repeat(24), name: "Owner project" };
+      value.observation.workspace = { id: "a".repeat(24), name: "Owner project", read_lines: true };
       expect(await f.next(value)).toMatchObject({ action: workspaceAction });
       expect(f.calls).toHaveLength(1);
       expect(f.calls[0]!.messages[1]!.content).toContain("Owner project");
@@ -483,6 +490,64 @@ describe("owner-bound computer proposals", () => {
     });
     await f.create();
     await expect(f.next()).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+  });
+  it("advertises the new source reader only with the selected-folder capability", async () => {
+    for (const [mounted, supported] of [
+      [false, false],
+      [true, false],
+      [true, true]
+    ] as const) {
+      const f = await fixture();
+      await f.create();
+      const value = structuredClone(step);
+      if (mounted)
+        value.observation.workspace = {
+          id: "a".repeat(24),
+          name: "Owner project",
+          ...(supported ? { read_lines: true as const } : {})
+        };
+      await f.next(value);
+      expect(f.calls[0]!.messages[0]!.content.includes("workspace_read_lines")).toBe(supported);
+    }
+  });
+  it("does not dispatch a new line-read action to an older client", async () => {
+    const f = await fixture({
+      output: {
+        ...action,
+        action: {
+          kind: "workspace_read_lines",
+          path: "notes.md",
+          start_line: 1,
+          end_line: 5,
+          expected_version: null
+        }
+      }
+    });
+    await f.create();
+    const value = structuredClone(step);
+    value.observation.workspace = { id: "a".repeat(24), name: "Legacy client folder" };
+    await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+  });
+  it.each([
+    { start_line: 1, end_line: 121 },
+    { start_line: 9, end_line: 3 },
+    { start_line: 0, end_line: 3 }
+  ])("rejects invalid line ranges at the gateway boundary: %j", async (range) => {
+    const f = await fixture({
+      output: {
+        ...action,
+        action: {
+          kind: "workspace_read_lines",
+          path: "notes.md",
+          ...range,
+          expected_version: null
+        }
+      }
+    });
+    await f.create();
+    const value = structuredClone(step);
+    value.observation.workspace = { id: "a".repeat(24), name: "Owner project" };
+    await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
   });
   it.each([
     { kind: "hover", x: 0.2, y: 0.3 },

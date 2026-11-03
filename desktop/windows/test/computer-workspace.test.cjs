@@ -44,6 +44,139 @@ function fixture(t) {
   });
   return { base, root, profile, codec, workspace };
 }
+
+test("large Unicode files can be read as literal versioned lines, without enabling whole-file replacement", async (t) => {
+  const f = fixture(t),
+    selected = await f.workspace.connect(context, new AbortController().signal);
+  const name = "большой отчёт.txt";
+  const content = Array.from({ length: 1000 }, (_, i) =>
+    i === 499
+      ? "Важное условие: 77 ₽, только после проверки"
+      : `Строка ${i + 1}: исходные условия без изменений`
+  ).join("\r\n");
+  fs.writeFileSync(path.join(f.root, name), content, "utf8");
+  const execute = (action) =>
+    f.workspace.execute(validateComputerAction(action), {
+      context,
+      workspaceId: selected.id,
+      signal: new AbortController().signal
+    });
+  await assert.rejects(
+    execute({ kind: "workspace_read", path: name }),
+    (e) => e.code === "WORKSPACE_FILE_TOO_LARGE"
+  );
+  const found = await execute({
+    kind: "workspace_find",
+    path: "",
+    mode: "text",
+    query: "Важное условие"
+  });
+  const source = found.matches[0];
+  assert.equal(source.line, 500);
+  const quote = await execute({
+    kind: "workspace_read_lines",
+    path: source.path,
+    start_line: 499,
+    end_line: 501,
+    expected_version: source.version
+  });
+  assert.ok(content.includes(quote.content));
+  assert.ok(quote.content.includes("77 ₽, только после проверки"));
+  assert.equal(quote.version, source.version);
+  assert.equal(quote.sha256, crypto.createHash("sha256").update(content).digest("hex"));
+  assert.equal(quote.excerpt_only, true);
+  assert.equal(quote.next_start_line, 502);
+  assert.equal(quote.total_lines, 1000);
+  assert.ok(Buffer.byteLength(JSON.stringify(quote)) < 1000);
+  await assert.rejects(
+    execute({
+      kind: "workspace_update",
+      path: name,
+      content: "lost source",
+      expected_version: quote.version
+    }),
+    (e) => e.code === "WORKSPACE_FILE_TOO_LARGE"
+  );
+  assert.equal(fs.readFileSync(path.join(f.root, name), "utf8"), content);
+  fs.appendFileSync(path.join(f.root, name), "\r\nchanged");
+  await assert.rejects(
+    execute({
+      kind: "workspace_read_lines",
+      path: name,
+      start_line: 502,
+      end_line: 510,
+      expected_version: quote.version
+    }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  const fresh = await execute({
+    kind: "workspace_read_lines",
+    path: name,
+    start_line: 1001,
+    end_line: 1010,
+    expected_version: null
+  });
+  assert.equal(fresh.content, "changed");
+  assert.equal(fresh.end_line, 1001);
+  assert.equal(fresh.next_start_line, null);
+});
+
+test("line reads retain source limits, protected paths and strict UTF-8 checks", async (t) => {
+  const f = fixture(t),
+    selected = await f.workspace.connect(context, new AbortController().signal);
+  const execute = (name, overrides = {}) =>
+    f.workspace.execute(
+      validateComputerAction({
+        kind: "workspace_read_lines",
+        path: name,
+        start_line: 1,
+        end_line: 2,
+        expected_version: null
+      }),
+      {
+        context,
+        workspaceId: selected.id,
+        signal: new AbortController().signal,
+        ...overrides
+      }
+    );
+  fs.writeFileSync(path.join(f.root, "invalid.txt"), Buffer.from([0xc3, 0x28]));
+  fs.writeFileSync(path.join(f.root, "huge.txt"), Buffer.alloc(2 * 1024 * 1024 + 1, 65));
+  await assert.rejects(execute("invalid.txt"), (e) => e.code === "WORKSPACE_BINARY_FILE");
+  await assert.rejects(execute("huge.txt"), (e) => e.code === "WORKSPACE_FILE_TOO_LARGE");
+  assert.throws(() => execute(".env"), /COMPUTER_ACTION_INVALID/);
+  await assert.rejects(
+    execute("invalid.txt", { context: { ...context, owner: "other" } }),
+    /IDENTITY_CHANGED/
+  );
+});
+
+test("search and excerpt line numbers agree for CR-only sources", async (t) => {
+  const f = fixture(t),
+    selected = await f.workspace.connect(context, new AbortController().signal);
+  fs.writeFileSync(path.join(f.root, "old.txt"), "one\rtwo\rИскомое условие\rfour");
+  const execute = (action) =>
+    f.workspace.execute(validateComputerAction(action), {
+      context,
+      workspaceId: selected.id,
+      signal: new AbortController().signal
+    });
+  const found = await execute({
+    kind: "workspace_find",
+    path: "",
+    mode: "text",
+    query: "Искомое условие"
+  });
+  assert.equal(found.matches[0].line, 3);
+  const quote = await execute({
+    kind: "workspace_read_lines",
+    path: "old.txt",
+    start_line: 3,
+    end_line: 3,
+    expected_version: found.matches[0].version
+  });
+  assert.equal(quote.content, "Искомое условие");
+});
 test("real temporary folder actions are scoped, versions are checked and production backups are encrypted", async (t) => {
   const f = fixture(t),
     selected = await f.workspace.connect(context, new AbortController().signal);

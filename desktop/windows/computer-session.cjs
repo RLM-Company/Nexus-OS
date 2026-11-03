@@ -2,6 +2,7 @@
 
 const { ComputerSessionGate, recoveryWriteActions } = require("./computer-policy.cjs");
 const { setTimeout: delay } = require("node:timers/promises");
+const { WorkRetryGuard } = require("./work-retry-guard.cjs");
 
 class ComputerSession {
   constructor({
@@ -145,8 +146,10 @@ class ComputerSession {
       let previousResult = recovery?.previousResult ?? "";
       let approval = null;
       let pendingObservation = null;
+      const retryGuard = this.executionMode === "work" ? new WorkRetryGuard() : null;
       for (let step = 0; step < maxSteps; step++) {
         await this.assertLive(state);
+        retryGuard?.assertCanContinue();
         let observation;
         for (let capture = 0; ; capture++) {
           try {
@@ -167,7 +170,17 @@ class ComputerSession {
           }
         }
         await this.assertLive(state);
-        if (state.workspace) observation = { ...observation, workspace: state.workspace };
+        if (state.workspace)
+          observation = {
+            ...observation,
+            workspace: {
+              ...state.workspace,
+              ...(state.session?.supports_workspace_read_lines === true &&
+              this.workspace.supportsLineReads?.(state.grant) === true
+                ? { read_lines: true }
+                : {})
+            }
+          };
         if (pendingObservation !== null) {
           state.journal?.mark(pendingObservation, "observed");
           pendingObservation = null;
@@ -238,9 +251,11 @@ class ComputerSession {
             )
               throw error;
             state.journal?.mark(step + 1, "not_executed");
+            const retry = retryGuard?.recordFailure(action, observation, error.message);
             previousResult = JSON.stringify({
               not_executed: true,
               reason: error.message,
+              ...(retry ? { retry_guard: retry } : {}),
               instruction:
                 "Create the plan, select its running step and authorize the required environment. Text-file tools cannot create Office/PDF documents: use a real authorized application, never rename plain text to an Office extension."
             });
@@ -401,6 +416,21 @@ class ComputerSession {
               signal: state.controller.signal
             });
           } else response = await this.driver.execute(action, observation, state.controller.signal);
+          // This top-level error is created by the trusted workspace adapter.
+          // Read payloads (including JSON-looking file content) are not inspected.
+          if (
+            [
+              "workspace_read",
+              "workspace_read_lines",
+              "workspace_list",
+              "workspace_find",
+              "workspace_backups"
+            ].includes(action.kind) &&
+            response?.error === "WORKSPACE_RESULT_TOO_LARGE"
+          ) {
+            const retry = retryGuard?.recordFailure(action, observation, response.error);
+            if (retry) response = { ...response, retry_guard: retry };
+          } else retryGuard?.recordSuccess(action, observation);
           this.driver.recordResult?.(action, response);
           if (this.executionMode === "work") state.journal?.plan(this.driver.checkpoint());
           state.journal?.mark(step + 1, "requested");
@@ -409,6 +439,7 @@ class ComputerSession {
         } catch (error) {
           const knownWorkspaceRejection = [
             "WORKSPACE_VERSION_CONFLICT",
+            "WORKSPACE_RANGE_INVALID",
             "WORKSPACE_ALREADY_EXISTS",
             "WORKSPACE_NOT_FOUND",
             "WORKSPACE_NOT_A_FILE",
@@ -433,14 +464,21 @@ class ComputerSession {
           )
             throw error;
           state.journal?.mark(step + 1, "not_executed");
+          const retry = retryGuard?.recordFailure(
+            action,
+            observation,
+            knownWorkspaceRejection ? error.code : error.message
+          );
           previousResult = JSON.stringify({
             not_executed: true,
             reason: knownWorkspaceRejection ? error.code : error.message,
+            ...(retry ? { retry_guard: retry } : {}),
             instruction:
               "Inspect a fresh observation and replan; never blindly repeat the prior action."
           });
         }
       }
+      retryGuard?.assertCanContinue();
       outcome = "step_limit";
       return result({
         status: "step_limit",

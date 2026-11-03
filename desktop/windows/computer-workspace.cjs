@@ -1,6 +1,7 @@
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
+const { ERROR_CODES, KosworkWorkspaceError } = require("./workspace/errors.cjs");
 const {
   createKosworkWorkspaceService,
   createBackupStore,
@@ -32,6 +33,7 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
     return prior ? service.revokeAccess(owner(prior)) : Promise.resolve();
   }
   return {
+    supportsLineReads: (context) => Boolean(snapshot(context)),
     uploadFile(context, workspaceId, relativePath) {
       if (snapshot(context)?.id !== workspaceId || !workspaceId)
         throw Error("COMPUTER_WORKSPACE_CHANGED");
@@ -128,6 +130,16 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
         case "workspace_read":
           result = await service.readTextFile({ ...args, maxBytes: 10000 });
           break;
+        case "workspace_read_lines":
+          result = await service.readTextFile({
+            ...args,
+            range: {
+              startLine: action.start_line,
+              endLine: action.end_line,
+              expectedVersion: action.expected_version ?? undefined
+            }
+          });
+          break;
         case "workspace_mkdir":
           result = await service.createDirectory(args);
           break;
@@ -135,6 +147,15 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
           result = await service.createFile({ ...args, content: action.content });
           break;
         case "workspace_update":
+          // A partial range is not a basis for replacing a larger source.
+          // Match the complete-read tool's bound; updateFile independently
+          // rechecks this exact version again immediately before committing.
+          const base = await service.readTextFile({ ...args, maxBytes: 10000 });
+          if (base.version !== action.expected_version)
+            throw new KosworkWorkspaceError(
+              ERROR_CODES.WORKSPACE_VERSION_CONFLICT,
+              "Файл изменился. Перед заменой прочитайте актуальную полную версию."
+            );
           result = await service.updateFile({
             ...args,
             content: action.content,

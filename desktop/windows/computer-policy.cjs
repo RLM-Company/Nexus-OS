@@ -47,6 +47,7 @@ const fields = {
   workspace_list: ["path", "cursor"],
   workspace_find: ["path", "mode", "query"],
   workspace_read: ["path"],
+  workspace_read_lines: ["path", "start_line", "end_line", "expected_version"],
   workspace_mkdir: ["path"],
   workspace_create: ["path", "content"],
   workspace_update: ["path", "content", "expected_version"],
@@ -144,6 +145,18 @@ function validateComputerAction(action) {
     }
     if (action.kind.startsWith("workspace_")) {
       try {
+        if (
+          action.kind === "workspace_read_lines" &&
+          (!Number.isSafeInteger(action.start_line) ||
+            !Number.isSafeInteger(action.end_line) ||
+            action.start_line < 1 ||
+            action.end_line < action.start_line ||
+            action.end_line > 2097153 ||
+            action.end_line - action.start_line >= 120 ||
+            (action.expected_version !== null &&
+              !/^sha256:[a-f0-9]{64}$/.test(action.expected_version)))
+        )
+          return false;
         if (action.kind !== "workspace_restore")
           require("./workspace/path-guard.cjs").validateRelativePath(action.path, {
             allowEmpty: ["workspace_list", "workspace_find"].includes(action.kind)

@@ -11,6 +11,32 @@ const response = (body) =>
     headers: { "content-type": "application/json" }
   });
 
+test("line-reader support is negotiated only by an explicit server capability", async () => {
+  for (const capability of [undefined, false, "true", true]) {
+    const client = createComputerApiClient({
+      identity: async () => owner,
+      getSession: () => ({
+        fetch: async (_url, options) =>
+          response({
+            id: JSON.parse(options.body).client_request_id,
+            execution_mode: "work",
+            planner: { kind: "model_gateway", mode: "provider" },
+            ...(capability === undefined ? {} : { supports_workspace_read_lines: capability })
+          })
+      })
+    });
+    const result = await client.begin({
+      project: "project",
+      goal: "Read source",
+      maxSteps: 5,
+      context: owner,
+      executionMode: "work",
+      signal: new AbortController().signal
+    });
+    assert.equal(result.supports_workspace_read_lines, capability === true ? true : undefined);
+  }
+});
+
 test("computer API never forwards an old session secret to a new server or owner", async () => {
   for (const changed of [
     { ...owner, origin: "https://other.test" },

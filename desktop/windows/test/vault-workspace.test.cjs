@@ -59,6 +59,26 @@ function fixture(t, options = {}) {
     }
   };
 }
+test("ordinary file line readers cannot bypass the vault's opaque source protocol", async (t) => {
+  const f = fixture(t);
+  await f.grant();
+  await assert.rejects(
+    f.execute({
+      kind: "workspace_read_lines",
+      path: P + "/" + f.source.id + "/0",
+      start_line: 1,
+      end_line: 5,
+      expected_version: null
+    }),
+    (e) => e.code === "WORKSPACE_PROTECTED_PATH"
+  );
+  const stillReadable = await f.execute({
+    kind: "workspace_read",
+    path: P + "/" + f.source.id + "/0"
+  });
+  assert.ok(stillReadable.content.includes("17 350.25"));
+});
+
 test("no agent access without a grant, then opaque listing/search/read return exact source data", async (t) => {
   const f = fixture(t);
   await f.workspace.connect(c, f.signal);
