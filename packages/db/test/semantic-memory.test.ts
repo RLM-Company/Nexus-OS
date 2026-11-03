@@ -136,9 +136,9 @@ describe("hybrid memory source boundaries", () => {
     expect(result.retrieval).toBe("lexical");
     expect(result.items).toHaveLength(0);
   });
-  it.each([[], [Number.NaN], [1.5]])(
+  it.each([{ scores: [] }, { scores: [Number.NaN] }, { scores: [1.5] }])(
     "rejects invalid ranking %j without losing lexical behavior",
-    async (scores) => {
+    async ({ scores }) => {
       message("old", "source", "Согласован аванс.");
       memory.semanticRanker = { rank: () => Promise.resolve({ encoder: "fixture-only", scores }) };
       expect(await memory.resolveAsync(target, "a", "аванс")).toEqual(
