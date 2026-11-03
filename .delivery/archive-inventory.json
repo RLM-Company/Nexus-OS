@@ -1,0 +1,3297 @@
+{
+  "archive_sha256": "13f533f3c1edc75517d4bb110cd7515e953a98aecbb215e9f9e1470051aa3859",
+  "archive_bytes": 1173642,
+  "entries": [
+    {
+      "path": "apps/api/src/app.ts",
+      "bytes": 109005,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        0,
+        32
+      ],
+      "sha256": "724bbf42bb74b21a40075948180a1d72dde618e6c7024bb8e6e193ff1b033fbf",
+      "current_state": "different"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/full-account-emergency-snapshot.ts",
+      "bytes": 9357,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        47,
+        24
+      ],
+      "sha256": "ccc045eac80ceadeafbaaa53b23d7442a987de7041db99cc4f529ec19b5f1087",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-archive-builder.ts",
+      "bytes": 12776,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        18,
+        57,
+        24
+      ],
+      "sha256": "adc4176f249321d5311d7b81cbb6b8ca1f6eba1c2eddb6f9007d6401076494df",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-authorization.ts",
+      "bytes": 6812,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        18,
+        54,
+        4
+      ],
+      "sha256": "981f3373735e8081d94bc132d107218d1bd031db5dff38dd5bdc1a3fac961a99",
+      "current_state": "different"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-backups.ts",
+      "bytes": 9673,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        18,
+        55,
+        18
+      ],
+      "sha256": "7b4f5cf9438482658cb68e8a17e5bf9d1c5f7deeb542248477e50b535fc60f95",
+      "current_state": "different"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-controller.ts",
+      "bytes": 14273,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        6,
+        6
+      ],
+      "sha256": "1fcf9944367d6cea5e63bfee711d339287f511d44bf7029d95b66d115d50cefd",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-grant-cipher.ts",
+      "bytes": 2767,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        18,
+        54,
+        4
+      ],
+      "sha256": "92cf640c63def3a0ad252579cca58ac1bb04493796be57d6a13e275fb787db04",
+      "current_state": "different"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-immutable-spooler.ts",
+      "bytes": 14857,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        8,
+        10,
+        46
+      ],
+      "sha256": "b7b328770ced59cbb2a87ee1b8dbe0733de1072b833100e719713a541181774c",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-journal-recovery-and-zip-import.ts",
+      "bytes": 21136,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        31,
+        36
+      ],
+      "sha256": "0d2659bc75f2faabbf19fff47494f8c5426fb789a29dad6a50fbd7958dd6de40",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-privacy.ts",
+      "bytes": 2166,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        18,
+        55,
+        18
+      ],
+      "sha256": "08badab18941151bb41c36c667d4a10353290411858271e289a173c1013e202d",
+      "current_state": "different"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-restore.ts",
+      "bytes": 21441,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        18,
+        57,
+        24
+      ],
+      "sha256": "85c4898f6a439307b434c374faa44114a589178c9173746e2d8431ba1471d6cd",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-routes.ts",
+      "bytes": 12139,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        5,
+        30
+      ],
+      "sha256": "57e4ac7047a9273d8eb7070058543d19fd836f3c9e56c083bae0580e9e05f00f",
+      "current_state": "different"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive-store.ts",
+      "bytes": 15807,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        18,
+        55,
+        16
+      ],
+      "sha256": "7dd9349fc97ff3019d77ee7043a78bc36fa9326229f499ca616d2448152dad84",
+      "current_state": "different"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/google-drive.ts",
+      "bytes": 10445,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        18,
+        54,
+        4
+      ],
+      "sha256": "6be728b3c78d8446116f4401d15200d7702e8dfe1dbf904420a0ef48c81f5633",
+      "current_state": "different"
+    },
+    {
+      "path": "apps/api/src/cloud-storage/index.ts",
+      "bytes": 5308,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        18,
+        59,
+        22
+      ],
+      "sha256": "b5be1de2c171ddf1111b64dafa305b619567a31ba185f295592efe221c35c053",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/context-memory-hybrid-routes.ts",
+      "bytes": 4089,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        30,
+        14
+      ],
+      "sha256": "26fee6e869b939939fd1b2544bbcf603fb1bcbaea25cbdac07b1e7d9b3b784de",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/fable-discovery-and-registry-validator.ts",
+      "bytes": 3927,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        3,
+        6
+      ],
+      "sha256": "b81142becb19e20e9257e9a1a2c7a3f9f4ff7d16a413bc3b9c5b454566c26874",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/fable-sse-resilient-stream.ts",
+      "bytes": 10055,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        14,
+        39,
+        18
+      ],
+      "sha256": "926100e83d86efac8b0bf21af5c616fc3e220128fc5dfdcc2068ae90e6c0d9a5",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/memory-advanced-compaction-routes.ts",
+      "bytes": 5180,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        7,
+        51,
+        40
+      ],
+      "sha256": "89b435dc2b8f5941e8d150ab19c4c300f126ca83ddf3626eaa0bc1a246abffc4",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/memory-snapshot-reconciler.ts",
+      "bytes": 21087,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        7,
+        2
+      ],
+      "sha256": "89f934e7753997d33c60f16a809d26e737843b0aa163eea8c4691498f9b4482d",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/src/server.ts",
+      "bytes": 12652,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        0,
+        32
+      ],
+      "sha256": "e4f314d2a771e7f3e2aa8a13ed4b1aa448daa3e84fedb795ab4c630f52f144ee",
+      "current_state": "different"
+    },
+    {
+      "path": "apps/api/src/stage2-privacy-adapter.ts",
+      "bytes": 9464,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        0,
+        6
+      ],
+      "sha256": "54b652019d674800af769df98ed5410fc491050bfbbbd81d5034b9ac4e041264",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/cdc-ast-and-bandit-router.test.ts",
+      "bytes": 4690,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        19,
+        4,
+        58
+      ],
+      "sha256": "e3e007f10a8040be178320e90c298a0fa047362574fb6761fc1033d53fbf50c6",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/context-memory-hybrid-and-migration.test.ts",
+      "bytes": 9298,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        55,
+        12
+      ],
+      "sha256": "23ac14b5e8c45dfa0518af5632ad3cfd1e9bbe6b6ccf52b3aa277e978005660a",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/crdt-mcts-and-pii-firewall.test.ts",
+      "bytes": 5934,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        39,
+        44
+      ],
+      "sha256": "d98794e4be351008ff2854062750fb4f6b292f2baab8327eb93fbe40cc02a5bd",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/cuckoo-shamir-and-causal-engine.test.ts",
+      "bytes": 6137,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        13,
+        46
+      ],
+      "sha256": "b9540c5ce0936f252a5bf1122db4f6235c263ca48fc37425dfa3a18a6d3958e4",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/datalog-minhash-and-otel-tracer.test.ts",
+      "bytes": 5735,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        24,
+        10
+      ],
+      "sha256": "7bded64f7f04bc33a2f242dbdeae83ccbbc0dfbc87ffd3ff04ce500895756387",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/drive-journal-recovery-and-bpe-audit.test.ts",
+      "bytes": 6602,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        30,
+        50
+      ],
+      "sha256": "779d9b8676df733b815979da16c6f34e424a0fb2163a38cfa73f298a0bd8b488",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/dynamic-budget-and-audit-blackbox.test.ts",
+      "bytes": 4768,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        6,
+        22
+      ],
+      "sha256": "8105c6c697ed0ba289f388fe1a61f162c997e27729342f796d553a44b7366840",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/fable-sse-memory-cache-and-workflows.test.ts",
+      "bytes": 11148,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        14,
+        40,
+        34
+      ],
+      "sha256": "b5bd6d48272ba16c7210914a0b4532f30128bd6df9620103e2ed8da664ed5695",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/full-account-emergency-snapshot.test.ts",
+      "bytes": 3580,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        48,
+        22
+      ],
+      "sha256": "f01788f08e7832c30203f89d0197400826c2d9ed09e7b8f7cdfb61d08b172f29",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/google-drive-complete.test.ts",
+      "bytes": 29641,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        6,
+        54
+      ],
+      "sha256": "72a559275670129c50b5da34a8cd9762e283d7d52667fa48b8082d145c78c6ec",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/google-drive-immutable-spooler.test.ts",
+      "bytes": 5849,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        8,
+        11,
+        34
+      ],
+      "sha256": "e0f81a0ae167adf21542e2538dd9fd1de1b6b6f7dc93d4daf0b145bb101576f4",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/hnsw-merkle-and-grammar-enforcer.test.ts",
+      "bytes": 4722,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        6,
+        55,
+        16
+      ],
+      "sha256": "8a73272a19369d7053ceac75a2bc9fa2a427129c88d49d636a9a26347fe9b878",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/memory-compaction-and-profile-reconciler.test.ts",
+      "bytes": 10654,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        55,
+        12
+      ],
+      "sha256": "0aeb1993b816bd2ae78e6c17cf663600e5185fced5854d85bfdbfa8dc752b563",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/memory-snapshot-reconciler.test.ts",
+      "bytes": 9887,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        7,
+        2
+      ],
+      "sha256": "ba8638a720dcb9b01c61cb9f63935b5bc4f4712fcc6c646db7db8f5c7f9297bd",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/nextgen-vector-caching-consensus.test.ts",
+      "bytes": 7427,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        13,
+        42
+      ],
+      "sha256": "f6a1b748057cc1f9679e20089e52162db3a772af33596f7f44e9a68862037b0e",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/pq-kalman-and-zk-verifier.test.ts",
+      "bytes": 3542,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        27,
+        34
+      ],
+      "sha256": "1456ca0c86be9e6d729291de386642eb91f1e08ebc278f15de8e25857bca98c0",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/reflexion-and-grounding-verifier.test.ts",
+      "bytes": 4336,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        23,
+        38
+      ],
+      "sha256": "b812e969f4ff0af8ee1d884ca0cdb3ec7b7d934848bb1eb9964c268717e9ee7e",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/roaring-dp-and-petri-net.test.ts",
+      "bytes": 9407,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        55,
+        16
+      ],
+      "sha256": "355198cf47a7f838352b315a7966f048636f8f532a6e686f0b4e7d877c71155a",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/self-healing-runtime-and-citation-graph.test.ts",
+      "bytes": 4592,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        31,
+        10
+      ],
+      "sha256": "95c884d5bec5cb11c0d28e7b1bf1b02341df18fc49e8aa6b2a4972abfd5363a2",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/speculative-tool-router.test.ts",
+      "bytes": 6711,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        43,
+        6
+      ],
+      "sha256": "77733e87b0d18c5ace0e59b828dbbf33ba10e1da3b9a0fb01c055d451b390343",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/stage2-privacy-and-fencing.test.ts",
+      "bytes": 5596,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        0,
+        56
+      ],
+      "sha256": "69cd1d9f49a9a2dd6d5516e3f30a5749e2c75f822e8b187ab796b9891de835e7",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/temporal-kg-injection-and-circuit-breaker.test.ts",
+      "bytes": 6552,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        51,
+        30
+      ],
+      "sha256": "af3a22ef2597625375c892c655543ed9cab57230f0f4af88d7aef2e8c25bfaba",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/workflow-dag-critic-and-receipts.test.ts",
+      "bytes": 5302,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        33,
+        4
+      ],
+      "sha256": "8173d4ae685646008ca4af801e50acb592a870d5c56d37eddb2cfb342c90fc5a",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/api/test/workflow-portability-and-fable-discovery.test.ts",
+      "bytes": 6579,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        3,
+        20
+      ],
+      "sha256": "8c8be33370acf19264b8da05a8b2040fb86f268f87cd678ebe46e2457d8b7fe2",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/web/src/app/personal-settings/google-drive-panel.tsx",
+      "bytes": 15898,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        0,
+        32
+      ],
+      "sha256": "78d7b7b69608346f95947fde525e44719a267d9fd8f2308467f25c56e2872d19",
+      "current_state": "new"
+    },
+    {
+      "path": "apps/web/src/app/personal-settings/page.tsx",
+      "bytes": 12131,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        0,
+        32
+      ],
+      "sha256": "b03e4811cc157ef6f499ba134afe9e0865add4cdb3f8d942dbde4fc54dd5814e",
+      "current_state": "different"
+    },
+    {
+      "path": "config/model-registry.tokenshop.fable.v1.json",
+      "bytes": 1233,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        2,
+        10
+      ],
+      "sha256": "a4bb78da21b8ee32487e8a0f932add5f8bcfc5b616189989993c4242737a4050",
+      "current_state": "different"
+    },
+    {
+      "path": "deploy/alpha/GOOGLE_DRIVE.md",
+      "bytes": 2638,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        2,
+        28
+      ],
+      "sha256": "a5d8a4ecdeee26e46aa85f04cd2b40feea6282aa0b76f962a5e12773c4f1f29d",
+      "current_state": "different"
+    },
+    {
+      "path": "deploy/alpha/drive.env.example",
+      "bytes": 982,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        2,
+        18
+      ],
+      "sha256": "f6d7f08fbac9b9117a278086b3317cc39e1cd861279ccc752ef16ee37b98475b",
+      "current_state": "different"
+    },
+    {
+      "path": "desktop/windows/browser/download-verifier.cjs",
+      "bytes": 5723,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        29,
+        14
+      ],
+      "sha256": "ac3577ff52b8c8afcdcb5b70bc4a64c78ef9eacfc06738fc66359d80a4246013",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/browser/search-pagination-and-bookmarks.cjs",
+      "bytes": 5744,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        47,
+        24
+      ],
+      "sha256": "0fd3e5947da7f047c95422073a926eb3ad20ebb3ac5c1508a144a7496e253e55",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/browser/shadow-and-frame-piercer.cjs",
+      "bytes": 6817,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        8,
+        10,
+        48
+      ],
+      "sha256": "c4b466dd8943308ae03b491174865f43955b09a85e9bf6af19b1328678d96992",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/browser/visual-dom-diff-verifier.cjs",
+      "bytes": 6023,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        22,
+        34
+      ],
+      "sha256": "ded95b6cbaa31e12f1d76bac9c6de3b7788e92f4ae4e4f1276c04f728bdb1ff1",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/ci/archive-quarantine-verifier.cjs",
+      "bytes": 6572,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        26,
+        36
+      ],
+      "sha256": "63d5f76f038b989508d2d42e48a8c963fca41a8772252baf644c9a4584e0218f",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/ci/clipboard-and-drop-guard.cjs",
+      "bytes": 5581,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        22,
+        50
+      ],
+      "sha256": "239b18fb70b65a6cb91faea7312549758fc80f5ec7e18d0f69d70823f46a3ff6",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/ci/computer-hazard-and-focus-guard.cjs",
+      "bytes": 7080,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        31,
+        36
+      ],
+      "sha256": "c38c2e4640fe3827879b505721ccc21d338c4c931cff2f186310940779e7a992",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/ci/desktop-runtime-watchdog.cjs",
+      "bytes": 4523,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        30,
+        54
+      ],
+      "sha256": "9ec2cb3068533d7254a46ac586be50216e67b85ba29509a2329a6cbcf49667dc",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/ci/dpi-coordinate-calibrator.cjs",
+      "bytes": 5368,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        6,
+        54,
+        16
+      ],
+      "sha256": "4e62f725391434f562de476d78f244f2180bc9ec7e26ddf35497b7180b3ba85c",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/ci/stage2-desktop-ipc-bridge.cjs",
+      "bytes": 5150,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        0,
+        6
+      ],
+      "sha256": "1e0eb72b625037af7d9604da5bbc37d4b2e05682f6bb73b424d75989748599b3",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/ci/unified-task-coordinator.cjs",
+      "bytes": 5940,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        32,
+        18
+      ],
+      "sha256": "40ac30b24b89eae8f2939276ea85ddca117259977d9b47606b2f870d3996a35c",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/ci/wav-pcm-audio-verifier.cjs",
+      "bytes": 8652,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        53,
+        22
+      ],
+      "sha256": "53e93207dc50b66df27f8a8c28680c0a27f71b3658ec217a36a7ef8b98236070",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/archive-quarantine-verifier.test.cjs",
+      "bytes": 1700,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        27,
+        42
+      ],
+      "sha256": "4169a87ecd96d607a0a61ad79fe055241835ef88b1e112acacd836898e2337ce",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/clipboard-and-drop-guard.test.cjs",
+      "bytes": 2509,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        23,
+        14
+      ],
+      "sha256": "59653905c90ae5feb6b9b2843b04949ed556b5f4f36d8fb26da4ded1c247190e",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/computer-hazard-and-focus-guard.test.cjs",
+      "bytes": 3146,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        31,
+        4
+      ],
+      "sha256": "4fbb45d261751d793f6d72bff105af83784f8b8d9ba6578b90d986ddd9760721",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/desktop-runtime-watchdog.test.cjs",
+      "bytes": 2592,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        31,
+        22
+      ],
+      "sha256": "5c4aa1b5a5463c3c5da1f626d6d4639f1a7bf8886903536b19d1a967234d8c53",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/download-verifier.test.cjs",
+      "bytes": 3181,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        29,
+        18
+      ],
+      "sha256": "bc0c5f445f4f7bf044a6f9f8372224e83195fb14c153cb529e45216f8bdb0665",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/dpi-coordinate-calibrator.test.cjs",
+      "bytes": 2206,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        6,
+        54,
+        32
+      ],
+      "sha256": "ccdaeebb8f3e3ee438b8d433f53f582b3983e139d7dd19db89259315ac40ef6d",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/excel-workbook-builder.test.cjs",
+      "bytes": 2670,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        37,
+        52
+      ],
+      "sha256": "6a9910e0550b0669cf93ef940c13ab0715adea2c5c7c00babd34dda107766d3b",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/interactive-report-bundle-builder.test.cjs",
+      "bytes": 2622,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        13,
+        58
+      ],
+      "sha256": "34a77ad69d7f6aeb3e0a2acfd2547495c8aece9b4d492f41d45849c3828d6501",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/koswork-workspace.test.cjs",
+      "bytes": 17776,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        10,
+        0,
+        4
+      ],
+      "sha256": "9ff8bd8ee5dcf64b5e4053fda9cf327f6344876970038787100f85be87d33ccb",
+      "current_state": "different"
+    },
+    {
+      "path": "desktop/windows/test/pdf-report-builder.test.cjs",
+      "bytes": 1983,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        19,
+        4,
+        30
+      ],
+      "sha256": "d0d070e8a97196fa2ca76244d456bdc50da4bbada935d44f4d2c74bff3c86fa2",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/powerpoint-deck-builder.test.cjs",
+      "bytes": 2193,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        49,
+        34
+      ],
+      "sha256": "8f2df86ea29dd4daf0f76db3d84a2fd42c100e14658cabaf8b91e038baf3168c",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/shadow-piercer-and-word-report.test.cjs",
+      "bytes": 4813,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        8,
+        12,
+        46
+      ],
+      "sha256": "ac9dfff02fae9d0f5834799d25568f50d13412a0b754ea2880825a3489767e95",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/stage2-desktop-ipc-bridge.test.cjs",
+      "bytes": 3169,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        1,
+        8
+      ],
+      "sha256": "953e8864c8ec4e8f043b51c07b3c3c6478153a0d6c0135409714ea0d4add5064",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/unified-task-coordinator.test.cjs",
+      "bytes": 2788,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        33,
+        18
+      ],
+      "sha256": "aa4f4169495ce4d59337c83b5a5c48f0e310bd5bef71b1ab010993f0d71962e7",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/vault-bridge-and-search-store.test.cjs",
+      "bytes": 5647,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        48,
+        10
+      ],
+      "sha256": "0b37fb6efc38172037a0612787f6606020b36489e47be220fc9c21369363e707",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/vault-document-extractor.test.cjs",
+      "bytes": 9057,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        5,
+        2
+      ],
+      "sha256": "29d588b3c4c807df55534c1a4c06351db7e0c43f23ca4a3b7c32f0b5b5b9fb05",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/visual-diagram-extractor.test.cjs",
+      "bytes": 3155,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        11,
+        52
+      ],
+      "sha256": "db4cebff1eb8a52af5b39b3229e2501d0fe636f8c1a7eb9bf84b25fe4cf48f0d",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/visual-dom-diff-verifier.test.cjs",
+      "bytes": 2383,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        23,
+        4
+      ],
+      "sha256": "77784cd4c7d670fa2c69e8b570c287ec1efdc5f5a20b0644fb9984670c7ecd66",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/test/wav-pcm-audio-verifier.test.cjs",
+      "bytes": 2014,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        54,
+        20
+      ],
+      "sha256": "c4f71f6005d5d9c80e4204b15b012cb91966161cec8285972cd5f2f0eeffb5c1",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/vault-document-extractor.cjs",
+      "bytes": 25698,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        8,
+        36
+      ],
+      "sha256": "3382d4b1e6e0bae10f6b1c413bdd12ea5c446cab6e682153498f89ddd5999ad6",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/vault-virtual-bridge.cjs",
+      "bytes": 7664,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        47,
+        24
+      ],
+      "sha256": "7d7d3ecd24e302e3f9fedfd308102d2c8d2c241019415c855b0ffa475a168431",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/vault-visual-diagram-extractor.cjs",
+      "bytes": 5900,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        11,
+        18
+      ],
+      "sha256": "626aabfabad61f72c0f55255e7070b6689da2f7725bdc7dd8b1138eae4e93696",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/workspace/README.md",
+      "bytes": 8252,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        10,
+        0,
+        4
+      ],
+      "sha256": "ee2dd7f472dc1a2be58a15c80e7b83debd6f32faf05ce2b90741ce30f5918be5",
+      "current_state": "different"
+    },
+    {
+      "path": "desktop/windows/workspace/demo.cjs",
+      "bytes": 9368,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        9,
+        57,
+        58
+      ],
+      "sha256": "2c6cc57c546ea2b15952bf84417765eff1d16313608fe8e3675ee3c13bf52109",
+      "current_state": "different"
+    },
+    {
+      "path": "desktop/windows/workspace/errors.cjs",
+      "bytes": 2207,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        9,
+        54,
+        26
+      ],
+      "sha256": "e2eed8dc8bbfd19abf1915a0d9068ad54669bfd9505aa60aa2c9ce664c719494",
+      "current_state": "different"
+    },
+    {
+      "path": "desktop/windows/workspace/excel-workbook-builder.cjs",
+      "bytes": 10487,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        36,
+        12
+      ],
+      "sha256": "c3a28cd7799e3008b72828164feec2d8ed7527aaa5a32bafe15f1400a705a015",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/workspace/index.cjs",
+      "bytes": 1396,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        9,
+        56,
+        40
+      ],
+      "sha256": "baf9f3bbc8a9079c2699392d94aa8c34bd82d8202858ad7238ac0c208c2b7d3d",
+      "current_state": "identical"
+    },
+    {
+      "path": "desktop/windows/workspace/interactive-report-bundle-builder.cjs",
+      "bytes": 7183,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        14,
+        42
+      ],
+      "sha256": "57b97dd279f95c53a55a28184ee77e3c12b35b8acf76a3cefe95852aa34ee049",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/workspace/path-guard.cjs",
+      "bytes": 16441,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        9,
+        54,
+        26
+      ],
+      "sha256": "acbf18e297f7839c790ec14d149762645fab6ccecb4e82bbb9f9b3a59d583874",
+      "current_state": "different"
+    },
+    {
+      "path": "desktop/windows/workspace/pdf-report-builder.cjs",
+      "bytes": 5355,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        19,
+        4,
+        18
+      ],
+      "sha256": "7995506cdd255ddbd454331d9d09e544340ef021de6ece0ac7fa92c34b0c4814",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/workspace/powerpoint-deck-builder.cjs",
+      "bytes": 9276,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        49,
+        22
+      ],
+      "sha256": "d176eed78f85588f56fa2d8c6ed1967fbdab46fbcfe0cc7154022a8bab883575",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/workspace/version-backup.cjs",
+      "bytes": 12102,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        9,
+        56,
+        40
+      ],
+      "sha256": "d2f2c45d6e526dd5a1ec44d04c2a476bca1067ae5cb981eaf982cf35f70cb28a",
+      "current_state": "different"
+    },
+    {
+      "path": "desktop/windows/workspace/word-report-builder.cjs",
+      "bytes": 9059,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        8,
+        12,
+        24
+      ],
+      "sha256": "0199e200ed990cd549cb05d5e5b1b48c2c953a7f9960572b67fec53c1db88694",
+      "current_state": "new"
+    },
+    {
+      "path": "desktop/windows/workspace/workspace-service.cjs",
+      "bytes": 43045,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        9,
+        56,
+        40
+      ],
+      "sha256": "a79886ffb1f7c207c6367f3e0417ce06dae766f3a005e64c4b32ddbc65b314ee",
+      "current_state": "different"
+    },
+    {
+      "path": "desktop/windows/workspace/workspace.test.cjs",
+      "bytes": 17776,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        10,
+        0,
+        32
+      ],
+      "sha256": "9ff8bd8ee5dcf64b5e4053fda9cf327f6344876970038787100f85be87d33ccb",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_AUTONOMOUS_SELF_HEALING_AND_KNOWLEDGE_GRAPH_2026-11-02_RU.md",
+      "bytes": 5868,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        35,
+        6
+      ],
+      "sha256": "12257ccb0c135b7b9a4681fa6ee51a6a6e6a24af7ba3994d38a01021e3cbece0",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_CDC_AST_SANDBOX_BANDIT_AND_PDF_BUILDER_2026-11-02_RU.md",
+      "bytes": 6072,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        19,
+        8,
+        50
+      ],
+      "sha256": "b48928b271a0aa55c88b419ef1d7622504fa735d8ed0c8b1f6f5a7ee20f26ba0",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_COMPACTION_PROFILE_AND_VPS_RECOVERY_2026-11-02_RU.md",
+      "bytes": 6625,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        7,
+        52,
+        14
+      ],
+      "sha256": "1b7b758be772200721cb36664e9c54dfdd3f44f250880d3072dbfcc71f75e665",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_CRDT_MCTS_PII_AND_EXCEL_BUILDER_2026-11-02_RU.md",
+      "bytes": 5611,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        40,
+        40
+      ],
+      "sha256": "bfbc09aa88ad42cafdba8b2fa8368d4f2206b428e5fc2488ba5517e9b3556974",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_CUCKOO_SHAMIR_CAUSAL_AND_HTML_BUNDLE_2026-11-03_RU.md",
+      "bytes": 4349,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        13,
+        58
+      ],
+      "sha256": "44dc99ce1c4c8910099e4154339c61d04600494d0f18e695357091dbf4b25792",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_DATALOG_MINHASH_OTEL_AND_CLIPBOARD_GUARD_2026-11-03_RU.md",
+      "bytes": 5250,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        25,
+        36
+      ],
+      "sha256": "3d70523ea657191a1bfb8e7e7babf1ab7ee8a02766b8d9722bac5ef0221a2c74",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_DRIVE_JOURNAL_RECOVERY_AND_HAZARD_GUARD_2026-11-02_RU.md",
+      "bytes": 5926,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        31,
+        8
+      ],
+      "sha256": "cb61e3bd7a73b02da966698b7abbd99c69651f89337165a5503e3dfb12cd2a36",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_DRIVE_SPOOL_AND_KOSWORK_UNIFIED_2026-11-02_RU.md",
+      "bytes": 4947,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        8,
+        11,
+        48
+      ],
+      "sha256": "d9dea9df51b6f3534293918eae720d4d240fa0702c194b11b1bed5e2512ba0de",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_DYNAMIC_BUDGET_AND_AUDIT_BLACKBOX_2026-11-02_RU.md",
+      "bytes": 5893,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        7,
+        18
+      ],
+      "sha256": "291f2a48695bdc35c6a6d73033fcfded57f5f203c725fd40208dc255480fb61f",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_FABLE_SSE_MEMORY_CACHE_AND_WORKFLOW_SCHEDULES_2026-11-02_RU.md",
+      "bytes": 5711,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        14,
+        40,
+        36
+      ],
+      "sha256": "5fbba05a9d7cd37f01efe838662ae757f6ab7868c54af689088cefc8247a627f",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_GOOGLE_DRIVE_COMPLETE_2026-11-01_RU.md",
+      "bytes": 10150,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        2,
+        18
+      ],
+      "sha256": "6a47d989a29f08ae7ddf313d36b0da036357a52c8135336e13af7615e2370b7d",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_HNSW_MERKLE_GRAMMAR_AND_DPI_CALIBRATOR_2026-11-02_RU.md",
+      "bytes": 5853,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        6,
+        57,
+        44
+      ],
+      "sha256": "031762112d5146104ce28635e38d805b27afc2035f2a763e11b8ac6ea9c570de",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_HYBRID_MEMORY_AND_NOTES_MIGRATION_2026-11-01_RU.md",
+      "bytes": 5738,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        29,
+        38
+      ],
+      "sha256": "27fb80f3e1769ce5fcee80d23598889e2237497af4750de35ed5bf3c044a40b7",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_NEXTGEN_FRONTIER_TECHNOLOGIES_2026-11-02_RU.md",
+      "bytes": 7504,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        17,
+        16
+      ],
+      "sha256": "348f5f94c9a41e513fe355c72b25ebee37c826deddca947878faaacf748e6a02",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_PPTX_TEMPORAL_KG_AND_SECURITY_SHIELD_2026-11-02_RU.md",
+      "bytes": 5605,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        52,
+        54
+      ],
+      "sha256": "5997317c816dcca375ac8f65229b6f4089832564efe0604af60b229acb1219d5",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_PQ_KALMAN_ZK_AND_ARCHIVE_QUARANTINE_2026-11-03_RU.md",
+      "bytes": 2840,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        27,
+        44
+      ],
+      "sha256": "c01605001524092de1fcfafb5b48535e73b09bd4c12277d859d51d21c55364c1",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_REFLEXION_GROUNDING_AND_DOM_DIFF_2026-11-02_RU.md",
+      "bytes": 6166,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        25,
+        24
+      ],
+      "sha256": "617bec30fa34e7f4d5a8e90c1dfbd6ea088445275562678d3bfc226c61ed68ff",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_ROARING_DP_PETRI_AND_WAV_VERIFIER_2026-11-03_RU.md",
+      "bytes": 3928,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        54,
+        22
+      ],
+      "sha256": "5f2e97a5aa38679ddefbc1026a08809cae8cb26ef2e2e14e8d093940588bb70b",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_SPECULATIVE_ROUTING_AND_PRODUCTION_SIMULATION_2026-11-02_RU.md",
+      "bytes": 12289,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        1,
+        30
+      ],
+      "sha256": "829988457b85af632e82679e4e79eeb59fb1c0e3f5810cdfb673f255e949bb4b",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_STAGE2_MASTER_VERIFICATION_MATRIX_AND_RUNBOOK_2026-11-02_RU.md",
+      "bytes": 15822,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        58,
+        14
+      ],
+      "sha256": "7d261fafd489851d83fa9cc8e15c029c96c9e3ba9488132f009ae2f23ded92d2",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_STAGE2_UNIFIED_MIGRATION_PRIVACY_AND_IPC_2026-11-02_RU.md",
+      "bytes": 4594,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        1,
+        12
+      ],
+      "sha256": "862b97d4078a31b1510bd024917926bba02db148453251ce3b29da829c07da36",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_VAULT_BRIDGE_SEARCH_AND_EMERGENCY_SNAPSHOT_2026-11-02_RU.md",
+      "bytes": 4878,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        48,
+        26
+      ],
+      "sha256": "f51c453a3dbe4813d3e91a0800f385b1e254b55030e5172df04b384bab4bc892",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_WORKFLOW_DAG_RECEIPTS_AND_UNIFIED_TASK_2026-11-02_RU.md",
+      "bytes": 5333,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        33,
+        22
+      ],
+      "sha256": "db344e6c70f728df7f85d4eb35fe8756f55e227cb765cd1d9173851d341d012b",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSMORA_WORKFLOW_PORTABILITY_AND_FABLE_DISCOVERY_2026-11-02_RU.md",
+      "bytes": 5237,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        3,
+        20
+      ],
+      "sha256": "3c627952da9191d2ca2536c89e5b66bc355b9a17c46d342ee8c7eb9b460010f4",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSWORK_VAULT_DOCS_AND_SNAPSHOT_RESTORE_2026-11-01_RU.md",
+      "bytes": 7632,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        7,
+        46
+      ],
+      "sha256": "d41e3ff14586f793605b986bfaf9ea5826ab23a5a011504110d03422f294da99",
+      "current_state": "new"
+    },
+    {
+      "path": "docs/handoff/KOSWORK_WORKSPACE_FOLDER.md",
+      "bytes": 12333,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        10,
+        0,
+        6
+      ],
+      "sha256": "b4828f884ad8bfe01e87145625f16513dea8c627b9ece6f392e3ba0d3beeab56",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/adaptive-circuit-breaker.ts",
+      "bytes": 5589,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        50,
+        50
+      ],
+      "sha256": "81d0ad2ddfaf68cfc42a4b7419044057b359991e21ed229b00ba41d8b31df732",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/ast-code-sandbox-verifier.ts",
+      "bytes": 5358,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        19,
+        7,
+        36
+      ],
+      "sha256": "04a21ddd3c2bf1db61fbd120e6affb8c9770e02e7ac5fd4c4cf44731948e9fed",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/bpe-context-estimator-and-audit.ts",
+      "bytes": 7498,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        30,
+        2
+      ],
+      "sha256": "2413713e66e496a3052585bb76443e49175d3faeeb79e708c048d7e37705a21a",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/causal-counterfactual-attribution.ts",
+      "bytes": 6998,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        12,
+        58
+      ],
+      "sha256": "dfd70fad08fd62c32813f0144a2c213bc923b809377c114a56ee66a28eac1371",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/claim-grounding-verifier.ts",
+      "bytes": 7166,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        22,
+        4
+      ],
+      "sha256": "1dfddd233f998c846b8627de5cab7eccd23ef2bc89f53e24339ccf603bff48e2",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/constrained-grammar-enforcer.ts",
+      "bytes": 7989,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        6,
+        53,
+        32
+      ],
+      "sha256": "24d50b02440c298d0f86397b141ec8dc83a48f1ae5cb9f7be399212164178a8f",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/datalog-inference-engine.ts",
+      "bytes": 6462,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        21,
+        2
+      ],
+      "sha256": "0ef5edf8fbe69f89b508fc5ff5539eb8b354b88d98c090c297cf92586fc9fe8c",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/differential-privacy-telemetry.ts",
+      "bytes": 9466,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        53,
+        18
+      ],
+      "sha256": "05b54f2c76a74bc550f3edca53db10cf77f7e8df24e46dd3ede273b8268b6200",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/dynamic-context-budget-allocator.ts",
+      "bytes": 6382,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        5,
+        32
+      ],
+      "sha256": "82bd7c3d8574577e6a5d9471114b1c86d313293fb4089809a1a028a6307bd3ef",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/index.ts",
+      "bytes": 1546,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        26,
+        36
+      ],
+      "sha256": "2feaa0c9c3bbba7c2d5fafeb1f8faa313087c18e028a0238716ddf9e5fff1406",
+      "current_state": "different"
+    },
+    {
+      "path": "packages/core/src/kalman-cusum-drift-detector.ts",
+      "bytes": 3101,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        26,
+        30
+      ],
+      "sha256": "94341ea95e23a68bca4c918b142c53e85ef56b4c43b7c6e09b79188c842df0ae",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/mcts-workflow-planner.ts",
+      "bytes": 5976,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        34,
+        40
+      ],
+      "sha256": "332b3b9cf66f16f2a9833ae0ac294b3c15f093bc0e5736126f0745ed0dd24440",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/merkle-state-trie.ts",
+      "bytes": 5981,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        6,
+        53,
+        0
+      ],
+      "sha256": "9283a3f03cc2d08c5d42032b5c3e5efaba7bef9fb62b01f15a089c5b9aeed2a7",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/opentelemetry-trace-analyzer.ts",
+      "bytes": 5520,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        22,
+        2
+      ],
+      "sha256": "8a72303409856635afd68e7b99053a1cdb08ba976efa1cc2282edd2115c562cf",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/petri-net-workflow-verifier.ts",
+      "bytes": 6994,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        53,
+        18
+      ],
+      "sha256": "3a6f581fc3dc364a38e20d460fedde03fc08a1dde52243cbea414aadd8bcd484",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/pii-redaction-firewall.ts",
+      "bytes": 5275,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        35,
+        8
+      ],
+      "sha256": "c2f5e36d6a6db3cf0352b910fa86a848615640fe73c4ff1335665ffbe8f9118f",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/prompt-caching-optimizer.ts",
+      "bytes": 5487,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        10,
+        34
+      ],
+      "sha256": "ccdeeb61caf6cfabd0bb19242d1a2c0ba592218c95f239ad9f3b65800ffbe90e",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/prompt-injection-shield.ts",
+      "bytes": 6882,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        50,
+        32
+      ],
+      "sha256": "875aaa88e954072763070df5f80a8f05ca83891352a32c2e999627b6d7954e0d",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/shamir-secret-sharing-escrow.ts",
+      "bytes": 7870,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        12,
+        58
+      ],
+      "sha256": "3e7e2c956d37e97a23b047928c26a327e35c3f4d1cffd86f9a2729eb560bbf3f",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/speculative-tool-router.ts",
+      "bytes": 16661,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        53,
+        48
+      ],
+      "sha256": "084fae76342763ffbba142a090f21a8158eff5ad2486c28af9391d3a868fff16",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/thompson-sampling-bandit-router.ts",
+      "bytes": 5856,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        19,
+        3,
+        38
+      ],
+      "sha256": "f918b78cc6194ecc29f98d02f0dc9e927cc3371fb4e3f31b552c03694312b364",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/core/src/zk-commitment-verifier.ts",
+      "bytes": 4730,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        26,
+        32
+      ],
+      "sha256": "e91a2c2fc10af1ccbed14d4528ed051b7e6f4f3233824c192940b9aa3b9a1b90",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/migrations/0060_drive_storage.sql",
+      "bytes": 2918,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        18,
+        53,
+        40
+      ],
+      "sha256": "501a8a13933b3ecacabb664b1212681e89b5a27db8696edd1c3f08d09437d850",
+      "current_state": "different"
+    },
+    {
+      "path": "packages/db/migrations/0063_unified_stage2_extensions.sql",
+      "bytes": 8444,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        25,
+        54
+      ],
+      "sha256": "7b8b5fc560b6cae374f56f9cb45beee098a91343c811b2b3bdc5955034bbfd31",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/cdc-chunking-deduplicator.ts",
+      "bytes": 9602,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        19,
+        5,
+        58
+      ],
+      "sha256": "d901041b9ca8efa2df57845c965b4e4e0906c8108e2ff35d9bd4c11f53202adf",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/context-memory-hybrid-search.ts",
+      "bytes": 21633,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        28,
+        12
+      ],
+      "sha256": "ed2aa3a02f5a54eff4800c6d4abc375531e67feb45db90d932800287c09f81fa",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/context-memory-notes-migrator.ts",
+      "bytes": 18028,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        28,
+        14
+      ],
+      "sha256": "6b67668cb88156188ba9673c6c7f188fcaba6a8dad01b6c608c8f03c0df6668c",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/context-memory-prefix-byte-cache.ts",
+      "bytes": 6594,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        14,
+        39,
+        18
+      ],
+      "sha256": "cd74fcf9f38afb060513a9adf460fca63fee240d23daf4abe29450a75e7b1dae",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/context-memory-receipts-store.ts",
+      "bytes": 8524,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        32,
+        18
+      ],
+      "sha256": "c797650e49a916ce3965bdbdda9643b208543c291b34795f64d41aa21893c27a",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/crdt-memory-sync-engine.ts",
+      "bytes": 9686,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        39,
+        22
+      ],
+      "sha256": "a3e8fd326b39fb9bf3fead26c9f20d3717b8616a05e0687f72365fdb0960c22f",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/cryptographic-audit-blackbox.ts",
+      "bytes": 8934,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        6,
+        6
+      ],
+      "sha256": "f5792266d7d9d25c574123e1447e3dbee04df48b2b4d56e809c496075e31f881",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/cuckoo-and-bloom-filter-index.ts",
+      "bytes": 10596,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        12,
+        34
+      ],
+      "sha256": "619d53491898c7bdd72e6cbc93b65522420056988405d762bf6d2a26de2b9130",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/dense-vector-semantic-search.ts",
+      "bytes": 13688,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        13,
+        14
+      ],
+      "sha256": "9a65233c1ab5cb7105dbf4cad20ab3201cae2781d402ba13e08a131d3ebe3386",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/episodic-reflexion-engine.ts",
+      "bytes": 10080,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        21,
+        38
+      ],
+      "sha256": "a2df3060d80f6e3e88d0a0c045e76632ef6b1065c2bb6aed63e592a13d9cacf9",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/history-compaction-topic-analyzer.ts",
+      "bytes": 18133,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        7,
+        54,
+        42
+      ],
+      "sha256": "d50ca41f586065fd99a0f89167d3389e21975a69c0ec1b351ebec36d66e28d4f",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/hnsw-vector-index.ts",
+      "bytes": 11619,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        6,
+        56,
+        34
+      ],
+      "sha256": "647fbf24f0326db7b192aaafad1e9d1b300b2df0e1f3a18d6849f2cceaf903fa",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/minhash-lsh-deduplicator.ts",
+      "bytes": 7471,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        21,
+        36
+      ],
+      "sha256": "d055ab251d31ed5f8a5e529703ddc94c458290e92b9614ef4cae51053203e7d0",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/multi-agent-consensus-engine.ts",
+      "bytes": 6708,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        10,
+        54
+      ],
+      "sha256": "48d139b1ac9101efa93d09f069951359c487e1e9a7ef8317830658adfa80fd56",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/product-quantization-vector-codec.ts",
+      "bytes": 9889,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        26,
+        10
+      ],
+      "sha256": "be5daa50e005f2f3f7493ae86e8608763ad40c8837d1d45f7f7a09e510390df9",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/profile-candidate-reconciler.ts",
+      "bytes": 20418,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        7,
+        54,
+        14
+      ],
+      "sha256": "c53250adad724a5ecd15113e081685f2062ef1b960602554d3dbeb8961a88fc4",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/roaring-positional-inverted-index.ts",
+      "bytes": 22988,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        52,
+        52
+      ],
+      "sha256": "a1922b9c887402dd6b8808545f01d02e61da0229f88697c0a0d5b7f6acc87afc",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/self-healing-workflow-runtime.ts",
+      "bytes": 9006,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        30,
+        16
+      ],
+      "sha256": "5319cc9534565fe388712f0d44dc25f5209c5da2e2ae1edfec625c24416f957b",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/temporal-knowledge-graph.ts",
+      "bytes": 6527,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        50,
+        6
+      ],
+      "sha256": "93949aa03611edcd60c8de4d4cf28f72e7e1aab71eaedbd1fdee5503f5477530",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/vault-cross-citation-graph.ts",
+      "bytes": 7149,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        30,
+        36
+      ],
+      "sha256": "98a6074da4afed92a8e4045006a92c850862c6acfab0cb9c56a91dd32e43c672",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/vps-chat-history-migrator.ts",
+      "bytes": 11741,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        7,
+        50,
+        38
+      ],
+      "sha256": "ebe4d8cc2e8807f397f4807b206fa26be477c42d1d28642f83cf8c3c91d83946",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/workflow-dag-templates-and-critic.ts",
+      "bytes": 19591,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        32,
+        18
+      ],
+      "sha256": "1b0cb926e34589ebf183bc8737812b1157bc70319337a25dfd1891f81a43389b",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/workflow-portability-and-zip-exporter.ts",
+      "bytes": 20298,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        2,
+        58
+      ],
+      "sha256": "23162f5fa75071b4439ac7474e23d8a11c57f814f7e099c1374bcc996b887a0a",
+      "current_state": "new"
+    },
+    {
+      "path": "packages/db/src/workflow-schedule-and-subworkflow-runner.ts",
+      "bytes": 15330,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        14,
+        39,
+        18
+      ],
+      "sha256": "341f7dbd2f2a14ec97065b2ca9caa0b6024c737d1bf69fca9ff433d5dfe8a581",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/benchmark-kosmora-stage2-performance.mjs",
+      "bytes": 12993,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        56,
+        22
+      ],
+      "sha256": "ff0b198e39566d03024ba38123b87dad9eaadc76c1f325559532f02b3b8d568f",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/check-secrets.mjs",
+      "bytes": 2973,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        54,
+        24
+      ],
+      "sha256": "75c8a4f98057f9462810a885b6c20e151e5204a347313ce0a484bec8d749b502",
+      "current_state": "different"
+    },
+    {
+      "path": "scripts/driver-mock-gateway-live-e2e.mjs",
+      "bytes": 14370,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        50,
+        4
+      ],
+      "sha256": "d1820de54564cbb09d920ca36087d8d16263fc6e196ffd9f7344d8425b122dd9",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-cdc-ast-bandit-and-pdf-smoke.mjs",
+      "bytes": 3091,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        19,
+        5,
+        12
+      ],
+      "sha256": "761de838328029503d0eb2836fb9034a830429965ed6c4800be4a3db4438fd66",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-compaction-profile-and-vps-smoke.mjs",
+      "bytes": 3196,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        7,
+        51,
+        48
+      ],
+      "sha256": "21516cd4a43d993e08937e18fc77688ee8c439ede5e7aa8da0deca125c12901c",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-crdt-mcts-pii-and-excel-smoke.mjs",
+      "bytes": 3015,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        38,
+        40
+      ],
+      "sha256": "07ff41b184121a7537e4fe3a4742e994f2f0c077a0ca855d3012060753e41de3",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-cuckoo-shamir-causal-and-html-smoke.mjs",
+      "bytes": 3190,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        13,
+        58
+      ],
+      "sha256": "843310f9ae3198a5276bba52b542a30fc4037c695a285952d5cfa2a1a5c8a474",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-datalog-minhash-otel-and-clipboard-smoke.mjs",
+      "bytes": 3137,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        24,
+        28
+      ],
+      "sha256": "3b94e2982bafe66b62a837c59072285c9fea31844e84282af3a08a24c8e51bbf",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-drive-spool-and-koswork-report-smoke.mjs",
+      "bytes": 2614,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        8,
+        11,
+        48
+      ],
+      "sha256": "0d7d0e0937c868e90604102e162aa4e4325fcb101039f3b6eec78a7a328d8073",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-dynamic-budget-and-blackbox-smoke.mjs",
+      "bytes": 2549,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        6,
+        32
+      ],
+      "sha256": "bc4376126a0ea58e7b3fba5f439e4e0a05f00ab578ac98bc51992e2c4688f1e2",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-fable-memory-cache-and-workflows-smoke.mjs",
+      "bytes": 2774,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        14,
+        40,
+        36
+      ],
+      "sha256": "8fb3dbc3f3e20678cfdbafb86df555eaf389073717d33de088cbccd6835ea747",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-google-drive-smoke.mjs",
+      "bytes": 3317,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        4,
+        40
+      ],
+      "sha256": "2ba210303da4a3d251bb35cb30494a6ddd04a20be898029f48ea83b5f6ac4dcd",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-hnsw-merkle-grammar-and-dpi-smoke.mjs",
+      "bytes": 3329,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        6,
+        55,
+        44
+      ],
+      "sha256": "3fbbbdfecda6c47fb07082096b32e0241d84257ee4451f3ce69a3292ddc63428",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-hybrid-memory-and-download-smoke.mjs",
+      "bytes": 2901,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        30,
+        0
+      ],
+      "sha256": "cbded74aef3ae95abef1e70c31f9d6786e1638544d5da446099a58adf94e853a",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-journal-recovery-hazard-and-bpe-smoke.mjs",
+      "bytes": 3001,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        31,
+        6
+      ],
+      "sha256": "8c6666d61da3a955e052ac8db52ce8652c3d199969d120de173b0d5b4e3efb88",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-nextgen-technologies-smoke.mjs",
+      "bytes": 4185,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        57,
+        0
+      ],
+      "sha256": "c76581a6654a8cfb6452543c570d7cdd294f768fd2546a5acb94dee1b65fea6c",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-pptx-temporal-kg-and-shield-smoke.mjs",
+      "bytes": 3160,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        51,
+        46
+      ],
+      "sha256": "1c0b631d245ea887bc2006250eb95896fcdd2baef043bc0ef4e252cdca2852be",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-pq-kalman-zk-and-archive-smoke.mjs",
+      "bytes": 3120,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        27,
+        42
+      ],
+      "sha256": "6cef003f95893fcfce629a91ed7e34bb69be8f710c4046e7c6d3f2d1e6390da0",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-reflexion-grounding-and-dom-diff-smoke.mjs",
+      "bytes": 3068,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        23,
+        54
+      ],
+      "sha256": "d1fe6d7ca21bd7e80d587f29f09c1130420079c7590861d9ac663c9a3e06c80c",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-roaring-dp-petri-and-wav-smoke.mjs",
+      "bytes": 3133,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        55,
+        18
+      ],
+      "sha256": "f5231842631feda8363c11f9f88d3bca6a880dcb56aadfd3042b45511e09bb36",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-self-healing-and-watchdog-smoke.mjs",
+      "bytes": 3192,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        31,
+        32
+      ],
+      "sha256": "179eb7c4c4cc143db147c9786b46315459b8c31a0f6c3b9bea559c8dce759060",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-vault-bridge-search-and-emergency-smoke.mjs",
+      "bytes": 2933,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        48,
+        26
+      ],
+      "sha256": "3028c4480d30edd002b980e78f9a1a74e9c7837909de80e44c065e5453338186",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-vault-memory-smoke.mjs",
+      "bytes": 4113,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        7,
+        46
+      ],
+      "sha256": "10d5727b4a87288f65318dd84462a5a8e06b6c178aa78115e470209da930b0e4",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-workflow-dag-receipts-and-unified-smoke.mjs",
+      "bytes": 3074,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        33,
+        22
+      ],
+      "sha256": "2f5b028c3eda58910f0c40b352244d91d8ea819e8965d65df3563561e8bea13a",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/integration-workflow-portability-and-fable-discovery-smoke.mjs",
+      "bytes": 2681,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        3,
+        20
+      ],
+      "sha256": "4068c49d5070657cd9d77440df7f28a6000e9a2922324a62d5d8b7b16675c7fc",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/offline-typescript.mjs",
+      "bytes": 6055,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        4,
+        40
+      ],
+      "sha256": "8ad700099d9b31efec6cd234ecf77ab88db94b40eda1e21a19d6803bdfa796bd",
+      "current_state": "different"
+    },
+    {
+      "path": "scripts/remediate-memory-and-vault-ci.mjs",
+      "bytes": 4438,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        7,
+        2
+      ],
+      "sha256": "573757aebbc5e0ecad890cdba71717becc4075785a1145bf7208b9c812d7ba07",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/run-all-stage2-acceptance-suites.mjs",
+      "bytes": 3227,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        1,
+        10
+      ],
+      "sha256": "38ba73fbe73bed584744c35eae77b5b4edb4e24c02a021488e2d9a6f9b5db0f0",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/stage2-master-verification-matrix-runner.mjs",
+      "bytes": 10185,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        28,
+        2
+      ],
+      "sha256": "ed18ccc4b5accd003c1387e400b402fc8f7536b526b77810cd4471e1b8ceb97b",
+      "current_state": "new"
+    },
+    {
+      "path": "scripts/vps-chat-recovery-and-tls-probe.mjs",
+      "bytes": 2373,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        7,
+        51,
+        48
+      ],
+      "sha256": "9c2897e4b7de3eb9a634e4f2e2dec20186f9983ff4f3f3553ef381e340dbc5c4",
+      "current_state": "new"
+    },
+    {
+      "path": "push-all-3days-complete.sh",
+      "bytes": 12018,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        9,
+        0,
+        2
+      ],
+      "sha256": "c0a03574fb4536a6d3f2dfe5484b9051e77e9e12e0fdb68fe00445b230e07dba",
+      "current_state": "new"
+    },
+    {
+      "path": "kosmora-complete-3days-unified.patch",
+      "bytes": 1602196,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        9,
+        0,
+        0
+      ],
+      "sha256": "d3b38135a3e62ecb5ccb254f2a1b36362d4ed044b2d7ecc73bbd691409f4750d",
+      "current_state": "new"
+    },
+    {
+      "path": "KOSMORA_COMPLETE_3DAYS_MASTER_MANIFEST_2026-11-03_RU.md",
+      "bytes": 20799,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        9,
+        0,
+        2
+      ],
+      "sha256": "8bc9de9ce1454b6e75575754dd7ba47c3e29b3fe4601b124e41391f7fca1064b",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-cdc-ast-bandit-and-pdf.sh",
+      "bytes": 1261,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        19,
+        15,
+        14
+      ],
+      "sha256": "af72cab52850a2a6aeb5e2323a5bb45c828035d3d1da57eabf02e3d8e2da050b",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-compaction-profile-and-vps-recovery.sh",
+      "bytes": 553,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        7,
+        56,
+        0
+      ],
+      "sha256": "38dc402d3e4efb2dd40843a2f4c27265f0b17a3d81ebbfa89a0a0f1ba20bf32d",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-crdt-mcts-pii-and-excel.sh",
+      "bytes": 1231,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        46,
+        4
+      ],
+      "sha256": "6274dece3c8fe76d580b72446d6569640259c9cec77696dbc4969036ef52cdcc",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-cuckoo-shamir-causal-and-html.sh",
+      "bytes": 1112,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        20,
+        18
+      ],
+      "sha256": "ee7e487755857b9ed8e98d61e0210c85a1dfa5092f568ec6193714d3b45118b1",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-datalog-minhash-otel-and-clipboard.sh",
+      "bytes": 1293,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        32,
+        4
+      ],
+      "sha256": "c2851b82c34e833426896ed57ca78a2704ea2d4a320a800b7d9ec674dd634bec",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-drive-journal-recovery-and-hazard-guard.sh",
+      "bytes": 566,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        33,
+        2
+      ],
+      "sha256": "f0bfe46f0feb059722989f1be920961e8f0032c2ecb1eea51806d29cbbaa294f",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-drive-spool-and-koswork-unified.sh",
+      "bytes": 549,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        8,
+        14,
+        22
+      ],
+      "sha256": "6606acc537d5c8bc4cd87dabc04abfc1348cad45044b9ed4baf7b7c6977875e8",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-dynamic-budget-and-blackbox.sh",
+      "bytes": 1087,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        11,
+        56
+      ],
+      "sha256": "2ac102652c1a00e048880c9c21fcdf654bb574e5425ef3ad77bfff1681ba0867",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-fable-sse-memory-cache-and-workflows.sh",
+      "bytes": 561,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        14,
+        41,
+        58
+      ],
+      "sha256": "580bebd6af17ca1d352b6717b68c8d97b07ce839388a7b5cc9cd50521fda9be5",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-google-drive-complete.sh",
+      "bytes": 44581,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        19,
+        9,
+        12
+      ],
+      "sha256": "7a28b7a9626a66de814fbd4a9807fdaccdc595efe4081d2e4f16d5a4a1feced7",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-hnsw-merkle-grammar-and-dpi.sh",
+      "bytes": 1261,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        7,
+        5,
+        34
+      ],
+      "sha256": "a079621177e1c80836563be94dc023c85698f65294a85173af18a17e4b54f2a9",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-hybrid-memory-and-migration.sh",
+      "bytes": 537,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        31,
+        30
+      ],
+      "sha256": "e94ea97a86b6e695f92c4c2d09210d5d19638a6045e73f0c9c2e29fe842e5465",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-media-final-acceptance.sh",
+      "bytes": 76494,
+      "zip_date": [
+        2026,
+        10,
+        28,
+        9,
+        1,
+        8
+      ],
+      "sha256": "0e9864eac43c341bdfb19bec42bc5a888f1f19a9e18988f7c6560aa044f75f63",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-nextgen-frontier-technologies.sh",
+      "bytes": 552,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        29,
+        50
+      ],
+      "sha256": "4cc1bad5a66a561bada0b559fc5f5bb583d3aa9a7d5d54c0b3d0de0769f0743c",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-pptx-temporal-kg-and-shield.sh",
+      "bytes": 1280,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        59,
+        16
+      ],
+      "sha256": "e1540653dfc6aa364a40d091812814cbdcb54883581cde8848a373db1ff7f9b0",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-pq-kalman-zk-and-archive.sh",
+      "bytes": 1066,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        33,
+        16
+      ],
+      "sha256": "ffee0036ccbd9354ba4a6eb821b56571dd862e8f31b3d7e28ff19026ea39c9e9",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-privacy-segmented-acceptance.sh",
+      "bytes": 79101,
+      "zip_date": [
+        2026,
+        10,
+        28,
+        16,
+        28,
+        6
+      ],
+      "sha256": "584e5f55602edf8a5615e460e2b710ddef88bb7a58e098cd28bb1696cd92b38d",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-reflexion-grounding-and-dom-diff.sh",
+      "bytes": 1193,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        31,
+        2
+      ],
+      "sha256": "11bbd9dbe6a0d7f3b54a0c10c7ae4737b1fc06cfb102285eacf9863c46046305",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-relay-release-acceptance.sh",
+      "bytes": 114107,
+      "zip_date": [
+        2026,
+        10,
+        28,
+        11,
+        44,
+        38
+      ],
+      "sha256": "04450269eef7899eeba0f661d61900ded88daa1d4c1fce4ff43b3adee1952f1b",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-roaring-dp-petri-and-wav.sh",
+      "bytes": 1056,
+      "zip_date": [
+        2026,
+        11,
+        3,
+        8,
+        11,
+        2
+      ],
+      "sha256": "3f8cb55ea369dfa19950487a1c2bd950c0ae36deeb5ea930ccc6d3699835a5fb",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-self-healing-and-knowledge-graph.sh",
+      "bytes": 559,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        36,
+        30
+      ],
+      "sha256": "beaf17e24b0467030ddaf99a49d4fc381daf49644c2aeb07344124034743996f",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-speculative-and-simulation.sh",
+      "bytes": 1145,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        18,
+        2,
+        54
+      ],
+      "sha256": "a8c1c94f0d9d2a262e250620a8bf76a04aec4c2fc9ce75bba1fb20eca592bed7",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-stage2-master-verification.sh",
+      "bytes": 554,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        17,
+        1,
+        10
+      ],
+      "sha256": "16c06ed29b82b6eacf1399438be92db87f7c370bc768b575cb9f22c5d7112b37",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-stage2-migration-privacy-and-ipc.sh",
+      "bytes": 571,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        16,
+        50,
+        58
+      ],
+      "sha256": "8e32452b8b2dc1ff3af24c7b2b073175753769ead775b9e8167991ee9030668c",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-vault-bridge-search-and-emergency-snapshot.sh",
+      "bytes": 574,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        9,
+        50,
+        26
+      ],
+      "sha256": "e526441bd7823dac7b3b67e6262202b6fcce8c55e3beeb95e2af49a074d6f589",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-windows-final-acceptance.sh",
+      "bytes": 62191,
+      "zip_date": [
+        2026,
+        10,
+        28,
+        8,
+        26,
+        16
+      ],
+      "sha256": "273f694bdc8e6e35ce8f8d1928273280edcbc8a7b2e4a58f40e8da1cff93e5aa",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-workflow-portability-and-fable-discovery.sh",
+      "bytes": 577,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        5,
+        8
+      ],
+      "sha256": "fdaf1b36ec3d8df3e981ef6d52b4eb1fe910ef7091331b75654c55ac9c5fbdd3",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-kosmora-workflows-dag-receipts-and-unified-coordinator.sh",
+      "bytes": 581,
+      "zip_date": [
+        2026,
+        11,
+        2,
+        15,
+        58,
+        50
+      ],
+      "sha256": "ae2322f29ce16c130be7e91cd4088a3bd4ada58cccb9bd095eb9e8d0427499fe",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-koswork-vault-docs-and-memory-restore.sh",
+      "bytes": 678,
+      "zip_date": [
+        2026,
+        11,
+        1,
+        20,
+        11,
+        10
+      ],
+      "sha256": "2b162d738e6d5fb9c9119ca66843b317b43daf381e447eb77d25e968e9a4c223",
+      "current_state": "new"
+    },
+    {
+      "path": "wave-push-scripts/push-koswork-workspace-folder.sh",
+      "bytes": 38374,
+      "zip_date": [
+        2026,
+        10,
+        29,
+        10,
+        2,
+        44
+      ],
+      "sha256": "ec760e1025a6fad08db9f82df3e6f1a141a9d78a7ba3a32fc550228c36c243b0",
+      "current_state": "new"
+    }
+  ],
+  "uncompressed_bytes": 3714154
+}
