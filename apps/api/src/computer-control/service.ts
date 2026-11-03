@@ -1,6 +1,7 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { Value } from "typebox/value";
 import type { ContextMemoryRanker } from "@cosmora/contracts";
+import type { IndexedMemoryRecall } from "@cosmora/db";
 import {
   ComputerProposalSchema,
   type ComputerDecision,
@@ -171,6 +172,7 @@ export class ComputerControlService {
       policy: PolicyStore;
       now?: () => number;
       semanticRanker?: ContextMemoryRanker | undefined;
+      indexedRecall?: IndexedMemoryRecall | undefined;
     }
   ) {
     this.tools = new GuardedToolRuntime(deps.policy);
@@ -542,6 +544,7 @@ export class ComputerControlService {
     if (!chat) throw new ComputerControlError("PROJECT_CHAT_MISSING");
     const memoryStore = new ContextMemoryStore(sql, () => this.now());
     memoryStore.semanticRanker = this.deps.semanticRanker;
+    memoryStore.indexedRecall = this.deps.indexedRecall;
     const resolved =
       s.executionMode === "work"
         ? await memoryStore.resolveAsync(

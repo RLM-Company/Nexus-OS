@@ -71,8 +71,9 @@
 
 - Реальный offline E5 encoder и bounded hybrid retrieval подключены к Kosmora/Koswork:
   [поставка и границы](../handoff/KOSMORA_SEMANTIC_MEMORY_2026-11-03_RU.md).
-  Исходные hash-векторы не использованы. Постоянный полный индекс, HNSW/PQ,
-  расширенный privacy lifecycle индекса и большая независимая оценка остаются далее.
+  Исходные hash-векторы не использованы. Постоянный scoped index и privacy lifecycle реализованы в
+  [следующем пакете](../handoff/KOSMORA_SEMANTIC_HISTORY_INDEX_2026-11-03_RU.md).
+  HNSW/PQ и большая независимая оценка остаются далее.
 - Подтверждённый опыт выполнения: нужны достоверные исходы, источник правила,
   область задачи, версия и privacy lifecycle. Произвольный текст remedialResolution
   не становится системной инструкцией и не расширяет полномочия агента.

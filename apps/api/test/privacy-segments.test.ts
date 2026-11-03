@@ -235,9 +235,15 @@ describe("owner-scoped segmented privacy exports", () => {
     const f = await fixture();
     const full = new OwnerPrivacyCoordinator(f.db.sqlite);
     full.register(f.adapter);
-    for (const id of ["presentations", "notifications", "owner-skills", "email-change"])
+    for (const id of [
+      "presentations",
+      "notifications",
+      "owner-skills",
+      "email-change",
+      "semantic-memory"
+    ])
       expect(full.overview("owner-a").missing).toContain(id);
-    expect(REQUIRED_PRIVACY_STORES).toHaveLength(13);
+    expect(REQUIRED_PRIVACY_STORES).toHaveLength(14);
     f.db.sqlite
       .prepare(
         "INSERT INTO kosmora_owner_data_lifecycle(owner_id,epoch,state,operation_id,started_at,updated_at) VALUES('old-owner',1,'quiescing','interrupted','now','now')"

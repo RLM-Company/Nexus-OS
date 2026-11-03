@@ -428,6 +428,13 @@
       "when": 1793620800000,
       "tag": "0062_reusable_workflows",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "6",
+      "when": 1793620800001,
+      "tag": "0063_semantic_history_index",
+      "breakpoints": true
     }
   ]
 }
