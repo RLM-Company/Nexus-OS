@@ -1,0 +1,59 @@
+name: API Linux dependency bundle
+
+on:
+  push:
+    branches: [codex/api-linux-deps-20261103]
+    paths: [".github/workflows/api-linux-deps.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-linux-deps-20261103
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 74ab1bc6a7c48c9dc27168fd23805e99bf4d67f9
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Verify source and install locked Linux production dependencies
+        run: |
+          test "$(git rev-parse HEAD)" = 74ab1bc6a7c48c9dc27168fd23805e99bf4d67f9
+          node scripts/check-secrets.mjs
+          pnpm install --prod --frozen-lockfile --ignore-scripts
+      - name: Verify bundled native CPU backend
+        working-directory: apps/api
+        run: |
+          node --input-type=module - <<'JS'
+          import {createRequire} from 'node:module';
+          import assert from 'node:assert/strict';
+          const root=createRequire(import.meta.url), require=createRequire(root.resolve('@huggingface/transformers'));
+          assert.ok(require('onnxruntime-node').listSupportedBackends().some(x=>x.name==='cpu' && x.bundled));
+          console.log('Bundled Linux CPU backend verified');
+          JS
+      - name: Export dependencies and provenance without secrets or model weights
+        run: |
+          mkdir runtime
+          tar -czf runtime/linux-deps.tar.gz node_modules apps/api/node_modules packages/*/node_modules
+          printf '%s\n' 74ab1bc6a7c48c9dc27168fd23805e99bf4d67f9 > runtime/source-revision.txt
+          sha256sum runtime/linux-deps.tar.gz > runtime/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-linux-deps-74ab1bc6a7c4
+          path: runtime/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
