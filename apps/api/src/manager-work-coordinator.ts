@@ -19,15 +19,18 @@ import {
   type WorkIntelligenceGraphAdapter,
   type WorkOwnerBudget,
   type WorkQuiescence,
-  type ModelRequest
+  type ModelRequest,
+  type ContextMemoryBundle,
+  type ModelMessage
 } from "@cosmora/contracts";
 import {
   estimateInputTokensUpperBound,
   CONTEXT_MEMORY_RULES,
   tagContextMemoryRequest,
   contextMemoryUsage,
-  assertContextMemoryComplete,
-  fitContextMemory,
+  fitContextMessages,
+  ContextTooLargeError,
+  MemoryContextIncompleteError,
   readWorkGraphContext,
   workRuntimeProgress,
   assertWorkTaskGraph,
@@ -290,9 +293,14 @@ export class ManagerWorkCoordinator {
       work.owner_id,
       work.request.goal
     );
-    assertContextMemoryComplete(resolved);
-    const recalled = fitContextMemory(resolved, resolved.budget_bytes, work.request.goal);
-    request.messages = [
+    const personalSkills =
+      this.dependencies.store.skills.forWork(work.id, work.owner_id)?.items ?? [];
+    const projectMemory = this.dependencies.store.memory.visibleSnapshot(
+      work.project_id,
+      work.owner_id,
+      work.memory_snapshot
+    );
+    const render = (recalled: ContextMemoryBundle | undefined): ModelMessage[] => [
       {
         role: "system",
         content:
@@ -322,20 +330,39 @@ export class ManagerWorkCoordinator {
         content: JSON.stringify({
           goal: work.request.goal,
           recalled_memory: recalled?.items.length ? recalled : undefined,
-          personal_skills:
-            this.dependencies.store.skills.forWork(work.id, work.owner_id)?.items ?? [],
+          personal_skills: personalSkills,
           materials: work.materials,
           optional_graph_context: work.graph_context,
-          project_memory: this.dependencies.store.memory.visibleSnapshot(
-            work.project_id,
-            work.owner_id,
-            work.memory_snapshot
-          ),
+          project_memory: projectMemory,
           plan: stage !== "plan" ? work.plan : undefined,
           draft: stage === "review" ? work.draft : undefined
         })
       }
     ];
+    const remainingInput = work.request.max_input_tokens - work.reserved_input_tokens;
+    if (remainingInput < 0) throw new Error("EXECUTION_BUDGET_EXCEEDED");
+    let recalled: ContextMemoryBundle | undefined;
+    try {
+      const packed = fitContextMessages({
+        render,
+        memory: resolved,
+        query: work.request.goal,
+        inputBudget: Math.min(this.dependencies.manager.inputContextBudget, remainingInput)
+      });
+      request.messages = packed.messages;
+      recalled = packed.memory;
+    } catch (error) {
+      if (error instanceof MemoryContextIncompleteError)
+        throw new Error("WORK_MEMORY_CONTEXT_INCOMPLETE", { cause: error });
+      if (error instanceof ContextTooLargeError)
+        throw new Error(
+          remainingInput < this.dependencies.manager.inputContextBudget
+            ? "EXECUTION_BUDGET_EXCEEDED"
+            : "WORK_CONTEXT_TOO_LARGE",
+          { cause: error }
+        );
+      throw error;
+    }
     request.routing.fallback_allowed = false;
     request.routing.estimated_input_tokens = estimateInputTokensUpperBound(request.messages);
     const remainingOutput = work.request.max_output_tokens - work.reserved_output_tokens;
@@ -536,7 +563,19 @@ export class ManagerWorkCoordinator {
       return content;
     } catch (error) {
       if (!runCommitted)
-        projects.failRun(runId, error instanceof GatewayRunError ? error.code : "WORK_INTERRUPTED");
+        projects.failRun(
+          runId,
+          error instanceof GatewayRunError
+            ? error.code
+            : error instanceof Error &&
+                [
+                  "WORK_CONTEXT_TOO_LARGE",
+                  "WORK_MEMORY_CONTEXT_INCOMPLETE",
+                  "EXECUTION_BUDGET_EXCEEDED"
+                ].includes(error.message)
+              ? error.message
+              : "WORK_INTERRUPTED"
+        );
       if (ownerReservation) {
         if (dispatchAllowed)
           this.dependencies.ownerBudget?.uncertainReservation(ownerReservation, "main");
@@ -782,6 +821,8 @@ export class ManagerWorkCoordinator {
       const known = [
         "EMERGENCY_STOP",
         "EXECUTION_BUDGET_EXCEEDED",
+        "WORK_CONTEXT_TOO_LARGE",
+        "WORK_MEMORY_CONTEXT_INCOMPLETE",
         "INVALID_MODEL_OUTPUT",
         "INVALID_PRESENTATION_RESULT",
         "INVALID_WEBSITE_RESULT",
@@ -803,7 +844,13 @@ export class ManagerWorkCoordinator {
                 (known.includes(error.message) || /^OWNER_[A-Z_]+$/.test(error.message))
               ? error.message
               : "WORK_FAILED";
-      this.checkpoint(work, "Работа остановлена: " + work.error_code);
+      const contextMessage =
+        work.error_code === "WORK_CONTEXT_TOO_LARGE"
+          ? "Материалы и результаты этапа не помещаются в контекст выбранной модели. Запрос этого этапа не отправлен; содержимое сохранено без обрезки."
+          : work.error_code === "WORK_MEMORY_CONTEXT_INCOMPLETE"
+            ? "Обязательные записи памяти не помещаются вместе с материалами этапа. Запрос этого этапа не отправлен; проверьте обязательные записи и объём материалов."
+            : "Работа остановлена: " + work.error_code;
+      this.checkpoint(work, contextMessage);
     }
   }
 }

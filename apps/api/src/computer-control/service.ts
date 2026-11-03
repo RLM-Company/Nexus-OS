@@ -6,13 +6,16 @@ import {
   type ComputerStep,
   type CreateComputerSession,
   type ModelMessage,
-  type ModelRequest
+  type ModelRequest,
+  type ContextMemoryBundle
 } from "@cosmora/contracts";
 import {
   CONTEXT_MEMORY_RULES,
   tagContextMemoryRequest,
   contextMemoryUsage,
-  fitContextMemory,
+  fitContextMessages,
+  ContextTooLargeError,
+  MemoryContextIncompleteError,
   estimateInputTokensUpperBound,
   type ManagerService
 } from "@cosmora/core";
@@ -493,17 +496,9 @@ export class ComputerControlService {
         : undefined;
     if (resolved?.priority_omitted)
       throw new ComputerControlError("COMPUTER_MEMORY_CONTEXT_INCOMPLETE");
-    const recalled = resolved
-      ? fitContextMemory(resolved, resolved.budget_bytes, s.goal)
-      : undefined;
     const run = randomUUID(),
       at = new Date(this.now()).toISOString();
-    sql
-      .prepare(
-        "INSERT INTO runs (id,project_id,chat_id,status,created_at,updated_at) VALUES (?,?,?,'running',?,?)"
-      )
-      .run(run, s.project, String(chat.id), at, at);
-    const messages: ModelMessage[] = [
+    const render = (recalled: ContextMemoryBundle | undefined): ModelMessage[] => [
       {
         role: "system",
         content:
@@ -531,7 +526,29 @@ export class ComputerControlService {
           : {})
       }
     ];
+    let messages: ModelMessage[], recalled: ContextMemoryBundle | undefined;
+    try {
+      const packed = fitContextMessages({
+        render,
+        memory: resolved,
+        query: s.goal,
+        inputBudget: this.deps.manager.inputContextBudget
+      });
+      messages = packed.messages;
+      recalled = packed.memory;
+    } catch (error) {
+      if (error instanceof MemoryContextIncompleteError)
+        throw new ComputerControlError("COMPUTER_MEMORY_CONTEXT_INCOMPLETE", 422);
+      if (error instanceof ContextTooLargeError)
+        throw new ComputerControlError("COMPUTER_CONTEXT_TOO_LARGE", 422);
+      throw error;
+    }
     const request = tagContextMemoryRequest(this.requestFor(s, run, messages), recalled);
+    sql
+      .prepare(
+        "INSERT INTO runs (id,project_id,chat_id,status,created_at,updated_at) VALUES (?,?,?,'running',?,?)"
+      )
+      .run(run, s.project, String(chat.id), at, at);
     const snapshot = contextMemoryUsage(request);
     const memoryUsage = (attempt: number, phase: "dispatch_boundary" | "provider_completed") => {
       if (s.executionMode === "work")

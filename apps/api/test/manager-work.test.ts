@@ -27,6 +27,7 @@ import {
   type ProviderStreamEvent
 } from "@cosmora/model-gateway";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ManagerService } from "@cosmora/core";
 import { buildApp } from "../src/app.js";
 import { ManagerWorkCoordinator, type WorkOwnerBudget } from "../src/manager-work-coordinator.js";
 import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runtime.js";
@@ -71,6 +72,8 @@ async function fixture(
     wrapOutput?: boolean;
     afterChunk?: (request: ModelRequest, signal: AbortSignal, index: number) => Promise<void>;
     operationTimeoutMs?: number;
+    managerContextWindow?: number;
+    prepareMemory?: (store: ManagerWorkStore, projectId: string) => void;
   } = {}
 ) {
   const database = openDatabase(options.databasePath ?? ":memory:");
@@ -145,7 +148,15 @@ async function fixture(
     policy,
     emergency,
     gateway,
-    manager: runtime.manager,
+    manager:
+      options.managerContextWindow === undefined
+        ? runtime.manager
+        : new ManagerService({
+            preferredProvider: "mock",
+            preferredModelAlias: "manager",
+            fallbackAllowed: false,
+            contextWindowTokens: options.managerContextWindow
+          }),
     ...(options.operationTimeoutMs === undefined
       ? {}
       : { operationTimeoutMs: options.operationTimeoutMs }),
@@ -153,6 +164,10 @@ async function fixture(
     ownerBudget: options.ownerBudget ?? accountStore
   };
   const coordinator = new ManagerWorkCoordinator(dependencies);
+  if (options.prepareMemory) {
+    projects.failRun(initial.run.id, "FIXTURE_IDLE");
+    options.prepareMemory(store, project.id);
+  }
   const work = store.create(project.id, "local-owner", "local-owner", options.request ?? request)!;
   const get = () => store.get(work.id, "local-owner")!;
   return {
@@ -175,6 +190,121 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  const recalled =
+    (required = false) =>
+    (store: ManagerWorkStore, projectId: string) => {
+      for (let index = 0; index < (required ? 1 : 3); index++)
+        store.contextMemory.create(
+          {
+            scope: "project",
+            scope_id: projectId,
+            kind: required ? "constraint" : "fact",
+            title: `document ${index}`,
+            content: `document ${index}: ` + "x".repeat(1400),
+            pinned: required,
+            expires_at: null,
+            source: null
+          },
+          "local-owner"
+        );
+      store.contextMemory.updateSettings(
+        { kind: "project", id: projectId },
+        {
+          enabled: true,
+          use_personal: false,
+          source_chat_ids: [],
+          project_ids: [],
+          expected_version: 0
+        },
+        "local-owner"
+      );
+    };
+  it("drops only optional recall to finish within the remaining task input budget", async () => {
+    const requests: ModelRequest[] = [];
+    const f = await fixture({
+      request: { ...request, max_input_tokens: 3000 },
+      prepareMemory: recalled(),
+      onCall: (req) => {
+        requests.push(req);
+        return Promise.resolve();
+      }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get().status).toBe("completed");
+    expect(requests).toHaveLength(2);
+    for (const req of requests) {
+      const data = JSON.parse(req.messages.find((m) => m.role === "user")!.content) as {
+        goal: string;
+        recalled_memory?: unknown;
+      };
+      expect(data.goal).toBe(request.goal);
+      expect(data.recalled_memory).toBeUndefined();
+      expect(req.routing.estimated_input_tokens).toBeLessThanOrEqual(3000);
+    }
+    const receipts = f.store.contextMemory.usage(
+      { kind: "project", id: f.project.id },
+      "local-owner"
+    ).items;
+    expect(receipts).toHaveLength(2);
+    for (const receipt of receipts)
+      expect(receipt.snapshot).toMatchObject({
+        representation: "none",
+        bundle_bytes: 0,
+        sources: []
+      });
+    expect(f.accountStore.summary("local-owner").in_flight_or_uncertain_holds).toBe(0);
+  });
+  it("fails before dispatch when a mandatory recalled fact cannot fit with the task envelope", async () => {
+    const f = await fixture({
+      request: { ...request, max_input_tokens: 3000 },
+      prepareMemory: recalled(true)
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({
+      status: "failed",
+      error_code: "WORK_MEMORY_CONTEXT_INCOMPLETE",
+      model_requests: 0
+    });
+    expect(f.calls).toEqual([]);
+    expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(0);
+  });
+  it("rejects mandatory materials beyond the model window without charging or cutting them", async () => {
+    const f = await fixture({ managerContextWindow: 6000 });
+    const materials = { instructions: "Owner material " + "x".repeat(9000), attachments: [] };
+    f.store.save({ ...f.get(), materials });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({
+      status: "failed",
+      error_code: "WORK_CONTEXT_TOO_LARGE",
+      model_requests: 0
+    });
+    expect(f.get().materials).toEqual(materials);
+    expect(f.get().events.at(-1)?.message).toContain("Запрос этого этапа не отправлен");
+    expect(f.calls).toEqual([]);
+    expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(0);
+    const running = f.database.sqlite
+      .prepare("SELECT count(*) AS n FROM runs WHERE project_id=? AND id!=? AND status='running'")
+      .get(f.project.id, f.initialRun.id);
+    expect(running?.n).toBe(0);
+  });
+  it("keeps a complete draft and refuses an oversized Critic request before dispatch", async () => {
+    const content = "A".repeat(16000);
+    const f = await fixture({
+      managerContextWindow: 12000,
+      request: { ...request, max_input_tokens: 300000, require_critic: true },
+      plan: { ...defaultPlan, needs_critic: true },
+      draft: { files: [{ name: "result.md", content }] }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({
+      status: "failed",
+      error_code: "WORK_CONTEXT_TOO_LARGE",
+      model_requests: 2
+    });
+    expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft"]);
+    expect(f.get().draft?.files[0]?.content).toBe(content);
+    expect(f.get().review).toBeNull();
+  });
   it("validates a relay-wrapped plan without granting its requested external actions", async () => {
     const f = await fixture({
       chunks: [

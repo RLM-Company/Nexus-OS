@@ -96,6 +96,11 @@ export class ManagerService {
     );
   }
 
+  /** Conservative input allowance for the configured route, including its output reserve. */
+  get inputContextBudget(): number {
+    return this.#contextBudget;
+  }
+
   buildRequest(context: ManagerRunContext): ModelRequest {
     assertEntityId(context.projectId, "projectId");
     assertEntityId(context.runId, "runId");

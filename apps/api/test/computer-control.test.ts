@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
+import { ManagerService } from "@cosmora/core";
 import { loadServerConfig } from "@cosmora/config";
 import {
   openDatabase,
@@ -52,6 +53,7 @@ async function fixture(
     finish?: string;
     vision?: boolean;
     fail?: boolean;
+    managerContextWindow?: number;
     onCall?: (request: ModelRequest, signal: AbortSignal) => Promise<void>;
   } = {}
 ) {
@@ -107,7 +109,15 @@ async function fixture(
     policy,
     emergency,
     gateway,
-    manager: runtime.manager,
+    manager:
+      options.managerContextWindow === undefined
+        ? runtime.manager
+        : new ManagerService({
+            preferredProvider: "mock",
+            preferredModelAlias: "manager",
+            fallbackAllowed: false,
+            contextWindowTokens: options.managerContextWindow
+          }),
     budget,
     now: () => now
   };
@@ -155,6 +165,27 @@ async function fixture(
 }
 
 describe("owner-bound computer proposals", () => {
+  it("counts the Work observation image before a paid call or run insertion", async () => {
+    const f = await fixture({ managerContextWindow: 22000 });
+    Object.assign(f.input, { execution_mode: "work" });
+    await f.create();
+    const before = f.db.sqlite
+      .prepare("SELECT count(*) AS n FROM runs WHERE project_id=?")
+      .get(f.project.id)!.n;
+    const value = structuredClone(step);
+    value.observation.work = {
+      environment: "computer",
+      generation: 1,
+      plan_steps: 0,
+      plan_complete: false
+    };
+    await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_CONTEXT_TOO_LARGE" });
+    expect(f.calls).toEqual([]);
+    expect(f.account.summary("local-owner").total_counted_tokens).toBe(0);
+    expect(
+      f.db.sqlite.prepare("SELECT count(*) AS n FROM runs WHERE project_id=?").get(f.project.id)!.n
+    ).toBe(before);
+  });
   it("stops before a model call and leaves no running execution when mandatory memory does not fit", async () => {
     const f = await fixture({ vision: false });
     f.db.sqlite.prepare("UPDATE runs SET status='cancelled' WHERE project_id=?").run(f.project.id);
