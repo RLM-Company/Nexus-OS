@@ -717,12 +717,18 @@ function createBrowserEngine({
           if (
             !["input", "textarea", "textbox"].includes(t.node.role) ||
             t.node.secret ||
+            t.node.readonly ||
             t.node.upload
           )
             throw Error("BROWSER_ELEMENT_UNAVAILABLE");
           await clickPoint(t.web, t.found.x, t.found.y, inputGuard);
           guard();
+          if ((await evaluate(tab, documentCode.focused, [last.id, action.ref])) !== true)
+            throw Error("BROWSER_FOCUS_CHANGED");
+          guard();
           await pressKey(t.web, "a", 65, 2, inputGuard);
+          if ((await evaluate(tab, documentCode.focused, [last.id, action.ref])) !== true)
+            throw Error("BROWSER_FOCUS_CHANGED");
           inputGuard();
           if (action.text) await send(t.web, "Input.insertText", { text: action.text });
           else await pressKey(t.web, "Backspace", 8, 0, inputGuard);
@@ -737,7 +743,10 @@ function createBrowserEngine({
         }
         case "browser_key": {
           const t = await target(action, observation);
-          await clickPoint(t.web, t.found.x, t.found.y, inputGuard);
+          // Focusing must not click a submit button before pressing Enter.
+          inputGuard();
+          if ((await evaluate(tab, documentCode.focus, [last.id, action.ref])) !== true)
+            throw Error("BROWSER_FOCUS_CHANGED");
           guard();
           const key = { ENTER: ["Enter", 13], TAB: ["Tab", 9], ESCAPE: ["Escape", 27] }[action.key];
           await pressKey(t.web, key[0], key[1], 0, inputGuard);

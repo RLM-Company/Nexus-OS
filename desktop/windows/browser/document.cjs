@@ -142,6 +142,7 @@ const capture = function (snapshotId) {
       type,
       secret,
       disabled: el.disabled === true,
+      readonly: el.readOnly === true,
       checked: el.matches('input[type="checkbox"],input[type="radio"]') ? el.checked : undefined,
       expanded: el.getAttribute("aria-expanded") ?? undefined,
       upload: el.matches('input[type="file"]'),
@@ -163,6 +164,7 @@ const capture = function (snapshotId) {
         el.formAction,
         el.formMethod,
         el.formTarget,
+        el.readOnly === true,
         el.matches('input[type="checkbox"],input[type="radio"]') ? el.checked : null,
         el.getAttribute("aria-expanded"),
         ctx?.frames.map((f) => [f.id, f.title, f.contentDocument?.URL])
@@ -173,6 +175,23 @@ const capture = function (snapshotId) {
   state.visible = (el) => !!geometry(el);
   state.point = (el) => geometry(el);
   state.connected = (el) => !!contexts.get(el) && validContext(contexts.get(el)) && el.isConnected;
+  const deepActive = (doc) => {
+    let active = doc.activeElement;
+    for (let i = 0; active?.shadowRoot?.activeElement && i < 8; i++)
+      active = active.shadowRoot.activeElement;
+    return active;
+  };
+  state.focused = (el) => {
+    const ctx = contexts.get(el);
+    if (!ctx || !validContext(ctx)) return false;
+    let doc = document;
+    for (const f of ctx.frames) {
+      if (deepActive(doc) !== f) return false;
+      doc = f.contentDocument;
+    }
+    const active = deepActive(doc);
+    return active === el || (el.isContentEditable && contains(el, active));
+  };
   state.hit = (el, x, y) => {
     const ctx = contexts.get(el);
     if (!ctx || !validContext(ctx)) return false;
@@ -245,7 +264,7 @@ const capture = function (snapshotId) {
       if (
         nodes.length < 55 &&
         node.matches(
-          'a[href],button,input,textarea,select,[role="button"],[role="link"],[role="checkbox"],[role="tab"],[contenteditable="true"]'
+          'a[href],button,input,textarea,select,[role="button"],[role="link"],[role="checkbox"],[role="tab"],[role="textbox"],[role="combobox"],[contenteditable="true"],[contenteditable=""],[contenteditable="plaintext-only"]'
         ) &&
         geometry(node)
       ) {
@@ -344,8 +363,38 @@ const fileNode = function (snapshotId, ref) {
     ? e.node
     : null;
 };
+const focused = function (snapshotId, ref) {
+  const s = globalThis.__kosworkDocument,
+    e = s?.refs.get(ref);
+  return (
+    s?.snapshotId === snapshotId &&
+    s.connected(e?.node) &&
+    s.info(e.node).signature === e.signature &&
+    !s.info(e.node).secret &&
+    s.focused(e.node)
+  );
+};
+const focus = function (snapshotId, ref) {
+  const s = globalThis.__kosworkDocument,
+    e = s?.refs.get(ref);
+  if (
+    s?.snapshotId !== snapshotId ||
+    !s.connected(e?.node) ||
+    s.info(e.node).signature !== e.signature ||
+    s.info(e.node).secret ||
+    e.node.disabled
+  )
+    return false;
+  s.scroll(e.node);
+  const p = s.point(e.node);
+  if (!p || !s.hit(e.node, p.x, p.y)) return false;
+  e.node.focus({ preventScroll: true });
+  return s.focused(e.node);
+};
 module.exports = {
   capture: capture.toString(),
   locate: locate.toString(),
-  fileNode: fileNode.toString()
+  fileNode: fileNode.toString(),
+  focused: focused.toString(),
+  focus: focus.toString()
 };

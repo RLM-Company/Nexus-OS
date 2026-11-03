@@ -30,6 +30,7 @@ async function run() {
       response.end(`<!doctype html><body style="margin:20px"><h1>Complex fixture</h1>
         <div id="host"></div><div id="closed"></div>
         <form id="mutable-form" action="/first-destination"><button>Protected submit</button></form>
+        <form id="key-form" onsubmit="event.preventDefault();window.keySubmits=(window.keySubmits||0)+1"><input aria-label="Keyboard query"><button>Keyboard submit</button></form>
         <iframe id="embedded" title="Embedded editor" src="/same-frame" style="display:block;width:700px;height:310px;border:4px solid"></iframe>
         <iframe title="Other site" src="http://127.0.0.1:${otherServer.address().port}/" style="width:300px;height:90px"></iframe>
         <script>
@@ -342,6 +343,43 @@ async function run() {
     );
     deep = await observeDeep();
     assert.notEqual(deep.doc.nodes.find((n) => n.name === "Save shadow").ref, stale.ref);
+    const keyButton = deep.doc.nodes.find((n) => n.name === "Keyboard submit");
+    await engine.execute(
+      { kind: "browser_key", ref: keyButton.ref, key: "ENTER" },
+      deep.observation,
+      abort
+    );
+    assert.equal(
+      await page.evaluate(() => window.keySubmits),
+      1,
+      "Enter must not pre-click and submit twice"
+    );
+    deep = await observeDeep();
+    const hijackTarget = deep.doc.nodes.find((n) => n.name === "Shadow Query");
+    await page.evaluate(() => {
+      const root = document.querySelector("#host").shadowRoot,
+        other = document.createElement("input");
+      other.id = "hijacked";
+      other.value = "untouched";
+      root.append(other);
+      root.querySelector("#shadow-query").onfocus = () => other.focus();
+    });
+    await assert.rejects(
+      engine.execute(
+        { kind: "browser_fill", ref: hijackTarget.ref, text: "must not leak" },
+        deep.observation,
+        abort
+      ),
+      /BROWSER_INPUT_UNCERTAIN/
+    );
+    assert.equal(
+      await page.locator("#hijacked").inputValue(),
+      "untouched",
+      "focus theft must stop text insertion"
+    );
+    assert.equal(await page.locator("#shadow-query").inputValue(), "Shadow Query Космора");
+    await page.locator("#shadow-query").evaluate((e) => (e.onfocus = null));
+    deep = await observeDeep();
     const nested = deep.doc.nodes.find((n) => n.name === "Nested save");
     assert.ok(nested.scope.includes("frame:"));
     await engine.execute({ kind: "browser_click", ref: nested.ref }, deep.observation, abort);
