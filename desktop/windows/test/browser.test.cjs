@@ -470,9 +470,9 @@ test("stop during click or Ctrl+A releases inputs and prevents later text or DOM
     await f.engine.open("https://example.test");
     const o = await f.engine.observe(new AbortController().signal),
       controller = new AbortController();
+    let readsAfterAbort = 0;
     f.setHook((method, args) => {
-      if (method === "Runtime.callFunctionOn" && controller.signal.aborted)
-        assert.fail("A cancelled action must not issue a new DOM read");
+      if (method === "Runtime.callFunctionOn" && controller.signal.aborted) readsAfterAbort++;
       if (method.startsWith("Input.") && args.type === trigger) {
         controller.abort();
         if (stopEngine) f.engine.stop();
@@ -486,6 +486,7 @@ test("stop during click or Ctrl+A releases inputs and prevents later text or DOM
       ),
       /STOPPED|STALE/
     );
+    assert.equal(readsAfterAbort, 0, "A cancelled action must not issue a new DOM read");
     assert.ok(!f.calls.some((x) => x.method === "Input.insertText"));
     assert.ok(
       f.calls.some((x) => x.args?.type === (trigger === "mousePressed" ? "mouseReleased" : "keyUp"))
