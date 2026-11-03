@@ -593,6 +593,8 @@ test("computer modules are packaged and the helper is extracted from ASAR", () =
     "work-retry-guard.cjs",
     "workspace/text-range.cjs",
     "workspace/office-document.cjs",
+    "workspace/office-text.cjs",
+    "browser/action-evidence.cjs",
     "computer-policy.cjs",
     "computer-helper.ps1",
     "computer-preload.cjs",

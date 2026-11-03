@@ -11,6 +11,7 @@ const { createLocalVault } = require("../local-vault.cjs"),
   { ComputerSession } = require("../computer-session.cjs"),
   { createWorkCycleDriver } = require("../work-cycle-driver.cjs");
 const c = { owner: "alice", origin: "https://kosmora.test" };
+const officeFixtures = require("./fixtures/office-import.json").files;
 function fixture(t, options = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "koswork-vault-agent-"));
   t.after(() => {
@@ -59,6 +60,29 @@ function fixture(t, options = {}) {
     }
   };
 }
+test("Office source excerpts require a vault grant and preserve original and extracted-text hashes", async (t) => {
+  const f = fixture(t),
+    file = officeFixtures[0],
+    item = f.vault.put(c, file.name, Buffer.from(file.base64, "base64"));
+  const p = P + "/" + item.id + "/0";
+  await assert.rejects(f.execute({ kind: "workspace_read", path: p }));
+  await f.grant();
+  const read = await f.execute({ kind: "workspace_read", path: p });
+  assert.equal(read.sha256, item.id);
+  assert.equal(read.representation.kind, "office_text");
+  assert.ok(read.content.includes("19 700 ₽, кроме доставки"));
+  assert.equal(
+    read.representation.sha256,
+    crypto.createHash("sha256").update(read.content).digest("hex")
+  );
+  const bad = f.vault.put(c, "broken.docx", Buffer.from("corrupt"));
+  await assert.rejects(
+    f.execute({ kind: "workspace_read", path: P + "/" + bad.id + "/0" }),
+    (e) => e.code === "WORKSPACE_BINARY_FILE"
+  );
+  await f.workspace.revokeVault();
+  await assert.rejects(f.execute({ kind: "workspace_read", path: p }));
+});
 test("document generators cannot turn a vault source into a writable workspace", async (t) => {
   const f = fixture(t);
   await f.grant();

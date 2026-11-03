@@ -7,6 +7,7 @@ const test = require("node:test"),
 const { EventEmitter } = require("node:events");
 const { createLocalVault } = require("../local-vault.cjs");
 const { createVaultConsole } = require("../vault-console.cjs");
+const independentOffice = require("./fixtures/office-import.json").files;
 const codec = {
   seal: (s) => Buffer.from(s).toString("base64"),
   open: (s) => Buffer.from(s, "base64").toString()
@@ -26,6 +27,30 @@ function fixture(t) {
   });
   return { dir, profile, folder, vault: createLocalVault({ userDataPath: profile, codec }) };
 }
+test("Office originals are locally searchable and addressable without changing bytes or evaluating formulas", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  for (const input of independentOffice) {
+    const bytes = Buffer.from(input.base64, "base64"),
+      item = f.vault.put(alice, input.name, bytes);
+    const excerpt = f.vault.fragment(alice, item.id);
+    assert.equal(excerpt.sha256, item.id);
+    assert.equal(excerpt.representation.kind, "office_text");
+    assert.equal(excerpt.offset_utf16, 0);
+    assert.ok(excerpt.content.length > 0);
+    assert.deepEqual(f.vault.get(alice, item.id).bytes, bytes);
+    assert.ok(f.vault.context(alice, item.id).includes("office_text"));
+    assert.ok(
+      f.vault.search(alice, "доставки").items.some((i) => i.id === item.id) ||
+        input.name.endsWith("xlsx")
+    );
+  }
+  const broken = f.vault.put(alice, "broken.docx", Buffer.from("not a container"));
+  assert.throws(() => f.vault.context(alice, broken.id), /VAULT_DOCUMENT_INVALID/);
+  assert.equal(f.vault.search(alice, "anything").limited, true);
+  f.vault.disconnect(alice);
+  assert.throws(() => f.vault.fragment(alice, independentOffice[0].sha256));
+});
 test("stores exact originals, deduplicates, searches and restores a binding after restart", (t) => {
   const f = fixture(t);
   f.vault.choose(alice, f.folder);

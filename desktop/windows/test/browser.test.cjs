@@ -138,7 +138,9 @@ function fixture(t, options = {}) {
     snapshot: () => ({ id: "a".repeat(24), name: "Work" }),
     uploadFile: () => "C:\\fixture\\upload.txt",
     reserveDownload: () => ({ path: "C:\\fixture\\download.txt", name: "download.txt" }),
-    verifyDownload() {}
+    verifyDownload() {
+      return { sha256: "a".repeat(64), version: "sha256:" + "a".repeat(64) };
+    }
   };
   const engine = createBrowserEngine({
     WebContentsView: View,
@@ -551,6 +553,8 @@ test("download binds the approved link and workspace, enforces size and verifies
   assert.equal(item.path, "C:\\fixture\\download.txt");
   item.emit("done", {}, "completed");
   assert.equal(f.engine.state().downloads[0].status, "completed");
+  assert.equal(f.engine.state().downloads[0].sha256, "a".repeat(64));
+  assert.equal(f.engine.state().downloads[0].version, "sha256:" + "a".repeat(64));
   assert.equal(f.engine.state().downloads[0].path, undefined);
 });
 test("one local task gate prevents concurrent computer/browser agent runs", async () => {

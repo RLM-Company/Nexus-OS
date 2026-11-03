@@ -1,6 +1,7 @@
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
+const { readBoundedFileSnapshot } = require("./workspace/version-backup.cjs");
 const { ERROR_CODES, KosworkWorkspaceError } = require("./workspace/errors.cjs");
 const {
   createKosworkWorkspaceService,
@@ -73,6 +74,8 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
       throw Error("BROWSER_DOWNLOAD_UNAVAILABLE");
     },
     verifyDownload(context, workspaceId, file, size) {
+      if (!Number.isSafeInteger(size) || size < 0 || size > 25 * 1024 * 1024)
+        throw Error("BROWSER_DOWNLOAD_UNAVAILABLE");
       if (snapshot(context)?.id !== workspaceId || !workspaceId)
         throw Error("COMPUTER_WORKSPACE_CHANGED");
       const status = service.getStatus(owner(context));
@@ -83,6 +86,22 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
       );
       if (!target.stat.isFile() || target.stat.size !== size || size > 25 * 1024 * 1024)
         throw Error("BROWSER_DOWNLOAD_UNAVAILABLE");
+      const receipt = readBoundedFileSnapshot(target.absolutePath, { maxBytes: 25 * 1024 * 1024 });
+      const final = resolveSafeWorkspaceTarget(
+        status.rootPath,
+        path.relative(status.rootPath, file),
+        { mustExist: true }
+      );
+      if (
+        snapshot(context)?.id !== workspaceId ||
+        receipt.size !== size ||
+        final.stat.size !== size ||
+        final.stat.mtimeMs !== receipt.mtimeMs ||
+        (receipt.ino && final.stat.ino && receipt.ino !== final.stat.ino) ||
+        (receipt.dev && final.stat.dev && receipt.dev !== final.stat.dev)
+      )
+        throw Error("BROWSER_DOWNLOAD_UNAVAILABLE");
+      return { sha256: receipt.sha256, version: receipt.version };
     },
     snapshot,
     async connect(context, signal) {

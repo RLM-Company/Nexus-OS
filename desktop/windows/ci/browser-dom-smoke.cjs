@@ -19,8 +19,43 @@ async function run() {
   let engine,
     received = "",
     submissions = 0;
+  const otherServer = http.createServer((_request, response) => {
+    response.setHeader("content-type", "text/html; charset=utf-8");
+    response.end("<!doctype html><button>Forbidden other-origin control</button>");
+  });
+  await new Promise((resolve) => otherServer.listen(0, "127.0.0.1", resolve));
   const server = http.createServer((request, response) => {
     response.setHeader("content-type", "text/html; charset=utf-8");
+    if (request.url === "/deep") {
+      response.end(`<!doctype html><body style="margin:20px"><h1>Complex fixture</h1>
+        <div id="host"></div><div id="closed"></div>
+        <form id="mutable-form" action="/first-destination"><button>Protected submit</button></form>
+        <iframe id="embedded" title="Embedded editor" src="/same-frame" style="display:block;width:700px;height:310px;border:4px solid"></iframe>
+        <iframe title="Other site" src="http://127.0.0.1:${otherServer.address().port}/" style="width:300px;height:90px"></iframe>
+        <script>
+          const root=document.querySelector('#host').attachShadow({mode:'open'});
+          root.innerHTML='<label>Shadow Query <input id="shadow-query"></label><button type="button" id="shadow-save">Save shadow</button><input type="password" value="hidden-shadow-secret">';
+          window.shadowClicks=0;root.querySelector('button').onclick=()=>{window.shadowClicks++;const el=document.createElement('div');el.setAttribute('role','alert');el.textContent='Saved shadow result';root.append(el);};
+          document.querySelector('#closed').attachShadow({mode:'closed'}).innerHTML='<button>Closed root control</button>';
+        </script></body>`);
+      return;
+    }
+    if (request.url?.startsWith("/same-frame")) {
+      response.end(`<!doctype html><body style="margin:10px"><div id="frame-host"></div>
+        <iframe title="Nested control" src="/nested-frame" style="display:block;width:500px;height:120px;border:3px solid"></iframe>
+        <script>document.querySelector('#frame-host').attachShadow({mode:'open'}).innerHTML='<label>Frame Query <input></label><input type="password" value="hidden-frame-secret">';</script></body>`);
+      return;
+    }
+    if (request.url === "/nested-frame") {
+      response.end(
+        '<!doctype html><body style="margin:12px"><button type="button" onclick="window.clicked=(window.clicked||0)+1">Nested save</button></body>'
+      );
+      return;
+    }
+    if (request.url === "/other-frame") {
+      response.end("<!doctype html><button>Forbidden other-origin control</button>");
+      return;
+    }
     if (request.url === "/send") {
       let body = "";
       request.on("data", (chunk) => {
@@ -228,6 +263,135 @@ async function run() {
       .locator("#query")
       .filter({ hasText: "Later search" })
       .waitFor();
+    // Exercise the actual engine on open roots, nested same-origin frames and
+    // rerendered/occluded controls. Playwright only sets up/asserts fixtures;
+    // browser actions under test are dispatched through our CDP engine.
+    const abort = new AbortController().signal;
+    await engine.open(url + "deep");
+    const deepView = views.findLast((v) => !v.webContents.isDestroyed());
+    await deepView.webContents.ready;
+    const page = deepView.webContents.page;
+    await page.locator("#shadow-query").waitFor();
+    await page
+      .frameLocator('iframe[title="Other site"]')
+      .getByText("Forbidden other-origin control")
+      .waitFor();
+    await page.frameLocator("#embedded").locator("input").first().waitFor();
+    await page.frameLocator("#embedded").frameLocator("iframe").getByText("Nested save").waitFor();
+    const observeDeep = async () => {
+      const observation = await engine.observe(abort);
+      return { observation, doc: JSON.parse(observation.description) };
+    };
+    let deep = await observeDeep();
+    for (const forbidden of [
+      "hidden-shadow-secret",
+      "hidden-frame-secret",
+      "Closed root control",
+      "Forbidden other-origin control"
+    ])
+      assert.equal(deep.observation.description.includes(forbidden), false, forbidden);
+    assert.ok(deep.doc.skipped_frames >= 1);
+    const protectedSubmit = deep.doc.nodes.find((n) => n.name === "Protected submit");
+    assert.ok(protectedSubmit);
+    await page.locator("#mutable-form").evaluate((e) => (e.action = "/other-destination"));
+    await assert.rejects(
+      engine.execute({ kind: "browser_click", ref: protectedSubmit.ref }, deep.observation, abort),
+      /BROWSER_ELEMENT_UNAVAILABLE/
+    );
+    assert.equal(
+      page.url(),
+      url + "deep",
+      "a changed form destination cannot reuse the observed target"
+    );
+    for (const label of ["Shadow Query", "Frame Query"]) {
+      deep = await observeDeep();
+      const node = deep.doc.nodes.find((n) => n.name === label);
+      assert.ok(node, label);
+      assert.ok(node.scope.includes("shadow:"));
+      const receipt = await engine.execute(
+        { kind: "browser_fill", ref: node.ref, text: label + " Космора" },
+        deep.observation,
+        abort
+      );
+      assert.equal(receipt.input_verified, true);
+      deep = await observeDeep();
+      assert.equal(deep.doc.transition.input_verified_at_action, true);
+      assert.equal(deep.doc.transition.goal_verified, false);
+    }
+    deep = await observeDeep();
+    const save = deep.doc.nodes.find((n) => n.name === "Save shadow");
+    await engine.execute({ kind: "browser_click", ref: save.ref }, deep.observation, abort);
+    deep = await observeDeep();
+    assert.deepEqual(deep.doc.transition.new_notice_roles, ["alert"]);
+    assert.equal(await page.evaluate(() => window.shadowClicks), 1);
+    const stale = deep.doc.nodes.find((n) => n.name === "Save shadow");
+    await page.evaluate(() => {
+      const old = document.querySelector("#host").shadowRoot.querySelector("button");
+      const replacement = old.cloneNode(true);
+      replacement.onclick = () => window.shadowClicks++;
+      old.replaceWith(replacement);
+    });
+    await assert.rejects(
+      engine.execute({ kind: "browser_click", ref: stale.ref }, deep.observation, abort),
+      /BROWSER_ELEMENT_UNAVAILABLE/
+    );
+    assert.equal(
+      await page.evaluate(() => window.shadowClicks),
+      1,
+      "a detached ref must not be retargeted/retried"
+    );
+    deep = await observeDeep();
+    assert.notEqual(deep.doc.nodes.find((n) => n.name === "Save shadow").ref, stale.ref);
+    const nested = deep.doc.nodes.find((n) => n.name === "Nested save");
+    assert.ok(nested.scope.includes("frame:"));
+    await engine.execute({ kind: "browser_click", ref: nested.ref }, deep.observation, abort);
+    assert.equal(
+      await page
+        .frameLocator("#embedded")
+        .frameLocator("iframe")
+        .locator("button")
+        .evaluate((e) => e.ownerDocument.defaultView.clicked),
+      1
+    );
+    deep = await observeDeep();
+    const frameInput = deep.doc.nodes.find((n) => n.name === "Frame Query");
+    await page.evaluate(() => {
+      const e = document.createElement("div");
+      e.id = "occluder";
+      e.style = "position:fixed;inset:0;background:white;z-index:99999";
+      document.body.append(e);
+    });
+    await assert.rejects(
+      engine.execute(
+        { kind: "browser_fill", ref: frameInput.ref, text: "must not type" },
+        deep.observation,
+        abort
+      ),
+      /BROWSER_ELEMENT_UNAVAILABLE/
+    );
+    assert.equal(
+      await page.frameLocator("#embedded").locator("input").first().inputValue(),
+      "Frame Query Космора"
+    );
+    await page.locator("#occluder").evaluate((e) => e.remove());
+    deep = await observeDeep();
+    const oldFrame = deep.doc.nodes.find((n) => n.name === "Frame Query");
+    await page.locator("#embedded").evaluate((e) => (e.src = "/same-frame?generation=2"));
+    await page.frameLocator("#embedded").locator("input").first().waitFor();
+    await assert.rejects(
+      engine.execute(
+        { kind: "browser_fill", ref: oldFrame.ref, text: "old frame write" },
+        deep.observation,
+        abort
+      ),
+      /BROWSER_ELEMENT_UNAVAILABLE/
+    );
+    await page.locator("#embedded").evaluate((e) => (e.style.transform = "scale(0.75)"));
+    deep = await observeDeep();
+    assert.equal(
+      deep.doc.nodes.some((n) => n.name === "Frame Query"),
+      false
+    );
     const preview = await browser.newPage({ viewport: { width: 1280, height: 840 } });
     await preview.addInitScript(() => {
       const state = {
@@ -366,13 +530,16 @@ async function run() {
         model_steps: providerCalls,
         page_screenshots: sourceScreenshots,
         ui_viewport: "1280x840",
-        owner_desktop_input: false
+        owner_desktop_input: false,
+        deep_dom:
+          "shadow fill, same-origin frame/shadow fill, nested-frame click, cross-origin/closed-root exclusion, stale ref/navigation/occlusion/transform fences passed"
       }) + "\n"
     );
   } finally {
     engine?.dispose();
     await browser.close();
     await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => otherServer.close(resolve));
     assert.ok(path.resolve(temporary).startsWith(path.resolve(os.tmpdir()) + path.sep));
     fs.rmSync(temporary, { recursive: true, force: true });
   }

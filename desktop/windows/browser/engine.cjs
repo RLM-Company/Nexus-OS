@@ -4,6 +4,7 @@ const { setTimeout: delay } = require("node:timers/promises");
 const { safeUrl, agentUrl } = require("./policy.cjs");
 const documentCode = require("./document.cjs");
 const searchCode = require("./search.cjs");
+const { actionProbe, actionEvidence } = require("./action-evidence.cjs");
 
 const HOME = "about:blank";
 function createBrowserEngine({
@@ -29,7 +30,8 @@ function createBrowserEngine({
     last = null,
     stopped = false,
     wantImage = false,
-    automated = 0;
+    automated = 0,
+    pendingEvidence = null;
   const downloads = [],
     intents = new Map();
   const activeDownloads = () => downloads.filter((d) => d.status === "progressing").length;
@@ -535,6 +537,12 @@ function createBrowserEngine({
     if (signal.aborted || version !== tab.version) throw Error("BROWSER_STALE");
     tab.dirty ||= doc.dirty;
     doc.text = doc.text.slice(0, 6000);
+    const evidence = pendingEvidence;
+    pendingEvidence = null;
+    const transition =
+      evidence && evidence.tab === tab.id && now() - evidence.at <= 30000
+        ? actionEvidence(evidence.probe, doc, evidence.inputVerified)
+        : null;
     const publicDoc = () =>
       JSON.stringify({
         url: agentUrl(doc.url),
@@ -554,6 +562,9 @@ function createBrowserEngine({
           href: node.href ? agentUrl(node.href) : ""
         })),
         truncated: doc.truncated,
+        ...(doc.notices?.length ? { notices: doc.notices } : {}),
+        ...(doc.skipped_frames ? { skipped_frames: doc.skipped_frames } : {}),
+        ...(transition ? { transition } : {}),
         downloads: downloads.slice(-5).map(({ item, path, ...d }) => d)
       });
     while (publicDoc().length > 14500 && doc.nodes.length) doc.nodes.pop();
@@ -607,6 +618,15 @@ function createBrowserEngine({
     return { site: tabs.get(active)?.url, target: node?.name, role: node?.role, path: action.path };
   }
   async function execute(action, observation, signal) {
+    expected(observation);
+    const probe = actionProbe(action, last.document),
+      tab = active;
+    const receipt = await executeAction(action, observation, signal);
+    if (probe)
+      pendingEvidence = { tab, probe, at: now(), inputVerified: receipt.input_verified === true };
+    return receipt;
+  }
+  async function executeAction(action, observation, signal) {
     live();
     if (signal.aborted) throw Error("COMPUTER_SESSION_STOPPED");
     expected(observation);
@@ -710,7 +730,7 @@ function createBrowserEngine({
           guard();
           const verified = await evaluate(
             tab,
-            `function(snapshot,ref,text){const s=globalThis.__kosworkDocument,e=s?.refs.get(ref);return s?.snapshotId===snapshot&&e?.node.isConnected&&!s.info(e.node).secret&&(e.node.isContentEditable?e.node.innerText:e.node.value)===text;}`,
+            `function(snapshot,ref,text){const s=globalThis.__kosworkDocument,e=s?.refs.get(ref);return s?.snapshotId===snapshot&&s.connected(e?.node)&&!s.info(e.node).secret&&(e.node.isContentEditable?e.node.innerText:e.node.value)===text;}`,
             [last.id, action.ref, action.text]
           );
           return { requested: true, input_verified: verified === true };
@@ -842,9 +862,18 @@ function createBrowserEngine({
       d.bytes = item.getReceivedBytes();
       d.status = status;
       try {
-        if (status === "completed")
-          workspace.verifyDownload(context, intent.workspaceId, reservation.path, d.bytes);
-        else d.status = status === "cancelled" ? "cancelled" : "interrupted";
+        if (status === "completed") {
+          const receipt = workspace.verifyDownload(
+            context,
+            intent.workspaceId,
+            reservation.path,
+            d.bytes
+          );
+          if (receipt?.sha256 && receipt?.version) {
+            d.sha256 = receipt.sha256;
+            d.version = receipt.version;
+          }
+        } else d.status = status === "cancelled" ? "cancelled" : "interrupted";
       } catch {
         d.status = "unverified";
       }

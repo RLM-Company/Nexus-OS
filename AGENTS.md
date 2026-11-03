@@ -20,6 +20,10 @@ changing product functionality.
   from the reviewed Ruflo plan. Read docs/product/RUFLO_ADOPTION_SCOPE_RU.md for
   that scope and progress. This does not expand device permissions or UI scope;
   Multi-Agent remains last. Routine fixes do not restart the research process.
+- The owner also approved adapting useful remaining parts of the Gemini November
+  delivery. Scope/dispositions are in docs/product/GEMINI_NOVEMBER_ADOPTION_RU.md.
+  Preserve current stronger implementations; archived prototypes are not active
+  functions. This permission does not expand device/data grants or design scope.
 - Leave Multi-Agent implementation and redesign until the final section.
 - Preserve existing UI boundaries in `apps/web/UI_RULES.md`. Do not change the chat,
   sidebar, logo or styling without a targeted request or agreed design scope.

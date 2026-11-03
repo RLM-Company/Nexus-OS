@@ -471,7 +471,19 @@ test("binary browser transfers stay in the selected folder without overwriting a
   const reserved = f.workspace.reserveDownload(context, selected.id, "../report.pdf");
   assert.notEqual(reserved.name, "report.pdf");
   fs.writeFileSync(reserved.path, Buffer.from([0, 1, 255]));
-  f.workspace.verifyDownload(context, selected.id, reserved.path, 3);
+  const verified = f.workspace.verifyDownload(context, selected.id, reserved.path, 3);
+  assert.equal(
+    verified.sha256,
+    crypto
+      .createHash("sha256")
+      .update(Buffer.from([0, 1, 255]))
+      .digest("hex")
+  );
+  assert.equal(verified.version, "sha256:" + verified.sha256);
+  for (const invalidSize of [Number.NaN, -1, 2, 3.5, Infinity])
+    assert.throws(() =>
+      f.workspace.verifyDownload(context, selected.id, reserved.path, invalidSize)
+    );
   assert.equal(f.workspace.uploadFile(context, selected.id, reserved.name), reserved.path);
   assert.equal(fs.readFileSync(path.join(f.root, "report.pdf"), "utf8"), "keep original");
   assert.throws(() => f.workspace.reserveDownload(context, selected.id, ".env"));

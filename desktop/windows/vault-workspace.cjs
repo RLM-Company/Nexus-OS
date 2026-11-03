@@ -235,7 +235,7 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
       } catch (e) {
         if (e.code?.startsWith("WORKSPACE_")) throw e;
         throw error(
-          e.message === "VAULT_TEXT_ONLY"
+          e.message === "VAULT_TEXT_ONLY" || e.message?.startsWith("VAULT_DOCUMENT_")
             ? "WORKSPACE_BINARY_FILE"
             : e.message === "VAULT_QUERY"
               ? "WORKSPACE_PATH_TRAVERSAL"
