@@ -50,6 +50,9 @@ const fields = {
   workspace_read_lines: ["path", "start_line", "end_line", "expected_version"],
   workspace_mkdir: ["path"],
   workspace_create: ["path", "content"],
+  workspace_create_docx: ["path", "title", "sections"],
+  workspace_create_xlsx: ["path", "sheets"],
+  workspace_create_pptx: ["path", "title", "slides"],
   workspace_update: ["path", "content", "expected_version"],
   workspace_backups: ["path"],
   workspace_restore: ["backup_id", "expected_version"],
@@ -145,6 +148,12 @@ function validateComputerAction(action) {
     }
     if (action.kind.startsWith("workspace_")) {
       try {
+        if (
+          ["workspace_create_docx", "workspace_create_xlsx", "workspace_create_pptx"].includes(
+            action.kind
+          )
+        )
+          require("./workspace/office-document.cjs").validateDocumentAction(action);
         if (
           action.kind === "workspace_read_lines" &&
           (!Number.isSafeInteger(action.start_line) ||
@@ -345,6 +354,9 @@ const recoveryWriteActions = new Set([
   "browser_forward",
   "browser_reload",
   "workspace_create",
+  "workspace_create_docx",
+  "workspace_create_xlsx",
+  "workspace_create_pptx",
   "workspace_update",
   "workspace_restore",
   "workspace_mkdir",

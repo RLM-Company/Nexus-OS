@@ -73,6 +73,7 @@
       "workspace/version-backup.cjs",
       "workspace/workspace-service.cjs",
       "workspace/text-range.cjs",
+      "workspace/office-document.cjs",
       "browser/policy.cjs",
       "browser/document.cjs",
       "browser/profiles.cjs",

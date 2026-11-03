@@ -6,6 +6,7 @@ const path = require("node:path");
 const { normalizeServerOrigin } = require("../connection-policy.cjs");
 const { ERROR_CODES, KosworkWorkspaceError, throwIfAborted } = require("./errors.cjs");
 const { selectTextRange } = require("./text-range.cjs");
+const { buildOfficeDocument } = require("./office-document.cjs");
 const {
   DEFAULT_IGNORED_DIRS,
   assertNotReparseOrSymlink,
@@ -1095,9 +1096,38 @@ function createKosworkWorkspaceService({
     }
   }
 
-  async function createFile({
+  async function createFile(options = {}) {
+    verifyCallerOwner(options);
+    if (typeof options.content !== "string")
+      throw new KosworkWorkspaceError(
+        ERROR_CODES.WORKSPACE_INVALID_ARGUMENT,
+        "Содержимое создаваемого файла должно быть текстовой строкой."
+      );
+    const buffer = Buffer.from(options.content, "utf8");
+    if (buffer.byteLength > limits.maxWriteBytes)
+      throw new KosworkWorkspaceError(
+        ERROR_CODES.WORKSPACE_FILE_TOO_LARGE,
+        `Размер записываемого файла (${buffer.byteLength} байт) превышает лимит ${limits.maxWriteBytes} байт.`,
+        { size: buffer.byteLength, maxWriteBytes: limits.maxWriteBytes }
+      );
+    decodeStrictUtf8Text(buffer, options.relativePath);
+    return createDataFile({ ...options, buffer });
+  }
+
+  async function createDocument(options = {}) {
+    verifyCallerOwner(options);
+    const { format, buffer } = buildOfficeDocument(options.document);
+    const created = await createDataFile({
+      ...options,
+      relativePath: options.document.path,
+      buffer
+    });
+    return { ...created, format };
+  }
+
+  async function createDataFile({
     relativePath,
-    content,
+    buffer,
     createParents = false,
     ownerId = null,
     origin = null,
@@ -1107,13 +1137,6 @@ function createKosworkWorkspaceService({
     const session = verifyCallerOwner({ ownerId, origin, ipcEvent });
     const op = beginOperation(signal);
     try {
-      if (typeof content !== "string") {
-        throw new KosworkWorkspaceError(
-          ERROR_CODES.WORKSPACE_INVALID_ARGUMENT,
-          "Содержимое создаваемого файла должно быть текстовой строкой."
-        );
-      }
-      const buffer = Buffer.from(content, "utf8");
       if (buffer.byteLength > limits.maxWriteBytes) {
         throw new KosworkWorkspaceError(
           ERROR_CODES.WORKSPACE_FILE_TOO_LARGE,
@@ -1121,8 +1144,6 @@ function createKosworkWorkspaceService({
           { size: buffer.byteLength, maxWriteBytes: limits.maxWriteBytes }
         );
       }
-      decodeStrictUtf8Text(buffer, relativePath);
-
       if (createParents) {
         const parsedDir = path.posix.dirname(String(relativePath).replace(/\\/g, "/"));
         if (parsedDir && parsedDir !== ".") {
@@ -1484,6 +1505,7 @@ function createKosworkWorkspaceService({
     readTextFile,
     createDirectory,
     createFile,
+    createDocument,
     updateFile,
     listBackups,
     restoreBackup

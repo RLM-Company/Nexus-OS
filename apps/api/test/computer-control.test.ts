@@ -449,6 +449,31 @@ describe("owner-bound computer proposals", () => {
     { kind: "workspace_find", path: "", mode: "text", query: "summary" },
     { kind: "workspace_read", path: "note.md" },
     {
+      kind: "workspace_create_docx",
+      path: "report.docx",
+      title: "Summary",
+      sections: [{ heading: "Result", text: "Literal report" }]
+    },
+    {
+      kind: "workspace_create_xlsx",
+      path: "report.xlsx",
+      sheets: [
+        {
+          name: "Summary",
+          rows: [
+            ["Budget", 19700],
+            ["Total", { formula: "SUM(B1:B1)" }]
+          ]
+        }
+      ]
+    },
+    {
+      kind: "workspace_create_pptx",
+      path: "report.pptx",
+      title: "Summary",
+      slides: [{ title: "Result", text: "Literal report" }]
+    },
+    {
       kind: "workspace_read_lines",
       path: "note.md",
       start_line: 2,
@@ -475,7 +500,12 @@ describe("owner-bound computer proposals", () => {
       const f = await fixture({ output: { ...action, action: workspaceAction } });
       await f.create();
       const value = structuredClone(step);
-      value.observation.workspace = { id: "a".repeat(24), name: "Owner project", read_lines: true };
+      value.observation.workspace = {
+        id: "a".repeat(24),
+        name: "Owner project",
+        read_lines: true,
+        create_documents: true
+      };
       expect(await f.next(value)).toMatchObject({ action: workspaceAction });
       expect(f.calls).toHaveLength(1);
       expect(f.calls[0]!.messages[1]!.content).toContain("Owner project");
@@ -526,6 +556,57 @@ describe("owner-bound computer proposals", () => {
     await f.create();
     const value = structuredClone(step);
     value.observation.workspace = { id: "a".repeat(24), name: "Legacy client folder" };
+    await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+  });
+  it("negotiates Office tools and a bounded document output allowance only for capable clients", async () => {
+    for (const capable of [false, true]) {
+      const doc = {
+        kind: "workspace_create_docx",
+        path: "report.docx",
+        title: "Result",
+        sections: [{ heading: "", text: "Report" }]
+      };
+      const f = await fixture({ output: { ...action, action: doc } });
+      await f.create();
+      const value = structuredClone(step);
+      value.observation.workspace = {
+        id: "a".repeat(24),
+        name: "Owner folder",
+        ...(capable ? { create_documents: true as const } : {})
+      };
+      if (capable) expect(await f.next(value)).toMatchObject({ action: doc });
+      else await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+      expect(f.calls[0]!.messages[0]!.content.includes("workspace_create_docx")).toBe(capable);
+      expect(f.calls[0]!.constraints.max_output_tokens).toBeLessThanOrEqual(capable ? 6000 : 2000);
+    }
+  });
+  it.each([
+    {
+      kind: "workspace_create_docx",
+      path: "report.exe",
+      title: "Result",
+      sections: [{ heading: "", text: "Report" }]
+    },
+    {
+      kind: "workspace_create_xlsx",
+      path: "report.xlsx",
+      sheets: [{ name: "Data", rows: [[{ formula: 'WEBSERVICE("https://example.test")' }]] }]
+    },
+    {
+      kind: "workspace_create_docx",
+      path: "large.docx",
+      title: "Result",
+      sections: Array.from({ length: 8 }, () => ({ heading: "", text: "Ж".repeat(1600) }))
+    }
+  ])("rejects invalid document output at the gateway: $path", async (doc) => {
+    const f = await fixture({ output: { ...action, action: doc } });
+    await f.create();
+    const value = structuredClone(step);
+    value.observation.workspace = {
+      id: "a".repeat(24),
+      name: "Owner folder",
+      create_documents: true
+    };
     await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
   });
   it.each([

@@ -3,6 +3,28 @@ import { Type, type Static, type TSchema } from "typebox";
 const object = <T extends Record<string, TSchema>>(properties: T) =>
   Type.Object(properties, { additionalProperties: false });
 const text = (maximum: number) => Type.String({ minLength: 1, maxLength: maximum });
+const formulaRef = "\\$?[A-Z]{1,3}\\$?[1-9][0-9]{0,5}";
+const documentCell = Type.Union([
+  Type.Null(),
+  Type.String({ maxLength: 500 }),
+  Type.Number({ minimum: -999999999999999, maximum: 999999999999999 }),
+  object({
+    formula: Type.String({
+      minLength: 1,
+      maxLength: 256,
+      pattern:
+        "^(?:SUM|AVERAGE|MIN|MAX|COUNT)\\(" +
+        formulaRef +
+        "(?::" +
+        formulaRef +
+        ")?(?:," +
+        formulaRef +
+        "(?::" +
+        formulaRef +
+        ")?)*\\)$"
+    })
+  })
+]);
 
 /** Proposals, never executable JavaScript, shell commands or an unbounded RPC. */
 export const ComputerActionSchema = Type.Union([
@@ -90,6 +112,38 @@ export const ComputerActionSchema = Type.Union([
     content: Type.String({ maxLength: 10000 })
   }),
   object({
+    kind: Type.Literal("workspace_create_docx"),
+    path: text(512),
+    title: text(180),
+    sections: Type.Array(
+      object({ heading: Type.String({ maxLength: 180 }), text: Type.String({ maxLength: 1600 }) }),
+      { minItems: 1, maxItems: 8 }
+    )
+  }),
+  object({
+    kind: Type.Literal("workspace_create_xlsx"),
+    path: text(512),
+    sheets: Type.Array(
+      object({
+        name: text(31),
+        rows: Type.Array(Type.Array(documentCell, { minItems: 1, maxItems: 10 }), {
+          minItems: 1,
+          maxItems: 40
+        })
+      }),
+      { minItems: 1, maxItems: 3 }
+    )
+  }),
+  object({
+    kind: Type.Literal("workspace_create_pptx"),
+    path: text(512),
+    title: text(180),
+    slides: Type.Array(
+      object({ title: Type.String({ maxLength: 180 }), text: Type.String({ maxLength: 1600 }) }),
+      { minItems: 1, maxItems: 12 }
+    )
+  }),
+  object({
     kind: Type.Literal("workspace_update"),
     path: text(512),
     content: Type.String({ maxLength: 10000 }),
@@ -171,6 +225,7 @@ export const ComputerDecisionSchema = object({
 export type ComputerDecision = Static<typeof ComputerDecisionSchema>;
 export const ComputerSessionAcceptanceSchema = object({
   supports_workspace_read_lines: Type.Optional(Type.Literal(true)),
+  supports_workspace_documents: Type.Optional(Type.Literal(true)),
   execution_mode: Type.Optional(
     Type.Union([Type.Literal("computer"), Type.Literal("browser"), Type.Literal("work")])
   ),
@@ -205,7 +260,8 @@ export const ComputerObservationSchema = object({
     object({
       id: Type.String({ pattern: "^[a-f0-9]{24}$" }),
       name: text(180),
-      read_lines: Type.Optional(Type.Literal(true))
+      read_lines: Type.Optional(Type.Literal(true)),
+      create_documents: Type.Optional(Type.Literal(true))
     })
   ),
   observation_id: text(128),

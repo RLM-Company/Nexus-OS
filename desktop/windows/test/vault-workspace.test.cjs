@@ -59,6 +59,20 @@ function fixture(t, options = {}) {
     }
   };
 }
+test("document generators cannot turn a vault source into a writable workspace", async (t) => {
+  const f = fixture(t);
+  await f.grant();
+  assert.equal(f.workspace.supportsDocuments(c), false);
+  await assert.rejects(
+    f.execute({
+      kind: "workspace_create_docx",
+      path: P + "/report.docx",
+      title: "Report",
+      sections: [{ heading: "", text: "Unauthorized write" }]
+    }),
+    (e) => e.code === "WORKSPACE_PROTECTED_PATH"
+  );
+});
 test("ordinary file line readers cannot bypass the vault's opaque source protocol", async (t) => {
   const f = fixture(t);
   await f.grant();

@@ -178,6 +178,10 @@ class ComputerSession {
               ...(state.session?.supports_workspace_read_lines === true &&
               this.workspace.supportsLineReads?.(state.grant) === true
                 ? { read_lines: true }
+                : {}),
+              ...(state.session?.supports_workspace_documents === true &&
+              this.workspace.supportsDocuments?.(state.grant) === true
+                ? { create_documents: true }
                 : {})
             }
           };
@@ -257,7 +261,7 @@ class ComputerSession {
               reason: error.message,
               ...(retry ? { retry_guard: retry } : {}),
               instruction:
-                "Create the plan, select its running step and authorize the required environment. Text-file tools cannot create Office/PDF documents: use a real authorized application, never rename plain text to an Office extension."
+                "Create the plan, select its running step and authorize the required environment. Text-file tools cannot create binary Office/PDF documents. Use workspace_create_docx/xlsx/pptx when observation.workspace.create_documents is true, otherwise a separately authorized application. Never rename plain text to an Office extension."
             });
             continue;
           }

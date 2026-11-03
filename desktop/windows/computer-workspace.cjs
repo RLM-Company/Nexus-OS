@@ -34,6 +34,7 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
   }
   return {
     supportsLineReads: (context) => Boolean(snapshot(context)),
+    supportsDocuments: (context) => Boolean(snapshot(context)),
     uploadFile(context, workspaceId, relativePath) {
       if (snapshot(context)?.id !== workspaceId || !workspaceId)
         throw Error("COMPUTER_WORKSPACE_CHANGED");
@@ -145,6 +146,11 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
           break;
         case "workspace_create":
           result = await service.createFile({ ...args, content: action.content });
+          break;
+        case "workspace_create_docx":
+        case "workspace_create_xlsx":
+        case "workspace_create_pptx":
+          result = await service.createDocument({ ...args, document: action });
           break;
         case "workspace_update":
           // A partial range is not a basis for replacing a larger source.

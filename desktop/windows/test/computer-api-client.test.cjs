@@ -11,7 +11,7 @@ const response = (body) =>
     headers: { "content-type": "application/json" }
   });
 
-test("line-reader support is negotiated only by an explicit server capability", async () => {
+test("native source and document tools require explicit server capability flags", async () => {
   for (const capability of [undefined, false, "true", true]) {
     const client = createComputerApiClient({
       identity: async () => owner,
@@ -21,7 +21,12 @@ test("line-reader support is negotiated only by an explicit server capability", 
             id: JSON.parse(options.body).client_request_id,
             execution_mode: "work",
             planner: { kind: "model_gateway", mode: "provider" },
-            ...(capability === undefined ? {} : { supports_workspace_read_lines: capability })
+            ...(capability === undefined
+              ? {}
+              : {
+                  supports_workspace_read_lines: capability,
+                  supports_workspace_documents: capability
+                })
           })
       })
     });
@@ -34,6 +39,7 @@ test("line-reader support is negotiated only by an explicit server capability", 
       signal: new AbortController().signal
     });
     assert.equal(result.supports_workspace_read_lines, capability === true ? true : undefined);
+    assert.equal(result.supports_workspace_documents, capability === true ? true : undefined);
   }
 });
 

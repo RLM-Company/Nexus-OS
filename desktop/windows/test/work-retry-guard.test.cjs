@@ -110,6 +110,7 @@ function cycle({
   validateAction,
   workspace,
   serverReadLines = false,
+  serverDocuments = false,
   observations = [],
   actions = [{ kind: "type_text", text: "example" }],
   feedback = []
@@ -140,7 +141,8 @@ function cycle({
     planner: {
       begin: async () => ({
         id: "fixture",
-        ...(serverReadLines ? { supports_workspace_read_lines: true } : {})
+        ...(serverReadLines ? { supports_workspace_read_lines: true } : {}),
+        ...(serverDocuments ? { supports_workspace_documents: true } : {})
       }),
       authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
       end: async () => {
@@ -182,6 +184,31 @@ test("new native clients preserve the old wire shape unless both ends support li
       id: "folder-a",
       name: "Owner folder",
       ...(server && local ? { read_lines: true } : {})
+    });
+  }
+});
+test("old servers and read-only sources never receive a document capability in observations", async () => {
+  for (const [server, local] of [
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true]
+  ]) {
+    const observations = [];
+    const f = cycle({
+      serverDocuments: server,
+      observations,
+      workspace: {
+        snapshot: () => ({ id: "folder-a", name: "Owner folder" }),
+        supportsDocuments: () => local
+      },
+      actions: [{ kind: "done", summary: "Fixture complete" }]
+    });
+    assert.equal((await f.run()).status, "completed");
+    assert.deepEqual(observations[0].workspace, {
+      id: "folder-a",
+      name: "Owner folder",
+      ...(server && local ? { create_documents: true } : {})
     });
   }
 });

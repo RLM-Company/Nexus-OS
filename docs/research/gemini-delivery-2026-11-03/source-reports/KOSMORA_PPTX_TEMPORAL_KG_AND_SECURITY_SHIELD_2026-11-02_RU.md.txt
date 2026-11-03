@@ -1,0 +1,69 @@
+﻿Руководство по генератору PowerPoint (.pptx), битемпоральному графу знаний, защите от промпт-инъекций и адаптивному Circuit Breaker Kosmora / Nexus-OS (Волна 20)
+Дата: 2 ноября 2026 г.
+Ветка: feature/kosmora-self-healing-and-knowledge-graph-20261102
+Репозиторий: RLM-Company/Nexus-OS (PR #411 .. #428 + Waves 16-20)
+Статус верификации: 19 из 19 тестовых сьютов PASS (100%).
+Инварианты границ: 0 изменений в файлах Codex (apps/api/src/account-settings/**, packages/db/src/usage-store.ts, packages/contracts/src/usage.ts). 0 утечек секретов.
+
+
+________________
+
+
+1. Архитектурный контекст и цели Волны 20
+Волна 20 завершает формирование полного офисного пакета Koswork (Word .docx + Excel .xlsx/.csv + PowerPoint .pptx), вводит битемпоральную базу знаний с поддержкой запросов «путешествия во времени» и укрепляет защиту периметра от непрямых промпт-инъекций и каскадных сбоев API:
+
+
+1. Автономный генератор презентаций OpenXML PowerPoint (.pptx) (desktop/windows/workspace/powerpoint-deck-builder.cjs):
+
+
+   * Формирует многослайдовые презентации .pptx (ppt/presentation.xml, ppt/slides/slide1.xml, ...) напрямую в подключенной рабочей папке Koswork без внешних библиотек.
+   * Поддерживает заголовки, подзаголовки и маркированные списки DrawingML (<a:p>, <a:r>, <a:t>).
+   * Проходит полную двустороннюю проверку чтения и разбиения на слайды через vault-document-extractor.cjs.
+
+
+2. Битемпоральный граф знаний и движок Time-Travel запросов (packages/db/src/temporal-knowledge-graph.ts):
+
+
+   * Хранит триплеты фактов (subject, predicate, object_value) с двумя временными осями в SQLite (kosmora_temporal_knowledge_graph):
+      * Время действительности факта (valid_from, valid_to).
+      * Транзакционное время записи (recorded_at, superseded_at).
+   * При обновлении метрики (например, бюджета или дедлайна проекта) старый факт не затирается, а закрывается интервалом valid_to и связывается с новым через supersedes_id.
+   * Позволяет выполнять точные ретроспективные запросы queryStateAsOf({ asOfIso }) и выгружать полную эволюционную цепочку getFactEvolutionChain.
+
+
+3. Щит защиты от непрямых промпт-инъекций и криптографическое маркирование (packages/core/src/prompt-injection-shield.ts):
+
+
+   * Защищает агентный контур при чтении внешних веб-страниц и сторонних документов:
+      * Вырезает невидимые Unicode zero-width и bidirectional символы стеганографии (UNICODE_STEGANOGRAPHY).
+      * Блокирует попытки перехвата инструкций (INSTRUCTION_OVERRIDE), спуфинга системных разделителей ChatML (<|im_start|>system, ROLE_DELIMITER_SPOOFING), внедрения фальшивых вызовов инструментов (</tool_call><tool_call>, TOOL_CALL_HIJACKING) и утечки данных через markdown-маячки (EXFILTRATION_BEACON).
+      * Изолирует внешний текст внутри криптографического контейнера со случайным одноразовым токеном <untrusted_external_data_NONCE>.
+
+
+4. Адаптивный предохранитель (Circuit Breaker), трекер задержек EWMA и Token Bucket (packages/core/src/adaptive-circuit-breaker.ts):
+
+
+   * Реализует трехфазный автомат состояний (CLOSED -> OPEN -> HALF_OPEN -> CLOSED) для каждого провайдера и API-эндпоинта.
+   * Вычисляет экспоненциально взвешенное скользящее среднее задержек (EWMA) и ограничивает всплески запросов алгоритмом Token Bucket с непрерывным пополнением токенов.
+
+
+________________
+
+
+2. Инструкция по верификации
+1. Запуск полной матрицы (19 сьютов):
+
+
+node scripts/stage2-master-verification-matrix-runner.mjs
+
+2. Запуск изолированного смоук-теста Волны 20:
+
+
+node scripts/integration-pptx-temporal-kg-and-shield-smoke.mjs
+
+3. Проверка секретов и границ параллельной разработки:
+
+
+node scripts/check-secrets.mjs
+git diff --name-only apps/api/src/account-settings packages/db/src/usage-store.ts packages/contracts/src/usage.ts
+

@@ -70,6 +70,7 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
   return {
     snapshot,
     supportsLineReads: (context) => Boolean(base.snapshot(context)),
+    supportsDocuments: (context) => Boolean(base.snapshot(context)),
     vaultState: (c) => Boolean(allowed(c)),
     async connect(c, signal) {
       revoke();

@@ -159,9 +159,15 @@ function createWorkCycleDriver({
     },
     recordResult(action) {
       if (
-        ["workspace_create", "workspace_update", "workspace_mkdir", "workspace_restore"].includes(
-          action.kind
-        )
+        [
+          "workspace_create",
+          "workspace_create_docx",
+          "workspace_create_xlsx",
+          "workspace_create_pptx",
+          "workspace_update",
+          "workspace_mkdir",
+          "workspace_restore"
+        ].includes(action.kind)
       )
         effects = true;
     },

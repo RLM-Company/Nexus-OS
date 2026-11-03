@@ -107,6 +107,8 @@ function createComputerApiClient({ identity, getSession }) {
           throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
         if (result.supports_workspace_read_lines === true)
           session.supports_workspace_read_lines = true;
+        if (result.supports_workspace_documents === true)
+          session.supports_workspace_documents = true;
         return session;
       } catch (error) {
         // Cancellation is safe even when the create response was lost; never recreate or retry.
