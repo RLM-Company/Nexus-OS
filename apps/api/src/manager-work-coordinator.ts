@@ -277,7 +277,11 @@ export class ManagerWorkCoordinator {
     return work;
   }
 
-  private request(work: ManagerWork, runId: string): ModelRequest {
+  private request(
+    work: ManagerWork,
+    runId: string,
+    recalledMemory?: ContextMemoryBundle
+  ): ModelRequest {
     const stage = work.stage as keyof typeof prompts;
     const request = this.dependencies.manager.buildRequest({
       projectId: work.project_id,
@@ -288,11 +292,13 @@ export class ManagerWorkCoordinator {
       stage === "plan" ? "manager" : stage === "review" ? "critic" : work.request.worker_role;
     request.agent_id = "cosmora-work-" + request.role;
     request.task_type = "manager_work_" + stage;
-    const resolved = this.dependencies.store.contextMemory.resolve(
-      { kind: "project", id: work.project_id },
-      work.owner_id,
-      work.request.goal
-    );
+    const resolved =
+      recalledMemory ??
+      this.dependencies.store.contextMemory.resolve(
+        { kind: "project", id: work.project_id },
+        work.owner_id,
+        work.request.goal
+      );
     const personalSkills =
       this.dependencies.store.skills.forWork(work.id, work.owner_id)?.items ?? [];
     const projectMemory = this.dependencies.store.memory.visibleSnapshot(
@@ -461,7 +467,16 @@ export class ManagerWorkCoordinator {
       }
     }, 50);
     try {
-      const request = this.request(work, runId);
+      const recalled = await store.contextMemory.resolveAsync(
+        { kind: "project", id: work.project_id },
+        work.owner_id,
+        work.request.goal,
+        [],
+        6000,
+        controller.signal
+      );
+      controller.signal.throwIfAborted();
+      const request = this.request(work, runId, recalled);
       const snapshot = contextMemoryUsage(request);
       const memoryUsage = (attempt: number, phase: "dispatch_boundary" | "provider_completed") =>
         store.contextMemory.recordUsage({ kind: "project", id: work.project_id }, work.owner_id, {

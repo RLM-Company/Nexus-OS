@@ -31,6 +31,14 @@ const absorb = (container: Evidence, covered: Evidence): Evidence => ({
   ...(covered.priority ? { priority: true } : {}),
   ...(container.sequence === undefined && covered.sequence !== undefined
     ? { sequence: covered.sequence }
+    : {}),
+  ...(covered.retrieval_rank !== undefined
+    ? {
+        retrieval_rank: Math.min(
+          container.retrieval_rank ?? Number.MAX_SAFE_INTEGER,
+          covered.retrieval_rank
+        )
+      }
     : {})
 });
 
@@ -87,7 +95,7 @@ export function compactContextEvidence(items: readonly Evidence[]): Evidence[] {
   return selected.filter((entry) => retained.has(entry)).map((entry) => entry.item);
 }
 
-/** Lexical relevance, not semantic confidence. Priority entries always precede it. */
+/** Preserve trusted hybrid order through final fitting. Priority always wins. */
 export function rankContextEvidence(items: readonly Evidence[], query?: string): Evidence[] {
   const terms = query
     ? [...new Set([...libraryTerms(query), ...(fold(query).match(/\p{N}+/gu) ?? [])])].slice(0, 32)
@@ -101,6 +109,13 @@ export function rankContextEvidence(items: readonly Evidence[], query?: string):
       required: Number(Boolean(item.priority || item.memory_kind === "constraint")),
       score: terms.length ? overlap(tokens(item.text)) * 4 + overlap(tokens(item.title)) : 0
     }))
-    .sort((a, b) => b.required - a.required || b.score - a.score || a.index - b.index)
+    .sort(
+      (a, b) =>
+        b.required - a.required ||
+        (a.item.retrieval_rank ?? Number.MAX_SAFE_INTEGER) -
+          (b.item.retrieval_rank ?? Number.MAX_SAFE_INTEGER) ||
+        b.score - a.score ||
+        a.index - b.index
+    )
     .map(({ item }) => item);
 }

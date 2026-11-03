@@ -1,0 +1,198 @@
+{
+  "fixture_sha256": "446192b2b1a6d58e82bd70d142d4bd79e4ac0afd0a87474a4d51788433821249",
+  "cases": 22,
+  "documents": 16,
+  "node": "v26.13.0",
+  "encoder_boot_ms": 4020.946899999999,
+  "lexical": {
+    "recall_at_1": 0.2727272727272727,
+    "recall_at_3": 0.2727272727272727,
+    "mrr": 0.2727272727272727
+  },
+  "hybrid": {
+    "recall_at_1": 0.7727272727272727,
+    "recall_at_3": 0.9090909090909091,
+    "mrr": 0.8446969696969698
+  },
+  "median_hybrid_ms": 86.79279999999926,
+  "p95_hybrid_ms": 119.56440000000111,
+  "rss_mib": 323.20703125,
+  "results": [
+    {
+      "query": "How much can we spend on equipment, excluding shipping?",
+      "gold": "H:g:budget",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:budget", "H:g:retry", "H:g:agents"],
+      "latency_ms": 139.90030000000115
+    },
+    {
+      "query": "Какая палитра разрешена для оформления?",
+      "gold": "H:g:design",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:design", "H:g:approval", "H:g:guest"],
+      "latency_ms": 88.65260000000126
+    },
+    {
+      "query": "Do we need the owner's consent before posting publicly?",
+      "gold": "H:g:approval",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:approval", "H:g:retry", "H:g:drive"],
+      "latency_ms": 88.53080000000045
+    },
+    {
+      "query": "В какое время лучше принять посылку?",
+      "gold": "H:g:delivery",
+      "lexical_rank": null,
+      "hybrid_rank": 2,
+      "hybrid_top3": ["H:g:session", "H:g:delivery", "H:g:retry"],
+      "latency_ms": 82.28080000000045
+    },
+    {
+      "query": "What dietary restrictions should the catering service follow?",
+      "gold": "H:g:food",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:food", "H:g:design", "H:g:delivery"],
+      "latency_ms": 94.08020000000033
+    },
+    {
+      "query": "В каких форматах передать текст и вычисления?",
+      "gold": "H:g:report",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:report", "H:g:retry", "H:g:drive"],
+      "latency_ms": 80.65459999999985
+    },
+    {
+      "query": "Who is eligible to join the trial?",
+      "gold": "H:g:staff",
+      "lexical_rank": null,
+      "hybrid_rank": null,
+      "hybrid_top3": ["H:g:session", "H:g:agents", "H:g:budget"],
+      "latency_ms": 83.49229999999989
+    },
+    {
+      "query": "Что делать, если деньги могли уйти, но подтверждения нет?",
+      "gold": "H:g:retry",
+      "lexical_rank": null,
+      "hybrid_rank": 2,
+      "hybrid_top3": ["H:g:delivery", "H:g:retry", "H:g:session"],
+      "latency_ms": 119.56440000000111
+    },
+    {
+      "query": "Where should conversation backups be kept?",
+      "gold": "H:g:drive",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:drive"],
+      "latency_ms": 92.58559999999852
+    },
+    {
+      "query": "Can an invited visitor modify or erase project documents?",
+      "gold": "H:g:guest",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:guest", "H:g:session", "H:g:drive"],
+      "latency_ms": 99.28009999999995
+    },
+    {
+      "query": "Какой идентификатор указать при перечислении поставщику?",
+      "gold": "H:g:invoice",
+      "lexical_rank": null,
+      "hybrid_rank": 3,
+      "hybrid_top3": ["H:g:delivery", "H:g:design", "H:g:invoice"],
+      "latency_ms": 96.84560000000056
+    },
+    {
+      "query": "When are we showing the product to our business partner?",
+      "gold": "H:g:meeting",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:meeting", "H:g:session", "H:g:drive"],
+      "latency_ms": 76.10710000000108
+    },
+    {
+      "query": "Какая операционная система поддерживается агентом на компьютере?",
+      "gold": "H:g:platform",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:platform", "H:g:agents", "H:g:guest"],
+      "latency_ms": 74.56169999999838
+    },
+    {
+      "query": "How can a person use the app without a mouse?",
+      "gold": "H:g:accessibility",
+      "lexical_rank": null,
+      "hybrid_rank": 4,
+      "hybrid_top3": ["H:g:design", "H:g:platform", "H:g:guest"],
+      "latency_ms": 86.79279999999926
+    },
+    {
+      "query": "Когда приступаем к совместной работе нескольких агентов?",
+      "gold": "H:g:agents",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:agents", "H:g:meeting", "H:g:retry"],
+      "latency_ms": 85.43840000000091
+    },
+    {
+      "query": "How long can I stay signed in without entering my password again?",
+      "gold": "H:g:session",
+      "lexical_rank": null,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:session", "H:g:retry", "H:g:agents"],
+      "latency_ms": 116.79039999999986
+    },
+    {
+      "query": "19 700 доставка техника",
+      "gold": "H:g:budget",
+      "lexical_rank": 1,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:budget"],
+      "latency_ms": 81.21389999999883
+    },
+    {
+      "query": "Фиолетовые акценты",
+      "gold": "H:g:design",
+      "lexical_rank": 1,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:design"],
+      "latency_ms": 94.4367000000002
+    },
+    {
+      "query": "00123 номер счёта",
+      "gold": "H:g:invoice",
+      "lexical_rank": 1,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:invoice"],
+      "latency_ms": 66.79949999999917
+    },
+    {
+      "query": "Google Drive резервные копии",
+      "gold": "H:g:drive",
+      "lexical_rank": 1,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:drive"],
+      "latency_ms": 66.30519999999888
+    },
+    {
+      "query": "30 дней сессию",
+      "gold": "H:g:session",
+      "lexical_rank": 1,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:session", "H:g:meeting"],
+      "latency_ms": 67.92959999999948
+    },
+    {
+      "query": "Multi-Agent отложен",
+      "gold": "H:g:agents",
+      "lexical_rank": 1,
+      "hybrid_rank": 1,
+      "hybrid_top3": ["H:g:agents"],
+      "latency_ms": 68.04229999999916
+    }
+  ]
+}

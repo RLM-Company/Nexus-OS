@@ -4,3 +4,7 @@ packages:
 
 allowBuilds:
   esbuild: true
+  # CPU bindings are bundled. Do not download optional providers during install.
+  onnxruntime-node: false
+  # The distributed JS is ready; this script only checks version conventions.
+  protobufjs: false

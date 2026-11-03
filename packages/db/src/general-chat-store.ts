@@ -670,12 +670,7 @@ export class GeneralChatStore {
     ownerId: string,
     recentMessageIds: readonly string[]
   ): ContextMemoryBundle | undefined {
-    const message = this.#sqlite
-      .prepare(
-        "SELECT m.chat_id,m.content FROM general_chat_messages m JOIN general_chats c ON c.id=m.chat_id AND c.owner_id=m.owner_id " +
-          "JOIN general_chat_runs r ON r.id=m.run_id AND r.chat_id=c.id WHERE m.run_id=? AND m.role='user' AND c.owner_id=?"
-      )
-      .get(runId, ownerId) as { chat_id: string; content: string } | undefined;
+    const message = this.recallMessageForRun(runId, ownerId);
     return message
       ? this.contextMemory.resolve(
           { kind: "chat", id: message.chat_id },
@@ -684,6 +679,32 @@ export class GeneralChatStore {
           recentMessageIds
         )
       : undefined;
+  }
+  async recallForRunAsync(
+    runId: string,
+    ownerId: string,
+    recentMessageIds: readonly string[],
+    signal?: AbortSignal
+  ): Promise<ContextMemoryBundle | undefined> {
+    const message = this.recallMessageForRun(runId, ownerId);
+    return message
+      ? this.contextMemory.resolveAsync(
+          { kind: "chat", id: message.chat_id },
+          ownerId,
+          message.content,
+          recentMessageIds,
+          6000,
+          signal
+        )
+      : undefined;
+  }
+  private recallMessageForRun(runId: string, ownerId: string) {
+    return this.#sqlite
+      .prepare(
+        "SELECT m.chat_id,m.content FROM general_chat_messages m JOIN general_chats c ON c.id=m.chat_id AND c.owner_id=m.owner_id " +
+          "JOIN general_chat_runs r ON r.id=m.run_id AND r.chat_id=c.id WHERE m.run_id=? AND m.role='user' AND c.owner_id=?"
+      )
+      .get(runId, ownerId) as { chat_id: string; content: string } | undefined;
   }
   historyCompactionOptions(
     chatId: string,

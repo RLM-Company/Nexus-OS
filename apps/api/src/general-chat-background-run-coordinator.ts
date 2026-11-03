@@ -226,10 +226,11 @@ export class GeneralChatBackgroundRunCoordinator {
         runId: queued.run_id,
         messages: conversation,
         historyCompaction: this.#store.historyCompactionForRun(queued.run_id, queued.owner_id),
-        recalledMemory: this.#store.recallForRun(
+        recalledMemory: await this.#store.recallForRunAsync(
           queued.run_id,
           queued.owner_id,
-          conversation.slice(-8).map((m) => m.id)
+          conversation.slice(-8).map((m) => m.id),
+          controller.signal
         ),
         memoryNotes: this.#store.getChatMemory(queued.chat_id, queued.owner_id)?.memory_notes ?? "",
         skills: this.#store.skills.forRun(queued.run_id, queued.owner_id)?.items ?? []

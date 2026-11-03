@@ -209,6 +209,46 @@ describe("context memory API and model dispatch", () => {
       store.contextMemory.usage({ kind: "chat", id: targetChat }, LOCAL_OWNER_ID).items
     ).toEqual([]);
   });
+  it("dispatches semantic recall as untrusted source data and records its exact source receipt", async () => {
+    await enable();
+    const queries: string[] = [];
+    store.contextMemory.semanticRanker = {
+      rank: async (query, passages) => {
+        await Promise.resolve();
+        queries.push(query);
+        expect(passages.some((p) => p.includes("17350.25"))).toBe(true);
+        return { encoder: "fixture-only", scores: passages.map(() => 0.9) };
+      }
+    };
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/v1/chats/${targetChat}/messages`,
+      payload: {
+        content: "What is the approved spending ceiling?",
+        client_message_id: crypto.randomUUID()
+      }
+    });
+    expect(accepted.statusCode, accepted.body).toBe(202);
+    const stream = await app.inject({ url: accepted.json<{ stream_url: string }>().stream_url });
+    expect(stream.body).toContain("event: run.completed");
+    expect(queries).toEqual(["What is the approved spending ceiling?"]);
+    const request = requests.at(-1)!;
+    const user = request.messages.findLast((m) => m.role === "user")!.content;
+    expect(user).toContain('"retrieval":"hybrid"');
+    expect(user).toContain("17350.25");
+    expect(user).toContain("H:g:" + sourceMessage);
+    expect(
+      request.messages
+        .filter((m) => m.role === "system")
+        .map((m) => m.content)
+        .join("\n")
+    ).not.toContain("17350.25");
+    const receipt = store.contextMemory.usage({ kind: "chat", id: targetChat }, LOCAL_OWNER_ID)
+      .items[0]!;
+    expect(receipt.phase).toBe("provider_completed");
+    expect(receipt.snapshot.representation).toBe("exact");
+    expect(receipt.snapshot.sources[0]?.source_message_id).toBe(sourceMessage);
+  });
   it("journals the final dispatch, excludes previews, and clears only usage metadata", async () => {
     await enable();
     await send();

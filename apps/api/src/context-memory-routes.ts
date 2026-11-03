@@ -201,7 +201,7 @@ export function registerContextMemoryRoutes(
           )
         }
       },
-      (r) => store.resolve(target(r.params), owner(r), r.body.query, [], r.body.budget_bytes)
+      (r) => store.resolveAsync(target(r.params), owner(r), r.body.query, [], r.body.budget_bytes)
     );
     routes.get<{ Params: TargetParams; Querystring: { reference: string; offset?: number } }>(
       base + "/source",
