@@ -22,6 +22,7 @@ export class SemanticHistoryIndex implements IndexedMemoryRecall {
   private fenced = new Set<string>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private stopped = false;
+  private lastSweep = -Infinity;
   private cursor: [string, string, string] = ["", "", ""];
   constructor(
     sqlite: DatabaseSync,
@@ -67,9 +68,13 @@ export class SemanticHistoryIndex implements IndexedMemoryRecall {
     if (this.timer || this.stopped) return;
     const tick = async () => {
       const began = performance.now();
+      let working = false;
       try {
         if (this.encoder.readyForBackground && !this.encoder.readyForBackground()) return;
-        this.store.sweep(this.format);
+        if (began - this.lastSweep >= 60000) {
+          this.store.sweep(this.format);
+          this.lastSweep = began;
+        }
         let next = this.store.nextTarget(this.cursor);
         if (!next) {
           this.cursor = ["", "", ""];
@@ -77,7 +82,13 @@ export class SemanticHistoryIndex implements IndexedMemoryRecall {
         }
         if (next) {
           this.cursor = [next.owner, next.target.kind, next.target.id];
-          if (!this.fenced.has(next.owner)) await this.buildOnce(next.target, next.owner);
+          if (!this.fenced.has(next.owner)) {
+            const p = this.store.progress(next.target, next.owner, this.format);
+            working =
+              p.state === "building" ||
+              (p.state === "capacity" && this.store.remaining(next.owner) > 0);
+            if (working) await this.buildOnce(next.target, next.owner);
+          }
         }
       } catch {
         /* Optional local inference degrades to lexical; no unbounded retry loop. */
@@ -85,7 +96,10 @@ export class SemanticHistoryIndex implements IndexedMemoryRecall {
         if (!this.stopped) {
           this.timer = setTimeout(
             () => void tick(),
-            Math.max(this.options.tickMs ?? 50, Math.ceil((performance.now() - began) * 3))
+            Math.max(
+              this.options.tickMs ?? (working ? 50 : 1000),
+              Math.ceil((performance.now() - began) * 3)
+            )
           );
           this.timer.unref();
         }
