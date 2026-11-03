@@ -19,6 +19,12 @@
   сохранены в lockfile. Пакеты сохраняют собственные LICENSE/notice.
   [Официальное локальное использование](https://huggingface.co/docs/transformers.js/custom_usage).
 
+Политика pnpm сохраняется: `onnxruntime-node` postinstall отключён явно,
+CPU binding и Linux/Windows CPU-библиотеки уже входят в npm-пакет; дополнительные
+CUDA/provider Nuget-downloads не выполняются. Postinstall `protobufjs` только
+проверяет соглашение о версиях и тоже отключён. Отдельный API-тест действительно
+загружает native binding и проверяет bundled CPU backend, без весов/сети.
+
 Из исходной карточки применяется рецепт query/passages с английскими префиксами
 `query: ` и `passage: `, даже для русского текста; masked mean pooling,
 L2-нормализация и cosine, 384 измерения, максимум 512 токенов модели.
